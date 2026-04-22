@@ -20,6 +20,7 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import fs from 'fs';
 import { createClient } from '@supabase/supabase-js';
+import { registerScrapeRoute } from './scrapers/index.js';
 
 // =============================================================================
 // SUPABASE CLIENT - API INTEGRATION
@@ -321,6 +322,16 @@ app.get('/ready', (req, res) => {
     res.status(503).json({ status: 'starting', timestamp: new Date().toISOString() });
   }
 });
+
+// ============================================
+// SCRAPER — POST /api/v1/scrape-imovel
+// Estudo de mercado: URL do anúncio -> dados extraídos
+// ============================================
+try {
+  registerScrapeRoute(app);
+} catch (err) {
+  console.error('❌ Falha ao registrar rota /api/v1/scrape-imovel:', err.message);
+}
 
 // ============================================
 // API v1 - HEALTH CHECK (público)
