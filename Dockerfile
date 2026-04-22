@@ -1,142 +1,104 @@
 # =============================================================================
-# 🐳 DOCKERFILE OTIMIZADO PARA EASYPANEL - OCTO-CRM
+# 🐳 DOCKERFILE — OCTO-DASH CRM (EasyPanel / Docker)
 # =============================================================================
-# Multi-stage build para imagem Docker otimizada e rápida
-# 
-# Características:
-# ✅ Build rápido com cache otimizado
-# ✅ Health checks configurados corretamente
-# ✅ Shutdown gracioso com dumb-init
-# ✅ Logs detalhados para debug
-# ✅ Imagem final ~250MB
+# Multi-stage build:
+#   1. builder: instala deps do frontend + server, roda vite build
+#   2. runtime: node slim com apenas o necessário pra rodar o proxy de produção
+#
+# IMPORTANTE para EasyPanel:
+#   - Na UI do serviço, escolha "Dockerfile" como build method (NÃO Nixpacks)
+#   - Defina VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY como BUILD ARGUMENTS
+#     (o Vite embute essas variáveis no bundle em build-time)
 # =============================================================================
 
-# ====== ESTÁGIO 1: BUILD DA APLICAÇÃO ======
+# ====== ESTÁGIO 1: BUILD ======
 FROM node:20-alpine AS builder
 
-# Metadados
 LABEL maintainer="OctoIA25"
-LABEL description="Octo-CRM - Dashboard Imobiliário (Build Stage)"
-LABEL version="2.0.0"
+LABEL description="Octo-Dash CRM — build stage"
 
-# =============================================================================
-# VARIÁVEIS DE AMBIENTE PARA BUILD (VITE)
-# =============================================================================
-# IMPORTANTE: Vite injeta variáveis VITE_* no bundle durante o build.
-# Essas variáveis DEVEM ser passadas como build args no docker build:
-#   docker build --build-arg VITE_SUPABASE_URL=... --build-arg VITE_SUPABASE_ANON_KEY=... .
-# Ou definidas no EasyPanel como "Build Arguments"
-# =============================================================================
+# -------- Build args (embutidos no bundle Vite) --------
 ARG VITE_SUPABASE_URL
 ARG VITE_SUPABASE_ANON_KEY
+ARG VITE_GOOGLE_CALENDAR_CLIENT_ID
+ARG VITE_GOOGLE_CALENDAR_CLIENT_SECRET
 
-# Converter ARGs em ENVs para o processo de build
-ENV VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
-ENV VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
+ENV VITE_SUPABASE_URL=${VITE_SUPABASE_URL} \
+    VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY} \
+    VITE_GOOGLE_CALENDAR_CLIENT_ID=${VITE_GOOGLE_CALENDAR_CLIENT_ID} \
+    VITE_GOOGLE_CALENDAR_CLIENT_SECRET=${VITE_GOOGLE_CALENDAR_CLIENT_SECRET}
 
-# Instalar dependências do sistema
-RUN apk add --no-cache \
-    git \
-    python3 \
-    make \
-    g++
+# Pula download de Chromium pelo puppeteer (Alpine não tem deps nativas)
+ENV PUPPETEER_SKIP_DOWNLOAD=true \
+    PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+
+# Deps de build nativas (node-gyp)
+RUN apk add --no-cache git python3 make g++
 
 WORKDIR /app
 
-# Copiar apenas package.json primeiro (aproveitamento de cache)
-COPY package.json ./
-
-# Instalar dependências
-RUN echo "📦 Installing dependencies..." && \
-    npm cache clean --force && \
+# -------- Install deps do frontend (root) --------
+COPY package.json package-lock.json* ./
+RUN echo "📦 Installing frontend deps..." && \
     npm install --silent --legacy-peer-deps && \
-    echo "✅ Dependencies installed"
+    echo "✅ Frontend deps ok"
 
-# Copiar código fonte
+# -------- Install deps do backend (server/) --------
+COPY server/package.json server/package-lock.json* ./server/
+RUN echo "📦 Installing server deps..." && \
+    cd server && \
+    npm install --silent --omit=dev && \
+    echo "✅ Server deps ok"
+
+# -------- Copy source --------
 COPY . .
 
-# Verificar se variáveis de ambiente estão definidas
-RUN echo "🔍 Verificando variáveis de ambiente..." && \
-    if [ -z "$VITE_SUPABASE_URL" ]; then \
-      echo "❌ ERRO: VITE_SUPABASE_URL não definida!"; \
-      exit 1; \
-    else \
-      echo "✅ VITE_SUPABASE_URL definida"; \
+# -------- Validar variáveis obrigatórias --------
+RUN if [ -z "$VITE_SUPABASE_URL" ]; then \
+      echo "❌ VITE_SUPABASE_URL não definida (passe como --build-arg)"; exit 1; \
     fi && \
     if [ -z "$VITE_SUPABASE_ANON_KEY" ]; then \
-      echo "❌ ERRO: VITE_SUPABASE_ANON_KEY não definida!"; \
-      exit 1; \
-    else \
-      echo "✅ VITE_SUPABASE_ANON_KEY definida"; \
+      echo "❌ VITE_SUPABASE_ANON_KEY não definida (passe como --build-arg)"; exit 1; \
     fi && \
-    if echo "$VITE_SUPABASE_ANON_KEY" | grep -q '^sb_'; then \
-      echo "❌ ERRO: VITE_SUPABASE_ANON_KEY inválida (sb_*). Use a JWT legacy (eyJ...)."; \
-      exit 1; \
-    fi
+    case "$VITE_SUPABASE_ANON_KEY" in \
+      sb_*) echo "❌ Use a JWT anon legacy (eyJ...), não a publishable (sb_...)"; exit 1 ;; \
+    esac
 
-# Build da aplicação
-RUN echo "🔨 Building application..." && \
+# -------- Build Vite --------
+RUN echo "🔨 Vite build..." && \
     npm run build && \
-    echo "✅ Build completed" && \
-    ls -lah dist/
+    ls -lah dist/ && \
+    echo "✅ Build ok"
 
-# ====== ESTÁGIO 2: PRODUÇÃO COM NODE.JS + PROXY ======
+# ====== ESTÁGIO 2: RUNTIME ======
 FROM node:20-alpine
 
-# Metadados
 LABEL maintainer="OctoIA25"
-LABEL description="Octo-CRM - Produção com Proxy Integrado"
-LABEL version="2.0.0"
+LABEL description="Octo-Dash CRM — runtime"
 
-# Instalar ferramentas essenciais
-RUN apk add --no-cache \
-    curl \
-    dumb-init \
-    tini && \
-    echo "✅ System tools installed"
-
-# Criar usuário não-root para segurança
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S -D -H -u 1001 -h /app -s /sbin/nologin -G nodejs -g nodejs nodejs
+RUN apk add --no-cache curl dumb-init tini
 
 WORKDIR /app
 
-# Copiar apenas arquivos necessários do builder
-COPY --from=builder --chown=nodejs:nodejs /app/package.json ./
-COPY --from=builder --chown=nodejs:nodejs /app/node_modules ./node_modules
-COPY --from=builder --chown=nodejs:nodejs /app/server ./server
-COPY --from=builder --chown=nodejs:nodejs /app/dist ./dist
-COPY --from=builder --chown=nodejs:nodejs /app/public/temp_kenlo.xml ./public/temp_kenlo.xml
+# Copia apenas o que é necessário em runtime
+COPY --from=builder /app/package.json ./
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/server ./server
+COPY --from=builder /app/server/node_modules ./server/node_modules
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/public ./public
 
-# Verificar se arquivos foram copiados corretamente
-RUN echo "📂 Verificando arquivos copiados..." && \
-    ls -lah && \
-    ls -lah dist/ && \
-    ls -lah server/ && \
-    echo "✅ Arquivos verificados"
-
-# NOTA: Mantemos root para usar porta 80
-# EasyPanel gerencia segurança do container
-# USER nodejs  # Comentado para permitir porta 80
-
-# Expor porta 80 para EasyPanel
+# Porta padrão do EasyPanel
 EXPOSE 80
 
-# Variáveis de ambiente
 ENV NODE_ENV=production \
     PORT=80 \
-    NODE_OPTIONS="--max-old-space-size=512"
+    NODE_OPTIONS="--max-old-space-size=512" \
+    PUPPETEER_SKIP_DOWNLOAD=true
 
-# Health check otimizado para EasyPanel (porta 80)
-# IMPORTANTE: Configurações ajustadas para evitar SIGTERM prematuro
-# - start-period: 60s = Tempo generoso para inicialização completa
-# - interval: 30s = Verifica a cada 30 segundos (não muito agressivo)
-# - timeout: 15s = Timeout generoso para resposta
-# - retries: 5 = 5 tentativas antes de considerar falha
+# Health check alinhado com o endpoint /healthz do proxy-production.js
 HEALTHCHECK --interval=30s --timeout=15s --start-period=60s --retries=5 \
-    CMD curl -f http://localhost:80/healthz || exit 1
+    CMD curl -f http://localhost:${PORT}/healthz || exit 1
 
-# Inicialização com dumb-init (gerencia sinais SIGTERM corretamente)
-# dumb-init garante que o Node.js receba os sinais de forma adequada
 ENTRYPOINT ["dumb-init", "--"]
 CMD ["node", "server/proxy-production.js"]

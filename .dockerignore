@@ -1,97 +1,73 @@
 # =============================================================================
-# .dockerignore - Otimizar builds Docker
-# =============================================================================
-# Excluir arquivos desnecessários do contexto de build do Docker
-# Isso reduz o tempo de build e o tamanho da imagem final
+# .dockerignore — reduz contexto enviado pro builder
 # =============================================================================
 
 # Node
 node_modules
+**/node_modules
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .npm
-.yarn
 
-# Build outputs (serão recriados durante o build)
+# Build outputs
 dist
+dist-ssr
 build
 *.tsbuildinfo
+.vite
 
 # Git
 .git
 .gitignore
 .gitattributes
 
-# IDEs e Editores
+# IDEs
 .vscode
 .idea
+.cursor
+.claude
+.kiro
+.windsurf
 *.swp
 *.swo
-*~
 .DS_Store
 
-# Ambiente
+# Ambiente local (nunca ir para a imagem — use build args + env vars)
 .env
 .env.local
 .env.*.local
 .env.development
 .env.test
 
-# Logs
+# Browser profile (NUNCA commitar — contém senhas/cookies)
+.chromium-profile
+.chrome-profile
+
+# Logs / caches
 logs
 *.log
-
-# Testes
 coverage
 .nyc_output
 test-results
+tsc.log
+console-cleanup-skipped.txt
 
-# Documentação (não necessária na imagem)
-*.md
-!README.md
+# Docs grandes (não precisa na imagem)
 docs
 
-# Scripts de desenvolvimento
-*.sh
-*.bat
-*.ps1
-
-# Docker (evitar recursão)
+# Docker files (evitar recursão)
 Dockerfile*
 docker-compose*.yml
 .dockerignore
 
-# Arquivos temporários
+# Temp
 temp
 tmp
 *.tmp
 *.bak
 *.cache
 
-# Arquivos de sistema
+# Sistema
 Thumbs.db
 Desktop.ini
-
-# Arquivos grandes de exemplo ou dados de teste
-*.xlsx
-*.xls
-*.csv
-*.json
-!package.json
-!package-lock.json
-
-# MCP Servers (não necessário na imagem)
-mcp-supabase
-mcp-supabase-server
-
-# Configurações locais
-.cursor
-terminals
-
-# Arquivos SQL
-*.sql
-
-# Arquivos de texto temporários
-*.txt
-!kenlo-xml-real.txt

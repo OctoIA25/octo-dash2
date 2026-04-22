@@ -4,7 +4,22 @@
  * 2. Puppeteer headless (para sites com Cloudflare: ZAP, VivaReal, OLX)
  */
 
-import puppeteer from 'puppeteer';
+// Puppeteer é carregado de forma preguiçosa apenas quando um site Cloudflare
+// é solicitado. Isso mantém o boot rápido e permite implantar sem Chromium.
+let puppeteer = null;
+async function loadPuppeteer() {
+  if (puppeteer) return puppeteer;
+  try {
+    const mod = await import('puppeteer');
+    puppeteer = mod.default ?? mod;
+    return puppeteer;
+  } catch (err) {
+    throw new Error(
+      `Puppeteer não disponível neste ambiente (${err.message}). ` +
+      `Esta rota precisa de Chromium instalado — veja Dockerfile para habilitar.`
+    );
+  }
+}
 
 const USER_AGENTS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
@@ -64,9 +79,10 @@ async function fetchSimple(url) {
  * Fetch com Puppeteer (browser headless) para sites com Cloudflare
  */
 async function fetchWithBrowser(url) {
+  const pptr = await loadPuppeteer();
   let browser = null;
   try {
-    browser = await puppeteer.launch({
+    browser = await pptr.launch({
       headless: 'new',
       args: [
         '--no-sandbox',
