@@ -328,7 +328,7 @@ app.get('/ready', (req, res) => {
 // Estudo de mercado: URL do anúncio -> dados extraídos
 // ============================================
 try {
-  registerScrapeRoute(app);
+  registerScrapeRoute(app, supabase);
 } catch (err) {
   console.error('❌ Falha ao registrar rota /api/v1/scrape-imovel:', err.message);
 }

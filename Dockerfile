@@ -76,7 +76,19 @@ FROM node:20-alpine
 LABEL maintainer="OctoIA25"
 LABEL description="Octo-Dash CRM — runtime"
 
-RUN apk add --no-cache curl dumb-init tini
+# Chromium + fontes para Puppeteer (scraper de Estudo de Mercado)
+# Sem isso as rotas que precisam burlar Cloudflare (ZAP, VivaReal, OLX) falham.
+RUN apk add --no-cache \
+      curl \
+      dumb-init \
+      tini \
+      chromium \
+      nss \
+      freetype \
+      freetype-dev \
+      harfbuzz \
+      ca-certificates \
+      ttf-freefont
 
 WORKDIR /app
 
@@ -94,7 +106,8 @@ EXPOSE 80
 ENV NODE_ENV=production \
     PORT=80 \
     NODE_OPTIONS="--max-old-space-size=512" \
-    PUPPETEER_SKIP_DOWNLOAD=true
+    PUPPETEER_SKIP_DOWNLOAD=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
 # Health check alinhado com o endpoint /healthz do proxy-production.js
 HEALTHCHECK --interval=30s --timeout=15s --start-period=60s --retries=5 \

@@ -144,7 +144,12 @@ export async function fetchHtml(url, maxRetries = 2) {
 
       if (useBrowser) {
         console.log(`🌐 [Puppeteer] Tentativa ${attempt}/${maxRetries}: ${url.substring(0, 60)}...`);
-        html = await fetchWithBrowser(url);
+        try {
+          html = await fetchWithBrowser(url);
+        } catch (browserErr) {
+          console.warn(`⚠️ Puppeteer falhou (${browserErr.message}), caindo para fetch simples...`);
+          html = await fetchSimple(url);
+        }
       } else {
         console.log(`⚡ [Fetch] Tentativa ${attempt}/${maxRetries}: ${url.substring(0, 60)}...`);
         html = await fetchSimple(url);
