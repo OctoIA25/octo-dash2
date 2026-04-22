@@ -1,0 +1,43 @@
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+tsc.log
+console-cleanup-skipped.txt
+
+node_modules
+**/node_modules
+dist
+dist-ssr
+*.local
+.vite/
+.cache/
+
+# Browser profiles (CONTAINS LOGINS/COOKIES — NEVER COMMIT)
+.chromium-profile/
+.chrome-profile/
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS
+Thumbs.db
+ehthumbs.db
+Desktop.ini

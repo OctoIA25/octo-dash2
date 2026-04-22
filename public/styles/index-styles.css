@@ -1,0 +1,134 @@
+/* Index page styles - separated from inline HTML */
+/* OctoDash CRM Imobiliário */
+
+/* Override específico para elementos amarelos no HTML */
+.text-card-foreground {
+  color: hsl(218 11% 65%) !important; /* Cinza harmonioso */
+}
+
+/* Override global para qualquer amarelo que possa aparecer */
+*[style*="color: #ff"] {
+  color: hsl(218 11% 65%) !important;
+}
+
+*[style*="background-color: #ff"] {
+  background-color: hsl(218 11% 15% / 0.1) !important;
+}
+
+/* Cores amarelas específicas que podem aparecer */
+*[style*="#ffcc00"],
+*[style*="#ffd700"],
+*[style*="#ffb347"],
+*[style*="#ff7f50"] {
+  color: hsl(218 11% 65%) !important;
+  background-color: hsl(218 11% 15% / 0.1) !important;
+}
+
+/* Estilos para transições suaves */
+.transition-all {
+  transition-property: all;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 300ms;
+}
+
+/* Prevenir recargas abruptas */
+body {
+  overflow-anchor: none;
+}
+
+/* Melhorar animações */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Melhorar animação do botão de refresh */
+.refresh-button {
+  transition: transform 0.3s ease;
+}
+
+.refresh-button:hover {
+  transform: rotate(180deg);
+}
+
+/* Sistema de Neon Minimalista e Harmonioso */
+.neon-border-subtle {
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.1), inset 0 0 8px rgba(255, 255, 255, 0.05);
+  transition: all 0.3s ease;
+}
+
+.neon-border-subtle:hover {
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.15), inset 0 0 12px rgba(255, 255, 255, 0.08);
+}
+
+.neon-text-subtle {
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.15);
+  transition: text-shadow 0.3s ease;
+}
+
+.neon-text-subtle:hover {
+  text-shadow: 0 0 12px rgba(255, 255, 255, 0.25);
+}
+
+/* Tamanhos de texto harmonizados */
+.text-harmonized-sm {
+  font-size: 0.875rem; /* 14px */
+  line-height: 1.4;
+}
+
+.text-harmonized-base {
+  font-size: 1rem; /* 16px */
+  line-height: 1.5;
+}
+
+.text-harmonized-lg {
+  font-size: 1.125rem; /* 18px */
+  line-height: 1.5;
+}
+
+/* Cards com bordas neon sutis */
+.card-neon {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.08), inset 0 0 10px rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(8px);
+  transition: all 0.3s ease;
+}
+
+.card-neon:hover {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 0 15px rgba(255, 255, 255, 0.12), inset 0 0 15px rgba(255, 255, 255, 0.06);
+}
+
+/* Botões com efeito neon sutil */
+.btn-neon {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.1);
+  transition: all 0.3s ease;
+}
+
+.btn-neon:hover {
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.15);
+}
+
+/* Estilos para charts - Recharts */
+.recharts-wrapper {
+  background: rgba(0, 0, 0, 0.1) !important;
+  border-radius: 8px !important;
+}
+
+/* Efeito glow adicional para as barras */
+.recharts-bar rect {
+  filter: drop-shadow(0 0 8px currentColor) brightness(1.8) saturate(2.0) !important;
+  opacity: 1 !important;
+}
+
+/* Melhorar visibilidade dos textos dos eixos */
+.recharts-cartesian-axis-tick-value {
+  font-weight: 700 !important;
+  font-size: 13px !important;
+  fill: #FFFFFF !important;
+  text-shadow: 0 0 4px rgba(0, 0, 0, 0.8) !important;
+}

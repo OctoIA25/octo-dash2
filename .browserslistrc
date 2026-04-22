@@ -1,0 +1,8 @@
+# Browsers that we support
+
+> 0.5%
+last 2 versions
+Firefox ESR
+not dead
+not IE 9-11 # For support only, remove if you want to support IE
+

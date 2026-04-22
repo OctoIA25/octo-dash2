@@ -1,0 +1,77 @@
+/* CanvasJS overrides and watermark removal */
+/* OctoDash CRM Imobiliário */
+
+/* ===== REMOÇÃO COMPLETA DAS MARCAS D'ÁGUA CANVASJS ===== */
+
+/* Ocultar todos os links de crédito do CanvasJS */
+a[href*="canvasjs.com"],
+a[href*="canvasjs"],
+a[title*="CanvasJS"],
+a[title*="canvasjs"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  position: absolute !important;
+  left: -9999px !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+/* Ocultar textos de crédito do CanvasJS */
+text[style*="canvasjs"],
+text[fill*="#999999"],
+text[font-size="11"]:not([class]),
+tspan:contains("CanvasJS"),
+text:contains("CanvasJS") {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+}
+
+/* Ocultar elementos SVG de crédito específicos */
+svg text[font-size="11"][fill="#999999"],
+svg text[font-size="11"][fill="rgb(153, 153, 153)"],
+svg text[font-family*="Calibri"]:not([class]),
+svg text[text-anchor="start"][font-size="11"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+}
+
+/* Ocultar qualquer elemento que contenha "canvasjs" */
+*[*|href*="canvasjs"],
+*[*|title*="canvasjs"],
+*[*|alt*="canvasjs"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+}
+
+/* Remover marcas d'água através de seletores mais específicos */
+div[id*="canvasjs"] a,
+div[class*="canvasjs"] a,
+.canvasjs-chart-credit,
+.canvasjs-chart-toolbar a[href*="canvasjs"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+}
+
+/* Ocultar elementos de texto pequenos que podem ser créditos */
+svg g text[font-size="11"]:last-child,
+svg g:last-child text[font-size="11"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+}
+
+/* Aplicar a todos os containers de gráficos CanvasJS */
+div[id*="chartContainer"] a,
+div[class*="canvasjs"] a,
+.canvasjs-chart-container a {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}

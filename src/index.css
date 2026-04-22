@@ -1,0 +1,321 @@
+/**
+ * OctoDash CRM - Tema Moderno
+ *
+ * Abordagem: CSS Variables HSL (padrão shadcn/ui) + next-themes
+ * 3 temas: light (padrão), dark, gray
+ *
+ * IMPORTANTE:
+ * - Zero !important em seletores globais
+ * - Zero seletores agressivos (> div, [class*="..."])
+ * - Cores via variáveis HSL para que Tailwind e IAs possam alterar facilmente
+ * - Legacy CSS de referência em src/index-legacy.css (não importado)
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   CORES DOS TEMAS (CSS VARIABLES - padrão shadcn em HSL)
+   ============================================================ */
+
+@layer base {
+  /* TEMA CLARO (padrão) */
+  :root {
+    /* Shadcn core */
+    --background: 0 0% 100%;             /* #ffffff */
+    --foreground: 222 14% 20%;           /* #2f3437 - Notion dark gray */
+
+    --card: 0 0% 98%;                    /* #fafafa */
+    --card-foreground: 222 14% 20%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 14% 20%;
+
+    --primary: 221 83% 53%;              /* Azul principal #3b82f6 */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 14% 96%;
+    --secondary-foreground: 222 14% 20%;
+
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 9% 46%;      /* #737373 */
+
+    --accent: 220 14% 96%;
+    --accent-foreground: 222 14% 20%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 13% 91%;               /* #e4e4e4 */
+    --input: 220 13% 91%;
+    --ring: 221 83% 53%;
+
+    --radius: 0.5rem;
+
+    /* Cores legadas do CRM (mapeadas para HSL — IAs conseguem trocar) */
+    --bg-primary: 0 0% 100%;
+    --bg-secondary: 0 0% 98%;
+    --bg-card: 0 0% 98%;
+    --bg-hover: 0 0% 96%;
+    --bg-chat: 220 14% 96%;
+
+    --text-primary: 0 0% 32%;            /* #525252 */
+    --text-secondary: 0 0% 45%;          /* #737373 */
+
+    --accent-blue: 221 83% 53%;
+    --accent-purple: 265 89% 64%;
+    --accent-pink: 330 81% 60%;
+    --accent-green: 142 71% 45%;
+    --accent-gray: 220 9% 46%;
+
+    /* Sidebar */
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 222 14% 20%;
+    --sidebar-primary: 221 83% 53%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 14% 96%;
+    --sidebar-accent-foreground: 222 14% 20%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 221 83% 53%;
+  }
+
+  /* TEMA ESCURO (padrão Tailwind .dark) */
+  .dark {
+    --background: 0 0% 10%;              /* #191919 - Notion dark */
+    --foreground: 60 2% 94%;             /* #f1f1f0 */
+
+    --card: 0 0% 11%;                    /* #1c1c1c */
+    --card-foreground: 60 2% 94%;
+
+    --popover: 0 0% 11%;
+    --popover-foreground: 60 2% 94%;
+
+    --primary: 221 83% 58%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 0 0% 13%;
+    --secondary-foreground: 60 2% 94%;
+
+    --muted: 0 0% 13%;
+    --muted-foreground: 0 0% 70%;
+
+    --accent: 0 0% 16%;
+    --accent-foreground: 60 2% 94%;
+
+    --destructive: 0 63% 40%;
+    --destructive-foreground: 60 2% 94%;
+
+    --border: 0 0% 16%;                  /* #292929 */
+    --input: 0 0% 16%;
+    --ring: 221 83% 58%;
+
+    /* Legadas */
+    --bg-primary: 0 0% 10%;
+    --bg-secondary: 0 0% 11%;
+    --bg-card: 0 0% 11%;
+    --bg-hover: 0 0% 13%;
+    --bg-chat: 0 0% 11%;
+
+    --text-primary: 60 2% 94%;
+    --text-secondary: 0 0% 70%;
+
+    --sidebar-background: 0 0% 10%;
+    --sidebar-foreground: 60 2% 94%;
+    --sidebar-primary: 221 83% 58%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 0% 16%;
+    --sidebar-accent-foreground: 60 2% 94%;
+    --sidebar-border: 0 0% 16%;
+    --sidebar-ring: 221 83% 58%;
+  }
+
+  /* TEMA CINZA (variação intermediária) */
+  .gray {
+    --background: 220 6% 18%;            /* Cinza médio #2b2d30 */
+    --foreground: 0 0% 92%;
+
+    --card: 220 6% 20%;
+    --card-foreground: 0 0% 92%;
+
+    --popover: 220 6% 20%;
+    --popover-foreground: 0 0% 92%;
+
+    --primary: 221 83% 58%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 6% 24%;
+    --secondary-foreground: 0 0% 92%;
+
+    --muted: 220 6% 24%;
+    --muted-foreground: 0 0% 68%;
+
+    --accent: 220 6% 26%;
+    --accent-foreground: 0 0% 92%;
+
+    --destructive: 0 63% 45%;
+    --destructive-foreground: 0 0% 92%;
+
+    --border: 220 6% 28%;
+    --input: 220 6% 28%;
+    --ring: 221 83% 58%;
+
+    --bg-primary: 220 6% 18%;
+    --bg-secondary: 220 6% 20%;
+    --bg-card: 220 6% 20%;
+    --bg-hover: 220 6% 24%;
+    --bg-chat: 220 6% 20%;
+
+    --text-primary: 0 0% 92%;
+    --text-secondary: 0 0% 68%;
+
+    --sidebar-background: 220 6% 18%;
+    --sidebar-foreground: 0 0% 92%;
+    --sidebar-primary: 221 83% 58%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 6% 24%;
+    --sidebar-accent-foreground: 0 0% 92%;
+    --sidebar-border: 220 6% 28%;
+    --sidebar-ring: 221 83% 58%;
+  }
+}
+
+/* ============================================================
+   RESET BASE + FONTE
+   ============================================================ */
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    border-color: hsl(var(--border));
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    scroll-behavior: smooth;
+  }
+
+  /* Rolagem suave em todos os containers com overflow */
+  main,
+  nav,
+  aside,
+  [data-smooth-scroll],
+  .overflow-y-auto,
+  .overflow-auto,
+  .overflow-x-auto {
+    scroll-behavior: smooth;
+  }
+
+  /* Respeitar preferência do usuário por motion reduzido */
+  @media (prefers-reduced-motion: reduce) {
+    html,
+    main,
+    nav,
+    aside,
+    [data-smooth-scroll],
+    .overflow-y-auto,
+    .overflow-auto,
+    .overflow-x-auto {
+      scroll-behavior: auto;
+    }
+  }
+
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-feature-settings: "kern" 1, "liga" 1;
+    letter-spacing: -0.01em;
+    font-optical-sizing: auto;
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+}
+
+/* ============================================================
+   CLASSES UTILITÁRIAS — SÓ O QUE É USADO NO PROJETO
+   ============================================================ */
+
+@layer utilities {
+  /* Overlay padrão para TODOS os modais (usado pelo shadcn Dialog e modais custom) */
+  .octo-modal-overlay {
+    background-color: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+
+  /* Card com efeito sutil de brilho (usado em vários lugares) */
+  .card-glow {
+    background-color: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05);
+    transition: box-shadow 0.2s ease, border-color 0.2s ease;
+  }
+
+  .card-glow:hover {
+    border-color: hsl(var(--ring) / 0.3);
+    box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.08);
+  }
+
+  /* Glow colorido sutil (dark theme) */
+  .glow-accent-purple {
+    box-shadow: 0 0 8px hsl(265 89% 64% / 0.3);
+  }
+  .glow-accent-blue {
+    box-shadow: 0 0 8px hsl(221 83% 53% / 0.3);
+  }
+  .glow-accent-green {
+    box-shadow: 0 0 8px hsl(142 71% 45% / 0.3);
+  }
+
+  /* Scrollbar customizada */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background-color: hsl(var(--background));
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--border));
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--muted-foreground));
+  }
+
+  /* Classes legadas mapeadas para novas (compatibilidade) */
+  .bg-theme-primary { background-color: hsl(var(--bg-primary)); }
+  .bg-theme-secondary { background-color: hsl(var(--bg-secondary)); }
+  .bg-theme-card { background-color: hsl(var(--bg-card)); }
+  .bg-theme-hover { background-color: hsl(var(--bg-hover)); }
+  .text-theme-primary { color: hsl(var(--text-primary)); }
+  .text-theme-secondary { color: hsl(var(--text-secondary)); }
+  .border-theme { border-color: hsl(var(--border)); }
+}
+
+/* ============================================================
+   ANIMAÇÕES (tailwindcss-animate já cobre a maioria)
+   ============================================================ */
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-in-from-right {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes slide-in-from-bottom {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}

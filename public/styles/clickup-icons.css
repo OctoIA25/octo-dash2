@@ -1,0 +1,432 @@
+/**
+ * ClickUp Icon Styles
+ * Estilo minimalista, bordas suaves, arredondadas
+ * Baseado em Lucide Icons (similar a Feather Icons)
+ */
+
+/* ========================================
+   CONFIGURAÇÃO GLOBAL DOS ÍCONES
+   ======================================== */
+
+/* Todos os ícones Lucide */
+svg[class*="lucide"] {
+  stroke-width: 2px !important;
+  stroke-linecap: round !important;
+  stroke-linejoin: round !important;
+  /* Transições suaves */
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+/* Ícones inativos - Cinza claro (#C1C1C1 ou #BFBFBF) */
+.icon-inactive,
+svg[data-state="inactive"],
+.text-gray-400 svg,
+.text-gray-500 svg,
+.text-muted-foreground svg {
+  color: #C1C1C1 !important;
+  stroke: #C1C1C1 !important;
+}
+
+/* Ícones ativos - Roxo ClickUp (#7B68EE) */
+.icon-active,
+svg[data-state="active"],
+.text-purple-600 svg,
+[data-active="true"] svg {
+  color: #7B68EE !important;
+  stroke: #7B68EE !important;
+}
+
+/* Ícones pretos sólidos - Para elementos principais */
+.icon-primary,
+.text-foreground svg {
+  color: #111111 !important;
+  stroke: #111111 !important;
+}
+
+/* ========================================
+   TAMANHOS PADRÃO CLICKUP
+   ======================================== */
+
+/* Pequeno - 16px */
+.icon-sm,
+svg.h-4.w-4 {
+  width: 16px !important;
+  height: 16px !important;
+}
+
+/* Médio - 20px (padrão) */
+.icon-md,
+svg.h-5.w-5 {
+  width: 20px !important;
+  height: 20px !important;
+}
+
+/* Grande - 24px */
+.icon-lg,
+svg.h-6.w-6 {
+  width: 24px !important;
+  height: 24px !important;
+}
+
+/* ========================================
+   ESTADOS INTERATIVOS
+   ======================================== */
+
+/* Hover - Roxo ClickUp */
+button:hover svg,
+a:hover svg,
+[role="button"]:hover svg {
+  color: #7B68EE !important;
+  stroke: #7B68EE !important;
+  transform: scale(1.05);
+}
+
+/* Active/Focus */
+button:active svg,
+button:focus svg {
+  color: #6951CC !important;
+  stroke: #6951CC !important;
+  transform: scale(0.95);
+}
+
+/* Disabled */
+button:disabled svg,
+[aria-disabled="true"] svg {
+  color: #E0E0E0 !important;
+  stroke: #E0E0E0 !important;
+  opacity: 0.5;
+}
+
+/* ========================================
+   ALINHAMENTO COM TEXTO
+   ======================================== */
+
+/* Alinhar ícones com altura-x da fonte Plus Jakarta Sans */
+svg {
+  vertical-align: middle;
+  margin-top: -2px; /* Ajuste fino para Plus Jakarta Sans */
+}
+
+/* Ícones inline com texto */
+.inline-icon {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+}
+
+.inline-icon svg {
+  margin-right: 0.5rem;
+}
+
+/* ========================================
+   SIDEBAR - ÍCONES ESPECIAIS
+   ======================================== */
+
+/* Ícones da sidebar inativas */
+.sidebar-item svg,
+nav a svg {
+  color: #BFBFBF;
+  stroke: #BFBFBF;
+}
+
+/* Ícones da sidebar ativas */
+.sidebar-item.active svg,
+.sidebar-item[data-active="true"] svg,
+nav a.active svg,
+nav a[aria-current="page"] svg {
+  color: #7B68EE;
+  stroke: #7B68EE;
+  filter: drop-shadow(0 0 4px rgba(123, 104, 238, 0.3));
+}
+
+/* Hover na sidebar */
+.sidebar-item:hover svg,
+nav a:hover svg {
+  color: #7B68EE;
+  stroke: #7B68EE;
+}
+
+/* ========================================
+   CORES CONTEXTUAIS
+   ======================================== */
+
+/* Success - Verde */
+.icon-success,
+.text-green-600 svg,
+.text-emerald-600 svg {
+  color: #10B981 !important;
+  stroke: #10B981 !important;
+}
+
+/* Warning - Laranja */
+.icon-warning,
+.text-orange-600 svg,
+.text-amber-600 svg {
+  color: #F59E0B !important;
+  stroke: #F59E0B !important;
+}
+
+/* Danger - Vermelho */
+.icon-danger,
+.text-red-600 svg {
+  color: #EF4444 !important;
+  stroke: #EF4444 !important;
+}
+
+/* Info - Azul */
+.icon-info,
+.text-blue-600 svg {
+  color: #3B82F6 !important;
+  stroke: #3B82F6 !important;
+}
+
+/* ========================================
+   BOTÕES COM ÍCONES
+   ======================================== */
+
+/* Botão primário */
+button.bg-purple-600 svg,
+button.bg-primary svg {
+  color: white !important;
+  stroke: white !important;
+}
+
+/* Botões com fundo colorido (text-white indica fundo colorido) */
+button.text-white svg,
+button.text-white:hover svg,
+button.text-white:active svg,
+button.text-white:focus svg {
+  color: white !important;
+  stroke: white !important;
+}
+
+/* Botão secundário */
+button.bg-gray-100 svg,
+button.bg-secondary svg {
+  color: #525252 !important;
+  stroke: #525252 !important;
+}
+
+/* Botão ghost/outline */
+button.variant-ghost svg,
+button.variant-outline svg {
+  color: #525252 !important;
+  stroke: #525252 !important;
+}
+
+button.variant-ghost:hover svg,
+button.variant-outline:hover svg {
+  color: #7B68EE !important;
+  stroke: #7B68EE !important;
+}
+
+/* ========================================
+   TEMA CLARO - OVERRIDES
+   ======================================== */
+
+body.theme-branco svg[class*="lucide"],
+.light svg[class*="lucide"] {
+  stroke-width: 2px !important;
+}
+
+/* Ícones inativos no tema claro */
+body.theme-branco .icon-inactive,
+body.theme-branco .text-gray-400 svg,
+body.theme-branco .text-gray-500 svg {
+  color: #9CA3AF !important;
+  stroke: #9CA3AF !important;
+}
+
+/* Ícones ativos no tema claro */
+body.theme-branco .icon-active,
+body.theme-branco .text-purple-600 svg {
+  color: #7B68EE !important;
+  stroke: #7B68EE !important;
+}
+
+/* Ícones primários no tema claro */
+body.theme-branco .icon-primary,
+body.theme-branco .text-foreground svg {
+  color: #171717 !important;
+  stroke: #171717 !important;
+}
+
+/* ========================================
+   ANIMAÇÕES SUAVES
+   ======================================== */
+
+@keyframes icon-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.05);
+  }
+}
+
+.icon-pulse {
+  animation: icon-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Rotação suave para loading */
+@keyframes icon-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.icon-spin {
+  animation: icon-spin 1s linear infinite;
+}
+
+/* ========================================
+   BADGES E NOTIFICAÇÕES
+   ======================================== */
+
+/* Container de ícone com badge */
+.icon-with-badge {
+  position: relative;
+  display: inline-flex;
+}
+
+.icon-with-badge .badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  color: white;
+  background-color: #EF4444;
+  border-radius: 8px;
+  border: 2px solid var(--bg-primary, white);
+}
+
+/* ========================================
+   INPUTS E FORMULÁRIOS
+   ======================================== */
+
+/* Ícones em inputs */
+.input-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.input-icon svg {
+  color: #9CA3AF;
+  stroke: #9CA3AF;
+  width: 18px;
+  height: 18px;
+}
+
+/* Input com ícone à esquerda */
+input.with-icon {
+  padding-left: 40px;
+}
+
+/* ========================================
+   CARDS E CONTAINERS
+   ======================================== */
+
+/* Ícones em headers de cards */
+.card-header-icon svg {
+  color: #7B68EE;
+  stroke: #7B68EE;
+  width: 20px;
+  height: 20px;
+}
+
+/* Ícones em métricas */
+.metric-icon {
+  padding: 12px;
+  border-radius: 12px;
+  background-color: rgba(123, 104, 238, 0.1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.metric-icon svg {
+  width: 24px;
+  height: 24px;
+  color: #7B68EE;
+  stroke: #7B68EE;
+}
+
+/* ========================================
+   DROPDOWN E MENUS
+   ======================================== */
+
+/* Ícones em dropdown items */
+[role="menuitem"] svg,
+.dropdown-item svg {
+  width: 18px;
+  height: 18px;
+  margin-right: 8px;
+  color: #525252;
+  stroke: #525252;
+}
+
+[role="menuitem"]:hover svg,
+.dropdown-item:hover svg {
+  color: #7B68EE;
+  stroke: #7B68EE;
+}
+
+/* Chevron em dropdowns */
+.dropdown-chevron svg {
+  width: 16px;
+  height: 16px;
+  color: #9CA3AF;
+  stroke: #9CA3AF;
+  transition: transform 0.2s;
+}
+
+.dropdown-chevron[data-state="open"] svg {
+  transform: rotate(180deg);
+}
+
+/* ========================================
+   TOOLTIPS E POPOVERS
+   ======================================== */
+
+/* Ícones em tooltips */
+[role="tooltip"] svg {
+  width: 16px;
+  height: 16px;
+  margin-right: 6px;
+}
+
+/* ========================================
+   RESPONSIVIDADE
+   ======================================== */
+
+/* Mobile - ícones ligeiramente maiores para touch */
+@media (max-width: 768px) {
+  button svg,
+  a svg {
+    width: 22px !important;
+    height: 22px !important;
+  }
+  
+  .sidebar-item svg {
+    width: 24px !important;
+    height: 24px !important;
+  }
+}
+
+
+
+
+

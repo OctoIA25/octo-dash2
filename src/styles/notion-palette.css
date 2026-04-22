@@ -1,0 +1,111 @@
+/* 🌙 PALETA MINIMALISTA NOTION-INSPIRED - Cores Refinadas */
+/* ATUALIZADO PARA USAR VARIÁVEIS DO TEMA GLOBAL */
+
+:root {
+  /* === CORES BASE ADAPTADAS AO TEMA === */
+  --notion-bg-primary: var(--bg-primary);        /* Usa tema global */
+  --notion-bg-secondary: var(--bg-secondary);    /* Usa tema global */
+  --notion-bg-tertiary: var(--bg-card);          /* Usa tema global */
+  --notion-border: var(--border);                /* Usa tema global */
+  
+  /* === TEXTOS ADAPTADOS AO TEMA === */
+  --notion-text-primary: var(--text-primary);    /* Usa tema global */
+  --notion-text-secondary: var(--text-secondary); /* Usa tema global */
+  --notion-text-muted: var(--text-secondary);     /* Usa tema global */
+  
+  /* === CORES DE STATUS MINIMALISTAS === */
+  --status-criados: #10b981;           /* Verde Elegante */
+  --status-apresentados: #f59e0b;      /* Laranja Suave */
+  --status-assinados: #dc2626;         /* Vermelho Refinado */
+  --status-vendidos: #3b82f6;          /* Azul Harmônico */
+  --status-suspensos: #dc2626;         /* Vermelho Refinado */
+  
+  /* === CORES DA PIRÂMIDE REFINADAS === */
+  --pyramid-muito-caro: #dc2626;       /* Vermelho Elegante */
+  --pyramid-caro: #f59e0b;             /* Laranja Refinado */
+  --pyramid-atrativo: #3b82f6;         /* Azul Moderno */
+  --pyramid-muito-atrativo: #10b981;   /* Verde Minimalista */
+  
+  /* === CORES DE DESTAQUE === */
+  --accent-primary: #f1f3f4;           /* Primário */
+  --accent-secondary: var(--bg-secondary); /* Usa tema global */
+  --accent-destructive: #dc2626;       /* Destrutivo */
+  
+  /* === GRADIENTES ADAPTADOS AO TEMA === */
+  --gradient-card: var(--bg-card);
+  --gradient-hover: var(--bg-hover);
+  --gradient-accent: linear-gradient(135deg, #404040 0%, #525252 100%);
+  --gradient-subtle: linear-gradient(135deg, rgba(64, 64, 64, 0.1) 0%, rgba(82, 82, 82, 0.1) 100%);
+}
+
+/* === CLASSES UTILITÁRIAS NOTION === */
+.notion-bg-primary { background-color: var(--notion-bg-primary); }
+.notion-bg-secondary { background-color: var(--notion-bg-secondary); }
+.notion-bg-tertiary { background-color: var(--notion-bg-tertiary); }
+.notion-border { border-color: var(--notion-border); }
+
+.notion-text-primary { color: var(--notion-text-primary); }
+.notion-text-secondary { color: var(--notion-text-secondary); }
+.notion-text-muted { color: var(--notion-text-muted); }
+
+.notion-card {
+  background: var(--gradient-card);
+  background-color: var(--bg-card);
+  border: 1px solid var(--notion-border);
+  color: var(--notion-text-primary);
+  transition: all 0.3s ease;
+}
+
+.notion-card-hover:hover {
+  background: var(--gradient-hover);
+  background-color: var(--bg-hover);
+  border-color: var(--notion-text-secondary);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(35, 131, 226, 0.15);
+}
+
+/* === ANIMAÇÕES SUAVES === */
+.notion-transition {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.notion-scale:hover {
+  transform: scale(1.02);
+}
+
+/* === EFEITOS DE GLOW SUTIS === */
+.notion-glow-blue {
+  box-shadow: 0 0 20px rgba(35, 131, 226, 0.2);
+}
+
+.notion-glow-green {
+  box-shadow: 0 0 20px rgba(39, 174, 96, 0.2);
+}
+
+.notion-glow-yellow {
+  box-shadow: 0 0 20px rgba(234, 179, 8, 0.2);
+}
+
+.notion-glow-red {
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.2);
+}
+
+/* === OVERRIDES PARA TEMA BRANCO === */
+body.theme-branco .notion-card {
+  background-color: #fafafa !important;
+  border-color: #e4e4e4 !important;
+  box-shadow: none;
+}
+
+body.theme-branco .notion-card-hover:hover {
+  background-color: #f5f5f5 !important;
+  border-color: #d4d4d4 !important;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1) !important;
+}
+
+body.theme-branco .notion-glow-blue,
+body.theme-branco .notion-glow-green,
+body.theme-branco .notion-glow-yellow,
+body.theme-branco .notion-glow-red {
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1) !important;
+}

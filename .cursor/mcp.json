@@ -1,0 +1,24 @@
+{
+  "mcpServers": {
+    "mcp-playwright": {
+      "args": [
+        "-y",
+        "@playwright/mcp@latest"
+      ],
+      "command": "npx",
+      "disabled": false,
+      "env": {}
+    },
+    "supabase-mcp-server": {
+      "args": [
+        "-y",
+        "@supabase/mcp-server-supabase@latest",
+        "--access-token",
+        "sbp_cc84b8120797426df49c1be3747bd01315cb57eb"
+      ],
+      "command": "npx",
+      "disabled": false,
+      "env": {}
+    }
+  }
+}

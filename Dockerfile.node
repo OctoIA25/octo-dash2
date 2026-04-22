@@ -1,0 +1,89 @@
+# ====================================
+# Dockerfile com Node.js + Proxy Integrado
+# Para Octo-CRM com suporte a proxy Kenlo
+# ====================================
+
+# ====== ESTÁGIO 1: BUILD DA APLICAÇÃO REACT ======
+FROM node:20-alpine AS builder
+
+# Metadados
+LABEL maintainer="OctoIA25"
+LABEL description="Octo-CRM - Build Stage"
+
+# Instalar dependências do sistema
+RUN apk add --no-cache \
+    git \
+    python3 \
+    make \
+    g++
+
+# Diretório de trabalho
+WORKDIR /app
+
+# Copiar apenas package.json primeiro
+COPY package.json ./
+
+# Limpar cache do npm e instalar dependências
+RUN npm cache clean --force && \
+    npm install --silent --legacy-peer-deps
+
+# Copiar código fonte
+COPY . .
+
+# Build da aplicação React (Vite)
+RUN npm run build
+
+# ====== ESTÁGIO 2: SERVIDOR DE PRODUÇÃO COM PROXY ======
+FROM node:20-alpine
+
+# Metadados
+LABEL maintainer="OctoIA25"
+LABEL description="Octo-CRM - Production Server with Proxy"
+LABEL version="2.0.0"
+
+# Instalar curl para healthchecks
+RUN apk add --no-cache curl
+
+# Criar usuário não-root
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S -D -H -u 1001 -h /app -s /sbin/nologin -G nodejs -g nodejs nodejs
+
+# Diretório de trabalho
+WORKDIR /app
+
+# Copiar package.json
+COPY package.json ./
+
+# Limpar cache e instalar apenas dependências necessárias para produção
+RUN npm cache clean --force && \
+    npm install --production --silent --legacy-peer-deps express cors
+
+# Copiar servidor proxy
+COPY server/proxy-production.js ./server/
+
+# Copiar build da aplicação do estágio anterior
+COPY --from=builder /app/dist ./dist
+
+# Copiar XML local como fallback
+COPY public/temp_kenlo.xml ./public/
+
+# Ajustar propriedade dos arquivos
+RUN chown -R nodejs:nodejs /app
+
+# Mudar para usuário não-root
+USER nodejs
+
+# Expor porta
+EXPOSE 8080
+
+# Variáveis de ambiente
+ENV NODE_ENV=production
+ENV PORT=8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+# Comando de inicialização
+CMD ["node", "server/proxy-production.js"]
+

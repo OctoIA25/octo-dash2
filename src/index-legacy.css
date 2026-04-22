@@ -1,0 +1,3835 @@
+@import './styles/notion-palette.css';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ===================================
+   FONT SMOOTHING - Renderização suave das fontes
+   =================================== */
+html {
+  -webkit-font-smoothing: antialiased !important;
+  -moz-osx-font-smoothing: grayscale !important;
+  text-rendering: optimizeLegibility !important;
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif !important;
+}
+
+body {
+  -webkit-font-smoothing: antialiased !important;
+  -moz-osx-font-smoothing: grayscale !important;
+  text-rendering: optimizeLegibility !important;
+  font-feature-settings: "kern" 1, "liga" 1;
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif !important;
+  letter-spacing: -0.01em;
+  font-optical-sizing: auto;
+  font-variation-settings: normal;
+}
+
+*, *::before, *::after {
+  -webkit-font-smoothing: antialiased !important;
+  -moz-osx-font-smoothing: grayscale !important;
+  text-rendering: optimizeLegibility !important;
+}
+
+/* Garantir fonte suave em todos os elementos */
+h1, h2, h3, h4, h5, h6, p, span, div, button, input, textarea, select, a, label, li, td, th {
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif !important;
+  -webkit-font-smoothing: antialiased !important;
+  -moz-osx-font-smoothing: grayscale !important;
+  text-rendering: optimizeLegibility !important;
+}
+
+/* ===================================
+   LUCIDE ICONS - Fundo sempre transparente
+   =================================== */
+/* Todos os SVGs e ícones Lucide */
+svg[class*="lucide"],
+[class*="lucide"],
+.lucide,
+button svg,
+nav svg,
+header svg,
+aside svg {
+  background-color: transparent !important;
+  background: transparent !important;
+}
+
+/* Containers que envolvem ícones - também transparentes */
+.relative:has(svg),
+div:has([class*="lucide"]),
+button:has(svg) > div,
+button:has([class*="lucide"]) > div,
+nav:has(svg) > div,
+.sidebar-bg-gray .relative,
+.sidebar-bg-gray div:has(svg),
+.sidebar-bg-gray button > div {
+  background-color: transparent !important;
+  background: transparent !important;
+}
+
+/* HEADER - Forçar fundo cinza em todos os elementos, nunca branco */
+header[class*="bg-gray-50"] *,
+header.bg-gray-50 *,
+header[class*="bg-gray-50"] button,
+header.bg-gray-50 button,
+header[class*="bg-gray-50"] button.active,
+header.bg-gray-50 button[class*="active"],
+header[class*="bg-gray-50"] > div > div,
+header.bg-gray-50 > div > div {
+  background-color: transparent !important;
+  background: transparent !important;
+}
+
+/* Botões ativos no header devem ter fundo cinza, não branco */
+header[class*="bg-gray-50"] button:not(:hover),
+header.bg-gray-50 button:not(:hover) {
+  background-color: transparent !important;
+}
+
+/* Fix para elementos com transform que ficam borrados */
+/* Removido seletor genérico que criava containing blocks e quebrava position:fixed */
+
+/* ===================================
+   CUSTOM SCROLLBAR - Minimalista
+   =================================== */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(15, 15, 15, 0.3);
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(59, 130, 246, 0.3);
+  border-radius: 10px;
+  transition: background 0.2s ease;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(59, 130, 246, 0.5);
+}
+
+/* Firefox */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(59, 130, 246, 0.3) rgba(15, 15, 15, 0.3);
+}
+
+/* ===================================
+   VARIÁVEIS DE TEMA (Sistema de 2 Temas)
+   Cinza e Branco
+   =================================== */
+
+:root {
+  /* Tema padrão: Branco */
+  --bg-primary: #ffffff;
+  --bg-secondary: #fafafa;
+  --bg-card: #fafafa;
+  --bg-hover: #f5f5f5;
+  --bg-chat: #f3f4f6;
+  --text-primary: #525252;
+  --text-secondary: #737373;
+  --border: #e4e4e4;
+  --accent: #3b82f6;
+}
+
+/* Tema Cinza - Estilo Notion */
+body.theme-cinza {
+  --bg-primary: #191919;      /* Cinza Notion - fundo principal */
+  --bg-secondary: #1c1c1c;    /* Cinza cards - fundo dos cards */
+  --bg-card: #1c1c1c;         /* Cinza cards */
+  --bg-hover: #212121;        /* Cinza hover - estados de hover */
+  --bg-chat: #1c1c1c;         /* Fundo cinza para chat */
+  --text-primary: #f1f1f0;    /* Off-white - texto principal */
+  --text-secondary: #b3b3b3;  /* Cinza texto esmaecido */
+  --border: #292929;          /* Cinza bordas */
+  --accent: #3B82F6;
+}
+
+/* Tema Branco - Estilo Notion Clean */
+body.theme-branco {
+  --bg-primary: #ffffff;      /* Branco puro - fundo principal */
+  --bg-secondary: #fafafa;    /* Cinza claríssimo - cards */
+  --bg-card: #fafafa;         /* Cinza claríssimo - cards */
+  --bg-hover: #f5f5f5;        /* Cinza muito claro - hover states */
+  --bg-chat: #f3f4f6;         /* Fundo cinza claro para chat */
+  --text-primary: #525252;    /* Cinza médio - suave e elegante */
+  --text-secondary: #737373;  /* Cinza médio claro - texto esmaecido */
+  --border: #e4e4e4;          /* Bordas leves e sutis */
+  --accent: #3b82f6;          /* Azul Notion */
+}
+
+/* ===================================
+   OVERRIDES ESPECÍFICOS TEMA BRANCO
+   Forçar aplicação de cores limpas
+   =================================== */
+
+/* Sobrescrever todos os backgrounds neutros no tema branco */
+body.theme-branco .bg-neutral-800\/40,
+body.theme-branco .bg-neutral-900\/50,
+body.theme-branco .bg-neutral-950\/50,
+body.theme-branco [class*="bg-neutral-8"],
+body.theme-branco [class*="bg-neutral-9"],
+body.theme-branco [class*="bg-zinc-8"],
+body.theme-branco [class*="bg-zinc-9"],
+body.theme-branco [class*="bg-gray-8"],
+body.theme-branco [class*="bg-gray-9"] {
+  background-color: #fafafa !important; /* Cards claros */
+}
+
+/* Sobrescrever bordas escuras no tema branco */
+body.theme-branco .border-neutral-800,
+body.theme-branco .border-neutral-700,
+body.theme-branco .border-gray-500\/60,
+body.theme-branco [class*="border-purple-"],
+body.theme-branco [class*="border-blue-"],
+body.theme-branco [class*="border-orange-"],
+body.theme-branco [class*="border-green-"],
+body.theme-branco [class*="border-neutral-"] {
+  border-color: #e4e4e4 !important; /* Bordas sutis */
+}
+
+/* Garantir que Cards tenham fundo claro */
+body.theme-branco .card,
+body.theme-branco [class*="Card"] {
+  background-color: #fafafa !important;
+  border-color: #e4e4e4 !important;
+}
+
+/* Textos no tema branco - suavizados e elegantes */
+body.theme-branco h1,
+body.theme-branco h2,
+body.theme-branco h3,
+body.theme-branco h4,
+body.theme-branco h5,
+body.theme-branco h6 {
+  color: #404040 !important; /* Cinza médio-escuro - mais suave */
+  font-weight: 600 !important; /* Reduzir peso da fonte */
+}
+
+/* No tema branco, text-white deve continuar branco em fundos coloridos.
+   Só vira cinza quando o pai tem fundo branco/claro. */
+body.theme-branco .text-white:not([class*="bg-blue"]):not([class*="bg-green"]):not([class*="bg-red"]):not([class*="bg-purple"]):not([class*="bg-orange"]):not([class*="bg-pink"]):not([class*="bg-yellow"]):not([class*="bg-indigo"]):not([class*="bg-cyan"]):not([class*="bg-teal"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-lime"]):not([class*="bg-sky"]):not([class*="bg-violet"]):not([class*="bg-fuchsia"]):not([class*="bg-black"]):not([class*="bg-slate-8"]):not([class*="bg-slate-9"]):not([class*="bg-gray-8"]):not([class*="bg-gray-9"]):not([class*="bg-zinc-8"]):not([class*="bg-zinc-9"]):not([class*="bg-neutral-8"]):not([class*="bg-neutral-9"]):not([class*="bg-stone-8"]):not([class*="bg-stone-9"]):not([class*="bg-gradient"]) {
+  color: #525252 !important;
+}
+
+/* Em fundos coloridos/escuros, text-white FICA branco (mesmo elemento OU filho) */
+body.theme-branco [class*="bg-blue"].text-white,
+body.theme-branco [class*="bg-green"].text-white,
+body.theme-branco [class*="bg-red"].text-white,
+body.theme-branco [class*="bg-purple"].text-white,
+body.theme-branco [class*="bg-orange"].text-white,
+body.theme-branco [class*="bg-pink"].text-white,
+body.theme-branco [class*="bg-yellow"].text-white,
+body.theme-branco [class*="bg-indigo"].text-white,
+body.theme-branco [class*="bg-cyan"].text-white,
+body.theme-branco [class*="bg-teal"].text-white,
+body.theme-branco [class*="bg-emerald"].text-white,
+body.theme-branco [class*="bg-rose"].text-white,
+body.theme-branco [class*="bg-amber"].text-white,
+body.theme-branco [class*="bg-sky"].text-white,
+body.theme-branco [class*="bg-violet"].text-white,
+body.theme-branco [class*="bg-fuchsia"].text-white,
+body.theme-branco [class*="bg-black"].text-white,
+body.theme-branco [class*="bg-gradient"].text-white,
+body.theme-branco [class*="bg-blue"] .text-white,
+body.theme-branco [class*="bg-green"] .text-white,
+body.theme-branco [class*="bg-red"] .text-white,
+body.theme-branco [class*="bg-purple"] .text-white,
+body.theme-branco [class*="bg-orange"] .text-white,
+body.theme-branco [class*="bg-pink"] .text-white,
+body.theme-branco [class*="bg-yellow"] .text-white,
+body.theme-branco [class*="bg-indigo"] .text-white,
+body.theme-branco [class*="bg-cyan"] .text-white,
+body.theme-branco [class*="bg-teal"] .text-white,
+body.theme-branco [class*="bg-emerald"] .text-white,
+body.theme-branco [class*="bg-rose"] .text-white,
+body.theme-branco [class*="bg-amber"] .text-white,
+body.theme-branco [class*="bg-sky"] .text-white,
+body.theme-branco [class*="bg-violet"] .text-white,
+body.theme-branco [class*="bg-fuchsia"] .text-white,
+body.theme-branco [class*="bg-black"] .text-white,
+body.theme-branco [class*="bg-gradient"] .text-white {
+  color: #ffffff !important;
+}
+
+body.theme-branco .novo-candidato-button-text,
+body.theme-cinza .novo-candidato-button-text {
+  color: #ffffff !important;
+}
+
+body.theme-branco .novo-candidato-button,
+body.theme-branco .novo-candidato-button *,
+body.theme-cinza .novo-candidato-button,
+body.theme-cinza .novo-candidato-button * {
+  color: #ffffff !important;
+}
+
+body.theme-branco .bolsao-connect-button,
+body.theme-cinza .bolsao-connect-button {
+  color: #ffffff !important;
+}
+
+body.theme-branco .bolsao-connect-button svg,
+body.theme-cinza .bolsao-connect-button svg {
+  color: #ffffff !important;
+}
+
+body.theme-branco .bolsao-connect-button:hover,
+body.theme-cinza .bolsao-connect-button:hover,
+body.theme-branco .bolsao-connect-button:hover *,
+body.theme-cinza .bolsao-connect-button:hover * {
+  color: #ffffff !important;
+}
+
+body.theme-branco .bolsao-connect-button:hover svg,
+body.theme-cinza .bolsao-connect-button:hover svg {
+  color: #ffffff !important;
+}
+
+.bolsao-connect-button:hover,
+.bolsao-connect-button:hover *,
+.bolsao-connect-button:focus,
+.bolsao-connect-button:focus *,
+.bolsao-connect-button:focus-visible,
+.bolsao-connect-button:focus-visible * {
+  color: #ffffff !important;
+}
+
+.bolsao-connect-button:hover svg,
+.bolsao-connect-button:focus svg,
+.bolsao-connect-button:focus-visible svg {
+  color: #ffffff !important;
+}
+
+/* FORÇAR texto preto no tema branco */
+body.theme-branco .text-black,
+body.theme-branco .text-black *,
+body.theme-branco p.text-black,
+body.theme-branco span.text-black,
+body.theme-branco div.text-black {
+  color: #000000 !important; /* Preto puro para máxima legibilidade */
+}
+
+/* FORÇAR fundos brancos nos cards */
+body.theme-branco .bg-white {
+  background-color: #ffffff !important;
+}
+
+/* FORÇAR fundos amarelo/laranja nos cards de dica */
+body.theme-branco .bg-gradient-to-br.from-yellow-100,
+body.theme-branco [class*="from-yellow-"],
+body.theme-branco [class*="via-orange-"] {
+  /* Manter o gradiente amarelo/laranja */
+}
+
+/* FORÇAR texto preto em cards de dica profissional */
+body.theme-branco .bg-gradient-to-br.from-yellow-100 p,
+body.theme-branco .bg-gradient-to-br.from-yellow-100 span {
+  color: #000000 !important;
+}
+
+body.theme-branco .text-gray-400,
+body.theme-branco .text-gray-500,
+body.theme-branco .text-text-secondary {
+  color: #737373 !important;
+}
+
+/* Textos principais mais suaves no tema branco */
+body.theme-branco .text-text-primary,
+body.theme-branco [class*="text-xl"],
+body.theme-branco [class*="text-2xl"],
+body.theme-branco [class*="text-3xl"] {
+  color: #525252 !important;
+}
+
+/* Títulos de seções e cards mais suaves */
+body.theme-branco .font-bold,
+body.theme-branco .font-semibold {
+  font-weight: 600 !important; /* Reduzir peso */
+}
+
+body.theme-branco .notion-text-primary {
+  color: #525252 !important;
+}
+
+/* Backdrop blur no tema branco
+   IMPORTANTE: NAO pintar overlays de modais (que usam bg-black/XX com backdrop-blur).
+   Essa regra estava forcando TODOS os overlays a ficarem BRANCOS, fazendo modais
+   aparecerem com fundo branco em volta no tema claro. */
+body.theme-branco .backdrop-blur-sm:not([class*="bg-black"]):not([class*="bg-neutral"]):not([class*="bg-zinc"]):not(.octo-modal-overlay):not([data-state]):not([class*="fixed inset-0"]) {
+  backdrop-filter: blur(4px);
+  background-color: rgba(250, 250, 250, 0.8) !important;
+}
+
+/* Sombras no tema branco - muito sutis */
+body.theme-branco [class*="shadow-purple-"],
+body.theme-branco [class*="shadow-blue-"],
+body.theme-branco [class*="shadow-orange-"],
+body.theme-branco [class*="shadow-green-"] {
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Componentes Shadcn/UI no tema branco */
+body.theme-branco [data-radix-dialog-content],
+body.theme-branco [data-radix-dropdown-menu-content],
+body.theme-branco [data-radix-popover-content],
+body.theme-branco [data-radix-select-content] {
+  background-color: #ffffff !important;
+  border-color: #e4e4e4 !important;
+  color: #171717 !important;
+}
+
+body.theme-branco [data-radix-select-item]:hover {
+  background-color: #f5f5f5 !important;
+}
+
+/* Sidebar no tema branco */
+body.theme-branco .sidebar,
+body.theme-branco .sidebar-content,
+body.theme-branco nav,
+body.theme-branco aside {
+  background-color: #fafafa !important;
+  border-color: #e4e4e4 !important;
+}
+
+body.theme-branco .fixed.left-0:not(.app-sidebar-main),
+body.theme-branco div[class*="fixed left-0"]:not(.app-sidebar-main) {
+  background-color: #fafafa !important;
+  border-color: #e4e4e4 !important;
+}
+
+body.theme-cinza .sidebar-bg-gray,
+body.theme-cinza .sidebar-bg-gray nav,
+body.theme-cinza .sidebar-bg-gray aside,
+body.theme-cinza .sidebar-bg-gray .sidebar-nav-scroll,
+body.theme-cinza .sidebar-bg-gray div {
+  background-color: var(--bg-secondary) !important;
+}
+
+body.theme-cinza .sidebar-bg-gray,
+body.theme-cinza .sidebar-bg-gray span,
+body.theme-cinza .sidebar-bg-gray p {
+  color: var(--text-secondary) !important;
+}
+
+body.theme-cinza .sidebar-bg-gray .text-gray-900,
+body.theme-cinza .sidebar-bg-gray .text-gray-800,
+body.theme-cinza .sidebar-bg-gray .text-gray-700 {
+  color: var(--text-primary) !important;
+}
+
+body.theme-cinza .sidebar-bg-gray svg {
+  color: var(--text-secondary) !important;
+}
+
+body.theme-cinza .sidebar-bg-gray button:hover {
+  background-color: var(--bg-hover) !important;
+}
+
+body.theme-cinza .sidebar-bg-gray .border-gray-200,
+body.theme-cinza .sidebar-bg-gray .border-gray-300,
+body.theme-cinza .sidebar-bg-gray [class*="border-gray-"] {
+  border-color: var(--border) !important;
+}
+
+body.theme-cinza .sidebar-bg-gray .bg-gray-900 {
+  background-color: #0f0f0f !important;
+}
+
+/* =============================================
+   SIDEBAR PRINCIPAL - ESTILO CLICKUP/NOTION
+   Sempre branca, independente do tema
+   ============================================= */
+.app-sidebar-main,
+body.theme-cinza .app-sidebar-main,
+body.theme-branco .app-sidebar-main {
+  background-color: #ffffff !important;
+  border-right: 1px solid #e5e7eb !important;
+  border-color: #e5e7eb !important;
+  box-shadow: none !important;
+}
+
+/* Textos da sidebar */
+.app-sidebar-main span,
+.app-sidebar-main p,
+body.theme-cinza .app-sidebar-main span,
+body.theme-cinza .app-sidebar-main p {
+  color: #4b5563 !important;
+}
+
+/* Títulos da sidebar */
+.app-sidebar-main .font-semibold,
+body.theme-cinza .app-sidebar-main .font-semibold {
+  color: #111827 !important;
+}
+
+/* Botões da sidebar */
+.app-sidebar-main button,
+body.theme-cinza .app-sidebar-main button {
+  background-color: transparent !important;
+  color: #4b5563 !important;
+  border: none !important;
+}
+
+.app-sidebar-main button:hover,
+body.theme-cinza .app-sidebar-main button:hover {
+  background-color: #f3f4f6 !important;
+}
+
+/* Ícones da sidebar */
+.app-sidebar-main svg,
+body.theme-cinza .app-sidebar-main svg {
+  color: #6b7280 !important;
+}
+
+/* Item ativo da sidebar */
+.app-sidebar-main button[style*="background-color: rgb(239, 246, 255)"],
+.app-sidebar-main button[style*="#eff6ff"] {
+  background-color: #eff6ff !important;
+}
+
+.app-sidebar-main button[style*="background-color: rgb(239, 246, 255)"] span,
+.app-sidebar-main button[style*="#eff6ff"] span,
+.app-sidebar-main button[style*="color: rgb(37, 99, 235)"] span {
+  color: #2563eb !important;
+}
+
+.app-sidebar-main button[style*="color: rgb(37, 99, 235)"] svg {
+  color: #2563eb !important;
+}
+
+/* Bordas internas da sidebar */
+.app-sidebar-main .border-gray-200,
+body.theme-cinza .app-sidebar-main .border-gray-200 {
+  border-color: #e5e7eb !important;
+}
+
+.app-sidebar-main .bg-gray-200,
+body.theme-cinza .app-sidebar-main .bg-gray-200 {
+  background-color: #e5e7eb !important;
+}
+
+/* Inputs e formulários no tema branco */
+body.theme-branco input,
+body.theme-branco textarea,
+body.theme-branco select {
+  background-color: #ffffff !important;
+  color: #171717 !important;
+  border-color: #e4e4e4 !important;
+}
+
+body.theme-branco input:focus,
+body.theme-branco textarea:focus,
+body.theme-branco select:focus {
+  border-color: #3b82f6 !important;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1) !important;
+}
+
+body.theme-branco input::placeholder,
+body.theme-branco textarea::placeholder {
+  color: #737373 !important;
+}
+
+/* Tabelas no tema branco */
+body.theme-branco table thead {
+  background-color: #fafafa !important;
+  border-color: #e4e4e4 !important;
+}
+
+body.theme-branco table tbody tr {
+  border-color: #e4e4e4 !important;
+}
+
+body.theme-branco table tbody tr:hover {
+  background-color: #f5f5f5 !important;
+}
+
+body.theme-branco table th,
+body.theme-branco table td {
+  color: #171717 !important;
+  border-color: #e4e4e4 !important;
+}
+
+body.theme-branco table td {
+  color: #171717 !important;
+  border-color: #e4e4e4 !important;
+}
+
+/* Botões no tema branco - manter cores de accent */
+body.theme-branco button:not([class*="bg-blue"]):not([class*="bg-green"]):not([class*="bg-red"]):not([class*="bg-purple"]):not([class*="bg-orange"]):not(.disc-btn-pouco-muito):not([class*="btn-octo-"]) {
+  background-color: #ffffff;
+  color: #171717;
+  border-color: transparent;
+}
+
+body.theme-branco button:not([class*="bg-blue"]):not([class*="bg-green"]):not([class*="bg-red"]):not([class*="bg-purple"]):not([class*="bg-orange"]):not(.disc-btn-pouco-muito):not([class*="btn-octo-"]):hover {
+  background-color: #ffffff;
+}
+
+/* Scrollbar no tema branco */
+body.theme-branco ::-webkit-scrollbar-track {
+  background-color: #fafafa !important;
+}
+
+body.theme-branco ::-webkit-scrollbar-thumb {
+  background-color: #e4e4e4 !important;
+}
+
+body.theme-branco ::-webkit-scrollbar-thumb:hover {
+  background-color: #d4d4d4 !important;
+}
+
+/* Cards de métricas e gráficos no tema branco */
+body.theme-branco .metric-card,
+body.theme-branco .stats-card,
+body.theme-branco .chart-container {
+  background-color: #fafafa !important;
+  border-color: #e4e4e4 !important;
+}
+
+body.theme-branco .notion-card {
+  background-color: #fafafa !important;
+  border-color: #e4e4e4 !important;
+}
+
+body.theme-branco .notion-card:hover {
+  background-color: #f5f5f5 !important;
+}
+
+/* Gráficos - manter transparentes para não interferir */
+body.theme-branco .recharts-wrapper,
+body.theme-branco .canvasjs-chart-container {
+  background-color: transparent !important;
+}
+
+/* Garantir que todos os divs principais tenham fundo branco limpo
+   EXCETO: overlays de modais (Portal do Radix, overlays customizados).
+   Essa regra forcava TODO div filho do body a ser branco, matando qualquer overlay escuro. */
+body.theme-branco > div:not(.octo-modal-overlay):not([data-radix-portal]):not([data-state]):not([role="dialog"]):not([role="alertdialog"]):not([class*="fixed"]):not([class*="inset-0"]),
+body.theme-branco #root > div:not(.octo-modal-overlay):not([data-radix-portal]):not([data-state]):not([role="dialog"]):not([role="alertdialog"]):not([class*="fixed"]):not([class*="inset-0"]) {
+  background-color: #ffffff !important;
+}
+
+/* Headers de seção no tema branco */
+body.theme-branco .section-header {
+  background-color: transparent !important;
+}
+
+/* Badges e tags no tema branco — SOMENTE sem cor explicita (outline/default) */
+body.theme-branco [class*="badge"]:not([class*="bg-blue"]):not([class*="bg-green"]):not([class*="bg-red"]):not([class*="bg-purple"]):not([class*="bg-orange"]):not([class*="bg-pink"]):not([class*="bg-yellow"]):not([class*="bg-indigo"]):not([class*="bg-cyan"]):not([class*="bg-teal"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-amber"]):not([class*="bg-sky"]):not([class*="bg-violet"]):not([class*="bg-gradient"]):not([class*="bg-black"]),
+body.theme-branco [class*="tag"]:not([class*="bg-blue"]):not([class*="bg-green"]):not([class*="bg-red"]):not([class*="bg-purple"]):not([class*="bg-orange"]):not([class*="bg-pink"]):not([class*="bg-yellow"]):not([class*="bg-indigo"]):not([class*="bg-gradient"]) {
+  background-color: #f5f5f5 !important;
+  color: #171717 !important;
+  border-color: #e4e4e4 !important;
+}
+
+/* Popovers e tooltips no tema branco */
+body.theme-branco [role="tooltip"],
+body.theme-branco .tooltip {
+  background-color: #ffffff !important;
+  color: #171717 !important;
+  border: 1px solid #e4e4e4 !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Cards de ranking/performance no tema branco — SO cards sem gradient colorido */
+body.theme-branco .bg-bg-secondary\/20,
+body.theme-branco [class*="bg-bg-secondary"],
+body.theme-branco [class*="from-notion-bg"],
+body.theme-branco [class*="to-notion-bg"] {
+  background: #fafafa !important;
+  background-color: #fafafa !important;
+  background-image: none !important;
+}
+
+/* Bordas dos cards de ranking no tema branco */
+body.theme-branco .border-bg-secondary\/30,
+body.theme-branco .border-notion-border,
+body.theme-branco [class*="border-bg-secondary"] {
+  border-color: #e4e4e4 !important;
+}
+
+/* Hover nos cards de ranking */
+body.theme-branco .hover\:border-notion-text-secondary:hover {
+  border-color: #d4d4d4 !important;
+}
+
+/* Fundos com rgba para transparência no tema branco
+   EXCETO overlays de modais (que usam rgba preto proposital) */
+body.theme-branco [style*="backgroundColor: 'rgba"]:not(.octo-modal-overlay),
+body.theme-branco [style*="background-color: rgba"]:not(.octo-modal-overlay),
+body.theme-branco div[style*="rgba"]:not(.octo-modal-overlay) {
+  background-color: #fafafa !important;
+}
+
+/* Divs com estilos inline no tema branco */
+body.theme-branco div[style*="borderColor: 'rgba"],
+body.theme-branco div[style*="border-color: rgba"] {
+  border-color: #e4e4e4 !important;
+}
+
+/* Progress bars e elementos de progresso no tema branco */
+body.theme-branco .progress,
+body.theme-branco [class*="Progress"] {
+  background-color: #f5f5f5 !important;
+}
+
+body.theme-branco .progress-bar,
+body.theme-branco [class*="ProgressIndicator"] {
+  background-color: #3b82f6 !important;
+}
+
+/* Garantir que TODOS os divs com fundo tenham cor clara no tema branco */
+body.theme-branco div[class*="bg-"],
+body.theme-branco div[class*="rounded"],
+body.theme-branco .rounded-lg,
+body.theme-branco .rounded-xl {
+  /* Sobrescrever apenas se tiver background escuro */
+}
+
+body.theme-branco div.bg-neutral-800,
+body.theme-branco div.bg-neutral-900,
+body.theme-branco div.bg-zinc-800,
+body.theme-branco div.bg-zinc-900,
+body.theme-branco div.bg-slate-800,
+body.theme-branco div.bg-slate-900,
+body.theme-branco div.bg-gray-800,
+body.theme-branco div.bg-gray-900 {
+  background-color: #fafafa !important;
+}
+
+/* Sobrescrever fundos com opacidade no tema branco
+   MAS: nao afetar overlays de modais (bg-black/*) e elementos transparentes proposital */
+body.theme-branco [class*="\/20"]:not([class*="bg-black"]):not([class*="bg-transparent"]):not([data-radix-dialog-overlay]):not([data-radix-alert-dialog-overlay]):not([data-radix-sheet-overlay]):not([data-state="open"]),
+body.theme-branco [class*="\/30"]:not([class*="bg-black"]):not([class*="bg-transparent"]):not([data-radix-dialog-overlay]):not([data-radix-alert-dialog-overlay]):not([data-radix-sheet-overlay]):not([data-state="open"]),
+body.theme-branco [class*="\/40"]:not([class*="bg-black"]):not([class*="bg-transparent"]):not([data-radix-dialog-overlay]):not([data-radix-alert-dialog-overlay]):not([data-radix-sheet-overlay]):not([data-state="open"]),
+body.theme-branco [class*="\/50"]:not([class*="bg-black"]):not([class*="bg-transparent"]):not([data-radix-dialog-overlay]):not([data-radix-alert-dialog-overlay]):not([data-radix-sheet-overlay]):not([data-state="open"]),
+body.theme-branco [class*="\/60"]:not([class*="bg-black"]):not([class*="bg-transparent"]):not([data-radix-dialog-overlay]):not([data-radix-alert-dialog-overlay]):not([data-radix-sheet-overlay]):not([data-state="open"]) {
+  background-color: #fafafa !important;
+  border-color: #e4e4e4 !important;
+}
+
+/* FORCAR overlay de modais no tema branco/cinza — prioridade maxima */
+body.theme-branco [data-radix-dialog-overlay],
+body.theme-branco [data-radix-alert-dialog-overlay],
+body.theme-branco [data-radix-sheet-overlay],
+body.theme-cinza [data-radix-dialog-overlay],
+body.theme-cinza [data-radix-alert-dialog-overlay],
+body.theme-cinza [data-radix-sheet-overlay] {
+  background-color: rgba(0, 0, 0, 0.6) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+}
+
+/* ===================================
+   REMOVER EFEITOS GLOW/NEON NO TEMA BRANCO
+   =================================== */
+
+/* Remover todos os efeitos de glow (box-shadow coloridos) */
+body.theme-branco .glow-accent-blue,
+body.theme-branco .glow-accent-purple,
+body.theme-branco .glow-accent-green,
+body.theme-branco .glow-accent-gray,
+body.theme-branco .glow-accent-pink,
+body.theme-branco .glow-accent-orange,
+body.theme-branco .glow-accent-red,
+body.theme-branco .glow-accent-cyan,
+body.theme-branco .glow-purple,
+body.theme-branco .glow-blue {
+  box-shadow: none !important;
+}
+
+/* Remover efeitos neon de texto */
+body.theme-branco .neon-text,
+body.theme-branco .neon-text-subtle,
+body.theme-branco .text-glow,
+body.theme-branco .text-glow-green,
+body.theme-branco .text-glow-purple,
+body.theme-branco .text-glow-blue,
+body.theme-branco .text-glow-subtle {
+  text-shadow: none !important;
+}
+
+/* Remover borda neon */
+body.theme-branco .neon-border {
+  box-shadow: none !important;
+}
+
+/* Remover glow do logo */
+body.theme-branco .logo-glow {
+  filter: none !important;
+}
+
+/* Remover card-glow no tema branco */
+body.theme-branco .card-glow {
+  background-color: #fafafa !important;
+  border: 1px solid #e4e4e4 !important;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1) !important;
+}
+
+body.theme-branco .card-glow:hover {
+  background-color: #f5f5f5 !important;
+  border-color: #d4d4d4 !important;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1) !important;
+  transform: translateY(0px) !important;
+}
+
+/* Remover card-neon no tema branco */
+body.theme-branco .card-neon {
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* ===================================
+   AJUSTAR TEXTOS DOS GRÁFICOS CANVASJS NO TEMA BRANCO
+   =================================== */
+
+/* Todos os textos do CanvasJS devem ter cor escura no tema branco */
+body.theme-branco .canvasjs-chart-canvas,
+body.theme-branco .canvasjs-chart-container {
+  /* Forçar cor escura em todos os textos SVG do CanvasJS */
+}
+
+body.theme-branco .canvasjs-chart-text {
+  fill: #171717 !important;
+  color: #171717 !important;
+}
+
+/* Labels de índice (números dentro dos gráficos) */
+body.theme-branco text[fill="#ffffff"],
+body.theme-branco text[fill="#FFFFFF"],
+body.theme-branco text[fill="white"] {
+  fill: #171717 !important;
+}
+
+/* Eixos e legendas dos gráficos */
+body.theme-branco .canvasjs-axis-label {
+  fill: #525252 !important;
+}
+
+/* Títulos dos gráficos */
+body.theme-branco .canvasjs-chart-title {
+  fill: #171717 !important;
+}
+
+/* ===================================
+   AJUSTAR TÍTULOS COM GRADIENTE NO TEMA BRANCO
+   =================================== */
+
+/* Remover efeito de gradiente transparente e usar cor sólida */
+body.theme-branco .bg-gradient-to-r.bg-clip-text.text-transparent {
+  background: none !important;
+  -webkit-background-clip: unset !important;
+  -webkit-text-fill-color: unset !important;
+  background-clip: unset !important;
+  color: #171717 !important;
+}
+
+/* Aplicar variáveis de tema */
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Transições suaves para todos os elementos temáticos */
+* {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+/* ===================================
+   CLASSES UTILITÁRIAS DE TEMA
+   Aplicar tema automaticamente
+   =================================== */
+
+@layer utilities {
+  /* Backgrounds temáticos */
+  .bg-theme-primary {
+    background-color: var(--bg-primary) !important;
+  }
+  
+  .bg-theme-secondary {
+    background-color: var(--bg-secondary) !important;
+  }
+  
+  .bg-theme-card {
+    background-color: var(--bg-card) !important;
+  }
+  
+  .bg-theme-hover {
+    background-color: var(--bg-hover) !important;
+  }
+  
+  /* Textos temáticos */
+  .text-theme-primary {
+    color: var(--text-primary) !important;
+  }
+  
+  .text-theme-secondary {
+    color: var(--text-secondary) !important;
+  }
+  
+  /* Bordas temáticas */
+  .border-theme {
+    border-color: var(--border) !important;
+  }
+  
+  /* Sobrescrever backgrounds escuros com tema */
+  .bg-black,
+  .bg-neutral-900,
+  .bg-neutral-950,
+  .bg-zinc-900,
+  .bg-zinc-950,
+  .bg-gray-900,
+  .bg-gray-950 {
+    background-color: var(--bg-secondary) !important;
+  }
+  
+  .bg-neutral-800,
+  .bg-zinc-800,
+  .bg-gray-800 {
+    background-color: var(--bg-card) !important;
+  }
+  
+  /* Sobrescrever backgrounds de card */
+  .bg-neutral-900\/50,
+  .bg-neutral-950\/50,
+  .bg-black\/80 {
+    background-color: var(--bg-card) !important;
+    opacity: 1 !important;
+  }
+  
+  /* Sobrescrever textos */
+  .text-white {
+    color: var(--text-primary) !important;
+  }
+  
+  .text-gray-400,
+  .text-gray-500,
+  .text-neutral-400,
+  .text-neutral-500 {
+    color: var(--text-secondary) !important;
+  }
+  
+  /* Sobrescrever bordas */
+  .border-neutral-800,
+  .border-neutral-700,
+  .border-zinc-800,
+  .border-zinc-700,
+  .border-gray-800,
+  .border-gray-700 {
+    border-color: var(--border) !important;
+  }
+  
+  /* Hover states */
+  .hover\:bg-neutral-800:hover,
+  .hover\:bg-neutral-900:hover,
+  .hover\:bg-zinc-800:hover {
+    background-color: var(--bg-hover) !important;
+  }
+  
+  /* Sobrescrever fundos de diálogos e modais */
+  [role="dialog"],
+  [role="alertdialog"],
+  .dialog-content,
+  .modal-content {
+    background-color: var(--bg-secondary) !important;
+  }
+  
+  /* Sobrescrever fundos de sheets e drawers */
+  .sheet-content,
+  .drawer-content {
+    background-color: var(--bg-secondary) !important;
+  }
+  
+  /* Cards e containers */
+  .card,
+  .container-dark {
+    background-color: var(--bg-card) !important;
+  }
+  
+  /* Sidebar backgrounds */
+  .sidebar,
+  .sidebar-content,
+  nav,
+  aside,
+  [role="navigation"] {
+    background-color: var(--bg-secondary) !important;
+  }
+  
+  /* Forçar sidebar fixa a usar tema */
+  .fixed.left-0:not(.app-sidebar-main),
+  div[class*="fixed left-0"]:not(.app-sidebar-main) {
+    background-color: var(--bg-secondary) !important;
+  }
+  
+  /* =============================================
+     SIDEBAR PRINCIPAL - ESTILO CLICKUP/NOTION
+     Fundo branco, bordas sutis, colada na lateral
+     ============================================= */
+  .app-sidebar-main {
+    background-color: #ffffff !important;
+    border-right: 1px solid #e5e7eb !important;
+    box-shadow: none !important;
+  }
+  
+  /* Inputs e selects */
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="tel"],
+  textarea,
+  select {
+    background-color: var(--bg-card) !important;
+    color: var(--text-primary) !important;
+    border-color: var(--border) !important;
+  }
+  
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--text-secondary) !important;
+  }
+  
+  /* Buttons e elementos interativos com fundo escuro */
+  button.bg-neutral-900,
+  button.bg-neutral-800,
+  .button-dark {
+    background-color: var(--bg-card) !important;
+  }
+  
+  button.bg-neutral-900:hover,
+  button.bg-neutral-800:hover {
+    background-color: var(--bg-hover) !important;
+  }
+  
+  /* Popover e dropdown backgrounds */
+  .popover-content,
+  .dropdown-content,
+  .menu-content {
+    background-color: var(--bg-secondary) !important;
+    border-color: var(--border) !important;
+  }
+  
+  /* Tabelas */
+  table thead {
+    background-color: var(--bg-card) !important;
+  }
+  
+  table tbody tr:hover {
+    background-color: var(--bg-hover) !important;
+  }
+  
+  /* Scrollbars personalizados */
+  ::-webkit-scrollbar-track {
+    background-color: var(--bg-secondary) !important;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--border) !important;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--bg-hover) !important;
+  }
+  
+  /* ===================================
+     COMPONENTES SHADCN/UI
+     =================================== */
+  
+  /* Dialog/Modal do Shadcn — overlay suave com blur */
+  .dialog-overlay,
+  [data-radix-dialog-overlay],
+  [data-radix-alert-dialog-overlay] {
+    background-color: rgba(0, 0, 0, 0.6) !important;
+    backdrop-filter: blur(8px) !important;
+    -webkit-backdrop-filter: blur(8px) !important;
+  }
+  
+  [data-radix-dialog-content],
+  [data-state="open"][role="dialog"] {
+    background-color: var(--bg-secondary) !important;
+    border-color: var(--border) !important;
+  }
+  
+  /* Dropdown Menu */
+  [data-radix-dropdown-menu-content],
+  [data-radix-context-menu-content] {
+    background-color: var(--bg-secondary) !important;
+    border-color: var(--border) !important;
+  }
+  
+  /* Popover */
+  [data-radix-popover-content] {
+    background-color: var(--bg-secondary) !important;
+    border-color: var(--border) !important;
+  }
+  
+  /* Select */
+  [data-radix-select-content] {
+    background-color: var(--bg-secondary) !important;
+    border-color: var(--border) !important;
+  }
+  
+  [data-radix-select-item]:hover {
+    background-color: var(--bg-hover) !important;
+  }
+  
+  /* Tooltip */
+  [data-radix-tooltip-content] {
+    background-color: var(--bg-card) !important;
+    border-color: var(--border) !important;
+  }
+  
+  /* Tabs */
+  [role="tablist"] {
+    border-color: var(--border) !important;
+  }
+  
+  [role="tab"][data-state="active"] {
+    background-color: var(--bg-card) !important;
+    color: var(--text-primary) !important;
+  }
+  
+  /* Sheet/Drawer do Shadcn */
+  [data-radix-dialog-content].sheet-content {
+    background-color: var(--bg-secondary) !important;
+  }
+  
+  /* Accordion */
+  [data-radix-accordion-content] {
+    background-color: var(--bg-card) !important;
+  }
+  
+  /* Hover Card */
+  [data-radix-hover-card-content] {
+    background-color: var(--bg-secondary) !important;
+    border-color: var(--border) !important;
+  }
+  
+  /* Sidebar específico */
+  .sidebar-trigger,
+  .sidebar-item {
+    color: var(--text-secondary) !important;
+  }
+  
+  .sidebar-item:hover,
+  .sidebar-item[data-active="true"] {
+    background-color: var(--bg-hover) !important;
+    color: var(--text-primary) !important;
+  }
+  
+  /* ===================================
+     COMPONENTES ESPECÍFICOS DO CRM
+     =================================== */
+  
+  /* Containers de gráficos */
+  .chart-container,
+  .recharts-wrapper,
+  .canvasjs-chart-container {
+    background-color: transparent !important;
+  }
+  
+  /* Cards de métricas */
+  .metric-card,
+  .stats-card {
+    background-color: var(--bg-card) !important;
+    border-color: var(--border) !important;
+  }
+  
+  /* Headers de seção */
+  .section-header {
+    background-color: var(--bg-secondary) !important;
+  }
+  
+  /* Tabela de leads */
+  .leads-table,
+  .data-table {
+    background-color: var(--bg-card) !important;
+  }
+  
+  .leads-table th,
+  .data-table th {
+    background-color: var(--bg-secondary) !important;
+    color: var(--text-primary) !important;
+  }
+  
+  .leads-table td,
+  .data-table td {
+    border-color: var(--border) !important;
+    color: var(--text-primary) !important;
+  }
+  
+  .leads-table tr:hover,
+  .data-table tr:hover {
+    background-color: var(--bg-hover) !important;
+  }
+  
+  /* Popups e modais de leads */
+  .lead-popup,
+  .lead-details {
+    background-color: var(--bg-secondary) !important;
+    border-color: var(--border) !important;
+  }
+  
+  /* Filtros e controles */
+  .filter-container,
+  .controls-container {
+    background-color: var(--bg-card) !important;
+    border-color: var(--border) !important;
+  }
+  
+  /* Login screen */
+  .login-container,
+  .auth-container {
+    background-color: var(--bg-primary) !important;
+  }
+  
+  .login-card,
+  .auth-card {
+    background-color: var(--bg-secondary) !important;
+    border-color: var(--border) !important;
+  }
+}
+
+.motivos-color-swatch {
+  background: var(--swatch-color) !important;
+  background-image: linear-gradient(var(--swatch-color), var(--swatch-color)) !important;
+}
+
+.central-leads-tab:hover svg,
+.central-leads-tab:hover svg *,
+.central-leads-tab[data-active='true'] svg,
+.central-leads-tab[data-active='true'] svg * {
+  color: #2563eb !important;
+  stroke: #2563eb !important;
+  fill: #2563eb !important;
+}
+
+/* ===================================
+   OTIMIZAÇÕES PARA 100% ZOOM
+   Melhorias globais de legibilidade
+   =================================== */
+
+/* ===================================
+   PLUS JAKARTA SANS - CLICKUP STYLE
+   =================================== */
+
+/* Aplicar Plus Jakarta Sans globalmente */
+* {
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif !important;
+}
+
+/* Fontes base otimizadas com Plus Jakarta Sans */
+html {
+  font-size: 16px; /* Base size para rem */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  max-width: 100vw;
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+}
+
+body {
+  font-size: 0.9375rem; /* 15px - melhor leitura */
+  line-height: 1.6;
+  letter-spacing: 0.01em;
+  max-width: 100vw;
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+}
+
+/* Garantir que nenhum elemento cause overflow horizontal - exclui overlays/modals */
+*:not([data-modal-overlay]) {
+  max-width: 100%;
+}
+
+#root {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
+/* ===================================
+   HIERARQUIA TIPOGRÁFICA PADRONIZADA
+   Sistema de fontes consistente para todo o dashboard
+   =================================== */
+
+/* Headings com melhor hierarquia */
+h1 { font-size: 1.75rem; font-weight: 700; line-height: 1.2; }   /* 28px - Títulos de página */
+h2 { font-size: 1.5rem; font-weight: 600; line-height: 1.3; }    /* 24px - Títulos de seção */
+h3 { font-size: 1.25rem; font-weight: 600; line-height: 1.4; }   /* 20px - Títulos de card */
+h4 { font-size: 1.125rem; font-weight: 600; line-height: 1.4; }  /* 18px - Subtítulos */
+h5 { font-size: 1rem; font-weight: 500; line-height: 1.5; }      /* 16px - Labels importantes */
+h6 { font-size: 0.875rem; font-weight: 500; line-height: 1.5; }  /* 14px - Labels secundários */
+
+/* Textos de corpo */
+p { font-size: 0.9375rem; line-height: 1.6; }  /* 15px - Texto padrão */
+small { font-size: 0.8125rem; line-height: 1.5; } /* 13px - Texto pequeno */
+
+/* ===================================
+   CLASSES UTILITÁRIAS DE TIPOGRAFIA
+   Use estas classes para garantir consistência
+   =================================== */
+
+/* Títulos de Página - Usado em headers principais */
+.title-page {
+  font-size: 1.75rem !important;   /* 28px */
+  font-weight: 700 !important;
+  line-height: 1.2 !important;
+  letter-spacing: -0.01em;
+}
+
+/* Títulos de Seção - Usado em seções dentro de páginas */
+.title-section {
+  font-size: 1.5rem !important;    /* 24px */
+  font-weight: 600 !important;
+  line-height: 1.3 !important;
+  letter-spacing: -0.01em;
+}
+
+/* Títulos de Card - Usado em cards e gráficos */
+.title-card {
+  font-size: 1.125rem !important;  /* 18px */
+  font-weight: 600 !important;
+  line-height: 1.4 !important;
+  letter-spacing: 0;
+}
+
+/* Subtítulos - Descrições abaixo de títulos */
+.subtitle {
+  font-size: 0.875rem !important;  /* 14px */
+  font-weight: 400 !important;
+  line-height: 1.5 !important;
+  opacity: 0.8;
+}
+
+/* Labels de Métricas - Números grandes em cards */
+.metric-value {
+  font-size: 1.75rem !important;   /* 28px */
+  font-weight: 700 !important;
+  line-height: 1.2 !important;
+  letter-spacing: -0.02em;
+}
+
+/* Labels de Métricas Pequenas */
+.metric-value-sm {
+  font-size: 1.5rem !important;    /* 24px */
+  font-weight: 600 !important;
+  line-height: 1.3 !important;
+}
+
+/* Labels de Métricas Muito Pequenas */
+.metric-value-xs {
+  font-size: 1.25rem !important;   /* 20px */
+  font-weight: 600 !important;
+  line-height: 1.4 !important;
+}
+
+/* Legendas de Gráficos */
+.chart-legend {
+  font-size: 0.75rem !important;   /* 12px */
+  font-weight: 500 !important;
+  line-height: 1.4 !important;
+}
+
+/* Labels de Eixos de Gráficos */
+.chart-axis-label {
+  font-size: 0.6875rem !important; /* 11px */
+  font-weight: 400 !important;
+  line-height: 1.3 !important;
+}
+
+/* Texto de Tabela - Cabeçalho */
+.table-header {
+  font-size: 0.75rem !important;   /* 12px */
+  font-weight: 600 !important;
+  line-height: 1.4 !important;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+/* Texto de Tabela - Células */
+.table-cell {
+  font-size: 0.8125rem !important; /* 13px */
+  font-weight: 400 !important;
+  line-height: 1.5 !important;
+}
+
+/* Badges e Tags */
+.badge-text {
+  font-size: 0.6875rem !important; /* 11px */
+  font-weight: 600 !important;
+  line-height: 1.3 !important;
+  letter-spacing: 0.02em;
+}
+
+/* Texto de Ajuda/Dica */
+.helper-text {
+  font-size: 0.75rem !important;   /* 12px */
+  font-weight: 400 !important;
+  line-height: 1.5 !important;
+  opacity: 0.7;
+}
+
+/* Labels e inputs otimizados */
+label {
+  font-size: 0.875rem; /* 14px */
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+input, textarea, select {
+  font-size: 0.9375rem; /* 15px */
+  line-height: 1.5;
+  padding: 0.625rem 0.875rem; /* 10px 14px */
+}
+
+/* Buttons com padding otimizado */
+button {
+  font-size: 0.875rem; /* 14px */
+  font-weight: 500;
+  padding: 0.625rem 1.25rem; /* 10px 20px */
+  line-height: 1.5;
+}
+
+/* Tabs estilo Power BI - sem bordas, apenas underline */
+.powerbi-tabs,
+.powerbi-tabs nav,
+.powerbi-tabs nav button,
+.powerbi-tabs button,
+.powerbi-tabs nav button *,
+.powerbi-tabs button * {
+  background: white !important;
+  background-color: white !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+  padding: 12px 0 !important;
+  margin: 0 !important;
+  margin-bottom: -2px !important;
+  font-weight: 400 !important;
+  font-size: 14px !important;
+  line-height: 1.5 !important;
+  width: auto !important;
+  height: auto !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+}
+
+.powerbi-tabs nav button:hover,
+.powerbi-tabs button:hover,
+.powerbi-tabs nav button:hover *,
+.powerbi-tabs button:hover * {
+  background: white !important;
+  background-color: white !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+
+.powerbi-tabs nav button:active,
+.powerbi-tabs button:active,
+.powerbi-tabs nav button:active *,
+.powerbi-tabs button:active * {
+  background: white !important;
+  background-color: white !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+
+.powerbi-tabs nav button:focus,
+.powerbi-tabs button:focus,
+.powerbi-tabs nav button:focus *,
+.powerbi-tabs button:focus * {
+  background: white !important;
+  background-color: white !important;
+  box-shadow: none !important;
+  outline: none !important;
+  border: none !important;
+}
+
+.powerbi-tabs nav button:focus-visible,
+.powerbi-tabs button:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+  border: none !important;
+  background: white !important;
+  background-color: white !important;
+}
+
+body .exporting-pdf .truncate {
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+}
+
+body .exporting-pdf .overflow-hidden {
+  overflow: visible !important;
+}
+
+body .exporting-pdf * {
+  overflow: visible !important;
+  max-height: none !important;
+  max-width: none !important;
+}
+
+body .exporting-pdf {
+  overflow: visible !important;
+}
+
+body .exporting-pdf [data-page-break="before"] {
+  page-break-before: always !important;
+  break-before: page !important;
+}
+
+/* Forçar grid de KPIs a manter 5 colunas durante exportação */
+body .exporting-pdf [data-export-layout="kpis"] {
+  display: grid !important;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  gap: 16px !important;
+  margin-bottom: 24px !important;
+}
+
+/* Forçar grid de gráficos a manter 2 colunas durante exportação */
+body .exporting-pdf [data-export-layout="charts"] {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 32px !important;
+  row-gap: 40px !important;
+}
+
+/* Garantir espaçamento entre cards de gráficos */
+body .exporting-pdf [data-export-layout="charts"] > div {
+  margin-bottom: 16px !important;
+  page-break-inside: avoid !important;
+}
+
+/* Forçar layout horizontal para motivos do arquivamento */
+body .exporting-pdf [data-export-layout="motivos"] {
+  display: flex !important;
+  flex-direction: row !important;
+  gap: 24px !important;
+  align-items: flex-start !important;
+}
+
+/* Gráfico doughnut com tamanho fixo */
+body .exporting-pdf [data-export-layout="motivos"] > div:first-child {
+  flex-shrink: 0 !important;
+  width: 300px !important;
+  height: 300px !important;
+}
+
+/* Legenda em múltiplas colunas */
+body .exporting-pdf [data-export-layout="motivos-legend"] {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+/* Bordas pretas para cards de gráficos */
+.bg-white.rounded-xl.shadow-sm.border.border-gray-200 {
+  border-color: #000000 !important;
+  border-width: 2px !important;
+}
+
+/* Garantir que não há estilos de pill/border aplicados */
+.powerbi-tabs nav button::before,
+.powerbi-tabs nav button::after,
+.powerbi-tabs button::before,
+.powerbi-tabs button::after {
+  display: none !important;
+  content: none !important;
+}
+
+/* Ícones das abas - remover qualquer fundo cinza */
+.powerbi-tabs svg,
+.powerbi-tabs nav button svg,
+.powerbi-tabs button svg {
+  background: transparent !important;
+  background-color: transparent !important;
+  fill: none !important;
+  stroke: currentColor !important;
+}
+
+.powerbi-tabs svg path,
+.powerbi-tabs nav button svg path,
+.powerbi-tabs button svg path {
+  fill: none !important;
+  stroke: currentColor !important;
+}
+
+/* CanvasJS Global Optimizations */
+.canvasjs-chart-canvas,
+.canvasjs-chart-container {
+  font-size: 12px !important;
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif !important;
+}
+
+.canvasjs-chart-tooltip {
+  font-size: 12px !important;
+  padding: 10px !important;
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif !important;
+}
+
+/* CanvasJS Axis Labels */
+.canvasjs-chart-container text {
+  font-size: 11px !important;
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif !important;
+}
+
+/* CanvasJS Legend */
+.canvasjs-chart-container .canvasjs-chart-legend {
+  font-size: 11px !important;
+}
+
+/* Cards com spacing melhorado */
+[class*="card"] {
+  padding: 1.25rem; /* 20px */
+}
+
+/* Tables otimizadas */
+table {
+  font-size: 0.8125rem; /* 13px */
+}
+
+th {
+  font-size: 0.75rem; /* 12px */
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 0.75rem 1rem; /* 12px 16px */
+  text-transform: uppercase;
+}
+
+td {
+  font-size: 0.8125rem; /* 13px */
+  padding: 0.75rem 1rem; /* 12px 16px */
+}
+
+/* Badges otimizados */
+[class*="badge"] {
+  font-size: 0.6875rem; /* 11px */
+  padding: 0.25rem 0.5rem; /* 4px 8px */
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* Tooltips */
+[role="tooltip"] {
+  font-size: 0.75rem; /* 12px */
+  padding: 0.5rem 0.75rem; /* 8px 12px */
+}
+
+/* Scroll suave */
+* {
+  scroll-behavior: smooth;
+}
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    /* Paleta Ultra Minimalista - Preto e Cinza */
+    --bg-primary: 0 0% 0%;         /* #000000 - Preto absoluto */
+    --bg-secondary: 0 0% 3%;       /* #080808 - Preto suave */
+    --bg-card: 0 0% 5%;            /* #0d0d0d - Cards pretos */
+    
+    --text-primary: 0 0% 100%;     /* #ffffff - Branco puro */
+    --text-secondary: 0 0% 70%;    /* #b3b3b3 - Cinza claro visível */
+    
+    /* Cores Minimalistas de Status */
+    --accent-green: 142 76% 36%;   /* #10b981 - Verde elegante */
+    --accent-orange: 25 95% 53%;   /* #f59e0b - Laranja suave */
+    --accent-red: 0 72% 51%;       /* #dc2626 - Vermelho refinado */
+    --accent-blue: 217 91% 60%;    /* #3b82f6 - Azul harmônico */
+    --accent-purple: 262 83% 58%;  /* #8b5cf6 - Roxo elegante */
+    --accent-cyan: 188 94% 43%;    /* #06b6d4 - Ciano moderno */
+    --accent-pink: 330 81% 60%;    /* #ec4899 - Rosa sutil */
+    --accent-gray: 215 20% 65%;    /* #9ca3af - Cinza neutro */
+    
+    /* Cores da Pirâmide - Refinadas */
+    --pyramid-muito-caro: 0 72% 51%;     /* #dc2626 */
+    --pyramid-caro: 25 95% 53%;          /* #f59e0b */
+    --pyramid-atrativo: 217 91% 60%;     /* #3b82f6 */
+    --pyramid-muito-atrativo: 142 76% 36%; /* #10b981 */
+    
+    --background: hsl(var(--bg-primary));
+    --foreground: hsl(var(--text-primary));
+
+    --card: hsl(var(--bg-card));
+    --card-foreground: hsl(var(--text-primary));
+
+    --popover: hsl(var(--bg-card));
+    --popover-foreground: hsl(var(--text-primary));
+
+    --primary: hsl(var(--accent-blue));
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: hsl(var(--bg-secondary));
+    --secondary-foreground: hsl(var(--text-primary));
+
+    --muted: hsl(var(--bg-secondary));
+    --muted-foreground: hsl(var(--text-secondary));
+
+    --accent: hsl(var(--accent-blue));
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: hsl(var(--accent-pink));
+    --destructive-foreground: 0 0% 100%;
+
+    --border: hsl(var(--bg-secondary));
+    --input: hsl(var(--bg-card));
+    --ring: hsl(var(--accent-blue));
+
+    --radius: 0.5rem; /* 8px - ClickUp default border radius */
+
+    --sidebar-background: 0 0% 98%;
+
+    --sidebar-foreground: 240 5.3% 26.1%;
+
+    --sidebar-primary: 240 5.9% 10%;
+
+    --sidebar-primary-foreground: 0 0% 98%;
+
+    --sidebar-accent: 240 4.8% 95.9%;
+
+    --sidebar-accent-foreground: 240 5.9% 10%;
+
+    --sidebar-border: 220 13% 91%;
+
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    /* Tema Escuro Original - Paleta Ultra Minimalista */
+    --bg-primary: 0 0% 4%;         /* #0a0a0a - Preto profundo */
+    --bg-secondary: 0 0% 6%;       /* #0f0f0f - Preto suave */
+    --bg-card: 0 0% 8%;            /* #141414 - Cards escuros */
+    
+    --text-primary: 0 0% 98%;      /* #fafafa - Branco máximo contraste */
+    --text-secondary: 0 0% 75%;    /* #bfbfbf - Cinza claro visível */
+
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .light {
+    /* Tema Branco - Estilo Notion Clean */
+    --bg-primary: 0 0% 100%;       /* #ffffff - Branco puro */
+    --bg-secondary: 0 0% 98%;      /* #fafafa - Cinza claríssimo para cards */
+    --bg-card: 0 0% 98%;           /* #fafafa - Cinza claríssimo para cards */
+    --bg-hover: 0 0% 96%;          /* #f5f5f5 - Hover states */
+    
+    --text-primary: 0 0% 32%;      /* #525252 - Cinza médio suave */
+    --text-secondary: 0 0% 45%;    /* #737373 - Cinza médio claro */
+    
+    --border-light: 0 0% 89%;      /* #e4e4e4 - Bordas leves e sutis */
+
+    /* Cores de status adaptadas para tema claro */
+    --accent-green: 142 76% 36%;   /* #10b981 - Verde (mantém) */
+    --accent-orange: 25 95% 53%;   /* #f59e0b - Laranja (mantém) */
+    --accent-red: 0 72% 51%;       /* #dc2626 - Vermelho (mantém) */
+    --accent-blue: 217 91% 60%;    /* #3b82f6 - Azul (mantém) */
+    --accent-purple: 262 83% 58%;  /* #8b5cf6 - Roxo (mantém) */
+    --accent-cyan: 188 94% 43%;    /* #06b6d4 - Ciano (mantém) */
+    --accent-pink: 330 81% 60%;    /* #ec4899 - Rosa (mantém) */
+    --accent-gray: 215 16% 47%;    /* #64748b - Cinza mais escuro para contraste */
+
+    --background: hsl(var(--bg-primary));
+    --foreground: hsl(var(--text-primary));
+
+    --card: hsl(var(--bg-card));
+    --card-foreground: hsl(var(--text-primary));
+
+    --popover: hsl(var(--bg-card));
+    --popover-foreground: hsl(var(--text-primary));
+
+    --primary: hsl(var(--accent-blue));
+    --primary-foreground: 0 0% 98%;
+
+    --secondary: hsl(var(--bg-secondary));
+    --secondary-foreground: hsl(var(--text-primary));
+
+    --muted: hsl(var(--bg-secondary));
+    --muted-foreground: hsl(var(--text-secondary));
+
+    --accent: hsl(var(--accent-blue));
+    --accent-foreground: 0 0% 98%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 0 0% 89%;          /* #e4e4e4 - Bordas Notion */
+    --input: 0 0% 89%;           /* #e4e4e4 - Bordas inputs */
+    --ring: hsl(var(--accent-blue));
+
+    --sidebar-background: 0 0% 98%;      /* #fafafa - Sidebar clara */
+    --sidebar-foreground: 0 0% 9%;       /* #171717 - Texto sidebar */
+    --sidebar-primary: 0 0% 9%;          /* #171717 - Primary sidebar */
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 0 0% 96%;          /* #f5f5f5 - Hover sidebar */
+    --sidebar-accent-foreground: 0 0% 9%;
+    --sidebar-border: 0 0% 89%;          /* #e4e4e4 - Bordas sidebar */
+    --sidebar-ring: 217 91% 60%;         /* Azul Notion */
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer components {
+  /* Override para cores amarelas problemáticas */
+  .text-yellow-400,
+  .text-yellow-500,
+  .text-yellow-300,
+  .text-yellow-600,
+  .text-yellow-200,
+  .text-amber-400,
+  .text-amber-500,
+  .text-amber-300 {
+    color: hsl(var(--accent-blue)) !important;
+  }
+  
+  .bg-yellow-500\/10,
+  .bg-yellow-400\/10,
+  .bg-yellow-500\/20,
+  .bg-yellow-600\/10,
+  .bg-yellow-400\/20,
+  .bg-amber-500\/10,
+  .bg-amber-400\/10,
+  .bg-amber-500\/20 {
+    background-color: hsl(var(--accent-blue) / 0.1) !important;
+  }
+  
+  .border-yellow-500\/30,
+  .border-yellow-400\/30,
+  .border-yellow-500\/20,
+  .border-yellow-600\/30,
+  .border-amber-500\/30,
+  .border-amber-400\/30 {
+    border-color: hsl(var(--accent-blue) / 0.3) !important;
+  }
+
+  /* Override mais específico para elementos de warning/alert */
+  .bg-yellow-50,
+  .bg-yellow-100,
+  .bg-yellow-200,
+  .bg-amber-50,
+  .bg-amber-100,
+  .bg-amber-200 {
+    background-color: hsl(var(--accent-blue) / 0.1) !important;
+  }
+
+  /* Override global para qualquer cor amarela */
+  *[class*="yellow"]:not([class*="hover"]) {
+    color: hsl(var(--accent-blue)) !important;
+  }
+  
+  *[class*="bg-yellow"]:not([class*="hover"]) {
+    background-color: hsl(var(--accent-blue) / 0.1) !important;
+  }
+  
+  *[class*="border-yellow"]:not([class*="hover"]) {
+    border-color: hsl(var(--accent-blue) / 0.3) !important;
+  }
+
+  /* Override para amber (alternativa do yellow) */
+  *[class*="amber"]:not([class*="hover"]) {
+    color: hsl(var(--accent-blue)) !important;
+  }
+  
+  *[class*="bg-amber"]:not([class*="hover"]) {
+    background-color: hsl(var(--accent-blue) / 0.1) !important;
+  }
+  
+  *[class*="border-amber"]:not([class*="hover"]) {
+    border-color: hsl(var(--accent-blue) / 0.3) !important;
+  }
+
+  /* Override para alertas e warnings do sistema */
+  .alert-warning,
+  .warning,
+  .bg-warning,
+  .text-warning {
+    background-color: hsl(var(--accent-blue) / 0.1) !important;
+    color: hsl(var(--accent-blue)) !important;
+    border-color: hsl(var(--accent-blue) / 0.3) !important;
+  }
+
+  /* Override para cores amarelas aplicadas via style inline */
+  *[style*="color: #"] {
+    /* Detectar cores amarelas via hex e substituir */
+  }
+
+  /* Override para elementos específicos da UI que podem estar amarelos */
+  .badge[class*="yellow"],
+  .alert[class*="yellow"],
+  .button[class*="yellow"],
+  .card[class*="yellow"] {
+    background-color: hsl(var(--accent-blue) / 0.1) !important;
+    color: hsl(var(--accent-blue)) !important;
+    border-color: hsl(var(--accent-blue) / 0.3) !important;
+  }
+
+  /* Override para componentes shadcn/ui que podem ter amarelo */
+  [data-warning="true"],
+  [role="alert"]:not([class*="destructive"]) {
+    background-color: hsl(var(--accent-blue) / 0.1) !important;
+    color: hsl(var(--accent-blue)) !important;
+    border-color: hsl(var(--accent-blue) / 0.3) !important;
+  }
+
+  /* Override para cores laranja que podem aparecer como amarelo */
+  .text-orange-400,
+  .text-orange-500,
+  .text-orange-300,
+  .text-orange-600 {
+    color: hsl(var(--accent-blue)) !important;
+  }
+
+  .bg-orange-500\/10,
+  .bg-orange-400\/10,
+  .bg-orange-500\/20,
+  .bg-orange-600\/10 {
+    background-color: hsl(var(--accent-blue) / 0.1) !important;
+  }
+
+  .border-orange-500\/30,
+  .border-orange-400\/30,
+  .border-orange-600\/30 {
+    border-color: hsl(var(--accent-blue) / 0.3) !important;
+  }
+
+  /* Override global para qualquer cor laranja */
+  *[class*="orange"]:not([class*="hover"]) {
+    color: hsl(var(--accent-blue)) !important;
+  }
+  
+  *[class*="bg-orange"]:not([class*="hover"]) {
+    background-color: hsl(var(--accent-blue) / 0.1) !important;
+  }
+  
+  *[class*="border-orange"]:not([class*="hover"]) {
+    border-color: hsl(var(--accent-blue) / 0.3) !important;
+  }
+
+  .logo-glow {
+    filter: drop-shadow(0 0 16px hsl(var(--accent-blue) / 0.55))
+            drop-shadow(0 0 32px hsl(var(--accent-blue) / 0.35));
+  }
+
+  /* Efeitos Neon Minimalistas */
+  .glow-accent-blue {
+    box-shadow: 0 0 8px hsl(var(--accent-blue) / 0.3),
+                0 0 16px hsl(var(--accent-blue) / 0.2);
+  }
+
+  .glow-accent-purple {
+    box-shadow: 0 0 8px hsl(var(--accent-purple) / 0.3),
+                0 0 16px hsl(var(--accent-purple) / 0.2);
+  }
+
+  .glow-accent-green {
+    box-shadow: 0 0 8px hsl(var(--accent-green) / 0.3),
+                0 0 16px hsl(var(--accent-green) / 0.2);
+  }
+
+  .glow-accent-gray {
+    box-shadow: 0 0 8px hsl(var(--accent-gray) / 0.3),
+                0 0 16px hsl(var(--accent-gray) / 0.2);
+  }
+
+  .glow-accent-pink {
+    box-shadow: 0 0 8px hsl(var(--accent-pink) / 0.3),
+                0 0 16px hsl(var(--accent-pink) / 0.2);
+  }
+
+  /* Efeito Neon Sutil para Cards - Fundo Preto Absoluto */
+  .card-glow {
+    background-color: rgba(0, 0, 0, 0.95) !important;
+    border: 1px solid rgba(139, 92, 246, 0.2);
+    box-shadow: 0 0 0 1px rgba(139, 92, 246, 0.1),
+                0 0 20px rgba(139, 92, 246, 0.05),
+                0 4px 16px rgba(0, 0, 0, 0.3);
+  }
+
+  .card-glow:hover {
+    background-color: rgba(5, 5, 5, 0.98) !important;
+    border-color: rgba(139, 92, 246, 0.4);
+    box-shadow: 0 0 0 1px rgba(139, 92, 246, 0.3),
+                0 0 24px rgba(139, 92, 246, 0.15),
+                0 8px 24px rgba(0, 0, 0, 0.4);
+    transform: translateY(-2px);
+    transition: all 0.3s ease;
+  }
+
+  /* Texto com Glow Sutil */
+  .text-glow {
+    text-shadow: 0 0 10px hsl(var(--accent-blue) / 0.2);
+  }
+
+  .text-glow-green {
+    text-shadow: 0 0 10px hsl(var(--accent-green) / 0.2);
+  }
+
+  .text-glow-purple {
+    text-shadow: 0 0 10px hsl(var(--accent-purple) / 0.3);
+  }
+
+  .text-glow-blue {
+    text-shadow: 0 0 10px hsl(var(--accent-blue) / 0.3);
+  }
+
+  /* Efeito Neon para textos importantes - mais sutil */
+  .neon-text {
+    text-shadow: 0 0 2px currentColor,
+                 0 0 4px currentColor;
+  }
+
+  /* Texto com glow ainda mais sutil */
+  .text-glow-subtle {
+    text-shadow: 0 0 3px hsl(var(--accent-blue) / 0.1);
+  }
+
+  /* Glows específicos para cores */
+  .glow-purple {
+    box-shadow: 0 0 10px hsl(var(--accent-purple) / 0.4),
+                0 0 20px hsl(var(--accent-purple) / 0.2),
+                0 0 30px hsl(var(--accent-purple) / 0.1);
+  }
+
+  .glow-blue {
+    box-shadow: 0 0 10px hsl(var(--accent-blue) / 0.4),
+                0 0 20px hsl(var(--accent-blue) / 0.2),
+                0 0 30px hsl(var(--accent-blue) / 0.1);
+  }
+
+  /* Bordas neon */
+  .neon-border {
+    box-shadow: 0 0 5px currentColor,
+                inset 0 0 5px currentColor;
+  }
+
+  .neon-border:hover {
+    box-shadow: 0 0 10px currentColor,
+                0 0 20px currentColor,
+                inset 0 0 10px currentColor;
+  }
+
+  /* Animações suaves para elementos interativos */
+  .metric-card {
+    transition: all 0.3s ease;
+    backdrop-filter: blur(10px);
+  }
+
+  .metric-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 0 20px hsl(var(--accent-blue) / 0.2);
+  }
+
+  /* Animações avançadas para botões */
+  .btn-interactive {
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transform: translateZ(0);
+  }
+
+  .btn-interactive::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.3) 0%, transparent 70%);
+    transform: translate(-50%, -50%);
+    transition: width 0.6s ease, height 0.6s ease;
+    border-radius: 50%;
+    pointer-events: none;
+  }
+
+  .btn-interactive:hover::before {
+    width: 300px;
+    height: 300px;
+  }
+
+  .btn-interactive:hover {
+    transform: translateY(-2px) scale(1.02);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15),
+                0 0 20px hsl(var(--accent-blue) / 0.3);
+  }
+
+  .btn-interactive:active {
+    transform: translateY(-1px) scale(0.98);
+    transition: all 0.1s ease;
+  }
+
+  /* Efeito ripple para botões */
+  .btn-ripple {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn-ripple::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 5px;
+    height: 5px;
+    background: rgba(255, 255, 255, 0.5);
+    opacity: 0;
+    border-radius: 100%;
+    transform: scale(1, 1) translate(-50%);
+    transform-origin: 50% 50%;
+  }
+
+  .btn-ripple:focus:not(:active)::after {
+    animation: ripple 1s ease-out;
+  }
+
+  @keyframes ripple {
+    0% {
+      transform: scale(0, 0);
+      opacity: 1;
+    }
+    20% {
+      transform: scale(25, 25);
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+      transform: scale(40, 40);
+    }
+  }
+
+  /* Estados de loading para botões */
+  .btn-loading {
+    pointer-events: none;
+    opacity: 0.7;
+  }
+
+  .btn-loading .btn-text {
+    opacity: 0;
+  }
+
+  .btn-loading::after {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    top: 50%;
+    left: 50%;
+    margin-left: -8px;
+    margin-top: -8px;
+    border-radius: 50%;
+    border: 2px solid currentColor;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+
+  /* Micro-interações para elementos clicáveis */
+  .interactive-element {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+  }
+
+  .interactive-element:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
+
+  .interactive-element:active {
+    transform: translateY(0);
+    transition: all 0.1s ease;
+  }
+
+  /* Scrollbar personalizada */
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: hsl(var(--bg-secondary));
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--accent-blue) / 0.5);
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--accent-blue) / 0.7);
+  }
+
+  /* Scrollbar customizada com cor sutil */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 3px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, rgba(16, 185, 129, 0.3), rgba(34, 211, 238, 0.3));
+    border-radius: 3px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, rgba(16, 185, 129, 0.5), rgba(34, 211, 238, 0.5));
+  }
+
+  /* Efeito de pulsação para indicadores */
+  .pulse-glow {
+    animation: pulse-glow 2s infinite;
+  }
+
+  @keyframes pulse-glow {
+    0%, 100% {
+      box-shadow: 0 0 5px currentColor;
+    }
+    50% {
+      box-shadow: 0 0 15px currentColor,
+                  0 0 25px currentColor;
+    }
+  }
+
+  /* ============================================
+     SIDEBAR ANIMATIONS - Melhorias Fluidas
+     ============================================ */
+  
+  /* Transições suaves para expansão de sub-menus */
+  .sidebar-submenu-enter {
+    animation: slideDown 0.3s ease-out forwards;
+  }
+
+  .sidebar-submenu-exit {
+    animation: slideUp 0.3s ease-out forwards;
+  }
+
+  @keyframes slideDown {
+    from {
+      opacity: 0;
+      max-height: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      max-height: 500px;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 1;
+      max-height: 500px;
+      transform: translateY(0);
+    }
+    to {
+      opacity: 0;
+      max-height: 0;
+      transform: translateY(-10px);
+    }
+  }
+
+  /* Efeito de hover suave para itens do menu */
+  .sidebar-item-hover {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .sidebar-item-hover:hover {
+    transform: translateX(2px);
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.15);
+  }
+
+  /* Indicador lateral animado */
+  .sidebar-active-indicator {
+    position: relative;
+  }
+
+  .sidebar-active-indicator::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: linear-gradient(180deg, #3b82f6 0%, #60a5fa 100%);
+    box-shadow: 0 0 8px rgba(59, 130, 246, 0.6);
+    border-radius: 0 2px 2px 0;
+  }
+
+  /* Efeito de glow suave para ícones ativos */
+  .sidebar-icon-active {
+    filter: drop-shadow(0 0 4px rgba(59, 130, 246, 0.5));
+    transition: filter 0.3s ease;
+  }
+
+  /* Backdrop blur para sidebar no mobile */
+  .sidebar-mobile-backdrop {
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+
+  /* ============================================
+     SIDEBAR - Forçar fundo cinza #f5f5f5
+     ============================================ */
+  .sidebar-bg-gray,
+  .sidebar-bg-gray *:not(.bg-gray-900):not(.bg-blue-500):not(.bg-blue-600):not(.bg-gradient-to-br):not(.bg-green-500):not(svg):not(svg *):not([class*="lucide"]):not([class*="lucide"] *) {
+    background-color: #f5f5f5 !important;
+  }
+  
+  /* FORÇAR todos os SVGs e containers de ícones a terem fundo transparente */
+  /* Regra global para TODOS os ícones Lucide em qualquer lugar */
+  [class*="lucide"],
+  svg[class*="lucide"],
+  .sidebar-bg-gray svg,
+  .sidebar-bg-gray [class*="lucide"],
+  .sidebar-bg-gray button svg,
+  .sidebar-bg-gray nav svg,
+  .sidebar-bg-gray div svg {
+    background-color: transparent !important;
+    background: transparent !important;
+    background-image: none !important;
+  }
+  
+  /* Containers de ícones na sidebar - FORÇAR transparente */
+  .sidebar-bg-gray button > div.relative,
+  .sidebar-bg-gray button > div[class*="relative"],
+  .sidebar-bg-gray .relative,
+  .sidebar-bg-gray button .relative,
+  .sidebar-bg-gray nav .relative,
+  .sidebar-bg-gray div.relative {
+    background-color: transparent !important;
+    background: transparent !important;
+  }
+  
+  /* Garantir que os ícones mantenham seu preenchimento (stroke) */
+  [class*="lucide"] path,
+  [class*="lucide"] circle,
+  [class*="lucide"] rect,
+  [class*="lucide"] line,
+  [class*="lucide"] polyline {
+    background: transparent !important;
+  }
+  
+  /* Garantir que elementos que contêm SVGs não tenham fundo branco */
+  .sidebar-bg-gray button:has(svg),
+  .sidebar-bg-gray button:has(svg) > * {
+    /* Mantém o fundo do botão, mas garante que elementos internos sejam transparentes */
+  }
+  
+  /* FORÇAR todos os elementos dentro de botões a serem transparentes (exceto o botão em si) */
+  .sidebar-bg-gray button *,
+  .sidebar-bg-gray button > *,
+  .sidebar-bg-gray button > div,
+  .sidebar-bg-gray button > span,
+  .sidebar-bg-gray button > div > *,
+  .sidebar-bg-gray button > div.relative,
+  .sidebar-bg-gray button .relative,
+  .sidebar-bg-gray button svg,
+  .sidebar-bg-gray button [class*="lucide"] {
+    background-color: transparent !important;
+    background: transparent !important;
+  }
+  
+  /* O próprio botão pode ter fundo cinza ou azul claro quando ativo */
+  .sidebar-bg-gray button {
+    background-color: #f5f5f5 !important;
+  }
+  
+  .sidebar-bg-gray button[style*="rgba(30, 58, 138"] {
+    background-color: rgba(30, 58, 138, 0.08) !important;
+  }
+  
+  /* Exceções para hover e estados ativos */
+  .sidebar-bg-gray button {
+    background-color: #f5f5f5 !important;
+  }
+  
+  .sidebar-bg-gray button:hover {
+    background-color: #ebebeb !important;
+  }
+  
+  /* Botão ativo - azul claro */
+  .sidebar-bg-gray button[style*="rgba(30, 58, 138"] {
+    background-color: rgba(30, 58, 138, 0.08) !important;
+  }
+  
+  .sidebar-bg-gray button:hover svg,
+  .sidebar-bg-gray button svg {
+    background-color: transparent !important;
+    background: transparent !important;
+  }
+  
+  /* Garantir que divs dentro de botões também sejam transparentes */
+  .sidebar-bg-gray button > div,
+  .sidebar-bg-gray button > div.relative,
+  .sidebar-bg-gray button .relative {
+    background-color: transparent !important;
+    background: transparent !important;
+  }
+  
+  .sidebar-bg-gray .bg-blue-500\/10,
+  .sidebar-bg-gray [style*="rgba(59, 130, 246"] {
+    background-color: rgba(59, 130, 246, 0.1) !important;
+  }
+  
+  .sidebar-bg-gray .bg-blue-50,
+  .sidebar-bg-gray [style*="#eff6ff"] {
+    background-color: #eff6ff !important;
+  }
+  
+  .sidebar-bg-gray button:hover.hover\:bg-red-50 {
+    background-color: #fef2f2 !important;
+  }
+
+  /* Scroll suave para navegação na sidebar */
+  .sidebar-nav-scroll {
+    scroll-behavior: smooth;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(59, 130, 246, 0.3) transparent;
+  }
+
+  .sidebar-nav-scroll::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .sidebar-nav-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .sidebar-nav-scroll::-webkit-scrollbar-thumb {
+    background: rgba(59, 130, 246, 0.3);
+    border-radius: 2px;
+  }
+
+  .sidebar-nav-scroll::-webkit-scrollbar-thumb:hover {
+    background: rgba(59, 130, 246, 0.5);
+  }
+
+  /* ===================================
+     OCTODASH LOGO - Foguete Azul
+     =================================== */
+  
+  /* Logo principal com glow azul */
+  .octodash-logo {
+    filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.4)) 
+            drop-shadow(0 0 16px rgba(59, 130, 246, 0.2))
+            brightness(1.1) 
+            contrast(1.1);
+    transition: all 0.3s ease;
+  }
+
+  .octodash-logo:hover {
+    filter: drop-shadow(0 0 12px rgba(59, 130, 246, 0.6)) 
+            drop-shadow(0 0 24px rgba(59, 130, 246, 0.3))
+            brightness(1.2) 
+            contrast(1.2);
+    transform: scale(1.05);
+  }
+
+  /* Logo quando sidebar colapsada */
+  .octodash-logo-collapsed {
+    filter: drop-shadow(0 0 6px rgba(59, 130, 246, 0.3)) 
+            drop-shadow(0 0 12px rgba(59, 130, 246, 0.15))
+            brightness(1.05);
+    transition: all 0.3s ease;
+  }
+
+  .octodash-logo-collapsed:hover {
+    filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.5)) 
+            drop-shadow(0 0 20px rgba(59, 130, 246, 0.25))
+            brightness(1.15);
+    transform: scale(1.1);
+  }
+
+  /* Garantir que o logo mantenha suas cores originais */
+  .octodash-logo img,
+  .octodash-logo-collapsed img {
+    mix-blend-mode: normal;
+    background: transparent;
+  }
+
+  /* Efeito de pulsação sutil para o logo */
+  .octodash-logo-pulse {
+    animation: logo-pulse 3s ease-in-out infinite;
+  }
+
+  @keyframes logo-pulse {
+    0%, 100% {
+      filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.4)) 
+              drop-shadow(0 0 16px rgba(59, 130, 246, 0.2))
+              brightness(1.1);
+    }
+    50% {
+      filter: drop-shadow(0 0 12px rgba(59, 130, 246, 0.6)) 
+              drop-shadow(0 0 24px rgba(59, 130, 246, 0.3))
+              brightness(1.2);
+    }
+  }
+
+  /* Texto OctoDash com glow azul */
+  .octodash-text-glow {
+    text-shadow: 0 0 10px rgba(59, 130, 246, 0.4),
+                 0 0 20px rgba(59, 130, 246, 0.2),
+                 0 0 30px rgba(59, 130, 246, 0.1);
+    transition: all 0.3s ease;
+  }
+
+  .octodash-text-glow:hover {
+    text-shadow: 0 0 15px rgba(59, 130, 246, 0.6),
+                 0 0 30px rgba(59, 130, 246, 0.3),
+                 0 0 45px rgba(59, 130, 246, 0.15);
+    transform: translateY(-1px);
+  }
+
+  /* Estilos específicos para gráficos de leads */
+  .leads-chart-container {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .leads-chart-container:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 32px rgba(139, 92, 246, 0.1);
+  }
+
+  /* Glows específicos para cores dos gráficos */
+  .glow-accent-green {
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.3);
+  }
+
+  .glow-accent-orange {
+    box-shadow: 0 0 10px rgba(245, 158, 11, 0.3);
+  }
+
+  .glow-accent-red {
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.3);
+  }
+
+  .glow-accent-cyan {
+    box-shadow: 0 0 10px rgba(34, 211, 238, 0.3);
+  }
+
+  /* Animação suave para números de métricas */
+  .metric-number {
+    transition: all 0.3s ease;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .metric-number:hover {
+    transform: scale(1.05);
+  }
+
+  /* Cards de métricas com gradients harmoniosos */
+  .metric-card-red {
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(239, 68, 68, 0.05) 100%);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+  }
+
+  .metric-card-orange {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(245, 158, 11, 0.05) 100%);
+    border: 1px solid rgba(245, 158, 11, 0.2);
+  }
+
+  .metric-card-green {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%);
+    border: 1px solid rgba(16, 185, 129, 0.2);
+  }
+
+  .metric-card-purple {
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(139, 92, 246, 0.05) 100%);
+    border: 1px solid rgba(139, 92, 246, 0.2);
+  }
+
+  .metric-card-cyan {
+    background: linear-gradient(135deg, rgba(34, 211, 238, 0.1) 0%, rgba(34, 211, 238, 0.05) 100%);
+    border: 1px solid rgba(34, 211, 238, 0.2);
+  }
+
+  /* === FUNDO LIMPO ESCURO === */
+  /* Efeitos de estrelas removidos para design minimalista */
+
+  /* Scrollbar para tema claro */
+  .light ::-webkit-scrollbar-track {
+    background: hsl(var(--bg-secondary));
+  }
+
+  .light ::-webkit-scrollbar-thumb {
+    background: hsl(var(--accent-blue) / 0.6);
+  }
+
+  .light ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--accent-blue) / 0.8);
+  }
+
+  /* Ajustes para cards no tema claro */
+  .light .card-glow {
+    box-shadow: 0 0 0 1px hsl(var(--border)),
+                0 2px 10px rgba(0, 0, 0, 0.1),
+                0 4px 20px rgba(0, 0, 0, 0.05);
+  }
+
+  .light .card-glow:hover {
+    box-shadow: 0 0 0 1px hsl(var(--accent-blue) / 0.3),
+                0 4px 20px rgba(0, 0, 0, 0.15),
+                0 8px 30px rgba(0, 0, 0, 0.1);
+  }
+
+  /* Texto com glow mais sutil no tema claro */
+  .light .text-glow {
+    text-shadow: 0 0 4px hsl(var(--accent-blue) / 0.1);
+  }
+
+  .light .text-glow-purple {
+    text-shadow: 0 0 4px hsl(var(--accent-purple) / 0.15);
+  }
+
+  .light .text-glow-blue {
+    text-shadow: 0 0 4px hsl(var(--accent-blue) / 0.15);
+  }
+
+  /* Bordas neon mais sutis no tema claro */
+  .light .neon-border {
+    box-shadow: 0 0 2px currentColor,
+                inset 0 0 2px currentColor;
+  }
+
+  .light .neon-border:hover {
+    box-shadow: 0 0 5px currentColor,
+                0 0 10px currentColor,
+                inset 0 0 5px currentColor;
+  }
+}
+
+/* ===================================
+   CLICKUP STYLE - BOTÕES E ELEMENTOS
+   =================================== */
+
+/* Botões com estilo ClickUp */
+button, [role="button"] {
+  border-radius: 0.5rem; /* 8px rounded */
+  font-weight: 500;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+button:hover, [role="button"]:hover {
+  transform: translateY(-1px);
+}
+
+button:active, [role="button"]:active {
+  transform: translateY(0);
+}
+
+/* Cards com bordas arredondadas ClickUp */
+.card, [class*="Card"] {
+  border-radius: 0.75rem; /* 12px */
+}
+
+/* Inputs com estilo ClickUp */
+input, textarea, select {
+  border-radius: 0.5rem; /* 8px */
+  border-width: 1.5px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+input:focus, textarea:focus, select:focus {
+  border-color: #7B68EE;
+  box-shadow: 0 0 0 3px rgba(123, 104, 238, 0.1);
+}
+
+/* Badges arredondados */
+[class*="badge"], [class*="Badge"] {
+  border-radius: 0.375rem; /* 6px */
+  font-weight: 600;
+}
+
+/* Dropdowns e Menus */
+[role="menu"], [role="listbox"], [data-radix-dropdown-menu-content] {
+  border-radius: 0.625rem; /* 10px */
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
+}
+
+/* Modais e Dialogs */
+[role="dialog"], [data-radix-dialog-content] {
+  border-radius: 0.75rem; /* 12px */
+}
+
+/* Tooltips */
+[role="tooltip"] {
+  border-radius: 0.5rem; /* 8px */
+  font-size: 0.8125rem;
+}
+
+/* Progress bars */
+[class*="Progress"] {
+  border-radius: 9999px; /* Totalmente arredondado */
+}
+
+/* Tabs */
+[role="tab"] {
+  border-radius: 0.5rem;
+  font-weight: 500;
+}
+
+/* ===================================
+   AJUSTES DE CONTRASTE PARA TABELA NO TEMA BRANCO
+   Melhorar legibilidade de badges e textos
+   =================================== */
+
+/* Headers da tabela - mais escuros */
+body.theme-branco table thead th {
+  color: #171717 !important;
+  font-weight: 700 !important;
+}
+
+/* Textos normais da tabela - mais escuros */
+body.theme-branco table tbody td {
+  color: #262626 !important;
+}
+
+/* Badges - cores mais saturadas e escuras */
+body.theme-branco .text-purple-300,
+body.theme-branco .text-purple-400 {
+  color: #7c3aed !important; /* purple-600 */
+}
+
+body.theme-branco .border-purple-400\/40,
+body.theme-branco .border-purple-500\/30 {
+  border-color: rgba(124, 58, 237, 0.4) !important;
+}
+
+body.theme-branco .bg-purple-500\/20 {
+  background-color: rgba(124, 58, 237, 0.15) !important;
+}
+
+body.theme-branco .text-emerald-300,
+body.theme-branco .text-emerald-400 {
+  color: #059669 !important; /* emerald-600 */
+}
+
+body.theme-branco .border-emerald-400\/40,
+body.theme-branco .border-emerald-500\/30 {
+  border-color: rgba(5, 150, 105, 0.4) !important;
+}
+
+body.theme-branco .bg-emerald-500\/20 {
+  background-color: rgba(5, 150, 105, 0.15) !important;
+}
+
+body.theme-branco .text-blue-300,
+body.theme-branco .text-blue-400 {
+  color: #2563eb !important; /* blue-600 */
+}
+
+body.theme-branco .border-blue-400\/40,
+body.theme-branco .border-blue-500\/30 {
+  border-color: rgba(37, 99, 235, 0.4) !important;
+}
+
+body.theme-branco .bg-blue-500\/20 {
+  background-color: rgba(37, 99, 235, 0.15) !important;
+}
+
+body.theme-branco .text-green-300,
+body.theme-branco .text-green-400 {
+  color: #16a34a !important; /* green-600 */
+}
+
+body.theme-branco .border-green-400\/40,
+body.theme-branco .border-green-500\/30 {
+  border-color: rgba(22, 163, 74, 0.4) !important;
+}
+
+body.theme-branco .bg-green-500\/20 {
+  background-color: rgba(22, 163, 74, 0.15) !important;
+}
+
+body.theme-branco .text-pink-300,
+body.theme-branco .text-pink-400 {
+  color: #db2777 !important; /* pink-600 */
+}
+
+body.theme-branco .border-pink-400\/40,
+body.theme-branco .border-pink-500\/30 {
+  border-color: rgba(219, 39, 119, 0.4) !important;
+}
+
+body.theme-branco .bg-pink-500\/20 {
+  background-color: rgba(219, 39, 119, 0.15) !important;
+}
+
+body.theme-branco .text-red-300,
+body.theme-branco .text-red-400 {
+  color: #dc2626 !important; /* red-600 */
+}
+
+body.theme-branco .border-red-400\/40,
+body.theme-branco .border-red-500\/30 {
+  border-color: rgba(220, 38, 38, 0.4) !important;
+}
+
+body.theme-branco .bg-red-500\/20 {
+  background-color: rgba(220, 38, 38, 0.15) !important;
+}
+
+body.theme-branco .text-orange-300,
+body.theme-branco .text-orange-400 {
+  color: #ea580c !important; /* orange-600 */
+}
+
+body.theme-branco .border-orange-400\/40,
+body.theme-branco .border-orange-500\/30 {
+  border-color: rgba(234, 88, 12, 0.4) !important;
+}
+
+body.theme-branco .bg-orange-500\/20 {
+  background-color: rgba(234, 88, 12, 0.15) !important;
+}
+
+body.theme-branco .text-amber-300,
+body.theme-branco .text-amber-400 {
+  color: #d97706 !important; /* amber-600 */
+}
+
+body.theme-branco .border-amber-400\/40,
+body.theme-branco .border-amber-500\/30 {
+  border-color: rgba(217, 119, 6, 0.4) !important;
+}
+
+body.theme-branco .bg-amber-500\/20 {
+  background-color: rgba(217, 119, 6, 0.15) !important;
+}
+
+body.theme-branco .text-violet-300,
+body.theme-branco .text-violet-400 {
+  color: #7c3aed !important; /* violet-600 */
+}
+
+body.theme-branco .border-violet-400\/40,
+body.theme-branco .border-violet-500\/30 {
+  border-color: rgba(124, 58, 237, 0.4) !important;
+}
+
+body.theme-branco .bg-violet-500\/20 {
+  background-color: rgba(124, 58, 237, 0.15) !important;
+}
+
+body.theme-branco .text-indigo-300,
+body.theme-branco .text-indigo-400 {
+  color: #4f46e5 !important; /* indigo-600 */
+}
+
+body.theme-branco .border-indigo-400\/40,
+body.theme-branco .border-indigo-500\/30 {
+  border-color: rgba(79, 70, 229, 0.4) !important;
+}
+
+body.theme-branco .bg-indigo-500\/20 {
+  background-color: rgba(79, 70, 229, 0.15) !important;
+}
+
+/* Textos cinzas - mais escuros */
+body.theme-branco .text-gray-200 {
+  color: #262626 !important; /* gray-800 */
+}
+
+body.theme-branco .text-gray-300 {
+  color: #404040 !important; /* gray-700 */
+}
+
+body.theme-branco .text-gray-500 {
+  color: #525252 !important; /* gray-600 */
+}
+
+body.theme-branco .text-gray-600 {
+  color: #404040 !important; /* gray-700 */
+}
+
+/* Badges cinzas */
+body.theme-branco .bg-gray-700\/20 {
+  background-color: rgba(64, 64, 64, 0.15) !important;
+}
+
+body.theme-branco .border-gray-600\/30 {
+  border-color: rgba(82, 82, 82, 0.4) !important;
+}
+
+/* Select de Corretor - melhorar contraste */
+body.theme-branco .text-gray-100 {
+  color: #171717 !important;
+}
+
+/* Botões de ação - melhorar contraste */
+body.theme-branco .text-blue-400.hover\:text-blue-300 {
+  color: #2563eb !important;
+}
+
+body.theme-branco .text-green-400.hover\:text-green-300 {
+  color: #16a34a !important;
+}
+
+body.theme-branco .text-red-400.hover\:text-red-300 {
+  color: #dc2626 !important;
+}
+
+/* Texto do nome do lead - mais escuro */
+body.theme-branco table tbody td .text-white {
+  color: #171717 !important;
+}
+
+/* Hover nos badges - aumentar contraste */
+body.theme-branco table tbody tr:hover .text-purple-300,
+body.theme-branco table tbody tr:hover .text-emerald-300,
+body.theme-branco table tbody tr:hover .text-blue-300,
+body.theme-branco table tbody tr:hover .text-green-300,
+body.theme-branco table tbody tr:hover .text-pink-300,
+body.theme-branco table tbody tr:hover .text-red-300,
+body.theme-branco table tbody tr:hover .text-orange-300 {
+  opacity: 1 !important;
+  filter: brightness(0.9);
+}
+
+/* ===================================
+   PREVIEWS DE TEMA - PRESERVAR CORES ORIGINAIS
+   Manter aparência correta independente do tema ativo
+   =================================== */
+
+/* Preview PRETO - manter cores escuras */
+body.theme-branco .theme-preview-preto {
+  background-color: #000000 !important;
+  border-color: #262626 !important;
+}
+
+body.theme-branco .theme-preview-preto .theme-preview-element.bg-neutral-900 {
+  background-color: #171717 !important;
+  border-color: #262626 !important;
+}
+
+body.theme-branco .theme-preview-preto .theme-preview-element.bg-neutral-800 {
+  background-color: #262626 !important;
+}
+
+/* Preview CINZA - manter cores cinzas médias */
+body.theme-branco .theme-preview-cinza {
+  background-color: #27272a !important;
+  border-color: #3f3f46 !important;
+}
+
+body.theme-branco .theme-preview-cinza .theme-preview-element.bg-zinc-700 {
+  background-color: #3f3f46 !important;
+  border-color: #52525b !important;
+}
+
+body.theme-branco .theme-preview-cinza .theme-preview-element.bg-zinc-600 {
+  background-color: #52525b !important;
+}
+
+/* Preview BRANCO - manter cores claras */
+body.theme-branco .theme-preview-branco {
+  background-color: #ffffff !important;
+  border-color: #e5e5e5 !important;
+}
+
+body.theme-branco .theme-preview-branco .theme-preview-element.bg-gray-50 {
+  background-color: #fafafa !important;
+  border-color: #e5e5e5 !important;
+}
+
+body.theme-branco .theme-preview-branco .theme-preview-element.bg-gray-200 {
+  background-color: #e5e5e5 !important;
+}
+
+/* ===================================
+   HARMONIZAÇÃO DE CORES PARA TEMA CINZA
+   Suavizar cores vibrantes para melhor integração
+   =================================== */
+
+/* Azuis - mais suaves e harmônicos */
+body.theme-cinza .text-blue-300,
+body.theme-cinza .text-blue-400 {
+  color: #60a5fa !important; /* blue-400 mais suave */
+}
+
+body.theme-cinza .border-blue-400\/40,
+body.theme-cinza .border-blue-500\/30 {
+  border-color: rgba(96, 165, 250, 0.3) !important;
+}
+
+body.theme-cinza .bg-blue-500\/20,
+body.theme-cinza .bg-blue-500\/10 {
+  background-color: rgba(96, 165, 250, 0.08) !important;
+}
+
+/* Verdes - tons mais suaves */
+body.theme-cinza .text-green-300,
+body.theme-cinza .text-green-400 {
+  color: #4ade80 !important; /* green-400 suave */
+}
+
+body.theme-cinza .border-green-400\/40,
+body.theme-cinza .border-green-500\/30 {
+  border-color: rgba(74, 222, 128, 0.3) !important;
+}
+
+body.theme-cinza .bg-green-500\/20,
+body.theme-cinza .bg-green-500\/10 {
+  background-color: rgba(74, 222, 128, 0.08) !important;
+}
+
+/* Roxos/Purples - mais elegantes */
+body.theme-cinza .text-purple-300,
+body.theme-cinza .text-purple-400 {
+  color: #a78bfa !important; /* purple-400 elegante */
+}
+
+body.theme-cinza .border-purple-400\/40,
+body.theme-cinza .border-purple-500\/30 {
+  border-color: rgba(167, 139, 250, 0.3) !important;
+}
+
+body.theme-cinza .bg-purple-500\/20,
+body.theme-cinza .bg-purple-500\/10 {
+  background-color: rgba(167, 139, 250, 0.08) !important;
+}
+
+/* Ciano - mais harmônico */
+body.theme-cinza .text-cyan-300,
+body.theme-cinza .text-cyan-400 {
+  color: #22d3ee !important; /* cyan-400 suave */
+}
+
+body.theme-cinza .border-cyan-400\/40,
+body.theme-cinza .border-cyan-500\/30 {
+  border-color: rgba(34, 211, 238, 0.3) !important;
+}
+
+body.theme-cinza .bg-cyan-500\/20,
+body.theme-cinza .bg-cyan-500\/10 {
+  background-color: rgba(34, 211, 238, 0.08) !important;
+}
+
+/* Amarelos - mais suaves */
+body.theme-cinza .text-yellow-300,
+body.theme-cinza .text-yellow-400 {
+  color: #fbbf24 !important; /* yellow-400 suave */
+}
+
+body.theme-cinza .border-yellow-400\/40,
+body.theme-cinza .border-yellow-500\/30 {
+  border-color: rgba(251, 191, 36, 0.3) !important;
+}
+
+body.theme-cinza .bg-yellow-500\/20,
+body.theme-cinza .bg-yellow-500\/10 {
+  background-color: rgba(251, 191, 36, 0.08) !important;
+}
+
+/* Laranjas - mais harmônicos */
+body.theme-cinza .text-orange-300,
+body.theme-cinza .text-orange-400 {
+  color: #fb923c !important; /* orange-400 suave */
+}
+
+body.theme-cinza .border-orange-400\/40,
+body.theme-cinza .border-orange-500\/30 {
+  border-color: rgba(251, 146, 60, 0.3) !important;
+}
+
+body.theme-cinza .bg-orange-500\/20,
+body.theme-cinza .bg-orange-500\/10 {
+  background-color: rgba(251, 146, 60, 0.08) !important;
+}
+
+/* Vermelhos - mais suaves */
+body.theme-cinza .text-red-300,
+body.theme-cinza .text-red-400 {
+  color: #f87171 !important; /* red-400 suave */
+}
+
+body.theme-cinza .border-red-400\/40,
+body.theme-cinza .border-red-500\/30 {
+  border-color: rgba(248, 113, 113, 0.3) !important;
+}
+
+body.theme-cinza .bg-red-500\/20,
+body.theme-cinza .bg-red-500\/10 {
+  background-color: rgba(248, 113, 113, 0.08) !important;
+}
+
+/* Rosas/Pinks - mais elegantes */
+body.theme-cinza .text-pink-300,
+body.theme-cinza .text-pink-400 {
+  color: #f472b6 !important; /* pink-400 elegante */
+}
+
+body.theme-cinza .border-pink-400\/40,
+body.theme-cinza .border-pink-500\/30 {
+  border-color: rgba(244, 114, 182, 0.3) !important;
+}
+
+body.theme-cinza .bg-pink-500\/20,
+body.theme-cinza .bg-pink-500\/10 {
+  background-color: rgba(244, 114, 182, 0.08) !important;
+}
+
+/* Emerald - mais suaves */
+body.theme-cinza .text-emerald-300,
+body.theme-cinza .text-emerald-400 {
+  color: #34d399 !important; /* emerald-400 suave */
+}
+
+body.theme-cinza .border-emerald-400\/40,
+body.theme-cinza .border-emerald-500\/30 {
+  border-color: rgba(52, 211, 153, 0.3) !important;
+}
+
+body.theme-cinza .bg-emerald-500\/20,
+body.theme-cinza .bg-emerald-500\/10 {
+  background-color: rgba(52, 211, 153, 0.08) !important;
+}
+
+/* Violeta - mais harmônicos */
+body.theme-cinza .text-violet-300,
+body.theme-cinza .text-violet-400 {
+  color: #a78bfa !important; /* violet-400 elegante */
+}
+
+body.theme-cinza .border-violet-400\/40,
+body.theme-cinza .border-violet-500\/30 {
+  border-color: rgba(167, 139, 250, 0.3) !important;
+}
+
+body.theme-cinza .bg-violet-500\/20,
+body.theme-cinza .bg-violet-500\/10 {
+  background-color: rgba(167, 139, 250, 0.08) !important;
+}
+
+/* Gradientes - mais sutis no tema cinza */
+body.theme-cinza .bg-gradient-to-br.from-blue-500\/10 {
+  background-image: linear-gradient(to bottom right, rgba(96, 165, 250, 0.06), rgba(34, 211, 238, 0.06)) !important;
+}
+
+body.theme-cinza .bg-gradient-to-br.from-green-500\/10 {
+  background-image: linear-gradient(to bottom right, rgba(74, 222, 128, 0.06), rgba(52, 211, 153, 0.06)) !important;
+}
+
+body.theme-cinza .bg-gradient-to-br.from-purple-500\/10 {
+  background-image: linear-gradient(to bottom right, rgba(167, 139, 250, 0.06), rgba(167, 139, 250, 0.06)) !important;
+}
+
+body.theme-cinza .bg-gradient-to-br.from-red-500\/10 {
+  background-image: linear-gradient(to bottom right, rgba(248, 113, 113, 0.06), rgba(251, 146, 60, 0.06)) !important;
+}
+
+body.theme-cinza .bg-gradient-to-br.from-yellow-500\/10 {
+  background-image: linear-gradient(to bottom right, rgba(251, 191, 36, 0.06), rgba(251, 146, 60, 0.06)) !important;
+}
+
+/* Sombras mais sutis no tema cinza */
+body.theme-cinza .shadow-blue-500\/20,
+body.theme-cinza .shadow-lg.shadow-blue-500\/20 {
+  box-shadow: 0 2px 8px rgba(96, 165, 250, 0.1) !important;
+}
+
+body.theme-cinza .shadow-green-500\/20,
+body.theme-cinza .shadow-lg.shadow-green-500\/20 {
+  box-shadow: 0 2px 8px rgba(74, 222, 128, 0.1) !important;
+}
+
+body.theme-cinza .shadow-purple-500\/20,
+body.theme-cinza .shadow-lg.shadow-purple-500\/20 {
+  box-shadow: 0 2px 8px rgba(167, 139, 250, 0.1) !important;
+}
+
+body.theme-cinza .shadow-red-500\/20,
+body.theme-cinza .shadow-lg.shadow-red-500\/20 {
+  box-shadow: 0 2px 8px rgba(248, 113, 113, 0.1) !important;
+}
+
+body.theme-cinza .shadow-orange-500\/20,
+body.theme-cinza .shadow-lg.shadow-orange-500\/20 {
+  box-shadow: 0 2px 8px rgba(251, 146, 60, 0.1) !important;
+}
+
+body.theme-cinza .shadow-cyan-500\/20,
+body.theme-cinza .shadow-lg.shadow-cyan-500\/20 {
+  box-shadow: 0 2px 8px rgba(34, 211, 238, 0.1) !important;
+}
+
+/* Cards com gradiente - fundos mais sutis */
+body.theme-cinza .metric-card-red {
+  background: linear-gradient(135deg, rgba(248, 113, 113, 0.06) 0%, rgba(248, 113, 113, 0.03) 100%) !important;
+  border-color: rgba(248, 113, 113, 0.2) !important;
+}
+
+body.theme-cinza .metric-card-orange {
+  background: linear-gradient(135deg, rgba(251, 146, 60, 0.06) 0%, rgba(251, 146, 60, 0.03) 100%) !important;
+  border-color: rgba(251, 146, 60, 0.2) !important;
+}
+
+body.theme-cinza .metric-card-green {
+  background: linear-gradient(135deg, rgba(74, 222, 128, 0.06) 0%, rgba(74, 222, 128, 0.03) 100%) !important;
+  border-color: rgba(74, 222, 128, 0.2) !important;
+}
+
+body.theme-cinza .metric-card-purple {
+  background: linear-gradient(135deg, rgba(167, 139, 250, 0.06) 0%, rgba(167, 139, 250, 0.03) 100%) !important;
+  border-color: rgba(167, 139, 250, 0.2) !important;
+}
+
+body.theme-cinza .metric-card-cyan {
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.06) 0%, rgba(34, 211, 238, 0.03) 100%) !important;
+  border-color: rgba(34, 211, 238, 0.2) !important;
+}
+
+/* Badges da tabela - cores mais harmônicas */
+body.theme-cinza .text-emerald-300,
+body.theme-cinza .text-emerald-400 {
+  color: #34d399 !important;
+}
+
+body.theme-cinza .text-indigo-300,
+body.theme-cinza .text-indigo-400 {
+  color: #818cf8 !important;
+}
+
+body.theme-cinza .text-amber-300,
+body.theme-cinza .text-amber-400 {
+  color: #fbbf24 !important;
+}
+
+/* Textos principais - melhor contraste no cinza */
+body.theme-cinza .text-white {
+  color: #f1f1f0 !important;
+}
+
+body.theme-cinza .text-gray-100 {
+  color: #f1f1f0 !important;
+}
+
+body.theme-cinza .text-gray-200 {
+  color: #e5e5e5 !important;
+}
+
+/* Notion glow effects - mais sutis no tema cinza */
+body.theme-cinza .notion-glow-green,
+body.theme-cinza .glow-accent-green {
+  box-shadow: 0 0 8px rgba(74, 222, 128, 0.15) !important;
+}
+
+body.theme-cinza .notion-glow-blue,
+body.theme-cinza .glow-accent-blue {
+  box-shadow: 0 0 8px rgba(96, 165, 250, 0.15) !important;
+}
+
+body.theme-cinza .notion-glow-purple,
+body.theme-cinza .glow-accent-purple {
+  box-shadow: 0 0 8px rgba(167, 139, 250, 0.15) !important;
+}
+
+body.theme-cinza .notion-glow-orange,
+body.theme-cinza .glow-accent-orange {
+  box-shadow: 0 0 8px rgba(251, 146, 60, 0.15) !important;
+}
+
+body.theme-cinza .notion-glow-red,
+body.theme-cinza .glow-accent-red {
+  box-shadow: 0 0 8px rgba(248, 113, 113, 0.15) !important;
+}
+
+body.theme-cinza .notion-glow-cyan,
+body.theme-cinza .glow-accent-cyan {
+  box-shadow: 0 0 8px rgba(34, 211, 238, 0.15) !important;
+}
+
+/* ===================================
+   CHARTS.CSS - Estilos Customizados
+   Paleta: Branco, Cinza, Azul
+   =================================== */
+
+.charts-css {
+  --color-primary: #3b82f6;
+  --color-secondary: #94a3b8;
+  --color-tertiary: #e2e8f0;
+  --color-quaternary: #f8fafc;
+  --color-quinary: #64748b;
+  --color-text-primary: #0f172a;
+  --color-text-secondary: #64748b;
+  --color-background: #ffffff;
+  --color-grid: #e2e8f0;
+  --color-axis: #64748b;
+  --color-label: #0f172a;
+  --color-label-background: #ffffff;
+  --color-label-border: #e2e8f0;
+  --color-label-text: #0f172a;
+  --color-label-text-secondary: #64748b;
+  --color-label-text-tertiary: #94a3b8;
+  --color-label-text-quaternary: #cbd5e1;
+  --color-label-text-quinary: #e2e8f0;
+  --color-label-text-senary: #f1f5f9;
+  --color-label-text-septenary: #f8fafc;
+  --color-label-text-octonary: #ffffff;
+  --color-label-text-nonary: #f8fafc;
+  --color-label-text-denary: #f1f5f9;
+  --color-label-text-undenary: #e2e8f0;
+  --color-label-text-duodenary: #cbd5e1;
+  --color-label-text-tridenary: #94a3b8;
+  --color-label-text-quattuordenary: #64748b;
+  --color-label-text-quindenary: #475569;
+  --color-label-text-sedecenary: #334155;
+  --color-label-text-septendecenary: #1e293b;
+  --color-label-text-octodecenary: #0f172a;
+  --color-label-text-novemdecenary: #000000;
+  --color-label-text-vigintenary: #ffffff;
+}
+
+.charts-css caption {
+  color: #0f172a;
+  font-weight: 600;
+  font-size: 1rem;
+  margin-bottom: 1rem;
+}
+
+.charts-css th {
+  color: #0f172a;
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.charts-css td {
+  color: #64748b;
+  font-size: 0.875rem;
+}
+
+.charts-css.bar tbody tr {
+  background: linear-gradient(to right, #3b82f6, #60a5fa);
+}
+
+/* ===================================
+   CORREÇÃO FORÇADA - Fundo branco nos ícones do header
+   =================================== */
+/* Header - fundo cinza */
+header[style*="background-color: #f5f5f5"],
+header[style*="background-color:#f5f5f5"] {
+  background-color: #f5f5f5 !important;
+}
+
+/* Botões do header - fundo cinza (nunca branco) */
+header button {
+  background-color: #f5f5f5 !important;
+}
+
+header button:hover {
+  background-color: #e5e7eb !important;
+}
+
+/* Ícones no header - SEMPRE transparente */
+header svg,
+header [class*="lucide"],
+header button svg,
+header button [class*="lucide"] {
+  background-color: transparent !important;
+  background: transparent !important;
+}
+
+/* Containers de ícones - transparente */
+header button > div,
+header .relative {
+  background-color: transparent !important;
+}
+
+/* ===================================
+   RANKING TABLE - Hover com fundo branco e textos pretos
+   =================================== */
+.ranking-row {
+  transition: all 0.2s ease;
+}
+
+.ranking-row:hover {
+  background-color: #ffffff !important;
+}
+
+.ranking-row:hover td div,
+.ranking-row:hover td span {
+  color: #111827 !important;
+}
+
+.ranking-row:hover td .text-xs {
+  color: #4b5563 !important;
+}
+
+/* Badge de colocação no hover - usa a cor de fundo da linha original */
+.ranking-row:hover .ranking-badge {
+  background-color: var(--row-bg) !important;
+  color: #ffffff !important;
+  border-color: #ffffff40 !important;
+  border-radius: 9999px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* Garantir que o badge sempre seja circular */
+.ranking-badge {
+  border-radius: 9999px !important;
+}
+
+/* Forçar cor vermelha no ícone de logout */
+.logout-icon-red {
+  color: #ef4444 !important;
+  stroke: #ef4444 !important;
+}
+
+/* ===================================
+   🎨 OCTOCRM DESIGN SYSTEM
+   Padrão visual consistente para todo o CRM
+   =================================== */
+
+/* ------------------------------------
+   REGRA 1: BOTÕES SEMPRE VISÍVEIS
+   Garantir contraste e visibilidade
+   ------------------------------------ */
+
+/* Botões primários - SEMPRE com fundo sólido */
+button, [role="button"] {
+  min-height: 36px;
+  font-weight: 500;
+}
+
+body .relatorios-pesquisar-button,
+body .relatorios-pesquisar-button *,
+body .relatorios-pesquisar-button svg {
+  color: #ffffff !important;
+}
+
+body .relatorios-pesquisar-button:hover,
+body .relatorios-pesquisar-button:hover *,
+body .relatorios-pesquisar-button:hover svg,
+body .relatorios-pesquisar-button:focus,
+body .relatorios-pesquisar-button:focus *,
+body .relatorios-pesquisar-button:focus svg,
+body .relatorios-pesquisar-button:focus-visible,
+body .relatorios-pesquisar-button:focus-visible *,
+body .relatorios-pesquisar-button:focus-visible svg,
+body .relatorios-pesquisar-button:active,
+body .relatorios-pesquisar-button:active *,
+body .relatorios-pesquisar-button:active svg {
+  color: #ffffff !important;
+}
+
+/* Botão primário padrão OctoCRM - PRETO */
+.btn-octo-primary {
+  background-color: var(--octo-primary) !important;
+  color: #ffffff !important;
+  border: none !important;
+}
+
+.btn-octo-primary:hover {
+  background-color: var(--octo-primary-dark) !important;
+  color: #ffffff !important;
+}
+
+/* Botões com fundo escuro - texto branco */
+button[class*="bg-gray-900"],
+button[class*="bg-gray-800"],
+button[class*="bg-black"] {
+  color: #ffffff !important;
+}
+
+button[class*="bg-gray-900"]:hover,
+button[class*="bg-gray-800"]:hover,
+button[class*="bg-black"]:hover {
+  color: #ffffff !important;
+}
+
+/* Botão secundário/outline OctoCRM */
+.btn-octo-secondary {
+  background-color: #ffffff !important;
+  color: var(--octo-primary) !important;
+  border: 1px solid var(--octo-primary) !important;
+}
+
+.btn-octo-secondary:hover {
+  background-color: #f9fafb !important;
+  color: var(--octo-primary-dark) !important;
+}
+
+/* Botão ghost OctoCRM */
+.btn-octo-ghost {
+  background-color: transparent !important;
+  color: #374151 !important;
+}
+
+.btn-octo-ghost:hover {
+  background-color: #f3f4f6 !important;
+}
+
+/* Botões desabilitados - NUNCA invisíveis */
+button:disabled,
+button[disabled],
+.btn:disabled {
+  background-color: #d1d5db !important;
+  color: #9ca3af !important;
+  cursor: not-allowed !important;
+  opacity: 1 !important;
+}
+
+/* ------------------------------------
+   REGRA 2: BORDAS RETAS (SEM ARREDONDAMENTO)
+   Padrão visual OctoCRM
+   ------------------------------------ */
+
+/* Remover arredondamento de todos os elementos */
+.octo-sharp,
+.octo-sharp * {
+  border-radius: 0 !important;
+}
+
+/* Inputs com bordas retas */
+.octo-input,
+input.octo-input,
+textarea.octo-input,
+select.octo-input {
+  border-radius: 0 !important;
+  border: 1px solid #e5e7eb;
+  padding: 0.625rem 0.75rem;
+  font-size: 0.875rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.octo-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 1px #3b82f6;
+}
+
+/* Cards com bordas retas */
+.octo-card {
+  border-radius: 0 !important;
+  border: 1px solid #e5e7eb;
+  background-color: #ffffff;
+}
+
+/* ------------------------------------
+   REGRA 3: CORES PADRÃO OCTOCRM
+   Paleta baseada no logo OctoIA
+   ------------------------------------ */
+
+:root {
+  /* Cores primárias OctoCRM */
+  --octo-primary: #1a5276;
+  --octo-primary-dark: #154360;
+  --octo-primary-light: #2980b9;
+  
+  /* Cores secundárias */
+  --octo-secondary: #34495e;
+  --octo-secondary-light: #5d6d7e;
+  
+  /* Cores de estado */
+  --octo-success: #27ae60;
+  --octo-warning: #f39c12;
+  --octo-danger: #e74c3c;
+  --octo-info: #3498db;
+  
+  /* Neutros */
+  --octo-gray-50: #f9fafb;
+  --octo-gray-100: #f3f4f6;
+  --octo-gray-200: #e5e7eb;
+  --octo-gray-300: #d1d5db;
+  --octo-gray-400: #9ca3af;
+  --octo-gray-500: #6b7280;
+  --octo-gray-600: #4b5563;
+  --octo-gray-700: #374151;
+  --octo-gray-800: #1f2937;
+  --octo-gray-900: #111827;
+}
+
+/* ------------------------------------
+   REGRA 4: TIPOGRAFIA CONSISTENTE
+   ------------------------------------ */
+
+.octo-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--octo-gray-900);
+  letter-spacing: -0.025em;
+}
+
+.octo-subtitle {
+  font-size: 0.875rem;
+  color: var(--octo-gray-500);
+}
+
+.octo-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--octo-gray-700);
+  margin-bottom: 0.25rem;
+  display: block;
+}
+
+/* ------------------------------------
+   REGRA 5: ESTADOS DE HOVER/FOCUS
+   ------------------------------------ */
+
+/* Links */
+a.octo-link {
+  color: var(--octo-primary);
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+a.octo-link:hover {
+  color: var(--octo-primary-dark);
+}
+
+/* Focus visível para acessibilidade */
+*:focus-visible {
+  outline: 2px solid var(--octo-primary);
+  outline-offset: 2px;
+}
+
+/* ------------------------------------
+   REGRA 6: GARANTIR VISIBILIDADE GLOBAL
+   Nunca deixar elementos invisíveis
+   ------------------------------------ */
+
+/* Garantir que botões nunca fiquem totalmente transparentes */
+button:not(.btn-octo-ghost):not([class*="ghost"]) {
+  min-width: fit-content;
+}
+
+/* Ícones em botões sempre visíveis */
+button svg,
+[role="button"] svg {
+  min-width: 16px;
+  min-height: 16px;
+}
+
+/* ------------------------------------
+   REGRA 7: TEXTO SEMPRE VISÍVEL NO HOVER
+   Corrige bug de texto invisível em botões
+   ------------------------------------ */
+
+/* REGRA CRÍTICA: Texto em botões NUNCA pode ser branco/transparente no hover */
+button:hover,
+button:focus,
+button:active,
+[role="button"]:hover,
+[role="button"]:focus {
+  color: inherit;
+}
+
+/* Botões com fundo claro no hover - texto DEVE ser escuro (PRETO) */
+button:hover:not([class*="bg-gray-9"]):not([class*="bg-black"]):not(.btn-octo-primary):not(.bolsao-connect-button),
+[role="button"]:hover:not([class*="bg-gray-9"]):not([class*="bg-black"]):not(.btn-octo-primary):not(.bolsao-connect-button),
+button[class*="border"]:hover,
+button[class*="outline"]:hover,
+button.bg-white:hover {
+  color: #111827 !important;
+}
+
+/* Botões com fundo escuro - texto DEVE ser branco */
+button[class*="bg-blue-"]:not([class*="bg-blue-50"]):hover,
+button[class*="bg-green-"]:hover,
+button[class*="bg-red-"]:hover,
+button[class*="bg-gray-900"]:hover,
+button[class*="bg-gray-800"]:hover,
+button.btn-octo-primary:hover {
+  color: #ffffff !important;
+}
+
+button.bolsao-connect-button:hover,
+button.bolsao-connect-button:focus,
+button.bolsao-connect-button:focus-visible,
+button.bolsao-connect-button:hover *,
+button.bolsao-connect-button:focus *,
+button.bolsao-connect-button:focus-visible * {
+  color: #ffffff !important;
+}
+
+button.bolsao-connect-button:hover svg,
+button.bolsao-connect-button:focus svg,
+button.bolsao-connect-button:focus-visible svg {
+  color: #ffffff !important;
+}
+
+/* Garantir que spans dentro de botões herdem a cor correta */
+button:hover span,
+button:hover p,
+button:focus span,
+[role="button"]:hover span {
+  color: inherit !important;
+}
+
+/* Fix específico para botões outline/secondary no hover */
+button[class*="border"]:hover *,
+button[class*="outline"]:hover * {
+  color: inherit !important;
+}
+
+button.central-leads-tab:hover svg,
+button.central-leads-tab:hover svg *,
+button.central-leads-tab[data-active='true'] svg,
+button.central-leads-tab[data-active='true'] svg * {
+  color: #2563eb !important;
+  stroke: #2563eb !important;
+  fill: none !important;
+}
+
+button:hover:not([class*="bg-blue-"]):not([class*="bg-green-"]):not([class*="bg-red-"]):not([class*="bg-gray-900"]):not([class*="bg-gray-800"]):not([class*="bg-black"]):not(.btn-octo-primary):not(.bolsao-connect-button):not(.relatorios-pesquisar-button) svg,
+button:hover:not([class*="bg-blue-"]):not([class*="bg-green-"]):not([class*="bg-red-"]):not([class*="bg-gray-900"]):not([class*="bg-gray-800"]):not([class*="bg-black"]):not(.btn-octo-primary):not(.bolsao-connect-button):not(.relatorios-pesquisar-button) svg *,
+[role="button"]:hover:not([class*="bg-blue-"]):not([class*="bg-green-"]):not([class*="bg-red-"]):not([class*="bg-gray-900"]):not([class*="bg-gray-800"]):not([class*="bg-black"]):not(.btn-octo-primary):not(.bolsao-connect-button):not(.relatorios-pesquisar-button) svg,
+[role="button"]:hover:not([class*="bg-blue-"]):not([class*="bg-green-"]):not([class*="bg-red-"]):not([class*="bg-gray-900"]):not([class*="bg-gray-800"]):not([class*="bg-black"]):not(.btn-octo-primary):not(.bolsao-connect-button):not(.relatorios-pesquisar-button) svg * {
+  color: #2563eb !important;
+  stroke: #2563eb !important;
+  fill: none !important;
+}
+
+.sidebar-bg-gray button[data-sidebar-active='true'] svg,
+.sidebar-bg-gray button[data-sidebar-active='true'] svg *,
+.app-sidebar-main button[data-sidebar-active='true'] svg,
+.app-sidebar-main button[data-sidebar-active='true'] svg * {
+  color: #2563eb !important;
+  stroke: #2563eb !important;
+  fill: none !important;
+}
+
+.sidebar-bg-gray button[data-sidebar-sub-active='true'] svg,
+.sidebar-bg-gray button[data-sidebar-sub-active='true'] svg *,
+.sidebar-bg-gray button[data-sidebar-sub-active='true'] span,
+.app-sidebar-main button[data-sidebar-sub-active='true'] svg,
+.app-sidebar-main button[data-sidebar-sub-active='true'] svg *,
+.app-sidebar-main button[data-sidebar-sub-active='true'] span {
+  color: #2563eb !important;
+  stroke: #2563eb !important;
+  fill: none !important;
+}
+
+/* ------------------------------------
+  UTILITÁRIOS OCTOCRM
+  ------------------------------------ */
+
+/* Sombra padrão para profundidade */
+.octo-shadow {
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+}
+
+.octo-shadow-md {
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+}
+
+.octo-shadow-lg {
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+}
+
+/* Divisor vertical */
+.octo-divider-v {
+  width: 1px;
+  background-color: var(--octo-gray-200);
+  height: 100%;
+}
+
+/* Divisor horizontal */
+.octo-divider-h {
+  height: 1px;
+  background-color: var(--octo-gray-200);
+  width: 100%;
+}
+
+body .relatorios-pesquisar-button,
+body .relatorios-pesquisar-button *,
+body .relatorios-pesquisar-button svg {
+  color: #ffffff !important;
+}
+
+/* ===================================================================
+   FIX DEFINITIVO - OVERLAY DE MODAIS EM TODOS OS TEMAS
+   Ultima regra do arquivo para maxima prioridade.
+   =================================================================== */
+html body [data-radix-dialog-overlay],
+html body [data-radix-alert-dialog-overlay],
+html body [data-radix-sheet-overlay],
+html body [data-radix-drawer-overlay],
+html body [data-vaul-overlay],
+html body[class*='theme-branco'] [data-radix-dialog-overlay],
+html body[class*='theme-branco'] [data-radix-alert-dialog-overlay],
+html body[class*='theme-branco'] [data-radix-sheet-overlay],
+html body[class*='theme-cinza'] [data-radix-dialog-overlay],
+html body[class*='theme-cinza'] [data-radix-alert-dialog-overlay],
+html body[class*='theme-cinza'] [data-radix-sheet-overlay] {
+  background-color: rgba(0, 0, 0, 0.6) !important;
+  background: rgba(0, 0, 0, 0.6) !important;
+  background-image: none !important;
+  opacity: 1 !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  border: 0 !important;
+}
+
+
+
+/* ===================================================================
+   OCTO MODAL OVERLAY - classe propria, imune a qualquer override
+   Funciona em TODOS os temas (escuro, branco, cinza)
+   =================================================================== */
+.octo-modal-overlay {
+  background-color: rgba(0, 0, 0, 0.6) !important;
+  background: rgba(0, 0, 0, 0.6) !important;
+  background-image: none !important;
+  opacity: 1 !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  border: 0 !important;
+}
+

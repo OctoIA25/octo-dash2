@@ -1,0 +1,86 @@
+/* Chart-specific styles - simplified from ultra-specific selectors */
+/* OctoDash CRM Imobiliário */
+
+/* Classes para gráficos específicos - substituindo seletores ultra-longos */
+.origin-chart-container {
+  background: rgba(255, 255, 255, 0.02) !important;
+  border-radius: 8px !important;
+}
+
+/* Barras do gráfico de origem específico - ultra vibrantes */
+.origin-chart-container .recharts-bar-rectangle {
+  filter: brightness(1.8) saturate(2.2) contrast(1.4) !important;
+  opacity: 1 !important;
+  stroke: rgba(255, 255, 255, 0.5) !important;
+  stroke-width: 2 !important;
+}
+
+/* Texto dos eixos do gráfico específico */
+.origin-chart-container .recharts-text {
+  fill: #FFFFFF !important;
+  font-weight: 700 !important;
+  font-size: 14px !important;
+}
+
+/* Linhas de grade e eixos */
+.origin-chart-container .recharts-cartesian-axis-tick-value {
+  fill: #F3F4F6 !important;
+  font-weight: 600 !important;
+}
+
+/* Forçar cores específicas nas barras do gráfico de origem - máxima visibilidade */
+.origin-chart-container rect {
+  filter: brightness(2.0) saturate(2.5) contrast(1.5) !important;
+  stroke: rgba(255, 255, 255, 0.6) !important;
+  stroke-width: 2px !important;
+  opacity: 1 !important;
+}
+
+/* Alternativamente, para aplicar usando seletores de atributos mais simples */
+[data-chart-type="origin"] svg {
+  background: rgba(255, 255, 255, 0.02) !important;
+  border-radius: 8px !important;
+}
+
+[data-chart-type="origin"] .recharts-bar-rectangle {
+  filter: brightness(1.8) saturate(2.2) contrast(1.4) !important;
+  opacity: 1 !important;
+  stroke: rgba(255, 255, 255, 0.5) !important;
+  stroke-width: 2 !important;
+}
+
+[data-chart-type="origin"] .recharts-text {
+  fill: #FFFFFF !important;
+  font-weight: 700 !important;
+  font-size: 14px !important;
+}
+
+[data-chart-type="origin"] .recharts-cartesian-axis-tick-value {
+  fill: #F3F4F6 !important;
+  font-weight: 600 !important;
+}
+
+[data-chart-type="origin"] rect {
+  filter: brightness(2.0) saturate(2.5) contrast(1.5) !important;
+  stroke: rgba(255, 255, 255, 0.6) !important;
+  stroke-width: 2px !important;
+  opacity: 1 !important;
+}
+
+/* Estilo geral para todos os gráficos melhorados */
+.enhanced-chart {
+  background: rgba(0, 0, 0, 0.1) !important;
+  border-radius: 8px !important;
+}
+
+.enhanced-chart .recharts-bar rect {
+  filter: drop-shadow(0 0 8px currentColor) brightness(1.8) saturate(2.0) !important;
+  opacity: 1 !important;
+}
+
+.enhanced-chart .recharts-cartesian-axis-tick-value {
+  font-weight: 700 !important;
+  font-size: 13px !important;
+  fill: #FFFFFF !important;
+  text-shadow: 0 0 4px rgba(0, 0, 0, 0.8) !important;
+}

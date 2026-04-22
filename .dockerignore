@@ -1,0 +1,97 @@
+# =============================================================================
+# .dockerignore - Otimizar builds Docker
+# =============================================================================
+# Excluir arquivos desnecessários do contexto de build do Docker
+# Isso reduz o tempo de build e o tamanho da imagem final
+# =============================================================================
+
+# Node
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.yarn
+
+# Build outputs (serão recriados durante o build)
+dist
+build
+*.tsbuildinfo
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# IDEs e Editores
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Ambiente
+.env
+.env.local
+.env.*.local
+.env.development
+.env.test
+
+# Logs
+logs
+*.log
+
+# Testes
+coverage
+.nyc_output
+test-results
+
+# Documentação (não necessária na imagem)
+*.md
+!README.md
+docs
+
+# Scripts de desenvolvimento
+*.sh
+*.bat
+*.ps1
+
+# Docker (evitar recursão)
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Arquivos temporários
+temp
+tmp
+*.tmp
+*.bak
+*.cache
+
+# Arquivos de sistema
+Thumbs.db
+Desktop.ini
+
+# Arquivos grandes de exemplo ou dados de teste
+*.xlsx
+*.xls
+*.csv
+*.json
+!package.json
+!package-lock.json
+
+# MCP Servers (não necessário na imagem)
+mcp-supabase
+mcp-supabase-server
+
+# Configurações locais
+.cursor
+terminals
+
+# Arquivos SQL
+*.sql
+
+# Arquivos de texto temporários
+*.txt
+!kenlo-xml-real.txt

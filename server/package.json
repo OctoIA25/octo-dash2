@@ -1,0 +1,26 @@
+{
+  "name": "octo-dash-server",
+  "version": "2.0.0",
+  "type": "module",
+  "description": "OctoDash CRM API Server + Kenlo Proxy + API v1",
+  "main": "proxy-production.js",
+  "scripts": {
+    "start": "node proxy-production.js",
+    "start:api": "node proxy-production.js",
+    "start:kenlo": "node kenlo-proxy.js",
+    "dev": "nodemon proxy-production.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "cheerio": "^1.2.0",
+    "cors": "^2.8.5",
+    "crawlee": "^3.16.0",
+    "express": "^4.18.2",
+    "node-fetch": "^3.3.2",
+    "openai": "^6.34.0",
+    "puppeteer": "^24.40.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}
