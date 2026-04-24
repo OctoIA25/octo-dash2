@@ -96,7 +96,10 @@ export const GestaoSectionWithMetrics = ({
   // Loading state
   if (isLoading) {
     return (
-      <div className="min-h-screen w-full bg-gray-50 dark:bg-slate-950 flex items-center justify-center">
+      <div
+        className="min-h-screen w-full flex items-center justify-center"
+        style={{ backgroundColor: 'hsl(var(--bg-primary))' }}
+      >
         <Card className="bg-bg-card/40 border-bg-secondary/40 shadow-xl p-8">
           <CardContent className="flex flex-col items-center gap-4">
             <Loader2 className="h-12 w-12 animate-spin text-blue-500" />
@@ -115,7 +118,10 @@ export const GestaoSectionWithMetrics = ({
   // Error state
   if (error) {
     return (
-      <div className="min-h-screen w-full bg-gray-50 dark:bg-slate-950 flex items-center justify-center">
+      <div
+        className="min-h-screen w-full flex items-center justify-center"
+        style={{ backgroundColor: 'hsl(var(--bg-primary))' }}
+      >
         <Card className="bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-900/60 shadow-xl p-8 max-w-md">
           <CardContent className="flex flex-col items-center gap-4">
             <AlertCircle className="h-12 w-12 text-red-500" />

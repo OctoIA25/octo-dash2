@@ -352,7 +352,7 @@ export const FunnelStagesBubbleChart = ({ leads, funnelType = 'comprador', subSe
   const etapaComMaisLeads = chartData.labels[chartData.data.indexOf(maxLeads)];
 
   return (
-    <Card className="bg-bg-card/40 border-bg-secondary/40 shadow-xl shadow-black/20 h-full overflow-hidden">
+    <Card className="bg-bg-card border border-border shadow-sm dark:bg-bg-card/40 dark:border-bg-secondary/40 dark:shadow-xl dark:shadow-black/20 h-full overflow-hidden">
       <CardHeader className="pb-1">
         <StandardCardTitle icon={Target}>
           Performance de Conversão
@@ -367,12 +367,12 @@ export const FunnelStagesBubbleChart = ({ leads, funnelType = 'comprador', subSe
             {/* Taxa de Conversão - Exclusivo */}
             <div className="relative group">
               <div className="absolute inset-0 bg-gradient-to-br from-purple-500/10 to-purple-600/5 rounded-xl blur-sm group-hover:blur-md transition-all duration-300"></div>
-              <div className="relative bg-black/40 backdrop-blur-sm rounded-xl p-3 border border-purple-500/20 hover:border-purple-500/40 transition-all duration-300">
+              <div className="relative bg-white/80 dark:bg-black/40 backdrop-blur-sm rounded-xl p-3 border border-purple-300/60 dark:border-purple-500/20 hover:border-purple-500/60 dark:hover:border-purple-500/40 transition-all duration-300">
                 <div className="flex flex-col items-center justify-center">
                   <div className="text-3xl font-black bg-gradient-to-br from-purple-400 to-purple-600 bg-clip-text text-transparent mb-1">
                     {chartData.totalLeads > 0 ? ((chartData.exclusivo / chartData.totalLeads) * 100).toFixed(1) : '0.0'}%
                   </div>
-                  <div className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-slate-400 font-semibold">Taxa de Conversão</div>
+                  <div className="text-[10px] uppercase tracking-wider text-text-secondary dark:text-slate-400 font-semibold">Taxa de Conversão</div>
                   <div className="text-xs text-purple-400/80 mt-1 font-medium">
                     {chartData.exclusivo} Exclusividades Assinadas
                   </div>
@@ -383,12 +383,12 @@ export const FunnelStagesBubbleChart = ({ leads, funnelType = 'comprador', subSe
             {/* Taxa de Conversão - Não Exclusivo */}
             <div className="relative group">
               <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-cyan-600/5 rounded-xl blur-sm group-hover:blur-md transition-all duration-300"></div>
-              <div className="relative bg-black/40 backdrop-blur-sm rounded-xl p-3 border border-blue-500/20 hover:border-blue-500/40 transition-all duration-300">
+              <div className="relative bg-white/80 dark:bg-black/40 backdrop-blur-sm rounded-xl p-3 border border-blue-300/60 dark:border-blue-500/20 hover:border-blue-500/60 dark:hover:border-blue-500/40 transition-all duration-300">
                 <div className="flex flex-col items-center justify-center">
                   <div className="text-3xl font-black bg-gradient-to-br from-blue-400 to-cyan-600 bg-clip-text text-transparent mb-1">
                     {chartData.totalLeads > 0 ? ((chartData.naoExclusivo / chartData.totalLeads) * 100).toFixed(1) : '0.0'}%
                   </div>
-                  <div className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-slate-400 font-semibold">Taxa de Conversão</div>
+                  <div className="text-[10px] uppercase tracking-wider text-text-secondary dark:text-slate-400 font-semibold">Taxa de Conversão</div>
                   <div className="text-xs text-blue-400/80 mt-1 font-medium">
                     {chartData.naoExclusivo} Imóveis Sem Exclusividade
                   </div>
@@ -399,12 +399,12 @@ export const FunnelStagesBubbleChart = ({ leads, funnelType = 'comprador', subSe
             {/* Total de Vendedores/Locatários */}
             <div className="relative group">
               <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/10 to-green-600/5 rounded-xl blur-sm group-hover:blur-md transition-all duration-300"></div>
-              <div className="relative bg-black/40 backdrop-blur-sm rounded-xl p-3 border border-emerald-500/20 hover:border-emerald-500/40 transition-all duration-300">
+              <div className="relative bg-white/80 dark:bg-black/40 backdrop-blur-sm rounded-xl p-3 border border-emerald-300/60 dark:border-emerald-500/20 hover:border-emerald-500/60 dark:hover:border-emerald-500/40 transition-all duration-300">
                 <div className="flex flex-col items-center justify-center">
                   <div className="text-3xl font-black bg-gradient-to-br from-emerald-400 to-green-600 bg-clip-text text-transparent mb-1">
                     {chartData.totalLeads}
                   </div>
-                  <div className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-slate-400 font-semibold">Total</div>
+                  <div className="text-[10px] uppercase tracking-wider text-text-secondary dark:text-slate-400 font-semibold">Total</div>
                   <div className="text-xs text-emerald-400/80 mt-1 font-medium">
                     {proprietarioType === 'vendedor' ? 'Total de Vendedores' : 'Total de Locatários'}
                   </div>
@@ -418,12 +418,12 @@ export const FunnelStagesBubbleChart = ({ leads, funnelType = 'comprador', subSe
             {/* Taxa de Conversão - Visitas */}
             <div className="relative group">
               <div className="absolute inset-0 bg-gradient-to-br from-purple-500/10 to-purple-600/5 rounded-xl blur-sm group-hover:blur-md transition-all duration-300"></div>
-              <div className="relative bg-black/40 backdrop-blur-sm rounded-xl p-3 border border-purple-500/20 hover:border-purple-500/40 transition-all duration-300">
+              <div className="relative bg-white/80 dark:bg-black/40 backdrop-blur-sm rounded-xl p-3 border border-purple-300/60 dark:border-purple-500/20 hover:border-purple-500/60 dark:hover:border-purple-500/40 transition-all duration-300">
                 <div className="flex flex-col items-center justify-center">
                   <div className="text-3xl font-black bg-gradient-to-br from-purple-400 to-purple-600 bg-clip-text text-transparent mb-1">
                     {chartData.taxaConversaoVisitas}%
                   </div>
-                  <div className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-slate-400 font-semibold">Taxa de Conversão</div>
+                  <div className="text-[10px] uppercase tracking-wider text-text-secondary dark:text-slate-400 font-semibold">Taxa de Conversão</div>
                   <div className="text-xs text-purple-400/80 mt-1 font-medium">
                     {chartData.visitasRealizadas} Visitas Agendadas
                   </div>
@@ -434,12 +434,12 @@ export const FunnelStagesBubbleChart = ({ leads, funnelType = 'comprador', subSe
             {/* Taxa de Conversão - Propostas */}
             <div className="relative group">
               <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-cyan-600/5 rounded-xl blur-sm group-hover:blur-md transition-all duration-300"></div>
-              <div className="relative bg-black/40 backdrop-blur-sm rounded-xl p-3 border border-blue-500/20 hover:border-blue-500/40 transition-all duration-300">
+              <div className="relative bg-white/80 dark:bg-black/40 backdrop-blur-sm rounded-xl p-3 border border-blue-300/60 dark:border-blue-500/20 hover:border-blue-500/60 dark:hover:border-blue-500/40 transition-all duration-300">
                 <div className="flex flex-col items-center justify-center">
                   <div className="text-3xl font-black bg-gradient-to-br from-blue-400 to-cyan-600 bg-clip-text text-transparent mb-1">
                     {chartData.taxaConversaoProposta}%
                   </div>
-                  <div className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-slate-400 font-semibold">Taxa de Conversão</div>
+                  <div className="text-[10px] uppercase tracking-wider text-text-secondary dark:text-slate-400 font-semibold">Taxa de Conversão</div>
                   <div className="text-xs text-blue-400/80 mt-1 font-medium truncate max-w-full">
                     {chartData.propostasAssinadas} Propostas Assinadas
                   </div>
@@ -455,7 +455,7 @@ export const FunnelStagesBubbleChart = ({ leads, funnelType = 'comprador', subSe
         </div>
 
         {/* Info adicional - Minimalista */}
-        <div className="mt-3 flex items-center justify-center gap-2 text-[10px] text-gray-500 dark:text-slate-400">
+        <div className="mt-3 flex items-center justify-center gap-2 text-[10px] text-text-secondary dark:text-slate-400">
           <TrendingUp className="h-3 w-3 text-purple-400/60" />
           <span className="uppercase tracking-wider">
             Etapa Dominante: <span className="text-purple-400 font-bold">{etapaComMaisLeads}</span>

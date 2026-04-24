@@ -56,8 +56,8 @@ export const NotionTabs = ({
     // Aba ATIVA - Destaque máximo com gradiente AZUL vibrante, escala maior, sombra forte e borda branca
     const activeStyle = 'bg-gradient-to-r from-blue-500 via-blue-600 to-cyan-600 text-white shadow-[0_0_25px_rgba(59,130,246,0.6)] scale-110 hover:scale-[1.12] hover:shadow-[0_0_35px_rgba(59,130,246,0.8)] ring-2 ring-white/50 border-2 border-white/30';
     
-    // Abas INATIVAS - Muito apagadas/opacas para contraste máximo
-    const inactiveStyle = 'bg-gray-700/30 text-gray-400/80 shadow-sm hover:bg-gray-600/40 hover:text-gray-300 hover:shadow-md hover:scale-[1.03] border border-gray-600/30 opacity-60 hover:opacity-80';
+    // Abas INATIVAS - Light: cinza claro sobre fundo claro / Dark: apagadas escuras
+    const inactiveStyle = 'bg-bg-secondary/70 text-text-secondary shadow-sm hover:bg-bg-hover hover:text-text-primary hover:shadow-md hover:scale-[1.03] border border-border opacity-80 hover:opacity-100 dark:bg-gray-700/30 dark:text-gray-400/80 dark:hover:bg-gray-600/40 dark:hover:text-gray-300 dark:border-gray-600/30 dark:opacity-60 dark:hover:opacity-80';
     
     switch (variant) {
       case 'minimal':
@@ -92,9 +92,9 @@ export const NotionTabs = ({
               {tab.count !== undefined && (
                 <span className={`
                   px-2.5 py-1 text-xs rounded-full font-extrabold transition-all duration-300
-                  ${isActive 
-                    ? 'bg-white text-blue-600 shadow-lg ring-2 ring-blue-200' 
-                    : 'bg-gray-800/50 text-gray-500 border border-gray-600/30'
+                  ${isActive
+                    ? 'bg-white text-blue-600 shadow-lg ring-2 ring-blue-200'
+                    : 'bg-bg-hover text-text-secondary border border-border dark:bg-gray-800/50 dark:text-gray-500 dark:border-gray-600/30'
                   }
                 `}>
                   {tab.count}

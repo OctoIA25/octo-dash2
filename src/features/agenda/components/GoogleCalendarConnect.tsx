@@ -127,18 +127,18 @@ export const GoogleCalendarConnect = () => {
                     Desconectar
                   </Button>
                 </AlertDialogTrigger>
-                <AlertDialogContent className="bg-card-dark border-border-subtle">
+                <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle className="text-white">
+                    <AlertDialogTitle className="text-slate-900 dark:text-white">
                       Desconectar Google Calendar?
                     </AlertDialogTitle>
-                    <AlertDialogDescription className="text-gray-400 dark:text-slate-500">
+                    <AlertDialogDescription className="text-slate-500 dark:text-slate-400">
                       Seus eventos não serão mais sincronizados com o Google Calendar.
                       Os eventos já criados no Google Calendar não serão deletados.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
-                    <AlertDialogCancel className="bg-bg-secondary border-border-subtle text-white hover:bg-bg-secondary/80">
+                    <AlertDialogCancel>
                       Cancelar
                     </AlertDialogCancel>
                     <AlertDialogAction

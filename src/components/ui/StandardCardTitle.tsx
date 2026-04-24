@@ -19,16 +19,18 @@ interface StandardCardTitleProps {
 
 /**
  * Componente de título padronizado para todos os cards
- * Estilo: Ícone roxo + Texto com gradiente roxo → azul claro
- * Baseado no design "Funil de Proprietários"
+ * Estilo: slate neutro, alinhado com o design da área "Início" / SectionHeader
  */
 export const StandardCardTitle = ({ icon: Icon, children, className = '' }: StandardCardTitleProps) => {
   return (
     <CardTitle className={`flex items-center gap-2.5 ${className}`}>
       {Icon && (
-        <Icon className="h-5 w-5 text-[#a78bfa]" strokeWidth={2} />
+        <Icon
+          className="h-[18px] w-[18px] text-slate-400 dark:text-slate-500 shrink-0"
+          strokeWidth={2}
+        />
       )}
-      <span className="bg-gradient-to-r from-[#a78bfa] via-[#8b9bfa] to-[#7dd3fc] bg-clip-text text-transparent font-semibold text-lg tracking-normal title-card">
+      <span className="text-[15px] font-semibold text-slate-900 dark:text-slate-100 tracking-tight">
         {children}
       </span>
     </CardTitle>

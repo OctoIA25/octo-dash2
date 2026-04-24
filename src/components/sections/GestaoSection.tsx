@@ -164,7 +164,10 @@ export const GestaoSection = ({
 
   // Dashboard completa de gestão com fundo limpo e transições harmônicas
   return (
-    <div className="min-h-screen w-full bg-gray-50 dark:bg-slate-950 overflow-x-hidden transition-all duration-300 ease-in-out">
+    <div
+      className="min-h-screen w-full overflow-x-hidden transition-all duration-300 ease-in-out"
+      style={{ backgroundColor: 'hsl(var(--bg-primary))' }}
+    >
       <SectionHeader
         title={currentSectionTitle}
         subtitle={currentSectionSubtitle}

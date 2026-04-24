@@ -394,7 +394,7 @@ export const VendedoresFunnelChart = ({ leads: propsLeads }: VendedoresFunnelCha
   };
 
   return (
-    <Card className="bg-bg-card/40 border-bg-secondary/40 shadow-xl shadow-black/20 h-full overflow-hidden transition-all duration-300 ease-in-out">
+    <Card className="bg-bg-card border border-border shadow-sm dark:bg-bg-card/40 dark:border-bg-secondary/40 dark:shadow-xl dark:shadow-black/20 h-full overflow-hidden transition-all duration-300 ease-in-out">
       <CardHeader className="pb-3 flex flex-row items-center justify-between">
         <StandardCardTitle icon={TrendingDown}>
           Funil de Proprietários

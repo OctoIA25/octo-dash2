@@ -362,8 +362,8 @@ export const LeadsTable = ({ leads, newLeadsCount = 0, showGetAllButton = false,
     <Card className="bg-bg-card/60 backdrop-blur-sm card-neon">
       <div className="px-6 py-5 border-b border-bg-secondary/40">
         <div className="flex justify-between items-center">
-          <h3 className="text-2xl font-bold flex items-center gap-3">
-            <span className="bg-gradient-to-r from-[#a78bfa] via-[#8b9bfa] to-[#7dd3fc] bg-clip-text text-transparent font-bold tracking-wide">
+          <h3 className="text-[15px] font-semibold flex items-center gap-3">
+            <span className="text-slate-900 dark:text-slate-100 tracking-tight">
               Todos os Leads
             </span>
             {newLeadsCount > 0 && (

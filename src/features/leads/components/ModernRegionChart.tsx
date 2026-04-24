@@ -214,9 +214,9 @@ export const ModernRegionChart = ({ leads, tipoNegocioFilter = 'todos', onFilter
                   Ver Todos
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-w-4xl bg-neutral-900 border-gray-800 text-white">
-                <DialogHeader className="flex flex-row items-center justify-between pb-4 border-b border-gray-800">
-                  <DialogTitle className="text-xl font-bold flex items-center gap-2">
+              <DialogContent className="max-w-4xl bg-background border-border text-foreground dark:bg-neutral-900 dark:border-gray-800 dark:text-white">
+                <DialogHeader className="flex flex-row items-center justify-between pb-4 border-b border-slate-200 dark:border-gray-800">
+                  <DialogTitle className="text-xl font-bold flex items-center gap-2 text-slate-900 dark:text-white">
                     <MapPin className="h-5 w-5 text-blue-500" />
                     Todos os Condomínios de Interesse
                   </DialogTitle>
@@ -230,52 +230,52 @@ export const ModernRegionChart = ({ leads, tipoNegocioFilter = 'todos', onFilter
                   <div className="grid grid-cols-4 gap-4 mb-6">
                     <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 text-center">
                       <div className="text-2xl font-bold text-blue-400">{regionStats.all.length}</div>
-                      <div className="text-xs text-gray-400 uppercase">Condomínios Identificados</div>
+                      <div className="text-xs text-slate-500 dark:text-gray-400 uppercase">Condomínios Identificados</div>
                     </div>
                     <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-3 text-center">
                       <div className="text-2xl font-bold text-orange-400">
                         {regionStats.all.reduce((acc, curr) => acc + curr.quentes, 0)}
                       </div>
-                      <div className="text-xs text-gray-400 uppercase">Total Quentes</div>
+                      <div className="text-xs text-slate-500 dark:text-gray-400 uppercase">Total Quentes</div>
                     </div>
                     <div className="bg-purple-500/10 border border-purple-500/20 rounded-lg p-3 text-center">
                       <div className="text-2xl font-bold text-purple-400">
                         {regionStats.all.reduce((acc, curr) => acc + curr.visitas, 0)}
                       </div>
-                      <div className="text-xs text-gray-400 uppercase">Total Visitas</div>
+                      <div className="text-xs text-slate-500 dark:text-gray-400 uppercase">Total Visitas</div>
                     </div>
                     <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-3 text-center">
                       <div className="text-2xl font-bold text-green-400">
                         {regionStats.all.reduce((acc, curr) => acc + curr.negociacoes, 0)}
                       </div>
-                      <div className="text-xs text-gray-400 uppercase">Total Negociações</div>
+                      <div className="text-xs text-slate-500 dark:text-gray-400 uppercase">Total Negociações</div>
                     </div>
                   </div>
 
-                  <ScrollArea className="h-[400px] rounded-md border border-gray-800">
+                  <ScrollArea className="h-[400px] rounded-md border border-slate-200 dark:border-gray-800">
                     <Table>
-                      <TableHeader className="bg-black/40 sticky top-0 z-10">
-                        <TableRow className="border-gray-800 hover:bg-transparent">
-                          <TableHead className="text-gray-300 w-[50px] text-center">#</TableHead>
-                          <TableHead className="text-gray-300">Condomínio</TableHead>
-                          <TableHead className="text-gray-300 text-center">Leads</TableHead>
-                          <TableHead className="text-gray-300 text-center">Quentes</TableHead>
-                          <TableHead className="text-gray-300 text-center">Visitas</TableHead>
-                          <TableHead className="text-gray-300 text-center">Negociações</TableHead>
-                          <TableHead className="text-gray-300 text-center">% Leads</TableHead>
+                      <TableHeader className="bg-slate-50 dark:bg-black/40 sticky top-0 z-10">
+                        <TableRow className="border-slate-200 dark:border-gray-800 hover:bg-transparent">
+                          <TableHead className="text-slate-600 dark:text-gray-300 w-[50px] text-center">#</TableHead>
+                          <TableHead className="text-slate-600 dark:text-gray-300">Condomínio</TableHead>
+                          <TableHead className="text-slate-600 dark:text-gray-300 text-center">Leads</TableHead>
+                          <TableHead className="text-slate-600 dark:text-gray-300 text-center">Quentes</TableHead>
+                          <TableHead className="text-slate-600 dark:text-gray-300 text-center">Visitas</TableHead>
+                          <TableHead className="text-slate-600 dark:text-gray-300 text-center">Negociações</TableHead>
+                          <TableHead className="text-slate-600 dark:text-gray-300 text-center">% Leads</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {regionStats.all.map((item, index) => (
-                          <TableRow key={index} className="border-gray-800 hover:bg-white/5">
-                            <TableCell className="text-center font-medium text-gray-500">{index + 1}</TableCell>
-                            <TableCell className="font-medium text-white">{item.nome}</TableCell>
-                            <TableCell className="text-center text-blue-400 font-bold">{item.total}</TableCell>
-                            <TableCell className="text-center text-orange-400 font-bold">{item.quentes}</TableCell>
-                            <TableCell className="text-center text-purple-400 font-bold">{item.visitas}</TableCell>
-                            <TableCell className="text-center text-green-400 font-bold">{item.negociacoes}</TableCell>
+                          <TableRow key={index} className="border-slate-200 dark:border-gray-800 hover:bg-slate-50 dark:hover:bg-white/5">
+                            <TableCell className="text-center font-medium text-slate-500 dark:text-gray-500">{index + 1}</TableCell>
+                            <TableCell className="font-medium text-slate-900 dark:text-white">{item.nome}</TableCell>
+                            <TableCell className="text-center text-blue-600 dark:text-blue-400 font-bold">{item.total}</TableCell>
+                            <TableCell className="text-center text-orange-600 dark:text-orange-400 font-bold">{item.quentes}</TableCell>
+                            <TableCell className="text-center text-purple-600 dark:text-purple-400 font-bold">{item.visitas}</TableCell>
+                            <TableCell className="text-center text-green-600 dark:text-green-400 font-bold">{item.negociacoes}</TableCell>
                             <TableCell className="text-center">
-                              <span className="text-xs font-bold text-gray-400">
+                              <span className="text-xs font-bold text-slate-500 dark:text-gray-400">
                                 {item.percentual.toFixed(1)}%
                               </span>
                             </TableCell>

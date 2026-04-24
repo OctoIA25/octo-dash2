@@ -67,9 +67,10 @@ export const LogoutConfirmModal = ({ isOpen, onClose }: LogoutConfirmModalProps)
 
       {/* Modal */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-        <div 
+        <div
           className={`
-            bg-neutral-900 border border-neutral-800 rounded-2xl shadow-2xl w-[340px] max-w-[92vw]
+            bg-white border border-slate-200 rounded-2xl shadow-2xl w-[340px] max-w-[92vw]
+            dark:bg-neutral-900 dark:border-neutral-800
             pointer-events-auto
             transform transition-all duration-300 ease-out
             ${isVisible ? 'scale-100 opacity-100 translate-y-0' : 'scale-95 opacity-0 translate-y-4'}
@@ -77,23 +78,23 @@ export const LogoutConfirmModal = ({ isOpen, onClose }: LogoutConfirmModalProps)
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="flex items-start justify-between p-6 border-b border-neutral-800">
+          <div className="flex items-start justify-between p-6 border-b border-slate-200 dark:border-neutral-800">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center">
-                <AlertCircle className="w-6 h-6 text-red-400" />
+                <AlertCircle className="w-6 h-6 text-red-500 dark:text-red-400" />
               </div>
               <div>
-                <h2 className="text-xl font-bold text-white">Confirmar Saída</h2>
-                <p className="text-sm text-gray-400 mt-0.5">Você tem certeza?</p>
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Confirmar Saída</h2>
+                <p className="text-sm text-slate-500 dark:text-gray-400 mt-0.5">Você tem certeza?</p>
               </div>
             </div>
-            
+
             <Button
               variant="ghost"
               size="icon"
               onClick={handleClose}
               disabled={isLoggingOut}
-              className="h-8 w-8 rounded-lg hover:bg-neutral-800 text-gray-400 hover:text-white transition-colors"
+              className="h-8 w-8 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 dark:text-gray-400 dark:hover:text-white dark:hover:bg-neutral-800 transition-colors"
             >
               <X className="h-4 w-4" />
             </Button>
@@ -101,12 +102,12 @@ export const LogoutConfirmModal = ({ isOpen, onClose }: LogoutConfirmModalProps)
 
           {/* Content */}
           <div className="p-6 space-y-4">
-            <div className="bg-neutral-800/50 border border-neutral-700/50 rounded-xl p-4">
-              <p className="text-gray-300 text-sm leading-relaxed">
+            <div className="bg-slate-50 border border-slate-200 dark:bg-neutral-800/50 dark:border-neutral-700/50 rounded-xl p-4">
+              <p className="text-slate-700 dark:text-gray-300 text-sm leading-relaxed">
                 Você está prestes a sair da sua conta{' '}
-                <span className="font-semibold text-white">{user?.name}</span>.
+                <span className="font-semibold text-slate-900 dark:text-white">{user?.name}</span>.
               </p>
-              <p className="text-gray-400 text-xs mt-2">
+              <p className="text-slate-500 dark:text-gray-400 text-xs mt-2">
                 Todas as configurações não salvas serão perdidas.
               </p>
             </div>
@@ -114,26 +115,26 @@ export const LogoutConfirmModal = ({ isOpen, onClose }: LogoutConfirmModalProps)
             {/* Sessão atual */}
             {user && (
               <div className="space-y-2 text-xs">
-                <div className="flex items-center justify-between text-gray-400">
+                <div className="flex items-center justify-between text-slate-500 dark:text-gray-400">
                   <span>Tipo de conta:</span>
-                  <span className="text-gray-300 font-medium">
+                  <span className="text-slate-700 dark:text-gray-300 font-medium">
                     {user.role === 'gestao' ? 'Administrador' : 'Corretor'}
                   </span>
                 </div>
                 {user.corretor && (
-                  <div className="flex items-center justify-between text-gray-400">
+                  <div className="flex items-center justify-between text-slate-500 dark:text-gray-400">
                     <span>Corretor:</span>
-                    <span className="text-gray-300 font-medium">{user.corretor}</span>
+                    <span className="text-slate-700 dark:text-gray-300 font-medium">{user.corretor}</span>
                   </div>
                 )}
                 {user.equipe && user.equipe !== 'admin' && (
-                  <div className="flex items-center justify-between text-gray-400">
+                  <div className="flex items-center justify-between text-slate-500 dark:text-gray-400">
                     <span>Equipe:</span>
                     <span className={`font-medium capitalize ${
-                      user.equipe === 'verde' ? 'text-green-400' :
-                      user.equipe === 'vermelha' ? 'text-red-400' :
-                      user.equipe === 'amarela' ? 'text-yellow-400' :
-                      user.equipe === 'azul' ? 'text-blue-400' : 'text-gray-300'
+                      user.equipe === 'verde' ? 'text-green-600 dark:text-green-400' :
+                      user.equipe === 'vermelha' ? 'text-red-600 dark:text-red-400' :
+                      user.equipe === 'amarela' ? 'text-yellow-600 dark:text-yellow-400' :
+                      user.equipe === 'azul' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-700 dark:text-gray-300'
                     }`}>
                       {user.equipe}
                     </span>
@@ -144,12 +145,12 @@ export const LogoutConfirmModal = ({ isOpen, onClose }: LogoutConfirmModalProps)
           </div>
 
           {/* Footer */}
-          <div className="flex flex-col sm:flex-row gap-3 p-6 border-t border-neutral-800 bg-neutral-900/50">
+          <div className="flex flex-col sm:flex-row gap-3 p-6 border-t border-slate-200 bg-slate-50 dark:border-neutral-800 dark:bg-neutral-900/50">
             <Button
               variant="outline"
               onClick={handleClose}
               disabled={isLoggingOut}
-              className="w-full sm:flex-1 h-11 border-neutral-700 hover:bg-neutral-800 text-gray-300 hover:text-white transition-all duration-200"
+              className="w-full sm:flex-1 h-11 border-slate-200 text-slate-700 hover:bg-slate-100 hover:text-slate-900 dark:border-neutral-700 dark:text-gray-300 dark:hover:bg-neutral-800 dark:hover:text-white transition-all duration-200"
             >
               Cancelar
             </Button>

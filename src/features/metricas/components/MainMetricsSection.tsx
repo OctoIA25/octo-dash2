@@ -836,7 +836,7 @@ export const MainMetricsSection = ({
       {/* ========== BARRA DE FILTROS - Acima dos Cards ========== */}
       {!(activeSection === 'proprietarios' && activeProprietariosSubSection === 'estudo-mercado') && (
         <div className="px-4 py-2">
-          <div className="bg-neutral-800/40 backdrop-blur-md rounded-xl border border-gray-600/40 shadow-lg p-3">
+          <div className="bg-bg-card/60 dark:bg-neutral-800/40 backdrop-blur-md rounded-xl border border-border dark:border-gray-600/40 shadow-sm dark:shadow-lg p-3">
             <div className="flex items-center justify-between gap-4 flex-wrap">
               
               {/* Filtros de Equipe e Corretor - apenas em Atendimento (Cliente Interessado) */}
@@ -863,9 +863,9 @@ export const MainMetricsSection = ({
                         </div>
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-64 bg-neutral-900 border border-gray-700/50 p-3 shadow-2xl" align="start">
+                    <PopoverContent className="w-64 bg-popover border border-border p-3 shadow-xl dark:bg-neutral-900 dark:border-gray-700/50 dark:shadow-2xl" align="start">
                       <div className="space-y-2">
-                        <div className="text-sm font-medium text-white mb-2">Filtrar por Equipe</div>
+                        <div className="text-sm font-medium text-foreground dark:text-white mb-2">Filtrar por Equipe</div>
                         {[
                           { value: 'todas', label: 'Todas Equipes', emoji: '👥' },
                           { value: 'verde', label: 'Verde', emoji: '🟢' },
@@ -910,9 +910,9 @@ export const MainMetricsSection = ({
                         </div>
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-80 bg-neutral-900 border border-gray-700/50 p-3 shadow-2xl" align="start">
+                    <PopoverContent className="w-80 bg-popover border border-border p-3 shadow-xl dark:bg-neutral-900 dark:border-gray-700/50 dark:shadow-2xl" align="start">
                       <div className="space-y-2">
-                        <div className="text-sm font-medium text-white mb-2">Filtrar por Corretor</div>
+                        <div className="text-sm font-medium text-foreground dark:text-white mb-2">Filtrar por Corretor</div>
                         <div className="max-h-60 overflow-y-auto space-y-1">
                           <button
                             onClick={() => setAtendimentoCorretorFilter('todos')}
@@ -1044,7 +1044,7 @@ export const MainMetricsSection = ({
                       </div>
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-72 bg-neutral-900 border border-gray-700/50 p-3 shadow-2xl" align="end">
+                  <PopoverContent className="w-72 bg-popover border border-border p-3 shadow-xl dark:bg-neutral-900 dark:border-gray-700/50 dark:shadow-2xl" align="end">
                     <div className="space-y-3">
                       {/* Filtros Rápidos */}
                       <div className="grid grid-cols-3 gap-1.5">
@@ -1201,12 +1201,12 @@ export const MainMetricsSection = ({
             
             return metricsToShow.filter(m => m !== undefined).map((metric, index) => {
               const colorClasses = {
-                green: 'text-emerald-400 border-gray-500/60 bg-neutral-800/25 hover:border-emerald-400/50 hover:shadow-emerald-500/15 hover:bg-emerald-500/8',
-                purple: 'text-purple-400 border-gray-500/60 bg-neutral-800/25 hover:border-purple-400/50 hover:shadow-purple-500/15 hover:bg-purple-500/8',
-                blue: 'text-blue-400 border-gray-500/60 bg-neutral-800/25 hover:border-blue-400/50 hover:shadow-blue-500/15 hover:bg-blue-500/8',
-                orange: 'text-orange-400 border-gray-500/60 bg-neutral-800/25 hover:border-orange-400/50 hover:shadow-orange-500/15 hover:bg-orange-500/8',
-                pink: 'text-pink-400 border-gray-500/60 bg-neutral-800/25 hover:border-pink-400/50 hover:shadow-pink-500/15 hover:bg-pink-500/8',
-                emerald: 'text-emerald-400 border-gray-500/60 bg-neutral-800/25 hover:border-emerald-400/50 hover:shadow-emerald-500/15 hover:bg-emerald-500/8'
+                green: 'border-emerald-200 bg-emerald-50/60 hover:border-emerald-400/60 hover:shadow-emerald-500/15 hover:bg-emerald-100/60 dark:border-gray-500/60 dark:bg-neutral-800/25 dark:hover:border-emerald-400/50 dark:hover:bg-emerald-500/8',
+                purple: 'border-purple-200 bg-purple-50/60 hover:border-purple-400/60 hover:shadow-purple-500/15 hover:bg-purple-100/60 dark:border-gray-500/60 dark:bg-neutral-800/25 dark:hover:border-purple-400/50 dark:hover:bg-purple-500/8',
+                blue: 'border-blue-200 bg-blue-50/60 hover:border-blue-400/60 hover:shadow-blue-500/15 hover:bg-blue-100/60 dark:border-gray-500/60 dark:bg-neutral-800/25 dark:hover:border-blue-400/50 dark:hover:bg-blue-500/8',
+                orange: 'border-orange-200 bg-orange-50/60 hover:border-orange-400/60 hover:shadow-orange-500/15 hover:bg-orange-100/60 dark:border-gray-500/60 dark:bg-neutral-800/25 dark:hover:border-orange-400/50 dark:hover:bg-orange-500/8',
+                pink: 'border-pink-200 bg-pink-50/60 hover:border-pink-400/60 hover:shadow-pink-500/15 hover:bg-pink-100/60 dark:border-gray-500/60 dark:bg-neutral-800/25 dark:hover:border-pink-400/50 dark:hover:bg-pink-500/8',
+                emerald: 'border-emerald-200 bg-emerald-50/60 hover:border-emerald-400/60 hover:shadow-emerald-500/15 hover:bg-emerald-100/60 dark:border-gray-500/60 dark:bg-neutral-800/25 dark:hover:border-emerald-400/50 dark:hover:bg-emerald-500/8'
               };
               
               const colorClass = colorClasses[metric.color as keyof typeof colorClasses] || colorClasses.green;
@@ -1218,18 +1218,18 @@ export const MainMetricsSection = ({
               >
                 <CardContent className="p-5">
                   <div className="text-center space-y-2">
-                    <AnimatedNumber 
-                      value={metric.value} 
+                    <AnimatedNumber
+                      value={metric.value}
                       className={`text-2xl font-bold transition-all duration-500 ${
-                        metric.color === 'green' ? 'text-emerald-400' : 
-                        metric.color === 'purple' ? 'text-purple-400' : 
-                        metric.color === 'blue' ? 'text-blue-400' : 
-                        metric.color === 'orange' ? 'text-orange-400' :
-                        metric.color === 'pink' ? 'text-pink-400' :
-                        metric.color === 'emerald' ? 'text-emerald-400' : 'text-emerald-400'
+                        metric.color === 'green' ? 'text-emerald-600 dark:text-emerald-400' :
+                        metric.color === 'purple' ? 'text-purple-600 dark:text-purple-400' :
+                        metric.color === 'blue' ? 'text-blue-600 dark:text-blue-400' :
+                        metric.color === 'orange' ? 'text-orange-600 dark:text-orange-400' :
+                        metric.color === 'pink' ? 'text-pink-600 dark:text-pink-400' :
+                        metric.color === 'emerald' ? 'text-emerald-600 dark:text-emerald-400' : 'text-emerald-600 dark:text-emerald-400'
                       }`}
                     />
-                    <p className="text-gray-300 text-sm font-semibold">{metric.label}</p>
+                    <p className="text-text-secondary dark:text-gray-300 text-sm font-semibold">{metric.label}</p>
                   </div>
                 </CardContent>
               </Card>
@@ -1241,7 +1241,7 @@ export const MainMetricsSection = ({
 
       {/* Seção integrada com botões e conteúdo (não mostrar em estudo-mercado) */}
       {!(activeSection === 'proprietarios' && activeProprietariosSubSection === 'estudo-mercado') && (
-        <div className="bg-neutral-800/30 backdrop-blur-md rounded-2xl border border-gray-500/60 shadow-xl shadow-black/20 py-4 max-w-full overflow-hidden mx-4">
+        <div className="bg-bg-card/60 dark:bg-neutral-800/30 backdrop-blur-md rounded-2xl border border-border dark:border-gray-500/60 shadow-sm dark:shadow-xl dark:shadow-black/20 py-4 max-w-full overflow-hidden mx-4">
 
         {/* Conteúdo Dinâmico */}
         <div className="transition-all duration-500 ease-in-out">
