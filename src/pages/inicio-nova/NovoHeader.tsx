@@ -10,6 +10,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { PageTabs } from './PageTabs';
 import { LogoutConfirmModal } from '@/components/LogoutConfirmModal';
 import { useHeaderSlot } from '@/contexts/HeaderSlotContext';
+import { useNovoActions } from '@/contexts/NovoActionsContext';
 
 function getInitials(name: string): string {
   return (
@@ -31,7 +32,34 @@ export function NovoHeader() {
 
   const [profileOpen, setProfileOpen] = useState(false);
   const [logoutOpen, setLogoutOpen] = useState(false);
+  const [novoOpen, setNovoOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
+  const novoRef = useRef<HTMLDivElement>(null);
+
+  const { actions: novoActions } = useNovoActions();
+  const hasSingleAction = novoActions.length === 1;
+  const hasMultipleActions = novoActions.length > 1;
+
+  useEffect(() => {
+    if (!novoOpen) return;
+    const onClick = (event: MouseEvent) => {
+      if (novoRef.current && !novoRef.current.contains(event.target as Node)) {
+        setNovoOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [novoOpen]);
+
+  const handleNovoClick = () => {
+    if (hasSingleAction) {
+      novoActions[0].onClick();
+      return;
+    }
+    if (hasMultipleActions) {
+      setNovoOpen((prev) => !prev);
+    }
+  };
 
   useEffect(() => {
     if (!profileOpen) return;
@@ -70,13 +98,57 @@ export function NovoHeader() {
       {slot ?? <PageTabs />}
 
       <div className="flex items-center gap-3 ml-auto">
-        <button
-          type="button"
-          className="h-9 px-3.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[13px] font-semibold flex items-center gap-1.5 transition-colors"
-        >
-          <Plus className="w-4 h-4" strokeWidth={2.2} />
-          Novo
-        </button>
+        {novoActions.length > 0 && (
+          <div ref={novoRef} className="relative">
+            <button
+              type="button"
+              onClick={handleNovoClick}
+              aria-haspopup={hasMultipleActions ? 'menu' : undefined}
+              aria-expanded={hasMultipleActions ? novoOpen : undefined}
+              title={hasSingleAction ? novoActions[0].label : 'Criar novo'}
+              className="h-9 px-3.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[13px] font-semibold flex items-center gap-1.5 transition-colors"
+            >
+              <Plus className="w-4 h-4" strokeWidth={2.2} />
+              Novo
+              {hasMultipleActions && (
+                <ChevronDown
+                  className={`w-3.5 h-3.5 transition-transform ${novoOpen ? 'rotate-180' : ''}`}
+                  strokeWidth={2.2}
+                />
+              )}
+            </button>
+
+            {hasMultipleActions && novoOpen && (
+              <div
+                role="menu"
+                className="absolute right-0 top-[calc(100%+6px)] min-w-[220px] rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl py-1.5 z-50"
+              >
+                {novoActions.map((action) => {
+                  const Icon = action.icon;
+                  return (
+                    <button
+                      key={action.id}
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setNovoOpen(false);
+                        action.onClick();
+                      }}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left"
+                    >
+                      {Icon ? (
+                        <Icon className="w-4 h-4 text-slate-500 dark:text-slate-400" strokeWidth={2} />
+                      ) : (
+                        <Plus className="w-4 h-4 text-slate-500 dark:text-slate-400" strokeWidth={2} />
+                      )}
+                      <span className="font-medium">{action.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         <button
           type="button"

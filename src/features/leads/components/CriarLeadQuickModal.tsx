@@ -10,7 +10,12 @@ import { X, Plus, Save, User as UserIcon, Phone, Mail, Home, Loader2, Thermomete
 import { supabase } from '@/lib/supabaseClient';
 import { leadsEventEmitter } from '@/lib/leadsEventEmitter';
 import { useToast } from '@/hooks/use-toast';
-import type { KanbanLead } from '../services/leadsService';
+import {
+  LEAD_TYPE_INTERESSADO,
+  LEAD_TYPE_PROPRIETARIO,
+  type KanbanLead,
+  type LeadType,
+} from '../services/leadsService';
 
 interface CriarLeadQuickModalProps {
   isOpen: boolean;
@@ -20,6 +25,8 @@ interface CriarLeadQuickModalProps {
   editingLead?: KanbanLead | null;
   /** Rótulo da etapa sugerida (só no criar). */
   stageHint?: string;
+  /** 1 = Interessado (default), 2 = Proprietário. Controla qual lead_type gravar. */
+  leadType?: LeadType;
 }
 
 interface LeadForm {
@@ -57,8 +64,10 @@ export const CriarLeadQuickModal = ({
   tenantId,
   editingLead,
   stageHint,
+  leadType = LEAD_TYPE_INTERESSADO,
 }: CriarLeadQuickModalProps) => {
   const isEditMode = Boolean(editingLead);
+  const isProprietario = leadType === LEAD_TYPE_PROPRIETARIO;
   const [form, setForm] = useState<LeadForm>(EMPTY_FORM);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -147,7 +156,7 @@ export const CriarLeadQuickModal = ({
           throw new Error(updateError.message);
         }
 
-        toast({ title: '✅ Lead atualizado', description: `${form.name.trim()} foi salvo.` });
+        toast({ title: `✅ ${typeLabel} atualizado`, description: `${form.name.trim()} foi salvo.` });
       } else {
         // INSERT
         const { data: authData } = await supabase.auth.getUser();
@@ -166,7 +175,8 @@ export const CriarLeadQuickModal = ({
           comments: form.message.trim() || null,
           temperature: form.temperature,
           source: 'Manual',
-          status: 'Novos Leads',
+          status: isProprietario ? 'Novos Proprietários' : 'Novos Leads',
+          lead_type: leadType,
         };
         if (authUserId) payload.assigned_agent_id = authUserId;
         if (authUserName) payload.assigned_agent_name = authUserName;
@@ -174,7 +184,7 @@ export const CriarLeadQuickModal = ({
         const { error: insertError } = await supabase.from('leads').insert(payload);
         if (insertError) throw new Error(insertError.message || 'Erro ao criar lead');
 
-        toast({ title: '✅ Lead criado', description: `${form.name.trim()} foi adicionado.` });
+        toast({ title: `✅ ${typeLabel} criado`, description: `${form.name.trim()} foi adicionado.` });
       }
 
       leadsEventEmitter.emit();
@@ -187,12 +197,15 @@ export const CriarLeadQuickModal = ({
     }
   };
 
-  const title = isEditMode ? 'Editar Lead' : 'Criar Lead';
+  const typeLabel = isProprietario ? 'Proprietário' : 'Lead';
+  const title = isEditMode ? `Editar ${typeLabel}` : `Criar ${typeLabel}`;
   const subtitle = isEditMode
-    ? 'Atualize as informações do lead'
+    ? `Atualize as informações do ${typeLabel.toLowerCase()}`
     : stageHint
       ? `Entrará em ${stageHint}`
-      : 'Cadastre um novo lead manualmente';
+      : isProprietario
+        ? 'Cadastre um novo proprietário manualmente'
+        : 'Cadastre um novo lead manualmente';
 
   return createPortal(
     <>
@@ -341,7 +354,7 @@ export const CriarLeadQuickModal = ({
                   : <Plus className="w-4 h-4" />}
               {isSubmitting
                 ? (isEditMode ? 'Salvando...' : 'Criando...')
-                : (isEditMode ? 'Salvar' : 'Criar Lead')}
+                : (isEditMode ? 'Salvar' : `Criar ${typeLabel}`)}
             </button>
           </div>
         </div>

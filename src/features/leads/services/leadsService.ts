@@ -87,6 +87,8 @@ export interface KanbanLead {
   // Arquivamento
   archived_at: string | null;
   archive_reason: string | null;
+  // Tipo de lead: 1 = Interessado, 2 = Proprietário
+  lead_type: LeadType;
 }
 
 const LEADS_TABLE = 'leads';
@@ -143,6 +145,8 @@ function mapKenloToKanbanLead(kl: Record<string, unknown>): KanbanLead {
     comments: (kl.message as string) || null,
     archived_at: (kl.archived_at as string) || null,
     archive_reason: (kl.archive_reason as string) || null,
+    // kenlo_leads vem sempre de portais → sempre interessado
+    lead_type: LEAD_TYPE_INTERESSADO,
   };
 }
 
@@ -194,6 +198,7 @@ async function fetchAllKenloLeadsForKanban(tenantId?: string): Promise<KanbanLea
  */
 function mapStatusToKanbanSlug(status: string): string {
   const statusMap: Record<string, string> = {
+    // Interessado
     'Novos Leads': 'novos-leads',
     'Interação': 'interacao',
     'Visita Agendada': 'visita-agendada',
@@ -202,6 +207,19 @@ function mapStatusToKanbanSlug(status: string): string {
     'Proposta Criada': 'proposta-criada',
     'Proposta Enviada': 'proposta-enviada',
     'Proposta Assinada': 'proposta-assinada',
+    // Proprietário (11 etapas do funil)
+    'Novos Proprietários': 'novos-proprietarios',
+    'Novo Proprietário': 'novos-proprietarios',
+    'Em Atendimento': 'em-atendimento',
+    'Primeira Visita': 'primeira-visita',
+    'Criação do Estudo de Mercado': 'criacao-estudo-mercado',
+    'Apresentação do Estudo de Mercado': 'apresentacao-estudo-mercado',
+    'Não Exclusivo': 'nao-exclusivo',
+    'Exclusivo': 'exclusivo',
+    'Cadastro': 'cadastro',
+    'Plano de Marketing': 'plano-marketing',
+    'Propostas Respondidas': 'propostas-respondidas',
+    'Feitura de Contrato': 'feitura-contrato',
     'Arquivado': 'arquivado'
   };
   return statusMap[status] || status?.toLowerCase().replace(/\s+/g, '-') || 'novos-leads';
@@ -221,6 +239,18 @@ function mapKanbanSlugToStatus(slug: string): string {
     'proposta-criada': 'Proposta Criada',
     'proposta-enviada': 'Proposta Enviada',
     'proposta-assinada': 'Proposta Assinada',
+    // Proprietário
+    'novos-proprietarios': 'Novos Proprietários',
+    'em-atendimento': 'Em Atendimento',
+    'primeira-visita': 'Primeira Visita',
+    'criacao-estudo-mercado': 'Criação do Estudo de Mercado',
+    'apresentacao-estudo-mercado': 'Apresentação do Estudo de Mercado',
+    'nao-exclusivo': 'Não Exclusivo',
+    'exclusivo': 'Exclusivo',
+    'cadastro': 'Cadastro',
+    'plano-marketing': 'Plano de Marketing',
+    'propostas-respondidas': 'Propostas Respondidas',
+    'feitura-contrato': 'Feitura de Contrato',
     'arquivado': 'Arquivado'
   };
   return slugMap[slug] || slug;
@@ -253,7 +283,8 @@ function mapToKanbanLead(lead: CRMLead): KanbanLead {
     property_value: lead.property_value,
     comments: lead.comments,
     archived_at: lead.archived_at,
-    archive_reason: lead.archive_reason
+    archive_reason: lead.archive_reason,
+    lead_type: (lead.lead_type as LeadType) ?? LEAD_TYPE_INTERESSADO,
   };
 }
 
@@ -264,7 +295,8 @@ function mapToKanbanLead(lead: CRMLead): KanbanLead {
 export async function fetchLeadsDoCorretorCRM(
   userId: string,
   tenantId?: string,
-  corretorNome?: string
+  corretorNome?: string,
+  leadType?: LeadType
 ): Promise<KanbanLead[]> {
   try {
 
@@ -276,6 +308,7 @@ export async function fetchLeadsDoCorretorCRM(
       .is('archived_at', null)
       .order('created_at', { ascending: false });
     if (tenantId) crmQuery = crmQuery.eq('tenant_id', tenantId);
+    if (leadType) crmQuery = crmQuery.eq('lead_type', leadType);
 
     const { data, error } = await crmQuery;
     if (error) {
@@ -285,8 +318,9 @@ export async function fetchLeadsDoCorretorCRM(
     const crmLeads = (data || []).map(mapToKanbanLead);
 
     // 2) kenlo_leads atribuídos pelo NOME do corretor — paginado
+    //    kenlo_leads são sempre Interessado; se o filtro é Proprietário, pular.
     let kenloLeads: KanbanLead[] = [];
-    if (corretorNome && corretorNome.trim().length > 0) {
+    if (leadType !== LEAD_TYPE_PROPRIETARIO && corretorNome && corretorNome.trim().length > 0) {
       const PAGE_SIZE = 1000;
       const all: Record<string, unknown>[] = [];
       for (let page = 0; page < 20; page++) {
@@ -327,7 +361,8 @@ export async function fetchLeadsDoCorretorCRM(
  */
 export async function fetchLeadsDoCorretorPorNome(
   nomeCorretor: string,
-  tenantId?: string
+  tenantId?: string,
+  leadType?: LeadType
 ): Promise<KanbanLead[]> {
   try {
 
@@ -339,6 +374,7 @@ export async function fetchLeadsDoCorretorPorNome(
       .is('archived_at', null)
       .order('created_at', { ascending: false });
     if (tenantId) crmQuery = crmQuery.eq('tenant_id', tenantId);
+    if (leadType) crmQuery = crmQuery.eq('lead_type', leadType);
 
     const { data, error } = await crmQuery;
     if (error) {
@@ -348,6 +384,10 @@ export async function fetchLeadsDoCorretorPorNome(
     const crmLeads = (data || []).map(mapToKanbanLead);
 
     // 2) kenlo_leads por attended_by_name — paginado
+    //    kenlo_leads são sempre Interessado; se filtro é Proprietário, pular.
+    if (leadType === LEAD_TYPE_PROPRIETARIO) {
+      return crmLeads;
+    }
     const PAGE_SIZE = 1000;
     const allKenlo: Record<string, unknown>[] = [];
     for (let page = 0; page < 20; page++) {
@@ -384,7 +424,7 @@ export async function fetchLeadsDoCorretorPorNome(
  * Busca TODOS os leads em andamento (para Admin)
  * Retorna leads de todos os corretores do tenant
  */
-export async function fetchTodosLeadsCRM(tenantId?: string): Promise<KanbanLead[]> {
+export async function fetchTodosLeadsCRM(tenantId?: string, leadType?: LeadType): Promise<KanbanLead[]> {
   try {
 
     // Buscar leads CRM — filtrar por tenant_id (escopo multi-tenant obrigatório)
@@ -394,6 +434,7 @@ export async function fetchTodosLeadsCRM(tenantId?: string): Promise<KanbanLead[
       .is('archived_at', null)
       .order('created_at', { ascending: false });
     if (tenantId) crmQuery = crmQuery.eq('tenant_id', tenantId);
+    if (leadType) crmQuery = crmQuery.eq('lead_type', leadType);
 
     const { data, error } = await crmQuery;
     if (error) {
@@ -402,7 +443,10 @@ export async function fetchTodosLeadsCRM(tenantId?: string): Promise<KanbanLead[
     }
     const crmLeads = (data || []).map(mapToKanbanLead);
 
-    // kenlo_leads (RLS desabilitada — filtro por tenant em app é obrigatório)
+    // kenlo_leads (sempre Interessado; se filtro é Proprietário, pular)
+    if (leadType === LEAD_TYPE_PROPRIETARIO) {
+      return crmLeads;
+    }
     const kenloLeads = await fetchAllKenloLeadsForKanban(tenantId);
 
     const allLeads = [...crmLeads, ...kenloLeads];

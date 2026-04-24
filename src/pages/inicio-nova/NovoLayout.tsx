@@ -9,6 +9,7 @@ import { NovaSidebar } from './NovaSidebar';
 import { NovoHeader } from './NovoHeader';
 import type { ProcessedLead } from '@/data/realLeadsProcessor';
 import { HeaderSlotProvider } from '@/contexts/HeaderSlotContext';
+import { NovoActionsProvider } from '@/contexts/NovoActionsContext';
 
 export interface NovoLayoutContext {
   leads: ProcessedLead[];
@@ -28,23 +29,25 @@ export function NovoLayout({ leads, onRefresh, isRefreshing, children }: NovoLay
 
   return (
     <HeaderSlotProvider>
-      <div
-        className="flex h-screen w-screen overflow-hidden bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100"
-        style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}
-      >
-        <NovaSidebar />
-
+      <NovoActionsProvider>
         <div
-          className="flex-1 flex flex-col min-w-0 overflow-hidden"
-          style={{ marginRight: 'var(--drawer-width, 0px)' }}
+          className="flex h-screen w-screen overflow-hidden bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100"
+          style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}
         >
-          <NovoHeader />
+          <NovaSidebar />
 
-          <main className="flex-1 overflow-y-auto">
-            {children ? children : <Outlet context={context} />}
-          </main>
+          <div
+            className="flex-1 flex flex-col min-w-0 overflow-hidden"
+            style={{ marginRight: 'var(--drawer-width, 0px)' }}
+          >
+            <NovoHeader />
+
+            <main className="flex-1 overflow-y-auto">
+              {children ? children : <Outlet context={context} />}
+            </main>
+          </div>
         </div>
-      </div>
+      </NovoActionsProvider>
     </HeaderSlotProvider>
   );
 }

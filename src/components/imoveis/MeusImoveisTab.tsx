@@ -6,6 +6,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from '@/lib/supabaseClient';
+import { useRegisterNovoActions } from '@/contexts/NovoActionsContext';
 import { Imovel } from '@/features/imoveis/services/kenloService';
 import { ImovelCard } from './ImovelCard';
 import { CriarImovelForm } from './CriarImovelForm';
@@ -122,6 +123,18 @@ export const MeusImoveisTab = ({ allImoveis, onViewDetails, onPropertyCreated }:
       status_aprovacao?: string;
     }) | null
   >(null);
+
+  // Registra "Novo Imóvel" no botão do header enquanto "Meus Imóveis" estiver montada.
+  useRegisterNovoActions('imoveis:meus-imoveis', [
+    {
+      id: 'novo-imovel-meus',
+      label: 'Novo Imóvel',
+      onClick: () => {
+        setEditingImovelData(null);
+        setIsCriarImovelOpen(true);
+      },
+    },
+  ]);
   
   // Estado para dialog de aprovação
   const [aprovacaoDialog, setAprovacaoDialog] = useState<AprovacaoDialog>({

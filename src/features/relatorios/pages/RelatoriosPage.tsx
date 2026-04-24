@@ -176,8 +176,8 @@ export const RelatoriosPage = () => {
   const [dataFinal, setDataFinal] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [exibirValores, setExibirValores] = useState(true);
   const _tab = searchParams.get('tab');
-  const activeSubArea: 'marketing' | 'metricas' | 'imoveis' =
-    _tab === 'metricas' || _tab === 'imoveis' ? _tab : 'marketing';
+  const activeSubArea: 'marketing' | 'metricas' | 'metricas-individuais' | 'imoveis' =
+    _tab === 'metricas' || _tab === 'imoveis' || _tab === 'metricas-individuais' ? _tab : 'marketing';
 
   const initialMetricasSubArea = useMemo(() => {
     const fromQuery = searchParams.get('metricasSubArea');
@@ -1586,45 +1586,8 @@ export const RelatoriosPage = () => {
   return (
     <div ref={reportRef} className="min-h-screen p-6" style={{ backgroundColor: 'var(--bg-primary, #f5f5f5)' }}>
 
-      {activeSubArea === 'metricas' && (
-        <div className="mb-4 flex gap-2 border-b border-gray-200 dark:border-slate-800">
-          <button
-            onClick={() => {
-              setActiveMetricasSubArea('visao-geral');
-              const params = new URLSearchParams(searchParams);
-              params.set('subArea', 'metricas');
-              params.set('metricasSubArea', 'visao-geral');
-              window.history.replaceState(null, '', `?${params.toString()}`);
-            }}
-            className={`px-4 py-3 font-medium text-sm transition-all border-b-2 ${
-              activeMetricasSubArea === 'visao-geral'
-                ? 'text-blue-600 border-blue-600'
-                : 'text-gray-600 dark:text-slate-400 border-transparent hover:text-gray-900 dark:hover:text-slate-100'
-            }`}
-          >
-            Visão geral
-          </button>
-          <button
-            onClick={() => {
-              setActiveMetricasSubArea('metricas-individuais');
-              const params = new URLSearchParams(searchParams);
-              params.set('subArea', 'metricas');
-              params.set('metricasSubArea', 'metricas-individuais');
-              window.history.replaceState(null, '', `?${params.toString()}`);
-            }}
-            className={`px-4 py-3 font-medium text-sm transition-all border-b-2 ${
-              activeMetricasSubArea === 'metricas-individuais'
-                ? 'text-blue-600 border-blue-600'
-                : 'text-gray-600 dark:text-slate-400 border-transparent hover:text-gray-900 dark:hover:text-slate-100'
-            }`}
-          >
-            Métricas individuais
-          </button>
-        </div>
-      )}
-
       {/* Área de Filtros */}
-      {activeSubArea === 'metricas' && activeMetricasSubArea === 'visao-geral' && (
+      {activeSubArea === 'metricas' && (
         <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-4 mb-6">
           <div className="flex flex-wrap items-end gap-4">
             {/* Filtro de Empresa/Equipe */}
@@ -1885,11 +1848,9 @@ export const RelatoriosPage = () => {
         </>
       )}
 
-      {/* SEÇÃO MÉTRICAS */}
+      {/* SEÇÃO MÉTRICAS DA EQUIPE */}
       {activeSubArea === 'metricas' && (
         <>
-          {activeMetricasSubArea === 'visao-geral' && (
-            <>
           {/* KPIs Cards - Métricas */}
           <div data-export-layout="kpis" className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
             <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-4 hover:shadow-md transition-shadow">
@@ -2090,10 +2051,12 @@ export const RelatoriosPage = () => {
           <div className="mt-10">
             <MetricsDashboard />
           </div>
-            </>
-          )}
+        </>
+      )}
 
-          {activeMetricasSubArea === 'metricas-individuais' && (
+      {/* SEÇÃO MÉTRICAS INDIVIDUAIS */}
+      {activeSubArea === 'metricas-individuais' && (
+        <>
             <div>
               <div className="mb-6 flex justify-center">
                 <div className="w-full max-w-5xl flex flex-wrap justify-center gap-4">
@@ -2110,8 +2073,7 @@ export const RelatoriosPage = () => {
                       onClick={() => {
                         setActiveMetricasIndSubArea(key);
                         const params = new URLSearchParams(searchParams);
-                        params.set('subArea', 'metricas');
-                        params.set('metricasSubArea', 'metricas-individuais');
+                        params.set('tab', 'metricas-individuais');
                         params.set('metricasIndSubArea', key);
                         window.history.replaceState(null, '', `?${params.toString()}`);
                       }}
@@ -2820,7 +2782,6 @@ export const RelatoriosPage = () => {
                 </div>
               )}
             </div>
-          )}
         </>
       )}
 

@@ -7,6 +7,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabaseClient';
 import { getFotoCapaUrl } from './fotos-helpers';
+import { useRegisterNovoActions } from '@/contexts/NovoActionsContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -175,6 +176,18 @@ export const CondominiosTab = () => {
   // Modal de criação
   const [isCriarOpen, setIsCriarOpen] = useState(false);
   const [editingCondominio, setEditingCondominio] = useState<Condominio | null>(null);
+
+  // Registra "Novo Condomínio" no botão do header enquanto esta aba estiver montada.
+  useRegisterNovoActions('imoveis:condominios', [
+    {
+      id: 'novo-condominio',
+      label: 'Novo Condomínio',
+      onClick: () => {
+        setEditingCondominio(null);
+        setIsCriarOpen(true);
+      },
+    },
+  ]);
 
   // Modal de detalhes
   const [selectedCondominio, setSelectedCondominio] = useState<Condominio | null>(null);

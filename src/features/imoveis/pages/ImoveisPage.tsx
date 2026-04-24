@@ -6,6 +6,7 @@
 
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useRegisterNovoActions } from '@/contexts/NovoActionsContext';
 import { useImoveisData } from '../hooks/useImoveisData';
 import { ImoveisMetrics } from '@/components/imoveis/ImoveisMetrics';
 import { ImovelCard } from '@/components/imoveis/ImovelCard';
@@ -279,6 +280,14 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
   const [selectedImovel, setSelectedImovel] = useState<Imovel | null>(null);
   const [showDetails, setShowDetails] = useState(false);
   const [isCriarImovelOpen, setIsCriarImovelOpen] = useState(false);
+
+  // Registra ação do botão "Novo" do header quando a aba Catálogo está ativa.
+  useRegisterNovoActions(
+    activeTab === 'catalogo' ? 'imoveis:catalogo' : 'imoveis:inactive',
+    activeTab === 'catalogo'
+      ? [{ id: 'novo-imovel', label: 'Novo Imóvel', onClick: () => setIsCriarImovelOpen(true) }]
+      : []
+  );
 
   // Carregar imóveis locais do banco
   const loadImoveisLocais = useCallback(async () => {

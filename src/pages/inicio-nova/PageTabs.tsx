@@ -52,7 +52,8 @@ const TAB_CONFIGS: TabConfig[] = [
     matchStrategy: 'query',
     queryKey: 'sub',
     tabs: [
-      { id: 'kanban', label: 'Kanban', icon: LayoutGrid, href: '/meus-leads?sub=kanban', isQuery: true },
+      { id: 'kanban', label: 'Kanban Interessado', icon: LayoutGrid, href: '/meus-leads?sub=kanban', isQuery: true },
+      { id: 'kanban-proprietario', label: 'Kanban Proprietário', icon: Building2, href: '/meus-leads?sub=kanban-proprietario', isQuery: true },
       { id: 'central-leads', label: 'Central de Leads', icon: Users, href: '/meus-leads?sub=central-leads', isQuery: true },
       { id: 'arquivados', label: 'Arquivados', icon: Archive, href: '/meus-leads?sub=arquivados', isQuery: true },
     ],
@@ -107,6 +108,7 @@ const TAB_CONFIGS: TabConfig[] = [
     tabs: [
       { id: 'marketing', label: 'Marketing', icon: TrendingUp, href: '/relatorios?tab=marketing', isQuery: true },
       { id: 'metricas', label: 'Métricas da Equipe', icon: Users, href: '/relatorios?tab=metricas', isQuery: true },
+      { id: 'metricas-individuais', label: 'Métricas Individuais', icon: User, href: '/relatorios?tab=metricas-individuais', isQuery: true },
       { id: 'imoveis', label: 'Imóveis', icon: Building2, href: '/relatorios?tab=imoveis', isQuery: true },
     ],
   },

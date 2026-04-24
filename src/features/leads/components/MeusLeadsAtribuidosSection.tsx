@@ -21,9 +21,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { 
-  User, 
-  Loader2, 
+import {
+  User,
+  Loader2,
   Clock,
   GripVertical,
   MessageSquare,
@@ -42,7 +42,16 @@ import {
   Send,
   FileCheck,
   Filter,
-  RotateCcw
+  RotateCcw,
+  Headphones,
+  MapPin,
+  ClipboardList,
+  Presentation,
+  Lock,
+  UserPlus,
+  Megaphone,
+  Reply,
+  FileSignature,
 } from 'lucide-react';
 import {
   fetchLeadsDoCorretorCRM,
@@ -50,8 +59,12 @@ import {
   fetchTodosLeadsCRM,
   atualizarStatusLeadCRM,
   arquivarLeadCRM,
-  type KanbanLead
+  LEAD_TYPE_INTERESSADO,
+  LEAD_TYPE_PROPRIETARIO,
+  type KanbanLead,
+  type LeadType,
 } from '../services/leadsService';
+import { useRegisterNovoActions } from '@/contexts/NovoActionsContext';
 import type { BolsaoLead } from '../services/bolsaoService';
 import {
   Dialog,
@@ -101,19 +114,18 @@ const snapCenterToCursor: Modifier = ({ activatorEvent, draggingNodeRect, transf
   };
 };
 
-// Tipo para status do Kanban - Todas as Etapas do Funil de Cliente Interessado
-type KanbanStatus = 
-  | 'novos-leads' 
-  | 'interacao' 
-  | 'visita-agendada' 
-  | 'visita-realizada' 
-  | 'negociacao' 
-  | 'proposta-criada' 
-  | 'proposta-enviada' 
-  | 'proposta-assinada';
+// Tipo para status do Kanban — string livre para suportar tanto Interessado quanto Proprietário
+type KanbanStatus = string;
 
-// Configuração das colunas — visual alinhado com Kanban de Proposta (hex + dot colorido no header)
-const KANBAN_COLUMNS: { id: KanbanStatus; title: string; color: string; icon: React.ComponentType<{ className?: string }> }[] = [
+type KanbanColumnDef = {
+  id: KanbanStatus;
+  title: string;
+  color: string;
+  icon: React.ComponentType<{ className?: string }>;
+};
+
+// Funil Cliente Interessado (8 etapas)
+const KANBAN_INTERESSADO_COLUMNS: KanbanColumnDef[] = [
   { id: 'novos-leads',       title: 'Novos Leads',       color: '#06b6d4', icon: Sparkles },
   { id: 'interacao',         title: 'Interação',         color: '#3b82f6', icon: MessageSquare },
   { id: 'visita-agendada',   title: 'Visita Agendada',   color: '#22c55e', icon: Calendar },
@@ -124,50 +136,76 @@ const KANBAN_COLUMNS: { id: KanbanStatus; title: string; color: string; icon: Re
   { id: 'proposta-assinada', title: 'Proposta Assinada', color: '#dc2626', icon: FileCheck },
 ];
 
+// Funil Cliente Proprietário (11 etapas — mesmas do VendedoresFunnelChart)
+const KANBAN_PROPRIETARIO_COLUMNS: KanbanColumnDef[] = [
+  { id: 'novos-proprietarios',        title: 'Novos Proprietários',       color: '#06b6d4', icon: Sparkles },
+  { id: 'em-atendimento',             title: 'Em Atendimento',            color: '#3b82f6', icon: Headphones },
+  { id: 'primeira-visita',            title: 'Primeira Visita',           color: '#22c55e', icon: MapPin },
+  { id: 'criacao-estudo-mercado',     title: 'Criação Estudo de Mercado', color: '#0ea5e9', icon: ClipboardList },
+  { id: 'apresentacao-estudo-mercado', title: 'Apresentação Estudo Mercado', color: '#8b5cf6', icon: Presentation },
+  { id: 'nao-exclusivo',              title: 'Não Exclusivo',             color: '#f59e0b', icon: Lock },
+  { id: 'exclusivo',                  title: 'Exclusivo',                 color: '#10b981', icon: CheckCircle2 },
+  { id: 'cadastro',                   title: 'Cadastro',                  color: '#0891b2', icon: UserPlus },
+  { id: 'plano-marketing',            title: 'Plano de Marketing',        color: '#ec4899', icon: Megaphone },
+  { id: 'propostas-respondidas',      title: 'Propostas Respondidas',     color: '#f97316', icon: Reply },
+  { id: 'feitura-contrato',           title: 'Feitura de Contrato',       color: '#dc2626', icon: FileSignature },
+];
+
+/**
+ * Retorna as colunas do Kanban baseado no tipo de lead.
+ */
+const getKanbanColumns = (leadType: LeadType): KanbanColumnDef[] =>
+  leadType === LEAD_TYPE_PROPRIETARIO ? KANBAN_PROPRIETARIO_COLUMNS : KANBAN_INTERESSADO_COLUMNS;
+
 const avatarPalette = ['#3b82f6', '#8b5cf6', '#ec4899', '#f97316', '#22c55e', '#06b6d4', '#f59e0b'];
 const avatarColorFor = (char: string) => avatarPalette[(char || 'A').charCodeAt(0) % avatarPalette.length];
 const BRL = (value: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(value);
 
-const getLeadStatus = (lead: KanbanLead): KanbanStatus => {
+const getLeadStatus = (lead: KanbanLead, columns: KanbanColumnDef[]): KanbanStatus => {
+  const fallback = columns[0]?.id ?? 'novos-leads';
   const status = lead?.status;
 
   if (!status || typeof status !== 'string') {
-    return 'novos-leads';
+    return fallback;
   }
 
-  const statusLower = String(status).toLowerCase().trim().replace(/\s+/g, '-');
+  const statusLower = String(status)
+    .toLowerCase()
+    .trim()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '') // remove diacríticos ("ã", "ç", etc.)
+    .replace(/\s+/g, '-');
 
-  if (KANBAN_COLUMNS.some(col => col.id === statusLower as KanbanStatus)) {
-    return statusLower as KanbanStatus;
-  }
-
-  if (statusLower === 'novo' || statusLower === 'novos-leads') {
-    return 'novos-leads';
-  }
-  if (statusLower === 'assumido' || statusLower === 'em-atendimento' || statusLower === 'interação' || statusLower === 'interacao') {
-    return 'interacao';
-  }
-  if (statusLower === 'atendido' || statusLower === 'visita-agendada' || statusLower === 'visita agendada') {
-    return 'visita-agendada';
-  }
-  if (statusLower === 'visita-realizada' || statusLower === 'visita realizada') {
-    return 'visita-realizada';
-  }
-  if (statusLower === 'negociacao' || statusLower === 'negociação') {
-    return 'negociacao';
-  }
-  if (statusLower === 'proposta-criada' || statusLower === 'proposta criada') {
-    return 'proposta-criada';
-  }
-  if (statusLower === 'proposta-enviada' || statusLower === 'proposta enviada') {
-    return 'proposta-enviada';
-  }
-  if (statusLower === 'proposta-assinada' || statusLower === 'proposta assinada' || statusLower === 'finalizado') {
-    return 'proposta-assinada';
+  // Match exato com alguma coluna disponível
+  if (columns.some(col => col.id === statusLower)) {
+    return statusLower;
   }
 
-  return 'novos-leads';
+  // Aliases Interessado
+  if (statusLower === 'novo' || statusLower === 'novos-leads') return 'novos-leads';
+  if (statusLower === 'assumido' || statusLower === 'interacao') return 'interacao';
+  if (statusLower === 'atendido' || statusLower === 'visita-agendada') return 'visita-agendada';
+  if (statusLower === 'visita-realizada') return 'visita-realizada';
+  if (statusLower === 'negociacao') return 'negociacao';
+  if (statusLower === 'proposta-criada') return 'proposta-criada';
+  if (statusLower === 'proposta-enviada') return 'proposta-enviada';
+  if (statusLower === 'proposta-assinada' || statusLower === 'finalizado') return 'proposta-assinada';
+
+  // Aliases Proprietário
+  if (statusLower === 'novo-proprietario' || statusLower === 'novos-proprietarios') return 'novos-proprietarios';
+  if (statusLower === 'em-atendimento') return 'em-atendimento';
+  if (statusLower === 'primeira-visita') return 'primeira-visita';
+  if (statusLower.startsWith('criacao-estudo') || statusLower === 'criando-estudo' || statusLower === 'estudo-em-criacao' || statusLower === 'preparando-estudo') return 'criacao-estudo-mercado';
+  if (statusLower.startsWith('apresentacao-estudo') || statusLower === 'apresentando-estudo') return 'apresentacao-estudo-mercado';
+  if (statusLower === 'nao-exclusivo') return 'nao-exclusivo';
+  if (statusLower === 'exclusivo') return 'exclusivo';
+  if (statusLower === 'cadastro') return 'cadastro';
+  if (statusLower === 'plano-de-marketing' || statusLower === 'plano-marketing') return 'plano-marketing';
+  if (statusLower === 'propostas-respondidas' || statusLower === 'proposta-respondida') return 'propostas-respondidas';
+  if (statusLower === 'feitura-de-contrato' || statusLower === 'feitura-contrato') return 'feitura-contrato';
+
+  return fallback;
 };
 
 // Componente do Card Arrastável
@@ -413,8 +451,16 @@ const KanbanColumn = memo(({ column, leads, onLeadClick, onAdicionarLead, mostra
 });
 KanbanColumn.displayName = 'KanbanColumn';
 
-export const MeusLeadsAtribuidosSection = () => {
+interface MeusLeadsAtribuidosSectionProps {
+  /** 1 = Interessado (default), 2 = Proprietário. Controla colunas do Kanban e filtro de dados. */
+  leadType?: LeadType;
+}
+
+export const MeusLeadsAtribuidosSection = ({
+  leadType = LEAD_TYPE_INTERESSADO,
+}: MeusLeadsAtribuidosSectionProps = {}) => {
   const { user, isCorretor, isAdmin, isLoading: authLoading, tenantId } = useAuth();
+  const kanbanColumns = useMemo(() => getKanbanColumns(leadType), [leadType]);
 
   // Modal de criar lead — permanece no Kanban; emite `leadsEventEmitter` no sucesso.
   const [createModalStage, setCreateModalStage] = useState<string | null>(null);
@@ -422,6 +468,20 @@ export const MeusLeadsAtribuidosSection = () => {
     setCreateModalStage(stageTitle ?? '');
   }, []);
   const handleCloseCreateModal = useCallback(() => setCreateModalStage(null), []);
+
+  // Registra a ação do botão "Novo" do header conforme o tipo do Kanban.
+  const isProprietarioKanban = leadType === LEAD_TYPE_PROPRIETARIO;
+  useRegisterNovoActions(
+    isProprietarioKanban ? 'meus-leads:kanban-proprietario' : 'meus-leads:kanban',
+    [
+      {
+        id: isProprietarioKanban ? 'novo-proprietario' : 'novo-lead',
+        label: isProprietarioKanban ? 'Novo Proprietário' : 'Novo Lead',
+        icon: Plus,
+        onClick: () => setCreateModalStage(''),
+      },
+    ]
+  );
   const { toast } = useToast();
   
   const [meusLeads, setMeusLeads] = useState<KanbanLead[]>([]);
@@ -465,7 +525,7 @@ export const MeusLeadsAtribuidosSection = () => {
     if (isAdmin) {
       try {
         setLoading(true);
-        const data = await fetchTodosLeadsCRM(tenantId || undefined);
+        const data = await fetchTodosLeadsCRM(tenantId || undefined, leadType);
         setMeusLeads(data);
       } catch (error) {
         console.error('Erro ao carregar todos os leads (admin):', error);
@@ -504,12 +564,12 @@ export const MeusLeadsAtribuidosSection = () => {
       // Tentar buscar por ID primeiro
       const effectiveTenantId = tenantId || undefined;
       let data = userId
-        ? await fetchLeadsDoCorretorCRM(userId, effectiveTenantId, corretorNome)
+        ? await fetchLeadsDoCorretorCRM(userId, effectiveTenantId, corretorNome, leadType)
         : [];
 
       // Se não encontrou por ID, tentar só por nome
       if (data.length === 0 && corretorNome) {
-        data = await fetchLeadsDoCorretorPorNome(corretorNome, effectiveTenantId);
+        data = await fetchLeadsDoCorretorPorNome(corretorNome, effectiveTenantId, leadType);
       }
       setMeusLeads(data);
       
@@ -523,7 +583,7 @@ export const MeusLeadsAtribuidosSection = () => {
     } finally {
       setLoading(false);
     }
-  }, [authLoading, isAdmin, user?.id, user?.name, user?.email, toast, tenantId]);
+  }, [authLoading, isAdmin, user?.id, user?.name, user?.email, toast, tenantId, leadType]);
 
   // Carregar ao montar - buscar sempre que o componente montar (busca userId da sessão)
   useEffect(() => {
@@ -644,22 +704,25 @@ export const MeusLeadsAtribuidosSection = () => {
   }, []);
 
   // Função para mapear status do lead para etapa do funil
-  const mapearStatusParaEtapa = (status: string | null | undefined): KanbanStatus => {
-    return getLeadStatus({ status } as KanbanLead);
-  };
+  const mapearStatusParaEtapa = useCallback(
+    (status: string | null | undefined): KanbanStatus => {
+      return getLeadStatus({ status } as KanbanLead, kanbanColumns);
+    },
+    [kanbanColumns]
+  );
 
   const findLeadById = useCallback((leadId: string) => {
     return meusLeads.find(lead => lead.id === leadId) || null;
   }, [meusLeads]);
 
   const findContainerByItemId = useCallback((itemId: string): KanbanStatus | null => {
-    if (KANBAN_COLUMNS.some(column => column.id === itemId)) {
+    if (kanbanColumns.some(column => column.id === itemId)) {
       return itemId as KanbanStatus;
     }
 
     const lead = findLeadById(itemId);
-    return lead ? getLeadStatus(lead) : null;
-  }, [findLeadById]);
+    return lead ? getLeadStatus(lead, kanbanColumns) : null;
+  }, [findLeadById, kanbanColumns]);
 
   // Aplicar filtros nos leads (memoizado)
   const leadsFiltrados = useMemo(() => meusLeads.filter(lead => {
@@ -691,7 +754,7 @@ export const MeusLeadsAtribuidosSection = () => {
 
   // Agrupar leads filtrados por etapa do funil (memoizado)
   const leadsAgrupados = useMemo(() => {
-    return KANBAN_COLUMNS.reduce((acc, column) => {
+    return kanbanColumns.reduce((acc, column) => {
       acc[column.id] = leadsFiltrados.filter(lead => {
         try {
           return mapearStatusParaEtapa(lead?.status ?? null) === column.id;
@@ -701,7 +764,7 @@ export const MeusLeadsAtribuidosSection = () => {
       });
       return acc;
     }, {} as Record<KanbanStatus, KanbanLead[]>);
-  }, [leadsFiltrados]);
+  }, [leadsFiltrados, kanbanColumns, mapearStatusParaEtapa]);
 
   // Clique no lead → abre o modal de edição (mesmo modal de criação em modo editar)
   const [editingLead, setEditingLead] = useState<KanbanLead | null>(null);
@@ -729,24 +792,16 @@ export const MeusLeadsAtribuidosSection = () => {
 
     // `over.id` é sempre o id da coluna (cada coluna é droppable). Se o usuário
     // soltar sobre outro card, caímos na mesma coluna do card de destino.
-    const destColumnId = KANBAN_COLUMNS.find((c) => c.id === overId)?.id
+    const destColumnId = kanbanColumns.find((c) => c.id === overId)?.id
       ?? findContainerByItemId(overId);
     if (!destColumnId) return;
 
-    const etapaAtual = getLeadStatus(lead);
+    const etapaAtual = getLeadStatus(lead, kanbanColumns);
     if (etapaAtual === destColumnId) return;
 
-    const slugToStatusMap: Record<KanbanStatus, string> = {
-      'novos-leads': 'Novos Leads',
-      'interacao': 'Interação',
-      'visita-agendada': 'Visita Agendada',
-      'visita-realizada': 'Visita Realizada',
-      'negociacao': 'Negociação',
-      'proposta-criada': 'Proposta Criada',
-      'proposta-enviada': 'Proposta Enviada',
-      'proposta-assinada': 'Proposta Assinada',
-    };
-    const statusParaSalvar = slugToStatusMap[destColumnId];
+    // Slug → status humano (usa título da coluna; leadsService normaliza via mapKanbanSlugToStatus)
+    const destColumn = kanbanColumns.find((c) => c.id === destColumnId);
+    const statusParaSalvar = destColumn?.title ?? destColumnId;
 
     // Update otimista no estado local — sem arrayMove, só muda o status.
     setMeusLeads((prev) =>
@@ -757,7 +812,7 @@ export const MeusLeadsAtribuidosSection = () => {
       await atualizarStatusLeadCRM(leadId, statusParaSalvar);
       toast({
         title: '✅ Etapa atualizada',
-        description: `Lead movido para ${KANBAN_COLUMNS.find((c) => c.id === destColumnId)?.title}`,
+        description: `Lead movido para ${kanbanColumns.find((c) => c.id === destColumnId)?.title}`,
         className: 'bg-green-500/10 border-green-500/50',
       });
     } catch (error) {
@@ -997,7 +1052,7 @@ export const MeusLeadsAtribuidosSection = () => {
           >
             {/* Grid de Colunas do Kanban - flex-1 min-h-0 força colunas a ocuparem toda altura restante */}
             <div className="flex gap-3 flex-1 min-h-0 pb-4" style={{ minWidth: 'fit-content' }}>
-              {KANBAN_COLUMNS.map((column) => (
+              {kanbanColumns.map((column) => (
                 <div key={column.id} id={column.id} className="h-full flex-shrink-0">
                   <KanbanColumn
                     column={column}
@@ -1036,6 +1091,7 @@ export const MeusLeadsAtribuidosSection = () => {
         onClose={handleCloseCreateModal}
         tenantId={tenantId}
         stageHint={createModalStage || undefined}
+        leadType={leadType}
       />
 
       {/* Modal "Editar Lead" — reutiliza o mesmo componente em modo edit */}
@@ -1044,6 +1100,7 @@ export const MeusLeadsAtribuidosSection = () => {
         onClose={handleCloseEditModal}
         tenantId={tenantId}
         editingLead={editingLead}
+        leadType={leadType}
       />
 
       <LeadDetailsModal
@@ -1082,7 +1139,7 @@ export const MeusLeadsAtribuidosSection = () => {
             
             toast({
               title: "✅ Status atualizado!",
-              description: `Lead movido para ${KANBAN_COLUMNS.find(c => c.id === novoStatus)?.title || novoStatus}`,
+              description: `Lead movido para ${kanbanColumns.find(c => c.id === novoStatus)?.title || novoStatus}`,
               className: "bg-green-500/10 border-green-500/50"
             });
           } catch (error) {
