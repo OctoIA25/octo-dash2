@@ -34,3 +34,31 @@ export function getFotoCapa(fotos: FotoInput[] | null | undefined): FotoInput | 
 export function getFotoCapaUrl(fotos: FotoInput[] | null | undefined): string | null {
   return getFotoUrl(getFotoCapa(fotos));
 }
+
+/**
+ * Normaliza uma lista de fotos para o formato novo ({url, legenda, isCapa})
+ * e garante exatamente uma capa (se nenhuma marcada, a primeira vira capa).
+ * Compatível com formato legado (string[]) e novo.
+ */
+export function normalizeFotos(raw: FotoInput[] | null | undefined): Foto[] {
+  const list = (raw || [])
+    .map((f) =>
+      typeof f === 'string'
+        ? { url: f, legenda: '', isCapa: false }
+        : { url: f.url, legenda: f.legenda ?? '', isCapa: !!f.isCapa },
+    )
+    .filter((f) => !!f.url);
+  // Se há fotos mas nenhuma é capa, marca a primeira
+  if (list.length > 0 && !list.some((f) => f.isCapa)) {
+    list[0] = { ...list[0], isCapa: true };
+  }
+  // Se há mais de uma com isCapa (caso de estado inconsistente), mantém só a primeira marcada
+  let jaTeveCapa = false;
+  return list.map((f) => {
+    if (f.isCapa && !jaTeveCapa) {
+      jaTeveCapa = true;
+      return f;
+    }
+    return { ...f, isCapa: false };
+  });
+}

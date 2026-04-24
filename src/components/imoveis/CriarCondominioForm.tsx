@@ -9,6 +9,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { buscarCep, formatarCepExibicao, validarCep } from '@/services/viaCepService';
 import { supabase } from '@/lib/supabaseClient';
 import { FotosUploader } from './FotosUploader';
+import { normalizeFotos } from './fotos-helpers';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -464,11 +465,48 @@ export const CriarCondominioForm = ({
       return;
     }
 
+    // Validar que tenantId é um UUID válido (evita erro silencioso quando owner
+    // não está impersonando, ou quando o AuthContext ainda não carregou)
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(tenantId)) {
+      setSubmitStatus('error');
+      setSubmitMessage(
+        'Nenhuma imobiliária selecionada. Se você é owner, selecione um tenant para impersonar antes de criar condomínios.'
+      );
+      return;
+    }
+
+    // Verificar tamanho total das fotos em base64 (Supabase tem limite ~10-50MB
+    // por request dependendo da configuração — alertar antes de estourar)
+    const fotosTotalBytes = formData.fotos.reduce((sum, f) => {
+      const url = typeof f === 'string' ? f : f?.url || '';
+      return sum + url.length;
+    }, 0);
+    const fotosTotalMB = fotosTotalBytes / (1024 * 1024);
+    if (fotosTotalMB > 40) {
+      setSubmitStatus('error');
+      setSubmitMessage(
+        `As fotos somam ${fotosTotalMB.toFixed(1)}MB, excedendo o limite de 40MB por requisição. ` +
+        `Remova algumas fotos ou reduza a resolução antes de salvar.`
+      );
+      return;
+    }
+
     setIsSubmitting(true);
     setSubmitStatus('idle');
     setSubmitMessage('');
 
     try {
+      // Garantir que a sessão está válida antes de enviar (evita falha silenciosa
+      // quando o token expirou enquanto o modal estava aberto)
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !sessionData.session) {
+        const { error: refreshError } = await supabase.auth.refreshSession();
+        if (refreshError) {
+          throw new Error('Sessão expirada. Faça login novamente.');
+        }
+      }
+
       // Preparar dados para inserção
       const condominioData = {
         tenant_id: tenantId,
@@ -561,7 +599,9 @@ export const CriarCondominioForm = ({
         destaque: formData.destaque,
         tour_virtual: formData.tour_virtual || null,
         descricao_site: formData.descricao_site || null,
-        fotos: formData.fotos.length > 0 ? formData.fotos : [],
+        // Normaliza as fotos para garantir que exatamente uma esteja marcada como capa
+        // (evita cards sem foto de capa quando o usuário não clicou manualmente na estrela)
+        fotos: normalizeFotos(formData.fotos),
         metragens_disponiveis: formData.metragens_disponiveis,
         criado_por: user.id,
         status_aprovacao: 'aguardando', // Novo condomínio sempre inicia aguardando aprovação
@@ -585,6 +625,7 @@ export const CriarCondominioForm = ({
 
       let { data: savedRow, error } = await runSave(condominioData);
 
+      // Retry sem a coluna fotos se ela não existir (schema desatualizado)
       if (error && error.message?.includes('fotos')) {
         console.warn('⚠️ Retry salvando sem coluna fotos:', error.message);
         const { fotos, ...condominioDataSemFotos } = condominioData as any;
@@ -593,8 +634,52 @@ export const CriarCondominioForm = ({
         error = retry.error;
       }
 
-      if (error) throw error;
-      if (!savedRow) throw new Error('O banco aceitou a requisição mas não retornou o condomínio salvo. Verifique as permissões (RLS) do seu usuário.');
+      // Retry sem metragens_disponiveis se ela não existir (schema antigo)
+      if (error && error.message?.includes('metragens_disponiveis')) {
+        console.warn('⚠️ Retry salvando sem coluna metragens_disponiveis:', error.message);
+        const { metragens_disponiveis, ...condominioDataSemMetragens } = condominioData as any;
+        const retry = await runSave(condominioDataSemMetragens);
+        savedRow = retry.data;
+        error = retry.error;
+      }
+
+      if (error) {
+        // Logar todos os detalhes do erro do PostgREST/Postgres para diagnóstico
+        console.error('❌ Erro do Supabase ao salvar condomínio:', {
+          message: error.message,
+          code: (error as any).code,
+          details: (error as any).details,
+          hint: (error as any).hint,
+          payload: {
+            tenant_id: condominioData.tenant_id,
+            nome: condominioData.nome,
+            criado_por: condominioData.criado_por,
+          },
+        });
+
+        // Mensagens mais amigáveis por código de erro
+        const pgCode = (error as any).code as string | undefined;
+        if (pgCode === '42501' || error.message?.toLowerCase().includes('row-level security')) {
+          throw new Error(
+            'Sem permissão para criar condomínio neste tenant. Verifique se seu usuário está vinculado à imobiliária atual.'
+          );
+        }
+        if (pgCode === '23503') {
+          throw new Error('Tenant ou usuário inválido (foreign key). Recarregue a página e tente novamente.');
+        }
+        if (pgCode === '22P02') {
+          throw new Error('Dado inválido no formulário (tipo incorreto). Verifique números, datas e UUIDs.');
+        }
+        if (error.message?.toLowerCase().includes('jwt') || error.message?.toLowerCase().includes('expired')) {
+          throw new Error('Sessão expirada. Faça logout e login novamente.');
+        }
+        throw error;
+      }
+      if (!savedRow) {
+        throw new Error('O banco aceitou a requisição mas não retornou o condomínio salvo. Verifique as permissões (RLS) do seu usuário.');
+      }
+
+      console.log('✅ Condomínio salvo com sucesso:', savedRow.id);
 
       setSubmitStatus('success');
       setSubmitMessage(
@@ -603,14 +688,10 @@ export const CriarCondominioForm = ({
           : `Condomínio "${formData.nome}" criado com sucesso!`
       );
 
-      // Fechar imediatamente após sucesso
+      // Resetar form e notificar parent (que vai recarregar a lista e fechar o modal)
       setFormData(initialFormData);
       setEditingId(null);
       onSuccess();
-      onClose();
-      setTimeout(() => {
-        onClose();
-      }, 800);
 
     } catch (err: any) {
       console.error('❌ Erro ao salvar condomínio:', err);

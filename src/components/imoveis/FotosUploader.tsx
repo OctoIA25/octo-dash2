@@ -27,6 +27,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { Foto, FotoInput } from './fotos-helpers';
+import { normalizeFotos } from './fotos-helpers';
 export type { Foto, FotoInput } from './fotos-helpers';
 
 interface FotosUploaderProps {
@@ -35,21 +36,6 @@ interface FotosUploaderProps {
   accent?: 'blue' | 'pink';
   inputId?: string;
   maxSizeMB?: number;
-}
-
-function normalizeFotos(raw: FotoInput[]): Foto[] {
-  const list = (raw || [])
-    .map((f) =>
-      typeof f === 'string'
-        ? { url: f, legenda: '', isCapa: false }
-        : { url: f.url, legenda: f.legenda ?? '', isCapa: !!f.isCapa },
-    )
-    .filter((f) => !!f.url);
-  // Garante exatamente uma capa: se nenhuma marcada, a primeira vira capa
-  if (list.length > 0 && !list.some((f) => f.isCapa)) {
-    list[0] = { ...list[0], isCapa: true };
-  }
-  return list;
 }
 
 
@@ -213,7 +199,9 @@ export function FotosUploader({
       .map((url) => ({ url, legenda: '', isCapa: false }));
 
     if (novas.length > 0) {
-      onChange([...normalizeFotos(fotos), ...novas]);
+      // Normaliza o array final para garantir que sempre haja uma foto de capa
+      // (se não havia fotos antes, a primeira nova vira capa automaticamente)
+      onChange(normalizeFotos([...normalizeFotos(fotos), ...novas]));
     }
 
     if (skipped.length > 0) {
@@ -226,7 +214,9 @@ export function FotosUploader({
   };
 
   const removeAt = (index: number) => {
-    onChange(normalized.filter((_, i) => i !== index));
+    // Passa pelo normalizeFotos para garantir que uma nova capa seja marcada
+    // caso a foto removida fosse a capa atual
+    onChange(normalizeFotos(normalized.filter((_, i) => i !== index)));
   };
 
   const setLegendaAt = (index: number, legenda: string) => {
