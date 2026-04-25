@@ -9,6 +9,13 @@ import { useAuth } from '@/hooks/useAuth';
 import { buscarCep, formatarCepExibicao, validarCep } from '@/services/viaCepService';
 import { supabase } from '@/lib/supabaseClient';
 import { FotosUploader } from './FotosUploader';
+import { ProprietarioAutocomplete } from './ProprietarioAutocomplete';
+import { ImovelDuplicadoDialog } from './ImovelDuplicadoDialog';
+import {
+  verificarImovelDuplicado,
+  type ImovelDuplicadoMatch,
+  type ProprietarioMatch,
+} from '@/features/imoveis/services/proprietarioService';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -424,6 +431,10 @@ export const CriarImovelForm = ({
   const [isBuscandoCep, setIsBuscandoCep] = useState(false);
   const [cepStatus, setCepStatus] = useState<'idle' | 'success' | 'error' | 'not_found'>('idle');
 
+  // Detecção de imóvel duplicado (mesmo proprietário + características)
+  const [duplicadosDetectados, setDuplicadosDetectados] = useState<ImovelDuplicadoMatch[]>([]);
+  const [showDuplicadoDialog, setShowDuplicadoDialog] = useState(false);
+
   // Buscar condomínios do banco
   useEffect(() => {
     const loadCondominios = async () => {
@@ -648,7 +659,21 @@ export const CriarImovelForm = ({
     return parseFloat(value.replace(/\./g, '').replace(',', '.')) || 0;
   };
 
-  const handleSubmit = async () => {
+  // Aplica os dados de um proprietário existente clicado no autocomplete
+  const handleProprietarioSelect = (match: ProprietarioMatch) => {
+    setFormData((prev) => ({
+      ...prev,
+      proprietario_nome: match.nome,
+      // Só sobrescreve telefone/email se o usuário ainda não tiver digitado nada
+      proprietario_celular:
+        prev.proprietario_celular || prev.proprietario_tel_residencial
+          ? prev.proprietario_celular
+          : match.telefone ?? '',
+      proprietario_email: prev.proprietario_email || (match.email ?? ''),
+    }));
+  };
+
+  const handleSubmit = async (skipDuplicidadeCheck = false) => {
     // Validar tipo obrigatório (necessário para gerar código)
     if (!formData.tipo) {
       setSubmitStatus('error');
@@ -674,6 +699,39 @@ export const CriarImovelForm = ({
 
     // Usar código gerado automaticamente
     const codigoNormalizado = codigoGerado;
+
+    // Verificação de imóvel duplicado para o mesmo proprietário
+    if (!skipDuplicidadeCheck && formData.proprietario_nome.trim().length >= 2) {
+      try {
+        const duplicados = await verificarImovelDuplicado({
+          tenantId,
+          proprietarioNome: formData.proprietario_nome,
+          proprietarioTelefone:
+            formData.proprietario_celular || formData.proprietario_tel_residencial || null,
+          proprietarioEmail: formData.proprietario_email || null,
+          tipo: formData.tipo || null,
+          logradouro: formData.logradouro || null,
+          numero: formData.numero || null,
+          cep: formData.cep || null,
+          bairro: formData.bairro || null,
+          cidade: formData.cidade || null,
+          areaTotal: parseFloat(formData.area_total) || null,
+          quartos: parseInt(formData.quartos) || null,
+          banheiros: parseInt(formData.banheiros) || null,
+          ignorarCodigo: isEdit ? codigoNormalizado : null,
+        });
+
+        if (duplicados.length > 0) {
+          setDuplicadosDetectados(duplicados);
+          setShowDuplicadoDialog(true);
+          setIsSubmitting(false);
+          return;
+        }
+      } catch (err) {
+        console.warn('[CriarImovelForm] falha ao verificar duplicidade:', err);
+        // Não bloqueia o cadastro caso a verificação falhe
+      }
+    }
 
     try {
       if (!isEdit) {
@@ -843,6 +901,7 @@ export const CriarImovelForm = ({
   };
 
   return (
+    <>
     <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto z-[9999]">
         <DialogHeader className="border-b pb-4">
@@ -924,11 +983,17 @@ export const CriarImovelForm = ({
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4 bg-card/50 rounded-lg border">
                 <div className="space-y-2 md:col-span-2 lg:col-span-3">
                   <Label>Nome do Proprietário</Label>
-                  <Input
-                    placeholder="Nome completo"
+                  <ProprietarioAutocomplete
+                    tenantId={tenantId}
                     value={formData.proprietario_nome}
-                    onChange={(e) => handleInputChange('proprietario_nome', e.target.value)}
+                    onChange={(nome) => handleInputChange('proprietario_nome', nome)}
+                    onSelect={handleProprietarioSelect}
+                    placeholder="Nome completo"
                   />
+                  <p className="text-[11px] text-muted-foreground">
+                    Digite 2+ letras para ver proprietários já cadastrados. Passe o mouse para ver
+                    os dados salvos; clique para preencher automaticamente.
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <Label>Tel. Residencial</Label>
@@ -1898,7 +1963,7 @@ export const CriarImovelForm = ({
             <X className="h-4 w-4 mr-2" />
             Cancelar
           </Button>
-          <Button onClick={handleSubmit} disabled={isSubmitting || !codigoGerado || !formData.tipo}>
+          <Button onClick={() => handleSubmit()} disabled={isSubmitting || !codigoGerado || !formData.tipo}>
             {isSubmitting ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -1914,6 +1979,22 @@ export const CriarImovelForm = ({
         </div>
       </DialogContent>
     </Dialog>
+
+    <ImovelDuplicadoDialog
+      open={showDuplicadoDialog}
+      matches={duplicadosDetectados}
+      proprietarioNome={formData.proprietario_nome}
+      onCancel={() => {
+        setShowDuplicadoDialog(false);
+        setDuplicadosDetectados([]);
+      }}
+      onConfirm={() => {
+        setShowDuplicadoDialog(false);
+        setDuplicadosDetectados([]);
+        handleSubmit(true);
+      }}
+    />
+    </>
   );
 };
 

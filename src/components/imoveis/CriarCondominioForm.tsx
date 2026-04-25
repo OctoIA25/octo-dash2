@@ -9,6 +9,14 @@ import { useAuth } from '@/hooks/useAuth';
 import { buscarCep, formatarCepExibicao, validarCep } from '@/services/viaCepService';
 import { supabase } from '@/lib/supabaseClient';
 import { FotosUploader } from './FotosUploader';
+import { CondominioAutocomplete } from './CondominioAutocomplete';
+import { CondominioDuplicadoDialog } from './CondominioDuplicadoDialog';
+import {
+  buscarCondominioCompleto,
+  verificarCondominioDuplicado,
+  type CondominioMatch,
+  type CondominioDuplicadoMatch,
+} from '@/features/imoveis/services/condominioService';
 import { normalizeFotos } from './fotos-helpers';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -332,6 +340,13 @@ export const CriarCondominioForm = ({
   const [submitMessage, setSubmitMessage] = useState('');
   const [isBuscandoCep, setIsBuscandoCep] = useState(false);
   const [cepStatus, setCepStatus] = useState<'idle' | 'success' | 'error' | 'not_found'>('idle');
+
+  // Detecção de duplicidade ao salvar
+  const [duplicadosDetectados, setDuplicadosDetectados] = useState<CondominioDuplicadoMatch[]>([]);
+  const [showDuplicadoDialog, setShowDuplicadoDialog] = useState(false);
+
+  // Indica que o usuário carregou um condomínio existente via autocomplete
+  const [autoSelecionado, setAutoSelecionado] = useState(false);
   
   // Estado para gerenciar metragens
   const [novaMetragem, setNovaMetragem] = useState('');
@@ -452,7 +467,42 @@ export const CriarCondominioForm = ({
     }
   }, [initialData, isEdit, isOpen]);
 
-  const handleSubmit = async () => {
+  // Carrega um condomínio existente no form (modo edit). Disparado pelo autocomplete
+  // ou pelo botão "Editar este em vez de criar novo" no dialog de duplicidade.
+  const handleCondominioSelect = async (match: { id: string; nome: string }) => {
+    if (!tenantId) return;
+    const completo = await buscarCondominioCompleto(tenantId, match.id);
+    if (!completo) {
+      // Fallback: ao menos preenche o nome
+      setFormData((prev) => ({ ...prev, nome: match.nome }));
+      setEditingId(match.id);
+      setAutoSelecionado(true);
+      return;
+    }
+
+    // Converter campos numéricos da DB para string (form trabalha com strings)
+    const toStr = (v: unknown): string => (v === null || v === undefined ? '' : String(v));
+
+    setFormData((prev) => ({
+      ...prev,
+      ...(completo as Partial<CondominioFormData>),
+      ano_construcao: toStr((completo as { ano_construcao?: unknown }).ano_construcao),
+      num_blocos_torres: toStr((completo as { num_blocos_torres?: unknown }).num_blocos_torres),
+      infra_quadra_gramada: toStr((completo as { infra_quadra_gramada?: unknown }).infra_quadra_gramada),
+      infra_sala_ginastica: toStr((completo as { infra_sala_ginastica?: unknown }).infra_sala_ginastica),
+      infra_vaga_visita: toStr((completo as { infra_vaga_visita?: unknown }).infra_vaga_visita),
+      data_entrega: toStr((completo as { data_entrega?: unknown }).data_entrega).slice(0, 10),
+      fotos: ((completo as { fotos?: unknown }).fotos as CondominioFormData['fotos']) ?? [],
+      metragens_disponiveis:
+        ((completo as { metragens_disponiveis?: unknown }).metragens_disponiveis as number[]) ?? [],
+    }));
+    setEditingId(match.id);
+    setAutoSelecionado(true);
+    setSubmitStatus('idle');
+    setSubmitMessage('');
+  };
+
+  const handleSubmit = async (skipDuplicidadeCheck = false) => {
     if (!formData.nome.trim()) {
       setSubmitStatus('error');
       setSubmitMessage('O nome do condomínio é obrigatório');
@@ -495,6 +545,30 @@ export const CriarCondominioForm = ({
     setIsSubmitting(true);
     setSubmitStatus('idle');
     setSubmitMessage('');
+
+    // Verificação de condomínio duplicado — só na criação (não em edit)
+    const ehCriacao = !isEdit && !editingId;
+    if (ehCriacao && !skipDuplicidadeCheck) {
+      try {
+        const duplicados = await verificarCondominioDuplicado({
+          tenantId,
+          nome: formData.nome,
+          logradouro: formData.logradouro || null,
+          numero: formData.numero || null,
+          cep: formData.cep || null,
+          ignorarId: null,
+        });
+
+        if (duplicados.length > 0) {
+          setDuplicadosDetectados(duplicados);
+          setShowDuplicadoDialog(true);
+          setIsSubmitting(false);
+          return;
+        }
+      } catch (err) {
+        console.warn('[CriarCondominioForm] falha ao verificar duplicidade:', err);
+      }
+    }
 
     try {
       // Garantir que a sessão está válida antes de enviar (evita falha silenciosa
@@ -725,6 +799,7 @@ export const CriarCondominioForm = ({
   );
 
   return (
+    <>
     <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto z-[9999]">
         <DialogHeader className="border-b pb-4">
@@ -744,13 +819,21 @@ export const CriarCondominioForm = ({
               <Badge variant="default" className="bg-primary">Obrigatório</Badge>
               <span className="font-semibold text-text-primary">Nome do Condomínio</span>
             </div>
-            <Input
-              placeholder="Ex: Residencial das Flores, Edifício Central, etc."
+            <CondominioAutocomplete
+              tenantId={tenantId}
               value={formData.nome}
-              onChange={(e) => handleInputChange('nome', e.target.value)}
-              className="text-lg"
+              onChange={(nome) => {
+                handleInputChange('nome', nome);
+                if (autoSelecionado) setAutoSelecionado(false);
+              }}
+              onSelect={handleCondominioSelect}
+              applied={autoSelecionado || (isEdit && !!editingId)}
               autoFocus
             />
+            <p className="text-[11px] text-muted-foreground mt-2">
+              Digite 2+ letras para ver condomínios já cadastrados. Passe o mouse para ver os
+              dados; clique para carregar e editar.
+            </p>
           </div>
 
           {/* Status de Submissão */}
@@ -1245,7 +1328,7 @@ export const CriarCondominioForm = ({
             <Button variant="outline" onClick={handleClose} disabled={isSubmitting}>
               Cancelar
             </Button>
-            <Button onClick={handleSubmit} disabled={isSubmitting || !formData.nome.trim()}>
+            <Button onClick={() => handleSubmit()} disabled={isSubmitting || !formData.nome.trim()}>
               {isSubmitting ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -1262,6 +1345,27 @@ export const CriarCondominioForm = ({
         </div>
       </DialogContent>
     </Dialog>
+
+    <CondominioDuplicadoDialog
+      open={showDuplicadoDialog}
+      matches={duplicadosDetectados}
+      nome={formData.nome}
+      onCancel={() => {
+        setShowDuplicadoDialog(false);
+        setDuplicadosDetectados([]);
+      }}
+      onConfirm={() => {
+        setShowDuplicadoDialog(false);
+        setDuplicadosDetectados([]);
+        handleSubmit(true);
+      }}
+      onCarregarExistente={(match) => {
+        setShowDuplicadoDialog(false);
+        setDuplicadosDetectados([]);
+        handleCondominioSelect({ id: match.id, nome: match.nome });
+      }}
+    />
+    </>
   );
 };
 
