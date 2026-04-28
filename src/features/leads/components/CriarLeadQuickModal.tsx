@@ -6,7 +6,7 @@
 
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Plus, Save, User as UserIcon, Phone, Mail, Home, Loader2, Thermometer } from 'lucide-react';
+import { X, Plus, Save, User as UserIcon, Phone, Mail, Home, Loader2, Thermometer, Inbox } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { leadsEventEmitter } from '@/lib/leadsEventEmitter';
 import { useToast } from '@/hooks/use-toast';
@@ -36,6 +36,7 @@ interface LeadForm {
   interest_reference: string;
   message: string;
   temperature: string;
+  participa_bolsao: boolean;
 }
 
 const EMPTY_FORM: LeadForm = {
@@ -45,6 +46,7 @@ const EMPTY_FORM: LeadForm = {
   interest_reference: '',
   message: '',
   temperature: 'Frio',
+  participa_bolsao: true,
 };
 
 const TEMPERATURES = ['Quente', 'Morno', 'Frio'];
@@ -56,6 +58,7 @@ const leadToForm = (lead: KanbanLead): LeadForm => ({
   interest_reference: lead.codigo ?? '',
   message: lead.comments ?? '',
   temperature: lead.temperature ?? 'Frio',
+  participa_bolsao: (lead as { participa_bolsao?: boolean }).participa_bolsao ?? true,
 });
 
 export const CriarLeadQuickModal = ({
@@ -177,6 +180,7 @@ export const CriarLeadQuickModal = ({
           source: 'Manual',
           status: isProprietario ? 'Novos Proprietários' : 'Novos Leads',
           lead_type: leadType,
+          participa_bolsao: form.participa_bolsao,
         };
         if (authUserId) payload.assigned_agent_id = authUserId;
         if (authUserName) payload.assigned_agent_name = authUserName;
@@ -325,6 +329,43 @@ export const CriarLeadQuickModal = ({
               placeholder="Informações adicionais sobre o lead"
               className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all resize-none"
             />
+
+            {/* Seção: Bolsão */}
+            <SectionTitle>Bolsão</SectionTitle>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={form.participa_bolsao}
+              onClick={() => setForm((f) => ({ ...f, participa_bolsao: !f.participa_bolsao }))}
+              className={`w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border transition-colors ${
+                form.participa_bolsao
+                  ? 'bg-orange-50 dark:bg-orange-950/30 border-orange-200 dark:border-orange-900'
+                  : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
+              }`}
+            >
+              <span className="flex items-center gap-2 min-w-0">
+                <Inbox className={`w-4 h-4 shrink-0 ${form.participa_bolsao ? 'text-orange-600 dark:text-orange-400' : 'text-slate-400'}`} />
+                <span className="flex flex-col items-start min-w-0">
+                  <span className="text-[13px] font-semibold text-slate-900 dark:text-slate-100">Ativar bolsão</span>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                    {form.participa_bolsao
+                      ? 'Lead expira conforme regra configurada'
+                      : 'Lead fica fora do fluxo de expiração'}
+                  </span>
+                </span>
+              </span>
+              <span
+                className={`relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors ${
+                  form.participa_bolsao ? 'bg-orange-500' : 'bg-slate-300 dark:bg-slate-700'
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                    form.participa_bolsao ? 'translate-x-[18px]' : 'translate-x-0.5'
+                  }`}
+                />
+              </span>
+            </button>
 
             {error && (
               <p className="mt-3 text-xs text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900 rounded-lg px-3 py-2">

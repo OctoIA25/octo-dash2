@@ -75,6 +75,7 @@ const EquipePage = lazy(() => import('@/features/corretores/pages/EquipePage').t
 const RecrutamentoPage = lazy(() => import('@/features/corretores/pages/RecrutamentoPage').then(m => ({ default: m.RecrutamentoPage })));
 const GestaoEquipePage = lazy(() => import('@/features/corretores/pages/GestaoEquipePage').then(m => ({ default: m.GestaoEquipePage })));
 const BolsaoPage = lazy(() => import('@/features/leads/pages/BolsaoPage').then(m => ({ default: m.BolsaoPage })));
+const CentralLeadsPage = lazy(() => import('@/features/leads/pages/CentralLeadsPage').then(m => ({ default: m.CentralLeadsPage })));
 const CorretoresPage = lazy(() => import('@/features/corretores/pages/CorretoresPage').then(m => ({ default: m.CorretoresPage })));
 const ImoveisPage = lazy(() => import('@/features/imoveis/pages/ImoveisPage').then(m => ({ default: m.ImoveisPage })));
 const ImoveisMapPage = lazy(() => import('@/features/imoveis/pages/ImoveisMapPage'));
@@ -377,9 +378,9 @@ const DashboardLayout = () => {
             element={canAccess('integracoes') ? <IntegracoesPage /> : <Navigate to={defaultAllowedRoute} replace />} 
           />
           
-          <Route 
-            path="central-leads" 
-            element={canAccess('central-leads') ? <Navigate to="/meus-leads?sub=central-leads" replace /> : <Navigate to={defaultAllowedRoute} replace />} 
+          <Route
+            path="central-leads"
+            element={canAccess('central-leads') ? <CentralLeadsPage /> : <Navigate to={defaultAllowedRoute} replace />}
           />
           
           <Route 

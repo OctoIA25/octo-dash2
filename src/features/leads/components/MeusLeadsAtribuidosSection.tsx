@@ -64,6 +64,10 @@ import {
   type KanbanLead,
   type LeadType,
 } from '../services/leadsService';
+import {
+  fetchTenantBolsaoConfig,
+  type TenantBolsaoConfig,
+} from '../services/tenantBolsaoConfigService';
 import { useRegisterNovoActions } from '@/contexts/NovoActionsContext';
 import type { BolsaoLead } from '../services/bolsaoService';
 import {
@@ -212,21 +216,102 @@ const getLeadStatus = (lead: KanbanLead, columns: KanbanColumnDef[]): KanbanStat
 interface KanbanCardProps {
   lead: KanbanLead;
   onClick: () => void;
-  mostrarCorretor?: boolean;}
+  mostrarCorretor?: boolean;
+  bolsaoConfig?: TenantBolsaoConfig | null;
+  nowMs?: number;
+  bolsaoStatus?: { queue_attempt: number; atendido: boolean; status: string } | null;
+  onAssumirDoBolsao?: (leadId: string) => void;
+}
 
 interface KanbanCardContentProps {
   lead: KanbanLead;
   onClick: () => void;
   mostrarCorretor?: boolean;
   isOverlay?: boolean;
+  bolsaoConfig?: TenantBolsaoConfig | null;
+  nowMs?: number;
+  /** Estado do espelho do bolsão pra esse lead — usado pra "Assumir do bolsão" */
+  bolsaoStatus?: { queue_attempt: number; atendido: boolean; status: string } | null;
+  onAssumirDoBolsao?: (leadId: string) => void;
 }
+
+/**
+ * Linha de contagem regressiva pro bolsão.
+ * Aparece somente quando:
+ *  - lead.participa_bolsao = true
+ *  - lead.atendido = false (status = "novos-leads")
+ *  - existe config carregada
+ */
+const BolsaoCountdownLine = memo(({
+  lead,
+  config,
+  nowMs,
+}: {
+  lead: KanbanLead;
+  config: TenantBolsaoConfig;
+  nowMs: number;
+}) => {
+  if (!lead.participa_bolsao) return null;
+  // status do KanbanLead vem como slug ("novos-leads", "interacao", etc.)
+  if (lead.status !== 'novos-leads') return null;
+  // Cronômetro reseta a cada redistribuição via roleta — usa assigned_at
+  const baseTs = lead.assigned_at || lead.created_at;
+  if (!baseTs) return null;
+
+  const limiteMin = lead.is_exclusive
+    ? config.tempoExpiracaoExclusivo
+    : config.tempoExpiracaoNaoExclusivo;
+  const baseMs = new Date(baseTs).getTime();
+  if (Number.isNaN(baseMs)) return null;
+  const expiresMs = baseMs + limiteMin * 60_000;
+  const remainMs = expiresMs - nowMs;
+  const remainMin = Math.floor(remainMs / 60_000);
+
+  const destino = config.teamQueueEnabled ? 'Próximo da equipe' : 'Próximo da roleta';
+
+  // Quando expirou, o card sai da view do corretor atual logo que a redistribuição rodar.
+  // Não mostramos nenhum aviso intermediário.
+  if (remainMin <= 0) {
+    return null;
+  }
+
+  const isUrgent = remainMin < 10;
+  const colorClass = isUrgent
+    ? 'text-rose-600 dark:text-rose-400'
+    : remainMin < 30
+      ? 'text-orange-600 dark:text-orange-400'
+      : 'text-slate-500 dark:text-slate-400';
+
+  const formatRemain = (m: number) => {
+    if (m >= 60) {
+      const h = Math.floor(m / 60);
+      const rem = m % 60;
+      return rem > 0 ? `${h}h ${rem}m` : `${h}h`;
+    }
+    return `${m}m`;
+  };
+
+  return (
+    <div className="flex items-center justify-between gap-2 mt-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+      <div className={`flex items-center gap-1 text-[10px] font-semibold ${colorClass}`}>
+        <Clock className="h-3 w-3" />
+        {formatRemain(remainMin)} p/ bolsão
+      </div>
+      <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate" title={`Próximo destino: ${destino}`}>
+        → {destino}
+      </span>
+    </div>
+  );
+});
+
+BolsaoCountdownLine.displayName = 'BolsaoCountdownLine';
 
 /**
  * Conteúdo visual do card — recebe opcionalmente `dragHandle` (o
  * GripVertical com listeners do dnd-kit) para renderizar à esquerda do avatar.
  * Quando `isOverlay=true` estamos desenhando o clone do DragOverlay.
  */
-const KanbanCardContent = memo(({ lead, onClick, mostrarCorretor, isOverlay = false, dragHandle }: KanbanCardContentProps & { dragHandle?: React.ReactNode }) => {
+const KanbanCardContent = memo(({ lead, onClick, mostrarCorretor, isOverlay = false, dragHandle, bolsaoConfig, nowMs, bolsaoStatus, onAssumirDoBolsao }: KanbanCardContentProps & { dragHandle?: React.ReactNode }) => {
   const nome = lead.nomedolead || 'Lead sem nome';
   const telefone = lead.lead || lead.numerocorretor || '';
   const portal = lead.portal || '';
@@ -329,13 +414,41 @@ const KanbanCardContent = memo(({ lead, onClick, mostrarCorretor, isOverlay = fa
           )}
         </div>
       </div>
+
+      {/* Countdown do bolsão — escondido quando já assumido do bolsão */}
+      {bolsaoConfig && nowMs !== undefined && !(bolsaoStatus?.atendido && bolsaoStatus?.status === 'assumido') && (
+        <BolsaoCountdownLine lead={lead} config={bolsaoConfig} nowMs={nowMs} />
+      )}
+
+      {/* Botão "Assumir do bolsão" — aparece quando lead foi redistribuído (queue_attempt > 0) e ainda não foi assumido */}
+      {bolsaoStatus && bolsaoStatus.queue_attempt > 0 && !bolsaoStatus.atendido && onAssumirDoBolsao && !isOverlay && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onAssumirDoBolsao(lead.id);
+          }}
+          className="mt-2 w-full h-8 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11.5px] font-semibold flex items-center justify-center gap-1.5 transition-colors"
+        >
+          <CheckCircle2 className="w-3.5 h-3.5" strokeWidth={2.4} />
+          Assumir do bolsão
+        </button>
+      )}
+
+      {/* Badge "Assumido do bolsão" — depois de clicar no botão */}
+      {bolsaoStatus?.atendido && bolsaoStatus?.status === 'assumido' && (
+        <div className="mt-2 inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 text-[10.5px] font-semibold">
+          <CheckCircle2 className="w-3 h-3" strokeWidth={2.4} />
+          Assumido do bolsão
+        </div>
+      )}
     </div>
   );
 });
 
 KanbanCardContent.displayName = 'KanbanCardContent';
 
-const KanbanCard = memo(({ lead, onClick, mostrarCorretor }: KanbanCardProps) => {
+const KanbanCard = memo(({ lead, onClick, mostrarCorretor, bolsaoConfig, nowMs, bolsaoStatus, onAssumirDoBolsao }: KanbanCardProps) => {
   // Quando há DragOverlay, o card ORIGINAL não recebe `transform` — só muda opacity
   // para marcar a posição de origem. O overlay (portal no body) é quem segue o cursor.
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: lead.id });
@@ -363,6 +476,10 @@ const KanbanCard = memo(({ lead, onClick, mostrarCorretor }: KanbanCardProps) =>
         onClick={onClick}
         mostrarCorretor={mostrarCorretor}
         dragHandle={dragHandle}
+        bolsaoConfig={bolsaoConfig}
+        nowMs={nowMs}
+        bolsaoStatus={bolsaoStatus}
+        onAssumirDoBolsao={onAssumirDoBolsao}
       />
     </div>
   );
@@ -376,11 +493,15 @@ interface KanbanColumnProps {
   onLeadClick: (lead: KanbanLead) => void;
   onAdicionarLead?: () => void;
   mostrarCorretor?: boolean;
+  bolsaoConfig?: TenantBolsaoConfig | null;
+  nowMs?: number;
+  bolsaoStatusMap?: Record<string, { queue_attempt: number; atendido: boolean; status: string }>;
+  onAssumirDoBolsao?: (leadId: string) => void;
 }
 
 const CARDS_PER_PAGE = 15;
 
-const KanbanColumn = memo(({ column, leads, onLeadClick, onAdicionarLead, mostrarCorretor }: KanbanColumnProps) => {
+const KanbanColumn = memo(({ column, leads, onLeadClick, onAdicionarLead, mostrarCorretor, bolsaoConfig, nowMs, bolsaoStatusMap, onAssumirDoBolsao }: KanbanColumnProps) => {
   const { setNodeRef, isOver } = useDroppable({ id: column.id });
   const [visibleCount, setVisibleCount] = useState(CARDS_PER_PAGE);
 
@@ -425,6 +546,10 @@ const KanbanColumn = memo(({ column, leads, onLeadClick, onAdicionarLead, mostra
               lead={lead}
               onClick={() => onLeadClick(lead)}
               mostrarCorretor={mostrarCorretor}
+              bolsaoConfig={bolsaoConfig}
+              nowMs={nowMs}
+              bolsaoStatus={bolsaoStatusMap?.[lead.id] ?? null}
+              onAssumirDoBolsao={onAssumirDoBolsao}
             />
           ))}
 
@@ -508,6 +633,105 @@ export const MeusLeadsAtribuidosSection = ({
   const [isDraggingScroll, setIsDraggingScroll] = useState(false);
   const [dragStartX, setDragStartX] = useState(0);
   const [scrollStartX, setScrollStartX] = useState(0);
+
+  // Bolsão: config do tenant + clock que tica a cada 30s para alimentar o countdown
+  const [bolsaoConfig, setBolsaoConfig] = useState<TenantBolsaoConfig | null>(null);
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+
+  useEffect(() => {
+    if (!tenantId || tenantId === 'owner') {
+      setBolsaoConfig(null);
+      return;
+    }
+    let cancelled = false;
+    fetchTenantBolsaoConfig(tenantId)
+      .then((cfg) => { if (!cancelled) setBolsaoConfig(cfg); })
+      .catch(() => { /* silencioso — sem config, countdown não aparece */ });
+    return () => { cancelled = true; };
+  }, [tenantId]);
+
+  useEffect(() => {
+    const interval = setInterval(() => setNowMs(Date.now()), 30_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Dispara a expiração do bolsão imediatamente ao abrir o kanban — assim leads
+  // que já bateram o tempo são redistribuídos pra próxima pessoa da roleta sem
+  // esperar o cron de 1 min.
+  useEffect(() => {
+    if (!tenantId || tenantId === 'owner') return;
+    supabase.rpc('expire_bolsao_leads').then(({ error }) => {
+      if (error) {
+        console.warn('[MeusLeads] expire_bolsao_leads falhou:', error.message);
+      } else {
+        leadsEventEmitter.emit();
+      }
+    });
+  }, [tenantId]);
+
+  /**
+   * Espelho do bolsão pros leads exibidos. Quando uma row tem
+   * `queue_attempt > 0` significa que o lead foi redistribuído (caiu no bolsão).
+   * Quando `atendido=true && status='assumido'` o corretor já clicou em
+   * "Assumir do bolsão" — o cronômetro está parado, exibimos o badge.
+   */
+  interface BolsaoMirrorRow {
+    source_lead_id: string;
+    queue_attempt: number;
+    atendido: boolean;
+    status: string;
+  }
+  const [bolsaoStatusMap, setBolsaoStatusMap] = useState<Record<string, BolsaoMirrorRow>>({});
+  const carregarBolsaoStatus = useCallback(async (leadIds: string[]) => {
+    if (leadIds.length === 0) {
+      setBolsaoStatusMap({});
+      return;
+    }
+    const result = await supabase
+      .from('bolsao')
+      .select('source_lead_id, queue_attempt, atendido, status')
+      .in('source_lead_id', leadIds);
+    if (result.error) {
+      console.warn('[MeusLeads] erro ao buscar status do bolsão:', result.error.message);
+      return;
+    }
+    const rows = (result.data ?? []) as Array<Record<string, unknown>>;
+    const map: Record<string, BolsaoMirrorRow> = {};
+    for (const row of rows) {
+      const sid = row.source_lead_id as string | null;
+      if (!sid) continue;
+      map[sid] = {
+        source_lead_id: sid,
+        queue_attempt: Number(row.queue_attempt ?? 0),
+        atendido: Boolean(row.atendido),
+        status: String(row.status ?? 'novo'),
+      };
+    }
+    setBolsaoStatusMap(map);
+  }, []);
+
+  /** Marca lead como assumido do bolsão — cronômetro para, badge aparece. */
+  const handleAssumirDoBolsao = useCallback(async (leadId: string) => {
+    const { error } = await supabase
+      .from('bolsao')
+      .update({
+        atendido: true,
+        data_atendimento: new Date().toISOString(),
+        status: 'assumido',
+      })
+      .eq('source_lead_id', leadId);
+    if (error) {
+      toast({ title: 'Erro ao assumir', description: error.message, variant: 'destructive' });
+      return;
+    }
+    // Atualiza o map local + emite evento
+    setBolsaoStatusMap((prev) => ({
+      ...prev,
+      [leadId]: { ...(prev[leadId] ?? { source_lead_id: leadId, queue_attempt: 1 }), atendido: true, status: 'assumido' },
+    }));
+    toast({ title: '✅ Lead assumido do bolsão', description: 'Cronômetro parado.' });
+    leadsEventEmitter.emit();
+  }, [toast]);
   
   // Sensores iguais aos do Kanban de Proposta — distance=6 evita "pick-up" acidental.
   const sensors = useSensors(
@@ -589,6 +813,11 @@ export const MeusLeadsAtribuidosSection = ({
   useEffect(() => {
     carregarMeusLeads();
   }, [carregarMeusLeads]);
+
+  // Sincroniza o status do bolsão (queue_attempt, atendido) sempre que mudar lista
+  useEffect(() => {
+    carregarBolsaoStatus(meusLeads.map((l) => l.id));
+  }, [meusLeads, carregarBolsaoStatus]);
 
   // Refetch quando outro lugar do app atualiza um lead (funil/pipeline, etc.)
   useEffect(() => {
@@ -1060,6 +1289,10 @@ export const MeusLeadsAtribuidosSection = ({
                     onLeadClick={handleLeadClick}
                     onAdicionarLead={() => handleAdicionarLead(column.title)}
                     mostrarCorretor={isAdmin}
+                    bolsaoConfig={bolsaoConfig}
+                    nowMs={nowMs}
+                    bolsaoStatusMap={bolsaoStatusMap}
+                    onAssumirDoBolsao={handleAssumirDoBolsao}
                   />
                 </div>
               ))}
@@ -1073,6 +1306,8 @@ export const MeusLeadsAtribuidosSection = ({
                     onClick={() => {}}
                     mostrarCorretor={isAdmin}
                     isOverlay
+                    bolsaoConfig={bolsaoConfig}
+                    nowMs={nowMs}
                   />
                 </div>
               ) : null}

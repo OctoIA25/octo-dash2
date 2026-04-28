@@ -8,7 +8,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { Phone, Building2, Clock, User, Maximize2, CheckCircle, Loader2, MessageCircle } from 'lucide-react';
+import { Phone, Building2, Clock, User, Maximize2, CheckCircle, Loader2, MessageCircle, Hand } from 'lucide-react';
 import { BolsaoLead } from '@/features/leads/services/bolsaoService';
 
 interface LeadMiniCardProps {
@@ -16,19 +16,25 @@ interface LeadMiniCardProps {
   onClick: () => void;
   onConfirmarAtendimento?: (leadId: number) => void;
   onEnviarMensagem?: (telefone: string) => void;
+  onAssumirLead?: (leadId: number) => void;
   isConfirmandoLead?: boolean;
+  isAssumindoLead?: boolean;
   mostrarBotaoConfirmar?: boolean;
   mostrarBotaoMensagem?: boolean;
+  mostrarBotaoAssumir?: boolean;
 }
 
-export const LeadMiniCard = ({ 
-  lead, 
-  onClick, 
+export const LeadMiniCard = ({
+  lead,
+  onClick,
   onConfirmarAtendimento,
   onEnviarMensagem,
+  onAssumirLead,
   isConfirmandoLead,
+  isAssumindoLead,
   mostrarBotaoConfirmar,
-  mostrarBotaoMensagem
+  mostrarBotaoMensagem,
+  mostrarBotaoAssumir
 }: LeadMiniCardProps) => {
   const [modalFotoAberto, setModalFotoAberto] = useState(false);
   
@@ -164,8 +170,32 @@ export const LeadMiniCard = ({
             </div>
             
             {/* Botões de Ação */}
-            {!lead.atendido && (mostrarBotaoMensagem || mostrarBotaoConfirmar) && (
+            {!lead.atendido && (mostrarBotaoAssumir || mostrarBotaoMensagem || mostrarBotaoConfirmar) && (
               <div className="pt-3 border-t space-y-2">
+                {/* Botão Assumir Lead (mais proeminente — emerald sólido) */}
+                {mostrarBotaoAssumir && onAssumirLead && (
+                  <Button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onAssumirLead(lead.id);
+                    }}
+                    disabled={isAssumindoLead}
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm h-10 shadow-md"
+                  >
+                    {isAssumindoLead ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Assumindo...
+                      </>
+                    ) : (
+                      <>
+                        <Hand className="h-4 w-4 mr-2" />
+                        Assumir Lead
+                      </>
+                    )}
+                  </Button>
+                )}
+
                 {/* Botão Enviar Mensagem */}
                 {mostrarBotaoMensagem && onEnviarMensagem && lead.lead && (
                   <Button

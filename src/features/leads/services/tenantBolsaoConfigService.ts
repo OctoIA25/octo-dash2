@@ -9,6 +9,8 @@ export interface HorarioDiaConfig {
 export type TeamQueueOrder = 'random' | 'linear' | 'balanced';
 
 export interface TenantBolsaoConfig {
+  /** Master switch — quando false, bolsão fica completamente desativado (não espelha leads, não expira) */
+  bolsaoEnabled: boolean;
   tempoExpiracaoExclusivo: number;
   tempoExpiracaoNaoExclusivo: number;
   intervaloVerificacao: number;
@@ -31,6 +33,7 @@ export interface TenantBolsaoConfig {
 }
 
 export const DEFAULT_BOLSAO_CONFIG: TenantBolsaoConfig = {
+  bolsaoEnabled: true,
   tempoExpiracaoExclusivo: 60,
   tempoExpiracaoNaoExclusivo: 60,
   intervaloVerificacao: 60,
@@ -84,7 +87,7 @@ export async function fetchTenantBolsaoConfig(tenantId: string): Promise<TenantB
 
   const { data, error } = await supabase
     .from('tenant_bolsao_config')
-    .select('tempo_expiracao_exclusivo, tempo_expiracao_nao_exclusivo, intervalo_verificacao, notificar_expiracao, auto_refresh, intervalo_auto_refresh, disponibilidade_lead, horario_funcionamento, team_queue_enabled, team_queue_order, roleta_enabled')
+    .select('bolsao_enabled, tempo_expiracao_exclusivo, tempo_expiracao_nao_exclusivo, intervalo_verificacao, notificar_expiracao, auto_refresh, intervalo_auto_refresh, disponibilidade_lead, horario_funcionamento, team_queue_enabled, team_queue_order, roleta_enabled')
     .eq('tenant_id', tenantId)
     .maybeSingle();
 
@@ -94,6 +97,7 @@ export async function fetchTenantBolsaoConfig(tenantId: string): Promise<TenantB
   }
 
   const config = normalizeConfig(data ? {
+    bolsaoEnabled: (data as any).bolsao_enabled ?? true,
     tempoExpiracaoExclusivo: data.tempo_expiracao_exclusivo,
     tempoExpiracaoNaoExclusivo: data.tempo_expiracao_nao_exclusivo,
     intervaloVerificacao: data.intervalo_verificacao,
@@ -122,6 +126,7 @@ export async function saveTenantBolsaoConfig(tenantId: string, config: TenantBol
     .from('tenant_bolsao_config')
     .upsert({
       tenant_id: tenantId,
+      bolsao_enabled: config.bolsaoEnabled,
       tempo_expiracao_exclusivo: config.tempoExpiracaoExclusivo,
       tempo_expiracao_nao_exclusivo: config.tempoExpiracaoNaoExclusivo,
       intervalo_verificacao: config.intervaloVerificacao,

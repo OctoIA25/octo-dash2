@@ -6,7 +6,10 @@
  */
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from "@/hooks/useAuth";
+import { supabase } from '@/lib/supabaseClient';
+import { leadsEventEmitter } from '@/lib/leadsEventEmitter';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -71,6 +74,8 @@ import {
  } from '../services/roletaService';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Settings2 } from 'lucide-react';
+import { BolsaoConfigPanel } from './BolsaoConfigPanel';
+import { BolsaoTeamsPanel } from './BolsaoTeamsPanel';
 import { DEFAULT_BOLSAO_CONFIG, TenantBolsaoConfig, fetchTenantBolsaoConfig, saveTenantBolsaoConfig } from '../services/tenantBolsaoConfigService';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
@@ -78,7 +83,7 @@ import { Input } from '@/components/ui/input';
 
 interface BolsaoSectionProps {}
 
-type BolsaoTab = 'geral' | 'disponiveis';
+type BolsaoTab = 'geral' | 'disponiveis' | 'configuracoes' | 'equipes';
 
 export const BolsaoSection = (props: BolsaoSectionProps) => {
   const { user, isCorretor, isAdmin, tenantId } = useAuth();
@@ -121,7 +126,18 @@ export const BolsaoSection = (props: BolsaoSectionProps) => {
     );
   }
   
-  const [activeTab, setActiveTab] = useState<BolsaoTab>('disponiveis');
+  // Tab agora vem da URL (?tab=...) — sincronizada com o PageTabs do header global
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab') as BolsaoTab | null;
+  // Aba "equipes" só vale quando team_queue_enabled — senão volta pra disponiveis
+  // (efeito é aplicado num useEffect abaixo, depois da config carregar)
+  const activeTab: BolsaoTab =
+    tabParam === 'geral' || tabParam === 'configuracoes' || tabParam === 'equipes'
+      ? tabParam
+      : 'disponiveis';
+  const setActiveTab = useCallback((tab: BolsaoTab) => {
+    setSearchParams({ tab }, { replace: true });
+  }, [setSearchParams]);
   const [leads, setLeads] = useState<BolsaoLead[]>([]);
   const [loading, setLoading] = useState(true);
   const [assumindoLead, setAssumindoLead] = useState<number | null>(null);
@@ -194,6 +210,14 @@ export const BolsaoSection = (props: BolsaoSectionProps) => {
       });
     }
   }, [isAdmin, activeTab]);
+
+  // Aba "Equipes" só faz sentido quando team_queue_enabled. Se acessada sem
+  // estar habilitada (ex: admin desligou no painel de configs), volta pra Disponíveis.
+  useEffect(() => {
+    if (activeTab === 'equipes' && !config.teamQueueEnabled) {
+      setActiveTab('disponiveis');
+    }
+  }, [activeTab, config.teamQueueEnabled]);
 
   // Carregar leads do Bolsão
   const carregarLeads = async () => {
@@ -1348,9 +1372,72 @@ export const BolsaoSection = (props: BolsaoSectionProps) => {
                     setConfirmandoLead(null);
                   }
                 }}
+                onAssumirLead={async (leadId: number) => {
+                  setAssumindoLead(leadId);
+                  try {
+                    // 1. Verificar limite de leads (se ativo)
+                    if (tenantId && user?.id) {
+                      const limitConfig = await fetchLeadLimitConfig(tenantId);
+                      if (limitConfig && limitConfig.lead_limit_enabled) {
+                        const brokerOverride = (user as { permissions?: { lead_limit?: BrokerLeadLimitOverride } })?.permissions?.lead_limit;
+                        const eligibility = await checkBrokerEligibility(tenantId, user.id, limitConfig, brokerOverride);
+                        if (!eligibility.eligible) {
+                          toast({
+                            title: 'Limite de leads atingido',
+                            description: eligibility.block_reason || 'Você atingiu o limite máximo de leads na carteira.',
+                            variant: 'destructive',
+                          });
+                          setAssumindoLead(null);
+                          return;
+                        }
+                      }
+                    }
+
+                    // 2. Atualiza bolsao (status=assumido, atendido=true, corretor=user)
+                    await assumirLeadDoBolsao(leadId, user?.name || 'Corretor', user?.telefone?.toString() || '');
+
+                    // 3. Espelha em leads (assigned_agent_*) pra aparecer no kanban do corretor
+                    const { data: bolsaoRow } = await supabase
+                      .from('bolsao')
+                      .select('source_lead_id, source_kenlo_id')
+                      .eq('id', leadId)
+                      .maybeSingle();
+                    if (bolsaoRow?.source_lead_id) {
+                      await supabase
+                        .from('leads')
+                        .update({
+                          assigned_agent_id: user?.id ?? null,
+                          assigned_agent_name: user?.name ?? null,
+                        })
+                        .eq('id', bolsaoRow.source_lead_id);
+                    } else if (bolsaoRow?.source_kenlo_id) {
+                      await supabase
+                        .from('kenlo_leads')
+                        .update({ attended_by_name: user?.name ?? null })
+                        .eq('id', bolsaoRow.source_kenlo_id);
+                    }
+
+                    toast({
+                      title: '✅ Lead assumido!',
+                      description: 'O lead agora está no seu kanban "Meus Leads".',
+                    });
+                    await carregarLeads();
+                    leadsEventEmitter.emit();
+                  } catch (error) {
+                    toast({
+                      title: '❌ Erro ao assumir lead',
+                      description: String(error),
+                      variant: 'destructive',
+                    });
+                  } finally {
+                    setAssumindoLead(null);
+                  }
+                }}
                 isConfirmandoLead={confirmandoLead === lead.id}
+                isAssumindoLead={assumindoLead === lead.id}
                 mostrarBotaoMensagem={false}
                 mostrarBotaoConfirmar={false}
+                mostrarBotaoAssumir={true}
               />
             ))}
           </div>
@@ -1969,136 +2056,51 @@ export const BolsaoSection = (props: BolsaoSectionProps) => {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header Fixo - Fica no topo sempre visível */}
-      <div className="sticky top-0 left-0 right-0 z-50 bg-card border-b shadow-sm">
-        <div className="w-full px-4 py-4">
-          {/* Linha 1: Título e Botões */}
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <Home className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-              <h1 className="text-xl font-bold text-foreground">Bolsão de Leads</h1>
+    <div
+      key="bolsao"
+      className="animate-in fade-in-0 slide-in-from-bottom-3 duration-300 ease-out"
+    >
+      <div className="px-6 py-5">
+        <div className="max-w-[1400px] mx-auto">
+
+          {/* Saudação / Header — padrão Início */}
+          <div className="flex items-start justify-between gap-4 mb-5 flex-wrap">
+            <div>
+              <h1 className="text-[22px] font-bold text-slate-900 dark:text-slate-100 leading-tight tracking-tight">
+                Bolsão de Leads
+              </h1>
+              <p className="text-[12.5px] text-slate-500 dark:text-slate-400 mt-0.5">
+                Leads que esfriaram e estão disponíveis para qualquer corretor assumir.
+              </p>
             </div>
-            
             <div className="flex items-center gap-2">
-              {canManageBolsaoConfig && (
-                <Button
-                  onClick={() => setModalTempoBolsaoAberto(true)}
-                  variant="outline"
-                  size="sm"
-                  className="h-9 px-4 font-semibold border-purple-500/50 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20"
-                >
-                  <Settings2 className="h-4 w-4 mr-2" />
-                  Tempo do Bolsão
-                </Button>
-              )}
-
-              {/* 🎰 Botão Gerenciar Roleta (Admin, Team Leader e usuários com permissão can_manage_roleta) */}
-              {(isAdmin || user?.systemRole === 'team_leader' || (user?.permissions as any)?.can_manage_roleta) && (
-                <Button
-                  onClick={() => {
-                    carregarCorretoresRoleta();
-                    setModalRoletaAberto(true);
-                  }}
-                  variant="outline"
-                  size="sm"
-                  className="h-9 px-4 font-semibold border-amber-500/50 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20"
-                >
-                  <Settings2 className="h-4 w-4 mr-2" />
-                  Roleta
-                  {roletaStats.total > 0 && (
-                    <Badge variant="secondary" className="ml-2 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 dark:bg-amber-950/60">
-                      {roletaStats.participantes}/{roletaStats.total}
-                    </Badge>
-                  )}
-                </Button>
-              )}
-
-              {/* Botão Conectar/Desconectar Bolsão */}
-              {bolsaoConectado ? (
-                <Button
-                  onClick={handleDesconectarBolsao}
-                  variant="outline"
-                  size="sm"
-                  className="h-9 px-4 font-semibold"
-                >
-                  {loading ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Clock className="h-4 w-4 mr-2" />
-                  )}
-                  Atualizar
-                </Button>
-              ) : (
-                <>
-                  <Button
-                    onClick={() => setModalConexaoAberto(true)}
-                    variant="default"
-                    size="sm"
-                    className="h-9 px-4 font-semibold bg-blue-600 hover:bg-blue-700 bolsao-connect-button"
-                  >
-                    <span className="flex items-center">
-                      <Zap className="h-4 w-4 mr-2" />
-                      Conectar Bolsão
-                    </span>
-                  </Button>
-
-                  <Button
-                    onClick={() => window.location.reload()}
-                    variant="outline"
-                    size="sm"
-                    className="h-9 px-4 font-semibold"
-                  >
-                    <RotateCcw className="h-4 w-4 mr-2" />
-                    Atualizar
-                  </Button>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* Linha 2: Abas de Navegação */}
-          <div className="flex items-center gap-2 border-t pt-3">
-            <button
-              onClick={() => setActiveTab('disponiveis')}
-/* ... */
-              className={`relative px-4 py-2 font-bold text-sm transition-all rounded-md ${
-                activeTab === 'disponiveis'
-                  ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-              }`}
-            >
-              <span className="flex items-center gap-2">
-                <Zap className="h-4 w-4" />
-                Disponíveis
-              </span>
-            </button>
-            
-            {/* Aba Todos os Leads - APENAS PARA ADMIN */}
-            {isAdmin && (
               <button
-                onClick={() => setActiveTab('geral')}
-                className={`relative px-4 py-2 font-bold text-sm transition-all rounded-md ${
-                  activeTab === 'geral'
-                    ? 'text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                }`}
+                type="button"
+                onClick={bolsaoConectado ? handleDesconectarBolsao : () => window.location.reload()}
+                disabled={loading}
+                className="h-9 px-3 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-[12.5px] font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5 transition-colors disabled:opacity-50"
               >
-                <span className="flex items-center gap-2">
-                  <Tag className="h-4 w-4" />
-                  Todos os Leads
-                </span>
+                {loading
+                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  : <RotateCcw className="w-3.5 h-3.5" strokeWidth={2} />}
+                Atualizar
               </button>
-            )}
+            </div>
           </div>
-        </div>
-      </div>
-            
-      {/* Container de Conteúdo */}
-      <div className="w-full px-4 py-2">
-        {/* 🆕 Cards de Métricas de Corretores (apenas Admin) */}
-        {isAdmin && renderMetricasCorretores()}
-        
+
+          {/* Container de Conteúdo */}
+          <div className="w-full">
+        {/* Aba "Configurações" / "Equipes" — render isolado */}
+        {activeTab === 'configuracoes' ? (
+          <BolsaoConfigPanel tenantId={tenantId} isAdmin={isAdmin} />
+        ) : activeTab === 'equipes' ? (
+          <BolsaoTeamsPanel
+            tenantId={tenantId}
+            isAdmin={isAdmin}
+            teamQueueEnabled={config.teamQueueEnabled}
+          />
+        ) : (
+        <>
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20">
             <Loader2 className="h-16 w-16 text-purple-500 animate-spin mb-4" />
@@ -2131,8 +2133,10 @@ export const BolsaoSection = (props: BolsaoSectionProps) => {
         ) : (
           renderLeadsMiniCards(leads)
         )}
+        </>
+        )}
       </div>
-      
+
       {/* 🆕 Modal de Detalhes do Lead */}
       <LeadDetailsModal
         lead={leadSelecionado}
@@ -2573,6 +2577,8 @@ export const BolsaoSection = (props: BolsaoSectionProps) => {
           </div>
         </div>
       )}
+        </div>
+      </div>
     </div>
   );
 };

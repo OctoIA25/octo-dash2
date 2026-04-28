@@ -3,8 +3,10 @@
  * Substituem as "internal tabs" do antigo MainLayoutOptimized.
  */
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useAuthContext } from '@/contexts/AuthContext';
+import { fetchTenantBolsaoConfig } from '@/features/leads/services/tenantBolsaoConfigService';
 import {
   BarChart3,
   Headphones,
@@ -27,6 +29,9 @@ import {
   Code,
   Home,
   User,
+  Zap,
+  Tag,
+  Settings2,
 } from 'lucide-react';
 
 interface Tab {
@@ -144,8 +149,14 @@ const TAB_CONFIGS: TabConfig[] = [
   {
     basePath: '/bolsao',
     label: 'Bolsão',
-    matchStrategy: 'pathSegment',
-    tabs: [],
+    matchStrategy: 'query',
+    queryKey: 'tab',
+    tabs: [
+      { id: 'disponiveis', label: 'Disponíveis', icon: Zap, href: '/bolsao?tab=disponiveis', isQuery: true },
+      { id: 'geral', label: 'Todos os Leads', icon: Tag, href: '/bolsao?tab=geral', isQuery: true },
+      { id: 'equipes', label: 'Equipes', icon: Users, href: '/bolsao?tab=equipes', isQuery: true },
+      { id: 'configuracoes', label: 'Configurações', icon: Settings2, href: '/bolsao?tab=configuracoes', isQuery: true },
+    ],
   },
   {
     basePath: '/imoveis',
@@ -198,10 +209,29 @@ const TAB_CONFIGS: TabConfig[] = [
 export function PageTabs() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { tenantId } = useAuthContext();
+
+  // Carrega o config do bolsão pra decidir se a aba "Equipes" aparece
+  const [teamQueueEnabled, setTeamQueueEnabled] = useState(false);
+  const isOnBolsao = location.pathname.startsWith('/bolsao');
+  useEffect(() => {
+    if (!isOnBolsao || !tenantId || tenantId === 'owner') return;
+    let cancelled = false;
+    fetchTenantBolsaoConfig(tenantId)
+      .then((c) => { if (!cancelled) setTeamQueueEnabled(c.teamQueueEnabled); })
+      .catch(() => { /* silencioso */ });
+    return () => { cancelled = true; };
+  }, [isOnBolsao, tenantId]);
 
   const { activeConfig, activeTabId } = useMemo(() => {
-    const cfg = TAB_CONFIGS.find((c) => location.pathname.startsWith(c.basePath));
-    if (!cfg) return { activeConfig: null, activeTabId: null };
+    const baseCfg = TAB_CONFIGS.find((c) => location.pathname.startsWith(c.basePath));
+    if (!baseCfg) return { activeConfig: null, activeTabId: null };
+
+    // Filtro dinâmico: aba "Equipes" do Bolsão só aparece se team_queue_enabled
+    const cfg: TabConfig =
+      baseCfg.basePath === '/bolsao'
+        ? { ...baseCfg, tabs: baseCfg.tabs.filter((t) => t.id !== 'equipes' || teamQueueEnabled) }
+        : baseCfg;
 
     let activeId: string | null = null;
     if (cfg.matchStrategy === 'pathSegment') {
@@ -212,7 +242,7 @@ export function PageTabs() {
       activeId = params.get(cfg.queryKey) || cfg.tabs[0]?.id || null;
     }
     return { activeConfig: cfg, activeTabId: activeId };
-  }, [location.pathname, location.search]);
+  }, [location.pathname, location.search, teamQueueEnabled]);
 
   if (!activeConfig) return null;
 

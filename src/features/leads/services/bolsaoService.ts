@@ -62,26 +62,27 @@ export async function fetchBolsaoLeads(): Promise<BolsaoLead[]> {
 }
 
 /**
- * Busca TODOS os leads do Bolsão (área geral)
- * EXCLUI status "novo" que é exclusivo de "Meus Leads"
+ * Busca todos os leads que passaram pelo Bolsão em algum momento.
+ * Critério: `data_expiracao IS NOT NULL` — só é setado por `moverLeadParaBolsao`,
+ * portanto identifica de forma confiável leads que cairam no pool.
+ * Inclui status atuais 'bolsao', 'assumido', 'atendido', 'finalizado'.
  */
 export async function fetchTodosLeadsBolsao(): Promise<BolsaoLead[]> {
   try {
-    
     const { data, error } = await supabase
       .from(BOLSAO_TABLE)
       .select('*')
-      .neq('status', 'novo')
-      .order('created_at', { ascending: false });
-    
+      .not('data_expiracao', 'is', null)
+      .order('data_expiracao', { ascending: false });
+
     if (error) {
-      throw new Error(`Erro ao buscar todos os leads: ${error.message}`);
+      throw new Error(`Erro ao buscar leads que passaram pelo bolsão: ${error.message}`);
     }
-    
+
     return data || [];
-    
+
   } catch (error) {
-    console.error('❌ Erro ao buscar todos os leads do Bolsão:', error);
+    console.error('❌ Erro ao buscar leads que passaram pelo bolsão:', error);
     return [];
   }
 }

@@ -53,6 +53,10 @@ export interface CRMLead {
   archived_at: string | null;
   archive_reason: string | null;
   lead_type: LeadType; // 1 = Interessado (default), 2 = Proprietário
+  is_exclusive: boolean;
+  participa_bolsao: boolean;
+  /** Quando o corretor ATUAL recebeu este lead — base do cronômetro do bolsão */
+  assigned_at: string;
   created_at: string;
   updated_at: string;
 }
@@ -89,6 +93,11 @@ export interface KanbanLead {
   archive_reason: string | null;
   // Tipo de lead: 1 = Interessado, 2 = Proprietário
   lead_type: LeadType;
+  // Bolsão
+  is_exclusive: boolean;
+  participa_bolsao: boolean;
+  /** Quando o corretor ATUAL recebeu este lead — base do cronômetro do bolsão */
+  assigned_at: string;
 }
 
 const LEADS_TABLE = 'leads';
@@ -147,6 +156,11 @@ function mapKenloToKanbanLead(kl: Record<string, unknown>): KanbanLead {
     archive_reason: (kl.archive_reason as string) || null,
     // kenlo_leads vem sempre de portais → sempre interessado
     lead_type: LEAD_TYPE_INTERESSADO,
+    is_exclusive: Boolean(kl.is_exclusive),
+    // Leads vindos do Kenlo entram automaticamente no bolsão
+    participa_bolsao: true,
+    // Kenlo não tem assigned_at — usa created_at como base
+    assigned_at: (kl.created_at as string) || '',
   };
 }
 
@@ -285,6 +299,9 @@ function mapToKanbanLead(lead: CRMLead): KanbanLead {
     archived_at: lead.archived_at,
     archive_reason: lead.archive_reason,
     lead_type: (lead.lead_type as LeadType) ?? LEAD_TYPE_INTERESSADO,
+    is_exclusive: Boolean(lead.is_exclusive),
+    participa_bolsao: lead.participa_bolsao !== false,
+    assigned_at: lead.assigned_at || lead.created_at,
   };
 }
 

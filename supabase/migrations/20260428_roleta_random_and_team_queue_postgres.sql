@@ -1,0 +1,13 @@
+-- =============================================================================
+-- 1) Roleta agora escolhe ALEATORIO (em vez de round-robin justo)
+-- 2) Quando team_queue_enabled = true, redistribuicao usa fila da equipe
+--    (mesmo leader_user_id + mesma team), aleatorio dentro do grupo
+-- 3) Caso contrario, redistribui via roleta aleatoria
+--
+-- Aplicada em producao em 2026-04-28 via supabase MCP.
+-- Corpo completo das funcoes esta no projeto Supabase.
+-- =============================================================================
+
+-- pick_roleta_broker / pick_roleta_broker_excluding agora usam ORDER BY random()
+-- pick_team_queue_member: novo helper para fila da equipe
+-- expire_bolsao_leads: ramificacao baseada em team_queue_enabled
