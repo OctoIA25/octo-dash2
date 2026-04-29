@@ -26,7 +26,6 @@ export interface MonthlyComparison {
   };
 }
 
-// Nomes dos meses em português
 const monthNames = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'

@@ -15,11 +15,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { RecrutamentoFunnelChart } from '../components/RecrutamentoFunnelChart';
 import { RecrutamentoPerformanceChart } from '../components/RecrutamentoPerformanceChart';
-import { 
-  Users, 
-  FileText, 
-  CheckCircle2, 
-  AlertCircle, 
+import { useRecruitment } from '../hooks/useRecruitment';
+import { useAuth } from '@/hooks/useAuth';
+import {
+  Users,
+  FileText,
+  CheckCircle2,
+  AlertCircle,
   Plus,
   Search,
   Filter,
@@ -47,7 +49,7 @@ interface RecrutamentoPageProps {
 }
 
 interface Candidato {
-  id: number;
+  id: string | number;
   nome: string;
   email: string;
   telefone: string;
@@ -67,8 +69,48 @@ interface Candidato {
 }
 
 export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: RecrutamentoPageProps) => {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [candidatoSelecionado, setCandidatoSelecionado] = useState<Candidato | null>(null);
+  const { user } = useAuth();
+
+  // Use recruitment hook with real data
+  const {
+    candidatos,
+    candidatoSelecionado,
+    metrics,
+    monthlyMetrics,
+    isLoading,
+    isLoadingMetrics,
+    isRefreshing: hookIsRefreshing,
+    currentPage,
+    totalPages,
+    totalCount,
+    itemsPerPage,
+    searchTerm,
+    filtroStatus,
+    filtroCargo,
+    filtroExperiencia,
+    refresh,
+    createCandidato,
+    updateCandidato,
+    deleteCandidato,
+    changeCandidateStatus,
+    setCurrentPage,
+    nextPage,
+    previousPage,
+    setSearchTerm: setHookSearchTerm,
+    setFiltroStatus: setHookFiltroStatus,
+    setFiltroCargo: setHookFiltroCargo,
+    setFiltroExperiencia: setHookFiltroExperiencia,
+    clearFilters,
+    selectCandidato,
+    candidatosFiltrados,
+    candidatosPorStatus,
+    candidatosPorCargo,
+    candidateSources,
+    isLoadingSources,
+    filtrosAtivos
+  } = useRecruitment({ autoRefresh: true, refreshInterval: 30000 });
+
+  // Local state for modals and forms
   const [modalOpen, setModalOpen] = useState(false);
   const [novoModalOpen, setNovoModalOpen] = useState(false);
   const [novoFormData, setNovoFormData] = useState({
@@ -78,186 +120,169 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
     cargo: 'Corretor Júnior',
     experiencia: '',
     linkedin: '',
-    observacoes: ''
+    observacoes: '',
+    fonte: ''
+  } as {
+    nome: string;
+    email: string;
+    telefone: string;
+    cargo: string;
+    experiencia: string;
+    linkedin: string;
+    observacoes: string;
+    fonte: string;
   });
-  
-  // Estados para paginação
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
-  
-  // Estados para filtros
-  const [filtroStatus, setFiltroStatus] = useState<string>('todos');
-  const [filtroCargo, setFiltroCargo] = useState<string>('todos');
-  const [filtroExperiencia, setFiltroExperiencia] = useState<string>('todos');
   const [filtrosOpen, setFiltrosOpen] = useState(false);
-  
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
   // Sincronizar com localStorage
   useEffect(() => {
     localStorage.setItem('selectedSection', 'recrutamento');
   }, []);
 
-  // Dados mockados para exemplo
-  const candidatosMock: Candidato[] = useMemo(() => [
-    // LEAD (45 candidatos)
-    ...Array.from({ length: 45 }, (_, i) => ({
-      id: 1000 + i,
-      nome: `Lead ${i + 1}`,
-      email: `lead${i + 1}@email.com`,
-      telefone: `(11) 9${String(i).padStart(4, '0')}-0000`,
-      cargo: 'Corretor Júnior',
-      status: 'Lead' as Candidato['status'],
-      dataInscricao: '2024-11-25',
-      experiencia: '0-2 anos',
-      linkedin: `linkedin.com/in/lead${i + 1}`,
-      curriculo: 'Aguardando',
-      observacoes: 'Novo cadastro aguardando triagem',
-      etapas: [
-        { etapa: 'Lead', data: '2024-11-25', responsavel: 'Sistema', notas: 'Cadastro via site' }
-      ]
-    })),
-    // INTERAÇÃO (30 candidatos)
-    ...Array.from({ length: 30 }, (_, i) => ({
-      id: 2000 + i,
-      nome: `Interação ${i + 1}`,
-      email: `interacao${i + 1}@email.com`,
-      telefone: `(11) 9${String(i).padStart(4, '0')}-1111`,
-      cargo: 'Corretor Júnior',
-      status: 'Interação' as Candidato['status'],
-      dataInscricao: '2024-11-22',
-      experiencia: '1-3 anos',
-      linkedin: `linkedin.com/in/interacao${i + 1}`,
-      curriculo: 'Disponível',
-      observacoes: 'Primeiro contato realizado',
-      etapas: [
-        { etapa: 'Lead', data: '2024-11-22', responsavel: 'Sistema', notas: 'Cadastro realizado' },
-        { etapa: 'Interação', data: '2024-11-23', responsavel: 'RH', notas: 'Primeira conversa telefônica' }
-      ]
-    })),
-    // REUNIÃO (15 candidatos)
-    {
-      id: 1,
-      nome: 'João Silva',
-      email: 'joao.silva@email.com',
-      telefone: '(11) 98765-4321',
-      cargo: 'Corretor Pleno',
-      status: 'Reunião' as Candidato['status'],
-      dataInscricao: '2024-11-20',
-      experiencia: '5 anos',
-      linkedin: 'linkedin.com/in/joaosilva',
-      curriculo: 'Disponível',
-      observacoes: 'Candidato com excelente experiência em vendas de imóveis de alto padrão.',
-      etapas: [
-        { etapa: 'Lead', data: '2024-11-20', responsavel: 'Sistema', notas: 'Cadastro via LinkedIn' },
-        { etapa: 'Interação', data: '2024-11-21', responsavel: 'Ana Costa', notas: 'Primeira conversa' },
-        { etapa: 'Reunião', data: '2024-11-23', responsavel: 'Ana Costa', notas: 'Reunião agendada' }
-      ]
-    },
-    ...Array.from({ length: 14 }, (_, i) => ({
-      id: 3000 + i,
-      nome: `Reunião ${i + 2}`,
-      email: `reuniao${i + 2}@email.com`,
-      telefone: `(11) 9${String(i).padStart(4, '0')}-2222`,
-      cargo: 'Corretor Pleno',
-      status: 'Reunião' as Candidato['status'],
-      dataInscricao: '2024-11-18',
-      experiencia: '3-5 anos',
-      linkedin: `linkedin.com/in/reuniao${i + 2}`,
-      curriculo: 'Disponível',
-      observacoes: 'Reunião presencial agendada',
-      etapas: [
-        { etapa: 'Lead', data: '2024-11-18', responsavel: 'Sistema', notas: 'Cadastro' },
-        { etapa: 'Interação', data: '2024-11-19', responsavel: 'RH', notas: 'Triagem' },
-        { etapa: 'Reunião', data: '2024-11-21', responsavel: 'Gestão', notas: 'Reunião marcada' }
-      ]
-    })),
-    // ONBOARD (8 candidatos)
-    {
-      id: 2,
-      nome: 'Maria Santos',
-      email: 'maria.santos@email.com',
-      telefone: '(11) 91234-5678',
-      cargo: 'Corretor Júnior',
-      status: 'Onboard' as Candidato['status'],
-      dataInscricao: '2024-11-18',
-      experiencia: '2 anos',
-      linkedin: 'linkedin.com/in/mariasantos',
-      curriculo: 'Disponível',
-      observacoes: 'Candidata em processo de onboarding',
-      etapas: [
-        { etapa: 'Lead', data: '2024-11-18', responsavel: 'Sistema', notas: 'Indicação' },
-        { etapa: 'Interação', data: '2024-11-19', responsavel: 'Pedro Lima', notas: 'Entrevista Zoom' },
-        { etapa: 'Reunião', data: '2024-11-20', responsavel: 'Pedro Lima', notas: 'Reunião presencial' },
-        { etapa: 'Onboard', data: '2024-11-22', responsavel: 'RH', notas: 'Onboarding iniciado' }
-      ]
-    },
-    ...Array.from({ length: 7 }, (_, i) => ({
-      id: 4000 + i,
-      nome: `Onboard ${i + 2}`,
-      email: `onboard${i + 2}@email.com`,
-      telefone: `(11) 9${String(i).padStart(4, '0')}-3333`,
-      cargo: 'Corretor Pleno',
-      status: 'Onboard' as Candidato['status'],
-      dataInscricao: '2024-11-15',
-      experiencia: '3-6 anos',
-      linkedin: `linkedin.com/in/onboard${i + 2}`,
-      curriculo: 'Disponível',
-      observacoes: 'Em processo de integração',
-      etapas: [
-        { etapa: 'Lead', data: '2024-11-15', responsavel: 'Sistema', notas: 'Cadastro' },
-        { etapa: 'Interação', data: '2024-11-16', responsavel: 'RH', notas: 'Triagem' },
-        { etapa: 'Reunião', data: '2024-11-18', responsavel: 'Gestão', notas: 'Aprovado' },
-        { etapa: 'Onboard', data: '2024-11-20', responsavel: 'RH', notas: 'Treinamento' }
-      ]
-    }))
-  ], []);
-
-  const [candidatos, setCandidatos] = useState<Candidato[]>(candidatosMock);
-
-  // Filtrar candidatos
-  const candidatosFiltrados = candidatos.filter(candidato => {
-    // Filtro de busca
-    const matchBusca = searchTerm === '' || 
-      candidato.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      candidato.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      candidato.cargo.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    // Filtro de status
-    const matchStatus = filtroStatus === 'todos' || candidato.status === filtroStatus;
-    
-    // Filtro de cargo
-    const matchCargo = filtroCargo === 'todos' || candidato.cargo === filtroCargo;
-    
-    // Filtro de experiência
-    const matchExperiencia = filtroExperiencia === 'todos' || candidato.experiencia === filtroExperiencia;
-    
-    return matchBusca && matchStatus && matchCargo && matchExperiencia;
-  });
-
-  // Ordenar por data mais recente (dataInscricao)
-  const candidatosOrdenados = [...candidatosFiltrados].sort((a, b) => {
-    return new Date(b.dataInscricao).getTime() - new Date(a.dataInscricao).getTime();
-  });
-
-  // Paginação
-  const totalPages = Math.ceil(candidatosOrdenados.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const candidatosPaginados = candidatosOrdenados.slice(startIndex, startIndex + itemsPerPage);
-
-  // Resetar página ao mudar filtros
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm, filtroStatus, filtroCargo, filtroExperiencia]);
-
-  // Limpar todos os filtros
-  const limparFiltros = () => {
-    setFiltroStatus('todos');
-    setFiltroCargo('todos');
-    setFiltroExperiencia('todos');
-    setSearchTerm('');
+  // Wrapper functions for local state
+  const setSearchTerm = (term: string) => {
+    setHookSearchTerm(term);
   };
 
-  // Verificar se há filtros ativos
-  const filtrosAtivos = filtroStatus !== 'todos' || filtroCargo !== 'todos' || filtroExperiencia !== 'todos';
+  const setFiltroStatus = (status: string) => {
+    setHookFiltroStatus(status);
+  };
+
+  const setFiltroCargo = (cargo: string) => {
+    setHookFiltroCargo(cargo);
+  };
+
+  const setFiltroExperiencia = (experiencia: string) => {
+    setHookFiltroExperiencia(experiencia);
+  };
+
+  // Handle candidate selection
+  const handleVerDetalhes = (candidato: any) => {
+    selectCandidato(candidato);
+    setModalOpen(true);
+  };
+
+  // Handle status change
+  const handleMudarStatus = async (novoStatus: string) => {
+    if (candidatoSelecionado) {
+      try {
+        await changeCandidateStatus(candidatoSelecionado.id, novoStatus, user?.email);
+        selectCandidato(null);
+        setModalOpen(false);
+      } catch (error) {
+        console.error('Error changing status:', error);
+      }
+    }
+  };
+
+  const formatTelefone = (value: string) => {
+    const cleaned = value.replace(/\D/g, '');
+    
+    if (cleaned.length === 0) return '';
+    if (cleaned.length <= 2) return cleaned;
+    if (cleaned.length <= 6) return `(${cleaned.slice(0, 2)}) ${cleaned.slice(2)}`;
+    
+    // Lógica corrigida: detectar DDD baseado no tamanho total
+    if (cleaned.length === 10) {
+      // 10 dígitos = (XX) XXXX-XXXX
+      return `(${cleaned.slice(0, 2)}) ${cleaned.slice(2, 6)}-${cleaned.slice(6, 10)}`;
+    } else if (cleaned.length === 11) {
+      // 11 dígitos = (XX) XXXXX-XXXX
+      return `(${cleaned.slice(0, 2)}) ${cleaned.slice(2, 7)}-${cleaned.slice(7, 11)}`;
+    } else {
+      if (cleaned.length > 6) {
+        return `(${cleaned.slice(0, 2)}) ${cleaned.slice(2, 6)}-${cleaned.slice(6, 10)}`;
+      }
+      return cleaned;
+    }
+  };
+
+  // Handle new candidate creation
+  const handleNovoCandidato = async () => {
+    try {
+      // Validações completas antes de criar candidato
+      const errors: Record<string, string> = {};
+
+      // Validaçoes de nome
+      if (!novoFormData.nome || novoFormData.nome.trim().length < 3) {
+        errors.nome = 'Nome é obrigatório e deve ter pelo menos 3 caracteres';
+      }
+
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!novoFormData.email || !emailRegex.test(novoFormData.email)) {
+        errors.email = 'Email inválido';
+      }
+
+      const cleanedTelefone = novoFormData.telefone.replace(/\D/g, '');
+      
+      if (!novoFormData.telefone || cleanedTelefone.length < 10 || cleanedTelefone.length > 11) {
+        errors.telefone = 'Telefone deve ter 10 ou 11 dígitos';
+      } else {
+        const telefoneRegex = /^\(\d{2}\)\s?\d{4,5}-\d{4}$/;
+        if (!telefoneRegex.test(novoFormData.telefone)) {
+          errors.telefone = 'Telefone inválido. Use formato: (11) 98765-4321';
+        }
+      }
+
+      if (!novoFormData.cargo || novoFormData.cargo === '') {
+        errors.cargo = 'Cargo é obrigatório';
+      }
+
+      if (!novoFormData.experiencia || novoFormData.experiencia === '') {
+        errors.experiencia = 'Experiência é obrigatória';
+      }
+
+      if (!novoFormData.fonte || novoFormData.fonte === '') {
+        errors.fonte = 'Fonte é obrigatória';
+      }
+
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors);
+        return;
+      }
+
+      const newCandidato = {
+        nome: novoFormData.nome.trim(),
+        email: novoFormData.email.trim().toLowerCase(),
+        telefone: novoFormData.telefone,
+        cargo: novoFormData.cargo,
+        experiencia: novoFormData.experiencia,
+        linkedin: novoFormData.linkedin?.trim() || undefined,
+        observacoes: novoFormData.observacoes?.trim() || undefined,
+        fonte: novoFormData.fonte
+      };
+
+      await createCandidato(newCandidato);
+
+
+      // Reset form
+      setNovoFormData({
+        nome: '',
+        email: '',
+        telefone: '',
+        cargo: 'Corretor Júnior',
+        experiencia: '',
+        linkedin: '',
+        observacoes: '',
+        fonte: ''
+      });
+      setValidationErrors([]);
+      setFieldErrors({});
+      setNovoModalOpen(false);
+    } catch (error) {
+      console.error('Error creating candidate:', error);
+    }
+  };
+
+  // Get paginated candidates
+  const candidatosPaginados = candidatosFiltrados.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  // Clear filters function
+  const limparFiltros = () => {
+    clearFilters();
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -278,55 +303,6 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
     }
   };
 
-  const handleVerDetalhes = (candidato: Candidato) => {
-    setCandidatoSelecionado(candidato);
-    setModalOpen(true);
-  };
-
-  const handleMudarStatus = (novoStatus: Candidato['status']) => {
-    if (candidatoSelecionado) {
-      // Aqui você faria a chamada para API para atualizar o status
-      setCandidatoSelecionado({ ...candidatoSelecionado, status: novoStatus });
-    }
-  };
-
-  const handleNovoCandidato = () => {
-    const nextId = candidatos.reduce((maxId, c) => Math.max(maxId, c.id), 0) + 1;
-    const hoje = new Date();
-    const dataInscricao = hoje.toISOString().slice(0, 10);
-
-    const novoCandidato: Candidato = {
-      id: nextId,
-      nome: novoFormData.nome,
-      email: novoFormData.email,
-      telefone: novoFormData.telefone,
-      cargo: novoFormData.cargo,
-      status: 'Lead',
-      dataInscricao,
-      experiencia: novoFormData.experiencia,
-      linkedin: novoFormData.linkedin || undefined,
-      observacoes: novoFormData.observacoes || undefined,
-      curriculo: 'Aguardando',
-      etapas: [
-        { etapa: 'Lead', data: dataInscricao, responsavel: 'Sistema', notas: 'Cadastro manual' }
-      ]
-    };
-
-    setCandidatos((prev) => [novoCandidato, ...prev]);
-
-    // Resetar formulário
-    setNovoFormData({
-      nome: '',
-      email: '',
-      telefone: '',
-      cargo: 'Corretor Júnior',
-      experiencia: '',
-      linkedin: '',
-      observacoes: ''
-    });
-    setNovoModalOpen(false);
-  };
-
   return (
     <div className="w-full h-full overflow-auto">
       <div className="p-6 md:p-8">
@@ -341,7 +317,7 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
                 Gestão de processos de recrutamento e seleção de novos corretores
               </p>
             </div>
-            <Button 
+            <Button
               className="novo-candidato-button gap-2 !bg-blue-600 hover:!bg-blue-700 shadow-sm hover:shadow-md transition-all [&_svg]:!text-white"
               onClick={() => setNovoModalOpen(true)}
               style={{ color: '#ffffff' }}
@@ -358,7 +334,7 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
             <BarChart3 className="h-5 w-5 text-gray-900 dark:text-slate-100 dark:text-white" />
             <h2 className="text-xl font-semibold text-gray-900 dark:text-slate-100 dark:text-white">Métricas de Recrutamento</h2>
           </div>
-          
+
           {/* Grid de Métricas Principais */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
             <Card className="border-gray-200/60 dark:border-gray-700/60">
@@ -369,7 +345,9 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-3xl font-bold text-gray-900 dark:text-slate-100 dark:text-white mb-2">15 dias</p>
+                <p className="text-3xl font-bold text-gray-900 dark:text-slate-100 dark:text-white mb-2">
+                  {metrics?.tempoMedioProcesso > 0 ? `${metrics.tempoMedioProcesso} dias` : 'N/A'}
+                </p>
                 <p className="text-sm text-gray-600 dark:text-slate-400 dark:text-gray-400">
                   Do primeiro contato à contratação
                 </p>
@@ -384,7 +362,9 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-3xl font-bold text-gray-900 dark:text-slate-100 dark:text-white mb-2">85%</p>
+                <p className="text-3xl font-bold text-gray-900 dark:text-slate-100 dark:text-white mb-2">
+                  {metrics?.taxaRetencao ? `${metrics.taxaRetencao}%` : 'Calculando...'}
+                </p>
                 <p className="text-sm text-gray-600 dark:text-slate-400 dark:text-gray-400">
                   Corretores ativos após 6 meses
                 </p>
@@ -399,7 +379,9 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-3xl font-bold text-gray-900 dark:text-slate-100 dark:text-white mb-2">R$ 1.2k</p>
+                <p className="text-3xl font-bold text-gray-900 dark:text-slate-100 dark:text-white mb-2">
+                  {metrics?.custoPorContratacao ? `R$ ${metrics.custoPorContratacao}k` : 'Calculando...'}
+                </p>
                 <p className="text-sm text-gray-600 dark:text-slate-400 dark:text-gray-400">
                   Investimento médio por contratação
                 </p>
@@ -407,7 +389,7 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
             </Card>
           </div>
 
-                    {/* Grid de Cards de Métricas de Candidatos */}
+          {/* Grid de Cards de Métricas de Candidatos */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <Card className="border-gray-200/60 dark:border-gray-700/60">
               <CardContent className="p-4">
@@ -419,7 +401,12 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
                     <p className="text-2xl font-bold text-gray-900 dark:text-slate-100 dark:text-white">{candidatos.length}</p>
                     <div className="flex items-center gap-1 mt-1">
                       <TrendingUp className="h-3 w-3 text-green-600 dark:text-green-300 dark:text-green-400" />
-                      <span className="text-xs text-green-600 dark:text-green-300 dark:text-green-400 font-medium">+12%</span>
+                      <span className="text-xs text-green-600 dark:text-green-300 dark:text-green-400 font-medium">
+                        {candidatos.length > 0
+                          ? `${Math.round((candidatos.filter(c => ['Interação', 'Reunião', 'Onboard', 'Aprovado'].includes(c.status)).length / candidatos.length) * 100)}%`
+                          : '0%'
+                        }
+                      </span>
                     </div>
                   </div>
                   <div className="w-10 h-10 rounded-lg bg-[#88C0E5]/10 dark:bg-[#88C0E5]/20 flex items-center justify-center">
@@ -499,7 +486,7 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
             <div className="h-[735px]">
               <RecrutamentoFunnelChart candidatos={candidatos} />
             </div>
-            
+
             {/* Coluna Direita - Performance de Conversão */}
             <div className="h-[735px]">
               <RecrutamentoPerformanceChart candidatos={candidatos} />
@@ -514,23 +501,27 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {[
-                    { mes: 'Novembro', candidatos: 12, contratados: 2, taxa: '16.7%' },
-                    { mes: 'Outubro', candidatos: 15, contratados: 3, taxa: '20%' },
-                    { mes: 'Setembro', candidatos: 10, contratados: 1, taxa: '10%' }
-                  ].map((item, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-950 dark:bg-gray-800/50 rounded-lg">
-                      <div>
-                        <p className="font-medium text-gray-900 dark:text-slate-100 dark:text-white">{item.mes}</p>
-                        <p className="text-sm text-gray-600 dark:text-slate-400 dark:text-gray-400">
-                          {item.candidatos} candidatos • {item.contratados} contratados
-                        </p>
+                  {monthlyMetrics && monthlyMetrics.length > 0 ? (
+                    monthlyMetrics.map((item, idx) => (
+                      <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-950 dark:bg-gray-800/50 rounded-lg">
+                        <div>
+                          <p className="font-medium text-gray-900 dark:text-slate-100 dark:text-white">{item.mes}</p>
+                          <p className="text-sm text-gray-600 dark:text-slate-400 dark:text-gray-400">
+                            {item.candidatos} candidatos • {item.contratados} contratados
+                          </p>
+                        </div>
                       </div>
-                      <Badge className="bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 dark:bg-blue-900/30 dark:text-blue-400">
-                        {item.taxa}
-                      </Badge>
+                    ))
+                  ) : (
+                    <div className="text-center py-12 px-4">
+                      <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-slate-800 dark:bg-gray-800 flex items-center justify-center mx-auto mb-4">
+                        <Users className="h-8 w-8 text-gray-300 dark:text-gray-600" />
+                      </div>
+                      <p className="text-lg font-light text-gray-900 dark:text-slate-100 dark:text-white">
+                        Nenhum dado de performance mensal disponível
+                      </p>
                     </div>
-                  ))}
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -541,25 +532,27 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {[
-                    { fonte: 'LinkedIn', quantidade: 18, percentual: 40 },
-                    { fonte: 'Indicação', quantidade: 12, percentual: 27 },
-                    { fonte: 'Site Institucional', quantidade: 8, percentual: 18 },
-                    { fonte: 'Outros', quantidade: 7, percentual: 15 }
-                  ].map((item, idx) => (
-                    <div key={idx} className="space-y-2">
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="font-medium text-gray-700 dark:text-slate-300 dark:text-gray-300">{item.fonte}</span>
-                        <span className="text-gray-600 dark:text-slate-400 dark:text-gray-400">{item.quantidade} ({item.percentual}%)</span>
+                  {Object.entries(candidateSources).length > 0 ? Object.entries(candidateSources).map(([fonte, quantidade], idx) => {
+                    const percentual = candidatos.length > 0 ? Math.round((quantidade / candidatos.length) * 100) : 0;
+                    return (
+                      <div key={idx} className="space-y-2">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="font-medium text-gray-700 dark:text-slate-300 dark:text-gray-300">{fonte}</span>
+                          <span className="text-gray-600 dark:text-slate-400 dark:text-gray-400">{quantidade} ({percentual}%)</span>
+                        </div>
+                        <div className="relative w-full h-2 bg-gray-100 dark:bg-slate-800 dark:bg-gray-800 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all duration-500"
+                            style={{ width: `${percentual}%` }}
+                          />
+                        </div>
                       </div>
-                      <div className="relative w-full h-2 bg-gray-100 dark:bg-slate-800 dark:bg-gray-800 rounded-full overflow-hidden">
-                        <div 
-                          className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all duration-500"
-                          style={{ width: `${item.percentual}%` }}
-                        />
-                      </div>
+                    );
+                  }) : (
+                    <div className="text-center py-8">
+                      <p className="text-gray-500 dark:text-gray-400">Nenhuma fonte de candidatos encontrada</p>
                     </div>
-                  ))}
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -608,7 +601,7 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
                           </Button>
                         )}
                       </div>
-                      
+
                       {/* Filtro por Status */}
                       <div className="space-y-2">
                         <label className="text-sm font-medium text-gray-700 dark:text-slate-300 dark:text-gray-300">Status</label>
@@ -627,7 +620,7 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
                           </SelectContent>
                         </Select>
                       </div>
-                      
+
                       {/* Filtro por Cargo */}
                       <div className="space-y-2">
                         <label className="text-sm font-medium text-gray-700 dark:text-slate-300 dark:text-gray-300">Cargo</label>
@@ -643,7 +636,7 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
                           </SelectContent>
                         </Select>
                       </div>
-                      
+
                       {/* Filtro por Experiência */}
                       <div className="space-y-2">
                         <label className="text-sm font-medium text-gray-700 dark:text-slate-300 dark:text-gray-300">Experiência</label>
@@ -662,9 +655,9 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
                           </SelectContent>
                         </Select>
                       </div>
-                      
-                      <Button 
-                        className="w-full mt-2" 
+
+                      <Button
+                        className="w-full mt-2"
                         onClick={() => setFiltrosOpen(false)}
                       >
                         Aplicar Filtros
@@ -673,7 +666,7 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
                   </PopoverContent>
                 </Popover>
               </div>
-              
+
               {/* Indicador de filtros ativos */}
               {filtrosAtivos && (
                 <div className="flex items-center gap-2 mt-3 flex-wrap">
@@ -706,7 +699,7 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-lg font-medium">Candidatos</CardTitle>
               <span className="text-sm text-gray-500 dark:text-slate-400 dark:text-gray-400">
-                {candidatosOrdenados.length} candidato{candidatosOrdenados.length !== 1 ? 's' : ''} encontrado{candidatosOrdenados.length !== 1 ? 's' : ''}
+                {candidatosFiltrados.length} candidato{candidatosFiltrados.length !== 1 ? 's' : ''} encontrado{candidatosFiltrados.length !== 1 ? 's' : ''}
               </span>
             </CardHeader>
             <CardContent className="p-0">
@@ -736,7 +729,7 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
                                   {candidato.status}
                                 </Badge>
                                 <span className="text-xs text-gray-400 dark:text-slate-500">
-                                  {new Date(candidato.dataInscricao).toLocaleDateString('pt-BR')}
+                                  {new Date(candidato.data_inscricao).toLocaleDateString('pt-BR')}
                                 </span>
                               </div>
 
@@ -763,8 +756,8 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
 
                           {/* Ações */}
                           <div className="flex gap-2 ml-4">
-                            <Button 
-                              size="sm" 
+                            <Button
+                              size="sm"
                               variant="outline"
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -778,25 +771,25 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
                       </div>
                     ))}
                   </div>
-                  
+
                   {/* Paginação */}
                   {totalPages > 1 && (
                     <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 dark:border-slate-800 dark:border-gray-700">
                       <div className="text-sm text-gray-500 dark:text-slate-400 dark:text-gray-400">
-                        Mostrando {startIndex + 1} - {Math.min(startIndex + itemsPerPage, candidatosOrdenados.length)} de {candidatosOrdenados.length}
+                        Mostrando {((currentPage - 1) * itemsPerPage) + 1} - {Math.min(currentPage * itemsPerPage, candidatosFiltrados.length)} de {candidatosFiltrados.length}
                       </div>
                       <div className="flex items-center gap-2">
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                          onClick={previousPage}
                           disabled={currentPage === 1}
                           className="gap-1"
                         >
                           <ChevronLeft className="h-4 w-4" />
                           Anterior
                         </Button>
-                        
+
                         <div className="flex items-center gap-1">
                           {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
                             let pageNum;
@@ -809,7 +802,7 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
                             } else {
                               pageNum = currentPage - 2 + i;
                             }
-                            
+
                             return (
                               <Button
                                 key={pageNum}
@@ -823,11 +816,11 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
                             );
                           })}
                         </div>
-                        
+
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                          onClick={nextPage}
                           disabled={currentPage === totalPages}
                           className="gap-1"
                         >
@@ -857,11 +850,11 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
 
         {/* Modal de Detalhes do Candidato */}
         {modalOpen && candidatoSelecionado && (
-          <div 
+          <div
             className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
             onClick={() => setModalOpen(false)}
           >
-            <div 
+            <div
               className="bg-white dark:bg-slate-900 dark:bg-gray-900 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden"
               onClick={(e) => e.stopPropagation()}
             >
@@ -935,9 +928,9 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
                     {candidatoSelecionado.linkedin && (
                       <div className="flex items-center gap-3">
                         <ExternalLink className="h-4 w-4 text-gray-500 dark:text-slate-400" />
-                        <a 
-                          href={`https://${candidatoSelecionado.linkedin}`} 
-                          target="_blank" 
+                        <a
+                          href={`https://${candidatoSelecionado.linkedin}`}
+                          target="_blank"
                           rel="noopener noreferrer"
                           className="text-blue-600 dark:text-blue-300 dark:text-blue-400 hover:underline"
                         >
@@ -961,7 +954,7 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-gray-600 dark:text-slate-400 dark:text-gray-400">Data de Inscrição:</span>
                       <span className="font-medium text-gray-900 dark:text-slate-100 dark:text-white">
-                        {new Date(candidatoSelecionado.dataInscricao).toLocaleDateString('pt-BR')}
+                        {new Date(candidatoSelecionado.data_inscricao).toLocaleDateString('pt-BR')}
                       </span>
                     </div>
                     {candidatoSelecionado.curriculo && (
@@ -1001,9 +994,8 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
                         {candidatoSelecionado.etapas.map((etapa, idx) => (
                           <div key={idx} className="flex gap-4">
                             <div className="flex flex-col items-center">
-                              <div className={`w-3 h-3 rounded-full ${
-                                idx === 0 ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'
-                              }`} />
+                              <div className={`w-3 h-3 rounded-full ${idx === 0 ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'
+                                }`} />
                               {idx < candidatoSelecionado.etapas!.length - 1 && (
                                 <div className="w-0.5 h-full bg-gray-200 dark:bg-gray-700 my-1" />
                               )}
@@ -1045,11 +1037,11 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
 
         {/* Modal de Novo Candidato */}
         {novoModalOpen && createPortal(
-          <div 
+          <div
             className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200"
             onMouseDown={() => setNovoModalOpen(false)}
           >
-            <div 
+            <div
               className="bg-white dark:bg-slate-900 dark:bg-gray-900 rounded-2xl shadow-2xl w-[360px] max-w-[92vw] max-h-[90vh] overflow-hidden animate-in zoom-in-95 duration-200"
               onMouseDown={(e) => e.stopPropagation()}
             >
@@ -1082,8 +1074,20 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
                     <Input
                       placeholder="Ex: João Silva"
                       value={novoFormData.nome}
-                      onChange={(e) => setNovoFormData({ ...novoFormData, nome: e.target.value })}
+                      onChange={(e) => {
+                        setNovoFormData({ ...novoFormData, nome: e.target.value });
+                        // Limpar erro do campo quando usuário digitar
+                        if (fieldErrors.nome) {
+                          setFieldErrors({ ...fieldErrors, nome: '' });
+                        }
+                      }}
+                      className={fieldErrors.nome ? 'border-red-500 focus:border-red-500' : ''}
                     />
+                    {fieldErrors.nome && (
+                      <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+                        {fieldErrors.nome}
+                      </p>
+                    )}
                   </div>
 
                   {/* Email e Telefone */}
@@ -1096,8 +1100,20 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
                         type="email"
                         placeholder="joao.silva@email.com"
                         value={novoFormData.email}
-                        onChange={(e) => setNovoFormData({ ...novoFormData, email: e.target.value })}
+                        onChange={(e) => {
+                          setNovoFormData({ ...novoFormData, email: e.target.value });
+                          // Limpar erro do campo quando usuário digitar
+                          if (fieldErrors.email) {
+                            setFieldErrors({ ...fieldErrors, email: '' });
+                          }
+                        }}
+                        className={fieldErrors.email ? 'border-red-500 focus:border-red-500' : ''}
                       />
+                      {fieldErrors.email && (
+                        <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+                          {fieldErrors.email}
+                        </p>
+                      )}
                     </div>
 
                     <div>
@@ -1106,10 +1122,23 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
                       </label>
                       <Input
                         type="tel"
-                        placeholder="(11) 98765-4321"
+                        placeholder="(00) 00000-0000"
                         value={novoFormData.telefone}
-                        onChange={(e) => setNovoFormData({ ...novoFormData, telefone: e.target.value })}
+                        onChange={(e) => {
+                          const formattedValue = formatTelefone(e.target.value);
+                          setNovoFormData({ ...novoFormData, telefone: formattedValue });
+                          // Limpar erro do campo quando usuário digitar
+                          if (fieldErrors.telefone) {
+                            setFieldErrors({ ...fieldErrors, telefone: '' });
+                          }
+                        }}
+                        className={fieldErrors.telefone ? 'border-red-500 focus:border-red-500' : ''}
                       />
+                      {fieldErrors.telefone && (
+                        <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+                          {fieldErrors.telefone}
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -1121,9 +1150,15 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
                       </label>
                       <Select
                         value={novoFormData.cargo}
-                        onValueChange={(value) => setNovoFormData({ ...novoFormData, cargo: value })}
+                        onValueChange={(value) => {
+                          setNovoFormData({ ...novoFormData, cargo: value });
+                          // Limpar erro do campo quando usuário selecionar
+                          if (fieldErrors.cargo) {
+                            setFieldErrors({ ...fieldErrors, cargo: '' });
+                          }
+                        }}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger className={fieldErrors.cargo ? 'border-red-500 focus:border-red-500' : ''}>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -1133,17 +1168,34 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
                           <SelectItem value="Gerente de Vendas">Gerente de Vendas</SelectItem>
                         </SelectContent>
                       </Select>
+                      {fieldErrors.cargo && (
+                        <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+                          {fieldErrors.cargo}
+                        </p>
+                      )}
                     </div>
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 dark:text-gray-300 mb-2">
-                        Experiência
+                        Experiência *
                       </label>
                       <Input
                         placeholder="Ex: 5 anos"
                         value={novoFormData.experiencia}
-                        onChange={(e) => setNovoFormData({ ...novoFormData, experiencia: e.target.value })}
+                        onChange={(e) => {
+                          setNovoFormData({ ...novoFormData, experiencia: e.target.value });
+                          // Limpar erro do campo quando usuário digitar
+                          if (fieldErrors.experiencia) {
+                            setFieldErrors({ ...fieldErrors, experiencia: '' });
+                          }
+                        }}
+                        className={fieldErrors.experiencia ? 'border-red-500 focus:border-red-500' : ''}
                       />
+                      {fieldErrors.experiencia && (
+                        <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+                          {fieldErrors.experiencia}
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -1159,17 +1211,51 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
                     />
                   </div>
 
-                  {/* Observações */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 dark:text-gray-300 mb-2">
-                      Observações
-                    </label>
-                    <Textarea
-                      placeholder="Adicione observações sobre o candidato..."
-                      rows={4}
-                      value={novoFormData.observacoes}
-                      onChange={(e) => setNovoFormData({ ...novoFormData, observacoes: e.target.value })}
-                    />
+                  {/* Fonte e Observações */}
+                  <div className="grid grid-cols-1 md:grid-cols-1 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 dark:text-gray-300 mb-2">
+                        Fonte *
+                      </label>
+                      <Select
+                        value={novoFormData.fonte}
+                        onValueChange={(value) => {
+                          setNovoFormData({ ...novoFormData, fonte: value });
+                          // Limpar erro do campo quando usuário selecionar
+                          if (fieldErrors.fonte) {
+                            setFieldErrors({ ...fieldErrors, fonte: '' });
+                          }
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione a fonte" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="LinkedIn">LinkedIn</SelectItem>
+                          <SelectItem value="Indicação">Indicação</SelectItem>
+                          <SelectItem value="Site Institucional">Site Institucional</SelectItem>
+                          <SelectItem value="Email Marketing">Email Marketing</SelectItem>
+                          <SelectItem value="Outros">Outros</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {fieldErrors.fonte && (
+                        <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+                          {fieldErrors.fonte}
+                        </p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 dark:text-gray-300 mb-2">
+                        Observações
+                      </label>
+                      <Textarea
+                        placeholder="Adicione observações sobre o candidato..."
+                        rows={4}
+                        value={novoFormData.observacoes}
+                        onChange={(e) => setNovoFormData({ ...novoFormData, observacoes: e.target.value })}
+                      />
+                    </div>
                   </div>
                 </div>
               </div>

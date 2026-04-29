@@ -538,9 +538,12 @@ export const BolsaoSection = (props: BolsaoSectionProps) => {
       
       if (response.ok) {
         const data = await response.json();
+        console.log('📦 [BOLSAO] Dados recebidos do webhook:', data);
         
         // TODO: Salvar leads no Supabase/Bolsão
         if (data && Array.isArray(data.leads)) {
+          console.log(data)
+          console.log('📋 [BOLSAO] Leads encontrados:', data.leads.length, 'leads');
         }
         
         // Recarregar leads da interface

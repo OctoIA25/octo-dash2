@@ -29,7 +29,7 @@ ChartJS.register(
 );
 
 interface Candidato {
-  id: number;
+  id: string | number;
   status: string;
 }
 

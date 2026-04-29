@@ -452,8 +452,7 @@ export async function calcularMetricasCorretores(dataInicio?: Date, dataFim?: Da
     return metricas;
     
   } catch (error) {
-    console.error('❌ Erro ao calcular métricas:', error);
+    console.error('?? Erro ao calcular métricas:', error);
     return [];
   }
 }
-

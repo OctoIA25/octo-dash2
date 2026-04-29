@@ -30,7 +30,9 @@ import {
   Filter,
   Calendar,
   Building2,
-  DollarSign
+  DollarSign,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { format, subDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -181,31 +183,30 @@ export const RelatoriosPage = () => {
 
   const initialMetricasSubArea = useMemo(() => {
     const fromQuery = searchParams.get('metricasSubArea');
-    if (fromQuery === 'visao-geral' || fromQuery === 'metricas-individuais') {
+    if (fromQuery === 'visao-geral' || fromQuery === 'metricas-individuais' || fromQuery === 'ranking') {
       return fromQuery;
     }
     return 'visao-geral';
   }, [searchParams]);
 
   const [activeMetricasSubArea, setActiveMetricasSubArea] = useState<
-    'visao-geral' | 'metricas-individuais'
+    'visao-geral' | 'metricas-individuais' | 'ranking'
   >(initialMetricasSubArea);
 
   const initialMetricasIndSubArea = useMemo(() => {
     const fromQuery = searchParams.get('metricasIndSubArea');
     if (
-      fromQuery === 'ranking' ||
       fromQuery === 'comissao-metas' ||
       fromQuery === 'leads' ||
       fromQuery === 'vendas'
     ) {
       return fromQuery;
     }
-    return 'ranking';
+    return 'comissao-metas';
   }, [searchParams]);
 
   const [activeMetricasIndSubArea, setActiveMetricasIndSubArea] = useState<
-    'ranking' | 'comissao-metas' | 'leads' | 'vendas'
+    'comissao-metas' | 'leads' | 'vendas'
   >(initialMetricasIndSubArea);
 
   useEffect(() => {
@@ -229,6 +230,14 @@ export const RelatoriosPage = () => {
   const initialRankingMonth = useMemo(() => new Date().getMonth() + 1, []);
   const [rankingYear, setRankingYear] = useState<number>(initialRankingYear);
   const [rankingMonth, setRankingMonth] = useState<number>(initialRankingMonth);
+  const [rankingPeriod, setRankingPeriod] = useState<'monthly' | 'quarterly' | 'semiannual' | 'yearly'>('monthly');
+  const [rankingCurrentPage, setRankingCurrentPage] = useState<number>(1);
+  const rankingItemsPerPage = 10;
+
+  // Reset page when period or filters change
+  useEffect(() => {
+    setRankingCurrentPage(1);
+  }, [rankingPeriod, rankingMonth, rankingYear]);
 
   useEffect(() => {
     let mounted = true;
@@ -389,19 +398,35 @@ export const RelatoriosPage = () => {
       return x;
     };
 
-    const computeRow = (corretor: string, base: { valorComissao: number; vendasFeitas: number; gestaoAtiva: number }, year: number, month: number) => {
-      const seed = `${corretor}|${year}-${String(month).padStart(2, '0')}`;
+    const computeRow = (corretor: string, base: { valorComissao: number; vendasFeitas: number; gestaoAtiva: number }, year: number, month: number, period: 'monthly' | 'quarterly' | 'semiannual' | 'yearly') => {
+      let seed = `${corretor}|${year}`;
+      
+      if (period === 'monthly') {
+        seed += `-${String(month).padStart(2, '0')}`;
+      } else if (period === 'quarterly') {
+        seed += `-Q${Math.ceil(month / 3)}`;
+      } else if (period === 'semiannual') {
+        seed += `-S${Math.ceil(month / 6)}`;
+      }
+      // yearly doesn't add anything to the seed
+
       const r1 = seeded01(`${seed}|a`);
       const r2 = seeded01(`${seed}|b`);
       const r3 = seeded01(`${seed}|c`);
 
+      // Ajuste dos valores baseado no período
+      let periodMultiplier = 1;
+      if (period === 'quarterly') periodMultiplier = 3;
+      else if (period === 'semiannual') periodMultiplier = 6;
+      else if (period === 'yearly') periodMultiplier = 12;
+
       // Variação intencionalmente mais forte por competência para que o Top 3 mude ao trocar mês/ano.
       // Mantém determinístico (mesmo corretor + ano + mês => mesmos números).
-      const vendas = Math.max(0, Math.round(base.vendasFeitas + (r1 - 0.5) * 10 + r3 * 3));
+      const vendas = Math.max(0, Math.round(base.vendasFeitas * periodMultiplier + (r1 - 0.5) * 10 * periodMultiplier + r3 * 3 * periodMultiplier));
 
       const multiplier = 0.55 + r2 * 1.35; // 0.55 .. 1.90
       const spike = r3 > 0.82 ? 1.18 : 1; // pico ocasional
-      const comissao = Math.max(0, Math.round(base.valorComissao * multiplier * spike * 100) / 100);
+      const comissao = Math.max(0, Math.round(base.valorComissao * multiplier * spike * periodMultiplier * 100) / 100);
 
       return {
         corretor,
@@ -426,14 +451,14 @@ export const RelatoriosPage = () => {
 
     return base
       .slice()
-      .map((item) => computeRow(item.corretor, item, rankingYear, rankingMonth))
+      .map((item) => computeRow(item.corretor, item, rankingYear, rankingMonth, rankingPeriod))
       .sort((a, b) => b.valorComissao - a.valorComissao)
       .map((item, index) => ({
         ...item,
         ranking: index + 1,
         fotoUrl: getCorretorPhoto(item.corretor) || `/avatars/${slugify(item.corretor)}.jpg`,
       }));
-  }, [rankingMonth, rankingYear, corretorPhotoMap]);
+  }, [rankingMonth, rankingYear, rankingPeriod, corretorPhotoMap]);
 
   const bestSellerForSelectedYear = useMemo(() => {
     if (rankingYear >= 2026) return null;
@@ -1851,264 +1876,244 @@ export const RelatoriosPage = () => {
       {/* SEÇÃO MÉTRICAS DA EQUIPE */}
       {activeSubArea === 'metricas' && (
         <>
-          {/* KPIs Cards - Métricas */}
-          <div data-export-layout="kpis" className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
-            <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-4 hover:shadow-md transition-shadow">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
-                  <Users className="h-5 w-5 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Vendas Criadas</p>
-                  <p className="text-xl font-bold text-gray-900 dark:text-slate-100">155</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-4 hover:shadow-md transition-shadow">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
-                  <TrendingUp className="h-5 w-5 text-green-600" />
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Vendas Assinadas</p>
-                  <p className="text-xl font-bold text-gray-900 dark:text-slate-100">146</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-4 hover:shadow-md transition-shadow">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-yellow-100 flex items-center justify-center">
-                  <BarChart3 className="h-5 w-5 text-yellow-600" />
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Imóveis Ativos</p>
-                  <p className="text-xl font-bold text-gray-900 dark:text-slate-100">448</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-4 hover:shadow-md transition-shadow">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
-                  <Clock className="h-5 w-5 text-purple-600" />
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Total de Leads/Mês</p>
-                  <p className="text-xl font-bold text-gray-900 dark:text-slate-100">537</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-4 hover:shadow-md transition-shadow">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center">
-                  <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Valor Total/Mês</p>
-                  <p className="text-xl font-bold text-gray-900 dark:text-slate-100">R$ 6.8M</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Grid de Gráficos - Métricas (Gestão de Equipe) */}
-          <div data-export-layout="charts" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* 1. Leads por Equipe */}
-            <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-5">
-              <h3 className="text-sm font-semibold text-gray-800 mb-4">Leads por Equipe</h3>
-              <div className="h-[280px]">
-                <Bar data={leadsPorEquipeData} options={defaultBarOptions} />
-              </div>
-            </div>
-
-            {/* 3. Tempo Médio de Resposta por Equipe */}
-            <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-5">
-              <h3 className="text-sm font-semibold text-gray-800 mb-4">Tempo Médio de Resposta por Equipe</h3>
-              <div className="h-[280px]">
-                <Bar data={tempoRespostaChartData} options={defaultBarOptions} />
-              </div>
-            </div>
-
-            {/* 4. Taxa de Conversão por Equipe */}
-            <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-5">
-              <h3 className="text-sm font-semibold text-gray-800 mb-4">Taxa de Conversão por Equipe</h3>
-              <div className="h-[280px]">
-                <Bar data={taxaConversaoChartData} options={defaultBarOptions} />
-              </div>
-            </div>
-
-            <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-5">
-              <h3 className="text-sm font-semibold text-gray-800 mb-4">Leads interagidos por Usuários</h3>
-              <div className="h-[280px]">
-                <Bar data={leadsInteragidosUsuarioData} options={defaultBarOptions} />
-              </div>
-              <div className="mt-4">
-                <button
-                  type="button"
-                  onClick={() => openChartModal('leads_interagidos_usuario')}
-                  className="btn-octo-primary w-full px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-                >
-                  Exibir mais
-                </button>
-              </div>
-            </div>
-
-            <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-5">
-              <h3 className="text-sm font-semibold text-gray-800 mb-4">Tempo de primeira interação por Usuário</h3>
-              <div className="h-[280px]">
-                <Bar data={tempoInteracaoData} options={defaultBarOptions} />
-              </div>
-              <div className="mt-4">
-                <button
-                  type="button"
-                  onClick={() => openChartModal('tempo_interacao_usuario')}
-                  className="btn-octo-primary w-full px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-                >
-                  Exibir mais
-                </button>
-              </div>
-            </div>
-
-            <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-5">
-              <h3 className="text-sm font-semibold text-gray-800 mb-4">Atividades em aberto por Usuário</h3>
-              <div className="h-[280px]">
-                <Bar data={atividadesAbertoData} options={stackedBarOptions} />
-              </div>
-              <div className="mt-4">
-                <button
-                  type="button"
-                  onClick={() => openChartModal('atividades_aberto_usuario')}
-                  className="btn-octo-primary w-full px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-                >
-                  Exibir mais
-                </button>
-              </div>
-            </div>
-
-            {/* Leads convertidos por Usuário */}
-            <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-5">
-              <h3 className="text-sm font-semibold text-gray-800 mb-4">Leads convertidos por Usuário</h3>
-              <div className="h-[280px]">
-                <Bar data={leadsConvertidosUsuarioData} options={defaultBarOptions} />
-              </div>
-              <div className="mt-4">
-                <button
-                  type="button"
-                  onClick={() => openChartModal('leads_convertidos_usuario')}
-                  className="btn-octo-primary w-full px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-                >
-                  Exibir mais
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {isChartModalOpen && activeChartModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-              <div className="mx-auto w-[84vw] max-w-2xl max-h-[85vh] bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-transparent flex flex-col overflow-hidden">
-                <div className="flex items-center justify-between gap-4 px-6 py-4 border-b border-gray-100 dark:border-slate-800 flex-shrink-0">
-                  <div>
-                    <h3 className="text-base font-semibold text-gray-900 dark:text-slate-100">
-                      {activeChartModal === 'leads_interagidos_usuario' && 'Leads interagidos por Usuários (todos os corretores)'}
-                      {activeChartModal === 'tempo_interacao_usuario' && 'Tempo de primeira interação por Usuário (todos os corretores)'}
-                      {activeChartModal === 'atividades_aberto_usuario' && 'Atividades em aberto por Usuário (todos os corretores)'}
-                      {activeChartModal === 'leads_convertidos_usuario' && 'Leads convertidos por Usuário (todos os corretores)'}
-                    </h3>
-                    <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">Visualização completa com todos os corretores</p>
-                  </div>
+          {/* Subárea Navigation */}
+          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-4 mb-6">
+            <div className="flex flex-wrap gap-3">
+              {[
+                { key: 'visao-geral', label: 'Visão Geral', Icon: BarChart3 },
+                { key: 'ranking', label: 'Ranking da Equipe', Icon: TrendingUp },
+              ].map(({ key, label, Icon }) => {
+                const isActive = activeMetricasSubArea === key;
+                return (
                   <button
-                    type="button"
-                    onClick={closeChartModal}
-                    className="px-4 py-2 rounded-lg border border-transparent text-sm font-medium text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800/60 transition-colors"
+                    key={key}
+                    onClick={() => {
+                      setActiveMetricasSubArea(key as 'visao-geral' | 'ranking');
+                      const params = new URLSearchParams(searchParams);
+                      params.set('tab', 'metricas');
+                      params.set('metricasSubArea', key);
+                      window.history.replaceState(null, '', `?${params.toString()}`);
+                    }}
+                    className={`h-10 px-4 rounded-lg border transition-all flex items-center gap-2 font-medium text-sm ${
+                      isActive
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white dark:bg-slate-900 text-gray-700 dark:text-slate-300 border-gray-300 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800'
+                    }`}
                   >
-                    Fechar
+                    <Icon className="h-4 w-4" />
+                    {label}
                   </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {activeMetricasSubArea === 'visao-geral' && (
+            <>
+              {/* KPIs Cards - Métricas */}
+              <div data-export-layout="kpis" className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
+                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-4 hover:shadow-md transition-shadow">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
+                      <Users className="h-5 w-5 text-blue-600" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Vendas Criadas</p>
+                      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">155</p>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="px-6 py-5 overflow-y-auto overflow-x-hidden">
-                  <div className="h-[60vh] min-h-[420px]">
-                    {activeChartModal === 'leads_interagidos_usuario' && (
-                      <Bar data={modalLeadsInteragidosUsuarioData} options={modalBarOptions} />
-                    )}
-                    {activeChartModal === 'tempo_interacao_usuario' && (
-                      <Bar data={modalTempoInteracaoUsuarioData} options={modalBarOptions} />
-                    )}
-                    {activeChartModal === 'atividades_aberto_usuario' && (
-                      <Bar data={modalAtividadesAbertoUsuarioData} options={modalStackedBarOptions} />
-                    )}
-                    {activeChartModal === 'leads_convertidos_usuario' && (
-                      <Bar data={modalLeadsConvertidosUsuarioData} options={modalBarOptions} />
-                    )}
+                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-4 hover:shadow-md transition-shadow">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
+                      <TrendingUp className="h-5 w-5 text-green-600" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Vendas Assinadas</p>
+                      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">146</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-4 hover:shadow-md transition-shadow">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-yellow-100 flex items-center justify-center">
+                      <BarChart3 className="h-5 w-5 text-yellow-600" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Imóveis Ativos</p>
+                      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">448</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-4 hover:shadow-md transition-shadow">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
+                      <Clock className="h-5 w-5 text-purple-600" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Total de Leads/Mês</p>
+                      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">537</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-4 hover:shadow-md transition-shadow">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center">
+                      <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Valor Total/Mês</p>
+                      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">R$ 6.8M</p>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+
+              {/* Grid de Gráficos - Métricas (Gestão de Equipe) */}
+              <div data-export-layout="charts" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* 1. Leads por Equipe */}
+                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-5">
+                  <h3 className="text-sm font-semibold text-gray-800 mb-4">Leads por Equipe</h3>
+                  <div className="h-[280px]">
+                    <Bar data={leadsPorEquipeData} options={defaultBarOptions} />
+                  </div>
+                </div>
+
+                {/* 3. Tempo Médio de Resposta por Equipe */}
+                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-5">
+                  <h3 className="text-sm font-semibold text-gray-800 mb-4">Tempo Médio de Resposta por Equipe</h3>
+                  <div className="h-[280px]">
+                    <Bar data={tempoRespostaChartData} options={defaultBarOptions} />
+                  </div>
+                </div>
+
+                {/* 4. Taxa de Conversão por Equipe */}
+                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-5">
+                  <h3 className="text-sm font-semibold text-gray-800 mb-4">Taxa de Conversão por Equipe</h3>
+                  <div className="h-[280px]">
+                    <Bar data={taxaConversaoChartData} options={defaultBarOptions} />
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-5">
+                  <h3 className="text-sm font-semibold text-gray-800 mb-4">Leads interagidos por Usuários</h3>
+                  <div className="h-[280px]">
+                    <Bar data={leadsInteragidosUsuarioData} options={defaultBarOptions} />
+                  </div>
+                  <div className="mt-4">
+                    <button
+                      type="button"
+                      onClick={() => openChartModal('leads_interagidos_usuario')}
+                      className="btn-octo-primary w-full px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                    >
+                      Exibir mais
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-5">
+                  <h3 className="text-sm font-semibold text-gray-800 mb-4">Tempo de primeira interação por Usuário</h3>
+                  <div className="h-[280px]">
+                    <Bar data={tempoInteracaoData} options={defaultBarOptions} />
+                  </div>
+                  <div className="mt-4">
+                    <button
+                      type="button"
+                      onClick={() => openChartModal('tempo_interacao_usuario')}
+                      className="btn-octo-primary w-full px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                    >
+                      Exibir mais
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-5">
+                  <h3 className="text-sm font-semibold text-gray-800 mb-4">Atividades em aberto por Usuário</h3>
+                  <div className="h-[280px]">
+                    <Bar data={atividadesAbertoData} options={stackedBarOptions} />
+                  </div>
+                  <div className="mt-4">
+                    <button
+                      type="button"
+                      onClick={() => openChartModal('atividades_aberto_usuario')}
+                      className="btn-octo-primary w-full px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                    >
+                      Exibir mais
+                    </button>
+                  </div>
+                </div>
+
+                {/* Leads convertidos por Usuário */}
+                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-5">
+                  <h3 className="text-sm font-semibold text-gray-800 mb-4">Leads convertidos por Usuário</h3>
+                  <div className="h-[280px]">
+                    <Bar data={leadsConvertidosUsuarioData} options={defaultBarOptions} />
+                  </div>
+                  <div className="mt-4">
+                    <button
+                      type="button"
+                      onClick={() => openChartModal('leads_convertidos_usuario')}
+                      className="btn-octo-primary w-full px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                    >
+                      Exibir mais
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {isChartModalOpen && activeChartModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+                  <div className="mx-auto w-[84vw] max-w-2xl max-h-[85vh] bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-transparent flex flex-col overflow-hidden">
+                    <div className="flex items-center justify-between gap-4 px-6 py-4 border-b border-gray-100 dark:border-slate-800 flex-shrink-0">
+                      <div>
+                        <h3 className="text-base font-semibold text-gray-900 dark:text-slate-100">
+                          {activeChartModal === 'leads_interagidos_usuario' && 'Leads interagidos por Usuários (todos os corretores)'}
+                          {activeChartModal === 'tempo_interacao_usuario' && 'Tempo de primeira interação por Usuário (todos os corretores)'}
+                          {activeChartModal === 'atividades_aberto_usuario' && 'Atividades em aberto por Usuário (todos os corretores)'}
+                          {activeChartModal === 'leads_convertidos_usuario' && 'Leads convertidos por Usuário (todos os corretores)'}
+                        </h3>
+                        <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">Visualização completa com todos os corretores</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={closeChartModal}
+                        className="px-4 py-2 rounded-lg border border-transparent text-sm font-medium text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800/60 transition-colors"
+                      >
+                        Fechar
+                      </button>
+                    </div>
+
+                    <div className="px-6 py-5 overflow-y-auto overflow-x-hidden">
+                      <div className="h-[60vh] min-h-[420px]">
+                        {activeChartModal === 'leads_interagidos_usuario' && (
+                          <Bar data={modalLeadsInteragidosUsuarioData} options={modalBarOptions} />
+                        )}
+                        {activeChartModal === 'tempo_interacao_usuario' && (
+                          <Bar data={modalTempoInteracaoUsuarioData} options={modalBarOptions} />
+                        )}
+                        {activeChartModal === 'atividades_aberto_usuario' && (
+                          <Bar data={modalAtividadesAbertoUsuarioData} options={modalStackedBarOptions} />
+                        )}
+                        {activeChartModal === 'leads_convertidos_usuario' && (
+                          <Bar data={modalLeadsConvertidosUsuarioData} options={modalBarOptions} />
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-10">
+                <MetricsDashboard />
+              </div>
+            </>
           )}
 
-          <div className="mt-10">
-            <MetricsDashboard />
-          </div>
-        </>
-      )}
-
-      {/* SEÇÃO MÉTRICAS INDIVIDUAIS */}
-      {activeSubArea === 'metricas-individuais' && (
-        <>
-            <div>
-              <div className="mb-6 flex justify-center">
-                <div className="w-full max-w-5xl flex flex-wrap justify-center gap-4">
-                {([
-                  { key: 'ranking', label: 'Ranking', count: 0, Icon: BarChart3 },
-                  { key: 'comissao-metas', label: 'Comissão e meta', count: 0, Icon: DollarSign },
-                  { key: 'leads', label: 'Leads', count: 0, Icon: Users },
-                  { key: 'vendas', label: 'Origens', count: 0, Icon: TrendingUp },
-                ] as const).map(({ key, label, count, Icon }) => {
-                  const isActive = activeMetricasIndSubArea === key;
-                  return (
-                    <button
-                      key={key}
-                      onClick={() => {
-                        setActiveMetricasIndSubArea(key);
-                        const params = new URLSearchParams(searchParams);
-                        params.set('tab', 'metricas-individuais');
-                        params.set('metricasIndSubArea', key);
-                        window.history.replaceState(null, '', `?${params.toString()}`);
-                      }}
-                      className={`h-14 px-6 rounded-2xl border transition-all flex items-center gap-4 shadow-sm ${
-                        isActive
-                          ? 'bg-white dark:bg-slate-900 border-blue-600'
-                          : 'bg-white dark:bg-slate-900 border-gray-200 dark:border-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800/60'
-                      }`}
-                    >
-                      <div
-                        className={`h-8 w-8 rounded-lg flex items-center justify-center ${
-                          isActive ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-400'
-                        }`}
-                      >
-                        <Icon className="h-5 w-5" />
-                      </div>
-                      <div className={`text-base font-semibold ${isActive ? 'text-blue-700' : 'text-gray-800'}`}>
-                        {label}
-                      </div>
-                      <div
-                        className={`ml-1 min-w-7 h-7 px-2 rounded-full text-sm font-semibold flex items-center justify-center ${
-                          isActive
-                            ? 'bg-blue-50 text-blue-700 border border-blue-100'
-                            : 'bg-gray-50 dark:bg-slate-950 text-gray-600 dark:text-slate-400 border border-gray-100 dark:border-slate-800'
-                        }`}
-                      >
-                        {count}
-                      </div>
-                    </button>
-                  );
-                })}
-                </div>
-              </div>
-
-              {activeMetricasIndSubArea === 'ranking' && (
+          {activeMetricasSubArea === 'ranking' && (
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-stretch">
                   <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-6 h-full min-h-[640px] flex flex-col">
                     <div className="flex items-center justify-between gap-4">
@@ -2117,29 +2122,63 @@ export const RelatoriosPage = () => {
                         <div className="hidden sm:block text-xs text-gray-500 dark:text-slate-400">Top 3 por comissão</div>
                         <div className="flex items-center gap-2">
                           <select
-                            value={rankingMonth}
-                            onChange={(e) => setRankingMonth(Number(e.target.value))}
+                            value={rankingPeriod}
+                            onChange={(e) => setRankingPeriod(e.target.value as 'monthly' | 'quarterly' | 'semiannual' | 'yearly')}
                             className="h-9 px-3 rounded-lg border border-gray-300 bg-white dark:bg-slate-900 text-xs text-gray-700 dark:text-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                           >
-                            {[
-                              'Janeiro',
-                              'Fevereiro',
-                              'Março',
-                              'Abril',
-                              'Maio',
-                              'Junho',
-                              'Julho',
-                              'Agosto',
-                              'Setembro',
-                              'Outubro',
-                              'Novembro',
-                              'Dezembro',
-                            ].map((label, idx) => (
-                              <option key={label} value={idx + 1}>
-                                {label}
-                              </option>
-                            ))}
+                            <option value="monthly">Mensal</option>
+                            <option value="quarterly">Trimestral</option>
+                            <option value="semiannual">Semestral</option>
+                            <option value="yearly">Anual</option>
                           </select>
+                          {rankingPeriod === 'monthly' && (
+                            <select
+                              value={rankingMonth}
+                              onChange={(e) => setRankingMonth(Number(e.target.value))}
+                              className="h-9 px-3 rounded-lg border border-gray-300 bg-white dark:bg-slate-900 text-xs text-gray-700 dark:text-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                            >
+                              {[
+                                'Janeiro',
+                                'Fevereiro',
+                                'Março',
+                                'Abril',
+                                'Maio',
+                                'Junho',
+                                'Julho',
+                                'Agosto',
+                                'Setembro',
+                                'Outubro',
+                                'Novembro',
+                                'Dezembro',
+                              ].map((label, idx) => (
+                                <option key={label} value={idx + 1}>
+                                  {label}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                          {rankingPeriod === 'quarterly' && (
+                            <select
+                              value={Math.ceil(rankingMonth / 3)}
+                              onChange={(e) => setRankingMonth((Number(e.target.value) - 1) * 3 + 1)}
+                              className="h-9 px-3 rounded-lg border border-gray-300 bg-white dark:bg-slate-900 text-xs text-gray-700 dark:text-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                            >
+                              <option value="1">1º Trimestre</option>
+                              <option value="2">2º Trimestre</option>
+                              <option value="3">3º Trimestre</option>
+                              <option value="4">4º Trimestre</option>
+                            </select>
+                          )}
+                          {rankingPeriod === 'semiannual' && (
+                            <select
+                              value={Math.ceil(rankingMonth / 6)}
+                              onChange={(e) => setRankingMonth((Number(e.target.value) - 1) * 6 + 1)}
+                              className="h-9 px-3 rounded-lg border border-gray-300 bg-white dark:bg-slate-900 text-xs text-gray-700 dark:text-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                            >
+                              <option value="1">1º Semestre</option>
+                              <option value="2">2º Semestre</option>
+                            </select>
+                          )}
                           <select
                             value={rankingYear}
                             onChange={(e) => setRankingYear(Number(e.target.value))}
@@ -2262,32 +2301,37 @@ export const RelatoriosPage = () => {
                           </tr>
                         </thead>
                         <tbody>
-                          {rankingMetricasIndividuais.map((row, idx) => (
-                            <tr
-                              key={row.corretor}
-                              className={`${idx % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-gray-50 dark:bg-slate-950'} hover:bg-blue-50/40 transition-colors`}
-                            >
-                              <td className="py-2.5 pl-3 pr-3 text-xs font-semibold text-gray-900 dark:text-slate-100">
-                                <div className="flex items-center gap-2">
-                                  <Avatar className="h-7 w-7 ring-1 ring-gray-200">
-                                    <AvatarImage src={(row as any).fotoUrl} alt={row.corretor} />
-                                    <AvatarFallback className="bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-slate-300 text-[10px] font-semibold">
-                                      {getInitials(row.corretor)}
-                                    </AvatarFallback>
-                                  </Avatar>
-                                  <span className="truncate">{row.corretor}</span>
-                                </div>
-                              </td>
-                              <td className="py-2.5 px-3 text-right text-xs">
-                                <span className="inline-flex min-w-8 justify-center rounded-full bg-blue-50 text-blue-700 border border-blue-100 px-2 py-0.5 font-semibold">
-                                  {row.ranking}
-                                </span>
-                              </td>
-                              <td className="py-2.5 px-3 text-right text-xs text-gray-800">{formatCurrencyBRL.format(row.valorComissao)}</td>
-                              <td className="py-2.5 px-3 text-right text-xs text-gray-800">{row.vendasFeitas}</td>
-                              <td className="py-2.5 pr-3 text-right text-xs text-gray-800">{row.gestaoAtiva}</td>
-                            </tr>
-                          ))}
+                          {rankingMetricasIndividuais
+                            .slice((rankingCurrentPage - 1) * rankingItemsPerPage, rankingCurrentPage * rankingItemsPerPage)
+                            .map((row, idx) => {
+                              const globalIdx = (rankingCurrentPage - 1) * rankingItemsPerPage + idx;
+                              return (
+                                <tr
+                                  key={row.corretor}
+                                  className={`${globalIdx % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-gray-50 dark:bg-slate-950'} hover:bg-blue-50/40 transition-colors`}
+                                >
+                                  <td className="py-2.5 pl-3 pr-3 text-xs font-semibold text-gray-900 dark:text-slate-100">
+                                    <div className="flex items-center gap-2">
+                                      <Avatar className="h-7 w-7 ring-1 ring-gray-200">
+                                        <AvatarImage src={(row as any).fotoUrl} alt={row.corretor} />
+                                        <AvatarFallback className="bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-slate-300 text-[10px] font-semibold">
+                                          {getInitials(row.corretor)}
+                                        </AvatarFallback>
+                                      </Avatar>
+                                      <span className="truncate">{row.corretor}</span>
+                                    </div>
+                                  </td>
+                                  <td className="py-2.5 px-3 text-right text-xs">
+                                    <span className="inline-flex min-w-8 justify-center rounded-full bg-blue-50 text-blue-700 border border-blue-100 px-2 py-0.5 font-semibold">
+                                      {row.ranking}
+                                    </span>
+                                  </td>
+                                  <td className="py-2.5 px-3 text-right text-xs text-gray-800">{formatCurrencyBRL.format(row.valorComissao)}</td>
+                                  <td className="py-2.5 px-3 text-right text-xs text-gray-800">{row.vendasFeitas}</td>
+                                  <td className="py-2.5 pr-3 text-right text-xs text-gray-800">{row.gestaoAtiva}</td>
+                                </tr>
+                              );
+                            })}
                           <tr className="bg-gray-100 dark:bg-slate-800">
                             <td className="py-2.5 pl-3 pr-3 text-xs font-semibold text-gray-800">Total</td>
                             <td className="py-2.5 px-3" />
@@ -2302,13 +2346,123 @@ export const RelatoriosPage = () => {
                         </tbody>
                       </table>
                     </div>
+                    
+                    {/* Pagination Controls */}
+                    {rankingMetricasIndividuais.length > rankingItemsPerPage && (
+                      <div className="mt-4 flex items-center justify-between px-2">
+                        <div className="text-xs text-gray-600 dark:text-slate-400">
+                          Mostrando {((rankingCurrentPage - 1) * rankingItemsPerPage) + 1} a {Math.min(rankingCurrentPage * rankingItemsPerPage, rankingMetricasIndividuais.length)} de {rankingMetricasIndividuais.length} corretores
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => setRankingCurrentPage(prev => Math.max(1, prev - 1))}
+                            disabled={rankingCurrentPage === 1}
+                            className="h-8 w-8 rounded-lg border border-gray-300 bg-white dark:bg-slate-900 text-xs text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center"
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                          </button>
+                          
+                          {Array.from({ length: Math.min(5, Math.ceil(rankingMetricasIndividuais.length / rankingItemsPerPage)) }, (_, i) => {
+                            const totalPages = Math.ceil(rankingMetricasIndividuais.length / rankingItemsPerPage);
+                            let pageNum;
+                            
+                            if (totalPages <= 5) {
+                              pageNum = i + 1;
+                            } else if (rankingCurrentPage <= 3) {
+                              pageNum = i + 1;
+                            } else if (rankingCurrentPage >= totalPages - 2) {
+                              pageNum = totalPages - 4 + i;
+                            } else {
+                              pageNum = rankingCurrentPage - 2 + i;
+                            }
+                            
+                            return (
+                              <button
+                                key={pageNum}
+                                onClick={() => setRankingCurrentPage(pageNum)}
+                                className={`h-8 w-8 rounded-lg border text-xs transition-all flex items-center justify-center ${
+                                  rankingCurrentPage === pageNum
+                                    ? 'bg-blue-600 text-white border-blue-600'
+                                    : 'border-gray-300 bg-white dark:bg-slate-900 text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800'
+                                }`}
+                              >
+                                {pageNum}
+                              </button>
+                            );
+                          })}
+                          
+                          <button
+                            onClick={() => setRankingCurrentPage(prev => Math.min(Math.ceil(rankingMetricasIndividuais.length / rankingItemsPerPage), prev + 1))}
+                            disabled={rankingCurrentPage === Math.ceil(rankingMetricasIndividuais.length / rankingItemsPerPage)}
+                            className="h-8 w-8 rounded-lg border border-gray-300 bg-white dark:bg-slate-900 text-xs text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center"
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
-              )}
 
-              {activeMetricasIndSubArea !== 'ranking' && (
-                <>
-                  {activeMetricasIndSubArea === 'comissao-metas' && (
+          )}
+        </>
+      )}
+
+      {/* SEÇÃO MÉTRICAS INDIVIDUAIS */}
+      {activeSubArea === 'metricas-individuais' && (
+        <>
+            <div>
+              <div className="mb-6 flex justify-center">
+                <div className="w-full max-w-5xl flex flex-wrap justify-center gap-4">
+                {([
+                  { key: 'comissao-metas', label: 'Comissão e meta', count: 0, Icon: DollarSign },
+                  { key: 'leads', label: 'Leads', count: 0, Icon: Users },
+                  { key: 'vendas', label: 'Origens', count: 0, Icon: TrendingUp },
+                ] as const).map(({ key, label, count, Icon }) => {
+                  const isActive = activeMetricasIndSubArea === key;
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => {
+                        setActiveMetricasIndSubArea(key);
+                        const params = new URLSearchParams(searchParams);
+                        params.set('tab', 'metricas-individuais');
+                        params.set('metricasIndSubArea', key);
+                        window.history.replaceState(null, '', `?${params.toString()}`);
+                      }}
+                      className={`h-14 px-6 rounded-2xl border transition-all flex items-center gap-4 shadow-sm ${
+                        isActive
+                          ? 'bg-white dark:bg-slate-900 border-blue-600'
+                          : 'bg-white dark:bg-slate-900 border-gray-200 dark:border-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800/60'
+                      }`}
+                    >
+                      <div
+                        className={`h-8 w-8 rounded-lg flex items-center justify-center ${
+                          isActive ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-400'
+                        }`}
+                      >
+                        <Icon className="h-5 w-5" />
+                      </div>
+                      <div className={`text-base font-semibold ${isActive ? 'text-blue-700' : 'text-gray-800'}`}>
+                        {label}
+                      </div>
+                      <div
+                        className={`ml-1 min-w-7 h-7 px-2 rounded-full text-sm font-semibold flex items-center justify-center ${
+                          isActive
+                            ? 'bg-blue-50 text-blue-700 border border-blue-100'
+                            : 'bg-gray-50 dark:bg-slate-950 text-gray-600 dark:text-slate-400 border border-gray-100 dark:border-slate-800'
+                        }`}
+                      >
+                        {count}
+                      </div>
+                    </button>
+                  );
+                })}
+                </div>
+              </div>
+
+
+              {activeMetricasIndSubArea === 'comissao-metas' && (
                     <div className="grid grid-cols-1 xl:grid-cols-[360px_1fr] gap-6 items-stretch">
                       <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent overflow-hidden">
                         <div className="p-5">
@@ -2475,8 +2629,6 @@ export const RelatoriosPage = () => {
                       </p>
                     </div>
                   )}
-                </>
-              )}
 
               {activeMetricasIndSubArea === 'leads' && (
                 <div className="grid grid-cols-1 xl:grid-cols-[360px_1fr] gap-6 items-stretch">

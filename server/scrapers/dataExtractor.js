@@ -13,6 +13,69 @@ function cleanText(raw) {
     .trim();
 }
 
+/**
+ * Detecta links honeypot (invisíveis para humanos)
+ * @param {string} html - HTML bruto
+ * @returns {Array} - Array de links seguros
+ */
+function extractSafeLinks(html) {
+  const safeLinks = [];
+  const tempDiv = document.createElement('div');
+  tempDiv.innerHTML = html;
+  
+  const links = tempDiv.querySelectorAll('a[href]');
+  
+  for (const link of links) {
+    if (isHoneypot(link)) {
+      console.warn('🐝 Honeypot detectado e ignorado:', link.href);
+      continue;
+    }
+    safeLinks.push(link.href);
+  }
+  
+  return safeLinks;
+}
+
+/**
+ * Verifica se um elemento é um honeypot
+ * @param {Element} element - Elemento DOM
+ * @returns {boolean}
+ */
+function isHoneypot(element) {
+  const style = element.style || {};
+  const computedStyle = window.getComputedStyle ? window.getComputedStyle(element) : {};
+  
+  // Verificar estilo CSS
+  if (
+    style.display === 'none' ||
+    style.visibility === 'hidden' ||
+    style.opacity === '0' ||
+    computedStyle.display === 'none' ||
+    computedStyle.visibility === 'hidden' ||
+    computedStyle.opacity === '0'
+  ) {
+    return true;
+  }
+  
+  // Verificar classes suspeitas
+  const honeypotClasses = ['hidden', 'invisible', 'honeypot', 'trap', 'bot-trap'];
+  const elementClasses = (element.className || '').split(' ');
+  
+  if (honeypotClasses.some(cls => elementClasses.includes(cls))) {
+    return true;
+  }
+  
+  // Verificar atributos suspeitos
+  const honeypotAttrs = ['aria-hidden', 'data-honeypot', 'data-bot'];
+  for (const attr of honeypotAttrs) {
+    if (element.hasAttribute && element.hasAttribute(attr)) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
 function normalizeNumberString(raw) {
   if (!raw) return null;
   raw = raw.replace(/\s+/g, '');

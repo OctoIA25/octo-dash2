@@ -78,6 +78,7 @@ function parseAiResponse(text) {
  * @param {string} apiKey - OpenAI API key
  * @returns {Promise<{rua, bairro, cidade, estado, tipo, diferenciais, condominio, localizacao_completa}>}
  */
+
 export async function enrichWithAI(htmlText, apiKey) {
   if (!apiKey) {
     console.warn('⚠️ OpenAI API key nao configurada, pulando enriquecimento AI');

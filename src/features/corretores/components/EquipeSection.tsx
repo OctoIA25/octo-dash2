@@ -131,6 +131,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
   // Estados para modal de novo membro
   const [isNewMemberModalOpen, setIsNewMemberModalOpen] = useState(false);
   const [newMemberName, setNewMemberName] = useState('');
+  const [newMemberSurname, setNewMemberSurname] = useState('');
   const [newMemberEmail, setNewMemberEmail] = useState('');
   const [newMemberPassword, setNewMemberPassword] = useState('');
   const [newMemberPhoto, setNewMemberPhoto] = useState<string>('');
@@ -326,6 +327,11 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
 
   // Criar novo membro
   const handleCreateMember = async () => {
+    if (!tenantId) {
+      toast.error('Tenant ID não encontrado. Faça login novamente.');
+      return;
+    }
+
     if (!newMemberEmail || !newMemberPassword) {
       toast.error('Preencha email e senha');
       return;
@@ -343,15 +349,17 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
         .filter(([_, value]) => value)
         .map(([key]) => key);
       
-      const result = await createTenantMember(tenantId!, {
+      const memberData = {
         email: newMemberEmail,
         password: newMemberPassword,
         role: newMemberRole,
-        name: newMemberName || undefined,
+        name: `${newMemberName} ${newMemberSurname}`.trim() || undefined,
         team: newMemberTeam || undefined,
         permissions: { ...permissions, photo: newMemberPhoto || null } as any,
         sidebarPermissions: sidebarPerms as any
-      });
+      };
+      
+      const result = await createTenantMember(tenantId!, memberData);
 
       if (result.success) {
         // Verificar se precisa confirmação de email
@@ -364,6 +372,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
         // Limpar formulário
         setIsNewMemberModalOpen(false);
         setNewMemberName('');
+        setNewMemberSurname('');
         setNewMemberEmail('');
         setNewMemberPassword('');
         setNewMemberPhoto('');
@@ -375,12 +384,14 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
         toast.error(result.error || 'Erro ao criar membro');
       }
     } catch (error) {
-      toast.error('Erro ao criar membro');
+      console.error('❌ Erro ao criar membro:', error);
+      toast.error('Erro inesperado ao criar membro: ' + (error as any)?.message || 'Erro desconhecido');
     } finally {
       setIsCreatingMember(false);
     }
   };
 
+// ...
   // Remover membro
   const handleRemoveMember = async (memberId: string) => {
     if (!confirm('Tem certeza que deseja remover este membro?')) return;
@@ -1436,7 +1447,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
             <div className="space-y-2">
               <Label htmlFor="name" className="flex items-center gap-2">
                 <User className="h-4 w-4 text-gray-500 dark:text-slate-400" />
-                Nome Completo
+                Nome
               </Label>
               <Input
                 id="name"
@@ -1444,6 +1455,22 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                 placeholder="Nome do membro"
                 value={newMemberName}
                 onChange={(e) => setNewMemberName(e.target.value)}
+                className="h-10"
+              />
+            </div>
+
+            {/* Sobrenome */}
+            <div className="space-y-2">
+              <Label htmlFor="sobrenome" className="flex items-center gap-2">
+                <User className="h-4 w-4 text-gray-500 dark:text-slate-400" />
+                Sobrenome
+              </Label>
+              <Input
+                id="sobrenome"
+                type="text"
+                placeholder="Sobrenome do membro"
+                value={newMemberSurname}
+                onChange={(e) => setNewMemberSurname(e.target.value)}
                 className="h-10"
               />
             </div>

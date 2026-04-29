@@ -5,7 +5,7 @@ import { TrendingDown } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 
 interface Candidato {
-  id: number;
+  id: string | number;
   status: string;
 }
 

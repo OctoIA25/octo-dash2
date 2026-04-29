@@ -78,7 +78,7 @@ console.log(`${DIM}   API:      http://localhost:3001${RESET}`);
 console.log(`${DIM}   Para parar: Ctrl+C${RESET}\n`);
 
 // 1. Vite (frontend) — usa Node pra rodar o vite.js direto
-const viteProc = spawn(process.execPath, [viteBin], {
+const viteProc = spawn(process.execPath, ['--max-old-space-size=4096', viteBin], {
   cwd: rootDir,
   env: processEnv,
   stdio: ['ignore', 'pipe', 'pipe'],

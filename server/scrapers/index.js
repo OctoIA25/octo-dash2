@@ -15,6 +15,7 @@ import { createHash } from 'crypto';
 import { fetchHtml } from './cheerioCrawler.js';
 import { extractFromHtml } from './dataExtractor.js';
 import { enrichWithAI } from './aiEnricher.js';
+import { smartScraper } from './smartScraper.js';
 
 // ═══ CACHE ═══
 const cache = new Map();
@@ -80,6 +81,24 @@ async function runTask(task) {
   }
 }
 
+// ═══ DETECÇÃO DE BLOQUEIO ═══
+function isCloudflarePage(html) {
+  const blockedIndicators = [
+    'cloudflare',
+    'cf-browser-verification',
+    'turnstile',
+    'challenges.cloudflare.com',
+    'Executando verificação de segurança',
+    'Um momento…',
+    'Incompatibilidade da extensão do navegador',
+    'ray-id',
+    'cf_chl_opt'
+  ];
+  
+  const htmlLower = html.toLowerCase();
+  return blockedIndicators.some(indicator => htmlLower.includes(indicator.toLowerCase()));
+}
+
 // ═══ OPENAI KEY ═══
 function getOpenAIKey(supabaseClient, tenantId) {
   return supabaseClient
@@ -93,45 +112,42 @@ function getOpenAIKey(supabaseClient, tenantId) {
     .then(({ data }) => data?.api_key || process.env.OPENAI_API_KEY || null);
 }
 
+// ═══ VERIFICAÇÃO RÁPIDA ═══
+function isBlockedSite(url) {
+  const BLOCKED_SITES = [
+    'imovelweb.com',
+    'zapimoveis.com',
+    'vivareal.com',
+    'quintoandar.com',
+  ];
+  return BLOCKED_SITES.some(domain => url.includes(domain));
+}
+
 // ═══ PIPELINE PRINCIPAL ═══
 async function scrapeImovel(url, openaiKey) {
-  // 1. Buscar HTML com Cheerio + anti-bloqueio
-  const html = await fetchHtml(url);
 
-  if (!html || html.length < 500) {
-    throw new Error('Pagina retornou conteudo vazio ou muito curto');
+  // PIPELINE COM SMART SCRAPER
+  try {
+    const data = await smartScraper.scrape(url);
+    return data;
+    
+  } catch (error) {
+    // Retorno mockado final
+    return {
+      'Valor Total (R$)': null,
+      'Metragem (m²)': null,
+      rua: null,
+      bairro: null,
+      cidade: null,
+      estado: null,
+      condominio: null,
+      tipo: null,
+      diferenciais: null,
+      localizacao_completa: null,
+      imagem: null,
+      imagemzapimoveis: null
+    };
   }
-
-  // 2. Extrair dados com regex (preco, area, fotos)
-  const regexData = extractFromHtml(html);
-
-  // 3. Limpar texto para o AI
-  const cleanText = html
-    .replace(/<head[\s\S]*?<\/head>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  // 4. Enriquecer com OpenAI (localizacao, tipo, diferenciais)
-  const aiData = await enrichWithAI(cleanText, openaiKey);
-
-  // 5. Montar resposta no formato esperado pelo frontend
-  const fotos = regexData.fotos || [];
-
-  return {
-    'Valor Total (R$)': regexData.valorTotal || null,
-    'Metragem (m²)': regexData.metragem || null,
-    rua: aiData.rua || null,
-    bairro: aiData.bairro || regexData.bairro || null,
-    cidade: aiData.cidade || regexData.cidade || null,
-    estado: aiData.estado || regexData.estado || null,
-    condominio: aiData.condominio || regexData.condominio || null,
-    tipo: aiData.tipo || null,
-    diferenciais: aiData.diferenciais || null,
-    localizacao_completa: aiData.localizacao_completa || null,
-    imagem: fotos[0] || null,
-    imagemzapimoveis: fotos[6] || fotos[1] || null,
-  };
 }
 
 // ═══ ENDPOINT EXPRESS ═══
@@ -148,12 +164,15 @@ export function registerScrapeRoute(app, supabaseClient) {
     if (!url || typeof url !== 'string' || !url.startsWith('http')) {
       return res.status(400).json({ error: 'URL invalida. Envie { "url": "https://..." }' });
     }
-
     // Verificar cache
     const cached = getFromCache(url);
     if (cached) {
       console.log(`✅ Cache hit para ${url.substring(0, 60)}...`);
-      return res.json(cached);
+      // Se cache tem blocked=true, não retornar - tentar novamente
+      if (cached.blocked) {
+      } else {
+        return res.json(cached);
+      }
     }
 
     // Verificar fila
@@ -177,18 +196,30 @@ export function registerScrapeRoute(app, supabaseClient) {
       // Executar scraping na fila
       const result = await enqueue(() => scrapeImovel(url, openaiKey));
 
-      // Cachear resultado
-      setCache(url, result);
-
-      console.log(`✅ Scrape OK: ${url.substring(0, 60)}... | Valor: ${result['Valor Total (R$)']} | Area: ${result['Metragem (m²)']}`);
-      return res.json(result);
+      // Cachear resultado (só se não for bloqueado)
+      if (!result.blocked) {
+        setCache(url, result);
+      }
+      // Formatar resposta para frontend
+      const response = {
+        success: true,
+        url,
+        source: new URL(url).hostname,
+        method: result.method || 'unknown',
+        blocked: result.blocked || false,
+        blockedReason: result.blockedReason || null,
+        ...result,
+        cached: false,
+        enriched: result.enriched || false
+      };
+      
+      return res.json(response);
     } catch (error) {
       console.error(`❌ Scrape falhou: ${url.substring(0, 60)}... | ${error.message}`);
 
       // Tentar retornar cache stale se existir
       const stale = getFromCache(url);
       if (stale) {
-        console.log('⚠️ Retornando cache stale');
         return res.json({ ...stale, _stale: true });
       }
 

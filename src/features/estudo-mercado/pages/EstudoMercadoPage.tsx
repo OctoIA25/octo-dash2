@@ -268,8 +268,8 @@ export const EstudoMercadoPage = () => {
           const parseNumber = (val: unknown): number => {
             if (typeof val === 'number') return val;
             if (typeof val === 'string') {
-              const cleaned = val.replace(/[^\d.,]/g, '').replace(',', '.');
-              return parseFloat(cleaned) || 0;
+              const cleaned = val.replace(/[^\d]/g, '');
+              return parseInt(cleaned) || 0;
             }
             return 0;
           };
