@@ -52,6 +52,8 @@ import { LEAD_TYPE_INTERESSADO, LEAD_TYPE_PROPRIETARIO } from '@/features/leads/
 import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { getRankingColor } from '@/utils/colors';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { useRelatorios } from '../hooks/useRelatorios';
+import { buscarValorTotal, formatarValorMonetario, buscarImoveisAtivos } from '../services/relatoriosService';
 
 // Registrar componentes do Chart.js
 ChartJS.register(
@@ -168,6 +170,8 @@ const PIE_COLORS = [
 export const RelatoriosPage = () => {
   const [searchParams] = useSearchParams();
   const { tenantId } = useAuth();
+
+  const { vendasCriadas, vendasAssinadas, metricasEquipes, totalLeadsMensal, valorTotal, imoveisAtivos, kpis: kpisRelatorios} = useRelatorios();
 
   const reportRef = useRef<HTMLDivElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
@@ -370,14 +374,14 @@ export const RelatoriosPage = () => {
     | null
   >(null);
 
-  // Dados calculados para KPIs
-  const kpis = useMemo(() => ({
-    totalLeadsRecebidos: 1247,
-    totalLeadsInteragidos: 1015,
-    mediaInteracaoDia: 81.41,
-    mediaTempoPrimeiraInteracao: 26,
-    totalLeadsConvertidos: 187,
-  }), []);
+  // Dados calculados para KPIs - usando dados reais do useRelatorios
+  const kpisCalculados = useMemo(() => ({
+    totalLeadsRecebidos: totalLeadsMensal || 0,
+    totalLeadsInteragidos: vendasCriadas || 0,
+    mediaInteracaoDia: vendasCriadas ? Math.round((vendasCriadas / 30) * 100) / 100 : 0,
+    mediaTempoPrimeiraInteracao: 0, // Precisa implementar
+    totalLeadsConvertidos: vendasAssinadas || 0,
+  }), [totalLeadsMensal, vendasCriadas, vendasAssinadas]);
 
   const rankingMetricasIndividuais = useMemo(() => {
     const slugify = (value: string) =>
@@ -1110,15 +1114,31 @@ export const RelatoriosPage = () => {
     }],
   }), [convertidosEarly, ALL_CORRETORES]);
 
-  const modalTempoInteracaoUsuarioData = useMemo(() => ({
-    labels: ALL_CORRETORES,
-    datasets: [{
-      label: 'Leads atribuídos',
-      data: allCorretorTop.values,
-      backgroundColor: CHART_COLORS.primary,
-      borderRadius: 6,
-    }],
-  }), [allCorretorTop, ALL_CORRETORES]);
+  const modalTempoInteracaoUsuarioData = useMemo(() => {
+    const temposPorCorretor = ALL_CORRETORES.map(nome => {
+      const leadsDoCorretor = allLeadsEarly.filter(l => l.corretor_responsavel === nome);
+      const leadsComInteracao = leadsDoCorretor.filter(l => l.data_entrada && l.Data_visita);
+      
+      if (leadsComInteracao.length === 0) return 0;
+      
+      const tempos = leadsComInteracao.map(l => {
+        const diff = new Date(l.Data_visita).getTime() - new Date(l.data_entrada).getTime();
+        return Math.floor(diff / (1000 * 60)); // Converter para minutos
+      });
+      
+      return Math.round(tempos.reduce((sum, t) => sum + t, 0) / tempos.length);
+    });
+    
+    return {
+      labels: ALL_CORRETORES,
+      datasets: [{
+        label: 'Tempo médio (min)',
+        data: temposPorCorretor,
+        backgroundColor: CHART_COLORS.primary,
+        borderRadius: 6,
+      }]
+    };
+  }, [allLeadsEarly, ALL_CORRETORES]);
 
   const modalAtividadesAbertoUsuarioData = useMemo(() => {
     const visitaData = ALL_CORRETORES.map(nome =>
@@ -1275,16 +1295,32 @@ export const RelatoriosPage = () => {
     }]
   };
 
-  // 6. Atividades por Usuário (leads por etapa agrupados por corretor)
-  const tempoInteracaoData = {
-    labels: REAL_CORRETORES,
-    datasets: [{
-      label: 'Leads atribuídos',
-      data: corretorTop.values,
-      backgroundColor: CHART_COLORS.primary,
-      borderRadius: 6,
-    }]
-  };
+  // 6. Tempo de primeira interação por Usuário (dados reais)
+  const tempoInteracaoData = useMemo(() => {
+    const temposPorCorretor = REAL_CORRETORES.map(nome => {
+      const leadsDoCorretor = allLeads.filter(l => l.corretor_responsavel === nome);
+      const leadsComInteracao = leadsDoCorretor.filter(l => l.data_entrada && l.Data_visita);
+      
+      if (leadsComInteracao.length === 0) return 0;
+      
+      const tempos = leadsComInteracao.map(l => {
+        const diff = new Date(l.Data_visita).getTime() - new Date(l.data_entrada).getTime();
+        return Math.floor(diff / (1000 * 60)); // Converter para minutos
+      });
+      
+      return Math.round(tempos.reduce((sum, t) => sum + t, 0) / tempos.length);
+    });
+    
+    return {
+      labels: REAL_CORRETORES,
+      datasets: [{
+        label: 'Tempo médio (min)',
+        data: temposPorCorretor,
+        backgroundColor: CHART_COLORS.primary,
+        borderRadius: 6,
+      }]
+    };
+  }, [allLeads, REAL_CORRETORES]);
 
   const atividadesAbertoData = useMemo(() => {
     const visitaData = REAL_CORRETORES.map(nome =>
@@ -1336,13 +1372,13 @@ export const RelatoriosPage = () => {
     }]
   };
 
-  // 10. Tempo Médio (placeholder — usa distribuição por temperatura como proxy)
+  // 10. Tempo Médio de Resposta por Equipe (dados reais)
   const tempoRespostaChartData = {
-    labels: Object.keys(tempCounts),
+    labels: metricasEquipes.map(d => d.equipe),
     datasets: [{
-      label: 'Leads',
-      data: Object.values(tempCounts),
-      backgroundColor: CHART_COLORS.primary,
+      label: 'Tempo (min)',
+      data: metricasEquipes.map(d => d.tempoMedio),
+      backgroundColor: metricasEquipes.map(d => d.cor),
       borderRadius: 6,
     }]
   };
@@ -1727,7 +1763,7 @@ export const RelatoriosPage = () => {
             </div>
             <div>
               <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Leads Recebidos</p>
-              <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpis.totalLeadsRecebidos.toLocaleString()}</p>
+              <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpisCalculados.totalLeadsRecebidos.toLocaleString()}</p>
             </div>
           </div>
         </div>
@@ -1739,7 +1775,7 @@ export const RelatoriosPage = () => {
             </div>
             <div>
               <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Leads Interagidos</p>
-              <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpis.totalLeadsInteragidos.toLocaleString()}</p>
+              <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpisCalculados.totalLeadsInteragidos.toLocaleString()}</p>
             </div>
           </div>
         </div>
@@ -1751,7 +1787,7 @@ export const RelatoriosPage = () => {
             </div>
             <div>
               <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Média Interação/Dia</p>
-              <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpis.mediaInteracaoDia}%</p>
+              <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpisCalculados.mediaInteracaoDia}%</p>
             </div>
           </div>
         </div>
@@ -1763,7 +1799,7 @@ export const RelatoriosPage = () => {
             </div>
             <div>
               <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Tempo 1ª Interação</p>
-              <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpis.mediaTempoPrimeiraInteracao} min</p>
+              <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpisCalculados.mediaTempoPrimeiraInteracao} min</p>
             </div>
           </div>
         </div>
@@ -1775,7 +1811,7 @@ export const RelatoriosPage = () => {
             </div>
             <div>
               <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Leads Convertidos</p>
-              <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpis.totalLeadsConvertidos.toLocaleString()}</p>
+              <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpisCalculados.totalLeadsConvertidos.toLocaleString()}</p>
             </div>
           </div>
         </div>
@@ -1919,7 +1955,7 @@ export const RelatoriosPage = () => {
                     </div>
                     <div>
                       <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Vendas Criadas</p>
-                      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">155</p>
+                      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{vendasCriadas}</p>
                     </div>
                   </div>
                 </div>
@@ -1931,7 +1967,7 @@ export const RelatoriosPage = () => {
                     </div>
                     <div>
                       <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Vendas Assinadas</p>
-                      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">146</p>
+                      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{vendasAssinadas}</p>
                     </div>
                   </div>
                 </div>
@@ -1943,7 +1979,7 @@ export const RelatoriosPage = () => {
                     </div>
                     <div>
                       <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Imóveis Ativos</p>
-                      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">448</p>
+                      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{imoveisAtivos}</p>
                     </div>
                   </div>
                 </div>
@@ -1955,7 +1991,7 @@ export const RelatoriosPage = () => {
                     </div>
                     <div>
                       <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Total de Leads/Mês</p>
-                      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">537</p>
+                      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{totalLeadsMensal}</p>
                     </div>
                   </div>
                 </div>
@@ -1967,7 +2003,7 @@ export const RelatoriosPage = () => {
                     </div>
                     <div>
                       <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Valor Total/Mês</p>
-                      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">R$ 6.8M</p>
+                      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{formatarValorMonetario(valorTotal)}</p>
                     </div>
                   </div>
                 </div>

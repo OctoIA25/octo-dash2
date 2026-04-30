@@ -96,6 +96,7 @@ import {
   type CollisionDetection,
 } from '@dnd-kit/core';
 import { getEventCoordinates } from '@dnd-kit/utilities';
+import { startAutoSync, SyncConfig } from '@/features/imoveis/services/santaAngelaSyncService';
 
 /** Detecção de colisão baseada no cursor (fallback: rectIntersection). */
 const cursorCollisionDetection: CollisionDetection = (args) => {
@@ -586,6 +587,20 @@ export const MeusLeadsAtribuidosSection = ({
 }: MeusLeadsAtribuidosSectionProps = {}) => {
   const { user, isCorretor, isAdmin, isLoading: authLoading, tenantId } = useAuth();
   const kanbanColumns = useMemo(() => getKanbanColumns(leadType), [leadType]);
+
+  // Iniciar sincronização automática do Santa Angela (apenas para tenant autorizado)
+  useEffect(() => {
+    const SANTA_ANGELA_TENANT_ID = '65c69875-dc83-4062-90f6-6f6adc30df26';
+    
+    if (tenantId && tenantId === SANTA_ANGELA_TENANT_ID) {
+      const config: SyncConfig = {
+        tenantId: tenantId,
+        intervalMinutes: 5,
+        enabled: true,
+      };
+      startAutoSync(config);
+    }
+  }, [tenantId]);
 
   // Modal de criar lead — permanece no Kanban; emite `leadsEventEmitter` no sucesso.
   const [createModalStage, setCreateModalStage] = useState<string | null>(null);

@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabaseClient';
+import { differenceInDays, subMonths } from 'date-fns';
 
 // Define types inline since we don't have a separate database types file
 export interface Database {
@@ -22,6 +23,7 @@ export interface Database {
           updated_at: string;
           created_by?: string;
           fonte: string;
+          creci: string;
         };
         Insert: Omit<Database['public']['Tables']['recruitment_candidates']['Row'], 'id' | 'created_at' | 'updated_at'>;
         Update: Partial<Database['public']['Tables']['recruitment_candidates']['Insert']>;
@@ -511,26 +513,33 @@ export class RecruitmentService {
       const approvedCount = candidates.filter(c => c.status === 'Aprovado').length;
       const rejectedCount = candidates.filter(c => c.status === 'Rejeitado').length;
 
+      // Calcular taxa de retenção (conversão do funil completo)
+      // Total de candidatos que passaram pelo processo vs os que chegaram ao final
+      const totalProcessados = candidates.filter(c => 
+        c.status !== 'Lead'
+      ).length;
+      const chegaramAoFinal = onboardCount + approvedCount; // Onboard + Aprovado
+      const taxaRetencao = totalProcessados > 0 
+        ? Math.round((chegaramAoFinal / totalProcessados) * 100)
+        : 0;
+
       // Calcular tempo médio de processo
       const processTimes: number[] = [];
       candidates.forEach(candidate => {
-        if (candidate.status === 'Onboard' && candidate.created_at) {
+        if ((candidate.status === 'Onboard' || candidate.status === 'Aprovado') && candidate.created_at) {
           const createdDate = new Date(candidate.created_at);
           const now = new Date();
-          const daysDiff = Math.floor((now.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24));
+          const daysDiff = differenceInDays(now, createdDate);
           processTimes.push(daysDiff);
         }
       });
 
-      const tempoMedioProcesso = processTimes.length > 0 
+      const tempoMedioProcesso = processTimes.length > 0
         ? Math.round(processTimes.reduce((a, b) => a + b, 0) / processTimes.length)
-        : 0; // Retorna 0 se não houver candidatos onboarded
-
-      // Calcular taxa de retenção (simulação - 85% dos onboard)
-      const taxaRetencao = onboardCount > 0 ? 85 : 0;
+        : 0;
 
       // Calcular custo por contratação (simulação - R$ 1.2k por onboard)
-      const custoPorContratacao = 1.2;
+      const custoPorContratacao = 1.2; // Adicionar logica ainda.
 
       return {
         total_candidates: candidates.length,

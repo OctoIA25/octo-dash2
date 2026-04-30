@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 import { RecrutamentoFunnelChart } from '../components/RecrutamentoFunnelChart';
 import { RecrutamentoPerformanceChart } from '../components/RecrutamentoPerformanceChart';
 import { useRecruitment } from '../hooks/useRecruitment';
@@ -41,6 +42,8 @@ import {
   ChevronLeft
 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { supabase } from '@/lib/supabaseClient';
+import { toast } from 'sonner';
 
 interface RecrutamentoPageProps {
   leads: ProcessedLead[];
@@ -121,7 +124,9 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
     experiencia: '',
     linkedin: '',
     observacoes: '',
-    fonte: ''
+    fonte: '',
+    temCreci: false,
+    creci: ''
   } as {
     nome: string;
     email: string;
@@ -131,6 +136,8 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
     linkedin: string;
     observacoes: string;
     fonte: string;
+    temCreci: boolean;
+    creci: string;
   });
   const [filtrosOpen, setFiltrosOpen] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
@@ -164,10 +171,51 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
     setModalOpen(true);
   };
 
+  const {
+    tenantId
+  } = useAuth();
+
   // Handle status change
   const handleMudarStatus = async (novoStatus: string) => {
     if (candidatoSelecionado) {
       try {
+        if (novoStatus === 'Aprovado') {
+          // 1. Criar usuário no Supabase Auth
+          const { data: createResult, error: createError } = await supabase.rpc('create_auth_user', {
+            p_email: candidatoSelecionado.email,
+            p_password: candidatoSelecionado.email, // Usar email como senha temporária
+            p_name: candidatoSelecionado.nome,
+            p_tenant_id: candidatoSelecionado.tenant_id,
+            p_role: 'corretor'
+          });
+
+          if (createError || !createResult?.success) {
+            console.error('❌ Erro ao criar usuário:', createError);
+            toast.error('Erro ao criar usuário: ' + (createError?.message || 'Erro desconhecido'));
+            return;
+          }
+
+          // 2. Adicionar como membro do tenant
+          const { data: memberResult, error: memberError } = await supabase.rpc('add_tenant_member', {
+            p_tenant_id: candidatoSelecionado.tenant_id,
+            p_user_id: createResult.user_id,
+            p_role: 'corretor',
+            p_name: candidatoSelecionado.nome,
+            p_email: candidatoSelecionado.email,
+            p_phone: candidatoSelecionado.telefone || null,
+            p_permissions: {}
+          });
+
+          if (memberError || !memberResult?.success) {
+            console.error('❌ Erro ao adicionar membro:', memberError);
+            toast.error('Erro adicionar à equipe: ' + (memberError?.message || 'Erro desconhecido'));
+            return;
+          }
+
+          toast.success('Candidato aprovado e adicionado à equipe!');
+        }
+        
+        // Mudar status do candidato
         await changeCandidateStatus(candidatoSelecionado.id, novoStatus, user?.email);
         selectCandidato(null);
         setModalOpen(false);
@@ -179,11 +227,11 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
 
   const formatTelefone = (value: string) => {
     const cleaned = value.replace(/\D/g, '');
-    
+
     if (cleaned.length === 0) return '';
     if (cleaned.length <= 2) return cleaned;
     if (cleaned.length <= 6) return `(${cleaned.slice(0, 2)}) ${cleaned.slice(2)}`;
-    
+
     // Lógica corrigida: detectar DDD baseado no tamanho total
     if (cleaned.length === 10) {
       // 10 dígitos = (XX) XXXX-XXXX
@@ -200,10 +248,16 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
   };
 
   // Handle new candidate creation
-  const handleNovoCandidato = async () => {
+  const handleNovoCandidato = async (tenantId?: string) => {
     try {
       // Validações completas antes de criar candidato
       const errors: Record<string, string> = {};
+
+      // Validar tenantId
+      if (!tenantId) {
+        console.error('Tenant ID não encontrado');
+        return;
+      }
 
       // Validaçoes de nome
       if (!novoFormData.nome || novoFormData.nome.trim().length < 3) {
@@ -216,7 +270,7 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
       }
 
       const cleanedTelefone = novoFormData.telefone.replace(/\D/g, '');
-      
+
       if (!novoFormData.telefone || cleanedTelefone.length < 10 || cleanedTelefone.length > 11) {
         errors.telefone = 'Telefone deve ter 10 ou 11 dígitos';
       } else {
@@ -251,7 +305,9 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
         experiencia: novoFormData.experiencia,
         linkedin: novoFormData.linkedin?.trim() || undefined,
         observacoes: novoFormData.observacoes?.trim() || undefined,
-        fonte: novoFormData.fonte
+        fonte: novoFormData.fonte,
+        creci: novoFormData.temCreci ? novoFormData.creci.trim() : undefined,
+        tenant_id: tenantId,
       };
 
       await createCandidato(newCandidato);
@@ -266,7 +322,9 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
         experiencia: '',
         linkedin: '',
         observacoes: '',
-        fonte: ''
+        fonte: '',
+        temCreci: false,
+        creci: ''
       });
       setValidationErrors([]);
       setFieldErrors({});
@@ -346,7 +404,7 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
               </CardHeader>
               <CardContent>
                 <p className="text-3xl font-bold text-gray-900 dark:text-slate-100 dark:text-white mb-2">
-                  {metrics?.tempoMedioProcesso > 0 ? `${metrics.tempoMedioProcesso} dias` : 'N/A'}
+                  {metrics?.tempoMedioProcesso ? `${metrics.tempoMedioProcesso} dias` : 'N/A'}
                 </p>
                 <p className="text-sm text-gray-600 dark:text-slate-400 dark:text-gray-400">
                   Do primeiro contato à contratação
@@ -363,7 +421,7 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
               </CardHeader>
               <CardContent>
                 <p className="text-3xl font-bold text-gray-900 dark:text-slate-100 dark:text-white mb-2">
-                  {metrics?.taxaRetencao ? `${metrics.taxaRetencao}%` : 'Calculando...'}
+                  {metrics?.taxaRetencao ? `${metrics.taxaRetencao}%` : '0%'}
                 </p>
                 <p className="text-sm text-gray-600 dark:text-slate-400 dark:text-gray-400">
                   Corretores ativos após 6 meses
@@ -380,7 +438,7 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
               </CardHeader>
               <CardContent>
                 <p className="text-3xl font-bold text-gray-900 dark:text-slate-100 dark:text-white mb-2">
-                  {metrics?.custoPorContratacao ? `R$ ${metrics.custoPorContratacao}k` : 'Calculando...'}
+                  {metrics?.custoPorContratacao ? `R$ ${metrics.custoPorContratacao}k` : 'R$ 0k'}
                 </p>
                 <p className="text-sm text-gray-600 dark:text-slate-400 dark:text-gray-400">
                   Investimento médio por contratação
@@ -466,7 +524,7 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
                       Taxa de Conversão
                     </p>
                     <p className="text-2xl font-bold text-gray-900 dark:text-slate-100 dark:text-white">
-                      {candidatos.length > 0 ? Math.round((candidatos.filter(c => c.status === 'Onboard').length / candidatos.length) * 100) : 0}%
+                      {candidatos.length > 0 ? ((candidatos.filter(c => ['Onboard', 'Aprovado'].includes(c.status)).length / candidatos.length) * 100).toFixed(1) : 0.0}%
                     </p>
                     <div className="flex items-center gap-1 mt-1">
                       <span className="text-xs text-gray-500 dark:text-slate-400 dark:text-gray-400 font-medium">Média</span>
@@ -957,6 +1015,13 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
                         {new Date(candidatoSelecionado.data_inscricao).toLocaleDateString('pt-BR')}
                       </span>
                     </div>
+                    {/*CRECI*/}
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-600 dark:text-slate-400 dark:text-gray-400">CRECI:</span>
+                      <span className="font-medium text-gray-900 dark:text-slate-100 dark:text-white">
+                        {candidatoSelecionado.creci || 'Não informado'}
+                      </span>
+                    </div>
                     {candidatoSelecionado.curriculo && (
                       <div className="flex items-center justify-between">
                         <span className="text-sm text-gray-600 dark:text-slate-400 dark:text-gray-400">Currículo:</span>
@@ -1210,7 +1275,36 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
                       onChange={(e) => setNovoFormData({ ...novoFormData, linkedin: e.target.value })}
                     />
                   </div>
-
+                  {/* CRECI */}
+                  <div className="space-y-3">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="tem-creci"
+                        checked={novoFormData.temCreci}
+                        onCheckedChange={(checked) => {
+                          setNovoFormData({ ...novoFormData, temCreci: checked as boolean, creci: '' });
+                        }}
+                      />
+                      <label
+                        htmlFor="tem-creci"
+                        className="text-sm font-medium text-gray-700 dark:text-slate-300 dark:text-gray-300 cursor-pointer"
+                      >
+                        Possui CRECI ativo
+                      </label>
+                    </div>
+                    {novoFormData.temCreci && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 dark:text-gray-300 mb-2">
+                          Número do CRECI *
+                        </label>
+                        <Input
+                          placeholder="Ex: 123456-SP"
+                          value={novoFormData.creci}
+                          onChange={(e) => setNovoFormData({ ...novoFormData, creci: e.target.value })}
+                        />
+                      </div>
+                    )}
+                  </div>
                   {/* Fonte e Observações */}
                   <div className="grid grid-cols-1 md:grid-cols-1 gap-4">
                     <div>
@@ -1233,6 +1327,7 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
                         <SelectContent>
                           <SelectItem value="LinkedIn">LinkedIn</SelectItem>
                           <SelectItem value="Indicação">Indicação</SelectItem>
+                          <SelectItem value="Meta">Meta</SelectItem>
                           <SelectItem value="Site Institucional">Site Institucional</SelectItem>
                           <SelectItem value="Email Marketing">Email Marketing</SelectItem>
                           <SelectItem value="Outros">Outros</SelectItem>
@@ -1265,7 +1360,7 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
                 <Button variant="outline" onClick={() => setNovoModalOpen(false)}>
                   Cancelar
                 </Button>
-                <Button onClick={handleNovoCandidato}>
+                <Button onClick={() => handleNovoCandidato(tenantId || undefined)}>
                   Adicionar Candidato
                 </Button>
               </div>

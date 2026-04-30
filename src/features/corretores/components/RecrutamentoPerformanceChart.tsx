@@ -50,7 +50,8 @@ export const RecrutamentoPerformanceChart = ({ candidatos }: RecrutamentoPerform
       'Lead',
       'Interação',
       'Reunião',
-      'Onboard'
+      'Onboard',
+      'Aprovado'
     ];
 
     const totalCandidatos = candidatos.length;
@@ -70,12 +71,15 @@ export const RecrutamentoPerformanceChart = ({ candidatos }: RecrutamentoPerform
     const interacao = calcularEtapa('Interação');
     const reuniao = calcularEtapa('Reunião');
     const onboard = calcularEtapa('Onboard');
+    const aprovado = calcularEtapa('Aprovado')
     
     // Taxa de conversão em reunião (leads que chegaram até reunião)
     const taxaConversaoReuniao = totalCandidatos > 0 ? ((reuniao / totalCandidatos) * 100).toFixed(1) : '0.0';
     
     // Taxa de conversão em onboard (leads que foram contratados)
     const taxaConversaoOnboard = totalCandidatos > 0 ? ((onboard / totalCandidatos) * 100).toFixed(1) : '0.0';
+
+    const geralConversao = totalCandidatos > 0 ? (([onboard, aprovado].reduce((acc, curr) => acc + curr, 0) / totalCandidatos) * 100).toFixed(1) : '0.0';
 
     return {
       labels,
@@ -87,8 +91,10 @@ export const RecrutamentoPerformanceChart = ({ candidatos }: RecrutamentoPerform
       interacao,
       reuniao,
       onboard,
+      aprovado,
       taxaConversaoReuniao,
-      taxaConversaoOnboard
+      taxaConversaoOnboard,
+      geralConversao
     };
   }, [candidatos]);
 
@@ -282,11 +288,11 @@ export const RecrutamentoPerformanceChart = ({ candidatos }: RecrutamentoPerform
             <div className="relative bg-white dark:bg-black/40 backdrop-blur-sm rounded-xl p-3 border border-green-500/20 hover:border-green-500/40 transition-all duration-300">
               <div className="flex flex-col items-center justify-center">
                 <div className="text-3xl font-black bg-gradient-to-br from-green-400 to-green-600 bg-clip-text text-transparent mb-1">
-                  {chartData.taxaConversaoOnboard}%
+                  {chartData.geralConversao}%
                 </div>
                 <div className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400 font-semibold">Taxa de Conversão</div>
                 <div className="text-xs text-green-400/80 mt-1 font-medium truncate max-w-full">
-                  {chartData.onboard} Candidatos Contratados
+                  {chartData.aprovado} Candidatos Contratados
                 </div>
               </div>
             </div>

@@ -67,11 +67,14 @@ function kenloLeadToCRMLead(kenloLead: Record<string, unknown>): CRMLead {
     visit_date: null,
     closing_date: null,
     final_sale_value: null,
-    archived_at: (kenloLead.archived_at as string) || null,
-    archive_reason: (kenloLead.archive_reason as string) || null,
-    lead_type: LEAD_TYPE_INTERESSADO,
-    created_at: (kenloLead.created_at as string) || '',
-    updated_at: (kenloLead.updated_at as string) || '',
+    archived_at: null,
+    archive_reason: null,
+    lead_type: 1,
+    is_exclusive: false,
+    participa_bolsao: false,
+    assigned_at: (kenloLead.created_at as string) || new Date().toISOString(),
+    created_at: (kenloLead.created_at as string) || new Date().toISOString(),
+    updated_at: (kenloLead.updated_at as string) || new Date().toISOString(),
   };
 }
 
@@ -164,6 +167,9 @@ const TEST_TENANT_LEADS: CRMLead[] = (() => {
       archived_at: input.archived_at ?? null,
       archive_reason: input.archive_reason ?? null,
       lead_type: input.lead_type,
+      is_exclusive: input.is_exclusive ?? (i % 3 === 0),
+      participa_bolsao: input.participa_bolsao ?? true,
+      assigned_at: input.assigned_at ?? createdAt,
       created_at: createdAt,
       updated_at: updatedAt,
     };
@@ -491,7 +497,7 @@ export function calculateLeadsMetrics(
  * @param crmLead Lead do CRM
  * @param index Índice para gerar id_lead sequencial
  */
-export function crmLeadToProcessedLead(crmLead: CRMLead, index: number = 0): ProcessedLead {
+export function crmLeadToProcessedLead(crmLead: Partial<CRMLead>, index: number = 0): ProcessedLead {
   // Mapear status do CRM para etapa_atual do ProcessedLead
   const etapaAtual = crmLead.status || 'Novos Leads';
   
@@ -527,7 +533,7 @@ export function crmLeadToProcessedLead(crmLead: CRMLead, index: number = 0): Pro
     corretor_responsavel: crmLead.assigned_agent_name || 'Não atribuído',
     data_finalizacao: crmLead.closing_date || '',
     valor_final_venda: crmLead.final_sale_value || undefined,
-    Data_visita: crmLead.visit_date || '',
+    Data_visita: crmLead.visit_date?.split('T')[0] || '',
     Imovel_visitado: crmLead.visit_date ? 'Sim' : 'Não',
     observacoes: crmLead.comments || '',
     Preferencias_lead: '',
