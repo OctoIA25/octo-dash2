@@ -219,7 +219,7 @@ export async function calcularMetricasCorretoresFromLeads(
       .from('leads' as any)
       .select('assigned_agent_id, assigned_at, created_at, status, final_sale_value, assigned_agent_name')
       .eq('tenant_id', tenantId)
-      .filter('archived_at', 'is', null)
+      .is('archived_at', null)
       .not('assigned_agent_id', 'is', null);
 
     if (dataInicio) {
@@ -271,7 +271,7 @@ export async function calcularMetricasCorretoresFromLeads(
         }
       });
 
-      const tempoMedio = leadsComTempo > 0 ? somaTempo / leadsComTempo : 0;
+      const tempoMedio = leadsComTempo > 0 ? Math.round(somaTempo / leadsComTempo) : 0;
 
       metricas.push({
         corretor,
@@ -756,7 +756,7 @@ export async function buscarLeadsPorEquipe(tenantId?: string): Promise<{ equipe:
       .from('leads' as any)
       .select('id, assigned_agent_name')
       .eq('tenant_id', tenantId)
-      .filter('archived_at', 'is', null);
+      .is('archived_at', null);
 
     if (error || !leads) return [];
 
@@ -885,7 +885,7 @@ export async function buscarDistribuicaoExclusivoFicha(tenantId?: string): Promi
       .from('leads' as any)
       .select('is_exclusive')
       .eq('tenant_id', tenantId)
-      .filter('archived_at', 'is', null);
+      .is('archived_at', null);
 
     if (error || !leads) return [];
 
@@ -941,7 +941,7 @@ export async function buscarNegociosFechadosPorFonte(tenantId?: string): Promise
       .from('leads' as any)
       .select('source, final_sale_value, created_at')
       .eq('tenant_id', tenantId)
-      .filter('archived_at', 'is', null)
+      .is('archived_at', null)
       .not('final_sale_value', 'is', null)
       .gt('final_sale_value', 0)
       .gte('created_at', seisMesesAtras.toISOString());
@@ -994,7 +994,7 @@ export async function buscarVendasPorFaixa(tenantId?: string): Promise<{ mes: st
       .from('leads' as any)
       .select('final_sale_value, created_at')
       .eq('tenant_id', tenantId)
-      .filter('archived_at', 'is', null)
+      .is('archived_at', null)
       .not('final_sale_value', 'is', null)
       .gt('final_sale_value', 0)
       .order('created_at', { ascending: true });
@@ -1114,7 +1114,7 @@ export async function buscarKPIsEquipe(tenantId?: string): Promise<KPIsEquipe> {
       .from('leads' as any)
       .select('created_at, final_sale_value, status, assigned_at, assigned_agent_id, assigned_agent_name')
       .eq('tenant_id', tenantId)
-      .filter('archived_at', 'is', null);
+      .is('archived_at', null);
 
     if (leadsError || !leads) {
       return getDefaultKPIs();
@@ -1148,7 +1148,7 @@ export async function buscarKPIsEquipe(tenantId?: string): Promise<KPIsEquipe> {
     // Calcular tempo médio de resposta geral diretamente
     let somaTempo = 0;
     let leadsComTempo = 0;
-    
+
     // Debug: mostrar primeiros leads para ver campos
     console.log('🔍 Sample leads data:', leads.slice(0, 3).map(lead => ({
       id: lead.id,
@@ -1158,22 +1158,22 @@ export async function buscarKPIsEquipe(tenantId?: string): Promise<KPIsEquipe> {
       assigned_agent_name: lead.assigned_agent_name,
       status: lead.status
     })));
-    
+
     leads.forEach((lead: any) => {
       if (lead.assigned_at) {
         const createdAt = new Date(lead.created_at);
         const assignedAt = new Date(lead.assigned_at);
         const diffMin = (assignedAt.getTime() - createdAt.getTime()) / (1000 * 60);
-        
+
         if (diffMin >= 0 && diffMin <= 1440) {
           somaTempo += diffMin;
           leadsComTempo++;
         }
       }
     });
-    
+
     const tempoMedioRespostaGeral = leadsComTempo > 0 ? Math.round(somaTempo / leadsComTempo * 10) / 10 : 0;
-    
+
     console.log('📊 Tempo médio calculado:', {
       totalLeads: leads.length,
       leadsComTempo,
@@ -1225,7 +1225,7 @@ export async function buscarVariacoesPercentuais(tenantId?: string): Promise<Var
       .from('leads' as any)
       .select('created_at, final_sale_value, status')
       .eq('tenant_id', tenantId)
-      .filter('archived_at', 'is', null)
+      .is('archived_at', null)
       .gte('created_at', mesAtual.toISOString());
 
     // Buscar leads com vendas assinadas
@@ -1233,14 +1233,14 @@ export async function buscarVariacoesPercentuais(tenantId?: string): Promise<Var
       .from('leads' as any)
       .select('created_at, final_sale_value, status')
       .eq('tenant_id', tenantId)
-      .filter('archived_at', 'is', null)
+      .is('archived_at', null)
       .gte('created_at', mesAtual.toISOString())
       .eq('status', 'Proposta Assinada');
     const { data: leadsAssinadosAnterior } = await supabase
       .from('leads' as any)
       .select('created_at, final_sale_value, status')
       .eq('tenant_id', tenantId)
-      .filter('archived_at', 'is', null)
+      .is('archived_at', null)
       .gte('created_at', mesAnterior.toISOString())
       .lt('created_at', mesAtual.toISOString())
       .eq('status', 'Proposta Assinada');
@@ -1250,7 +1250,7 @@ export async function buscarVariacoesPercentuais(tenantId?: string): Promise<Var
       .from('leads' as any)
       .select('created_at, final_sale_value, status')
       .eq('tenant_id', tenantId)
-      .filter('archived_at', 'is', null)
+      .is('archived_at', null)
       .gte('created_at', mesAnterior.toISOString())
       .lt('created_at', mesAtual.toISOString());
 
@@ -1260,7 +1260,7 @@ export async function buscarVariacoesPercentuais(tenantId?: string): Promise<Var
       .select('id')
       .eq('tenant_id', tenantId)
       .eq('status', 'Novos Leads')
-      .filter('archived_at', 'is', null)
+      .is('archived_at', null)
       .gte('created_at', mesAtual.toISOString());
 
     // Buscar imóveis ativos do mês anterior
@@ -1269,12 +1269,29 @@ export async function buscarVariacoesPercentuais(tenantId?: string): Promise<Var
       .select('id')
       .eq('tenant_id', tenantId)
       .eq('status', 'Novos Leads')
-      .filter('archived_at', 'is', null)
+      .is('archived_at', null)
+      .gte('created_at', mesAnterior.toISOString())
+      .lt('created_at', mesAtual.toISOString());
+
+    // Buscar total de leads do mês atual
+    const { data: totalLeadsAtual, error: errorTotalLeadsAtual } = await supabase
+      .from('leads' as any)
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .is('archived_at', null)
+      .gte('created_at', mesAtual.toISOString());
+
+    // Buscar total de leads do mês anterior
+    const { data: totalLeadsAnterior, error: errorTotalLeadsAnterior } = await supabase
+      .from('leads' as any)
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .is('archived_at', null)
       .gte('created_at', mesAnterior.toISOString())
       .lt('created_at', mesAtual.toISOString());
 
     const calcularVariacao = (atual: number, anterior: number): number => {
-      if (anterior === 0) return atual > 0 ? 100 : 0;
+      if (anterior === 0) return 0;
       return Math.round(((atual - anterior) / anterior) * 100);
     };
 
@@ -1286,12 +1303,15 @@ export async function buscarVariacoesPercentuais(tenantId?: string): Promise<Var
     const imoveisAtivosAnterior = imoveisAnterior?.length || 0;
     const valorTotalAtual = leadsAtual?.reduce((acc: number, l: any) => acc + (l.final_sale_value || 0), 0) || 0;
     const valorTotalAnterior = leadsAnterior?.reduce((acc: number, l: any) => acc + (l.final_sale_value || 0), 0) || 0;
+    const totalLeadsMesAtual = totalLeadsAtual?.length || 0;
+    const totalLeadsMesAnterior = totalLeadsAnterior?.length || 0;
+
 
     return {
       vendasCriadas: calcularVariacao(vendasCriadasAtual, vendasCriadasAnterior),
       vendasAssinadas: calcularVariacao(vendasAssinadasAtual, vendasAssinadasAnterior),
       imoveisAtivos: calcularVariacao(imoveisAtivosAtual, imoveisAtivosAnterior),
-      totalLeadsMes: calcularVariacao(vendasCriadasAtual, vendasCriadasAnterior),
+      totalLeadsMes: calcularVariacao(totalLeadsMesAtual, totalLeadsMesAnterior),
       valorTotalVendasMes: calcularVariacao(valorTotalAtual, valorTotalAnterior),
       tempoMedioRespostaGeral: 0
     };

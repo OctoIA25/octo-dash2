@@ -3,6 +3,8 @@
  * Gestão de Equipe - Métricas da Equipe e Métricas Individuais
  */
 
+import { Team } from "@/features/corretores/services/teamsManagementService";
+
 // ================================================================================
 // TIPOS PARA MÉTRICAS DA EQUIPE (ABA 1)
 // ================================================================================
@@ -117,15 +119,7 @@ export interface FiltrosMetricasIndividuais {
   equipe: string;
 }
 
-export type EquipeOption = 
-  | 'todas'
-  | 'equipe_verde'
-  | 'equipe_amarela'
-  | 'equipe_vermelha'
-  | 'team_barbara'
-  | 'team_felipe_martins'
-  | 'team_felipe_camargo'
-  | 'team_renato';
+export type EquipeOption = Team['id'];
 
 // ================================================================================
 // TIPOS PARA GRÁFICOS (Recharts)

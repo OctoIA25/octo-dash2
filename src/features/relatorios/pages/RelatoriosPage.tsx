@@ -4,7 +4,7 @@
  * Utiliza Chart.js para visualização de dados
  */
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Chart as ChartJS,
@@ -52,7 +52,9 @@ import { LEAD_TYPE_INTERESSADO, LEAD_TYPE_PROPRIETARIO } from '@/features/leads/
 import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { getRankingColor } from '@/utils/colors';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { CorretorMetricCard } from '@/components/metrics/individual';
 import { useRelatorios } from '../hooks/useRelatorios';
+import { buildCorretorMetricasCompletas } from '../utils/buildCorretorMetricasCompletas';
 import { buscarValorTotal, formatarValorMonetario, buscarImoveisAtivos } from '../services/relatoriosService';
 
 // Registrar componentes do Chart.js
@@ -171,7 +173,29 @@ export const RelatoriosPage = () => {
   const [searchParams] = useSearchParams();
   const { tenantId } = useAuth();
 
-  const { vendasCriadas, vendasAssinadas, metricasEquipes, totalLeadsMensal, valorTotal, imoveisAtivos, kpis: kpisRelatorios} = useRelatorios();
+  const {
+    vendasCriadas,
+    vendasAssinadas,
+    metricasEquipes,
+    totalLeadsMensal,
+    valorTotal,
+    imoveisAtivos,
+    kpis: kpisRelatorios,
+    ranking: rankingCorretoresRelatorio,
+    usandoDadosReaisRanking,
+    metricasIndLeads,
+    metricasIndVendas,
+    loadingMetricasInd,
+    metricasIndCorretor,
+    metricasIndDataInicial,
+    metricasIndDataFinal,
+    setMetricasIndCorretor,
+    setMetricasIndDataInicial,
+    setMetricasIndDataFinal,
+    setRankingAno,
+    setRankingMes,
+    setRankingPeriodo,
+  } = useRelatorios();
 
   const reportRef = useRef<HTMLDivElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
@@ -226,10 +250,6 @@ export const RelatoriosPage = () => {
 
   const [tenantMembers, setTenantMembers] = useState<TenantMember[]>([]);
 
-  const [metricasIndCorretor, setMetricasIndCorretor] = useState('ANA E KARLA');
-  const [metricasIndDataInicial, setMetricasIndDataInicial] = useState('2026-01-01');
-  const [metricasIndDataFinal, setMetricasIndDataFinal] = useState('2026-01-31');
-
   const initialRankingYear = useMemo(() => new Date().getFullYear(), []);
   const initialRankingMonth = useMemo(() => new Date().getMonth() + 1, []);
   const [rankingYear, setRankingYear] = useState<number>(initialRankingYear);
@@ -256,6 +276,12 @@ export const RelatoriosPage = () => {
     };
   }, [tenantId]);
 
+  useEffect(() => {
+    setRankingAno(rankingYear);
+    setRankingMes(rankingMonth);
+    setRankingPeriodo(rankingPeriod);
+  }, [rankingYear, rankingMonth, rankingPeriod, setRankingAno, setRankingMes, setRankingPeriodo]);
+
   const normalizeName = (value: string) =>
     value
       .normalize('NFD')
@@ -277,10 +303,13 @@ export const RelatoriosPage = () => {
     return map;
   }, [tenantMembers]);
 
-  const getCorretorPhoto = (name: string) => {
-    const byName = corretorPhotoMap.get(normalizeName(name));
-    return byName || null;
-  };
+  const getCorretorPhoto = useCallback(
+    (name: string) => {
+      const byName = corretorPhotoMap.get(normalizeName(name));
+      return byName || null;
+    },
+    [corretorPhotoMap]
+  );
 
   const { processedLeads: processedLeadsInteressado } = useLeadsMetrics({
     leadType: LEAD_TYPE_INTERESSADO
@@ -392,6 +421,20 @@ export const RelatoriosPage = () => {
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/(^-|-$)/g, '');
 
+    if (usandoDadosReaisRanking && rankingCorretoresRelatorio.length > 0) {
+      return rankingCorretoresRelatorio.map((item, index) => ({
+        corretor: item.corretor,
+        valorComissao: item.valorComissao,
+        vendasFeitas: item.vendasFeitas,
+        gestaoAtiva: item.gestaoAtiva,
+        ranking: item.ranking ?? index + 1,
+        fotoUrl:
+          getCorretorPhoto(item.corretor) ||
+          item.fotoUrl ||
+          `/avatars/${slugify(item.corretor)}.jpg`,
+      }));
+    }
+
     const seeded01 = (seed: string) => {
       let h = 2166136261;
       for (let i = 0; i < seed.length; i += 1) {
@@ -462,7 +505,23 @@ export const RelatoriosPage = () => {
         ranking: index + 1,
         fotoUrl: getCorretorPhoto(item.corretor) || `/avatars/${slugify(item.corretor)}.jpg`,
       }));
-  }, [rankingMonth, rankingYear, rankingPeriod, corretorPhotoMap]);
+  }, [
+    rankingMonth,
+    rankingYear,
+    rankingPeriod,
+    corretorPhotoMap,
+    usandoDadosReaisRanking,
+    rankingCorretoresRelatorio,
+    getCorretorPhoto,
+  ]);
+
+  useEffect(() => {
+    const names = rankingMetricasIndividuais.map((x) => x.corretor);
+    if (names.length === 0) return;
+    if (!metricasIndCorretor || !names.includes(metricasIndCorretor)) {
+      setMetricasIndCorretor(names[0]);
+    }
+  }, [rankingMetricasIndividuais, metricasIndCorretor, setMetricasIndCorretor]);
 
   const bestSellerForSelectedYear = useMemo(() => {
     if (rankingYear >= 2026) return null;
@@ -509,81 +568,29 @@ export const RelatoriosPage = () => {
     return totals[0] ?? null;
   }, [rankingYear]);
 
-  const metricasIndLeadsMock = useMemo(() => {
-    const seeded01 = (seed: string) => {
-      let h = 2166136261;
-      for (let i = 0; i < seed.length; i += 1) {
-        h ^= seed.charCodeAt(i);
-        h = Math.imul(h, 16777619);
-      }
-      return (h >>> 0) / 4294967295;
-    };
-
-    const start = new Date(metricasIndDataInicial);
-    const end = new Date(metricasIndDataFinal);
-    const startOk = !Number.isNaN(start.getTime());
-    const endOk = !Number.isNaN(end.getTime());
-    const days = startOk && endOk ? Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1) : 30;
-    const periodoFactor = Math.max(0.6, Math.min(1.8, days / 30));
-
-    const seedBase = `${metricasIndCorretor}|${metricasIndDataInicial}|${metricasIndDataFinal}`;
-    const rTotal = seeded01(`${seedBase}|total`);
-    const totalLeads = Math.max(1, Math.round((8 + rTotal * 28) * periodoFactor));
-
-    const allocate = (labels: string[], total: number, seedKey: string) => {
-      const weights = labels.map((_, i) => seeded01(`${seedKey}|w|${i}`) + 0.15);
-      const sum = weights.reduce((a, b) => a + b, 0);
-      const raw = weights.map((w) => (w / sum) * total);
-      const values = raw.map((x) => Math.floor(x));
-      let remainder = total - values.reduce((a, b) => a + b, 0);
-      const order = raw
-        .map((x, i) => ({ i, frac: x - Math.floor(x) }))
-        .sort((a, b) => b.frac - a.frac);
-      for (let k = 0; k < order.length && remainder > 0; k += 1) {
-        values[order[k].i] += 1;
-        remainder -= 1;
-      }
-      return labels.map((label, i) => ({ label, value: values[i] }));
-    };
-
-    const porBairroLabels = [
-      'Parque Residencial Japi',
-      'Centro',
-      'Fazenda Grande',
-      'Condomínio Nature',
-      'Vila Aparecida',
-      'Outros',
-    ];
-    const porFonteLabels = ['Chaves na Mão', 'ImovelWeb', 'Grupo Zap', 'Leads 4Sale', 'Plugimóveis'];
-
-    const porBairro = allocate(porBairroLabels, totalLeads, `${seedBase}|bairro`);
-    const porFonte = allocate(porFonteLabels, totalLeads, `${seedBase}|fonte`);
-
-    // Imóveis: mantém uma lista base, mas a distribuição muda por corretor/período.
-    const imoveisLabels = ['AP0681', 'CA0145', 'CA0580', 'CA0664', 'CA0710', 'CA0408', 'AP0123', 'CA0990'];
-    const rawPorImovel = allocate(imoveisLabels, totalLeads, `${seedBase}|imovel`);
-    // Mostrar apenas os mais relevantes (como em um ranking de imóveis do período)
-    const porImovel = rawPorImovel
-      .filter((x) => x.value > 0)
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 6);
-
-    const rVisitas = seeded01(`${seedBase}|visitas`);
-    const visitas = Math.max(0, Math.round(totalLeads * (0.05 + rVisitas * 0.35)));
-
-    const rVendas = seeded01(`${seedBase}|vendas`);
-    const vendasRealizadas = Math.max(0, Math.min(visitas, Math.round(visitas * (0.02 + rVendas * 0.22))));
-
+  const metricasIndLeadsView = useMemo(() => {
+    const emptyBairro = [{ label: 'Sem dados', value: 0 }];
+    const emptyFonte = [{ label: 'Sem dados', value: 0 }];
+    const emptyImovel = [{ label: '—', value: 0 }];
+    const L = metricasIndLeads;
+    if (!L) {
+      return {
+        totalLeads: 0,
+        leadsRecebidos: 0,
+        visitas: 0,
+        vendasRealizadas: 0,
+        porBairro: emptyBairro,
+        porFonte: emptyFonte,
+        porImovel: emptyImovel,
+      };
+    }
     return {
-      totalLeads,
-      leadsRecebidos: totalLeads,
-      visitas,
-      vendasRealizadas,
-      porBairro,
-      porFonte,
-      porImovel,
+      ...L,
+      porBairro: L.porBairro.length > 0 ? L.porBairro : emptyBairro,
+      porFonte: L.porFonte.length > 0 ? L.porFonte : emptyFonte,
+      porImovel: L.porImovel.length > 0 ? L.porImovel : emptyImovel,
     };
-  }, [metricasIndDataFinal, metricasIndDataInicial]);
+  }, [metricasIndLeads]);
 
   const leadsPieColors = useMemo(
     () => ['#22d3ee', '#3b82f6', '#8b5cf6', '#f97316', '#ec4899', '#10b981', '#a3e635', '#f59e0b'],
@@ -592,168 +599,104 @@ export const RelatoriosPage = () => {
 
   const leadsPorBairroData = useMemo(() => {
     return {
-      labels: metricasIndLeadsMock.porBairro.map((x) => x.label),
+      labels: metricasIndLeadsView.porBairro.map((x) => x.label),
       datasets: [
         {
-          data: metricasIndLeadsMock.porBairro.map((x) => x.value),
-          backgroundColor: metricasIndLeadsMock.porBairro.map((_, i) => leadsPieColors[i % leadsPieColors.length]),
+          data: metricasIndLeadsView.porBairro.map((x) => x.value),
+          backgroundColor: metricasIndLeadsView.porBairro.map((_, i) => leadsPieColors[i % leadsPieColors.length]),
           borderWidth: 0,
         },
       ],
     };
-  }, [metricasIndLeadsMock, leadsPieColors]);
+  }, [metricasIndLeadsView, leadsPieColors]);
 
   const leadsPorBairroLegend = useMemo(() => {
-    return metricasIndLeadsMock.porBairro.map((item, i) => ({
+    return metricasIndLeadsView.porBairro.map((item, i) => ({
       label: item.label,
       value: item.value,
       color: leadsPieColors[i % leadsPieColors.length],
     }));
-  }, [metricasIndLeadsMock, leadsPieColors]);
+  }, [metricasIndLeadsView, leadsPieColors]);
 
   const leadsPorFonteData = useMemo(() => {
     return {
-      labels: metricasIndLeadsMock.porFonte.map((x) => x.label),
+      labels: metricasIndLeadsView.porFonte.map((x) => x.label),
       datasets: [
         {
-          data: metricasIndLeadsMock.porFonte.map((x) => x.value),
-          backgroundColor: metricasIndLeadsMock.porFonte.map((_, i) => leadsPieColors[(i + 2) % leadsPieColors.length]),
+          data: metricasIndLeadsView.porFonte.map((x) => x.value),
+          backgroundColor: metricasIndLeadsView.porFonte.map((_, i) => leadsPieColors[(i + 2) % leadsPieColors.length]),
           borderWidth: 0,
         },
       ],
     };
-  }, [metricasIndLeadsMock, leadsPieColors]);
+  }, [metricasIndLeadsView, leadsPieColors]);
 
   const leadsPorFonteLegend = useMemo(() => {
-    return metricasIndLeadsMock.porFonte.map((item, i) => ({
+    return metricasIndLeadsView.porFonte.map((item, i) => ({
       label: item.label,
       value: item.value,
       color: leadsPieColors[(i + 2) % leadsPieColors.length],
     }));
-  }, [metricasIndLeadsMock, leadsPieColors]);
+  }, [metricasIndLeadsView, leadsPieColors]);
 
   const leadsPorImovelData = useMemo(() => {
     return {
-      labels: metricasIndLeadsMock.porImovel.map((x) => x.label),
+      labels: metricasIndLeadsView.porImovel.map((x) => x.label),
       datasets: [
         {
           label: 'Leads',
-          data: metricasIndLeadsMock.porImovel.map((x) => x.value),
+          data: metricasIndLeadsView.porImovel.map((x) => x.value),
           backgroundColor: 'rgba(59, 130, 246, 0.95)',
           borderRadius: 8,
           maxBarThickness: 48,
         },
       ],
     };
-  }, [metricasIndLeadsMock]);
+  }, [metricasIndLeadsView]);
 
-  const metricasIndVendasMock = useMemo(() => {
-    const seeded01 = (seed: string) => {
-      let h = 2166136261;
-      for (let i = 0; i < seed.length; i += 1) {
-        h ^= seed.charCodeAt(i);
-        h = Math.imul(h, 16777619);
-      }
-      return (h >>> 0) / 4294967295;
-    };
-
-    const start = new Date(metricasIndDataInicial);
-    const end = new Date(metricasIndDataFinal);
-    const startOk = !Number.isNaN(start.getTime());
-    const endOk = !Number.isNaN(end.getTime());
-    const days = startOk && endOk ? Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1) : 30;
-    const periodoFactor = Math.max(0.6, Math.min(1.8, days / 30));
-
-    const seedBase = `${metricasIndDataInicial}|${metricasIndDataFinal}|vendas`;
-    const rVendas = seeded01(`${seedBase}|count`);
-    const vendasTotal = Math.max(0, Math.round((3 + rVendas * 16) * periodoFactor));
-
-    const rExcl = seeded01(`${seedBase}|excl`);
-    const vendasExclusivas = Math.max(0, Math.min(vendasTotal, Math.round(vendasTotal * (0.25 + rExcl * 0.55))));
-    const vendasNaoExclusivas = Math.max(0, vendasTotal - vendasExclusivas);
-
-    const fontes = ['PARCERIA IMÓVEL NOSSO', 'CHAVES NA MÃO', 'CLIENTE ANTIGO', 'IMOVEL WEB', 'INDICAÇÃO', 'INSTAGRAM LEADS', 'LEAD 4 SALE', 'VIP/PLACAS'];
-    const fontesWeights = fontes.map((_, i) => seeded01(`${seedBase}|fonte|${i}`) + 0.2);
-    const fontesSum = fontesWeights.reduce((a, b) => a + b, 0);
-    const fontesRaw = fontesWeights.map((w) => (w / fontesSum) * Math.max(1, vendasTotal));
-    const fontesValues = fontesRaw.map((x) => Math.floor(x));
-    let fontesRem = vendasTotal - fontesValues.reduce((a, b) => a + b, 0);
-    const fontesOrder = fontesRaw
-      .map((x, i) => ({ i, frac: x - Math.floor(x) }))
-      .sort((a, b) => b.frac - a.frac);
-    for (let k = 0; k < fontesOrder.length && fontesRem > 0; k += 1) {
-      fontesValues[fontesOrder[k].i] += 1;
-      fontesRem -= 1;
-    }
-
-    const fonteBreakdown = fontes
-      .map((fonte, i) => ({ fonte, quantidade: fontesValues[i] }))
-      .filter((x) => x.quantidade > 0)
-      .sort((a, b) => b.quantidade - a.quantidade);
-
-    const imoveis = ['AP0359', 'AP0608', 'TE0105', 'CA0598', 'AP0868', 'TE0110', 'AP0549', 'AP0888', 'AP0242', 'CA0661', 'CA0710', 'AP0123', 'CA0990'];
-    const exclusividades = ['exclusivo', 'não exclusivo'] as const;
-
-    const rows = Array.from({ length: vendasTotal }).map((_, idx) => {
-      const rRow = seeded01(`${seedBase}|row|${idx}`);
-      const rRow2 = seeded01(`${seedBase}|row2|${idx}`);
-      const rRow3 = seeded01(`${seedBase}|row3|${idx}`);
-
-      const codigo_imovel = imoveis[Math.floor(rRow * imoveis.length) % imoveis.length];
-      const exclusividade = exclusividades[rRow2 > 0.5 ? 0 : 1];
-      const fonte = fonteBreakdown[Math.floor(rRow3 * fonteBreakdown.length) % fonteBreakdown.length]?.fonte ?? fontes[0];
-
-      const valor_imovel = Math.round((220000 + rRow2 * 980000) / 1000) * 1000;
-      const comissao = Math.round(valor_imovel * (0.02 + rRow3 * 0.02));
-
-      // data dentro do range (ou mês atual se inválido)
-      const baseStart = startOk ? start.getTime() : new Date().getTime();
-      const baseEnd = endOk ? end.getTime() : baseStart + 1000 * 60 * 60 * 24 * 30;
-      const t = baseStart + Math.floor((baseEnd - baseStart) * rRow);
-      const data = new Date(t);
-      const dataStr = data.toISOString().slice(0, 10);
-
+  const metricasIndVendasView = useMemo(() => {
+    const V = metricasIndVendas;
+    if (!V) {
       return {
-        id: `${seedBase}|${idx}`,
-        codigo_imovel,
-        exclusividade,
-        fonte,
-        valor_imovel,
-        comissao,
-        data: dataStr,
+        vendasTotal: 0,
+        vendasExclusivas: 0,
+        vendasNaoExclusivas: 0,
+        vgvTotal: 0,
+        comissaoTotal: 0,
+        ticketMedio: 0,
+        rows: [] as Array<{
+          id: string;
+          codigo_imovel: string;
+          exclusividade: string;
+          fonte: string;
+          valor_imovel: number;
+          comissao: number;
+          data: string;
+        }>,
+        fonteBreakdown: [] as Array<{ fonte: string; quantidade: number }>,
       };
-    });
-
-    const vgvTotal = rows.reduce((acc, r) => acc + r.valor_imovel, 0);
-    const comissaoTotal = rows.reduce((acc, r) => acc + r.comissao, 0);
-    const ticketMedio = vendasTotal > 0 ? vgvTotal / vendasTotal : 0;
-
-    return {
-      vendasTotal,
-      vendasExclusivas,
-      vendasNaoExclusivas,
-      vgvTotal,
-      comissaoTotal,
-      ticketMedio,
-      rows,
-      fonteBreakdown,
-    };
-  }, [metricasIndCorretor, metricasIndDataFinal, metricasIndDataInicial]);
+    }
+    return V;
+  }, [metricasIndVendas]);
 
   const vendasPorFonteData = useMemo(() => {
+    const breakdown =
+      metricasIndVendasView.fonteBreakdown.length > 0
+        ? metricasIndVendasView.fonteBreakdown
+        : [{ fonte: 'Sem dados', quantidade: 0 }];
     return {
-      labels: metricasIndVendasMock.fonteBreakdown.map((x) => x.fonte),
+      labels: breakdown.map((x) => x.fonte),
       datasets: [
         {
           label: 'Vendas',
-          data: metricasIndVendasMock.fonteBreakdown.map((x) => x.quantidade),
+          data: breakdown.map((x) => x.quantidade),
           backgroundColor: 'rgba(59, 130, 246, 0.95)',
           borderRadius: 8,
           maxBarThickness: 44,
         },
       ],
     };
-  }, [metricasIndVendasMock]);
+  }, [metricasIndVendasView]);
 
   const vendasBarOptions = useMemo(() => {
     return {
@@ -858,42 +801,21 @@ export const RelatoriosPage = () => {
     });
   }, []);
 
-  const metricasIndComissaoMetasMock = useMemo(() => {
-    const seeded01 = (seed: string) => {
-      let h = 2166136261;
-      for (let i = 0; i < seed.length; i += 1) {
-        h ^= seed.charCodeAt(i);
-        h = Math.imul(h, 16777619);
-      }
-      return (h >>> 0) / 4294967295;
-    };
-
-    const start = new Date(metricasIndDataInicial);
-    const end = new Date(metricasIndDataFinal);
-    const startOk = !Number.isNaN(start.getTime());
-    const endOk = !Number.isNaN(end.getTime());
-    const days = startOk && endOk ? Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1) : 30;
-    const periodoFactor = Math.max(0.6, Math.min(1.6, days / 30));
-
-    const seedBase = `${metricasIndCorretor}|${metricasIndDataInicial}|${metricasIndDataFinal}`;
-    const r1 = seeded01(`${seedBase}|meta`);
-    const r2 = seeded01(`${seedBase}|comissao`);
-    const r3 = seeded01(`${seedBase}|prod`);
-    const r4 = seeded01(`${seedBase}|port`);
-
-    const metaAnual = Math.round(180000 + r1 * 160000);
-    const comissaoRecebida = Math.round((9000 + r2 * 75000) * periodoFactor);
+  const metricasIndComissaoMetasView = useMemo(() => {
+    const row = rankingMetricasIndividuais.find((x) => x.corretor === metricasIndCorretor);
+    const v = metricasIndVendas;
+    const L = metricasIndLeads;
+    const comissaoRecebida = v?.comissaoTotal ?? 0;
+    const metaAnual = Math.max(Math.round(comissaoRecebida * 1.35), 360000);
     const faltaParaMeta = Math.max(metaAnual - comissaoRecebida, 0);
     const percentual = metaAnual > 0 ? (comissaoRecebida / metaAnual) * 100 : 0;
-
-    const metaExclusivo = Math.max(1, Math.round(2 + r3 * 6));
-    const exclusivos = Math.max(0, Math.round(metaExclusivo * (0.25 + r2 * 0.9)));
-
-    const metaFicha = Math.max(1, Math.round(4 + r4 * 10));
-    const ficha = Math.max(0, Math.round(metaFicha * (0.3 + r1 * 0.85)));
-
-    const imoveisFichaAtivos = Math.max(0, Math.round(10 + r2 * 55));
-    const imoveisExclusivosAtivos = Math.max(0, Math.round(r3 * 10));
+    const vendasT = v?.vendasTotal ?? 0;
+    const metaExclusivo = Math.max(1, Math.round(vendasT * 0.35 + 2));
+    const exclusivos = v?.vendasExclusivas ?? 0;
+    const metaFicha = Math.max(1, Math.round((L?.totalLeads ?? 0) * 0.2 + 3));
+    const ficha = Math.min(L?.totalLeads ?? 0, metaFicha);
+    const imoveisFichaAtivos = L?.totalLeads ?? row?.gestaoAtiva ?? 0;
+    const imoveisExclusivosAtivos = exclusivos;
 
     return {
       metaAnual,
@@ -907,7 +829,12 @@ export const RelatoriosPage = () => {
       imoveisFichaAtivos,
       imoveisExclusivosAtivos,
     };
-  }, [metricasIndCorretor, metricasIndDataFinal, metricasIndDataInicial]);
+  }, [
+    rankingMetricasIndividuais,
+    metricasIndCorretor,
+    metricasIndVendas,
+    metricasIndLeads,
+  ]);
 
   const comissaoVsMetaData = useMemo(() => {
     const start = new Date(metricasIndDataInicial);
@@ -920,21 +847,39 @@ export const RelatoriosPage = () => {
       datasets: [
         {
           label: 'Comissão recebida',
-          data: [metricasIndComissaoMetasMock.comissaoRecebida / 1000],
+          data: [metricasIndComissaoMetasView.comissaoRecebida / 1000],
           backgroundColor: 'rgba(59, 130, 246, 0.95)',
           borderRadius: 10,
           maxBarThickness: 80,
         },
         {
           label: 'Meta',
-          data: [metricasIndComissaoMetasMock.metaAnual / 1000],
+          data: [metricasIndComissaoMetasView.metaAnual / 1000],
           backgroundColor: 'rgba(34, 197, 94, 0.55)',
           borderRadius: 10,
           maxBarThickness: 80,
         },
       ],
     };
-  }, [metricasIndComissaoMetasMock, metricasIndDataInicial]);
+  }, [metricasIndComissaoMetasView, metricasIndDataInicial]);
+
+  const corretorIndividualDashboardModel = useMemo(() => {
+    const row = rankingMetricasIndividuais.find((x) => x.corretor === metricasIndCorretor);
+    return buildCorretorMetricasCompletas({
+      nomeCorretor: metricasIndCorretor || '—',
+      rankingPosicao: row?.ranking ?? 1,
+      leads: metricasIndLeads,
+      vendas: metricasIndVendas,
+      gestaoAtivaRanking: row?.gestaoAtiva ?? 0,
+      tempoMedioRespostaMin: kpisRelatorios.mediaTempoPrimeiraInteracao ?? 0,
+    });
+  }, [
+    rankingMetricasIndividuais,
+    metricasIndCorretor,
+    metricasIndLeads,
+    metricasIndVendas,
+    kpisRelatorios.mediaTempoPrimeiraInteracao,
+  ]);
 
   const comissaoChartOptions = useMemo(() => {
     return {
@@ -2499,6 +2444,7 @@ export const RelatoriosPage = () => {
 
 
               {activeMetricasIndSubArea === 'comissao-metas' && (
+                  <>
                     <div className="grid grid-cols-1 xl:grid-cols-[360px_1fr] gap-6 items-stretch">
                       <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent overflow-hidden">
                         <div className="p-5">
@@ -2559,13 +2505,13 @@ export const RelatoriosPage = () => {
                             <div className="rounded-xl bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 p-4">
                               <div className="text-[11px] text-gray-500 dark:text-slate-400 font-medium">IMÓVEIS FICHA (ATIVOS)</div>
                               <div className="mt-2 text-3xl font-extrabold text-gray-900 dark:text-slate-100">
-                                {metricasIndComissaoMetasMock.imoveisFichaAtivos}
+                                {metricasIndComissaoMetasView.imoveisFichaAtivos}
                               </div>
                             </div>
                             <div className="rounded-xl bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 p-4">
                               <div className="text-[11px] text-gray-500 dark:text-slate-400 font-medium">IMÓVEIS EXCLUSIVOS (ATIVOS)</div>
                               <div className="mt-2 text-3xl font-extrabold text-gray-900 dark:text-slate-100">
-                                {metricasIndComissaoMetasMock.imoveisExclusivosAtivos}
+                                {metricasIndComissaoMetasView.imoveisExclusivosAtivos}
                               </div>
                             </div>
                           </div>
@@ -2581,25 +2527,25 @@ export const RelatoriosPage = () => {
                           <div className="rounded-xl bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 p-5">
                             <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">% anual</div>
                             <div className="mt-2 text-3xl font-extrabold text-gray-900 dark:text-slate-100">
-                              {metricasIndComissaoMetasMock.percentual.toFixed(1)}%
+                              {metricasIndComissaoMetasView.percentual.toFixed(1)}%
                             </div>
                             <div className="mt-3 w-full h-2 rounded-full bg-gray-200 overflow-hidden">
                               <div
                                 className="h-2 rounded-full bg-blue-500"
-                                style={{ width: `${Math.min(metricasIndComissaoMetasMock.percentual, 100)}%` }}
+                                style={{ width: `${Math.min(metricasIndComissaoMetasView.percentual, 100)}%` }}
                               />
                             </div>
                           </div>
                           <div className="rounded-xl bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 p-5">
                             <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">META ANUAL</div>
                             <div className="mt-2 text-3xl font-extrabold text-gray-900 dark:text-slate-100">
-                              {(metricasIndComissaoMetasMock.metaAnual / 1000).toFixed(0)} Mil
+                              {(metricasIndComissaoMetasView.metaAnual / 1000).toFixed(0)} Mil
                             </div>
                           </div>
                           <div className="rounded-xl bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 p-5">
                             <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">Ainda falta para meta</div>
                             <div className="mt-2 text-3xl font-extrabold text-gray-900 dark:text-slate-100">
-                              {(metricasIndComissaoMetasMock.faltaParaMeta / 1000).toFixed(0)} Mil
+                              {(metricasIndComissaoMetasView.faltaParaMeta / 1000).toFixed(0)} Mil
                             </div>
                           </div>
                         </div>
@@ -2619,13 +2565,13 @@ export const RelatoriosPage = () => {
                                 <div className="text-center">
                                   <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">Exclusivos</div>
                                   <div className="mt-2 h-32 rounded-xl bg-emerald-50 border border-emerald-200 flex items-end justify-center pb-3 font-extrabold text-emerald-700">
-                                    {metricasIndComissaoMetasMock.exclusivos}
+                                    {metricasIndComissaoMetasView.exclusivos}
                                   </div>
                                 </div>
                                 <div className="text-center">
                                   <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">Meta</div>
                                   <div className="mt-2 h-32 rounded-xl bg-blue-50 border border-blue-200 flex items-end justify-center pb-3 font-extrabold text-blue-700">
-                                    {metricasIndComissaoMetasMock.metaExclusivo}
+                                    {metricasIndComissaoMetasView.metaExclusivo}
                                   </div>
                                 </div>
                               </div>
@@ -2637,13 +2583,13 @@ export const RelatoriosPage = () => {
                                 <div className="text-center">
                                   <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">Ficha</div>
                                   <div className="mt-2 h-32 rounded-xl bg-emerald-50 border border-emerald-200 flex items-end justify-center pb-3 font-extrabold text-emerald-700">
-                                    {metricasIndComissaoMetasMock.ficha}
+                                    {metricasIndComissaoMetasView.ficha}
                                   </div>
                                 </div>
                                 <div className="text-center">
                                   <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">Meta</div>
                                   <div className="mt-2 h-32 rounded-xl bg-blue-50 border border-blue-200 flex items-end justify-center pb-3 font-extrabold text-blue-700">
-                                    {metricasIndComissaoMetasMock.metaFicha}
+                                    {metricasIndComissaoMetasView.metaFicha}
                                   </div>
                                 </div>
                               </div>
@@ -2652,9 +2598,23 @@ export const RelatoriosPage = () => {
                         </div>
                       </div>
                     </div>
+
+                    <div className="mt-6 space-y-2">
+                      <div className="text-sm font-semibold text-gray-800 dark:text-slate-100">Painel do corretor</div>
+                      <p className="text-xs text-gray-500 dark:text-slate-400 max-w-lg">
+                        Resumo das métricas individuais no período (dados reais do banco).
+                      </p>
+                      <div className="max-w-md">
+                        <CorretorMetricCard
+                          corretor={corretorIndividualDashboardModel}
+                          isLoading={loadingMetricasInd}
+                        />
+                      </div>
+                    </div>
+                  </>
                   )}
 
-                  {activeMetricasIndSubArea !== 'comissao-metas' && (
+                  {activeMetricasIndSubArea !== 'comissao-metas' && activeMetricasIndSubArea !== 'leads' && activeMetricasIndSubArea !== 'vendas' && (
                     <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-6">
                       <h3 className="text-sm font-semibold text-gray-800">
                         {activeMetricasIndSubArea === 'leads' && 'Leads'}
@@ -2726,7 +2686,7 @@ export const RelatoriosPage = () => {
                       <div className="rounded-xl bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 p-5 text-center">
                         <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">Leads recebidos</div>
                         <div className="mt-3 text-5xl font-extrabold text-gray-900 dark:text-slate-100">
-                          {metricasIndLeadsMock.leadsRecebidos}
+                          {metricasIndLeadsView.leadsRecebidos}
                         </div>
                         <div className="mt-2 text-xs text-gray-500 dark:text-slate-400">janeiro</div>
                       </div>
@@ -2737,21 +2697,21 @@ export const RelatoriosPage = () => {
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                       <div className="rounded-xl bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 p-5">
                         <div className="text-sm font-semibold text-gray-800">Leads</div>
-                        <div className="mt-2 text-4xl font-extrabold text-gray-900 dark:text-slate-100">{metricasIndLeadsMock.totalLeads}</div>
+                        <div className="mt-2 text-4xl font-extrabold text-gray-900 dark:text-slate-100">{metricasIndLeadsView.totalLeads}</div>
                       </div>
                       <div className="rounded-xl bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 p-5">
                         <div className="text-sm font-semibold text-gray-800">Leads recebidos</div>
                         <div className="mt-3 h-10 rounded-lg bg-blue-50 border border-blue-200 flex items-center px-4">
-                          <div className="text-sm font-semibold text-blue-700">{metricasIndLeadsMock.leadsRecebidos}</div>
+                          <div className="text-sm font-semibold text-blue-700">{metricasIndLeadsView.leadsRecebidos}</div>
                         </div>
                         <div className="mt-3 grid grid-cols-2 gap-3">
                           <div className="rounded-lg bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 p-3">
                             <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">Visitas</div>
-                            <div className="mt-2 text-xl font-extrabold text-gray-900 dark:text-slate-100">{metricasIndLeadsMock.visitas}</div>
+                            <div className="mt-2 text-xl font-extrabold text-gray-900 dark:text-slate-100">{metricasIndLeadsView.visitas}</div>
                           </div>
                           <div className="rounded-lg bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 p-3">
                             <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">Vendas realizadas</div>
-                            <div className="mt-2 text-xl font-extrabold text-gray-900 dark:text-slate-100">{metricasIndLeadsMock.vendasRealizadas}</div>
+                            <div className="mt-2 text-xl font-extrabold text-gray-900 dark:text-slate-100">{metricasIndLeadsView.vendasRealizadas}</div>
                           </div>
                         </div>
                       </div>
@@ -2846,29 +2806,29 @@ export const RelatoriosPage = () => {
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="rounded-xl bg-white dark:bg-slate-900 shadow-sm border border-transparent p-5">
                       <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">Vendas assinadas</div>
-                      <div className="mt-2 text-3xl font-extrabold text-gray-900 dark:text-slate-100">{metricasIndVendasMock.vendasTotal}</div>
+                      <div className="mt-2 text-3xl font-extrabold text-gray-900 dark:text-slate-100">{metricasIndVendasView.vendasTotal}</div>
                       <div className="mt-3 h-1.5 rounded-full bg-gray-100 dark:bg-slate-800 overflow-hidden">
                         <div
                           className="h-1.5 rounded-full bg-blue-500"
-                          style={{ width: `${Math.min(100, (metricasIndVendasMock.vendasTotal / 25) * 100)}%` }}
+                          style={{ width: `${Math.min(100, (metricasIndVendasView.vendasTotal / 25) * 100)}%` }}
                         />
                       </div>
                     </div>
                     <div className="rounded-xl bg-white dark:bg-slate-900 shadow-sm border border-transparent p-5">
                       <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">Vendas exclusivas</div>
-                      <div className="mt-2 text-3xl font-extrabold text-gray-900 dark:text-slate-100">{metricasIndVendasMock.vendasExclusivas}</div>
+                      <div className="mt-2 text-3xl font-extrabold text-gray-900 dark:text-slate-100">{metricasIndVendasView.vendasExclusivas}</div>
                       <div className="mt-3 text-xs text-gray-500 dark:text-slate-400">
-                        {metricasIndVendasMock.vendasTotal > 0
-                          ? `${Math.round((metricasIndVendasMock.vendasExclusivas / metricasIndVendasMock.vendasTotal) * 100)}% do total`
+                        {metricasIndVendasView.vendasTotal > 0
+                          ? `${Math.round((metricasIndVendasView.vendasExclusivas / metricasIndVendasView.vendasTotal) * 100)}% do total`
                           : '0% do total'}
                       </div>
                     </div>
                     <div className="rounded-xl bg-white dark:bg-slate-900 shadow-sm border border-transparent p-5">
                       <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">Vendas não exclusivas</div>
-                      <div className="mt-2 text-3xl font-extrabold text-gray-900 dark:text-slate-100">{metricasIndVendasMock.vendasNaoExclusivas}</div>
+                      <div className="mt-2 text-3xl font-extrabold text-gray-900 dark:text-slate-100">{metricasIndVendasView.vendasNaoExclusivas}</div>
                       <div className="mt-3 text-xs text-gray-500 dark:text-slate-400">
-                        {metricasIndVendasMock.vendasTotal > 0
-                          ? `${Math.round((metricasIndVendasMock.vendasNaoExclusivas / metricasIndVendasMock.vendasTotal) * 100)}% do total`
+                        {metricasIndVendasView.vendasTotal > 0
+                          ? `${Math.round((metricasIndVendasView.vendasNaoExclusivas / metricasIndVendasView.vendasTotal) * 100)}% do total`
                           : '0% do total'}
                       </div>
                     </div>
@@ -2883,7 +2843,7 @@ export const RelatoriosPage = () => {
                             <div className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">Código, exclusividade, fonte e valores</div>
                           </div>
                           <div className="text-xs text-gray-500 dark:text-slate-400">
-                            Mostrando {Math.min(25, metricasIndVendasMock.rows.length)} de {metricasIndVendasMock.rows.length}
+                            Mostrando {Math.min(25, metricasIndVendasView.rows.length)} de {metricasIndVendasView.rows.length}
                           </div>
                         </div>
                       </div>
@@ -2899,7 +2859,7 @@ export const RelatoriosPage = () => {
                             </tr>
                           </thead>
                           <tbody>
-                            {metricasIndVendasMock.rows.slice(0, 25).map((row, idx) => (
+                            {metricasIndVendasView.rows.slice(0, 25).map((row, idx) => (
                               <tr
                                 key={row.id}
                                 className={`${idx % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-gray-50/50'} hover:bg-blue-50/40 transition-colors`}
@@ -2923,7 +2883,7 @@ export const RelatoriosPage = () => {
                                 <td className="py-2.5 pr-4 text-right text-xs text-gray-800">{row.data}</td>
                               </tr>
                             ))}
-                            {metricasIndVendasMock.rows.length === 0 && (
+                            {metricasIndVendasView.rows.length === 0 && (
                               <tr>
                                 <td colSpan={5} className="py-10 text-center text-sm text-gray-500 dark:text-slate-400">
                                   Nenhuma venda encontrada no período.
@@ -2943,8 +2903,8 @@ export const RelatoriosPage = () => {
                         <div className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">Ranking de origem no período selecionado</div>
                       </div>
                       <div className="text-xs text-gray-500 dark:text-slate-400">
-                        {metricasIndVendasMock.fonteBreakdown[0]
-                          ? `Top: ${metricasIndVendasMock.fonteBreakdown[0].fonte} (${metricasIndVendasMock.fonteBreakdown[0].quantidade})`
+                        {metricasIndVendasView.fonteBreakdown[0]
+                          ? `Top: ${metricasIndVendasView.fonteBreakdown[0].fonte} (${metricasIndVendasView.fonteBreakdown[0].quantidade})`
                           : 'Sem dados'}
                       </div>
                     </div>
@@ -2956,7 +2916,7 @@ export const RelatoriosPage = () => {
                     <div className="mt-5 rounded-xl bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 p-4">
                       <div className="text-xs font-semibold text-gray-700 dark:text-slate-300">Top fontes</div>
                       <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
-                        {metricasIndVendasMock.fonteBreakdown.slice(0, 6).map((item) => (
+                        {metricasIndVendasView.fonteBreakdown.slice(0, 6).map((item) => (
                           <div key={item.fonte} className="flex items-center justify-between gap-3">
                             <div className="text-xs text-gray-700 dark:text-slate-300 truncate" title={item.fonte}>
                               {item.fonte}

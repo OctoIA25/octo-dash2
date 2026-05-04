@@ -5,7 +5,7 @@
  */
 
 import { supabase } from '@/lib/supabaseClient';
-import { fetchSantaAngelaLeads, SantaAngelaLead, SantaAngelaRequestBody } from './santaAngelaService';
+import { fetchSantaAngelaLeads, SantaAngelaLead, SantaAngelaRequestBody } from './santaAngelaService.ts';
 
 export interface SyncConfig {
   tenantId: string;

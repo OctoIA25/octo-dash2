@@ -33,6 +33,7 @@ import { ApiDocsPage } from "@/features/api-docs/pages/ApiDocsPage";
 import { GoogleOAuthCallbackPage } from "@/features/agenda/pages/GoogleOAuthCallbackPage";
 import { NotificationsProvider } from "@/contexts/NotificationsContext";
 import { AuthProvider, useAuthContext } from "@/contexts/AuthContext";
+import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -115,6 +116,7 @@ const App = () => {
       storageKey="octo-dash-theme-v2"
     >
       <QueryClientProvider client={queryClient}>
+        <ReactQueryDevtools/>
         <TooltipProvider>
           <AuthProvider>
             <NotificationsProvider>

@@ -4,6 +4,7 @@
  */
 
 import { useState, useEffect, useMemo } from 'react';
+import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { useAuth } from '@/hooks/useAuth';
 import {
   buscarKPIsGerais,
@@ -55,8 +56,12 @@ export const useRelatorios = () => {
   const [rankingMes, setRankingMes] = useState(new Date().getMonth() + 1);
   const [rankingPeriodo, setRankingPeriodo] = useState<'monthly' | 'quarterly' | 'semiannual' | 'yearly'>('monthly');
   const [metricasIndCorretor, setMetricasIndCorretor] = useState('');
-  const [metricasIndDataInicial, setMetricasIndDataInicial] = useState('');
-  const [metricasIndDataFinal, setMetricasIndDataFinal] = useState('');
+  const [metricasIndDataInicial, setMetricasIndDataInicial] = useState(() =>
+    format(startOfMonth(new Date()), 'yyyy-MM-dd')
+  );
+  const [metricasIndDataFinal, setMetricasIndDataFinal] = useState(() =>
+    format(endOfMonth(new Date()), 'yyyy-MM-dd')
+  );
 
   // Carregar dados gerais
   useEffect(() => {
@@ -121,10 +126,10 @@ export const useRelatorios = () => {
   useEffect(() => {
     const carregarRanking = async () => {
       if (!tenantId) return;
-      
       setLoadingRanking(true);
       try {
         const ranking = await buscarRankingCorretores(tenantId, rankingAno, rankingMes, rankingPeriodo);
+        console.log('📈 [useRelatorios] Ranking carregado:', ranking);
         setRankingCorretores(ranking);
       } catch (error) {
         console.error('Erro ao carregar ranking de corretores:', error);

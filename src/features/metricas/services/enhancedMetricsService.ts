@@ -431,7 +431,7 @@ export async function buscarMetricasConversao(tenantId: string) {
       .from('leads')
       .select('etapa_atual, created_at, assigned_agent_name, first_interaction_at, final_sale_value')
       .eq('tenant_id', tenantId)
-      .filter('archived_at', 'is', null);
+      .is('archived_at', null);
 
     if (error) throw error;
 

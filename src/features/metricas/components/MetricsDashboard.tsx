@@ -9,7 +9,7 @@
 
 
 import { useState, useMemo, useEffect } from 'react';
-
+import { format, endOfYear, startOfYear } from 'date-fns';
 import { Card, CardContent } from '@/components/ui/card';
 
 import {
@@ -127,7 +127,7 @@ import {
 
 
 
-import type { EquipeOption } from '@/types/metricsTypes';
+import type { CorretorMetricasCompletas, EquipeOption } from '@/types/metricsTypes';
 
 import {
 
@@ -158,19 +158,26 @@ import type { MetricasEquipe, VariacoesPercentuais, KPIsEquipe } from '@/feature
 import { useAuthContext } from '@/contexts/AuthContext';
 
 import { useRelatorios } from '@/features/relatorios/hooks/useRelatorios';
+import {
+  buscarMetricasIndividuaisLeads,
+  buscarMetricasIndividuaisVendas,
+  buscarRankingCorretores,
+} from '@/features/relatorios/services/relatoriosService';
+import { buildCorretorMetricasCompletas } from '@/features/relatorios/utils/buildCorretorMetricasCompletas';
+import { fetchTeams, type Team } from '@/features/corretores/services/teamsManagementService';
 
 export const MetricsDashboard = () => {
 
   const { tenantId } = useAuthContext();
 
   const relatoriosData = useRelatorios();
-  const { vendasCriadas: vendasCriadasRelatorio, vendasAssinadas: vendasAssinadasRelatorio, metricasEquipes: metricasEquipesRelatorio, totalLeadsMensal, valorTotal, imoveisAtivos: imoveisAtivosRelatorio} = relatoriosData;
+  const { vendasCriadas: vendasCriadasRelatorio, vendasAssinadas: vendasAssinadasRelatorio, metricasEquipes: metricasEquipesRelatorio, totalLeadsMensal, valorTotal, imoveisAtivos: imoveisAtivosRelatorio } = relatoriosData;
 
   const [loading, setLoading] = useState(true);
 
   const [filtroEquipe, setFiltroEquipe] = useState<EquipeOption>('todas');
 
-// ... (rest of the code remains the same)
+  // ... (rest of the code remains the same)
 
 
   // Estados para dados reais do bolsão
@@ -180,6 +187,12 @@ export const MetricsDashboard = () => {
   const [metricasEquipesReais, setMetricasEquipesReais] = useState<MetricasEquipe[]>([]);
 
   const [metricasCorretoresReais, setMetricasCorretoresReais] = useState<Map<string, number>>(new Map());
+
+  const [corretoresIndividuaisReais, setCorretoresIndividuaisReais] = useState<CorretorMetricasCompletas[] | null>(null);
+
+  const [loadingIndividuais, setLoadingIndividuais] = useState(false);
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [loadingTeams, setLoadingTeams] = useState(true);
 
 
 
@@ -208,6 +221,28 @@ export const MetricsDashboard = () => {
   const [variacoes, setVariacoes] = useState<VariacoesPercentuais | null>(null);
 
 
+  useEffect(() => {
+    const loadTeams = async () => {
+      try {
+        const teamsData = await fetchTeams(tenantId);
+        setTeams(teamsData);
+      } catch (error) {
+        console.error('Erro ao carregar os times:', error);
+      } finally {
+        // Setando false no loading.
+        setLoadingTeams(false);
+      }
+    };
+    loadTeams();
+  }, [tenantId])
+
+  const equipesOptions = useMemo(() => [
+    { value: 'todas', label: 'Todas as equipes ' },
+    ...teams.map(team => ({
+      value: team.id,
+      label: team.name
+    }))
+  ], [teams])
 
   // Buscar métricas reais ao montar o componente
 
@@ -337,7 +372,7 @@ export const MetricsDashboard = () => {
 
 
 
-        
+
 
 
       } catch (error) {
@@ -355,6 +390,134 @@ export const MetricsDashboard = () => {
 
 
     carregarMetricas();
+
+  }, [tenantId]);
+
+
+
+  useEffect(() => {
+
+    const normalizeNome = (value: string) =>
+
+      value
+
+        .normalize('NFD')
+
+        .replace(/[\u0300-\u036f]/g, '')
+
+        .toLowerCase()
+
+        .trim();
+
+
+
+    const carregarIndividuais = async () => {
+
+      if (!tenantId) {
+
+        setCorretoresIndividuaisReais(null);
+
+        setLoadingIndividuais(false);
+
+        return;
+
+      }
+
+
+
+      setLoadingIndividuais(true);
+
+      try {
+
+        const year = new Date().getFullYear();
+
+        const ranking = await buscarRankingCorretores(tenantId, year, 12, 'yearly');
+
+
+
+        if (!ranking.length) {
+
+          setCorretoresIndividuaisReais([]);
+
+          return;
+
+        }
+
+
+
+        const dataIni = format(startOfYear(new Date()), 'yyyy-MM-dd');
+
+        const dataFim = format(endOfYear(new Date()), 'yyyy-MM-dd');
+
+        const top = ranking.slice(0, 24);
+
+
+
+        const built = await Promise.all(
+
+          top.map(async (row) => {
+
+            const [leads, vendas] = await Promise.all([
+
+              buscarMetricasIndividuaisLeads(tenantId, row.corretor, dataIni, dataFim),
+
+              buscarMetricasIndividuaisVendas(tenantId, row.corretor, dataIni, dataFim),
+
+            ]);
+
+
+
+            const template = corretoresData.find(
+
+              (c) => normalizeNome(c.nome) === normalizeNome(row.corretor)
+
+            );
+
+
+
+            return buildCorretorMetricasCompletas({
+
+              nomeCorretor: row.corretor,
+
+              rankingPosicao: row.ranking,
+
+              equipe: template?.equipe ?? '—',
+
+              leads,
+
+              vendas,
+
+              gestaoAtivaRanking: row.gestaoAtiva,
+
+              tempoMedioRespostaMin: 0,
+
+            });
+
+          })
+
+        );
+
+
+
+        setCorretoresIndividuaisReais(built);
+
+      } catch (err) {
+
+        console.error('Erro ao carregar métricas individuais (dashboard):', err);
+
+        setCorretoresIndividuaisReais(null);
+
+      } finally {
+
+        setLoadingIndividuais(false);
+
+      }
+
+    };
+
+
+
+    carregarIndividuais();
 
   }, [tenantId]);
 
@@ -495,7 +658,43 @@ export const MetricsDashboard = () => {
 
   const corretoresComMetricasReais = useMemo(() => {
 
-    return corretoresData.map(corretor => {
+    if (corretoresIndividuaisReais !== null && corretoresIndividuaisReais.length === 0) {
+
+      return [];
+
+    }
+
+
+
+    if (corretoresIndividuaisReais !== null && corretoresIndividuaisReais.length > 0) {
+
+      return corretoresIndividuaisReais.map((corretor) => {
+
+        const tempoReal = metricasCorretoresReais.get(corretor.nome);
+
+
+
+        return {
+
+          ...corretor,
+
+          kpis: {
+
+            ...corretor.kpis,
+
+            tempoMedioResposta: tempoReal ?? corretor.kpis.tempoMedioResposta,
+
+          },
+
+        };
+
+      });
+
+    }
+
+
+
+    return corretoresData.map((corretor) => {
 
       const tempoReal = metricasCorretoresReais.get(corretor.nome);
 
@@ -509,15 +708,15 @@ export const MetricsDashboard = () => {
 
           ...corretor.kpis,
 
-          tempoMedioResposta: tempoReal ?? corretor.kpis.tempoMedioResposta
+          tempoMedioResposta: tempoReal ?? corretor.kpis.tempoMedioResposta,
 
-        }
+        },
 
       };
 
     });
 
-  }, [metricasCorretoresReais]);
+  }, [corretoresIndividuaisReais, metricasCorretoresReais]);
 
 
 
@@ -1547,28 +1746,21 @@ export const MetricsDashboard = () => {
 
               <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Equipe:</span>
 
-              <Select value={filtroEquipe} onValueChange={(value) => setFiltroEquipe(value as EquipeOption)}>
-
+              <Select
+                value={filtroEquipe}
+                onValueChange={(value) => setFiltroEquipe(value as EquipeOption)}
+                disabled={loadingTeams}
+              >
                 <SelectTrigger className="w-[200px] h-9 text-sm">
-
-                  <SelectValue placeholder="Selecione a equipe" />
-
+                  <SelectValue placeholder={loadingTeams ? "Carregando..." : "Selecione a equipe"} />
                 </SelectTrigger>
-
                 <SelectContent>
-
                   {equipesOptions.map((equipe) => (
-
                     <SelectItem key={equipe.value} value={equipe.value}>
-
                       {equipe.label}
-
                     </SelectItem>
-
                   ))}
-
                 </SelectContent>
-
               </Select>
 
             </div>
@@ -1595,7 +1787,7 @@ export const MetricsDashboard = () => {
 
                 corretor={corretor}
 
-                isLoading={loading}
+                isLoading={loading || loadingIndividuais}
 
               />
 

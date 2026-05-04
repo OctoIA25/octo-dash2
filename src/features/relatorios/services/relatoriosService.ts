@@ -3,8 +3,33 @@
  * Substitui dados mockados por dados reais do banco
  */
 
-import { KPIsEquipe } from '@/features/metricas/services/metricsService';
 import { supabase } from '@/lib/supabaseClient';
+
+const UUID_AGENT_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** Filtro por `assigned_agent_id` (UUID) ou `assigned_agent_name` (ex.: ranking por nome). */
+export function isAgentKeyUuid(agentKey: string): boolean {
+  return UUID_AGENT_RE.test(agentKey.trim());
+}
+
+function applyAssignedAgentFilter<T extends { eq: (c: string, v: string) => T }>(
+  query: T,
+  agentKey: string
+): T {
+  const key = agentKey.trim();
+  if (!key) return query;
+  if (isAgentKeyUuid(key)) return query.eq('assigned_agent_id', key);
+  return query.eq('assigned_agent_name', key);
+}
+
+function toDayStartIso(dateStr: string): string {
+  return dateStr.includes('T') ? dateStr : `${dateStr}T00:00:00.000Z`;
+}
+
+function toDayEndIso(dateStr: string): string {
+  return dateStr.includes('T') ? dateStr : `${dateStr}T23:59:59.999Z`;
+}
 
 // Types (definidos inline para evitar dependência de Database)
 interface RelatorioVenda {
@@ -286,7 +311,7 @@ export async function buscarVendasCriadas(
     .from('leads' as any)
     .select('created_at, final_sale_value, status')
     .eq('tenant_id', tenantId)
-    .filter('archived_at', 'is', null);
+    .is('archived_at', null);
 
   if (error) {
     console.error('Erro ao buscar vendas criadas:', error);
@@ -324,8 +349,8 @@ export async function buscarRankingCorretores(
     .from('leads')
     .select('assigned_agent_name, created_at, final_sale_value')
     .eq('tenant_id', tenantId)
-    .gte('created_at', `${startYear}-${String(startMonth).padStart(2, '0')}-01`)
-    .lt('created_at', `${endYear}-${String(endMonth + 1).padStart(2, '0')}-01`);
+    // .gte('created_at', `${startYear}-${String(startMonth - 1).padStart(2, '0')}-01`)
+    // .lt('created_at', `${endYear}-${String(endMonth + 1).padStart(2, '0')}-01`);
 
   if (error) throw error;
 
@@ -378,14 +403,19 @@ export async function buscarMetricasIndividuaisLeads(
   dataInicial: string,
   dataFinal: string
 ): Promise<MetricasIndividuaisLeads> {
-  // Buscar leads do corretor no período
-  const { data: leads, error: leadsError } = await supabase
+  const di = toDayStartIso(dataInicial);
+  const df = toDayEndIso(dataFinal);
+
+  let query = supabase
     .from('leads')
     .select('*')
     .eq('tenant_id', tenantId)
-    .eq('assigned_agent_id', corretorId)
-    .gte('created_at', dataInicial)
-    .lte('created_at', dataFinal);
+    .gte('created_at', di)
+    .lte('created_at', df);
+
+  query = applyAssignedAgentFilter(query, corretorId);
+
+  const { data: leads, error: leadsError } = await query;
 
   if (leadsError) throw leadsError;
 
@@ -409,7 +439,10 @@ export async function buscarMetricasIndividuaisLeads(
   // Agrupar por bairro
   const bairrosCount = new Map<string, number>();
   leads?.forEach(lead => {
-    const bairro = lead.bairro || 'Não informado';
+    const row = lead as Record<string, unknown>;
+    const bairro = String(
+      row.bairro ?? row.district ?? row.neighborhood ?? 'Não informado'
+    );
     bairrosCount.set(bairro, (bairrosCount.get(bairro) || 0) + 1);
   });
 
@@ -421,7 +454,10 @@ export async function buscarMetricasIndividuaisLeads(
   // Agrupar por fonte
   const fontesCount = new Map<string, number>();
   leads?.forEach(lead => {
-    const fonte = lead.origem_lead || 'Não informado';
+    const row = lead as Record<string, unknown>;
+    const fonte = String(
+      row.origem_lead ?? row.source ?? row.lead_source ?? 'Não informado'
+    );
     fontesCount.set(fonte, (fontesCount.get(fonte) || 0) + 1);
   });
 
@@ -433,7 +469,8 @@ export async function buscarMetricasIndividuaisLeads(
   // Agrupar por imóvel
   const imoveisCount = new Map<string, number>();
   leads?.forEach(lead => {
-    const imovel = lead.imovel_id || 'Não informado';
+    const row = lead as Record<string, unknown>;
+    const imovel = String(row.imovel_id ?? row.property_code ?? 'Não informado');
     imoveisCount.set(imovel, (imoveisCount.get(imovel) || 0) + 1);
   });
 
@@ -459,20 +496,28 @@ export async function buscarMetricasIndividuaisVendas(
   dataInicial: string,
   dataFinal: string
 ): Promise<MetricasIndividuaisVendas> {
-  // Buscar vendas do corretor no período (usando leads com final_sale_value)
-  const { data: vendas, error: vendasError } = await supabase
+  const di = toDayStartIso(dataInicial);
+  const df = toDayEndIso(dataFinal);
+
+  let query = supabase
     .from('leads')
     .select('*')
     .eq('tenant_id', tenantId)
-    .eq('assigned_agent_id', corretorId)
-    .gte('created_at', dataInicial)
-    .lte('created_at', dataFinal)
+    .gte('created_at', di)
+    .lte('created_at', df)
     .not('final_sale_value', 'is', null);
+
+  query = applyAssignedAgentFilter(query, corretorId);
+
+  const { data: vendas, error: vendasError } = await query;
 
   if (vendasError) throw vendasError;
 
   const vendasTotal = vendas?.length || 0;
-  const vendasExclusivas = vendas?.filter(v => v.exclusividade).length || 0;
+  const vendasExclusivas = vendas?.filter(v => {
+    const row = v as Record<string, unknown>;
+    return Boolean(row.exclusividade ?? row.exclusivity);
+  }).length || 0;
   const vendasNaoExclusivas = vendasTotal - vendasExclusivas;
 
   const vgvTotal = vendas?.reduce((sum, v) => sum + (v.final_sale_value || 0), 0) || 0;
@@ -480,20 +525,27 @@ export async function buscarMetricasIndividuaisVendas(
   const ticketMedio = vendasTotal > 0 ? vgvTotal / vendasTotal : 0;
 
   // Detalhamento das vendas
-  const rows = vendas?.map(v => ({
-    id: v.id,
-    codigo_imovel: v.property_code || '',
-    exclusividade: v.exclusivity ? 'exclusivo' : 'não exclusivo',
-    fonte: v.lead_source || '',
-    valor_imovel: v.final_sale_value || 0,
-    comissao: v.final_sale_value || 0,
-    data: v.created_at || ''
-  })) || [];
+  const rows = vendas?.map(v => {
+    const row = v as Record<string, unknown>;
+    const exclusivo = Boolean(row.exclusivity ?? row.exclusividade);
+    const fonte = String(row.lead_source ?? row.source ?? 'Não informado');
+    const codigo = String(row.property_code ?? row.codigo_imovel ?? '');
+    return {
+      id: String(row.id ?? ''),
+      codigo_imovel: codigo,
+      exclusividade: exclusivo ? 'exclusivo' : 'não exclusivo',
+      fonte,
+      valor_imovel: Number(row.final_sale_value ?? 0),
+      comissao: Number(row.final_sale_value ?? 0),
+      data: String(row.created_at ?? ''),
+    };
+  }) || [];
 
   // Agrupar por fonte
   const fontesCount = new Map<string, number>();
   vendas?.forEach(venda => {
-    const fonte = venda.lead_source || 'Não informado';
+    const row = venda as Record<string, unknown>;
+    const fonte = String(row.lead_source ?? row.source ?? 'Não informado');
     fontesCount.set(fonte, (fontesCount.get(fonte) || 0) + 1);
   });
 

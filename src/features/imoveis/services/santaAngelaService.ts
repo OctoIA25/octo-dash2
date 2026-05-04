@@ -83,8 +83,8 @@ export interface SantaAngelaRequestBody {
  */
 const SANTA_ANGELA_CONFIG: SantaAngelaConfig = {
   baseUrl: 'https://portaldeimoveis.santaangelaconstrutora.com.br:8181/api/v1/prospects/grid/v2',
-  apiKey: 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpZCI6NjQ0LCJlbWFpbCI6ImVyaWNrZmVycmlnYXR0aUBpbW9iaWxpYXJpYWphcGkuY29tLmJyIn0.d23eCVDIg_QqvMUqpP_w78d3EF_kf2i_rdkllWTo0MY',
-  tenantId: '', // Será definido dinamicamente
+  apiKey: import.meta.env.VITE_SANTA_ANGELA_API_KEY,
+  tenantId: '',
 };
 
 /**
@@ -169,14 +169,7 @@ export const syncSantaAngelaLeads = async (
 ): Promise<{ synced: number; errors: number }> => {
   try {
     
-    const leads = await fetchSantaAngelaLeads(tenantId, undefined, config);
-    
-    // TODO: Implementar lógica de sincronização com Supabase
-    // - Verificar quais leads já existem
-    // - Atualizar leads existentes
-    // - Inserir novos leads
-    // - Marcar leads removidos
-    
+    const leads = await fetchSantaAngelaLeads(tenantId, undefined, config);    
     
     return {
       synced: leads.length,

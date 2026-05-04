@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { useDebounce } from '../hooks/useDebounce';
 import { LeadDetailsModal } from './LeadDetailsModal';
 import {
   Select,
@@ -590,7 +591,7 @@ export const MeusLeadsAtribuidosSection = ({
 
   // Iniciar sincronização automática do Santa Angela (apenas para tenant autorizado)
   useEffect(() => {
-    const SANTA_ANGELA_TENANT_ID = '65c69875-dc83-4062-90f6-6f6adc30df26';
+    const SANTA_ANGELA_TENANT_ID = import.meta.env.VITE_SANTA_ANGELA_TENANT_ID;
     
     if (tenantId && tenantId === SANTA_ANGELA_TENANT_ID) {
       const config: SyncConfig = {
@@ -633,7 +634,6 @@ export const MeusLeadsAtribuidosSection = ({
   const [motivoPredefinido, setMotivoPredefinido] = useState<string>('sem_interesse');
   const [arquivando, setArquivando] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
-  
   // Estados dos filtros
   const [filtroPeriodo, setFiltroPeriodo] = useState<'todos' | 'personalizado'>('todos');
   const [dataInicio, setDataInicio] = useState('');
@@ -648,6 +648,9 @@ export const MeusLeadsAtribuidosSection = ({
   const [isDraggingScroll, setIsDraggingScroll] = useState(false);
   const [dragStartX, setDragStartX] = useState(0);
   const [scrollStartX, setScrollStartX] = useState(0);
+  
+  const debouncedDataInicio = useDebounce(dataInicio, 300)
+  const debouncedDataFim = useDebounce(dataFim, 300)
 
   // Bolsão: config do tenant + clock que tica a cada 30s para alimentar o countdown
   const [bolsaoConfig, setBolsaoConfig] = useState<TenantBolsaoConfig | null>(null);
@@ -698,32 +701,28 @@ export const MeusLeadsAtribuidosSection = ({
   }
   const [bolsaoStatusMap, setBolsaoStatusMap] = useState<Record<string, BolsaoMirrorRow>>({});
   const carregarBolsaoStatus = useCallback(async (leadIds: string[]) => {
-    if (leadIds.length === 0) {
-      setBolsaoStatusMap({});
-      return;
-    }
-    const result = await supabase
-      .from('bolsao')
-      .select('source_lead_id, queue_attempt, atendido, status')
-      .in('source_lead_id', leadIds);
-    if (result.error) {
-      console.warn('[MeusLeads] erro ao buscar status do bolsão:', result.error.message);
-      return;
-    }
-    const rows = (result.data ?? []) as Array<Record<string, unknown>>;
-    const map: Record<string, BolsaoMirrorRow> = {};
-    for (const row of rows) {
-      const sid = row.source_lead_id as string | null;
-      if (!sid) continue;
-      map[sid] = {
-        source_lead_id: sid,
-        queue_attempt: Number(row.queue_attempt ?? 0),
-        atendido: Boolean(row.atendido),
-        status: String(row.status ?? 'novo'),
-      };
-    }
-    setBolsaoStatusMap(map);
-  }, []);
+  if (leadIds.length === 0) {
+    setBolsaoStatusMap({});
+    return;
+  }
+ 
+  const { data, error } = await supabase
+    .from('bolsao')
+    .select('*')
+    .in('source_lead_id', leadIds);
+ 
+  if (error) {
+    console.error('Erro ao carregar status do bolsão:', error);
+    return;
+  }
+ 
+  const statusMap = (data || []).reduce((acc, row) => {
+    acc[row.source_lead_id] = row;
+    return acc;
+  }, {} as Record<string, any>);
+ 
+  setBolsaoStatusMap(statusMap);
+}, []);
 
   /** Marca lead como assumido do bolsão — cronômetro para, badge aparece. */
   const handleAssumirDoBolsao = useCallback(async (leadId: string) => {
@@ -732,11 +731,13 @@ export const MeusLeadsAtribuidosSection = ({
       .update({
         atendido: true,
         data_atendimento: new Date().toISOString(),
+        assumed_by: user?.id,
+        assumed_at: new Date().toISOString(),
         status: 'assumido',
       })
       .eq('source_lead_id', leadId);
     if (error) {
-      toast({ title: 'Erro ao assumir', description: error.message, variant: 'destructive' });
+      toast({ title: 'Erro ao assumir', description: error.message, variant: 'destructive' })
       return;
     }
     // Atualiza o map local + emite evento
@@ -972,11 +973,11 @@ export const MeusLeadsAtribuidosSection = ({
   const leadsFiltrados = useMemo(() => meusLeads.filter(lead => {
     const leadRecord = lead as unknown as Record<string, unknown>;
 
-    if (filtroPeriodo === 'personalizado' && (dataInicio || dataFim)) {
+    if (filtroPeriodo === 'personalizado' && (debouncedDataInicio || debouncedDataFim)) {
       const dataLead = new Date(lead.created_at);
-      const inicio = dataInicio ? new Date(dataInicio) : new Date(0);
-      const fim = dataFim ? new Date(dataFim) : new Date();
-      if (dataFim) fim.setHours(23, 59, 59, 999);
+      const inicio = debouncedDataInicio ? new Date(debouncedDataInicio) : new Date(0);
+      const fim = debouncedDataFim ? new Date(debouncedDataFim) : new Date();
+      if (debouncedDataFim) fim.setHours(23, 59, 59, 999);
       if (dataLead < inicio || dataLead > fim) return false;
     }
 
@@ -994,7 +995,7 @@ export const MeusLeadsAtribuidosSection = ({
     }
 
     return true;
-  }), [meusLeads, filtroPeriodo, dataInicio, dataFim, filtroTemperatura, filtroTipo]);
+  }), [meusLeads, filtroPeriodo, debouncedDataInicio, debouncedDataFim, filtroTemperatura, filtroTipo]);
 
   // Agrupar leads filtrados por etapa do funil (memoizado)
   const leadsAgrupados = useMemo(() => {
@@ -1024,54 +1025,49 @@ export const MeusLeadsAtribuidosSection = ({
 
   // Handler de fim de drag — igual Proposta: solta em uma coluna, atualiza status.
   // Sem reordenação dentro da mesma coluna, sem animação de re-layout.
-  const handleDragEnd = async (event: DragEndEvent) => {
-    const { active, over } = event;
-    setActiveId(null);
-    if (!over) return;
-
-    const leadId = String(active.id);
-    const overId = String(over.id);
-    const lead = findLeadById(leadId);
-    if (!lead) return;
-
-    // `over.id` é sempre o id da coluna (cada coluna é droppable). Se o usuário
-    // soltar sobre outro card, caímos na mesma coluna do card de destino.
-    const destColumnId = kanbanColumns.find((c) => c.id === overId)?.id
-      ?? findContainerByItemId(overId);
-    if (!destColumnId) return;
-
-    const etapaAtual = getLeadStatus(lead, kanbanColumns);
-    if (etapaAtual === destColumnId) return;
-
-    // Slug → status humano (usa título da coluna; leadsService normaliza via mapKanbanSlugToStatus)
-    const destColumn = kanbanColumns.find((c) => c.id === destColumnId);
-    const statusParaSalvar = destColumn?.title ?? destColumnId;
-
-    // Update otimista no estado local — sem arrayMove, só muda o status.
+const handleDragEnd = useCallback(async (event: DragEndEvent) => {
+  const { active, over } = event;
+  setActiveId(null);
+  if (!over) return;
+ 
+  const leadId = String(active.id);
+  const overId = String(over.id);
+  const lead = findLeadById(leadId);
+  if (!lead) return;
+ 
+  const destColumnId = kanbanColumns.find((c) => c.id === overId)?.id
+    ?? findContainerByItemId(overId);
+  if (!destColumnId) return;
+ 
+  const etapaAtual = getLeadStatus(lead, kanbanColumns);
+  if (etapaAtual === destColumnId) return;
+ 
+  const destColumn = kanbanColumns.find((c) => c.id === destColumnId);
+  const statusParaSalvar = destColumn?.title ?? destColumnId;
+ 
+  setMeusLeads((prev) =>
+    prev.map((l) => (l.id === leadId ? { ...l, status: statusParaSalvar } : l))
+  );
+ 
+  try {
+    await atualizarStatusLeadCRM(leadId, statusParaSalvar);
+    toast({
+      title: '✅ Etapa atualizada',
+      description: `Lead movido para ${kanbanColumns.find((c) => c.id === destColumnId)?.title}`,
+      className: 'bg-green-500/10 border-green-500/50',
+    });
+  } catch (error) {
     setMeusLeads((prev) =>
-      prev.map((l) => (l.id === leadId ? { ...l, status: statusParaSalvar } : l))
+      prev.map((l) => (l.id === leadId ? { ...l, status: lead.status } : l))
     );
-
-    try {
-      await atualizarStatusLeadCRM(leadId, statusParaSalvar);
-      toast({
-        title: '✅ Etapa atualizada',
-        description: `Lead movido para ${kanbanColumns.find((c) => c.id === destColumnId)?.title}`,
-        className: 'bg-green-500/10 border-green-500/50',
-      });
-    } catch (error) {
-      // Rollback em caso de falha
-      setMeusLeads((prev) =>
-        prev.map((l) => (l.id === leadId ? { ...l, status: lead.status } : l))
-      );
-      console.error('Erro ao atualizar status:', error);
-      toast({
-        title: 'Erro ao atualizar status',
-        description: String(error),
-        variant: 'destructive',
-      });
-    }
-  };
+    console.error('Erro ao atualizar status:', error);
+    toast({
+      title: 'Erro ao atualizar status',
+      description: String(error),
+      variant: 'destructive',
+    });
+  }
+}, [findLeadById, kanbanColumns, findContainerByItemId, toast]);
 
   // Lead ativo sendo arrastado
   const activeLead = activeId ? meusLeads.find(l => l.id === activeId) : null;
