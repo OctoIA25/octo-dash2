@@ -17,6 +17,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { RecrutamentoFunnelChart } from '../components/RecrutamentoFunnelChart';
 import { RecrutamentoPerformanceChart } from '../components/RecrutamentoPerformanceChart';
 import { useRecruitment } from '../hooks/useRecruitment';
+import { createTenantMember } from '../services/tenantMembersService';
 import { useAuth } from '@/hooks/useAuth';
 import {
   Users,
@@ -72,7 +73,7 @@ interface Candidato {
 }
 
 export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: RecrutamentoPageProps) => {
-  const { user } = useAuth();
+  const { user, tenantId } = useAuth();
 
   // Use recruitment hook with real data
   const {
@@ -111,7 +112,7 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
     candidateSources,
     isLoadingSources,
     filtrosAtivos
-  } = useRecruitment({ autoRefresh: true, refreshInterval: 30000 });
+  } = useRecruitment({ tenantId, autoRefresh: true, refreshInterval: 30000 });
 
   // Local state for modals and forms
   const [modalOpen, setModalOpen] = useState(false);
@@ -171,59 +172,89 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
     setModalOpen(true);
   };
 
-  const {
-    tenantId
-  } = useAuth();
-
   // Handle status change
-  const handleMudarStatus = async (novoStatus: string) => {
-    if (candidatoSelecionado) {
-      try {
-        if (novoStatus === 'Aprovado') {
-          // 1. Criar usuário no Supabase Auth
-          const { data: createResult, error: createError } = await supabase.rpc('create_auth_user', {
-            p_email: candidatoSelecionado.email,
-            p_password: candidatoSelecionado.email, // Usar email como senha temporária
-            p_name: candidatoSelecionado.nome,
-            p_tenant_id: candidatoSelecionado.tenant_id,
-            p_role: 'corretor'
-          });
+const handleMudarStatus = async (novoStatus: string) => {
+  if (!candidatoSelecionado) return;
 
-          if (createError || !createResult?.success) {
-            console.error('❌ Erro ao criar usuário:', createError);
-            toast.error('Erro ao criar usuário: ' + (createError?.message || 'Erro desconhecido'));
-            return;
-          }
+  try {
+    // 1. Verificar se usuário já existe
+    const { data: verifyUser, error: verifyErr } = await supabase
+      .from('user_profiles')
+      .select('*')
+      .eq('email', candidatoSelecionado.email)
+      .maybeSingle();
 
-          // 2. Adicionar como membro do tenant
-          const { data: memberResult, error: memberError } = await supabase.rpc('add_tenant_member', {
-            p_tenant_id: candidatoSelecionado.tenant_id,
-            p_user_id: createResult.user_id,
-            p_role: 'corretor',
-            p_name: candidatoSelecionado.nome,
-            p_email: candidatoSelecionado.email,
-            p_phone: candidatoSelecionado.telefone || null,
-            p_permissions: {}
-          });
+    // Tratar erro de verificação (exceto se for "not found")
+    if (verifyErr && verifyErr.code !== 'PGRST116') {
+      console.error('❌ Erro ao verificar usuário:', verifyErr);
+      toast.error('Erro ao verificar usuário existente');
+      return;
+    }
 
-          if (memberError || !memberResult?.success) {
-            console.error('❌ Erro ao adicionar membro:', memberError);
-            toast.error('Erro adicionar à equipe: ' + (memberError?.message || 'Erro desconhecido'));
-            return;
-          }
+    // 2. Lógica baseada no novo status
+    if (novoStatus === 'Aprovado') {
+      if (verifyUser) {
+        toast.error('Usuário já existe como corretor');
+        return;
+      }
 
-          toast.success('Candidato aprovado e adicionado à equipe!');
+      // Criar usuario e vincular ao tenant via fluxo de Acessos e Permissoes
+      const effectiveTenantId = candidatoSelecionado.tenant_id || tenantId;
+      if (!effectiveTenantId) {
+        toast.error('Tenant ID nao encontrado para adicionar o candidato a equipe');
+        return;
+      }
+
+      const cleanEmail = candidatoSelecionado.email.trim().toLowerCase();
+      const result = await createTenantMember(effectiveTenantId, {
+        email: cleanEmail,
+        password: cleanEmail,
+        name: candidatoSelecionado.nome,
+        phone: candidatoSelecionado.telefone || undefined,
+        role: 'corretor',
+        permissions: {
+          origem: 'recrutamento',
+          candidato_id: candidatoSelecionado.id
         }
-        
-        // Mudar status do candidato
-        await changeCandidateStatus(candidatoSelecionado.id, novoStatus, user?.email);
-        selectCandidato(null);
-        setModalOpen(false);
-      } catch (error) {
-        console.error('Error changing status:', error);
+      });
+
+
+      if (!result.success) {
+        toast.error(result.error || 'Erro ao adicionar candidato a equipe');
+        return;
+      }
+
+      toast.success('Candidato aprovado e adicionado à equipe!');
+
+    } else {
+      // Se mudou para status diferente de "Aprovado" e usuário existia
+      if (verifyUser) {
+        const { data: deleteUser, error: errDelete } = await supabase
+          .from('user_profiles')
+          .delete()
+          .eq('email', candidatoSelecionado.email)
+          .select()
+          .single();
+
+        if (errDelete) {
+          console.error('❌ Erro ao remover usuário:', errDelete);
+          toast.error('Erro ao remover usuário como corretor');
+          return;
+        }
+        toast.success('Usuário removido como corretor');
       }
     }
-  };
+
+    // 3. Mudar status do candidato (sempre executa)
+    await changeCandidateStatus(candidatoSelecionado.id, novoStatus, user?.email);
+    selectCandidato(null);
+    setModalOpen(false);
+
+  } catch (error) {
+    console.error('❌ Erro ao mudar status:', error);
+    toast.error('Erro ao processar mudança de status');
+  }
+};
 
   const formatTelefone = (value: string) => {
     const cleaned = value.replace(/\D/g, '');
@@ -248,13 +279,13 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
   };
 
   // Handle new candidate creation
-  const handleNovoCandidato = async (tenantId?: string) => {
+  const handleNovoCandidato = async (candidateTenantId?: string) => {
     try {
       // Validações completas antes de criar candidato
       const errors: Record<string, string> = {};
 
       // Validar tenantId
-      if (!tenantId) {
+      if (!candidateTenantId) {
         console.error('Tenant ID não encontrado');
         return;
       }
@@ -307,7 +338,7 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
         observacoes: novoFormData.observacoes?.trim() || undefined,
         fonte: novoFormData.fonte,
         creci: novoFormData.temCreci ? novoFormData.creci.trim() : undefined,
-        tenant_id: tenantId,
+        tenant_id: candidateTenantId,
       };
 
       await createCandidato(newCandidato);

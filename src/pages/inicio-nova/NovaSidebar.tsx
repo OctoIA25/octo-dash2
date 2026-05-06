@@ -7,6 +7,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Home,
   Bell,
+  CheckSquare2,
   BarChart3,
   TrendingUp,
   UserCheck,
@@ -24,6 +25,7 @@ import {
   Pencil,
   Settings,
   MapPin,
+  Sheet,
 } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { SidebarPermission } from '@/types/permissions';
@@ -83,6 +85,7 @@ const GROUPS: SidebarGroup[] = [
     items: [
       { id: 'gestao-equipe', label: 'Gestão de Equipe', icon: Users, route: '/gestao-equipe', permission: 'gestao-equipe' },
       { id: 'recrutamento', label: 'Recrutamento', icon: UserCheck, route: '/recrutamento', permission: 'recrutamento' },
+      { id: 'excel', label: 'Excel', icon: Sheet, route: '/excel', permission: 'excel' },
     ],
   },
   {
@@ -124,8 +127,6 @@ const GROUPS: SidebarGroup[] = [
   },
 ];
 
-const ALL_ITEMS: SidebarItem[] = GROUPS.flatMap((g) => g.items);
-
 function routeBase(route: string): string {
   return route.split('?')[0];
 }
@@ -133,7 +134,7 @@ function routeBase(route: string): string {
 export function NovaSidebar() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { tenantName, user, isOwner } = useAuthContext();
+  const { tenantName, user, isOwner, tenantId } = useAuthContext();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [query, setQuery] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
@@ -143,6 +144,8 @@ export function NovaSidebar() {
 
   const q = normalize(query);
   const isSearching = q.length > 0;
+
+  const ALL_ITEMS: SidebarItem[] = GROUPS.flatMap((g) => g.items);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

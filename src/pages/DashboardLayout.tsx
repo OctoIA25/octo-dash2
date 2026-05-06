@@ -33,7 +33,8 @@ const SIDEBAR_PERMISSION_ORDER: SidebarPermission[] = [
   'octo-chat',
   'integracoes',
   'central-leads',
-  'relatorios'
+  'relatorios',
+  'excel'
 ];
 
 const DEFAULT_ROUTE_BY_PERMISSION: Partial<Record<SidebarPermission, string>> = {
@@ -48,7 +49,8 @@ const DEFAULT_ROUTE_BY_PERMISSION: Partial<Record<SidebarPermission, string>> = 
   'octo-chat': '/octo-chat',
   integracoes: '/integracoes',
   'central-leads': '/central-leads',
-  relatorios: '/relatorios'
+  relatorios: '/relatorios',
+  'excel': '/excel'
 };
 
 // 🚀 LAZY LOADING - Páginas carregadas sob demanda
@@ -91,6 +93,7 @@ const EstudoMercadoPage = lazy(() => import('@/features/estudo-mercado/pages/Est
 const EstudoMercadoAgentePage = lazy(() => import('@/features/estudo-mercado/pages/EstudoMercadoAgentePage').then(m => ({ default: m.EstudoMercadoAgentePage })));
 const EstudoMercadoMetricasPage = lazy(() => import('@/features/estudo-mercado/pages/EstudoMercadoMetricasPage').then(m => ({ default: m.EstudoMercadoMetricasPage })));
 const NotificacoesPage = lazy(() => import('@/features/notificacoes/pages/NotificacoesPage').then(m => ({ default: m.NotificacoesPage })));
+const ExcelPage = lazy(() => import('@/features/excel/pages/ExcelPage').then(m => ({ default: m.ExcelPage })));
 
 // Loading Fallback para páginas individuais
 const PageLoader = () => (
@@ -415,11 +418,16 @@ const DashboardLayout = () => {
             element={<Navigate to={canAccess('estudo-mercado') ? '/estudo-mercado/avaliacao' : defaultAllowedRoute} replace />} 
           />
           
-          <Route 
-            path="admin-testes-gerais" 
-            element={<AdminTestesGeraisPage />} 
+          <Route
+            path="admin-testes-gerais"
+            element={<AdminTestesGeraisPage />}
           />
-          
+
+          <Route
+            path="excel"
+            element={canAccess('excel') ? <ExcelPage /> : <Navigate to={defaultAllowedRoute} replace />}
+          />
+
           <Route path="*" element={<Navigate to={defaultAllowedRoute} replace />} />
         </Routes>
       </Suspense>

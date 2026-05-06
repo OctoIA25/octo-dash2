@@ -3,13 +3,16 @@
  * Preserva o OutletContext (leads, onRefresh, isRefreshing) usado pelas páginas existentes.
  */
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import { NovaSidebar } from './NovaSidebar';
 import { NovoHeader } from './NovoHeader';
 import type { ProcessedLead } from '@/data/realLeadsProcessor';
 import { HeaderSlotProvider } from '@/contexts/HeaderSlotContext';
 import { NovoActionsProvider } from '@/contexts/NovoActionsContext';
+import { SupportButton } from '@/components/support/SupportButton';
+import { useAuthContext } from '@/contexts/AuthContext';
+import { SupportService } from '@/components/support/SupportService';
 
 export interface NovoLayoutContext {
   leads: ProcessedLead[];
@@ -26,6 +29,13 @@ interface NovoLayoutProps {
 
 export function NovoLayout({ leads, onRefresh, isRefreshing, children }: NovoLayoutProps) {
   const context: NovoLayoutContext = { leads, onRefresh, isRefreshing };
+  const { tenantId, user } = useAuthContext();
+
+  useEffect(() => {
+    if (user && tenantId) {
+      SupportService.setContext(user, tenantId);
+    }
+  }, [user, tenantId])
 
   return (
     <HeaderSlotProvider>
@@ -46,6 +56,15 @@ export function NovoLayout({ leads, onRefresh, isRefreshing, children }: NovoLay
               {children ? children : <Outlet context={context} />}
             </main>
           </div>
+          <SupportButton
+          position='bottom-right'
+          config={{
+            enabled: true,
+            collectSystemInfo: true,
+            allowScreenshots: true,
+            autoOpen: false
+          }}
+          />
         </div>
       </NovoActionsProvider>
     </HeaderSlotProvider>

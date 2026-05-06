@@ -19,6 +19,7 @@ const ALL_TENANT_FEATURES: { id: SidebarPermission; label: string; description: 
   { id: 'central-leads', label: 'Central de Leads', description: 'Leads das integrações' },
   { id: 'atividades', label: 'Atividades', description: 'Atividades e tarefas' },
   { id: 'relatorios', label: 'Relatórios', description: 'Relatórios e análises' },
+  { id: 'excel', label: 'Excel', description: 'Importar tabela do excel'},
 ];
 
 // Features padrão para novos tenants

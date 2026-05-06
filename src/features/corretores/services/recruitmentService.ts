@@ -74,6 +74,7 @@ export interface RecruitmentMetrics {
 }
 
 export interface SearchParams {
+  tenantId: string;
   query?: string;
   status?: string;
   cargo?: string;
@@ -90,8 +91,9 @@ export class RecruitmentService {
   }
 
   // CRUD Operations
-  async getCandidatos(params: SearchParams = {}): Promise<{ data: CandidatoComEtapas[]; count: number }> {
+  async getCandidatos(params: SearchParams): Promise<{ data: CandidatoComEtapas[]; count: number }> {
     const {
+      tenantId,
       query = '',
       status,
       cargo,
@@ -115,7 +117,8 @@ export class RecruitmentService {
             created_at,
             updated_at
           )
-        `, { count: 'exact' });
+        `, { count: 'exact' })
+        .eq('tenant_id', tenantId);
 
       // Apply filters
       if (query) {
@@ -151,7 +154,7 @@ export class RecruitmentService {
     }
   }
 
-  async getCandidatoById(id: string): Promise<CandidatoComEtapas | null> {
+  async getCandidatoById(id: string, tenantId: string): Promise<CandidatoComEtapas | null> {
     try {
       const { data, error } = await this.supabase
         .from('recruitment_candidates')
@@ -168,6 +171,7 @@ export class RecruitmentService {
           )
         `)
         .eq('id', id)
+        .eq('tenant_id', tenantId)
         .single();
 
       if (error) throw error;
@@ -183,11 +187,11 @@ export class RecruitmentService {
     }
   }
 
-  async createCandidato(candidato: CandidatoInsert): Promise<Candidato> {
+  async createCandidato(candidato: CandidatoInsert, tenantId: string): Promise<Candidato> {
     try {
       const { data, error } = await this.supabase
         .from('recruitment_candidates')
-        .insert(candidato)
+        .insert({ ...candidato, tenant_id: tenantId })
         .select()
         .single();
 
@@ -199,12 +203,13 @@ export class RecruitmentService {
     }
   }
 
-  async updateCandidato(id: string, updates: CandidatoUpdate): Promise<Candidato> {
+  async updateCandidato(id: string, updates: CandidatoUpdate, tenantId: string): Promise<Candidato> {
     try {
       const { data, error } = await this.supabase
         .from('recruitment_candidates')
         .update(updates)
         .eq('id', id)
+        .eq('tenant_id', tenantId)
         .select()
         .single();
 
@@ -216,12 +221,13 @@ export class RecruitmentService {
     }
   }
 
-  async deleteCandidato(id: string): Promise<void> {
+  async deleteCandidato(id: string, tenantId: string): Promise<void> {
     try {
       const { error } = await this.supabase
         .from('recruitment_candidates')
         .delete()
-        .eq('id', id);
+        .eq('id', id)
+        .eq('tenant_id', tenantId);
 
       if (error) throw error;
     } catch (error) {
@@ -279,10 +285,10 @@ export class RecruitmentService {
   }
 
   // Metrics and Analytics
-  async getMetrics(): Promise<RecruitmentMetrics> {
+  async getMetrics(tenantId: string): Promise<RecruitmentMetrics> {
     try {
       const { data, error } = await this.supabase
-        .rpc('get_recruitment_metrics');
+        .rpc('get_recruitment_metrics', { p_tenant_id: tenantId });
 
       if (error) throw error;
       return data?.[0] || {
@@ -302,11 +308,12 @@ export class RecruitmentService {
     }
   }
 
-  async getCandidatesByStatus(): Promise<Record<string, number>> {
+  async getCandidatesByStatus(tenantId: string): Promise<Record<string, number>> {
     try {
       const { data, error } = await this.supabase
         .from('recruitment_candidates')
         .select('status')
+        .eq('tenant_id', tenantId)
         .order('status');
 
       if (error) throw error;
@@ -323,11 +330,12 @@ export class RecruitmentService {
     }
   }
 
-  async getCandidatesByCargo(): Promise<Record<string, number>> {
+  async getCandidatesByCargo(tenantId: string): Promise<Record<string, number>> {
     try {
       const { data, error } = await this.supabase
         .from('recruitment_candidates')
         .select('cargo')
+        .eq('tenant_id', tenantId)
         .order('cargo');
 
       if (error) throw error;
@@ -344,7 +352,7 @@ export class RecruitmentService {
     }
   }
 
-  async getMonthlyMetrics(year: number = new Date().getFullYear()): Promise<any[]> {
+  async getMonthlyMetrics(tenantId: string, year: number = new Date().getFullYear()): Promise<any[]> {
     try {
       const startDate = new Date(year, 0, 1).toISOString();
       const endDate = new Date(year, 11, 31, 23, 59, 59).toISOString();
@@ -352,6 +360,7 @@ export class RecruitmentService {
       const { data, error } = await this.supabase
         .from('recruitment_candidates')
         .select('data_inscricao, status')
+        .eq('tenant_id', tenantId)
         .gte('data_inscricao', startDate)
         .lte('data_inscricao', endDate)
         .order('data_inscricao');
@@ -441,12 +450,13 @@ export class RecruitmentService {
   }
 
   // Fontes de Candidatos
-  async getCandidateSources(): Promise<Record<string, number>> {
+  async getCandidateSources(tenantId: string): Promise<Record<string, number>> {
     try {
       // Agora usando o campo 'fonte' direto da tabela
       const { data, error } = await this.supabase
         .from('recruitment_candidates')
-        .select('fonte, created_at');
+        .select('fonte, created_at')
+        .eq('tenant_id', tenantId);
 
       if (error) throw error;
 
@@ -479,11 +489,12 @@ export class RecruitmentService {
   }
 
   // Calcular métricas avançadas
-  async getAdvancedMetrics(): Promise<RecruitmentMetrics> {
+  async getAdvancedMetrics(tenantId: string): Promise<RecruitmentMetrics> {
     try {
       const { data: candidates, error } = await this.supabase
         .from('recruitment_candidates')
         .select('*')
+        .eq('tenant_id', tenantId)
         .order('created_at', { ascending: false });
 
       if (error) throw error;

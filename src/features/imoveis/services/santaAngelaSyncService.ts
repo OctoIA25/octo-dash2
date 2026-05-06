@@ -5,7 +5,13 @@
  */
 
 import { supabase } from '@/lib/supabaseClient';
-import { fetchSantaAngelaLeads, SantaAngelaLead, SantaAngelaRequestBody } from './santaAngelaService.ts';
+import {
+  SantaAngelaLead,
+  SantaAngelaConfig,
+  fetchSantaAngelaLeads,
+  fetchAllSantaAngelaLeads,
+  testSantaAngelaConnection
+} from './santaAngelaService';
 
 export interface SyncConfig {
   tenantId: string;
@@ -32,12 +38,24 @@ const mapSantaAngelaToLead = (
   santaAngelaLead: SantaAngelaLead,
   tenantId: string
 ): any => {
-  // Determinar temperatura baseada no status
+  // Mapear situação para status permitidos pela constraint
   const statusTitulo = santaAngelaLead.situacaocadastropessoa_titulo || '';
-  let temperatura = 'Morno';
-  if (statusTitulo.includes('EM ATENDIMENTO')) temperatura = 'Quente';
-  else if (statusTitulo.includes('EM NEGOCIACAO')) temperatura = 'Quente';
-  else if (statusTitulo.includes('FRI')) temperatura = 'Frio';
+  let status = 'Novos Leads'; // Status padrão permitido
+
+  // Mapear para valores que provavelmente existem na constraint
+  if (statusTitulo.includes('NOVO') || statusTitulo == null) status = 'Novos Leads';
+  else if (statusTitulo.includes('EM ATENDIMENTO')) status = 'Interação';
+  else if (statusTitulo.includes('VISITA')) status = 'Visita Agendada';
+  else if (statusTitulo.includes('EM NEGOCIACAO')) status = 'Negociação';
+  else if (statusTitulo.includes('PROPOSTA')) {
+    if (statusTitulo.includes('CRIADA')) status = 'Visita Realizada';
+    else if (statusTitulo.includes('ENVIADA')) status = 'Proposta Enviada';
+    else if (statusTitulo.includes('ASSINADA')) status = 'Proposta Assinada';
+    else status = 'Proposta'; // Default para Proposta
+  }
+  else if (statusTitulo.includes('VENDA')) status = 'Proposta Assinada';
+  else if (statusTitulo.includes('SEM CONTATO')) status = 'Novos Leads';
+  else status = 'Novos Leads'; // Default para situações não mapeadas
 
   return {
     tenant_id: tenantId,
@@ -46,7 +64,7 @@ const mapSantaAngelaToLead = (
     email: santaAngelaLead.email || null,
     source: 'Santa Angela',
     source_lead_id: santaAngelaLead.id, // ID único do Santa Angela
-    status: 'Novos Leads',
+    status: status,
     property_id: null,
     property_code: santaAngelaLead.cpfcnpj || null,
     property_type: santaAngelaLead.tipo || null,
@@ -64,7 +82,7 @@ const mapSantaAngelaToLead = (
       santa_angela_midia_titulo: santaAngelaLead.midia_titulo,
       santa_angela_midia_sigla: santaAngelaLead.midia_sigla,
       santa_angela_rd_uuid: santaAngelaLead.rd_uuid,
-      santa_angela_temperatura: temperatura,
+      santa_angela_temperatura: status,
     },
     visit_date: null,
     closing_date: null,
@@ -78,32 +96,36 @@ const mapSantaAngelaToLead = (
 };
 
 /**
- * Verifica quais leads já existem no banco
+ * Verifica quais leads já existem no banco (por telefone e source_lead_id)
  */
-const getExistingSantaAngelaIds = async (tenantId: string): Promise<Set<string>> => {
+const getExistingLeadsInfo = async (tenantId: string): Promise<{
+  phoneSet: Set<string>;
+  sourceIdSet: Set<string>;
+}> => {
   try {
     const { data, error } = await supabase
       .from('leads')
-      .select('source_lead_id')
+      .select('phone, source_lead_id')
       .eq('tenant_id', tenantId)
       .eq('source', 'Santa Angela');
 
     if (error) {
-      console.error('❌ Erro ao buscar IDs existentes:', error);
-      return new Set();
+      console.error('❌ Erro ao buscar leads existentes:', error);
+      return { phoneSet: new Set(), sourceIdSet: new Set() };
     }
 
-    const existingIds = new Set(data?.map(lead => lead.source_lead_id) || []);
-    
-    return existingIds;
+    const phoneSet = new Set(data?.map(lead => lead.phone).filter(phone => phone) || []);
+    const sourceIdSet = new Set(data?.map(lead => lead.source_lead_id) || []);
+
+    return { phoneSet, sourceIdSet };
   } catch (error) {
-    console.error('❌ Erro ao buscar IDs existentes:', error);
-    return new Set();
+    console.error('❌ Erro ao buscar leads existentes:', error);
+    return { phoneSet: new Set(), sourceIdSet: new Set() };
   }
 };
 
 /**
- * Insere novos leads no banco
+ * Insere novos leads no banco (INSERT simples)
  */
 const insertNewLeads = async (
   leadsToInsert: any[],
@@ -111,23 +133,43 @@ const insertNewLeads = async (
 ): Promise<number> => {
   if (leadsToInsert.length === 0) return 0;
 
-  try {
-    const { data, error } = await supabase
-      .from('leads')
-      .insert(leadsToInsert)
-      .select();
+  let insertedCount = 0;
 
-    if (error) {
-      console.error('❌ Erro ao inserir leads:', JSON.stringify(error, null, 2));
-      console.error('❌ Detalhes do erro:', error.message, error.code, error.hint);
-      return 0;
+  for (const lead of leadsToInsert) {
+    try {
+      // INSERT simples (já verificamos duplicatas antes)
+      const { error } = await supabase
+        .from('leads')
+        .insert(lead);
+
+      if (!error) {
+        insertedCount++;
+        console.log(`✅ Lead inserido: ${lead.name}`);
+      } else {
+        // Se falhar por telefone, tentar inserir sem telefone
+        if (error.message.includes('unique_phone_per_tenant')) {
+          console.log(`⚠️ Telefone duplicado, tentando sem telefone: ${lead.name}`);
+          const leadWithoutPhone = { ...lead, phone: null };
+          const { error: error2 } = await supabase
+            .from('leads')
+            .insert(leadWithoutPhone);
+
+          if (!error2) {
+            insertedCount++;
+            console.log(`✅ Lead inserido sem telefone: ${lead.name}`);
+          } else {
+            console.error('❌ Erro ao inserir lead mesmo sem telefone:', error2);
+          }
+        } else {
+          console.error('❌ Erro ao inserir lead:', error);
+        }
+      }
+    } catch (error) {
+      console.error('❌ Erro ao inserir lead:', error);
     }
-
-    return data?.length || 0;
-  } catch (error) {
-    console.error('❌ Erro ao inserir leads (catch):', error);
-    return 0;
   }
+
+  return insertedCount;
 };
 
 /**
@@ -193,8 +235,8 @@ export const syncSantaAngelaLeads = async (
   };
 
   try {
-    // 1. Buscar leads do Santa Angela
-    const santaAngelaLeads = await fetchSantaAngelaLeads(config.tenantId);
+    // 1. Buscar TODOS os leads do Santa Angela
+    const santaAngelaLeads = await fetchAllSantaAngelaLeads(config.tenantId);
     result.totalFetched = santaAngelaLeads.length;
 
     if (santaAngelaLeads.length === 0) {
@@ -203,19 +245,30 @@ export const syncSantaAngelaLeads = async (
       return result;
     }
 
-    // 2. Buscar IDs já existentes no banco
-    const existingIds = await getExistingSantaAngelaIds(config.tenantId);
+    // 2. Buscar leads já existentes no banco (telefone e source_id)
+    const { phoneSet, sourceIdSet } = await getExistingLeadsInfo(config.tenantId);
 
     // 3. Separar novos leads de existentes
     const leadsToInsert: any[] = [];
     const leadsToUpdate: any[] = [];
+    const skippedLeads: any[] = [];
 
     for (const saLead of santaAngelaLeads) {
       const mappedLead = mapSantaAngelaToLead(saLead, config.tenantId);
-      
-      if (existingIds.has(saLead.id)) {
+      const phone = mappedLead.phone;
+
+      // Verificar duplicatas por telefone e por source_id
+      const hasDuplicatePhone = phone && phoneSet.has(phone);
+      const hasDuplicateSourceId = sourceIdSet.has(saLead.id);
+
+      if (hasDuplicateSourceId) {
+        // Se existe por source_id, atualizar
         leadsToUpdate.push(mappedLead);
+      } else if (hasDuplicatePhone) {
+        // Se existe por telefone mas não por source_id, pular para evitar constraint
+        skippedLeads.push(mappedLead);
       } else {
+        // Lead novo, pode inserir
         leadsToInsert.push(mappedLead);
       }
     }

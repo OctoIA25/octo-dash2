@@ -19,6 +19,35 @@ const SUPABASE_AUTH_CONFIG = {
   }
 };
 
+type SupabaseClient = ReturnType<typeof createClient>;
+
+let supabaseForRefresh: SupabaseClient | null = null;
+
+const isJwtExpiredResponse = async (response: Response) => {
+  if (response.status !== 401) return false;
+
+  try {
+    const body = await response.clone().text();
+    return body.toLowerCase().includes('jwt expired');
+  } catch {
+    return false;
+  }
+};
+
+const fetchWithTokenRefresh: typeof fetch = async (input, init) => {
+  const retryInput = input instanceof Request ? input.clone() : input;
+  const response = await fetch(input, init);
+
+  if (!await isJwtExpiredResponse(response) || !supabaseForRefresh) {
+    return response;
+  }
+
+  const { error } = await supabaseForRefresh.auth.refreshSession();
+  if (error) return response;
+
+  return fetch(retryInput, init);
+};
+
 // =============================================================================
 // VALIDAÇÃO DE VARIÁVEIS DE AMBIENTE
 // =============================================================================
@@ -137,4 +166,11 @@ Chaves publishable (começam com "sb_") NÃO funcionam para PostgREST e causam e
   throw new Error('Supabase anon key invalid. Must be JWT (eyJ...).');
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, SUPABASE_AUTH_CONFIG);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  ...SUPABASE_AUTH_CONFIG,
+  global: {
+    fetch: fetchWithTokenRefresh,
+  },
+});
+
+supabaseForRefresh = supabase;

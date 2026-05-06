@@ -464,7 +464,7 @@ const LeadSectionContent = () => {
   const kpisSemanais = useMemo(() => {
     const calcularKPIsSemana = (inicio: Date, fim: Date) => {
       const leadsNaSemana = leads.filter(l => {
-        const dataLead = new Date(l.data_lead);
+        const dataLead = new Date(l.data_entrada);
         return dataLead >= inicio && dataLead <= fim;
       });
       
@@ -549,28 +549,28 @@ const LeadSectionContent = () => {
     switch (periodoFiltro) {
       case 'hoje':
         dataLimite = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
-        return meusLeadsBase.filter(lead => new Date(lead.data_lead) >= dataLimite);
+        return meusLeadsBase.filter(lead => new Date(lead.data_entrada) >= dataLimite);
       
       case '7dias':
         dataLimite = new Date(agora);
         dataLimite.setDate(agora.getDate() - 7);
-        return meusLeadsBase.filter(lead => new Date(lead.data_lead) >= dataLimite);
+        return meusLeadsBase.filter(lead => new Date(lead.data_entrada) >= dataLimite);
       
       case '30dias':
         dataLimite = new Date(agora);
         dataLimite.setDate(agora.getDate() - 30);
-        return meusLeadsBase.filter(lead => new Date(lead.data_lead) >= dataLimite);
+        return meusLeadsBase.filter(lead => new Date(lead.data_entrada) >= dataLimite);
       
       case '90dias':
         dataLimite = new Date(agora);
         dataLimite.setDate(agora.getDate() - 90);
-        return meusLeadsBase.filter(lead => new Date(lead.data_lead) >= dataLimite);
+        return meusLeadsBase.filter(lead => new Date(lead.data_entrada) >= dataLimite);
       
       case 'personalizado':
         if (!dataInicio && !dataFim) return meusLeadsBase;
         
         return meusLeadsBase.filter(lead => {
-          const dataLead = new Date(lead.data_lead);
+          const dataLead = new Date(lead.data_entrada);
           const inicio = dataInicio ? new Date(dataInicio) : new Date(0);
           const fim = dataFim ? new Date(dataFim) : new Date();
           
@@ -804,12 +804,12 @@ const LeadSectionContent = () => {
             ) : (
               <div className="space-y-2">
                 {meusLeads.map((lead) => (
-                  <Card key={lead.id} className="hover:shadow-md transition-shadow cursor-pointer">
+                  <Card key={lead.id_lead} className="hover:shadow-md transition-shadow cursor-pointer">
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
                           <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-1 dark:text-slate-100">
-                            {lead.nome}
+                            {lead.nome_lead}
                           </h3>
                           <div className="flex items-center gap-3 text-sm text-gray-600 dark:text-gray-400 dark:text-slate-400">
                             <span>{lead.etapa_atual || 'Novo Lead'}</span>

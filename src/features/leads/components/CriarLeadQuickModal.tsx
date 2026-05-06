@@ -127,6 +127,7 @@ export const CriarLeadQuickModal = ({
           property_code: form.interest_reference.trim() || null,
           comments: form.message.trim() || null,
           temperature: form.temperature,
+          participa_bolsao: form.participa_bolsao,
           updated_at: new Date().toISOString(),
         };
 

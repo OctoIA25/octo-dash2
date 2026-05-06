@@ -230,7 +230,7 @@ export async function calcularMetricasCorretoresFromLeads(
     }
 
     const { data: leads, error } = await query;
-
+    console.log('query  ', leads)
     if (error) throw error;
     if (!leads || leads.length === 0) {
       return [];

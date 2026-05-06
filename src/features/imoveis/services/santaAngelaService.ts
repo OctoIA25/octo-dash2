@@ -1,7 +1,7 @@
 /**
  * 🏠 SERVIÇO DE INTEGRAÇÃO COM SANTA ANGELA
  * Busca e processa imóveis/leads do site Santa Angela
- * 
+ *
  * Integração externa para sincronização de dados
  */
 
@@ -99,16 +99,18 @@ const getHeaders = (apiKey?: string) => ({
 /**
  * Busca todos os leads do Santa Angela
  */
-export const fetchSantaAngelaLeads = async (
+/**
+ * Busca leads do Santa Angela (apenas uma página)
+ */
+export const fetchAllSantaAngelaLeads = async (
   tenantId: string,
-  requestBody?: SantaAngelaRequestBody,
   config?: Partial<SantaAngelaConfig>
 ): Promise<SantaAngelaLead[]> => {
   try {
     const finalConfig = { ...SANTA_ANGELA_CONFIG, tenantId, ...config };
-    
-    // Body padrão se não fornecido
-    const body: SantaAngelaRequestBody = requestBody || {
+
+    // Body para buscar uma página
+    const body: SantaAngelaRequestBody = {
       filtro: {
         cliente_novo: "1",
         cliente_atendimento: "1",
@@ -130,14 +132,77 @@ export const fetchSantaAngelaLeads = async (
       },
       paginacao: {
         paginaAtual: 1,
-        porPagina: 30
+        porPagina: 100  // Apenas uma página
       },
       ordenacao: {
         coluna: "PESSOA.nome",
         tipo: "ASC"
       }
     };
-    
+
+    const response = await fetch(finalConfig.baseUrl, {
+      method: 'POST',
+      headers: getHeaders(finalConfig.apiKey),
+      body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const leads = data.prospects || [];
+
+    return leads;
+
+  } catch (error) {
+    console.error('❌ Erro ao buscar leads:', error);
+    throw error;
+  }
+};
+
+/**
+ * Busca leads do Santa Angela (função original mantida)
+ */
+export const fetchSantaAngelaLeads = async (
+  tenantId: string,
+  requestBody?: SantaAngelaRequestBody,
+  config?: Partial<SantaAngelaConfig>
+): Promise<SantaAngelaLead[]> => {
+  try {
+    const finalConfig = { ...SANTA_ANGELA_CONFIG, tenantId, ...config };
+
+    // Body padrão se não fornecido - otimizado para buscar mais leads
+    const body: SantaAngelaRequestBody = requestBody || {
+      filtro: {
+        cliente_novo: "1",           // Todos novos
+        cliente_atendimento: "1",    // Em atendimento
+        cliente_banco_compradores: "1",    // Banco compradores
+        cliente_banco_nao_compradores: "1", // Banco não compradores
+        iniciado_com: "",            // Todos iniciados com
+        cliente_termometro_frio: "1",      // Frios
+        cliente_termometro_morno: "1",      // Mornos
+        cliente_termometro_quente: "1",     // Quentes
+        query: "",                  // Sem filtro específico
+        cadastradas_no_mes: "0",    // Todas datas
+        sem_contato_mais_uma_semana: "0",  // Incluir sem contato
+        com_atividade_agendada_proximo_trinta_dias: "0", // Todas
+        customizado: "0",           // Não customizado
+        filtro_customizado: null,
+        data_vigencia_avaliacao_vencida: "0",  // Todas
+        data_vigencia_avaliacao_pendente: "0", // Todas
+        possui_propostas_com_data_vigencia_avaliacao_pendente: "0" // Todas
+      },
+      paginacao: {
+        paginaAtual: 1,
+        porPagina: 100  // Aumentado para 100 leads por requisição
+      },
+      ordenacao: {
+        coluna: "PESSOA.nome",
+        tipo: "ASC"
+      }
+    };
+
     const response = await fetch(finalConfig.baseUrl, {
       method: 'POST',
       headers: getHeaders(finalConfig.apiKey),
@@ -149,11 +214,11 @@ export const fetchSantaAngelaLeads = async (
     }
 
     const data = await response.json();
-    
-    
+
+
     // Extrair array de leads da resposta (API retorna 'prospects')
     const leadsArray = data.prospects || [];
-    
+
     return leadsArray;
   } catch (error) {
     throw error;
@@ -168,9 +233,9 @@ export const syncSantaAngelaLeads = async (
   config?: Partial<SantaAngelaConfig>
 ): Promise<{ synced: number; errors: number }> => {
   try {
-    
-    const leads = await fetchSantaAngelaLeads(tenantId, undefined, config);    
-    
+
+    const leads = await fetchSantaAngelaLeads(tenantId, undefined, config);
+
     return {
       synced: leads.length,
       errors: 0,
@@ -192,7 +257,7 @@ export const testSantaAngelaConnection = async (
 ): Promise<boolean> => {
   try {
     const finalConfig = { ...SANTA_ANGELA_CONFIG, ...config };
-    
+
     const response = await fetch(finalConfig.baseUrl, {
       method: 'POST',
       headers: getHeaders(finalConfig.apiKey),
@@ -216,13 +281,13 @@ export const testSantaAngelaConnection = async (
     });
 
     const isConnected = response.ok;
-    
+
     if (isConnected) {
       console.log('✅ Conexão com Santa Angela estabelecida');
     } else {
       console.error('❌ Falha na conexão:', response.status);
     }
-    
+
     return isConnected;
   } catch (error) {
     return false;

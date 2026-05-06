@@ -291,6 +291,10 @@
     background-color: hsl(var(--muted-foreground));
   }
 
+  .scroll-bar-report::-webkit-scrollbar {
+    display: none;
+  }
+
   /* Classes legadas mapeadas para novas (compatibilidade) */
   .bg-theme-primary { background-color: hsl(var(--bg-primary)); }
   .bg-theme-secondary { background-color: hsl(var(--bg-secondary)); }

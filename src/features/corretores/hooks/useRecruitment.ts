@@ -2,9 +2,10 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { recruitmentService, type CandidatoComEtapas, type RecruitmentMetrics, type SearchParams } from '../services/recruitmentService';
 
 export interface UseRecruitmentOptions {
+  tenantId: string;
   autoRefresh?: boolean;
   refreshInterval?: number;
-  initialParams?: SearchParams;
+  initialParams?: Omit<SearchParams, 'tenantId'>;
 }
 
 export interface UseRecruitmentReturn {
@@ -13,24 +14,24 @@ export interface UseRecruitmentReturn {
   candidatoSelecionado: CandidatoComEtapas | null;
   metrics: RecruitmentMetrics | null;
   monthlyMetrics: any[];
-  
+
   // Loading states
   isLoading: boolean;
   isLoadingMetrics: boolean;
   isRefreshing: boolean;
-  
+
   // Pagination
   currentPage: number;
   totalPages: number;
   totalCount: number;
   itemsPerPage: number;
-  
+
   // Search and filters
   searchTerm: string;
   filtroStatus: string;
   filtroCargo: string;
   filtroExperiencia: string;
-  
+
   // Actions
   refresh: () => Promise<void>;
   loadCandidatos: (params?: SearchParams) => Promise<void>;
@@ -39,22 +40,22 @@ export interface UseRecruitmentReturn {
   updateCandidato: (id: string, updates: any) => Promise<void>;
   deleteCandidato: (id: string) => Promise<void>;
   changeCandidateStatus: (id: string, status: string, responsavel?: string, notas?: string) => Promise<void>;
-  
+
   // Pagination actions
   setCurrentPage: (page: number) => void;
   nextPage: () => void;
   previousPage: () => void;
-  
+
   // Filter actions
   setSearchTerm: (term: string) => void;
   setFiltroStatus: (status: string) => void;
   setFiltroCargo: (cargo: string) => void;
   setFiltroExperiencia: (experiencia: string) => void;
   clearFilters: () => void;
-  
+
   // Selection
   selectCandidato: (candidato: CandidatoComEtapas | null) => void;
-  
+
   // Computed values
   candidatosFiltrados: CandidatoComEtapas[];
   candidatosPorStatus: Record<string, number>;
@@ -64,24 +65,24 @@ export interface UseRecruitmentReturn {
   filtrosAtivos: boolean;
 }
 
-export const useRecruitment = ({ autoRefresh = false, refreshInterval = 60000, initialParams = {} }: UseRecruitmentOptions = {}): UseRecruitmentReturn => {
+export const useRecruitment = ({ tenantId, autoRefresh = false, refreshInterval = 60000, initialParams }: UseRecruitmentOptions): UseRecruitmentReturn => {
 
   // State
   const [candidatos, setCandidatos] = useState<CandidatoComEtapas[]>([]);
   const [candidatoSelecionado, setCandidatoSelecionado] = useState<CandidatoComEtapas | null>(null);
   const [metrics, setMetrics] = useState<RecruitmentMetrics | null>(null);
   const [monthlyMetrics, setMonthlyMetrics] = useState<any[]>([]);
-  
+
   // Loading states
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMetrics, setIsLoadingMetrics] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  
+
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const itemsPerPage = 10;
-  
+
   // Search and filters
   const [searchTerm, setSearchTerm] = useState('');
   const [filtroStatus, setFiltroStatus] = useState('todos');
@@ -90,18 +91,18 @@ export const useRecruitment = ({ autoRefresh = false, refreshInterval = 60000, i
 
   // Computed values
   const totalPages = useMemo(() => Math.ceil(totalCount / itemsPerPage), [totalCount, itemsPerPage]);
-  
+
   const candidatosFiltrados = useMemo(() => {
     return candidatos.filter(candidato => {
-      const matchSearch = searchTerm === '' || 
+      const matchSearch = searchTerm === '' ||
         candidato.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
         candidato.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
         candidato.cargo.toLowerCase().includes(searchTerm.toLowerCase());
-      
+
       const matchStatus = filtroStatus === 'todos' || candidato.status === filtroStatus;
       const matchCargo = filtroCargo === 'todos' || candidato.cargo === filtroCargo;
       const matchExperiencia = filtroExperiencia === 'todos' || candidato.experiencia === filtroExperiencia;
-      
+
       return matchSearch && matchStatus && matchCargo && matchExperiencia;
     });
   }, [candidatos, searchTerm, filtroStatus, filtroCargo, filtroExperiencia]);
@@ -129,14 +130,14 @@ export const useRecruitment = ({ autoRefresh = false, refreshInterval = 60000, i
   const loadCandidateSources = useCallback(async () => {
     setIsLoadingSources(true);
     try {
-      const sources = await recruitmentService.getCandidateSources();
+      const sources = await recruitmentService.getCandidateSources(tenantId);
       setCandidateSources(sources);
     } catch (error) {
       console.error('Error loading candidate sources:', error);
     } finally {
       setIsLoadingSources(false);
     }
-  }, [recruitmentService]);
+  }, [tenantId]);
 
   // Carregar fontes quando candidatos mudarem
   useEffect(() => {
@@ -153,8 +154,9 @@ export const useRecruitment = ({ autoRefresh = false, refreshInterval = 60000, i
   const loadCandidatos = useCallback(async (params?: SearchParams) => {
     try {
       setIsLoading(true);
-      
+
       const searchParams: SearchParams = {
+        tenantId,
         limit: itemsPerPage,
         offset: (currentPage - 1) * itemsPerPage,
         ...params
@@ -178,21 +180,21 @@ export const useRecruitment = ({ autoRefresh = false, refreshInterval = 60000, i
 
   const loadCandidatoById = useCallback(async (id: string) => {
     try {
-      const candidato = await recruitmentService.getCandidatoById(id);
+      const candidato = await recruitmentService.getCandidatoById(id, tenantId);
       setCandidatoSelecionado(candidato);
       return candidato;
     } catch (error) {
       console.error('Error loading candidate by ID:', error);
       return null;
     }
-  }, []);
+  }, [tenantId]);
 
   const loadMetrics = useCallback(async () => {
     try {
       setIsLoadingMetrics(true);
       const [metricsData, monthlyData] = await Promise.all([
-        recruitmentService.getAdvancedMetrics(),
-        recruitmentService.getMonthlyMetrics()
+        recruitmentService.getAdvancedMetrics(tenantId),
+        recruitmentService.getMonthlyMetrics(tenantId)
       ]);
       setMetrics(metricsData);
       setMonthlyMetrics(monthlyData);
@@ -201,7 +203,7 @@ export const useRecruitment = ({ autoRefresh = false, refreshInterval = 60000, i
     } finally {
       setIsLoadingMetrics(false);
     }
-  }, []);
+  }, [tenantId]);
 
   const refresh = useCallback(async () => {
     setIsRefreshing(true);
@@ -213,30 +215,24 @@ export const useRecruitment = ({ autoRefresh = false, refreshInterval = 60000, i
     } finally {
       setIsRefreshing(false);
     }
-  }, [loadCandidatos, loadMetrics]);
+  }, [loadCandidatos, loadMetrics, tenantId]);
 
   // CRUD operations
   const createCandidato = useCallback(async (candidatoData: any) => {
     try {
-      // Add tenant_id and created_by from auth
-      const newCandidato = {
-        ...candidatoData,
-        // tenant_id and created_by will be added by RLS policy
-      };
-
-      await recruitmentService.createCandidato(newCandidato);
+      await recruitmentService.createCandidato(candidatoData, tenantId);
       await refresh();
     } catch (error) {
       console.error('Error creating candidate:', error);
       throw error;
     }
-  }, [refresh]);
+  }, [refresh, tenantId]);
 
   const updateCandidato = useCallback(async (id: string, updates: any) => {
     try {
-      await recruitmentService.updateCandidato(id, updates);
+      await recruitmentService.updateCandidato(id, updates, tenantId);
       await refresh();
-      
+
       // Update selected candidate if it's the one being edited
       if (candidatoSelecionado?.id === id) {
         await loadCandidatoById(id);
@@ -245,13 +241,13 @@ export const useRecruitment = ({ autoRefresh = false, refreshInterval = 60000, i
       console.error('Error updating candidate:', error);
       throw error;
     }
-  }, [refresh, candidatoSelecionado, loadCandidatoById]);
+  }, [refresh, candidatoSelecionado, loadCandidatoById, tenantId]);
 
   const deleteCandidato = useCallback(async (id: string) => {
     try {
-      await recruitmentService.deleteCandidato(id);
+      await recruitmentService.deleteCandidato(id, tenantId);
       await refresh();
-      
+
       // Clear selection if deleted candidate was selected
       if (candidatoSelecionado?.id === id) {
         setCandidatoSelecionado(null);
@@ -260,18 +256,18 @@ export const useRecruitment = ({ autoRefresh = false, refreshInterval = 60000, i
       console.error('Error deleting candidate:', error);
       throw error;
     }
-  }, [refresh, candidatoSelecionado]);
+  }, [refresh, candidatoSelecionado, tenantId]);
 
   const changeCandidateStatus = useCallback(async (
-    id: string, 
-    status: string, 
-    responsavel?: string, 
+    id: string,
+    status: string,
+    responsavel?: string,
     notas?: string
   ) => {
     try {
       await recruitmentService.changeCandidateStatus(id, status, responsavel, notas);
       await refresh();
-      
+
       // Update selected candidate if it's the one being updated
       if (candidatoSelecionado?.id === id) {
         await loadCandidatoById(id);
@@ -280,7 +276,7 @@ export const useRecruitment = ({ autoRefresh = false, refreshInterval = 60000, i
       console.error('Error changing candidate status:', error);
       throw error;
     }
-  }, [refresh, candidatoSelecionado, loadCandidatoById]);
+  }, [refresh, candidatoSelecionado, loadCandidatoById, tenantId]);
 
   // Pagination actions
   const nextPage = useCallback(() => {
@@ -318,21 +314,21 @@ export const useRecruitment = ({ autoRefresh = false, refreshInterval = 60000, i
   useEffect(() => {
     const loadData = async () => {
       await Promise.all([
-        loadCandidatos(initialParams),
+        loadCandidatos({ ...initialParams, tenantId }),
         loadMetrics()
       ]);
       setIsLoading(false);
     };
 
     loadData();
-  }, []); // Only run once on mount
+  }, [tenantId]); // Only run once on mount
 
   // Load candidates when pagination or filters change
   useEffect(() => {
     if (!isLoading) { // Avoid double loading on initial mount
       loadCandidatos();
     }
-  }, [currentPage, searchTerm, filtroStatus, filtroCargo, filtroExperiencia]);
+  }, [currentPage, searchTerm, filtroStatus, filtroCargo, filtroExperiencia, tenantId]);
 
   // Auto-refresh
   useEffect(() => {
@@ -351,24 +347,24 @@ export const useRecruitment = ({ autoRefresh = false, refreshInterval = 60000, i
     candidatoSelecionado,
     metrics,
     monthlyMetrics,
-    
+
     // Loading states
     isLoading,
     isLoadingMetrics,
     isRefreshing,
-    
+
     // Pagination
     currentPage,
     totalPages,
     totalCount,
     itemsPerPage,
-    
+
     // Search and filters
     searchTerm,
     filtroStatus,
     filtroCargo,
     filtroExperiencia,
-    
+
     // Actions
     refresh,
     loadCandidatos,
@@ -377,22 +373,22 @@ export const useRecruitment = ({ autoRefresh = false, refreshInterval = 60000, i
     updateCandidato,
     deleteCandidato,
     changeCandidateStatus,
-    
+
     // Pagination actions
     setCurrentPage,
     nextPage,
     previousPage,
-    
+
     // Filter actions
     setSearchTerm,
     setFiltroStatus,
     setFiltroCargo,
     setFiltroExperiencia,
     clearFilters,
-    
+
     // Selection
     selectCandidato,
-    
+
     // Computed values
     candidatosFiltrados,
     candidatosPorStatus,

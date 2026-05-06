@@ -29,7 +29,8 @@ export type SidebarPermission =
   | 'integracoes'     // Integrações
   | 'central-leads'   // Central de Leads
   | 'atividades'      // Atividades
-  | 'relatorios';     // Relatórios
+  | 'relatorios'      // Relatórios
+  | 'excel' // Excel
 
 // Mantendo compatibilidade com MenuPermission antiga
 export type MenuPermission = 
@@ -41,7 +42,8 @@ export type MenuPermission =
   | 'corretores-gestao'
   | 'corretores'
   | 'agentes-ia'
-  | 'configuracoes';
+  | 'configuracoes'
+  | 'excel';
 
 export interface UserPermissions {
   userId: string;
@@ -81,23 +83,23 @@ export interface PermissionsConfig {
 // Owner: Acesso total a tudo
 export const OWNER_SIDEBAR_PERMISSIONS: SidebarPermission[] = [
   'leads', 'notificacoes', 'metricas', 'estudo-mercado', 'recrutamento', 'gestao-equipe',
-  'imoveis', 'agentes-ia', 'octo-chat', 'integracoes', 'central-leads', 'atividades', 'relatorios'
+  'imoveis', 'agentes-ia', 'octo-chat', 'integracoes', 'central-leads', 'atividades', 'relatorios', 'excel'
 ];
 
 // Admin: Acesso total ao tenant
 export const ADMIN_SIDEBAR_PERMISSIONS: SidebarPermission[] = [
   'leads', 'notificacoes', 'metricas', 'estudo-mercado', 'recrutamento', 'gestao-equipe',
-  'imoveis', 'agentes-ia', 'octo-chat', 'integracoes', 'central-leads', 'atividades', 'relatorios'
+  'imoveis', 'agentes-ia', 'octo-chat', 'integracoes', 'central-leads', 'atividades', 'relatorios', 'excel'
 ];
 
 // Team Leader: Acesso intermediário
 export const TEAM_LEADER_SIDEBAR_PERMISSIONS: SidebarPermission[] = [
-  'leads', 'notificacoes', 'metricas', 'estudo-mercado', 'gestao-equipe', 'imoveis', 'octo-chat'
+  'leads', 'notificacoes', 'metricas', 'estudo-mercado', 'gestao-equipe', 'imoveis', 'octo-chat', 'excel'
 ];
 
 // Corretor: Acesso restrito (bloqueado por padrão em várias áreas)
 export const CORRETOR_SIDEBAR_PERMISSIONS: SidebarPermission[] = [
-  'leads', 'notificacoes', 'metricas', 'estudo-mercado', 'imoveis', 'octo-chat'
+  'leads', 'notificacoes', 'metricas', 'estudo-mercado', 'imoveis', 'octo-chat', 'excel'
 ];
 
 // Abas bloqueadas por padrão para corretores
@@ -107,7 +109,7 @@ export const CORRETOR_BLOCKED_SECTIONS: SidebarPermission[] = [
   'central-leads',   // ❌ Central de Leads
   'relatorios',      // ❌ Relatórios
   'recrutamento',    // ❌ Recrutamento
-  'gestao-equipe'    // ❌ Gestão de Equipe
+  'gestao-equipe',   // ❌ Gestão de Equipe
 ];
 
 // ========== PERMISSÕES LEGADAS (compatibilidade) ==========
@@ -153,7 +155,8 @@ export const MENU_LABELS: Record<MenuPermission, string> = {
   'corretores-gestao': 'Corretores',
   'corretores': 'Corretores Gráficos',
   'agentes-ia': 'Agentes de IA',
-  'configuracoes': 'Configurações'
+  'configuracoes': 'Configurações',
+  'excel' : 'Excel',
 };
 
 // Ícones para os menus (usando nome dos ícones do lucide-react)
@@ -166,6 +169,7 @@ export const MENU_ICONS: Record<MenuPermission, string> = {
   'corretores-gestao': 'Users',
   'corretores': 'UserCheck',
   'agentes-ia': 'Bot',
-  'configuracoes': 'Settings'
+  'configuracoes': 'Settings',
+  'excel': 'FileSpreadsheet'
 };
 

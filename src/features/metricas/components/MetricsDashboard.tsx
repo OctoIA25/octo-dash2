@@ -664,34 +664,19 @@ export const MetricsDashboard = () => {
 
     }
 
-
-
     if (corretoresIndividuaisReais !== null && corretoresIndividuaisReais.length > 0) {
-
       return corretoresIndividuaisReais.map((corretor) => {
-
         const tempoReal = metricasCorretoresReais.get(corretor.nome);
 
-
-
         return {
-
           ...corretor,
-
           kpis: {
-
             ...corretor.kpis,
-
             tempoMedioResposta: tempoReal ?? corretor.kpis.tempoMedioResposta,
-
           },
-
         };
-
       });
-
     }
-
 
 
     return corretoresData.map((corretor) => {
@@ -1575,7 +1560,6 @@ export const MetricsDashboard = () => {
                 <div className="space-y-3">
 
                   {metricasEquipes.map((equipe) => {
-
                     const isExcelente = equipe.tempoMedio <= 10;
 
                     const isBom = equipe.tempoMedio > 10 && equipe.tempoMedio <= 15;

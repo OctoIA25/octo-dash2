@@ -154,7 +154,8 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
     'octo-chat': true,
     integracoes: false, // Bloqueado por padrão para corretores
     'central-leads': false, // Bloqueado por padrão para corretores
-    relatorios: false // Bloqueado por padrão para corretores
+    relatorios: false, // Bloqueado por padrão para corretores
+    'excel': false // Bloqueado por padrão para corretores
   });
   
   // Estados para modal de edição de permissões
@@ -288,7 +289,8 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
         'octo-chat': true,
         integracoes: true,
         'central-leads': true,
-        relatorios: true
+        relatorios: true,
+        'excel': true
       });
     } else if (newMemberRole === 'team_leader') {
       // Team Leader tem acesso intermediário
@@ -304,7 +306,8 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
         'octo-chat': true,
         integracoes: false,
         'central-leads': false,
-        relatorios: false
+        relatorios: false,
+        'excel': true
       });
     } else {
       // Corretor tem restrições padrão (BLOQUEADO nas áreas sensíveis)
@@ -320,7 +323,8 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
         'octo-chat': true,
         integracoes: false,   // ❌ Bloqueado
         'central-leads': false, // ❌ Bloqueado
-        relatorios: false     // ❌ Bloqueado
+        relatorios: false,     // ❌ Bloqueado
+        'excel': false
       });
     }
   }, [newMemberRole]);
@@ -494,7 +498,8 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
       'octo-chat': true,
       integracoes: member.role === 'admin',
       'central-leads': member.role === 'admin',
-      relatorios: member.role === 'admin'
+      relatorios: member.role === 'admin',
+      'excel': member.role === 'admin'
     };
     
     // Se tem permissões salvas, usar elas
@@ -1647,7 +1652,8 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                       { id: 'octo-chat', label: 'Octo Chat', icon: '💬' },
                       { id: 'integracoes', label: 'Integrações', icon: '🔌', restricted: true },
                       { id: 'central-leads', label: 'Central Leads', icon: '📥', restricted: true },
-                      { id: 'relatorios', label: 'Relatórios', icon: '📄', restricted: true }
+                      { id: 'relatorios', label: 'Relatórios', icon: '📄', restricted: true },
+                      { id: 'excel', label: 'Excel', icon: '📝', restricted: true }
                     ].map((section) => (
                       <label
                         key={section.id}
@@ -2024,7 +2030,8 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                   { id: 'octo-chat', label: 'Octo Chat', icon: '💬' },
                   { id: 'integracoes', label: 'Integrações', icon: '🔌', restricted: true },
                   { id: 'central-leads', label: 'Central Leads', icon: '📥', restricted: true },
-                  { id: 'relatorios', label: 'Relatórios', icon: '📄', restricted: true }
+                  { id: 'relatorios', label: 'Relatórios', icon: '📄', restricted: true },
+                  { id: 'excel', label: 'Excel', icon: '📝', restricted: true }
                 ].map((section) => (
                   <label
                     key={section.id}

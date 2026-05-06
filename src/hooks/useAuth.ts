@@ -559,3 +559,5 @@ export const useAuth = () => {
     tenantId: authState.user?.tenantId
   };
 };
+
+export default useAuth;
