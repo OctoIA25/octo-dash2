@@ -16,13 +16,15 @@ const queryClient = new QueryClient({
   },
 });
 
+const showReactQueryDevtools = import.meta.env.DEV;
+
 // Componente que envolve toda a aplicação com poder de cache
 export function QueryProvider({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       {children}
       {/* Ferramenta de debug - só aparece em desenvolvimento */}
-      <ReactQueryDevtools initialIsOpen={false} />
+      {showReactQueryDevtools && <ReactQueryDevtools initialIsOpen={false} />}
     </QueryClientProvider>
   );
 }

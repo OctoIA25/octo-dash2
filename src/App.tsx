@@ -46,6 +46,8 @@ const queryClient = new QueryClient({
   }
 });
 
+const showReactQueryDevtools = import.meta.env.DEV;
+
 const AppContent = () => {
   
   const { isAuthenticated, isLoading, isOwner, tenantId } = useAuthContext();
@@ -116,7 +118,7 @@ const App = () => {
       storageKey="octo-dash-theme-v2"
     >
       <QueryClientProvider client={queryClient}>
-        <ReactQueryDevtools/>
+        {showReactQueryDevtools && <ReactQueryDevtools />}
         <TooltipProvider>
           <AuthProvider>
             <NotificationsProvider>
