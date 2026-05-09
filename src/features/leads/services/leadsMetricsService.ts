@@ -75,6 +75,7 @@ function kenloLeadToCRMLead(kenloLead: Record<string, unknown>): CRMLead {
     assigned_at: (kenloLead.created_at as string) || new Date().toISOString(),
     created_at: (kenloLead.created_at as string) || new Date().toISOString(),
     updated_at: (kenloLead.updated_at as string) || new Date().toISOString(),
+    first_response_at: (kenloLead.first_response_at as string) || null,
   };
 }
 

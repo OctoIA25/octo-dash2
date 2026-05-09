@@ -59,6 +59,7 @@ export interface CRMLead {
   assigned_at: string;
   created_at: string;
   updated_at: string;
+  first_response_at?: string | null;
 }
 
 /**
@@ -101,6 +102,27 @@ export interface KanbanLead {
 }
 
 const LEADS_TABLE = 'leads';
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isUuid(value: string): boolean {
+  return UUID_REGEX.test(value);
+}
+
+async function setFirstResponseAtIfMissing(
+  tableName: typeof LEADS_TABLE | 'kenlo_leads',
+  leadId: string,
+  firstResponseAt: string
+): Promise<void> {
+  const { error } = await supabase
+    .from(tableName)
+    .update({ first_response_at: firstResponseAt })
+    .eq('id', leadId)
+    .is('first_response_at', null);
+
+  if (error) {
+    console.warn(`⚠️ Status atualizado, mas não foi possível gravar first_response_at em ${tableName}:`, error);
+  }
+}
 
 /**
  * Mapeamento de stage do kenlo_leads para status do CRM
@@ -486,26 +508,44 @@ export async function atualizarStatusLeadCRM(
 ): Promise<{ success: boolean; message: string }> {
   try {
     const statusParaSalvar = mapKanbanSlugToStatus(novoStatus);
+    const nowIso = new Date().toISOString();
 
 
     // Tentar atualizar na tabela leads primeiro
     const updateData: Record<string, any> = {
       status: statusParaSalvar,
-      updated_at: new Date().toISOString()
+      updated_at: nowIso
     };
+    
+    const isFirstResponse = ![
+      'Novos Leads',
+      'Novos Proprietários',
+    ].includes(statusParaSalvar);
 
     if (statusParaSalvar === 'Proposta Assinada') {
-      updateData.closing_date = new Date().toISOString();
+      updateData.closing_date = nowIso;
     }
 
-    const { error: crmError, count: crmCount } = await supabase
-      .from(LEADS_TABLE)
-      .update(updateData)
-      .eq('id', leadId)
-      .select('id');
+    let updatedCrmLead: Array<{ id: string }> | null = null;
+    let crmError: unknown = null;
+
+    // IDs do Kenlo podem não ser UUID. Evita consultar public.leads com um ID
+    // incompatível antes do fallback para kenlo_leads.
+    if (isUuid(leadId)) {
+      const crmResult = await supabase
+        .from(LEADS_TABLE)
+        .update(updateData)
+        .eq('id', leadId)
+        .select('id');
+
+      updatedCrmLead = crmResult.data;
+      crmError = crmResult.error;
+    } else {
+      updatedCrmLead = [];
+    }
 
     // Se não encontrou na tabela leads, tentar na kenlo_leads
-    if (!crmError && (!crmCount || crmCount === 0)) {
+    if (!crmError && (!updatedCrmLead || updatedCrmLead.length === 0)) {
       // Mapear status pt-BR para stage inglês para kenlo_leads
       const statusToStage: Record<string, string> = {
         'Novos Leads': 'new',
@@ -524,24 +564,36 @@ export async function atualizarStatusLeadCRM(
 
       const kenloUpdate: Record<string, any> = {
         stage: kenloStage,
-        updated_at: new Date().toISOString(),
+        updated_at: nowIso,
       };
       if (kenloTemp) kenloUpdate.temperature = kenloTemp;
 
-      const { error: kenloError } = await supabase
+      const { data: updatedKenloLead, error: kenloError } = await supabase
         .from('kenlo_leads')
         .update(kenloUpdate)
-        .eq('id', leadId);
+        .eq('id', leadId)
+        .select('id');
 
       if (kenloError) {
         console.error('❌ Erro ao atualizar kenlo_lead:', kenloError);
         throw kenloError;
       }
 
+      if (!updatedKenloLead || updatedKenloLead.length === 0) {
+        return { success: false, message: 'Lead não encontrado para atualizar status.' };
+      }
+
+      if (isFirstResponse) {
+        await setFirstResponseAtIfMissing('kenlo_leads', leadId, nowIso);
+      }
+
     } else if (crmError) {
       console.error('❌ Erro ao atualizar status CRM:', crmError);
       throw crmError;
     } else {
+      if (isFirstResponse) {
+        await setFirstResponseAtIfMissing(LEADS_TABLE, leadId, nowIso);
+      }
     }
 
     leadsEventEmitter.emit();
@@ -550,7 +602,17 @@ export async function atualizarStatusLeadCRM(
 
   } catch (error) {
     console.error('❌ Erro ao atualizar status:', error);
-    return { success: false, message: 'Erro ao atualizar status.' };
+    const errorMessage = error instanceof Error
+      ? error.message
+      : typeof error === 'object' && error !== null && 'message' in error
+        ? String((error as { message?: unknown }).message || '')
+        : '';
+
+    const message = /failed to fetch|networkerror|load failed/i.test(errorMessage)
+      ? 'Nao foi possivel conectar ao Supabase. Verifique internet, URL/chave do Supabase, CORS ou bloqueios do navegador.'
+      : errorMessage || 'Erro ao atualizar status.';
+
+    return { success: false, message };
   }
 }
 

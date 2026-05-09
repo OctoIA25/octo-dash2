@@ -99,6 +99,8 @@ import {
 import { getEventCoordinates } from '@dnd-kit/utilities';
 import { startAutoSync, SyncConfig } from '@/features/imoveis/services/santaAngelaSyncService';
 
+const DEBUG_LOGS = import.meta.env?.VITE_DEBUG_LOGS === 'true';
+
 /** Detecção de colisão baseada no cursor (fallback: rectIntersection). */
 const cursorCollisionDetection: CollisionDetection = (args) => {
   const pointer = pointerWithin(args);
@@ -701,28 +703,36 @@ export const MeusLeadsAtribuidosSection = ({
   }
   const [bolsaoStatusMap, setBolsaoStatusMap] = useState<Record<string, BolsaoMirrorRow>>({});
   const carregarBolsaoStatus = useCallback(async (leadIds: string[]) => {
-  if (leadIds.length === 0) {
-    setBolsaoStatusMap({});
-    return;
-  }
+    if (leadIds.length === 0) {
+      setBolsaoStatusMap({});
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('bolsao')
+        .select('source_lead_id,queue_attempt,atendido,status')
+        .in('source_lead_id', leadIds);
  
-  const { data, error } = await supabase
-    .from('bolsao')
-    .select('*')
-    .in('source_lead_id', leadIds);
+      if (error) {
+        if (DEBUG_LOGS) {
+          console.warn('Erro ao carregar status do bolsão:', error.message);
+        }
+        return;
+      }
  
-  if (error) {
-    console.error('Erro ao carregar status do bolsão:', error);
-    return;
-  }
+      const statusMap = (data || []).reduce((acc, row) => {
+        acc[row.source_lead_id] = row as BolsaoMirrorRow;
+        return acc;
+      }, {} as Record<string, BolsaoMirrorRow>);
  
-  const statusMap = (data || []).reduce((acc, row) => {
-    acc[row.source_lead_id] = row;
-    return acc;
-  }, {} as Record<string, any>);
- 
-  setBolsaoStatusMap(statusMap);
-}, []);
+      setBolsaoStatusMap(statusMap);
+    } catch (error) {
+      if (DEBUG_LOGS) {
+        console.warn('Erro ao carregar status do bolsão:', error instanceof Error ? error.message : error);
+      }
+    }
+  }, []);
 
   /** Marca lead como assumido do bolsão — cronômetro para, badge aparece. */
   const handleAssumirDoBolsao = useCallback(async (leadId: string) => {
@@ -1050,7 +1060,11 @@ const handleDragEnd = useCallback(async (event: DragEndEvent) => {
   );
  
   try {
-    await atualizarStatusLeadCRM(leadId, statusParaSalvar);
+    const result = await atualizarStatusLeadCRM(leadId, statusParaSalvar);
+    if (!result.success) {
+      throw new Error(result.message || 'Falha ao atualizar status');
+    }
+
     toast({
       title: '✅ Etapa atualizada',
       description: `Lead movido para ${kanbanColumns.find((c) => c.id === destColumnId)?.title}`,
@@ -1374,7 +1388,10 @@ const handleDragEnd = useCallback(async (event: DragEndEvent) => {
         currentCorretor={user?.email?.split('@')[0] || ''}
         onAtualizarStatusLead={async (leadId: number, novoStatus: string) => {
           try {
-            await atualizarStatusLeadCRM(String(leadId), novoStatus);
+            const result = await atualizarStatusLeadCRM(String(leadId), novoStatus);
+            if (!result.success) {
+              throw new Error(result.message || 'Falha ao atualizar status');
+            }
             
             // Atualizar estado local
             setMeusLeads(prevLeads =>

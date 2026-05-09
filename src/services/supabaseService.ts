@@ -22,6 +22,10 @@ let warnedSupabaseRemoved = false;
 
 const PAGE_SIZE = 1000;
 
+interface FetchSupabaseLeadsOptions {
+  throwOnError?: boolean;
+}
+
 const KENLO_STAGE_TO_ETAPA: Record<string, string> = {
   new: 'Novos Leads',
   contacted: 'Interação',
@@ -155,6 +159,16 @@ async function fetchCRMLeads(tenantId: string): Promise<CRMLeadRow[]> {
   if (error) throw new Error(error.message);
   return (data ?? []) as CRMLeadRow[];
 }
+
+const getErrorMessage = (error: unknown): string => {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return 'Erro desconhecido';
+  }
+};
 
 function mapKenloToProcessed(row: KenloLeadRow, id: number, override?: CRMLeadRow): ProcessedLead {
   const stageKey = (override?.status && CRM_STATUS_TO_ETAPA[override.status]) ||
@@ -405,7 +419,7 @@ export async function fetchAllSupabaseData(): Promise<{
 /**
  * Busca dados de leads do Supabase (assumindo que existe uma tabela de leads)
  */
-export async function fetchSupabaseLeadsData(): Promise<ProcessedLead[]> {
+export async function fetchSupabaseLeadsData(options: FetchSupabaseLeadsOptions = {}): Promise<ProcessedLead[]> {
   try {
     const tenantId = await resolveTenantId();
     if (!tenantId) {
@@ -416,10 +430,28 @@ export async function fetchSupabaseLeadsData(): Promise<ProcessedLead[]> {
       return [];
     }
 
-    const [kenloRows, crmRows] = await Promise.all([
+    const [kenloResult, crmResult] = await Promise.allSettled([
       fetchKenloLeadsPaginated(tenantId),
       fetchCRMLeads(tenantId),
     ]);
+
+    const kenloRows = kenloResult.status === 'fulfilled' ? kenloResult.value : [];
+    const crmRows = crmResult.status === 'fulfilled' ? crmResult.value : [];
+
+    const failedSources = [
+      kenloResult.status === 'rejected' ? `kenlo_leads: ${getErrorMessage(kenloResult.reason)}` : null,
+      crmResult.status === 'rejected' ? `leads: ${getErrorMessage(crmResult.reason)}` : null,
+    ].filter(Boolean);
+
+    if (failedSources.length > 0) {
+      const message = `Falha ao buscar ${failedSources.join('; ')}`;
+      if (kenloRows.length === 0 && crmRows.length === 0) {
+        throw new Error(message);
+      }
+      if (DEBUG_LOGS) {
+        console.warn('⚠️ Dados parciais do Supabase:', message);
+      }
+    }
 
     const overridesByExternal = new Map<string, CRMLeadRow>();
     const unmatchedCRM: CRMLeadRow[] = [];
@@ -448,7 +480,12 @@ export async function fetchSupabaseLeadsData(): Promise<ProcessedLead[]> {
 
     return merged;
   } catch (error) {
-    console.error('❌ Erro ao buscar dados do Supabase:', error);
+    if (options.throwOnError) {
+      throw error;
+    }
+    if (DEBUG_LOGS) {
+      console.warn('⚠️ Supabase indisponível ao buscar leads:', getErrorMessage(error));
+    }
     return [];
   }
 }

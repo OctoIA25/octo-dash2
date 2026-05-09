@@ -14,26 +14,36 @@
  * - Navegação instantânea sem re-render completo
  */
 
+import { lazy, Suspense } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
 import Index from "./pages/Index";
-import DashboardLayout from "./pages/DashboardLayout";
 import NotFound from "./pages/NotFound";
-import { LeadViewPage } from "@/features/leads/pages/LeadViewPage";
-import { ImovelViewPage } from "@/features/imoveis/pages/ImovelViewPage";
 import { MinimalLoginScreen } from "@/components/MinimalLoginScreen";
 import { OctoDashLoader } from "@/components/ui/OctoDashLoader";
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/useTheme";
 import { useKenloPolling } from "@/features/imoveis/hooks/useKenloPolling";
-import { OwnerDashboard } from "@/components/OwnerDashboard";
-import { ApiDocsPage } from "@/features/api-docs/pages/ApiDocsPage";
-import { GoogleOAuthCallbackPage } from "@/features/agenda/pages/GoogleOAuthCallbackPage";
 import { NotificationsProvider } from "@/contexts/NotificationsContext";
 import { AuthProvider, useAuthContext } from "@/contexts/AuthContext";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
+
+const DashboardLayout = lazy(() => import("./pages/DashboardLayout"));
+const LeadViewPage = lazy(() =>
+  import("@/features/leads/pages/LeadViewPage").then((module) => ({ default: module.LeadViewPage }))
+);
+const ImovelViewPage = lazy(() =>
+  import("@/features/imoveis/pages/ImovelViewPage").then((module) => ({ default: module.ImovelViewPage }))
+);
+const OwnerDashboard = lazy(() =>
+  import("@/components/OwnerDashboard").then((module) => ({ default: module.OwnerDashboard }))
+);
+const ApiDocsPage = lazy(() => import("@/features/api-docs/pages/ApiDocsPage"));
+const GoogleOAuthCallbackPage = lazy(() =>
+  import("@/features/agenda/pages/GoogleOAuthCallbackPage").then((module) => ({ default: module.GoogleOAuthCallbackPage }))
+);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -77,6 +87,7 @@ const AppContent = () => {
     <BrowserRouter>
             <div className="min-h-screen transition-colors duration-300" style={{ backgroundColor: 'var(--bg-primary)' }}>
               <div className="animate-in fade-in duration-700">
+                <Suspense fallback={<OctoDashLoader message="Carregando..." size="md" />}>
                 <Routes>
                   {/* 🌐 ROTA PÚBLICA - Documentação da API (sem autenticação) */}
                   <Route path="/apidocs/*" element={<ApiDocsPage />} />
@@ -101,6 +112,7 @@ const AppContent = () => {
                     )
                   } />
                 </Routes>
+                </Suspense>
               </div>
             </div>
     </BrowserRouter>

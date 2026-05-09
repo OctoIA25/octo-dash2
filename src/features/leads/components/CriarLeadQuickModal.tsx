@@ -46,7 +46,7 @@ const EMPTY_FORM: LeadForm = {
   interest_reference: '',
   message: '',
   temperature: 'Frio',
-  participa_bolsao: true,
+  participa_bolsao: true
 };
 
 const TEMPERATURES = ['Quente', 'Morno', 'Frio'];

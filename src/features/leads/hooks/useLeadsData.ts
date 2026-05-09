@@ -298,7 +298,7 @@ export const useLeadsData = (): LeadsDataResponse => {
       
       // Usar retry com backoff exponencial
       const processedLeads = await retryWithBackoff(async () => {
-        return await fetchSupabaseLeadsData();
+        return await fetchSupabaseLeadsData({ throwOnError: true });
       }, 3, 1000);
       
       // Salvar no cache

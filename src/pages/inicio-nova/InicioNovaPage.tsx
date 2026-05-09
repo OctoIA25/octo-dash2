@@ -29,6 +29,8 @@ import {
 import { useAuthContext } from '@/contexts/AuthContext';
 import { useLeadsMetrics } from '@/features/leads/hooks/useLeadsMetrics';
 import type { ProcessedLead } from '@/data/realLeadsProcessor';
+import { numberToString } from '@amcharts/amcharts5/.internal/core/util/Type';
+import { createGoogleCalendarEvent } from '@/features/agenda/services/googleCalendarService';
 
 const BRL = (value: number): string =>
   value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
@@ -352,7 +354,7 @@ export function InicioNovaPage() {
   // (etapa_atual, status_temperatura, valor_imovel, corretor_responsavel).
   // `useLeadsMetrics` assina `leadsEventEmitter`, então o Pipeline aqui
   // re-renderiza automaticamente quando o Kanban move um card.
-  const { processedLeads: leads, generalMetrics, isLoading } = useLeadsMetrics();
+  const { leads: crmLeads, processedLeads: leads, generalMetrics, isLoading } = useLeadsMetrics();
 
   const [activeTab, setActiveTab] = useState<TabKey>('todos');
 
@@ -370,6 +372,125 @@ export function InicioNovaPage() {
 
   const leadsNoFunil = generalMetrics?.totalLeads ?? leads.length;
   const conversaoMes = generalMetrics?.taxaConversao ?? 0;
+
+  const leadsNoFunilTrend = useMemo(() => {
+    const now = new Date();
+
+    const startOfThisWeek = new Date(now);
+    startOfThisWeek.setDate(now.getDate() - 7);
+
+    const startOfLastWeek = new Date(now);
+    startOfLastWeek.setDate(now.getDate() - 14);
+
+    const countLeadsInRange = (start: Date, end: Date) =>
+      crmLeads.filter((lead) => {
+        const createdAt = new Date(lead.created_at);
+        return !isNaN(createdAt.getTime()) && createdAt >= start && createdAt < end;
+      }).length;
+
+    const atual = countLeadsInRange(startOfThisWeek, now);
+    const anterior = countLeadsInRange(startOfLastWeek, startOfThisWeek);
+
+    if (anterior === 0) {
+      if (atual === 0) {
+        return { value: '0%', positive: true, caption: 'novos leads vs. semana passada' };
+      }
+
+      return { value: '100%', positive: true, caption: 'novos leads vs. semana passada' };
+    }
+
+    const percentual = ((atual - anterior) / anterior) * 100;
+
+    return {
+      value: `${Math.abs(percentual).toFixed(1).replace('.', ',')}%`,
+      positive: percentual >= 0,
+      caption: 'novos leads vs. semana passada',
+    };
+  }, [crmLeads]);
+
+  const responseTime = useMemo(() => {
+    const tempos = crmLeads
+      .map((lead) => {
+        const createdAt = new Date(lead.created_at).getTime();
+        const firstInteractionAt = lead.first_response_at
+          ? new Date(lead.first_response_at).getTime()
+          : 0;
+        
+        if (!createdAt || !firstInteractionAt) return null;
+        
+        const diffMin = (firstInteractionAt - createdAt) / 60_000;
+        
+        if(diffMin < 0) return null;
+
+        return diffMin;
+      }).filter((value): value is number => value !== null);
+
+      if(tempos.length === 0) return null;
+
+      return Math.round(tempos.reduce((sum, value) => sum + value, 0) / tempos.length);
+  }, [crmLeads]);
+
+  function formatResponseTime(minutes: number | null): string {
+
+    if (minutes === null) return 'Sem dados';
+
+    if(minutes < 60) return `${minutes}min`;
+
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+
+    return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+  }
+
+  const responseTimeTrend = useMemo(() => {
+    const now = new Date();
+
+    const startOfThisWeek = new Date(now);
+    startOfThisWeek.setDate(now.getDate() - 7);
+
+    const startOfLastWeek = new Date(now);
+    startOfLastWeek.setDate(now.getDate() - 14);
+
+    const getAverageResponseTime = (start: Date, end: Date) => {
+      const tempos = crmLeads
+        .filter((lead) => {
+          const createdAt = new Date(lead.created_at);
+          return createdAt >= start && createdAt < end;
+        })
+        .map((lead) => {
+          if(!lead.first_response_at) return null;
+
+          const createdAt = new Date(lead.created_at).getTime();
+          const firstResponseAt = new Date(lead.first_response_at).getTime();
+
+          const diffMin = (firstResponseAt - createdAt) / 60_000;
+
+          if(diffMin < 0) { 
+            return null;
+          }
+
+          return diffMin;
+        })
+        .filter((value): value is number => value !== null);
+
+        if(tempos.length === 0) return null;
+        
+        return tempos.reduce((sum, value) => sum + value, 0) / tempos.length;
+    };
+
+    const atual = getAverageResponseTime(startOfThisWeek, now);
+    const anterior = getAverageResponseTime(startOfLastWeek, startOfThisWeek);
+
+    if(atual === null || anterior === null || anterior === 0) return null;
+
+    const percentual = ((anterior - atual) / anterior) * 100;
+
+    return {
+      value: `${Math.abs(percentual).toFixed(1).replace('.', ',')}%`,
+      positive: percentual <= 0,
+      caption: 'vs. semana passada',
+    }
+  }, [crmLeads]);
 
   const nowMs = Date.now();
   const aguardandoResposta = useMemo(
@@ -542,7 +663,7 @@ export function InicioNovaPage() {
                 iconColor="text-slate-700 dark:text-slate-300"
                 label="Leads no Funil"
                 value={leadsNoFunil.toLocaleString('pt-BR')}
-                trend={{ value: '8,4%', positive: true, caption: 'vs. semana passada' }}
+                trend={leadsNoFunilTrend}
                 onClick={() => navigate('/metricas/cliente-interessado')}
               />
               <KpiCard
@@ -550,8 +671,8 @@ export function InicioNovaPage() {
                 iconBg="bg-transparent"
                 iconColor="text-slate-700 dark:text-slate-300"
                 label="Tempo Médio Resposta"
-                value="4h 32m"
-                trend={{ value: '15%', positive: true, caption: 'vs. semana passada' }}
+                value={formatResponseTime(responseTime)}
+                trend={responseTimeTrend ?? {value: '0%', positive: true, caption: 'vs. semana passada'}}
               />
               <KpiCard
                 icon={TrendingUp}
