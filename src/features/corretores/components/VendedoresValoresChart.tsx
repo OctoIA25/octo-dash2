@@ -25,8 +25,7 @@ export const VendedoresValoresChart = ({ leads }: VendedoresValoresChartProps) =
     const leadsComValor = leads.filter(lead => lead.valor_imovel && lead.valor_imovel > 0);
     
     if (leadsComValor.length === 0) {
-      // Dados de demonstração quando não há dados reais - NOVO gradiente azul
-      // 🎨 REGRA: Quanto MAIOR o valor do imóvel, MAIS ESCURO o tom
+      // Dados de demonstração quando não há dados reais
       return [
         { y: 0, label: "Até 200K", color: "#8ec8f2" },      // Azul Muito Claro (menores valores)
         { y: 0, label: "200K - 500K", color: "#6391c5" },   // Azul Médio-Claro
@@ -36,8 +35,7 @@ export const VendedoresValoresChart = ({ leads }: VendedoresValoresChartProps) =
       ];
     }
 
-    // Definir faixas de valores - NOVO gradiente azul
-    // 🎨 REGRA: Quanto MAIOR o valor do imóvel, MAIS ESCURO o tom de azul
+    // Definir faixas de valores
     const faixas = [
       { min: 0, max: 200000, label: "Até 200K", color: "#8ec8f2" },        // Azul Muito Claro
       { min: 200000, max: 500000, label: "200K - 500K", color: "#6391c5" }, // Azul Médio-Claro

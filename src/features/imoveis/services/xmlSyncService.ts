@@ -332,9 +332,9 @@ export const syncImoveisForCorretor = async (
       corretorTelefone = normalizePhone(brokerData.phone);
       if (DEBUG_LOGS) console.log('👤 [xmlSyncService] Dados do tenant_brokers:', { corretorEmail, corretorNome });
     } else {
-      // Fallback: buscar em profiles
+      // Fallback: buscar em user_profiles
       const { data: profileData } = await supabase
-        .from('profiles')
+        .from('user_profiles')
         .select('id, email, full_name, phone')
         .eq('id', corretorUserId)
         .maybeSingle();
@@ -343,9 +343,9 @@ export const syncImoveisForCorretor = async (
         corretorEmail = profileData.email?.toLowerCase();
         corretorNome = profileData.full_name;
         corretorTelefone = normalizePhone(profileData.phone);
-        if (DEBUG_LOGS) console.log('👤 [xmlSyncService] Dados do profiles:', { corretorEmail, corretorNome });
+        if (DEBUG_LOGS) console.log('👤 [xmlSyncService] Dados do user_profiles:', { corretorEmail, corretorNome });
       } else {
-        result.erros.push('Corretor não encontrado em tenant_brokers nem profiles');
+        result.erros.push('Corretor não encontrado em tenant_brokers nem user_profiles');
         return result;
       }
     }

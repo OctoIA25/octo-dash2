@@ -1,11 +1,11 @@
 import { supabase } from '@/lib/supabaseClient';
 import * as XLSX from 'xlsx';
 
-const TENANT_ID = 'tenant-area-de-teste';
+const TENANT_ID = 'e2d9bca4-3ce3-4733-b3ea-ed65ce09c832';
 const EXCEL_PATH = '/excel_ler.xlsx';
 const PULAR_CABECALHO = true;
-
 const limpar = (valor: unknown) => String(valor ?? '').trim();
+const normalizarPhone = (valor: unknown) => String(valor ?? '').replace(/\D/g, '');
 
 function parseDataExcel(valor: unknown) {
     if (!valor) return null;
@@ -85,9 +85,24 @@ export async function importarExcelFunilInteressado() {
         })
         .filter(Boolean);
 
+    const telefonesContagem = new Map<string, any[]>();
+
+    for (const lead of leads) {
+        const phoneNormalizado = normalizarPhone(lead.phone);
+
+        if (!phoneNormalizado) continue;
+
+        const lista = telefonesContagem.get(phoneNormalizado) || [];
+        lista.push(lead);
+        telefonesContagem.set(phoneNormalizado, lista);
+    }
+
+    const phonesDuplicadosNoExcel = Array.from(telefonesContagem.entries())
+        .filter(([_, lista]) => lista.length > 1);
+
     const { data: existentes, error: err } = await supabase
         .from('leads')
-        .select('email, phone')
+        .select('*')
         .eq('tenant_id', TENANT_ID)
 
     if (err) {
@@ -97,22 +112,46 @@ export async function importarExcelFunilInteressado() {
 
     const chavesExistentes = new Set(
         (existentes || []).flatMap((lead) => [
-            lead.phone ? `phone:${limpar(lead.phone)}` : null,
+            lead.phone ? `phone:${normalizarPhone(lead.phone)}` : null,
             lead.email ? `email:${limpar(lead.email).toLowerCase()}` : null,
         ]).filter(Boolean)
     );
 
-    const leadsNovos = leads.filter((lead) => {
-        const phoneKey = lead.phone ? `phone:${limpar(lead.phone)}` : null;
+    const duplicadosNoBanco = leads.filter((lead) => {
+        const phoneKey = lead.phone ? `phone:${normalizarPhone(lead.phone)}` : null;
         const emailKey = lead.email ? `email:${limpar(lead.email).toLowerCase()}` : null;
 
-        return !(
+        return (
             (phoneKey && chavesExistentes.has(phoneKey)) ||
             (emailKey && chavesExistentes.has(emailKey))
-        )
-    })
+        );
+    });
 
-    console.log('Preview dos leads que serao inseridos:', leadsNovos);
+    console.log('Leads do Excel que ja existem no banco:', duplicadosNoBanco);
+    console.table(
+        duplicadosNoBanco.map((lead) => ({
+            name: lead.name,
+            phone: lead.phone,
+            phone_normalizado: normalizarPhone(lead.phone),
+            email: lead.email,
+        }))
+    );
+
+    const leadsNovos = leads.filter((lead) => {
+        const phoneKey = lead.phone ? `phone:${normalizarPhone(lead.phone)}` : null;
+        const emailKey = lead.email ? `email:${limpar(lead.email).toLowerCase()}` : null;
+
+        const jaExiste =
+            (phoneKey && chavesExistentes.has(phoneKey)) ||
+            (emailKey && chavesExistentes.has(emailKey));
+
+        if (jaExiste) return false;
+
+        if (phoneKey) chavesExistentes.add(phoneKey);
+        if (emailKey) chavesExistentes.add(emailKey);
+
+        return true;
+    });
 
     const { data, error } = await supabase
         .from('leads')

@@ -512,8 +512,15 @@ export const parseImoveisFromXml = (xmlText: string): Imovel[] => {
 export const syncTenantImoveisFromXml = async (tenantId: string): Promise<{ count: number }> => {
   if (!tenantId) throw new Error('TenantId inválido');
 
-  const xmlUrl = getTenantXmlUrl(tenantId);
-  if (!xmlUrl) throw new Error('URL do XML não configurada');
+  let xmlUrl = getTenantXmlUrl(tenantId);
+  if (!xmlUrl) {
+    await loadXmlDataFromSupabase(tenantId);
+    xmlUrl = getTenantXmlUrl(tenantId);
+  }
+
+  if (!xmlUrl) {
+    throw new Error('URL do XML não configurada para este tenant.');
+  }
 
   const xmlText = await fetchXmlTextViaProxy(xmlUrl);
   const imoveis = parseImoveisFromXml(xmlText);
@@ -627,4 +634,3 @@ export const getCorretoresFromImoveis = (tenantId: string): TenantCorretor[] => 
   return Array.from(corretoresMap.values())
     .sort((a, b) => (b.imoveisCount || 0) - (a.imoveisCount || 0));
 };
-

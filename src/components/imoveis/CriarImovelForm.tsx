@@ -409,8 +409,8 @@ export const CriarImovelForm = ({
   initialData,
   isEdit = false,
 }: CriarImovelFormProps) => {
-  const { user } = useAuth();
-  const tenantId = user?.tenantId;
+  const { user, tenantId: authTenantId } = useAuth();
+  const tenantId = authTenantId || user?.tenantId;
   
   const [formData, setFormData] = useState<ImovelFormData>(initialFormData);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -463,7 +463,7 @@ export const CriarImovelForm = ({
   }, [tenantId, isOpen]);
 
   // Gerar código automaticamente quando o tipo mudar
-  const generateCodigoImovel = async (tipo: string) => {
+  const generateCodigoImovel = async (tipo: string, skipCurrentCode = false) => {
     if (!tenantId || !tipo) {
       setCodigoGerado('');
       return;
@@ -476,26 +476,46 @@ export const CriarImovelForm = ({
     }
 
     setIsGeneratingCodigo(true);
+    setCodigoGerado('');
     try {
       // Buscar todos os códigos existentes com esse prefixo para o tenant
-      const { data, error } = await supabase
+      const { data: codigosAtribuidos, error: codigosAtribuidosError } = await supabase
         .from('imoveis_corretores')
         .select('codigo_imovel')
         .eq('tenant_id', tenantId)
         .ilike('codigo_imovel', `${prefixo}%`);
 
-      if (error) throw error;
+      if (codigosAtribuidosError) throw codigosAtribuidosError;
+
+      const { data: codigosLocais, error: codigosLocaisError } = await supabase
+        .from('imoveis_locais')
+        .select('codigo_imovel')
+        .eq('tenant_id', tenantId)
+        .ilike('codigo_imovel', `${prefixo}%`);
+
+      if (codigosLocaisError) {
+        console.warn('Erro ao buscar códigos locais para gerar código:', codigosLocaisError);
+      }
 
       // Encontrar o maior número existente
       let maxNumero = 0;
-      if (data && data.length > 0) {
-        data.forEach((item) => {
-          const match = item.codigo_imovel.match(new RegExp(`^${prefixo}(\\d+)$`));
+      const codigosExistentes = [...(codigosAtribuidos || []), ...(codigosLocais || [])];
+      if (codigosExistentes.length > 0) {
+        codigosExistentes.forEach((item) => {
+          const match = item.codigo_imovel?.match(new RegExp(`^${prefixo}(\\d+)$`, 'i'));
           if (match) {
             const num = parseInt(match[1], 10);
             if (num > maxNumero) maxNumero = num;
           }
         });
+      }
+
+      if (skipCurrentCode && codigoGerado) {
+        const currentMatch = codigoGerado.match(new RegExp(`^${prefixo}(\\d+)$`, 'i'));
+        if (currentMatch) {
+          const currentNum = parseInt(currentMatch[1], 10);
+          if (currentNum > maxNumero) maxNumero = currentNum;
+        }
       }
 
       // Próximo número
@@ -734,33 +754,50 @@ export const CriarImovelForm = ({
     }
 
     try {
-      if (!isEdit) {
-        // Verificar se código já existe
-        const { data: existing, error: fetchError } = await supabase
-          .from('imoveis_corretores')
-          .select('id, corretor_nome')
-          .eq('tenant_id', tenantId)
-          .eq('codigo_imovel', codigoNormalizado);
-
-        if (fetchError) throw fetchError;
-
-        if (existing && existing.length > 0) {
-          setSubmitStatus('error');
-          setSubmitMessage(`Código ${codigoNormalizado} já existe (atribuído a ${existing[0].corretor_nome})`);
-          setIsSubmitting(false);
-          return;
-        }
-      }
-
       // Preparar dados do corretor
       const corretorNome = user.name || user.email?.split('@')[0] || 'Corretor';
       const corretorTelefone = user.telefone ? String(user.telefone).replace(/\D/g, '') : null;
 
       if (!isEdit) {
-        // Criar registro na tabela imoveis_corretores
-        const { error: insertError } = await supabase
+        const { data: existingAssignment, error: assignmentFetchError } = await supabase
           .from('imoveis_corretores')
-          .insert({
+          .select('id, corretor_id, corretor_nome')
+          .eq('tenant_id', tenantId)
+          .eq('codigo_imovel', codigoNormalizado)
+          .maybeSingle();
+
+        if (assignmentFetchError) throw assignmentFetchError;
+
+        const { data: existingLocal, error: localFetchError } = await supabase
+          .from('imoveis_locais')
+          .select('id')
+          .eq('tenant_id', tenantId)
+          .eq('codigo_imovel', codigoNormalizado)
+          .maybeSingle();
+
+        if (localFetchError) throw localFetchError;
+
+        if (existingAssignment && existingLocal) {
+          setSubmitStatus('error');
+          setSubmitMessage(`Código ${codigoNormalizado} já existe (atribuído a ${existingAssignment.corretor_nome || 'outro corretor'})`);
+          setIsSubmitting(false);
+          return;
+        }
+
+        if (existingAssignment && existingAssignment.corretor_id !== user.id) {
+          setSubmitStatus('error');
+          setSubmitMessage(`Código ${codigoNormalizado} já existe (atribuído a ${existingAssignment.corretor_nome || 'outro corretor'})`);
+          setIsSubmitting(false);
+          return;
+        }
+
+        // Salvar detalhes completos antes de criar/regularizar a atribuição.
+        await saveImovelLocal(codigoNormalizado);
+
+        // Criar ou completar registro na tabela imoveis_corretores
+        const { error: upsertAssignmentError } = await supabase
+          .from('imoveis_corretores')
+          .upsert({
             tenant_id: tenantId,
             codigo_imovel: codigoNormalizado,
             exclusivo: formData.exclusivo === 'sim',
@@ -768,9 +805,9 @@ export const CriarImovelForm = ({
             corretor_nome: corretorNome,
             corretor_email: user.email || null,
             corretor_telefone: corretorTelefone,
-          });
+          }, { onConflict: 'tenant_id,codigo_imovel' });
 
-        if (insertError) throw insertError;
+        if (upsertAssignmentError) throw upsertAssignmentError;
       } else {
         const { error: updateBrokerError } = await supabase
           .from('imoveis_corretores')
@@ -779,10 +816,10 @@ export const CriarImovelForm = ({
           .eq('codigo_imovel', codigoNormalizado);
 
         if (updateBrokerError) throw updateBrokerError;
-      }
 
-      // Salvar detalhes completos do imóvel na tabela imoveis_locais
-      await saveImovelLocal(codigoNormalizado);
+        // Salvar detalhes completos do imóvel na tabela imoveis_locais
+        await saveImovelLocal(codigoNormalizado);
+      }
 
       setSubmitStatus('success');
       setSubmitMessage(isEdit ? `Imóvel ${codigoNormalizado} atualizado com sucesso!` : `Imóvel ${codigoNormalizado} criado com sucesso!`);
@@ -938,7 +975,7 @@ export const CriarImovelForm = ({
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => generateCodigoImovel(formData.tipo)}
+                  onClick={() => generateCodigoImovel(formData.tipo, true)}
                   disabled={isGeneratingCodigo}
                   title="Regenerar código"
                 >

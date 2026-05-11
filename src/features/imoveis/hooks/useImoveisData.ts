@@ -65,7 +65,11 @@ export const useImoveisData = () => {
 
   const sync = async () => {
     if (!tenantId) return;
-    await syncTenantImoveisFromXml(tenantId);
+    try {
+      await syncTenantImoveisFromXml(tenantId);
+    } catch (error) {
+      console.warn('[useImoveisData] Não foi possível sincronizar imóveis do XML:', error);
+    }
     await refetch();
   };
 
@@ -193,4 +197,3 @@ export const useImoveisData = () => {
     bairros
   };
 };
-
