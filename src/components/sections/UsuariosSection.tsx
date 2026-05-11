@@ -11,7 +11,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
-import { getTenantCorretores } from '@/features/imoveis/services/imoveisXmlService';
 import {
   UserPermissions,
   MenuPermission,
@@ -49,9 +48,11 @@ import {
   UsersRound,
   Sparkles,
   CheckCircle2,
-  XCircle
+  XCircle,
+  NotepadText,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { fetchTenantMembers, TenantMember } from '@/features/corretores/services/tenantMembersService';
 
 // Mapeamento de ícones para cada menu
 const MENU_ICONS: Record<MenuPermission, any> = {
@@ -63,7 +64,8 @@ const MENU_ICONS: Record<MenuPermission, any> = {
   'corretores-gestao': Users,
   'corretores': Users,
   'agentes-ia': Bot,
-  'configuracoes': Settings
+  'configuracoes': Settings,
+  'excel': NotepadText,
 };
 
 interface UsuariosSectionProps {}
@@ -72,24 +74,40 @@ export const UsuariosSection = ({}: UsuariosSectionProps) => {
   const { user, tenantId } = useAuth();
   const { toast } = useToast();
   
+  const [members, setMembers] = useState<TenantMember[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
   const [userPermissions, setUserPermissions] = useState<Map<string, UserPermissions>>(new Map());
   const [isLoading, setIsLoading] = useState(false);
 
-  const corretores = useMemo(() => {
-    if (!tenantId || tenantId === 'owner') return [];
+  useEffect(() => {
+    if (!tenantId || tenantId === 'owner') return;
 
-    const fromXml = getTenantCorretores(tenantId)
-      .filter((c) => {
-        const email = (c.email || '').trim().toLowerCase();
-        return Boolean(email) && email.includes('@');
-      })
-      .map((c) => c.nome)
-      .filter(Boolean);
+    let isMounted = true;
 
-    return [...new Set(fromXml)].sort((a, b) => a.localeCompare(b));
+    const loadMembers = async () => {
+      setIsLoading(true);
+      const tenantMembers = await fetchTenantMembers(tenantId);
+
+      if (isMounted) {
+        setMembers(tenantMembers);
+        setIsLoading(false);
+      }
+    };
+
+    loadMembers();
+
+    return () => {
+      isMounted = false;
+    };
   }, [tenantId]);
+
+  const corretores = useMemo(() => {
+    return members
+      .map((member) => member.email?.trim())
+      .filter((email): email is string => Boolean(email && email.includes('@')))
+      .sort((a, b) => a.localeCompare(b));
+  }, [members]);
 
   // Carregar permissões dos usuários
   useEffect(() => {
@@ -98,7 +116,7 @@ export const UsuariosSection = ({}: UsuariosSectionProps) => {
       setUserPermissions(new Map());
       return;
     }
-    loadPermissions();
+    loadPermissions(); 
   }, [tenantId, corretores.length]);
 
   const loadPermissions = async () => {
@@ -759,4 +777,3 @@ export const UsuariosSection = ({}: UsuariosSectionProps) => {
     </div>
   );
 };
-

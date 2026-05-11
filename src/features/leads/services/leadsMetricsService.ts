@@ -323,7 +323,7 @@ export async function fetchLeadsForMetrics(
 
       return results;
     }
-
+    
     let query = supabase
       .from('leads')
       .select('*')

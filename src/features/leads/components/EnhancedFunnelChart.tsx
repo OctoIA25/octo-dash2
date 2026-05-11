@@ -1,3 +1,5 @@
+// Funil cliente interessado
+
 import { useEffect, useRef, useMemo } from 'react';
 import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -404,7 +406,7 @@ export const EnhancedFunnelChart = ({ leads }: EnhancedFunnelChartProps) => {
             
             {/* Funil principal - centralizado */}
             <div className="w-[68%] h-full flex justify-center">
-              <div ref={chartRef} className="w-full h-[770px] max-w-[500px]" />
+              <div ref={chartRef} className="w-full h-[770px] max-w-[500px] mt-10" />
             </div>
             
             {/* Labels muito próximos do funil */}

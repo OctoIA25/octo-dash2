@@ -52,6 +52,47 @@ export interface ServiceResult {
   data?: any;
 }
 
+function mapTenantMemberRow(member: any, leaderMap: Record<string, string | null> = {}): TenantMember | null {
+  const rawPermissions = member.permissions && typeof member.permissions === 'object' ? member.permissions : undefined;
+  const sidebarPerms =
+    (Array.isArray(member.sidebar_permissions) ? member.sidebar_permissions : undefined) ||
+    (Array.isArray(rawPermissions?.sidebar_permissions) ? rawPermissions.sidebar_permissions : undefined);
+  const team = (member.team as TeamColor | undefined) || (rawPermissions?.team as TeamColor | undefined);
+  const email = member.email || member.name || member.user_email || member.user_id || '';
+
+  if (!String(email).trim()) return null;
+  if (String(email).trim().toLowerCase() === 'email não disponível') return null;
+
+  return {
+    id: member.id,
+    user_id: member.user_id,
+    tenant_id: member.tenant_id,
+    role: member.role,
+    email,
+    team,
+    permissions: rawPermissions,
+    sidebar_permissions: sidebarPerms,
+    created_at: member.created_at,
+    leader_user_id: leaderMap[member.user_id] ?? member.leader_user_id ?? null,
+  };
+}
+
+async function fetchTenantMembersDirectly(tenantId: string): Promise<TenantMember[]> {
+  const { data, error } = await supabase
+    .from('tenant_memberships')
+    .select('*')
+    .eq('tenant_id', tenantId);
+
+  if (error) {
+    console.error('Erro ao buscar membros direto em tenant_memberships:', error);
+    return [];
+  }
+
+  return (data || [])
+    .map((member: any) => mapTenantMemberRow(member))
+    .filter((member): member is TenantMember => Boolean(member));
+}
+
 /**
  * Busca todos os membros de um tenant
  * Usa RPC get_tenant_members para bypassa RLS e obter todos os membros
@@ -65,11 +106,11 @@ export async function fetchTenantMembers(tenantId: string): Promise<TenantMember
 
     if (error) {
       console.error('Erro ao buscar membros via RPC:', error);
-      return [];
+      return fetchTenantMembersDirectly(tenantId);
     }
 
     if (!members || members.length === 0) {
-      return [];
+      return fetchTenantMembersDirectly(tenantId);
     }
 
     // Mapear resultado da RPC para o formato esperado
@@ -87,36 +128,12 @@ export async function fetchTenantMembers(tenantId: string): Promise<TenantMember
       });
     }
 
-    return members
-      .map((member: any) => {
-        const rawPermissions = member.permissions && typeof member.permissions === 'object' ? member.permissions : undefined;
-        const sidebarPerms =
-          (Array.isArray(member.sidebar_permissions) ? member.sidebar_permissions : undefined) ||
-          (Array.isArray(rawPermissions?.sidebar_permissions) ? rawPermissions.sidebar_permissions : undefined);
-        const team = (member.team as TeamColor | undefined) || (rawPermissions?.team as TeamColor | undefined);
-
-        return {
-          id: member.id,
-          user_id: member.user_id,
-          tenant_id: member.tenant_id,
-          role: member.role,
-          email: member.email || member.name || '',
-          team,
-          permissions: rawPermissions,
-          sidebar_permissions: sidebarPerms,
-          created_at: member.created_at,
-          leader_user_id: leaderMap[member.user_id] ?? null,
-        };
-      })
-      .filter((m: TenantMember) => {
-        const email = (m.email || '').trim();
-        if (!email) return false;
-        if (email.toLowerCase() === 'email não disponível') return false;
-        return true;
-      });
+    return (members as any[])
+      .map((member: any) => mapTenantMemberRow(member, leaderMap))
+      .filter((member): member is TenantMember => Boolean(member));
   } catch (error) {
     console.error('Erro ao buscar membros do tenant:', error);
-    return [];
+    return fetchTenantMembersDirectly(tenantId);
   }
 }
 
