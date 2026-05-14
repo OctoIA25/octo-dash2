@@ -31,10 +31,9 @@ export const teamKPIs: TeamKPI = {
 
 // TODO: Conectar com a API
 export const tempoRespostaPorEquipeData: TempoRespostaPorEquipeData[] = [
-  { equipe: 'Equipe Verde', tempoMedio: 8, cor: '#22c55e' },
-  { equipe: 'Equipe Amarela', tempoMedio: 14, cor: '#eab308' },
-  { equipe: 'Equipe Vermelha', tempoMedio: 18, cor: '#ef4444' }
-];
+  { equipe: 'Geral', tempoMedio: 0, cor: '#727272' }
+]; 
+
 
 // TODO: Conectar com a API
 export const vgcMensalData: VGCMensalData[] = [

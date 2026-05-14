@@ -16,6 +16,12 @@ import {
   type DistribuicaoPercentual,
   type VariacoesPercentuais as VariacoesPercentuaisType
 } from './percentageService';
+import {
+  buscarKPIsEquipeCentral,
+  buscarLeadsPorEquipeCentral,
+  buscarMetricasGeraisCentral,
+  buscarMetricasPorEquipeCentral,
+} from './teamMetricsService';
 
 // Interfaces para métricas aprimoradas
 export interface KPIsEquipe {
@@ -66,85 +72,9 @@ export interface EvolucaoAtivacoes {
 }
 
 
-// Cores padrão para equipes
-const CORES_EQUIPES = [
-  '#22c55e', // Equipe Verde
-  '#eab308', // Equipe Amarela
-  '#ef4444', // Equipe Vermelha
-  '#3b82f6', // Equipe Azul
-  '#8b5cf6', // Equipe Roxa
-  '#06b6d4', // Equipe Ciano
-];
-
-// Função para obter cor da equipe
-function getCorEquipe(index: number): string {
-  return CORES_EQUIPES[index % CORES_EQUIPES.length];
-}
-
 // Buscar KPIs gerais da equipe
 export async function buscarKPIsEquipe(tenantId: string): Promise<KPIsEquipe> {
-  const mesAtual = new Date().getMonth() + 1;
-  const anoAtual = new Date().getFullYear();
-
-  // Buscar vendas do mês
-  const { data: vendas, error: vendasError } = await supabase
-    .from('sales_transactions')
-    .select('valor_imovel, status')
-    .eq('tenant_id', tenantId)
-    .eq('status', 'concluida')
-    .gte('data_transacao', `${anoAtual}-${String(mesAtual).padStart(2, '0')}-01`)
-    .lt('data_transacao', `${anoAtual}-${String(mesAtual + 1).padStart(2, '0')}-01`);
-
-  if (vendasError) throw vendasError;
-
-  const vendasAssinadas = vendas?.length || 0;
-  const valorTotalVendas = vendas?.reduce((sum, v) => sum + (v.valor_imovel || 0), 0) || 0;
-
-  // Buscar imóveis ativos
-  const { data: imoveis, error: imoveisError } = await supabase
-    .from('imoveis')
-    .select('id')
-    .eq('tenant_id', tenantId)
-    .eq('status', 'ativo');
-
-  if (imoveisError) throw imoveisError;
-
-  const imoveisAtivos = imoveis?.length || 0;
-
-  // Buscar leads do mês
-  const { data: leads, error: leadsError } = await supabase
-    .from('leads')
-    .select('id, created_at, first_interaction_at')
-    .eq('tenant_id', tenantId)
-    .gte('created_at', `${anoAtual}-${String(mesAtual).padStart(2, '0')}-01`)
-    .lt('created_at', `${anoAtual}-${String(mesAtual + 1).padStart(2, '0')}-01`);
-
-  if (leadsError) throw leadsError;
-
-  const totalLeadsMes = leads?.length || 0;
-
-  // Calcular tempo médio de resposta
-  const leadsComResposta = leads?.filter(l => l.first_interaction_at) || [];
-  const temposResposta = leadsComResposta.map(l => {
-    if (l.created_at && l.first_interaction_at) {
-      const diff = new Date(l.first_interaction_at).getTime() - new Date(l.created_at).getTime();
-      return Math.floor(diff / (1000 * 60)); // minutos
-    }
-    return 0;
-  }).filter(t => t > 0);
-
-  const tempoMedioRespostaGeral = temposResposta.length > 0 
-    ? Math.round(temposResposta.reduce((a, b) => a + b, 0) / temposResposta.length)
-    : 0;
-
-  return {
-    vendasCriadas: vendasAssinadas, // Simplificado - poderia ser separado
-    vendasAssinadas,
-    imoveisAtivos,
-    totalLeadsMes,
-    valorTotalVendasMes: valorTotalVendas,
-    tempoMedioRespostaGeral
-  };
+  return buscarKPIsEquipeCentral(tenantId);
 }
 
 // Buscar métricas por equipe
@@ -153,143 +83,22 @@ export async function buscarMetricasPorEquipe(
   mes?: number,
   ano?: number
 ): Promise<MetricasEquipe[]> {
-  // Buscar diretamente da tabela teams
-  const { data: teams, error: teamsError } = await supabase
-    .from('teams')
-    .select('*')
-    .eq('tenant_id', tenantId);
-
-  if (teamsError) {
-    console.error('Erro ao buscar equipes:', teamsError);
-    return [];
-  }
-
-  // Sempre calcular dados reais dos leads
-  console.log('Calculando métricas reais dos dados brutos...');
   const mesAlvo = mes || new Date().getMonth() + 1;
   const anoAlvo = ano || new Date().getFullYear();
-  const metricasBrutas = await calcularMetricasPorEquipeBrutas(tenantId, mesAlvo, anoAlvo);
+  const dataInicio = new Date(anoAlvo, mesAlvo - 1, 1);
+  const dataFim = new Date(anoAlvo, mesAlvo, 0);
+  const metricas = await buscarMetricasPorEquipeCentral(tenantId, dataInicio, dataFim);
 
-  // Se tiver equipes configuradas, usar cores e nomes delas
-  if (teams && teams.length > 0) {
-    return metricasBrutas.map((metrica, index) => ({
-      equipe: metrica.equipe,
-      tempoMedio: metrica.tempoMedio,
-      cor: teams[index]?.color || metrica.cor,
-    }));
-  }
-
-  return metricasBrutas;
-}
-
-// Calcular métricas por equipe a partir dos dados brutos
-async function calcularMetricasPorEquipeBrutas(
-  tenantId: string,
-  mes: number,
-  ano: number
-): Promise<MetricasEquipe[]> {
-  // Buscar todos os leads no período (sem filtros restritivos)
-  const { data: leads, error: leadsError } = await supabase
-    .from('leads')
-    .select('assigned_agent_name, created_at, visit_date')
-    .eq('tenant_id', tenantId)
-    .gte('created_at', `${ano}-${String(mes).padStart(2, '0')}-01`)
-    .lt('created_at', `${ano}-${String(mes + 1).padStart(2, '0')}-01`);
-
-  if (leadsError) throw leadsError;
-
-  // Agrupar por corretor
-  const corretoresMap = new Map<string, { leads: any[], tempos: number[] }>();
-  
-  leads?.forEach(lead => {
-    const corretor = lead.assigned_agent_name;
-    if (!corretor) return;
-    
-    if (!corretoresMap.has(corretor)) {
-      corretoresMap.set(corretor, { leads: [], tempos: [] });
-    }
-    
-    const corretorData = corretoresMap.get(corretor)!;
-    corretorData.leads.push(lead);
-    
-    if (lead.created_at && lead.visit_date) {
-      const diff = new Date(lead.visit_date).getTime() - new Date(lead.created_at).getTime();
-      const tempo = Math.floor(diff / (1000 * 60));
-      if (tempo > 0) {
-        corretorData.tempos.push(tempo);
-      }
-    }
-  });
-
-  // Converter para o formato esperado
-  const metricasEquipe: MetricasEquipe[] = [];
-  let index = 0;
-  
-  for (const [corretor, data] of corretoresMap) {
-    const tempoMedio = data.tempos.length > 0 
-      ? Math.round(data.tempos.reduce((a, b) => a + b, 0) / data.tempos.length)
-      : 0;
-
-    metricasEquipe.push({
-      equipe: corretor,
-      tempoMedio,
-      cor: getCorEquipe(index++)
-    });
-  }
-
-  return metricasEquipe;
+  return metricas.map(({ equipe, tempoMedio, cor }) => ({
+    equipe,
+    tempoMedio,
+    cor,
+  }));
 }
 
 // Buscar leads por equipe
 export async function buscarLeadsPorEquipe(tenantId: string): Promise<LeadsPorEquipe[]> {
-  const mesAtual = new Date().getMonth() + 1;
-  const anoAtual = new Date().getFullYear();
-
-  // Buscar equipes únicas do tenant
-  const { data: memberships, error: membershipsError } = await supabase
-    .from('tenant_memberships')
-    .select('team_id')
-    .eq('tenant_id', tenantId)
-    .eq('status', 'active');
-
-  if (membershipsError) throw membershipsError;
-
-  // Obter equipes únicas
-  const uniqueTeams = [...new Set(memberships?.map(m => m.team_id) || [])];
-  const leadsPorEquipe: LeadsPorEquipe[] = [];
-
-  for (let i = 0; i < uniqueTeams.length; i++) {
-    const teamId = uniqueTeams[i];
-    
-    // Buscar membros da equipe
-    const { data: members, error: membersError } = await supabase
-      .from('tenant_memberships')
-      .select('user_id')
-      .eq('tenant_id', tenantId)
-      .eq('team_id', teamId)
-      .eq('status', 'active');
-
-    if (membersError) throw membersError;
-
-    // Buscar leads da equipe no mês
-    const { data: leads, error: leadsError } = await supabase
-      .from('leads')
-      .select('id')
-      .eq('tenant_id', tenantId)
-      .gte('created_at', `${anoAtual}-${String(mesAtual).padStart(2, '0')}-01`)
-      .lt('created_at', `${anoAtual}-${String(mesAtual + 1).padStart(2, '0')}-01`)
-      .in('attended_by_id', members?.map(m => m.user_id) || []);
-
-    if (leadsError) throw leadsError;
-
-    leadsPorEquipe.push({
-      equipe: teamId,
-      quantidade: leads?.length || 0,
-      cor: getCorEquipe(i)
-    });
-  }
-
-  return leadsPorEquipe.sort((a, b) => b.quantidade - a.quantidade);
+  return buscarLeadsPorEquipeCentral(tenantId);
 }
 
 // Buscar distribuição exclusivo vs ficha
@@ -418,10 +227,7 @@ export async function buscarEvolucaoAtivacoes(tenantId: string): Promise<Evoluca
 
 // Buscar métricas gerais (compatível com service existente)
 export async function buscarMetricasGerais() {
-  // Implementação placeholder para compatibilidade
-  return {
-    tempoMedioRespostaGeral: 0
-  };
+  return buscarMetricasGeraisCentral();
 }
 
 // Buscar métricas de conversão em tempo real
@@ -429,7 +235,7 @@ export async function buscarMetricasConversao(tenantId: string) {
   try {
     const { data: leads, error } = await supabase
       .from('leads')
-      .select('etapa_atual, created_at, assigned_agent_name, first_interaction_at, final_sale_value')
+      .select('etapa_atual, created_at, assigned_agent_name, first_response_at, final_sale_value')
       .eq('tenant_id', tenantId)
       .is('archived_at', null);
 
@@ -451,7 +257,7 @@ export async function buscarMetricasConversao(tenantId: string) {
     // Definir estágios do funil
     const estagios = [
       { nome: 'Lead', condicao: (l: any) => true },
-      { nome: 'Interação', condicao: (l: any) => l.first_interaction_at || l.etapa_atual?.includes('Interação') },
+      { nome: 'Interação', condicao: (l: any) => l.first_response_at || l.etapa_atual?.includes('Interação') },
       { nome: 'Reunião', condicao: (l: any) => l.etapa_atual?.includes('Reunião') || l.etapa_atual?.includes('Visita') },
       { nome: 'Venda', condicao: (l: any) => l.etapa_atual?.includes('Venda') || l.etapa_atual?.includes('Concluído') || l.final_sale_value > 0 }
     ];

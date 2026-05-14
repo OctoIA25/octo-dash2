@@ -1,12 +1,12 @@
 /**
- * Componente Kanban Semanal de Tarefas
- * Substitui o TaskManager antigo por um Kanban com dias da semana
+ * Planner Semanal de Tarefas
+ * Mantem a base `tarefas_semanais`, mas apresenta a semana em grade de horarios.
  */
 
-import { useState } from 'react';
-import { useTarefasSemanais, DIAS_SEMANA, DIAS_SEMANA_ABREV, DiaSemana, CreateTarefaSemanal } from '@/hooks/useTarefasSemanais';
+import { useMemo, useState } from 'react';
+import { useTarefasSemanais, DIAS_SEMANA, DIAS_SEMANA_ABREV, DiaSemana, CreateTarefaSemanal, TarefaSemanal } from '@/hooks/useTarefasSemanais';
 import { useToast } from '@/hooks/use-toast';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -27,32 +27,87 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
-  ChevronLeft,
-  ChevronRight,
-  Plus,
+  AlertTriangle,
+  Archive,
   Calendar,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Flag,
-  RotateCcw,
-  Archive,
   Home,
+  Plus,
+  RotateCcw,
   Trash2,
-  AlertTriangle,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
+const HORARIOS = [
+  '07:00',
+  '08:00',
+  '09:00',
+  '10:00',
+  '11:00',
+  '12:00',
+  '13:00',
+  '14:00',
+  '15:00',
+  '16:00',
+  '17:00',
+  '18:00',
+  '19:00',
+  '20:00',
+];
+
+type PlannerFormData = CreateTarefaSemanal & {
+  horario: string;
+};
+
+const getHorarioTarefa = (tarefa: TarefaSemanal): string => {
+  const dados = tarefa.dados_recorrencia as { horario?: string } | null | undefined;
+  return typeof dados?.horario === 'string' ? dados.horario.slice(0, 5) : '';
+};
+
+const getPrioridadeColor = (prioridade: string) => {
+  switch (prioridade) {
+    case 'urgente':
+      return 'border-l-red-500 bg-red-50 text-red-900 dark:bg-red-950/40 dark:text-red-200';
+    case 'alta':
+      return 'border-l-orange-500 bg-orange-50 text-orange-900 dark:bg-orange-950/40 dark:text-orange-200';
+    case 'media':
+      return 'border-l-amber-500 bg-amber-50 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200';
+    case 'baixa':
+      return 'border-l-blue-500 bg-blue-50 text-blue-900 dark:bg-blue-950/40 dark:text-blue-200';
+    default:
+      return 'border-l-slate-300 bg-slate-50 text-slate-900 dark:bg-slate-900 dark:text-slate-200';
+  }
+};
+
+const getPrioridadeBadge = (prioridade: string) => {
+  switch (prioridade) {
+    case 'urgente':
+      return 'bg-red-100 text-red-700 border-red-200 dark:bg-red-950/60 dark:text-red-300 dark:border-red-800';
+    case 'alta':
+      return 'bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-950/60 dark:text-orange-300 dark:border-orange-800';
+    case 'media':
+      return 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800';
+    case 'baixa':
+      return 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800';
+    default:
+      return 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700';
+  }
+};
+
 export const KanbanSemanalTarefas = () => {
   const {
-    tarefasPorDia,
+    tarefas,
     isLoading,
     semanaAtual,
     proximaSemana,
     semanaAnterior,
     irParaHoje,
     criarTarefa,
-    atualizarTarefa,
     deletarTarefa,
     toggleConcluida,
     estatisticas,
@@ -60,32 +115,68 @@ export const KanbanSemanalTarefas = () => {
   } = useTarefasSemanais();
 
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [formData, setFormData] = useState<CreateTarefaSemanal>({
-    titulo: '',
-    descricao: '',
-    prioridade: 'media',
-    categoria: 'geral',
-    dia_semana: 1, // Segunda-feira
-    recorrente: false,
-  });
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [tarefaParaDeletar, setTarefaParaDeletar] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const { toast } = useToast();
 
-  const resetForm = () => {
+  const [formData, setFormData] = useState<PlannerFormData>({
+    titulo: '',
+    descricao: '',
+    prioridade: 'media',
+    categoria: 'geral',
+    dia_semana: 1,
+    horario: '09:00',
+    recorrente: false,
+  });
+
+  const diasDaSemana = useMemo(() => {
+    return ([1, 2, 3, 4, 5, 6, 7] as DiaSemana[]).map((dia) => {
+      const data = new Date(semanaAtual.data_inicio);
+      data.setDate(data.getDate() + (dia - 1));
+      return { dia, data };
+    });
+  }, [semanaAtual.data_inicio]);
+
+  const tarefasComHorario = useMemo(() => tarefas.filter((tarefa) => Boolean(getHorarioTarefa(tarefa))), [tarefas]);
+  const tarefasSemHorario = useMemo(() => tarefas.filter((tarefa) => !getHorarioTarefa(tarefa)), [tarefas]);
+
+  const tarefasPorSlot = useMemo(() => {
+    const map = new Map<string, TarefaSemanal[]>();
+    tarefasComHorario.forEach((tarefa) => {
+      const horario = getHorarioTarefa(tarefa);
+      const key = `${tarefa.dia_semana}-${horario}`;
+      const list = map.get(key) || [];
+      list.push(tarefa);
+      map.set(key, list);
+    });
+    return map;
+  }, [tarefasComHorario]);
+
+  const tarefasSemHorarioPorDia = useMemo(() => {
+    const map = new Map<DiaSemana, TarefaSemanal[]>();
+    tarefasSemHorario.forEach((tarefa) => {
+      const list = map.get(tarefa.dia_semana) || [];
+      list.push(tarefa);
+      map.set(tarefa.dia_semana, list);
+    });
+    return map;
+  }, [tarefasSemHorario]);
+
+  const resetForm = (dia: DiaSemana = 1, horario = '09:00') => {
     setFormData({
       titulo: '',
       descricao: '',
       prioridade: 'media',
       categoria: 'geral',
-      dia_semana: 1,
+      dia_semana: dia,
+      horario,
       recorrente: false,
     });
   };
 
-  const handleOpenDialog = () => {
-    resetForm();
+  const handleOpenDialog = (dia?: DiaSemana, horario?: string) => {
+    resetForm(dia || 1, horario || '09:00');
     setDialogOpen(true);
   };
 
@@ -96,43 +187,50 @@ export const KanbanSemanalTarefas = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!formData.titulo.trim()) {
-      return;
-    }
+    if (!formData.titulo.trim()) return;
+
+    const dataEspecifica = new Date(semanaAtual.data_inicio);
+    dataEspecifica.setDate(dataEspecifica.getDate() + (formData.dia_semana - 1));
 
     try {
-      await criarTarefa(formData);
+      await criarTarefa({
+        ...formData,
+        data_especifica: format(dataEspecifica, 'yyyy-MM-dd'),
+        dados_recorrencia: {
+          ...(formData.dados_recorrencia || {}),
+          horario: formData.horario || null,
+        },
+      });
       handleCloseDialog();
     } catch (err) {
       console.error('Erro ao criar tarefa:', err);
     }
   };
 
-  const handleDelete = async (tarefaId: string) => {
+  const handleDelete = (tarefaId: string) => {
     setTarefaParaDeletar(tarefaId);
     setShowDeleteDialog(true);
   };
 
   const confirmDelete = async () => {
     if (!tarefaParaDeletar) return;
-    
+
     setIsDeleting(true);
     try {
       await deletarTarefa(tarefaParaDeletar);
       setShowDeleteDialog(false);
       setTarefaParaDeletar(null);
       toast({
-        title: "Tarefa excluída!",
-        description: "A tarefa foi removida com sucesso.",
+        title: 'Tarefa excluida',
+        description: 'A tarefa foi removida com sucesso.',
         duration: 3000,
       });
     } catch (err) {
       console.error('Erro ao deletar tarefa:', err);
       toast({
-        title: "Erro ao excluir tarefa",
-        description: "Não foi possível excluir a tarefa. Tente novamente.",
-        variant: "destructive",
+        title: 'Erro ao excluir tarefa',
+        description: 'Nao foi possivel excluir a tarefa. Tente novamente.',
+        variant: 'destructive',
         duration: 5000,
       });
     } finally {
@@ -140,200 +238,74 @@ export const KanbanSemanalTarefas = () => {
     }
   };
 
-  const getPrioridadeColor = (prioridade: string) => {
-    switch (prioridade) {
-      case 'urgente':
-        return 'bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300 border-red-300';
-      case 'alta':
-        return 'bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 border-orange-300';
-      case 'media':
-        return 'bg-yellow-100 dark:bg-yellow-950/60 text-yellow-700 dark:text-yellow-300 border-yellow-300';
-      case 'baixa':
-        return 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-300';
-      default:
-        return 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300';
-    }
-  };
-
-  const TarefaCard = ({ tarefa }: { tarefa: any }) => {
-    const [expanded, setExpanded] = useState(false);
-    const hasLongTitle = tarefa.titulo.length > 50;
-    const hasLongDescription = tarefa.descricao && tarefa.descricao.length > 100;
+  const TarefaCard = ({ tarefa, compact = false }: { tarefa: TarefaSemanal; compact?: boolean }) => {
+    const horario = getHorarioTarefa(tarefa);
 
     return (
-      <div className={`group bg-white dark:bg-gray-800 border rounded-xl p-4 mb-3 transition-all duration-200 hover:shadow-lg hover:border-blue-200 dark:hover:border-blue-800 ${
-        tarefa.concluida 
-          ? 'opacity-60 bg-gray-50 dark:bg-gray-800/50' 
-          : 'hover:translate-y-[-1px] hover:shadow-xl'
-      }`}>
-        <div className="flex items-start gap-3">
-          {/* Checkbox - Tamanho médio */}
+      <div
+        className={`group w-full rounded-md border border-slate-200 border-l-4 p-2 text-left shadow-sm transition hover:shadow-md dark:border-slate-800 ${getPrioridadeColor(tarefa.prioridade)} ${
+          tarefa.concluida ? 'opacity-60' : ''
+        }`}
+      >
+        <div className="flex items-start gap-2">
           <button
-            onClick={() => toggleConcluida(tarefa.id)}
-            className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center flex-shrink-0 mt-0.5 transition-all duration-200 ${
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              toggleConcluida(tarefa.id);
+            }}
+            className={`mt-0.5 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border ${
               tarefa.concluida
-                ? 'border-blue-500 bg-blue-500 hover:border-blue-600'
-                : 'border-gray-300 dark:border-gray-600 hover:border-blue-400'
+                ? 'border-emerald-500 bg-emerald-500 text-white'
+                : 'border-slate-300 bg-white hover:border-emerald-400 dark:border-slate-600 dark:bg-slate-950'
             }`}
+            aria-label={tarefa.concluida ? 'Reabrir tarefa' : 'Concluir tarefa'}
           >
-            {tarefa.concluida && <CheckCircle2 className="h-3 w-3 text-white" />}
+            {tarefa.concluida && <CheckCircle2 className="h-3 w-3" />}
           </button>
 
-          {/* Conteúdo - Tamanho médio e corrigido */}
-          <div className="flex-1 min-w-0">
-            {/* Título - Tamanho médio */}
-            <div className="mb-2">
-              <h4 className={`text-sm font-semibold leading-normal ${
-                tarefa.concluida
-                  ? 'text-gray-500 dark:text-gray-400 line-through'
-                  : 'text-gray-900 dark:text-gray-100'
-              }`}>
-                {hasLongTitle && !expanded ? (
-                  <>
-                    {tarefa.titulo.substring(0, 60)}
-                    <span className="text-blue-500 hover:text-blue-600 text-xs ml-1 cursor-pointer" onClick={() => setExpanded(true)}>
-                      ...mais
-                    </span>
-                  </>
-                ) : (
-                  tarefa.titulo
-                )}
-              </h4>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start justify-between gap-2">
+              <p className={`break-words text-xs font-semibold leading-snug ${tarefa.concluida ? 'line-through' : ''}`}>
+                {tarefa.titulo}
+              </p>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleDelete(tarefa.id);
+                }}
+                className="rounded p-1 text-slate-400 opacity-0 transition hover:bg-red-50 hover:text-red-600 group-hover:opacity-100 dark:hover:bg-red-950/40"
+                aria-label="Excluir tarefa"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
             </div>
-            
-            {/* Descrição - Texto médio e corrigido */}
-            {tarefa.descricao && (
-              <div className="mb-3">
-                {(hasLongDescription && !expanded) ? (
-                  <p className="text-xs text-gray-600 dark:text-gray-400 leading-normal">
-                    {tarefa.descricao.substring(0, 120)}
-                    <span className="text-blue-500 hover:text-blue-600 text-xs ml-1 cursor-pointer" onClick={() => setExpanded(true)}>
-                      ...ver mais
-                    </span>
-                  </p>
-                ) : (
-                  <p className="text-xs text-gray-600 dark:text-gray-400 leading-normal whitespace-pre-wrap break-words">
-                    {tarefa.descricao}
-                  </p>
-                )}
-              </div>
+
+            {!compact && tarefa.descricao && (
+              <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-slate-600 dark:text-slate-400">
+                {tarefa.descricao}
+              </p>
             )}
 
-            {/* Badges - Tamanho médio */}
-            <div className="flex flex-wrap items-center gap-2 mb-2">
-              <Badge className={`${getPrioridadeColor(tarefa.prioridade)} text-xs px-2 py-1 rounded-full font-medium`}>
-                <Flag className="h-3 w-3 mr-1" />
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              {horario && (
+                <span className="inline-flex items-center gap-1 rounded bg-white/70 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 dark:bg-slate-950/60 dark:text-slate-300">
+                  <Clock className="h-3 w-3" />
+                  {horario}
+                </span>
+              )}
+              <Badge className={`${getPrioridadeBadge(tarefa.prioridade)} h-5 px-1.5 text-[10px] capitalize`}>
+                <Flag className="mr-1 h-3 w-3" />
                 {tarefa.prioridade}
               </Badge>
-
               {tarefa.recorrente && (
-                <Badge variant="outline" className="text-xs px-2 py-1 rounded-full border-blue-200 text-blue-600 dark:border-blue-800 dark:text-blue-400">
-                  <RotateCcw className="h-3 w-3 mr-1" />
+                <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+                  <RotateCcw className="mr-1 h-3 w-3" />
                   Rec
                 </Badge>
               )}
-
-              {tarefa.tags && tarefa.tags.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {tarefa.tags.slice(0, 2).map((tag: string, index: number) => (
-                    <Badge key={index} variant="secondary" className="text-xs px-2 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 max-w-[100px] truncate">
-                      {tag}
-                    </Badge>
-                  ))}
-                  {tarefa.tags.length > 2 && (
-                    <Badge variant="secondary" className="text-xs px-2 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
-                      +{tarefa.tags.length - 2}
-                    </Badge>
-                  )}
-                </div>
-              )}
             </div>
-
-            {/* Botão de colapso - Tamanho médio */}
-            {expanded && (hasLongTitle || hasLongDescription) && (
-              <button
-                onClick={() => setExpanded(false)}
-                className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 underline transition-colors"
-              >
-                mostrar menos
-              </button>
-            )}
-          </div>
-
-          {/* Ações - Tamanho médio */}
-          <div className="flex flex-col gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => handleDelete(tarefa.id)}
-              className="text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 p-2 rounded-lg transition-colors"
-              title="Deletar tarefa"
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const KanbanColumn = ({ dia, tarefas }: { dia: DiaSemana; tarefas: any[] }) => {
-    const dataDia = new Date(semanaAtual.data_inicio);
-    dataDia.setDate(dataDia.getDate() + (dia - 1));
-    const ehHoje = format(new Date(), 'yyyy-MM-dd') === format(dataDia, 'yyyy-MM-dd');
-    const passou = dataDia.getTime() < new Date().setHours(0, 0, 0, 0);
-
-    return (
-      <div className={`bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-2xl overflow-hidden flex flex-col h-full min-h-[500px] w-full transition-all duration-200 ${
-        ehHoje 
-          ? 'ring-3 ring-blue-500 border-blue-300 dark:border-blue-600 shadow-xl' 
-          : passou 
-            ? 'opacity-60' 
-            : 'hover:shadow-lg hover:border-gray-300 dark:hover:border-gray-600'
-      }`}>
-        {/* Header da coluna - Maior */}
-        <div className={`px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0 ${
-          ehHoje ? 'bg-blue-50 dark:bg-blue-900/30' : 'bg-white dark:bg-gray-800'
-        }`}>
-          <div className="flex items-center justify-between">
-            <div className="min-w-0 flex-1">
-              <h3 className={`font-bold text-base truncate ${
-                ehHoje ? 'text-blue-700 dark:text-blue-300' : 'text-gray-900 dark:text-gray-100'
-              }`}>
-                {DIAS_SEMANA_ABREV[dia]}
-              </h3>
-              <p className={`text-sm truncate ${
-                ehHoje 
-                  ? 'text-blue-600 dark:text-blue-400' 
-                  : 'text-gray-500 dark:text-gray-400'
-              }`}>
-                {format(dataDia, 'dd/MM', { locale: ptBR })}
-              </p>
-            </div>
-            <div className={`px-3 py-2 rounded-full text-sm font-bold flex-shrink-0 ml-3 ${
-              ehHoje 
-                ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300' 
-                : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
-            }`}>
-              {tarefas.length}
-            </div>
-          </div>
-        </div>
-
-        {/* Conteúdo da coluna - Maior */}
-        <div className="flex-1 p-5 overflow-y-auto">
-          <div className="space-y-3 min-h-full">
-            {tarefas.map((tarefa) => (
-              <TarefaCard key={tarefa.id} tarefa={tarefa} />
-            ))}
-            
-            {tarefas.length === 0 && (
-              <div className="text-center py-16 text-gray-400 dark:text-gray-500">
-                <Calendar className="h-12 w-12 mx-auto mb-4 opacity-30" />
-                <p className="text-base font-medium">Nenhuma tarefa</p>
-                <p className="text-sm mt-2 opacity-60">Arraste ou crie aqui</p>
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -343,107 +315,157 @@ export const KanbanSemanalTarefas = () => {
   if (isLoading) {
     return (
       <div className="py-8 text-center text-gray-500 dark:text-gray-400">
-        <Clock className="h-8 w-8 mx-auto mb-2 animate-spin" />
+        <Clock className="mx-auto mb-2 h-8 w-8 animate-spin" />
         Carregando tarefas...
       </div>
     );
   }
 
   return (
-    <div className="w-full space-y-6">
-      {/* Header - Responsivo */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div className="min-w-0 flex-1">
-          <h2 className="text-lg lg:text-xl font-semibold text-gray-900 dark:text-gray-100 mb-1 lg:mb-2 truncate">
-            {semanaAtual.nome}
-          </h2>
-          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-sm text-gray-600 dark:text-gray-400">
-            <span>{estatisticas.concluidas} de {estatisticas.total} concluídas</span>
-            <span>{(estatisticas.taxaConclusao || 0)}%</span>
-          </div>
-        </div>
-
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full lg:w-auto lg:ml-48">
-          {/* Navegação */}
-          <div className="flex items-center gap-1">
-            <Button variant="outline" size="sm" onClick={semanaAnterior} className="flex-shrink-0">
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={irParaHoje}
-              disabled={semanaAtual.eh_semana_atual}
-              className="flex-shrink-0"
-            >
-              <Home className="h-4 w-4" />
-            </Button>
-            <Button variant="outline" size="sm" onClick={proximaSemana} className="flex-shrink-0">
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-
-          {/* Estatísticas */}
-          <div className="flex items-center gap-1 flex-wrap">
-            <Badge variant="outline" className="text-xs sm:text-sm">
-              {estatisticas.pendentes} pendentes
-            </Badge>
+    <div className="w-full space-y-5">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-slate-100">{semanaAtual.nome}</h2>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+            <Badge variant="outline">{estatisticas.concluidas} de {estatisticas.total} concluidas</Badge>
+            <Badge variant="outline">{estatisticas.pendentes} pendentes</Badge>
             {estatisticas.urgentes > 0 && (
-              <Badge className="bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300 text-xs sm:text-sm">
+              <Badge className="bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-300">
                 {estatisticas.urgentes} urgentes
               </Badge>
             )}
           </div>
+        </div>
 
-          {/* Ações */}
-          <div className="flex items-center gap-1">
-            <Button onClick={handleOpenDialog} className="flex-shrink-0 flex items-center justify-center">
-              <Plus className="h-4 w-4 sm:mr-2" />
-              <span className="hidden sm:inline">Nova Tarefa</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" onClick={semanaAnterior}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <Button variant="outline" size="sm" onClick={irParaHoje} disabled={semanaAtual.eh_semana_atual}>
+            <Home className="mr-2 h-4 w-4" />
+            Hoje
+          </Button>
+          <Button variant="outline" size="sm" onClick={proximaSemana}>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+          <Button size="sm" onClick={() => handleOpenDialog()}>
+            <Plus className="mr-2 h-4 w-4" />
+            Nova Tarefa
+          </Button>
+          {!semanaAtual.eh_semana_atual && (
+            <Button variant="outline" size="sm" onClick={() => arquivarSemana(semanaAtual.semana_an)}>
+              <Archive className="mr-2 h-4 w-4" />
+              Arquivar
             </Button>
-            
-            {!semanaAtual.eh_semana_atual && (
-              <Button 
-                variant="outline" 
-                onClick={() => arquivarSemana(semanaAtual.semana_an)}
-                className="flex-shrink-0 flex items-center justify-center"
-              >
-                <Archive className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Arquivar</span>
-                <span className="sm:hidden">📁</span>
-              </Button>
-            )}
-          </div>
+          )}
         </div>
       </div>
 
-      {/* Kanban Grid - Responsivo com colunas mais largas */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6 gap-4">
-        {([1, 2, 3, 4, 5, 6, 7] as DiaSemana[]).map((dia) => (
-          <KanbanColumn 
-            key={dia} 
-            dia={dia} 
-            tarefas={tarefasPorDia[dia] || []}
-          />
-        ))}
-      </div>
+      <Card className="overflow-hidden border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <div className="min-w-[980px]">
+              <div className="grid grid-cols-[76px_repeat(7,minmax(128px,1fr))] border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/70">
+                <div className="flex items-center justify-center border-r border-slate-200 p-3 dark:border-slate-800">
+                  <Clock className="h-4 w-4 text-slate-400" />
+                </div>
+                {diasDaSemana.map(({ dia, data }) => {
+                  const hoje = format(new Date(), 'yyyy-MM-dd') === format(data, 'yyyy-MM-dd');
+                  return (
+                    <div
+                      key={dia}
+                      className={`border-r border-slate-200 p-3 text-center last:border-r-0 dark:border-slate-800 ${
+                        hoje ? 'bg-blue-50 dark:bg-blue-950/30' : ''
+                      }`}
+                    >
+                      <p className={`text-xs font-semibold uppercase ${hoje ? 'text-blue-600 dark:text-blue-300' : 'text-slate-500 dark:text-slate-400'}`}>
+                        {DIAS_SEMANA_ABREV[dia]}
+                      </p>
+                      <p className={`mt-0.5 text-lg font-bold ${hoje ? 'text-blue-700 dark:text-blue-200' : 'text-slate-900 dark:text-slate-100'}`}>
+                        {format(data, 'dd/MM', { locale: ptBR })}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
 
-      {/* Dialog de Criação */}
-      <Dialog open={dialogOpen} onOpenChange={handleCloseDialog}>
+              <div className="grid grid-cols-[76px_repeat(7,minmax(128px,1fr))] border-b-2 border-slate-200 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-900/40">
+                <div className="flex items-center justify-center border-r border-slate-200 p-2 dark:border-slate-800">
+                  <span className="text-[10px] font-semibold uppercase text-slate-500 dark:text-slate-400">Dia todo</span>
+                </div>
+                {diasDaSemana.map(({ dia }) => {
+                  const list = tarefasSemHorarioPorDia.get(dia) || [];
+                  return (
+                    <div
+                      key={dia}
+                      onClick={() => handleOpenDialog(dia, '')}
+                      className="min-h-[76px] border-r border-slate-200 p-2 text-left transition hover:bg-slate-100/70 last:border-r-0 dark:border-slate-800 dark:hover:bg-slate-800/60"
+                    >
+                      <div className="space-y-2">
+                        {list.map((tarefa) => (
+                          <TarefaCard key={tarefa.id} tarefa={tarefa} compact />
+                        ))}
+                        {list.length === 0 && (
+                          <div className="flex h-12 items-center justify-center rounded border border-dashed border-slate-200 text-slate-300 dark:border-slate-800 dark:text-slate-600">
+                            <Plus className="h-4 w-4" />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="max-h-[640px] overflow-y-auto">
+                {HORARIOS.map((horario) => (
+                  <div
+                    key={horario}
+                    className="grid grid-cols-[76px_repeat(7,minmax(128px,1fr))] border-b border-slate-100 dark:border-slate-800"
+                  >
+                    <div className="border-r border-slate-200 p-2 pt-3 text-center dark:border-slate-800">
+                      <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{horario}</span>
+                    </div>
+                    {diasDaSemana.map(({ dia }) => {
+                      const key = `${dia}-${horario}`;
+                      const list = tarefasPorSlot.get(key) || [];
+
+                      return (
+                        <div
+                          key={key}
+                          onClick={() => handleOpenDialog(dia, horario)}
+                          className="group min-h-[78px] border-r border-slate-100 p-2 text-left transition hover:bg-blue-50/60 last:border-r-0 dark:border-slate-800 dark:hover:bg-blue-950/20"
+                        >
+                          <div className="space-y-2">
+                            {list.map((tarefa) => (
+                              <TarefaCard key={tarefa.id} tarefa={tarefa} />
+                            ))}
+                            {list.length === 0 && (
+                              <div className="flex h-12 items-center justify-center rounded border border-dashed border-transparent text-slate-300 opacity-0 transition group-hover:border-slate-200 group-hover:opacity-100 dark:text-slate-600 dark:group-hover:border-slate-700">
+                                <Plus className="h-4 w-4" />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Nova Tarefa</DialogTitle>
-            <DialogDescription>
-              Preencha os dados da nova tarefa para a semana atual
-            </DialogDescription>
+            <DialogDescription>Escolha o dia e o horario para encaixar a tarefa no planner.</DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Título */}
             <div>
-              <label className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-2 block">
-                Título *
-              </label>
+              <label className="mb-2 block text-sm font-medium text-gray-900 dark:text-gray-100">Titulo *</label>
               <Input
                 placeholder="Ex: Ligar para cliente"
                 value={formData.titulo}
@@ -452,11 +474,65 @@ export const KanbanSemanalTarefas = () => {
               />
             </div>
 
-            {/* Descrição */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-gray-900 dark:text-gray-100">Dia</label>
+                <Select
+                  value={formData.dia_semana.toString()}
+                  onValueChange={(value) => setFormData({ ...formData, dia_semana: parseInt(value, 10) as DiaSemana })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {([1, 2, 3, 4, 5, 6, 7] as DiaSemana[]).map((dia) => (
+                      <SelectItem key={dia} value={dia.toString()}>
+                        {DIAS_SEMANA[dia]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-gray-900 dark:text-gray-100">Horario</label>
+                <Input
+                  type="time"
+                  value={formData.horario}
+                  onChange={(e) => setFormData({ ...formData, horario: e.target.value })}
+                />
+              </div>
+            </div>
+
             <div>
-              <label className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-2 block">
-                Descrição
-              </label>
+              <label className="mb-2 block text-sm font-medium text-gray-900 dark:text-gray-100">Prioridade</label>
+              <Select
+                value={formData.prioridade}
+                onValueChange={(value) => setFormData({ ...formData, prioridade: value as PlannerFormData['prioridade'] })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="baixa">Baixa</SelectItem>
+                  <SelectItem value="media">Media</SelectItem>
+                  <SelectItem value="alta">Alta</SelectItem>
+                  <SelectItem value="urgente">Urgente</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-gray-900 dark:text-gray-100">Categoria</label>
+              <Input
+                placeholder="geral"
+                value={formData.categoria}
+                onChange={(e) => setFormData({ ...formData, categoria: e.target.value })}
+              />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-gray-900 dark:text-gray-100">Descricao</label>
               <Textarea
                 placeholder="Detalhes da tarefa..."
                 value={formData.descricao}
@@ -465,69 +541,12 @@ export const KanbanSemanalTarefas = () => {
               />
             </div>
 
-            {/* Dia da Semana */}
-            <div>
-              <label className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-2 block">
-                Dia da Semana *
-              </label>
-              <Select
-                value={formData.dia_semana.toString()}
-                onValueChange={(value) => setFormData({ ...formData, dia_semana: parseInt(value) as DiaSemana })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {([1, 2, 3, 4, 5, 6, 7] as DiaSemana[]).map((dia) => (
-                    <SelectItem key={dia} value={dia.toString()}>
-                      {DIAS_SEMANA[dia]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Prioridade */}
-            <div>
-              <label className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-2 block">
-                Prioridade
-              </label>
-              <Select
-                value={formData.prioridade}
-                onValueChange={(value) => setFormData({ ...formData, prioridade: value as any })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="baixa">Baixa</SelectItem>
-                  <SelectItem value="media">Média</SelectItem>
-                  <SelectItem value="alta">Alta</SelectItem>
-                  <SelectItem value="urgente">Urgente</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Categoria */}
-            <div>
-              <label className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-2 block">
-                Categoria
-              </label>
-              <Input
-                placeholder="geral"
-                value={formData.categoria}
-                onChange={(e) => setFormData({ ...formData, categoria: e.target.value })}
-              />
-            </div>
-
-            {/* Ações */}
             <div className="flex items-center justify-between gap-3 pt-4">
               <Button type="button" variant="outline" onClick={handleCloseDialog}>
                 Cancelar
               </Button>
-              
               <Button type="submit">
-                <Plus className="h-4 w-4 mr-2" />
+                <Plus className="mr-2 h-4 w-4" />
                 Criar Tarefa
               </Button>
             </div>
@@ -535,7 +554,6 @@ export const KanbanSemanalTarefas = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog de Confirmação de Delete */}
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
@@ -543,46 +561,24 @@ export const KanbanSemanalTarefas = () => {
               <AlertTriangle className="h-5 w-5 text-red-500" />
               Excluir Tarefa
             </DialogTitle>
-            <DialogDescription>
-              Tem certeza que deseja excluir esta tarefa? Esta ação não pode ser desfeita.
-            </DialogDescription>
+            <DialogDescription>Tem certeza que deseja excluir esta tarefa? Esta acao nao pode ser desfeita.</DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3">
-              <div className="flex items-start gap-2">
-                <AlertTriangle className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0" />
-                <div className="text-sm text-red-800 dark:text-red-200">
-                  <p className="font-medium mb-1">Esta ação irá:</p>
-                  <ul className="list-disc list-inside space-y-1 text-xs">
-                    <li>Remover permanentemente a tarefa</li>
-                    <li>Perder todos os dados associados</li>
-                    <li>Não poderá ser desfeita</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
+          <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200">
+            A tarefa sera removida permanentemente.
           </div>
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setShowDeleteDialog(false)}
-              disabled={isDeleting}
-            >
+            <Button variant="outline" onClick={() => setShowDeleteDialog(false)} disabled={isDeleting}>
               Cancelar
             </Button>
-            <Button
-              variant="destructive"
-              onClick={confirmDelete}
-              disabled={isDeleting}
-            >
+            <Button variant="destructive" onClick={confirmDelete} disabled={isDeleting}>
               {isDeleting ? (
                 <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  <div className="mr-2 h-4 w-4 animate-spin rounded-full border-b-2 border-white" />
                   Excluindo...
                 </>
               ) : (
                 <>
-                  <Trash2 className="h-4 w-4 mr-2" />
+                  <Trash2 className="mr-2 h-4 w-4" />
                   Excluir Tarefa
                 </>
               )}

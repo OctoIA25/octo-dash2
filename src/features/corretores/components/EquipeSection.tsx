@@ -23,7 +23,6 @@ import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { EquipeDetailsSidebar } from './EquipeDetailsSidebar';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from "@/hooks/useAuth";
-import { getTenantCorretores, type TenantCorretor } from '@/features/imoveis/services/imoveisXmlService';
 import { fetchTenantMembers, createTenantMember, updateMemberRole, removeTenantMember, updateMemberPermissions, updateMemberLeader, deleteMemberCompletely, adminUpdateMemberPassword, adminUpdateMemberEmail, type TenantMember } from '../services/tenantMembersService';
 import { fetchTeams, setTeamLeader, type Team } from '../services/teamsManagementService';
 import { useLateralDrawer } from '@/hooks/useLateralDrawer';
@@ -122,8 +121,6 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
   const [sortBy, setSortBy] = useState<string>('nome');
   const [membroSelecionado, setMembroSelecionado] = useState<MembroEquipe | null>(null);
 
-  const [corretoresXml, setCorretoresXml] = useState<TenantCorretor[]>([]);
-  
   // Estados para membros do banco de dados
   const [tenantMembers, setTenantMembers] = useState<TenantMember[]>([]);
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
@@ -655,32 +652,18 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
     }
   };
 
-  useEffect(() => {
-    if (!tenantId) return;
-    setCorretoresXml(getTenantCorretores(tenantId));
-  }, [tenantId]);
-
-  // Limpar corretores do XML ao carregar se não tiverem email válido
-  useEffect(() => {
-    if (!tenantId) return;
-    
-    const corretores = getTenantCorretores(tenantId);
-    const comEmailValido = corretores.filter(c => c.email && c.email.includes('@'));
-    
-    // Se mais de 50% não tem email, limpar o cache
-    if (corretores.length > 0 && comEmailValido.length < corretores.length * 0.5) {
-      localStorage.removeItem(`corretores_${tenantId}`);
-    }
-  }, [tenantId]);
-
-  // Nota: A tabela 'brokers' não existe no banco multitenant
-  // Os membros são gerenciados via tenant_memberships
-
-  // Extrair membros da equipe - PRIORIDADE: tenant_memberships do banco de dados
+  // Membros da equipe: fonte exclusiva tenant_memberships.
   const membrosEquipe = useMemo(() => {
     const membrosMap = new Map<string, MembroEquipe>();
+    const membroAliases = new Map<string, MembroEquipe>();
+    const normalizeAlias = (value?: string | null) => (value || '').trim().toLowerCase();
+    const registerAlias = (value: string | undefined, membro: MembroEquipe) => {
+      const alias = normalizeAlias(value);
+      if (alias && !membroAliases.has(alias)) {
+        membroAliases.set(alias, membro);
+      }
+    };
 
-    // FONTE PRINCIPAL: Membros do banco de dados (tenant_memberships)
     tenantMembers.forEach((member, index) => {
       const nomeMembro = member.email.split('@')[0] || member.email;
       const iniciais = nomeMembro
@@ -689,14 +672,9 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
         .join('')
         .substring(0, 2) || 'U';
       const cor = CORES_AVATAR[index % CORES_AVATAR.length];
-      const matchingCorretor = corretoresXml.find(
-        (c) =>
-          c.email?.toLowerCase() === member.email?.toLowerCase() ||
-          c.nome?.toLowerCase() === nomeMembro.toLowerCase()
-      );
-      const foto = ((member.permissions as any)?.photo as string | undefined) || matchingCorretor?.foto;
+      const foto = (member.permissions as any)?.photo as string | undefined;
 
-      membrosMap.set(member.user_id, {
+      const membro: MembroEquipe = {
         id: member.id,
         broker_uuid: member.user_id,
         nome: member.email,
@@ -710,81 +688,17 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
         taxaConversao: 0,
         email: member.email,
         foto,
-      });
-    });
+      };
 
-    // Complementar com corretores do XML (se não estiverem no banco)
-    corretoresXml.forEach((c) => {
-      const nomeMembro = c.nome || 'Não Atribuído';
-      // Verificar se já existe por email
-      const existingMember = Array.from(membrosMap.values()).find(
-        (m) =>
-          (m.email && c.email && m.email.toLowerCase() === c.email.toLowerCase()) ||
-          m.nome?.toLowerCase() === nomeMembro.toLowerCase()
-      );
-
-      if (!existingMember && c.nome) {
-        const iniciais = nomeMembro
-          .split(' ')
-          .map(n => n[0])
-          .join('')
-          .toUpperCase()
-          .substring(0, 2);
-        const cor = CORES_AVATAR[membrosMap.size % CORES_AVATAR.length];
-
-        membrosMap.set(nomeMembro, {
-          id: (c.email || nomeMembro).toLowerCase().replace(/\s+/g, '-'),
-          nome: nomeMembro,
-          iniciais,
-          cor,
-          status: 'offline',
-          equipe: 'Vendas',
-          cargo: 'Corretor',
-          totalLeads: 0,
-          leadsAtivos: 0,
-          taxaConversao: 0,
-          email: c.email,
-          foto: c.foto,
-        });
-      } else if (existingMember && !existingMember.foto && c.foto) {
-        existingMember.foto = c.foto;
-      }
+      membrosMap.set(member.user_id, membro);
+      registerAlias(member.email, membro);
+      registerAlias(nomeMembro, membro);
     });
     
-    // Contabilizar leads por corretor
+    // Contabilizar somente leads que casam com membros reais do tenant.
     leads.forEach((lead) => {
       const nomeMembro = lead.corretor_responsavel || 'Não Atribuído';
-      
-      // Buscar membro por nome ou email
-      let membro = Array.from(membrosMap.values()).find(
-        m => m.nome === nomeMembro || m.email?.toLowerCase() === nomeMembro.toLowerCase()
-      );
-      
-      if (!membro && nomeMembro !== 'Não Atribuído') {
-        const iniciais = nomeMembro
-          .split(' ')
-          .map(n => n[0])
-          .join('')
-          .toUpperCase()
-          .substring(0, 2);
-        
-        const cor = CORES_AVATAR[membrosMap.size % CORES_AVATAR.length];
-        
-        const novoMembro: MembroEquipe = {
-          id: nomeMembro.toLowerCase().replace(/\s+/g, '-'),
-          nome: nomeMembro,
-          iniciais,
-          cor,
-          status: 'offline',
-          equipe: 'Vendas',
-          cargo: 'Corretor',
-          totalLeads: 0,
-          leadsAtivos: 0,
-          taxaConversao: 0,
-        };
-        membrosMap.set(nomeMembro, novoMembro);
-        membro = novoMembro;
-      }
+      const membro = membroAliases.get(normalizeAlias(nomeMembro));
       
       if (membro) {
         membro.totalLeads++;
@@ -802,7 +716,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
     });
 
     return Array.from(membrosMap.values());
-  }, [leads, corretoresXml, tenantMembers]);
+  }, [leads, tenantMembers]);
 
   // Filtrar e ordenar membros
   const membrosFiltrados = useMemo(() => {
@@ -2455,4 +2369,3 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
     </div>
   );
 };
-

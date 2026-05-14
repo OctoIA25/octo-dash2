@@ -12,10 +12,15 @@ import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuthContext } from '@/contexts/AuthContext';
+import {
+  buscarMapaEquipesPorTenant,
+  resolverEquipeDoLead,
+} from '@/features/metricas/services/teamMetricsService';
 
 const PAGE_SIZE = 1000;
 
 interface KenloLeadRow {
+  attended_by_id: string | null;
   attended_by_name: string | null;
   is_exclusive: boolean | null;
   interest_type: string | null;
@@ -26,12 +31,6 @@ interface KenloLeadRow {
   portal: string | null;
   lead_timestamp: string | null;
   archived_at: string | null;
-}
-
-interface CorretorRow {
-  nm_corretor: string | null;
-  email: string | null;
-  equipe: string | null;
 }
 
 export interface MonthPoint {
@@ -53,28 +52,6 @@ export interface EquipePoint {
 
 const MES_LABEL = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
-const EQUIPE_CORES: Record<string, string> = {
-  Verde: '#22c55e',
-  Amarela: '#eab308',
-  Vermelha: '#ef4444',
-  Azul: '#3b82f6',
-  Laranja: '#f97316',
-};
-
-const fallbackCor = (idx: number): string => {
-  const palette = ['#7c3aed', '#06b6d4', '#ec4899', '#14b8a6', '#f59e0b', '#6366f1'];
-  return palette[idx % palette.length];
-};
-
-const normalizeName = (value: string | null | undefined): string => {
-  if (!value) return '';
-  return value
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .trim();
-};
-
 async function fetchKenloLeads(tenantId: string): Promise<KenloLeadRow[]> {
   const rows: KenloLeadRow[] = [];
   let from = 0;
@@ -82,7 +59,7 @@ async function fetchKenloLeads(tenantId: string): Promise<KenloLeadRow[]> {
   while (true) {
     const { data, error } = await supabase
       .from('kenlo_leads')
-      .select('attended_by_name,is_exclusive,interest_type,interest_is_sale,interest_is_rent,stage,temperature,portal,lead_timestamp,archived_at')
+      .select('attended_by_id,attended_by_name,is_exclusive,interest_type,interest_is_sale,interest_is_rent,stage,temperature,portal,lead_timestamp,archived_at')
       .eq('tenant_id', tenantId)
       .range(from, from + PAGE_SIZE - 1);
 
@@ -94,16 +71,6 @@ async function fetchKenloLeads(tenantId: string): Promise<KenloLeadRow[]> {
   }
 
   return rows;
-}
-
-async function fetchCorretoresEquipe(tenantId: string): Promise<CorretorRow[]> {
-  const { data, error } = await supabase
-    .from('Corretores')
-    .select('nm_corretor,email,equipe')
-    .eq('tenant_id', tenantId);
-
-  if (error) throw new Error(error.message);
-  return (data ?? []) as CorretorRow[];
 }
 
 export interface UseKenloMetricsResult {
@@ -127,15 +94,15 @@ export function useKenloMetrics(): UseKenloMetricsResult {
     staleTime: 5 * 60 * 1000,
   });
 
-  const corretoresQuery = useQuery({
-    queryKey: ['kenlo-metrics', 'corretores', tenantId],
-    queryFn: () => fetchCorretoresEquipe(tenantId as string),
+  const teamResolverQuery = useQuery({
+    queryKey: ['kenlo-metrics', 'team-resolver', tenantId],
+    queryFn: () => buscarMapaEquipesPorTenant(tenantId as string),
     enabled: tenantReady,
     staleTime: 10 * 60 * 1000,
   });
 
-  const leads = leadsQuery.data ?? [];
-  const corretores = corretoresQuery.data ?? [];
+  const leads = useMemo(() => leadsQuery.data ?? [], [leadsQuery.data]);
+  const teamResolver = teamResolverQuery.data;
 
   const evolucaoMensal = useMemo<MonthPoint[]>(() => {
     if (leads.length === 0) return [];
@@ -182,38 +149,33 @@ export function useKenloMetrics(): UseKenloMetricsResult {
   }, [leads]);
 
   const leadsPorEquipe = useMemo<EquipePoint[]>(() => {
-    if (leads.length === 0 || corretores.length === 0) return [];
+    if (leads.length === 0 || !teamResolver) return [];
 
-    const nameToEquipe = new Map<string, string>();
-    for (const c of corretores) {
-      if (!c.equipe) continue;
-      const byName = normalizeName(c.nm_corretor);
-      if (byName) nameToEquipe.set(byName, c.equipe);
-      const byEmail = normalizeName(c.email);
-      if (byEmail) nameToEquipe.set(byEmail, c.equipe);
-    }
-
-    const counts = new Map<string, number>();
+    const counts = new Map<string, { equipe: string; quantidade: number; cor: string }>();
     for (const lead of leads) {
-      const key = normalizeName(lead.attended_by_name);
-      if (!key) continue;
-      const equipe = nameToEquipe.get(key);
-      if (!equipe) continue;
-      counts.set(equipe, (counts.get(equipe) ?? 0) + 1);
+      const team = resolverEquipeDoLead(teamResolver, {
+        attended_by_id: lead.attended_by_id,
+        attended_by_name: lead.attended_by_name,
+        assigned_agent_name: lead.attended_by_name,
+      });
+      if (!team) continue;
+
+      const current = counts.get(team.id) || {
+        equipe: team.name,
+        quantidade: 0,
+        cor: team.color,
+      };
+      current.quantidade += 1;
+      counts.set(team.id, current);
     }
 
-    return Array.from(counts.entries())
-      .sort((a, b) => b[1] - a[1])
-      .map(([equipe, quantidade], idx) => ({
-        equipe,
-        quantidade,
-        cor: EQUIPE_CORES[equipe] ?? fallbackCor(idx),
-      }));
-  }, [leads, corretores]);
+    return Array.from(counts.values())
+      .sort((a, b) => b.quantidade - a.quantidade);
+  }, [leads, teamResolver]);
 
   return {
-    isLoading: leadsQuery.isLoading || corretoresQuery.isLoading,
-    isError: leadsQuery.isError || corretoresQuery.isError,
+    isLoading: leadsQuery.isLoading || teamResolverQuery.isLoading,
+    isError: leadsQuery.isError || teamResolverQuery.isError,
     tenantReady,
     totalLeads: leads.length,
     evolucaoMensal,

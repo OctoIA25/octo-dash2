@@ -129,7 +129,6 @@ export const useRelatorios = () => {
       setLoadingRanking(true);
       try {
         const ranking = await buscarRankingCorretores(tenantId, rankingAno, rankingMes, rankingPeriodo);
-        console.log('📈 [useRelatorios] Ranking carregado:', ranking);
         setRankingCorretores(ranking);
       } catch (error) {
         console.error('Erro ao carregar ranking de corretores:', error);

@@ -442,11 +442,19 @@ export const BolsaoSection = (props: BolsaoSectionProps) => {
   };
 
   // Selecionar/Deselecionar todos
+  const marcarTodosRoleta = () => {
+    setCorretoresSelecionados(new Set(corretoresDisponiveis.map(c => c.id)));
+  };
+
+  const desmarcarTodosRoleta = () => {
+    setCorretoresSelecionados(new Set());
+  };
+
   const toggleTodosRoleta = () => {
     if (corretoresSelecionados.size === corretoresDisponiveis.length) {
-      setCorretoresSelecionados(new Set());
+      desmarcarTodosRoleta();
     } else {
-      setCorretoresSelecionados(new Set(corretoresDisponiveis.map(c => c.id)));
+      marcarTodosRoleta();
     }
   };
 
@@ -2479,7 +2487,7 @@ export const BolsaoSection = (props: BolsaoSectionProps) => {
                   </div>
 
                   {/* Selecionar todos - Melhorado */}
-                  <div className="flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-900 border-2 border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-shadow dark:border-slate-800">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between p-4 rounded-xl bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-900 border-2 border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-shadow dark:border-slate-800">
                     <div className="flex items-center gap-3">
                       <Checkbox
                         id="select-all"
@@ -2494,16 +2502,40 @@ export const BolsaoSection = (props: BolsaoSectionProps) => {
                         } ({corretoresDisponiveis.length})
                       </label>
                     </div>
-                    <Badge 
-                      variant={corretoresSelecionados.size === corretoresDisponiveis.length ? "default" : "outline"} 
-                      className={`font-mono font-bold ${
-                        corretoresSelecionados.size === corretoresDisponiveis.length 
-                          ? 'bg-emerald-500 text-white' 
-                          : ''
-                      }`}
-                    >
-                      {corretoresSelecionados.size}/{corretoresDisponiveis.length}
-                    </Badge>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={marcarTodosRoleta}
+                        disabled={corretoresSelecionados.size === corretoresDisponiveis.length}
+                        className="h-8 text-xs font-semibold"
+                      >
+                        <CheckCircle className="h-3.5 w-3.5 mr-1.5" />
+                        Marcar todos
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={desmarcarTodosRoleta}
+                        disabled={corretoresSelecionados.size === 0}
+                        className="h-8 text-xs font-semibold"
+                      >
+                        <X className="h-3.5 w-3.5 mr-1.5" />
+                        Desmarcar todos
+                      </Button>
+                      <Badge 
+                        variant={corretoresSelecionados.size === corretoresDisponiveis.length ? "default" : "outline"} 
+                        className={`font-mono font-bold ${
+                          corretoresSelecionados.size === corretoresDisponiveis.length 
+                            ? 'bg-emerald-500 text-white' 
+                            : ''
+                        }`}
+                      >
+                        {corretoresSelecionados.size}/{corretoresDisponiveis.length}
+                      </Badge>
+                    </div>
                   </div>
 
                   {/* Lista de corretores */}

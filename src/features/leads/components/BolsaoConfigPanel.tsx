@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Clock, Inbox, Calendar, RefreshCw, Loader2, Check, Settings, Power, Zap } from 'lucide-react';
+import { Clock, Inbox, Calendar, RefreshCw, Loader2, Check, Settings, Power, Zap, X } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
   fetchTenantBolsaoConfig,
@@ -91,6 +91,10 @@ export const BolsaoConfigPanel = ({ tenantId, isAdmin }: BolsaoConfigPanelProps)
     );
   };
 
+  const handleSetTodosRoleta = (selected: boolean) => {
+    setCorretores((prev) => prev.map((c) => ({ ...c, is_in_roleta: selected })));
+  };
+
   const handleSaveRoleta = async () => {
     if (!tenantId) return;
     setSavingRoleta(true);
@@ -115,6 +119,10 @@ export const BolsaoConfigPanel = ({ tenantId, isAdmin }: BolsaoConfigPanelProps)
       setSavingRoleta(false);
     }
   };
+
+  const selecionadosRoleta = corretores.filter((c) => c.is_in_roleta).length;
+  const todosRoletaSelecionados = corretores.length > 0 && selecionadosRoleta === corretores.length;
+  const nenhumRoletaSelecionado = selecionadosRoleta === 0;
 
   if (!isAdmin) {
     return (
@@ -339,11 +347,42 @@ export const BolsaoConfigPanel = ({ tenantId, isAdmin }: BolsaoConfigPanelProps)
       {/* Participantes da roleta — só aparece se modo roleta */}
       {config.roletaEnabled && !config.teamQueueEnabled && (
       <Section icon={Inbox} title="Participantes da roleta">
-          <p className="text-[12px] text-slate-500 dark:text-slate-400 mb-3">
-            {corretores.length === 0
-              ? 'Nenhum corretor cadastrado neste tenant.'
-              : 'Marque quem participa do round-robin.'}
-          </p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-3">
+            <div>
+              <p className="text-[12px] text-slate-500 dark:text-slate-400">
+                {corretores.length === 0
+                  ? 'Nenhum corretor cadastrado neste tenant.'
+                  : 'Marque quem participa do round-robin.'}
+              </p>
+              {corretores.length > 0 && (
+                <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
+                  {selecionadosRoleta} de {corretores.length} participante(s) selecionado(s)
+                </p>
+              )}
+            </div>
+            {corretores.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleSetTodosRoleta(true)}
+                  disabled={savingRoleta || todosRoletaSelecionados}
+                  className="h-8 px-3 rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 text-[12px] font-semibold flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-emerald-100 dark:hover:bg-emerald-950/50 transition-colors"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  Marcar todos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSetTodosRoleta(false)}
+                  disabled={savingRoleta || nenhumRoletaSelecionado}
+                  className="h-8 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 text-[12px] font-semibold flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  Desmarcar todos
+                </button>
+              </div>
+            )}
+          </div>
           <div className="space-y-1.5">
             {corretores.map((c) => (
               <label

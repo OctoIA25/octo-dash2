@@ -37,6 +37,14 @@ export interface CorretorDisponivel {
 
 const ROLETA_TABLE = 'roleta_participantes';
 
+function getErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function normalizeEmail(email?: string | null): string {
+  return email?.trim().toLowerCase() || '';
+}
+
 /**
  * Verifica se a tabela de roleta existe
  */
@@ -78,43 +86,34 @@ export async function fetchRoletaParticipantes(tenantId: string): Promise<Roleta
   }
 }
 
+async function fetchTodosRoletaParticipantes(tenantId: string): Promise<RoletaParticipante[]> {
+  try {
+    const { data, error } = await supabase
+      .from(ROLETA_TABLE)
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .order('broker_name', { ascending: true });
+
+    if (error) {
+      console.error('❌ Erro ao buscar histórico da roleta:', error);
+      return [];
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error('❌ Erro ao buscar histórico da roleta:', error);
+    return [];
+  }
+}
+
 /**
  * Busca todos os corretores disponíveis do tenant (para seleção na UI)
- * Combina dados de tenant_brokers e tenant_memberships
+ * Usa tenant_memberships como fonte única de verdade para a roleta
  * Por padrão, se não houver participantes configurados, todos são marcados como na roleta
  */
 export async function fetchCorretoresDisponiveis(tenantId: string): Promise<CorretorDisponivel[]> {
   try {
-    
-    const corretoresMap = new Map<string, CorretorDisponivel>();
-    
-    // 1. Buscar de tenant_brokers (corretores cadastrados via XML ou manualmente)
-    const { data: tenantBrokers, error: brokersError } = await supabase
-      .from('tenant_brokers')
-      .select('id, name, email, phone, photo_url, auth_user_id, status')
-      .eq('tenant_id', tenantId)
-      .eq('status', 'active');
-    
-    if (brokersError) {
-      console.warn('⚠️ Erro ao buscar tenant_brokers:', brokersError.message);
-    }
-    
-    // Adicionar corretores de tenant_brokers
-    (tenantBrokers || []).forEach(broker => {
-      const key = broker.auth_user_id || broker.id;
-      if (!corretoresMap.has(key)) {
-        corretoresMap.set(key, {
-          id: key,
-          name: broker.name || 'Sem nome',
-          email: broker.email,
-          phone: broker.phone,
-          photo_url: broker.photo_url,
-          role: 'corretor'
-        });
-      }
-    });
-    
-    // 2. Buscar de tenant_memberships (usuários com acesso ao sistema)
+    // Buscar de tenant_memberships (usuários com acesso ao sistema)
     const { data: members, error: membersError } = await supabase
       .from('tenant_memberships')
       .select('user_id, role')
@@ -128,7 +127,15 @@ export async function fetchCorretoresDisponiveis(tenantId: string): Promise<Corr
     // Buscar dados dos usuários via user_profiles
     const memberUserIds = (members || [])
       .map(m => m.user_id)
-      .filter(id => !corretoresMap.has(id));
+      .filter((id): id is string => Boolean(id));
+
+    const profilesById = new Map<string, {
+      id: string;
+      email: string | null;
+      full_name: string | null;
+      phone: string | null;
+      avatar_url: string | null;
+    }>();
     
     if (memberUserIds.length > 0) {
       const { data: profiles, error: profilesError } = await supabase
@@ -141,34 +148,48 @@ export async function fetchCorretoresDisponiveis(tenantId: string): Promise<Corr
       }
       
       (profiles || []).forEach(profile => {
-        if (!corretoresMap.has(profile.id)) {
-          const memberRole = members?.find(m => m.user_id === profile.id)?.role || 'corretor';
-          corretoresMap.set(profile.id, {
-            id: profile.id,
-            name: profile.full_name || profile.email?.split('@')[0] || 'Usuário',
-            email: profile.email,
-            phone: profile.phone,
-            photo_url: profile.avatar_url,
-            role: memberRole
-          });
-        }
+        profilesById.set(profile.id, profile);
       });
     }
     
-    // 3. Buscar participantes atuais da roleta para marcar quem já está
-    const participantes = await fetchRoletaParticipantes(tenantId);
+    const corretores = (members || []).reduce<CorretorDisponivel[]>((acc, member) => {
+      if (!member.user_id || acc.some(c => c.id === member.user_id)) return acc;
+
+      const profile = profilesById.get(member.user_id);
+      acc.push({
+        id: member.user_id,
+        name: profile?.full_name || profile?.email?.split('@')[0] || 'Usuário',
+        email: profile?.email || null,
+        phone: profile?.phone || null,
+        photo_url: profile?.avatar_url || null,
+        role: member.role || 'corretor'
+      });
+
+      return acc;
+    }, []);
+    
+    // Buscar participantes atuais da roleta para marcar quem já está.
+    // O histórico diferencia "nunca configurado" de "todos desmarcados".
+    const todosParticipantes = await fetchTodosRoletaParticipantes(tenantId);
+    const participantes = todosParticipantes.filter(p => p.is_active);
     const participantesIds = new Set(participantes.map(p => p.broker_id));
+    const participantesEmails = new Set(
+      participantes.map(p => normalizeEmail(p.broker_email)).filter(Boolean)
+    );
     
     // 🎰 PADRÃO: Se não houver nenhum participante configurado, todos estão na roleta
-    const todosNaRoleta = participantes.length === 0;
+    const todosNaRoleta = todosParticipantes.length === 0;
     
     // Marcar quem já está na roleta (ou todos se for primeira vez)
-    const corretores = Array.from(corretoresMap.values()).map(c => ({
+    const corretoresComStatus = corretores.map(c => ({
       ...c,
-      is_in_roleta: todosNaRoleta || participantesIds.has(c.id)
+      is_in_roleta:
+        todosNaRoleta ||
+        participantesIds.has(c.id) ||
+        participantesEmails.has(normalizeEmail(c.email))
     }));
     
-    return corretores.sort((a, b) => a.name.localeCompare(b.name));
+    return corretoresComStatus.sort((a, b) => a.name.localeCompare(b.name));
   } catch (error) {
     console.error('❌ Erro ao buscar corretores disponíveis:', error);
     return [];
@@ -229,9 +250,9 @@ export async function adicionarParticipanteRoleta(
     if (error) throw error;
     
     return { success: true };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('❌ Erro ao adicionar à roleta:', error);
-    return { success: false, error: error.message || 'Erro ao adicionar participante' };
+    return { success: false, error: getErrorMessage(error, 'Erro ao adicionar participante') };
   }
 }
 
@@ -256,9 +277,9 @@ export async function removerParticipanteRoleta(
     if (error) throw error;
     
     return { success: true };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('❌ Erro ao remover da roleta:', error);
-    return { success: false, error: error.message || 'Erro ao remover participante' };
+    return { success: false, error: getErrorMessage(error, 'Erro ao remover participante') };
   }
 }
 
@@ -297,9 +318,9 @@ export async function atualizarParticipantesRoleta(
     }
     
     return { success: true, added, removed };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('❌ Erro ao atualizar roleta:', error);
-    return { success: false, error: error.message, added: 0, removed: 0 };
+    return { success: false, error: getErrorMessage(error, 'Erro ao atualizar roleta'), added: 0, removed: 0 };
   }
 }
 

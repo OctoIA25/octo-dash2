@@ -265,12 +265,19 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
   const [customFilters, setCustomFilters] = useState<CustomFilter[]>([]);
   const [filterSelectorKey, setFilterSelectorKey] = useState(0);
 
+  const [corretores, setCorretores] = useState<string[]>([]);
+  const [corretorPorCodigo, setCorretorPorCodigo] = useState<Record<string, string>>({});
+
   const TIPOS_COMISSAO = [
     'Captador', 'Indicação', 'Promotor', 'Placa', 'Fotografia',
     'Exclusividade', 'Anúncio', 'Plantão', 'Vistoria'
   ];
 
-  const matchesBooleanFilter = (value: boolean | string | number | null | undefined, filter: string) => {
+  const getImovelValue = (imovel: Imovel, field: string): unknown => {
+    return (imovel as unknown as Record<string, unknown>)[field];
+  };
+
+  const matchesBooleanFilter = (value: unknown, filter: string) => {
     if (filter === 'todos') return true;
     const normalized = typeof value === 'string' ? value.toLowerCase() : value;
     const isTrue = normalized === true || normalized === 'sim' || normalized === 'true' || normalized === '1' || normalized === 1;
@@ -350,8 +357,16 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
       local => !codigosXml.has(local.referencia?.toUpperCase())
     );
     
-    return [...imoveisXml, ...locaisSemDuplicata];
-  }, [imoveisXml, imoveisLocais, convertLocalToImovel]);
+    return [...imoveisXml, ...locaisSemDuplicata].map((imovel) => {
+      const codigo = imovel.referencia?.trim().toUpperCase();
+      const corretorNome = codigo ? corretorPorCodigo[codigo] : undefined;
+
+      return {
+        ...imovel,
+        corretor_nome: corretorNome
+      };
+    });
+  }, [imoveisXml, imoveisLocais, convertLocalToImovel, corretorPorCodigo]);
 
   // Métricas precisam considerar também os imóveis cadastrados localmente
   const metrics = useMemo(() => {
@@ -391,13 +406,48 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
     return [...new Set(values)].sort((a, b) => a.localeCompare(b, 'pt-BR'));
   }, [imoveis]);
 
-  const corretores = useMemo(() => {
-    const values = imoveis
-      .map((i) => i.corretor_nome)
-      .filter((nome): nome is string => !!nome && nome.trim().length > 0);
+  const loadCorretores = useCallback(async () => {
+    if (!tenantId) return;
 
-    return [...new Set(values)].sort((a, b) => a.localeCompare(b, 'pt-BR'));
-  }, [imoveis]);
+    try {
+      const { data, error } = await supabase
+        .from('imoveis_corretores')
+        .select('codigo_imovel, corretor_nome')
+        .eq('tenant_id', tenantId)
+        .not('corretor_nome', 'is', null)
+        .order('corretor_nome', { ascending: true });
+
+      if (error) {
+        console.error('Erro ao carregar corretores:', error);
+        return;
+      }
+
+      const mapa = Object.fromEntries(
+        (data || [])
+          .map((row) => {
+            const codigo = row.codigo_imovel?.trim().toUpperCase();
+            const nome = row.corretor_nome?.trim();
+            return codigo && nome ? [codigo, nome] : null;
+          })
+          .filter((item): item is [string, string] => Boolean(item))
+      );
+
+      const nomes = [...new Set(Object.values(mapa))]
+        .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+
+      setCorretorPorCodigo(mapa);
+      setCorretores(nomes);
+    } catch (err) {
+      console.error('Erro ao carregar corretores:', err);
+    }
+  }, [tenantId]);
+
+  const reloadCatalogoBanco = useCallback(async () => {
+    await Promise.all([
+      loadImoveisLocais(),
+      loadCorretores()
+    ]);
+  }, [loadImoveisLocais, loadCorretores]);
 
   // Excluir imóvel local do banco de dados
   const handleDeleteImovel = async (referencia: string) => {
@@ -412,6 +462,7 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
         .eq('codigo_imovel', referencia);
       
       if (deleteLocalError) {
+        console.error('❌ Erro ao excluir de imoveis_locais:', deleteLocalError.message);
       }
       
       // Excluir da tabela imoveis_corretores
@@ -428,6 +479,7 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
       
       // Recarregar dados
       await loadImoveisLocais();
+      await loadCorretores();
       
     } catch (err) {
       console.error('❌ Erro ao excluir imóvel:', err);
@@ -442,8 +494,8 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
   // Sincronizar com localStorage e carregar imóveis locais
   useEffect(() => {
     localStorage.setItem('selectedSection', 'imoveis');
-    loadImoveisLocais();
-  }, [loadImoveisLocais]);
+    void reloadCatalogoBanco();
+  }, [reloadCatalogoBanco]);
 
   // Filtrar imóveis
   const imoveisFiltrados = useMemo(() => {
@@ -537,21 +589,21 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
 
     if (acomodacaoFilter !== 'todos') {
       filtered = filtered.filter((i) => {
-        const acomodacao = (i as any).acomodacao ?? (i as any).acomodacoes ?? 0;
+        const acomodacao = getImovelValue(i, 'acomodacao') ?? getImovelValue(i, 'acomodacoes') ?? 0;
         return matchesNumericFilter(Number(acomodacao) || 0, acomodacaoFilter);
       });
     }
 
     if (exclusivoFilter !== 'todos') {
       filtered = filtered.filter((i) =>
-        matchesBooleanFilter((i as any).exclusivo ?? (i as any).exclusividade, exclusivoFilter)
+        matchesBooleanFilter(getImovelValue(i, 'exclusivo') ?? getImovelValue(i, 'exclusividade'), exclusivoFilter)
       );
     }
 
     if (iptuItrFilter !== 'todos') {
       filtered = filtered.filter((i) => {
         const iptu = i.valor_iptu || 0;
-        const itr = (i as any).valor_itr || 0;
+        const itr = Number(getImovelValue(i, 'valor_itr')) || 0;
         const possui = (iptu > 0) || (itr > 0);
         return iptuItrFilter === 'sim' ? possui : !possui;
       });
@@ -559,20 +611,20 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
 
     if (tipoComissaoFilter !== 'todos') {
       filtered = filtered.filter((i) => {
-        const tipo = (i as any).tipo_comissao ?? (i as any).tipoComissao ?? '';
+        const tipo = getImovelValue(i, 'tipo_comissao') ?? getImovelValue(i, 'tipoComissao') ?? '';
         return tipo === tipoComissaoFilter;
       });
     }
 
     if (financiamentoFilter !== 'todos') {
       filtered = filtered.filter((i) =>
-        matchesBooleanFilter((i as any).financiamento ?? (i as any).financiavel, financiamentoFilter)
+        matchesBooleanFilter(getImovelValue(i, 'financiamento') ?? getImovelValue(i, 'financiavel'), financiamentoFilter)
       );
     }
 
     if (destaqueFilter !== 'todos') {
       filtered = filtered.filter((i) =>
-        matchesBooleanFilter((i as any).destaque ?? (i as any).super_destaque, destaqueFilter)
+        matchesBooleanFilter(getImovelValue(i, 'destaque') ?? getImovelValue(i, 'super_destaque'), destaqueFilter)
       );
     }
 
@@ -584,8 +636,8 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
           if (!fieldDef) return true;
 
           if (fieldDef.type === 'feature') {
-            const areaComum: string[] = (imovel as any).area_comum || [];
-            const areaPrivativa: string[] = (imovel as any).area_privativa || [];
+            const areaComum = imovel.area_comum || [];
+            const areaPrivativa = imovel.area_privativa || [];
             const allFeatures = [...areaComum, ...areaPrivativa].map(f => f.toLowerCase().trim());
             const featureName = fieldDef.key.toLowerCase();
             const hasFeature = allFeatures.some(f => f.includes(featureName));
@@ -593,11 +645,11 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
           }
 
           if (fieldDef.type === 'boolean') {
-            const rawVal = (imovel as any)[cf.field];
+            const rawVal = getImovelValue(imovel, cf.field);
             return matchesBooleanFilter(rawVal, cf.value);
           }
 
-          const rawVal = (imovel as any)[cf.field];
+          const rawVal = getImovelValue(imovel, cf.field);
           if (fieldDef.type === 'number') {
             const numVal = parseFloat(String(rawVal ?? 0)) || 0;
             const filterNum = parseFloat(cf.value) || 0;
@@ -772,7 +824,10 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
             Novo Imóvel
           </Button>
           <Button 
-            onClick={() => sync()} 
+            onClick={async () => {
+              await sync();
+              await loadCorretores();
+            }}
             disabled={isRefetching || isLoading}
             variant="outline"
           >
@@ -785,9 +840,7 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
       <CriarImovelForm
         isOpen={isCriarImovelOpen}
         onClose={() => setIsCriarImovelOpen(false)}
-        onSuccess={() => {
-          loadImoveisLocais();
-        }}
+        onSuccess={reloadCatalogoBanco}
       />
 
       {/* Tabs são renderizadas no NovoHeader via PageTabs. Aqui usamos Tabs controlado pelo query param. */}
@@ -796,7 +849,7 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
           <MeusImoveisTab 
             allImoveis={imoveis} 
             onViewDetails={handleViewDetails}
-            onPropertyCreated={loadImoveisLocais}
+            onPropertyCreated={reloadCatalogoBanco}
           />
         </TabsContent>
 
@@ -1596,4 +1649,3 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
     </div>
   );
 };
-

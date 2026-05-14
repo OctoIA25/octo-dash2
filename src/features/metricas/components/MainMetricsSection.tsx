@@ -60,6 +60,12 @@ import { Users, Home, UserCheck, BarChart3, Target, Building2, Key, Calendar, Ch
 // Removido import não utilizado: LeadsSubSection
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useAuthContext } from '@/contexts/AuthContext';
+import {
+  buscarMapaEquipesPorTenant,
+  normalizeMetricKey,
+  type TeamMetricInfo,
+} from '@/features/metricas/services/teamMetricsService';
 
 interface MainMetricsSectionProps {
   leads: ProcessedLead[];
@@ -86,6 +92,8 @@ export const MainMetricsSection = ({
   onProprietariosSubSectionChange,
   activeClienteInteressadoSubSection = 'geral'
 }: MainMetricsSectionProps) => {
+  const { tenantId } = useAuthContext();
+
   // Estado interno para activeLeadsSubSection (fallback se não houver callback externo)
   const [internalLeadsSubSection, setInternalLeadsSubSection] = useState<'venda' | 'locacao' | 'todos'>('venda');
   
@@ -113,12 +121,61 @@ export const MainMetricsSection = ({
   const [geralBusinessFilter, setGeralBusinessFilter] = useState<'todos' | 'venda' | 'locacao'>('todos');
   
   // Estados para filtros da aba Atendimento
-  const [atendimentoEquipeFilter, setAtendimentoEquipeFilter] = useState<'todas' | 'verde' | 'vermelha' | 'amarela' | 'azul'>('todas');
+  const [atendimentoEquipeFilter, setAtendimentoEquipeFilter] = useState<string>('todas');
   const [atendimentoCorretorFilter, setAtendimentoCorretorFilter] = useState<string>('todos');
+  const [atendimentoEquipes, setAtendimentoEquipes] = useState<TeamMetricInfo[]>([]);
+  const [atendimentoCorretorEquipeMap, setAtendimentoCorretorEquipeMap] = useState<Map<string, string>>(new Map());
   
   // Determinar qual estado usar
   const currentVendaSubTab = onVendaSubTabChange ? activeVendaSubTab : internalVendaSubTab;
   const handleVendaSubTabChange = onVendaSubTabChange || setInternalVendaSubTab;
+
+  useEffect(() => {
+    let mounted = true;
+
+    if (!tenantId || tenantId === 'owner') {
+      setAtendimentoEquipes([]);
+      setAtendimentoCorretorEquipeMap(new Map());
+      setAtendimentoEquipeFilter('todas');
+      return;
+    }
+
+    buscarMapaEquipesPorTenant(tenantId)
+      .then((resolver) => {
+        if (!mounted) return;
+
+        const corretorEquipeMap = new Map<string, string>();
+        resolver.nameToTeam.forEach((team, key) => corretorEquipeMap.set(key, team.id));
+        resolver.emailToTeam.forEach((team, key) => corretorEquipeMap.set(key, team.id));
+
+        setAtendimentoEquipes(resolver.teams);
+        setAtendimentoCorretorEquipeMap(corretorEquipeMap);
+        setAtendimentoEquipeFilter((current) => (
+          current === 'todas' || resolver.teamById.has(current) ? current : 'todas'
+        ));
+      })
+      .catch((error) => {
+        console.error('Erro ao carregar equipes para filtro de atendimento:', error);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [tenantId]);
+
+  const atendimentoEquipeSelecionada = useMemo(() => {
+    if (atendimentoEquipeFilter === 'todas') return null;
+    return atendimentoEquipes.find((equipe) => equipe.id === atendimentoEquipeFilter) || null;
+  }, [atendimentoEquipeFilter, atendimentoEquipes]);
+
+  const atendimentoEquipeOptions = useMemo(() => [
+    { value: 'todas', label: 'Todas Equipes', color: null as string | null },
+    ...atendimentoEquipes.map((equipe) => ({
+      value: equipe.id,
+      label: equipe.name,
+      color: equipe.color,
+    })),
+  ], [atendimentoEquipes]);
 
   // Debug logs para verificar mudanças de estado
   useEffect(() => {
@@ -266,18 +323,10 @@ export const MainMetricsSection = ({
     if (activeClienteInteressadoSubSection === 'atendimento') {
       // Filtro por Equipe
       if (atendimentoEquipeFilter !== 'todas') {
-        // Mapear equipes para corretores (baseado nos dados do useAuth)
-        const equipeCorretores: Record<string, string[]> = {
-          'verde': ['Alexandra Niero', 'Ana Cristina Delgado Fontes', 'Bárbara Fabrício', 'Edna Silva', 'Felipe Martins', 'Jeferson Santos', 'Renato Faraco', 'André Coelho', 'Pâmela Hashimoto'],
-          'vermelha': ['Alexandre Faggian', 'Ana Giglio', 'Catia Oliveira', 'Emerson Pavan', 'Gabriele Fávaro', 'Karla Paulovic', 'Rose Braga', 'Felipe', 'Isabel Cristina'],
-          'amarela': ['André Marcondes', 'Ana Lucia Brito', 'Celina Yamamoto', 'Felipe Camargo', 'Gustavo Teo', 'Jose Rosalem', 'Wilson Peres', 'Jeniffer Arcos', 'Julia Castro'],
-          'azul': ['Andrea Abrao', 'Angelica Andrade', 'Caio Zomignani', 'Fernanda Cristina Lanfranchi Sanchez', 'Vanessa', 'Mariana Mamede', 'Josismar de Barros', 'Paulo Inacio', 'contato']
-        };
-        
-        const corretoresDaEquipe = equipeCorretores[atendimentoEquipeFilter] || [];
-        atendimentoFilteredLeads = atendimentoFilteredLeads.filter(lead => 
-          corretoresDaEquipe.includes(lead.corretor_responsavel)
-        );
+        atendimentoFilteredLeads = atendimentoFilteredLeads.filter(lead => {
+          const corretorKey = normalizeMetricKey(lead.corretor_responsavel);
+          return atendimentoCorretorEquipeMap.get(corretorKey) === atendimentoEquipeFilter;
+        });
       }
       
       // Filtro por Corretor
@@ -292,7 +341,7 @@ export const MainMetricsSection = ({
     const finalFiltered = filterLeadsByDate(atendimentoFilteredLeads);
     
     return finalFiltered;
-  }, [leads, activeSection, activeLeadsSubSection, currentVendaSubTab, activeClienteInteressadoSubSection, filterLeadsByDate, dateFilter, atendimentoEquipeFilter, atendimentoCorretorFilter]);
+  }, [leads, activeSection, activeLeadsSubSection, currentVendaSubTab, activeClienteInteressadoSubSection, filterLeadsByDate, dateFilter, atendimentoEquipeFilter, atendimentoCorretorFilter, atendimentoCorretorEquipeMap]);
 
   // Calcular métricas dinâmicas baseadas na seção ativa
   const dynamicMetrics = useMemo(() => {
@@ -854,11 +903,7 @@ export const MainMetricsSection = ({
                         <div className="flex flex-col items-start text-left">
                           <span className="text-[10px] font-medium text-white/70 leading-tight">Equipe</span>
                           <span className="text-xs font-semibold text-white leading-tight">
-                            {atendimentoEquipeFilter === 'todas' ? 'Todas' :
-                             atendimentoEquipeFilter === 'verde' ? '🟢 Verde' :
-                             atendimentoEquipeFilter === 'vermelha' ? '🔴 Vermelha' :
-                             atendimentoEquipeFilter === 'amarela' ? '🟡 Amarela' :
-                             atendimentoEquipeFilter === 'azul' ? '🔵 Azul' : 'Todas'}
+                            {atendimentoEquipeFilter === 'todas' ? 'Todas' : atendimentoEquipeSelecionada?.name || 'Equipe'}
                           </span>
                         </div>
                       </Button>
@@ -866,23 +911,20 @@ export const MainMetricsSection = ({
                     <PopoverContent className="w-64 bg-popover border border-border p-3 shadow-xl dark:bg-neutral-900 dark:border-gray-700/50 dark:shadow-2xl" align="start">
                       <div className="space-y-2">
                         <div className="text-sm font-medium text-foreground dark:text-white mb-2">Filtrar por Equipe</div>
-                        {[
-                          { value: 'todas', label: 'Todas Equipes', emoji: '👥' },
-                          { value: 'verde', label: 'Verde', emoji: '🟢' },
-                          { value: 'vermelha', label: 'Vermelha', emoji: '🔴' },
-                          { value: 'amarela', label: 'Amarela', emoji: '🟡' },
-                          { value: 'azul', label: 'Azul', emoji: '🔵' }
-                        ].map((equipe) => (
+                        {atendimentoEquipeOptions.map((equipe) => (
                           <button
                             key={equipe.value}
-                            onClick={() => setAtendimentoEquipeFilter(equipe.value as any)}
+                            onClick={() => setAtendimentoEquipeFilter(equipe.value)}
                             className={`w-full px-3 py-2 rounded text-sm font-medium transition-all text-left ${
                               atendimentoEquipeFilter === equipe.value
                                 ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40'
                                 : 'bg-bg-secondary/40 text-text-secondary hover:text-text-primary hover:bg-bg-secondary/60 border border-transparent'
-                            }`}
+                              }`}
                           >
-                            <span className="mr-2">{equipe.emoji}</span>
+                            <span
+                              className={`mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle ${equipe.color ? '' : 'border border-current'}`}
+                              style={equipe.color ? { backgroundColor: equipe.color } : undefined}
+                            />
                             {equipe.label}
                           </button>
                         ))}
@@ -1491,4 +1533,3 @@ export const MainMetricsSection = ({
     </section>
   );
 };
-

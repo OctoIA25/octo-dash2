@@ -1,6 +1,6 @@
 /**
  * Gráfico Leads por Equipe
- * Fonte: kenlo_leads.attended_by_name ↔ Corretores.equipe (JOIN por nome/email),
+ * Fonte: kenlo_leads ↔ teams/tenant_memberships,
  * filtrado por tenant no useKenloMetrics.
  */
 
