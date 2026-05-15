@@ -31,6 +31,13 @@ export interface SyncResult {
 let syncInterval: NodeJS.Timeout | null = null;
 let isSyncing = false;
 
+const mapAssignedAgentName = (corretorNome?: string | null): string | null => {
+  const name = corretorNome?.trim();
+  if (!name) return null;
+
+  return name.toUpperCase() === 'JAPI LEADS' ? null : name;
+};
+
 /**
  * Mapeia dados do Santa Angela para a tabela leads
  */
@@ -69,7 +76,7 @@ const mapSantaAngelaToLead = (
     property_code: santaAngelaLead.cpfcnpj || null,
     property_type: santaAngelaLead.tipo || null,
     assigned_agent_id: null,
-    assigned_agent_name: santaAngelaLead.corretor_nome || null,
+    assigned_agent_name: mapAssignedAgentName(santaAngelaLead.corretor_nome),
     tags: ['Santa Angela', santaAngelaLead.midia_titulo || 'Outros'],
     custom_fields: {
       santa_angela_cpfcnpj: santaAngelaLead.cpfcnpj,
@@ -90,7 +97,7 @@ const mapSantaAngelaToLead = (
     created_at: santaAngelaLead.datahoracadastro || new Date().toISOString(),
     updated_at: santaAngelaLead.data_ultima_interacao || new Date().toISOString(),
     lead_type: 1, // 1 = Interessado
-    participa_bolsao: false,
+    participa_bolsao: true,
     assigned_at: new Date().toISOString(),
   };
 };

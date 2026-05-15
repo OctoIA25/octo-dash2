@@ -10,6 +10,7 @@ import { useRegisterNovoActions } from '@/contexts/NovoActionsContext';
 import { Imovel } from '@/features/imoveis/services/kenloService';
 import { ImovelCard } from './ImovelCard';
 import { CriarImovelForm } from './CriarImovelForm';
+import { normalizeFotos, type FotoInput } from './fotos-helpers';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -73,7 +74,7 @@ interface ImovelLocal {
   valor_condominio: number;
   valor_iptu: number;
   descricao: string | null;
-  fotos: string[];
+  fotos: FotoInput[];
   created_at: string;
   status_aprovacao?: 'aprovado' | 'nao_aprovado' | 'aguardando';
   aprovado_por?: string;
@@ -367,7 +368,7 @@ export const MeusImoveisTab = ({ allImoveis, onViewDetails, onPropertyCreated }:
       banheiro: local.banheiros || 0,
       salas: 0,
       descricao: local.descricao || '',
-      fotos: Array.isArray(local.fotos) ? local.fotos : [],
+      fotos: Array.isArray(local.fotos) ? normalizeFotos(local.fotos).map((foto) => foto.url) : [],
       videos: [],
       area_comum: [],
       area_privativa: [],
@@ -396,7 +397,7 @@ export const MeusImoveisTab = ({ allImoveis, onViewDetails, onPropertyCreated }:
       valor_iptu: local.valor_iptu ? String(local.valor_iptu) : '',
       titulo: local.titulo || '',
       descricao: local.descricao || '',
-      fotos: local.fotos || [],
+      fotos: normalizeFotos(local.fotos),
       status_aprovacao: local.status_aprovacao,
     };
   };

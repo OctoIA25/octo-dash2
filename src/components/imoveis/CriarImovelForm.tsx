@@ -368,7 +368,11 @@ const CARACTERISTICAS_IMOVEL = {
       'Quadra de tênis',
       'Quadra poliesportiva',
       'Salão de festas',
-      'Salão de jogos'
+      'Salão de jogos',
+      'Quadra de Areia',
+      'Espaço pet',
+      'Pomar',
+      'Mirante'
     ]
   },
   servicos: {

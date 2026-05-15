@@ -118,6 +118,10 @@ interface CondominioFormData {
   infra_praca_recreacao: boolean;
   
   // Infraestrutura - Esporte/Lazer
+  infra_mirante: boolean;
+  infra_espaco_pet: boolean;
+  infra_quadra_areia: boolean;
+  infra_pomar: boolean;
   infra_academia: boolean;
   infra_bicicletario: boolean;
   infra_brinquedoteca: boolean;
@@ -223,6 +227,10 @@ const initialFormData: CondominioFormData = {
   infra_esgoto: false,
   infra_guarita: false,
   infra_praca_recreacao: false,
+  infra_mirante: false,
+  infra_espaco_pet: false,
+  infra_quadra_areia: false,
+  infra_pomar: false,
   infra_academia: false,
   infra_bicicletario: false,
   infra_brinquedoteca: false,
@@ -613,6 +621,10 @@ export const CriarCondominioForm = ({
         infra_esgoto: formData.infra_esgoto,
         infra_guarita: formData.infra_guarita,
         infra_praca_recreacao: formData.infra_praca_recreacao,
+        infra_mirante: formData.infra_mirante,
+        infra_espaco_pet: formData.infra_espaco_pet,
+        infra_quadra_areia: formData.infra_quadra_areia,
+        infra_pomar: formData.infra_pomar,
         infra_academia: formData.infra_academia,
         infra_bicicletario: formData.infra_bicicletario,
         infra_brinquedoteca: formData.infra_brinquedoteca,
@@ -1149,6 +1161,10 @@ export const CriarCondominioForm = ({
                 <InfraCheckbox field="infra_bicicletario" label="Bicicletário" />
                 <InfraCheckbox field="infra_brinquedoteca" label="Brinquedoteca" />
                 <InfraCheckbox field="infra_campo_futebol" label="Campo de futebol" />
+                <InfraCheckbox field="infra_mirante" label="Mirante" />
+                <InfraCheckbox field="infra_espaco_pet" label="Espaço pet" />
+                <InfraCheckbox field="infra_quadra_areia" label="Quadra de areia" />
+                <InfraCheckbox field="infra_pomar" label="Pomar" />
                 <InfraCheckbox field="infra_churrasqueira" label="Churrasqueira" />
                 <InfraCheckbox field="infra_deck_molhado" label="Deck molhado" />
                 <InfraCheckbox field="infra_espaco_gourmet" label="Espaço gourmet" />

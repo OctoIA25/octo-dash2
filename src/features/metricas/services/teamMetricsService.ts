@@ -9,6 +9,12 @@ export interface TeamMetricInfo {
   color: string;
 }
 
+const GENERAL_TEAM: TeamMetricInfo = {
+  id: '__general__',
+  name: 'Geral',
+  color: DEFAULT_TEAM_COLOR,
+};
+
 export interface TeamResolver {
   teams: TeamMetricInfo[];
   teamById: Map<string, TeamMetricInfo>;
@@ -455,8 +461,7 @@ export async function buscarMetricasPorEquipeCentral(
   });
 
   leads.forEach((lead) => {
-    const team = resolverEquipeDoLead(resolver, lead);
-    if (!team) return;
+    const team = resolverEquipeDoLead(resolver, lead) || GENERAL_TEAM;
 
     const current = stats.get(team.id) || {
       team,
@@ -496,8 +501,7 @@ export async function buscarLeadsPorEquipeCentral(tenantId?: string): Promise<Te
   const counts = new Map<string, { team: TeamMetricInfo; quantidade: number }>();
 
   leads.forEach((lead) => {
-    const team = resolverEquipeDoLead(resolver, lead);
-    if (!team) return;
+    const team = resolverEquipeDoLead(resolver, lead) || GENERAL_TEAM;
 
     const current = counts.get(team.id) || { team, quantidade: 0 };
     current.quantidade += 1;

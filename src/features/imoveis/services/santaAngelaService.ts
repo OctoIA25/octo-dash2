@@ -135,8 +135,8 @@ export const fetchAllSantaAngelaLeads = async (
         porPagina: 100  // Apenas uma página
       },
       ordenacao: {
-        coluna: "PESSOA.nome",
-        tipo: "ASC"
+        coluna: "PESSOA.datahoracadastro",
+        tipo: "DESC"
       }
     };
 
@@ -198,8 +198,8 @@ export const fetchSantaAngelaLeads = async (
         porPagina: 100  // Aumentado para 100 leads por requisição
       },
       ordenacao: {
-        coluna: "PESSOA.nome",
-        tipo: "ASC"
+        coluna: "PESSOA.datahoracadastro",
+        tipo: "DESC"
       }
     };
 
@@ -274,8 +274,8 @@ export const testSantaAngelaConnection = async (
           porPagina: 1
         },
         ordenacao: {
-          coluna: "PESSOA.nome",
-          tipo: "ASC"
+          coluna: "PESSOA.datahoracadastro",
+          tipo: "DESC"
         }
       }),
     });
