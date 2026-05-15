@@ -1793,6 +1793,23 @@ const createZapImoveisLead = async (req, res) => {
   }
 };
 
+app.get('/api/v1/integrations/zapimoveis/health', (req, res) => {
+  res.json({
+    success: true,
+    integration: 'zapimoveis',
+    status: 'ready',
+    routes: [
+      'POST /api/v1/integrations/zapimoveis/leads',
+      'POST /api/v1/integrations/grupo-olx/leads'
+    ],
+    auth: {
+      webhook_secret_configured: Boolean(process.env.ZAPIMOVEIS_WEBHOOK_SECRET || process.env.OLX_WEBHOOK_SECRET),
+      tenant_id_configured: Boolean(process.env.ZAPIMOVEIS_TENANT_ID || process.env.OLX_TENANT_ID)
+    },
+    timestamp: new Date().toISOString()
+  });
+});
+
 app.post('/api/v1/integrations/zapimoveis/leads', zapImoveisXmlTextParser, validateZapImoveisWebhook, createZapImoveisLead);
 app.post('/api/v1/integrations/grupo-olx/leads', zapImoveisXmlTextParser, validateZapImoveisWebhook, createZapImoveisLead);
 
@@ -4040,6 +4057,9 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log('   ├─ 📊 GET /health        → Health check completo');
   console.log('   ├─ ✅ GET /ready         → Readiness probe');
   console.log('   ├─ 📡 ALL /api/kenlo     → Proxy para XML Kenlo');
+  console.log('   ├─ 🏠 GET /api/v1/integrations/zapimoveis/health → Diagnóstico Zap/OLX');
+  console.log('   ├─ 📬 POST /api/v1/integrations/zapimoveis/leads → Webhook leads Zap');
+  console.log('   ├─ 📬 POST /api/v1/integrations/grupo-olx/leads  → Webhook leads OLX');
   console.log('   ├─ ℹ️  GET /api/info      → Informações do servidor');
   console.log('   └─ 🌐 GET /*             → Aplicação React (SPA)');
   console.log('');
