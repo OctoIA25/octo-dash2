@@ -1169,620 +1169,503 @@ const safeStringEquals = (left, right) => {
 
 const firstHeaderValue = (value) => Array.isArray(value) ? value[0] : value;
 
-const validateZapImoveisWebhook = async (req, res, next) => {
-  const configuredSecret = process.env.ZAPIMOVEIS_WEBHOOK_SECRET || process.env.OLX_WEBHOOK_SECRET;
-  const configuredTenantId = process.env.VITE_SANTA_ANGELA_TENANT_ID || process.env.OLX_TENANT_ID;
-  const body = typeof req.body === 'object' && req.body !== null ? req.body : {};
-  const providedSecret = firstHeaderValue(req.headers['x-zapimoveis-secret'])
-    || firstHeaderValue(req.headers['x-olx-secret'])
-    || firstHeaderValue(req.headers['x-webhook-secret'])
-    || req.query.token
-    || req.query.secret
-    || body.token
-    || body.secret;
+const getZapFeedConfig = () => ({
+  secret: process.env.ZAPIMOVEIS_FEED_SECRET
+    || process.env.ZAPIMOVEIS_WEBHOOK_SECRET
+    || process.env.OLX_FEED_SECRET,
+  tenantId: process.env.ZAPIMOVEIS_TENANT_ID
+    || process.env.OLX_TENANT_ID
+    || process.env.VITE_SANTA_ANGELA_TENANT_ID,
+  provider: process.env.ZAPIMOVEIS_PROVIDER || 'OctoDash',
+  contactName: process.env.ZAPIMOVEIS_CONTACT_NAME || 'OctoDash',
+  contactEmail: process.env.ZAPIMOVEIS_CONTACT_EMAIL || 'contato@octoia.com',
+  contactPhone: process.env.ZAPIMOVEIS_CONTACT_PHONE || '',
+  publicationType: process.env.ZAPIMOVEIS_PUBLICATION_TYPE || 'STANDARD',
+  detailBaseUrl: process.env.ZAPIMOVEIS_DETAIL_BASE_URL || process.env.PUBLIC_APP_URL || ''
+});
 
-  if (configuredSecret && safeStringEquals(providedSecret, configuredSecret)) {
-    const tenantId = req.query.tenant_id
-      || req.query.tenantId
-      || body.tenant_id
-      || body.tenantId
-      || configuredTenantId;
+const validateZapFeedAccess = async (req, res, next) => {
+  const config = getZapFeedConfig();
+  const providedSecret = firstHeaderValue(req.headers['x-zapimoveis-feed-secret'])
+    || firstHeaderValue(req.headers['x-zapimoveis-secret'])
+    || firstHeaderValue(req.headers['x-olx-feed-secret'])
+    || req.query.token
+    || req.query.feed_token
+    || req.query.secret;
+
+  if (config.secret && safeStringEquals(providedSecret, config.secret)) {
+    const tenantId = req.query.tenant_id || req.query.tenantId || config.tenantId;
 
     if (!tenantId) {
       return res.status(500).json({
         success: false,
         error: {
           code: 'MISSING_TENANT_ID',
-          message: 'Configure VITE_SANTA_ANGELA_TENANT_ID/OLX_TENANT_ID ou envie tenant_id no webhook.'
+          message: 'Configure ZAPIMOVEIS_TENANT_ID ou envie tenant_id na URL do feed.'
         }
       });
     }
 
     req.tenantId = tenantId;
-    req.integrationAuth = 'zapimoveis_secret';
+    req.integrationAuth = 'zapimoveis_feed_secret';
     return next();
   }
 
   return validateApiKey(req, res, next);
 };
 
-const getPathValue = (source, pathKey) => {
-  if (!source || !pathKey) return undefined;
+const xmlEscape = (value) => String(value ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&apos;');
 
-  return pathKey.split('.').reduce((current, key) => {
-    if (current === undefined || current === null) return undefined;
-    return current[key];
-  }, source);
+const xmlCdata = (value) => `<![CDATA[${String(value ?? '').replace(/]]>/g, ']]]]><![CDATA[>')}]]>`;
+
+const toFeedNumber = (value) => {
+  if (value === undefined || value === null || value === '') return 0;
+  const parsed = Number(String(value).replace(/[^\d.-]/g, ''));
+  return Number.isFinite(parsed) ? parsed : 0;
 };
 
-const normalizeWebhookValue = (value) => {
-  if (value === undefined || value === null) return null;
+const toPositiveInteger = (value) => Math.max(0, Math.floor(toFeedNumber(value)));
 
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const normalized = normalizeWebhookValue(item);
-      if (normalized) return normalized;
-    }
-    return null;
-  }
-
-  if (typeof value === 'object') {
-    const candidateKeys = [
-      'value',
-      'name',
-      'fullName',
-      'full_name',
-      'number',
-      'phone',
-      'phoneNumber',
-      'telephone',
-      'mobile',
-      'email',
-      'text',
-      'message',
-      'url',
-      'link',
-      'id',
-      'code',
-      'reference',
-      'externalId',
-      'external_id'
-    ];
-
-    for (const key of candidateKeys) {
-      const normalized = normalizeWebhookValue(value[key]);
-      if (normalized) return normalized;
-    }
-
-    return null;
-  }
-
-  const text = String(value).trim();
-  return text || null;
+const toMoneyValue = (value) => {
+  const parsed = toFeedNumber(value);
+  return parsed > 0 ? Math.round(parsed) : null;
 };
 
-const firstWebhookValue = (source, paths) => {
-  for (const pathKey of paths) {
-    const normalized = normalizeWebhookValue(getPathValue(source, pathKey));
-    if (normalized) return normalized;
-  }
-
-  return null;
+const normalizeFeedText = (value, fallback = '') => {
+  const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+  return text || fallback;
 };
 
-const normalizeWebhookTimestamp = (value) => {
-  const normalized = normalizeWebhookValue(value);
-  if (!normalized) return null;
-
-  const date = /^\d+$/.test(normalized)
-    ? new Date(normalized.length === 10 ? Number(normalized) * 1000 : Number(normalized))
-    : new Date(normalized);
-
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
-};
-
-const parseWebhookBoolean = (value) => {
-  const normalized = normalizeWebhookValue(value);
-  if (!normalized) return null;
-
-  const lower = normalized.toLowerCase();
-  if (['true', '1', 'sim', 'yes', 'sale', 'venda', 'comprar'].includes(lower)) return true;
-  if (['false', '0', 'nao', 'não', 'no', 'rent', 'aluguel', 'locacao', 'locação'].includes(lower)) return false;
-
-  return null;
-};
-
-const normalizeZapImoveisLeadPayload = (body) => {
-  const rootBody = body && typeof body === 'object' ? body : {};
-  const payload = rootBody.payload
-    || rootBody.data
-    || rootBody.lead
-    || rootBody.message
-    || rootBody.incoming_message
-    || rootBody.contact_request
-    || rootBody.contactRequest
-    || rootBody;
-  const contact = payload.contact
-    || payload.customer
-    || payload.client
-    || payload.consumer
-    || payload.user
-    || payload.sender
-    || payload.prospect
-    || rootBody.contact
-    || {};
-  const listing = payload.listing
-    || payload.property
-    || payload.ad
-    || payload.advertisement
-    || payload.realEstate
-    || payload.real_estate
-    || rootBody.listing
-    || rootBody.property
-    || {};
-  const broker = payload.broker
-    || payload.agent
-    || payload.assigned_agent
-    || payload.assignedAgent
-    || listing.broker
-    || listing.agent
-    || {};
-  const source = { body: rootBody, payload, contact, listing, broker };
-
-  const name = firstWebhookValue(source, [
-    'contact.name',
-    'contact.fullName',
-    'contact.full_name',
-    'contact.nome',
-    'payload.name',
-    'payload.contactName',
-    'payload.contact_name',
-    'payload.nome',
-    'body.name',
-    'body.nome'
-  ]);
-  const phone = firstWebhookValue(source, [
-    'contact.phone',
-    'contact.phoneNumber',
-    'contact.phone_number',
-    'contact.telephone',
-    'contact.mobile',
-    'contact.cel',
-    'contact.celular',
-    'payload.phone',
-    'payload.phoneNumber',
-    'payload.telephone',
-    'payload.mobile',
-    'payload.celular',
-    'body.phone',
-    'body.telephone',
-    'body.celular'
-  ]);
-  const email = firstWebhookValue(source, [
-    'contact.email',
-    'payload.email',
-    'payload.contactEmail',
-    'payload.contact_email',
-    'body.email'
-  ]);
-  const message = firstWebhookValue(source, [
-    'payload.message',
-    'payload.text',
-    'payload.body',
-    'payload.content',
-    'payload.description',
-    'payload.comment',
-    'payload.comments',
-    'body.message',
-    'body.text',
-    'body.comments'
-  ]);
-  const propertyCode = firstWebhookValue(source, [
-    'listing.externalId',
-    'listing.external_id',
-    'listing.reference',
-    'listing.referenceCode',
-    'listing.reference_code',
-    'listing.code',
-    'listing.codigo',
-    'listing.id',
-    'payload.listingId',
-    'payload.listing_id',
-    'payload.adId',
-    'payload.ad_id',
-    'payload.propertyCode',
-    'payload.property_code',
-    'payload.codigo_imovel',
-    'body.property_code',
-    'body.codigo_imovel',
-    'body.interest_reference'
-  ]);
-  const image = firstWebhookValue(source, [
-    'listing.image',
-    'listing.imageUrl',
-    'listing.image_url',
-    'listing.mainPhoto',
-    'listing.main_photo',
-    'listing.photos.0.url',
-    'listing.images.0.url',
-    'listing.images.0',
-    'payload.image',
-    'payload.interest_image',
-    'body.interest_image'
-  ]);
-  const listingTitle = firstWebhookValue(source, [
-    'listing.title',
-    'listing.name',
-    'listing.description',
-    'payload.listingTitle',
-    'payload.listing_title',
-    'body.listing_title'
-  ]);
-  const listingUrl = firstWebhookValue(source, [
-    'listing.url',
-    'listing.link',
-    'listing.permalink',
-    'payload.listingUrl',
-    'payload.listing_url',
-    'body.listing_url'
-  ]);
-  const transactionType = firstWebhookValue(source, [
-    'listing.transactionType',
-    'listing.transaction_type',
-    'listing.businessType',
-    'listing.business_type',
-    'listing.purpose',
-    'payload.transactionType',
-    'payload.transaction_type',
-    'payload.interest_type',
-    'body.interest_type'
-  ]);
-  const brokerName = firstWebhookValue(source, [
-    'broker.name',
-    'broker.fullName',
-    'broker.full_name',
-    'broker.nome',
-    'payload.brokerName',
-    'payload.broker_name',
-    'payload.agentName',
-    'payload.agent_name'
-  ]);
-  const brokerEmail = firstWebhookValue(source, [
-    'broker.email',
-    'payload.brokerEmail',
-    'payload.broker_email',
-    'payload.agentEmail',
-    'payload.agent_email'
-  ]);
-  const brokerPhone = firstWebhookValue(source, [
-    'broker.phone',
-    'broker.phoneNumber',
-    'broker.telephone',
-    'broker.mobile',
-    'payload.brokerPhone',
-    'payload.broker_phone',
-    'payload.agentPhone',
-    'payload.agent_phone'
-  ]);
-  const externalId = firstWebhookValue(source, [
-    'payload.leadId',
-    'payload.lead_id',
-    'payload.messageId',
-    'payload.message_id',
-    'payload.id',
-    'body.leadId',
-    'body.lead_id',
-    'body.eventId',
-    'body.event_id',
-    'body.id'
-  ]);
-  const timestamp = firstWebhookValue(source, [
-    'payload.createdAt',
-    'payload.created_at',
-    'payload.timestamp',
-    'payload.sentAt',
-    'payload.sent_at',
-    'body.createdAt',
-    'body.created_at',
-    'body.timestamp',
-    'body.eventTime',
-    'body.event_time'
-  ]);
-  const portal = firstWebhookValue(source, [
-    'payload.portal',
-    'payload.source',
-    'body.portal',
-    'body.source'
-  ]);
-
+const getDefaultZapContactInfo = () => {
+  const config = getZapFeedConfig();
   return {
-    name,
-    phone,
-    email,
-    message,
-    propertyCode,
-    image,
-    listingTitle,
-    listingUrl,
-    transactionType,
-    brokerName,
-    brokerEmail,
-    brokerPhone,
-    externalId,
-    timestamp,
-    portal,
-    isSale: parseWebhookBoolean(firstWebhookValue(source, [
-      'listing.isSale',
-      'listing.is_sale',
-      'payload.interest_is_sale',
-      'body.interest_is_sale'
-    ])),
-    isRent: parseWebhookBoolean(firstWebhookValue(source, [
-      'listing.isRent',
-      'listing.is_rent',
-      'payload.interest_is_rent',
-      'body.interest_is_rent'
-    ]))
+    name: normalizeFeedText(config.contactName, 'OctoDash'),
+    email: normalizeFeedText(config.contactEmail, 'contato@octoia.com'),
+    phone: normalizeFeedText(config.contactPhone)
   };
 };
 
-const buildZapExternalId = (normalizedLead) => {
-  const stableId = normalizedLead.externalId || crypto
-    .createHash('sha256')
-    .update(JSON.stringify({
-      name: normalizedLead.name,
-      phone: normalizedLead.phone,
-      email: normalizedLead.email,
-      message: normalizedLead.message,
-      propertyCode: normalizedLead.propertyCode,
-      timestamp: normalizedLead.timestamp
-    }))
-    .digest('hex')
-    .slice(0, 24);
+const getListingContactInfo = (imovel) => {
+  const fallback = getDefaultZapContactInfo();
+  const contact = imovel.zap_contact || {};
 
-  return `zapimoveis_${String(stableId).replace(/\s+/g, '_').slice(0, 120)}`;
+  return {
+    name: normalizeFeedText(contact.name, fallback.name),
+    email: normalizeFeedText(contact.email, fallback.email),
+    phone: normalizeFeedText(contact.phone, fallback.phone)
+  };
 };
 
-const zapImoveisXmlTextParser = express.text({
-  type: ['application/xml', 'text/xml', '*/xml'],
-  limit: '10mb'
-});
+const stripHtml = (value) => String(value ?? '')
+  .replace(/<[^>]*>/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
 
-const createZapImoveisLead = async (req, res) => {
-  try {
-    if (typeof req.body === 'string') {
-      const isVRSyncFeed = req.body.includes('<ListingDataFeed');
-      return res.status(415).json({
-        success: false,
-        error: {
-          code: isVRSyncFeed ? 'VRSYNC_FEED_NOT_LEAD_WEBHOOK' : 'UNSUPPORTED_XML_PAYLOAD',
-          message: isVRSyncFeed
-            ? 'XML VRSync é feed de imóveis. Leads do Zap/OLX devem ser enviados para este endpoint em JSON.'
-            : 'XML não é suportado para criação de leads neste endpoint. Envie o webhook em JSON.'
-        }
-      });
+const buildFeedDescription = (imovel) => {
+  const base = stripHtml(imovel.descricao);
+  const fallback = [
+    imovel.titulo,
+    imovel.tipo,
+    imovel.bairro,
+    imovel.cidade,
+    imovel.codigo_imovel ? `Código ${imovel.codigo_imovel}` : null
+  ].filter(Boolean).join(' - ');
+  const description = base || fallback || 'Imóvel disponível para negociação.';
+
+  if (description.length >= 50) {
+    return description.slice(0, 3000);
+  }
+
+  const complement = ' Entre em contato para receber mais informações, valores atualizados e detalhes completos deste imóvel.';
+  return `${description}${complement}`.slice(0, 3000);
+};
+
+const mapZapTransactionType = (imovel) => {
+  const finalidade = normalizeFeedText(imovel.finalidade).toLowerCase();
+  const hasSale = toMoneyValue(imovel.valor_venda) !== null;
+  const hasRent = toMoneyValue(imovel.valor_locacao) !== null;
+
+  if (finalidade.includes('venda_locacao') || finalidade.includes('venda e') || (hasSale && hasRent)) {
+    return 'Sale/Rent';
+  }
+
+  if (finalidade.includes('locacao') || finalidade.includes('locação') || finalidade.includes('aluguel') || hasRent) {
+    return 'For Rent';
+  }
+
+  return 'For Sale';
+};
+
+const getZapListingEligibility = (imovel) => {
+  const reasons = [];
+  const transactionType = mapZapTransactionType(imovel);
+  const salePrice = toMoneyValue(imovel.valor_venda);
+  const rentPrice = toMoneyValue(imovel.valor_locacao);
+
+  if (!normalizeFeedText(imovel.codigo_imovel)) {
+    reasons.push('missing_codigo_imovel');
+  }
+
+  if (transactionType === 'For Sale' && salePrice === null) {
+    reasons.push('missing_sale_price');
+  }
+
+  if (transactionType === 'For Rent' && rentPrice === null) {
+    reasons.push('missing_rent_price');
+  }
+
+  if (transactionType === 'Sale/Rent' && salePrice === null && rentPrice === null) {
+    reasons.push('missing_sale_or_rent_price');
+  }
+
+  return {
+    eligible: reasons.length === 0,
+    reasons,
+    transactionType,
+    salePrice,
+    rentPrice
+  };
+};
+
+const mapZapPropertyType = (imovel) => {
+  const type = `${imovel.tipo || ''} ${imovel.tipo_simplificado || ''}`.toLowerCase();
+
+  if (type.includes('cobertura')) return 'Residential / Penthouse';
+  if (type.includes('flat')) return 'Residential / Flat';
+  if (type.includes('kitnet') || type.includes('conjugado')) return 'Residential / Kitnet';
+  if (type.includes('studio')) return 'Residential / Studio';
+  if (type.includes('loft')) return 'Residential / Loft';
+  if (type.includes('condomínio') || type.includes('condominio')) return 'Residential / Condo';
+  if (type.includes('sobrado')) return 'Residential / Sobrado';
+  if (type.includes('casa')) return 'Residential / Home';
+  if (type.includes('apartamento') || type.includes('apto')) return 'Residential / Apartment';
+  if (type.includes('chácara') || type.includes('chacara') || type.includes('fazenda') || type.includes('sítio') || type.includes('sitio') || type.includes('rural')) {
+    return 'Residential / Agricultural';
+  }
+  if (type.includes('terreno') || type.includes('lote')) return 'Residential / Land Lot';
+  if (type.includes('galpão') || type.includes('galpao') || type.includes('depósito') || type.includes('deposito') || type.includes('armazém') || type.includes('armazem')) {
+    return 'Commercial / Industrial';
+  }
+  if (type.includes('sala') || type.includes('conjunto') || type.includes('office')) return 'Commercial / Office';
+  if (type.includes('loja') || type.includes('salão') || type.includes('salao') || type.includes('ponto')) return 'Commercial / Business';
+  if (type.includes('comercial')) return 'Commercial / Building';
+
+  return 'Residential / Apartment';
+};
+
+const mapZapUsageType = (propertyType) => {
+  if (propertyType.startsWith('Commercial /')) return 'Commercial';
+  return 'Residential';
+};
+
+const normalizeZapPhotoUrl = (photo) => {
+  if (!photo) return null;
+  if (typeof photo === 'string') return photo.trim();
+  if (typeof photo === 'object') {
+    return String(photo.url || photo.src || photo.preview || photo.publicUrl || '').trim() || null;
+  }
+  return null;
+};
+
+const extractZapPhotoUrls = (photos) => {
+  const rawPhotos = Array.isArray(photos) ? photos : [];
+  const seen = new Set();
+
+  return rawPhotos
+    .map(normalizeZapPhotoUrl)
+    .filter((url) => url && /^https?:\/\//i.test(url))
+    .filter((url) => {
+      if (seen.has(url)) return false;
+      seen.add(url);
+      return true;
+    })
+    .slice(0, 30);
+};
+
+const getConfiguredDetailBaseUrl = () => {
+  const configuredBase = getZapFeedConfig().detailBaseUrl;
+  if (configuredBase) return configuredBase.replace(/\/$/, '');
+  return '';
+};
+
+const buildZapListingXml = (imovel) => {
+  const propertyType = mapZapPropertyType(imovel);
+  const transactionType = mapZapTransactionType(imovel);
+  const usageType = mapZapUsageType(propertyType);
+  const salePrice = toMoneyValue(imovel.valor_venda);
+  const rentPrice = toMoneyValue(imovel.valor_locacao);
+  const condoFee = toMoneyValue(imovel.valor_condominio);
+  const yearlyTax = toMoneyValue(imovel.valor_iptu);
+  const lotArea = toFeedNumber(imovel.area_total);
+  const livingArea = toFeedNumber(imovel.area_util || imovel.metragem_m2);
+  const photos = extractZapPhotoUrls(imovel.fotos);
+  const baseUrl = getConfiguredDetailBaseUrl();
+  const contact = getListingContactInfo(imovel);
+  const detailUrl = baseUrl && imovel.codigo_imovel
+    ? `${baseUrl}/imovel/${encodeURIComponent(imovel.codigo_imovel)}`
+    : null;
+
+  const priceTags = [
+    (transactionType === 'For Sale' || transactionType === 'Sale/Rent') && salePrice
+      ? `      <ListPrice currency="BRL">${salePrice}</ListPrice>`
+      : null,
+    (transactionType === 'For Rent' || transactionType === 'Sale/Rent') && rentPrice
+      ? `      <RentalPrice currency="BRL" period="Monthly">${rentPrice}</RentalPrice>`
+      : null,
+    condoFee ? `      <PropertyAdministrationFee currency="BRL">${condoFee}</PropertyAdministrationFee>` : null,
+    yearlyTax ? `      <YearlyTax currency="BRL">${yearlyTax}</YearlyTax>` : null
+  ].filter(Boolean).join('\n');
+
+  const mediaXml = photos.length > 0
+    ? `    <Media>\n${photos.map((url, index) => `      <Item medium="image" caption="img${index + 1}">${xmlEscape(url)}</Item>`).join('\n')}\n    </Media>`
+    : '';
+
+  return `  <Listing>
+    <ListingID>${xmlEscape(imovel.codigo_imovel)}</ListingID>
+    <Title>${xmlCdata(normalizeFeedText(imovel.titulo, `${imovel.tipo || 'Imóvel'} - ${imovel.bairro || imovel.cidade || ''}`))}</Title>
+    <TransactionType>${transactionType}</TransactionType>
+    <PublicationType>${xmlEscape(getZapFeedConfig().publicationType)}</PublicationType>
+${detailUrl ? `    <DetailViewUrl>${xmlEscape(detailUrl)}</DetailViewUrl>\n` : ''}${mediaXml ? `${mediaXml}\n` : ''}    <Details>
+      <UsageType>${usageType}</UsageType>
+      <PropertyType>${propertyType}</PropertyType>
+      <Description>${xmlCdata(buildFeedDescription(imovel))}</Description>
+${priceTags}
+${lotArea > 0 ? `      <LotArea unit="square metres">${lotArea}</LotArea>\n` : ''}${livingArea > 0 ? `      <LivingArea unit="square metres">${livingArea}</LivingArea>\n` : ''}      <Bedrooms>${toPositiveInteger(imovel.quartos)}</Bedrooms>
+      <Bathrooms>${toPositiveInteger(imovel.banheiros)}</Bathrooms>
+      <Suites>${toPositiveInteger(imovel.suites)}</Suites>
+      <Garage>${toPositiveInteger(imovel.vagas)}</Garage>
+    </Details>
+    <Location displayAddress="All">
+      <Country abbreviation="BR">Brasil</Country>
+      <State abbreviation="${xmlEscape(normalizeFeedText(imovel.estado, 'SP').toUpperCase())}">${xmlEscape(normalizeFeedText(imovel.estado, 'SP').toUpperCase())}</State>
+      <City>${xmlCdata(normalizeFeedText(imovel.cidade, 'Jundiaí'))}</City>
+      <Neighborhood>${xmlCdata(normalizeFeedText(imovel.bairro, 'Não informado'))}</Neighborhood>
+${imovel.cep ? `      <PostalCode>${xmlEscape(imovel.cep)}</PostalCode>\n` : ''}${imovel.logradouro ? `      <Address>${xmlCdata(imovel.logradouro)}</Address>\n` : ''}${imovel.numero ? `      <StreetNumber>${xmlEscape(imovel.numero)}</StreetNumber>\n` : ''}${imovel.complemento ? `      <Complement>${xmlCdata(imovel.complemento)}</Complement>\n` : ''}    </Location>
+    <ContactInfo>
+      <Name>${xmlCdata(contact.name)}</Name>
+      <Email>${xmlEscape(contact.email)}</Email>
+${contact.phone ? `      <Telephone>${xmlEscape(contact.phone)}</Telephone>\n` : ''}    </ContactInfo>
+  </Listing>`;
+};
+
+const buildZapVRSyncXml = ({ listings }) => {
+  const config = getZapFeedConfig();
+  const publishDate = new Date().toISOString().replace(/\.\d{3}Z$/, '');
+  const listingsXml = listings.map((imovel) => buildZapListingXml(imovel)).join('\n');
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<ListingDataFeed xmlns="http://www.vivareal.com/schemas/1.0/VRSync"
+                 xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                 xsi:schemaLocation="http://www.vivareal.com/schemas/1.0/VRSync http://xml.vivareal.com/vrsync.xsd">
+  <Header>
+    <Provider>${xmlCdata(config.provider)}</Provider>
+    <Email>${xmlEscape(config.contactEmail)}</Email>
+    <ContactName>${xmlCdata(config.contactName)}</ContactName>
+    <PublishDate>${publishDate}</PublishDate>
+${config.contactPhone ? `    <Telephone>${xmlEscape(config.contactPhone)}</Telephone>\n` : ''}  </Header>
+  <Listings>
+${listingsXml}
+  </Listings>
+</ListingDataFeed>`;
+};
+
+const getZapFeedListings = async (tenantId, { includeAllStatuses = false } = {}) => {
+  let query = supabase
+    .from('imoveis_locais')
+    .select(`
+      id,
+      tenant_id,
+      codigo_imovel,
+      titulo,
+      tipo,
+      tipo_simplificado,
+      finalidade,
+      logradouro,
+      numero,
+      complemento,
+      bairro,
+      cidade,
+      estado,
+      cep,
+      area_total,
+      area_util,
+      metragem_m2,
+      quartos,
+      suites,
+      banheiros,
+      vagas,
+      valor_venda,
+      valor_locacao,
+      valor_condominio,
+      valor_iptu,
+      descricao,
+      fotos,
+      criado_por,
+      status_aprovacao,
+      updated_at
+    `)
+    .eq('tenant_id', tenantId)
+    .order('updated_at', { ascending: false });
+
+  if (!includeAllStatuses) {
+    query = query.eq('status_aprovacao', 'aprovado');
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+
+  const listings = data || [];
+  const creatorIds = [...new Set(listings.map((imovel) => imovel.criado_por).filter(Boolean))];
+  const profilesById = new Map();
+  const brokersByUserId = new Map();
+
+  if (creatorIds.length > 0) {
+    const [{ data: profiles, error: profilesError }, { data: brokers, error: brokersError }] = await Promise.all([
+      supabase
+        .from('user_profiles')
+        .select('id, email, full_name, phone')
+        .in('id', creatorIds),
+      supabase
+        .from('tenant_brokers')
+        .select('auth_user_id, name, email, phone')
+        .eq('tenant_id', tenantId)
+        .in('auth_user_id', creatorIds)
+    ]);
+
+    if (profilesError) {
+      console.warn('⚠️ Não foi possível buscar contatos de user_profiles para o feed Zap:', profilesError.message);
     }
 
-    const normalizedLead = normalizeZapImoveisLeadPayload(req.body);
-
-    if (!normalizedLead.name && !normalizedLead.phone && !normalizedLead.email) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: 'Webhook sem dados de contato. Envie ao menos nome, telefone ou e-mail.'
-        }
-      });
+    if (brokersError) {
+      console.warn('⚠️ Não foi possível buscar contatos de tenant_brokers para o feed Zap:', brokersError.message);
     }
 
-    const propertyCode = normalizedLead.propertyCode?.trim().toUpperCase() || null;
-    const normalizedPhone = normalizePhone(normalizedLead.phone) || normalizedLead.phone;
-    const externalId = buildZapExternalId(normalizedLead);
-    const portalName = normalizedLead.portal || 'Zap Imóveis';
-    const leadStage = normalizeStage('new');
-    const leadTemperature = normalizeTemperature('hot');
-    const now = new Date().toISOString();
-    const leadTimestamp = normalizeWebhookTimestamp(normalizedLead.timestamp) || now;
-
-    const { data: existingRows, error: duplicateError } = await supabase
-      .from('kenlo_leads')
-      .select('id, external_id, client_name, client_phone, client_email, created_at')
-      .eq('tenant_id', req.tenantId)
-      .eq('external_id', externalId)
-      .limit(1);
-
-    if (duplicateError) {
-      console.warn('⚠️ Não foi possível verificar duplicidade do webhook Zap/OLX:', duplicateError.message);
-    }
-
-    if (existingRows?.[0]) {
-      return res.status(200).json({
-        success: true,
-        duplicate: true,
-        data: {
-          id: existingRows[0].id,
-          external_id: existingRows[0].external_id,
-          name: existingRows[0].client_name,
-          phone: existingRows[0].client_phone,
-          email: existingRows[0].client_email,
-          created_at: existingRows[0].created_at
-        },
-        message: 'Lead Zap/OLX já recebido anteriormente.'
-      });
-    }
-
-    let assignedBroker = null;
-    let assignedBrokerId = null;
-    let assignmentMethod = null;
-
-    if (normalizedLead.brokerName || normalizedLead.brokerEmail || normalizedLead.brokerPhone) {
-      const foundBroker = await findBrokerByIdentifier(req.tenantId, {
-        name: normalizedLead.brokerName,
-        email: normalizedLead.brokerEmail,
-        phone: normalizedLead.brokerPhone
-      });
-
-      if (foundBroker) {
-        assignedBroker = foundBroker.name;
-        assignedBrokerId = foundBroker.id || foundBroker.auth_user_id || null;
-        assignmentMethod = 'zapimoveis_broker';
-      } else if (normalizedLead.brokerName) {
-        assignedBroker = normalizedLead.brokerName;
-        assignmentMethod = 'zapimoveis_broker_unmatched';
-      }
-    }
-
-    const rawData = {
-      source: 'ZAPIMOVEIS_WEBHOOK',
-      original_request: req.body,
-      normalized_payload: normalizedLead,
-      attendedBy: normalizedLead.brokerName || normalizedLead.brokerEmail || normalizedLead.brokerPhone
-        ? [{
-            name: normalizedLead.brokerName,
-            email: normalizedLead.brokerEmail,
-            phone: normalizedLead.brokerPhone
-          }]
-        : undefined
-    };
-
-    if (!assignedBroker) {
-      const { broker, method } = await resolveBrokerForLead(propertyCode, req.tenantId, rawData);
-      if (broker) {
-        assignedBroker = broker.name;
-        assignedBrokerId = broker.id || broker.auth_user_id || null;
-        assignmentMethod = method;
-      }
-    }
-
-    let propertyImage = normalizedLead.image;
-    if (!propertyImage && propertyCode) {
-      const { data: cached } = await supabase
-        .from('properties_cache')
-        .select('main_photo')
-        .eq('tenant_id', req.tenantId)
-        .eq('property_code', propertyCode)
-        .single();
-      propertyImage = cached?.main_photo || null;
-    }
-
-    const transactionType = normalizedLead.transactionType?.toLowerCase() || '';
-    const interestIsSale = normalizedLead.isSale ?? (transactionType
-      ? ['sale', 'sales', 'venda', 'comprar', 'buy'].some((word) => transactionType.includes(word))
-      : null);
-    const interestIsRent = normalizedLead.isRent ?? (transactionType
-      ? ['rent', 'rental', 'aluguel', 'locacao', 'locação'].some((word) => transactionType.includes(word))
-      : null);
-    const resolvedIsExclusive = await resolvePropertyExclusivity(req.tenantId, propertyCode);
-
-    const kenloLeadData = {
-      tenant_id: req.tenantId,
-      client_name: normalizedLead.name || 'Lead sem nome',
-      client_phone: normalizedPhone,
-      client_email: normalizedLead.email,
-      portal: portalName,
-      message: normalizedLead.message,
-      interest_reference: propertyCode,
-      interest_type: propertyCode ? 'property' : null,
-      interest_is_sale: interestIsSale,
-      interest_is_rent: interestIsRent,
-      interest_image: propertyImage,
-      is_exclusive: resolvedIsExclusive,
-      attended_by_name: assignedBroker,
-      stage: leadStage,
-      temperature: leadTemperature,
-      external_id: externalId,
-      lead_timestamp: leadTimestamp,
-      created_at: now,
-      updated_at: now,
-      raw_data: {
-        ...rawData,
-        listing_title: normalizedLead.listingTitle,
-        listing_url: normalizedLead.listingUrl,
-        auto_assigned: assignedBroker ? { broker: assignedBroker, method: assignmentMethod } : null
-      }
-    };
-
-    const { data: kenloData, error: kenloError } = await supabase
-      .from('kenlo_leads')
-      .insert(kenloLeadData)
-      .select()
-      .single();
-
-    if (kenloError) {
-      console.error('❌ Erro ao inserir lead Zap/OLX em kenlo_leads:', kenloError);
-      throw kenloError;
-    }
-
-    const kanbanStatus = mapStageToKanbanStatus('new');
-    const kanbanTemperature = mapTemperatureToCRM('hot');
-    const crmLeadData = {
-      tenant_id: req.tenantId,
-      name: normalizedLead.name || 'Lead sem nome',
-      phone: normalizedPhone,
-      email: normalizedLead.email,
-      source: portalName,
-      source_lead_id: kenloData.id,
-      status: kanbanStatus,
-      temperature: kanbanTemperature,
-      property_code: propertyCode,
-      is_exclusive: resolvedIsExclusive,
-      assigned_agent_id: assignedBrokerId,
-      assigned_agent_name: assignedBroker,
-      comments: normalizedLead.message,
-      lead_type: 1,
-      created_at: now,
-      updated_at: now
-    };
-
-    const { data: crmData, error: crmError } = await supabase
-      .from('leads')
-      .insert(crmLeadData)
-      .select()
-      .single();
-
-    if (crmError) {
-      console.error('❌ Erro ao inserir lead Zap/OLX em leads (CRM):', crmError);
-    } else {
-      console.log(`✅ Lead Zap/OLX criado no Kanban: ${crmData.id} → ${assignedBroker || 'Sem corretor'} (${kanbanStatus})`);
-    }
-
-    const mappedLead = {
-      id: kenloData.id,
-      crm_id: crmData?.id || null,
-      tenant_id: kenloData.tenant_id,
-      external_id: kenloData.external_id,
-      name: kenloData.client_name,
-      phone: kenloData.client_phone,
-      email: kenloData.client_email,
-      portal: kenloData.portal,
-      message: kenloData.message,
-      property_code: kenloData.interest_reference,
-      interest_reference: kenloData.interest_reference,
-      is_exclusive: resolvedIsExclusive,
-      interest_image: kenloData.interest_image,
-      assigned_agent: kenloData.attended_by_name,
-      assigned_agent_id: assignedBrokerId,
-      stage: kenloData.stage,
-      kanban_status: kanbanStatus,
-      temperature: kenloData.temperature,
-      lead_timestamp: kenloData.lead_timestamp,
-      created_at: kenloData.created_at
-    };
-
-    res.status(201).json({
-      success: true,
-      data: mappedLead,
-      auto_assigned: assignedBroker ? {
-        broker_name: assignedBroker,
-        broker_id: assignedBrokerId,
-        method: assignmentMethod
-      } : null,
-      message: assignedBroker
-        ? `Lead Zap/OLX criado e atribuído a ${assignedBroker} (via ${assignmentMethod})`
-        : 'Lead Zap/OLX criado com sucesso.'
+    (profiles || []).forEach((profile) => profilesById.set(profile.id, profile));
+    (brokers || []).forEach((broker) => {
+      if (broker.auth_user_id) brokersByUserId.set(broker.auth_user_id, broker);
     });
+  }
+
+  return listings.map((imovel) => {
+    const profile = profilesById.get(imovel.criado_por);
+    const broker = brokersByUserId.get(imovel.criado_por);
+
+    return {
+      ...imovel,
+      zap_contact: {
+        name: broker?.name || profile?.full_name || profile?.email?.split('@')[0] || null,
+        email: broker?.email || profile?.email || null,
+        phone: broker?.phone || profile?.phone || null
+      }
+    };
+  }).filter((imovel) => getZapListingEligibility(imovel).eligible);
+};
+
+const getZapFeedDebugInfo = async (tenantId) => {
+  const { data, error } = await supabase
+    .from('imoveis_locais')
+    .select(`
+      id,
+      tenant_id,
+      codigo_imovel,
+      titulo,
+      finalidade,
+      valor_venda,
+      valor_locacao,
+      criado_por,
+      status_aprovacao,
+      updated_at
+    `)
+    .eq('tenant_id', tenantId)
+    .order('updated_at', { ascending: false });
+
+  if (error) throw error;
+
+  const listings = data || [];
+  const statusCounts = {};
+  const skipReasonCounts = {};
+  let approvedRows = 0;
+  let publishableRows = 0;
+
+  const samples = listings.slice(0, 30).map((imovel) => {
+    const eligibility = getZapListingEligibility(imovel);
+    const status = imovel.status_aprovacao || 'sem_status';
+
+    statusCounts[status] = (statusCounts[status] || 0) + 1;
+    if (status === 'aprovado') approvedRows += 1;
+    if (eligibility.eligible) publishableRows += 1;
+
+    eligibility.reasons.forEach((reason) => {
+      skipReasonCounts[reason] = (skipReasonCounts[reason] || 0) + 1;
+    });
+
+    return {
+      id: imovel.id,
+      codigo_imovel: imovel.codigo_imovel,
+      titulo: imovel.titulo,
+      status_aprovacao: imovel.status_aprovacao,
+      finalidade: imovel.finalidade,
+      valor_venda: imovel.valor_venda,
+      valor_locacao: imovel.valor_locacao,
+      criado_por: imovel.criado_por,
+      updated_at: imovel.updated_at,
+      transaction_type: eligibility.transactionType,
+      can_publish: eligibility.eligible,
+      skipped_reasons: eligibility.reasons
+    };
+  });
+
+  listings.slice(30).forEach((imovel) => {
+    const eligibility = getZapListingEligibility(imovel);
+    const status = imovel.status_aprovacao || 'sem_status';
+
+    statusCounts[status] = (statusCounts[status] || 0) + 1;
+    if (status === 'aprovado') approvedRows += 1;
+    if (eligibility.eligible) publishableRows += 1;
+
+    eligibility.reasons.forEach((reason) => {
+      skipReasonCounts[reason] = (skipReasonCounts[reason] || 0) + 1;
+    });
+  });
+
+  return {
+    total_rows: listings.length,
+    approved_rows: approvedRows,
+    publishable_rows: publishableRows,
+    skipped_rows: listings.length - publishableRows,
+    status_counts: statusCounts,
+    skip_reason_counts: skipReasonCounts,
+    sample_rows: samples
+  };
+};
+
+const createZapVRSyncFeed = async (req, res) => {
+  try {
+    const includeAllStatuses = req.query.status === 'all' || req.query.include_pending === 'true';
+    const listings = await getZapFeedListings(req.tenantId, { includeAllStatuses });
+    const xml = buildZapVRSyncXml({ listings, req });
+    const requesterIp = firstHeaderValue(req.headers['x-forwarded-for']) || req.ip;
+    const requesterAgent = firstHeaderValue(req.headers['user-agent']) || 'unknown';
+
+    console.log('🧾 Feed VRSync Zap/OLX gerado:', {
+      tenant_id: req.tenantId,
+      listings_count: listings.length,
+      include_all_statuses: includeAllStatuses,
+      requester_ip: requesterIp,
+      user_agent: requesterAgent
+    });
+
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store, max-age=0');
+    res.setHeader('X-Zap-Listings-Count', String(listings.length));
+    res.status(200).send(xml);
   } catch (error) {
-    console.error('❌ Erro ao criar lead Zap/OLX:', error);
+    console.error('❌ Erro ao gerar feed VRSync Zap/OLX:', error);
     res.status(500).json({
       success: false,
       error: {
@@ -1793,25 +1676,66 @@ const createZapImoveisLead = async (req, res) => {
   }
 };
 
-app.get('/api/v1/integrations/zapimoveis/health', (req, res) => {
-  res.json({
-    success: true,
-    integration: 'zapimoveis',
-    status: 'ready',
-    routes: [
-      'POST /api/v1/integrations/zapimoveis/leads',
-      'POST /api/v1/integrations/grupo-olx/leads'
-    ],
-    auth: {
-      webhook_secret_configured: Boolean(process.env.ZAPIMOVEIS_WEBHOOK_SECRET || process.env.OLX_WEBHOOK_SECRET),
-      tenant_id_configured: Boolean(process.env.ZAPIMOVEIS_TENANT_ID || process.env.OLX_TENANT_ID)
-    },
-    timestamp: new Date().toISOString()
-  });
+app.get('/api/v1/integrations/zapimoveis/health', validateZapFeedAccess, async (req, res) => {
+  try {
+    const listings = await getZapFeedListings(req.tenantId);
+    res.json({
+      success: true,
+      integration: 'zapimoveis-vrsync',
+      status: 'ready',
+      tenant_id: req.tenantId,
+      approved_listings_count: listings.length,
+      routes: [
+        'GET /api/v1/integrations/zapimoveis/vrsync.xml',
+        'GET /api/v1/integrations/zapimoveis/feed.xml',
+        'GET /api/v1/integrations/zapimoveis/debug',
+        'GET /api/v1/integrations/grupo-olx/vrsync.xml'
+      ],
+      auth: {
+        feed_secret_configured: Boolean(getZapFeedConfig().secret),
+        tenant_id_configured: Boolean(getZapFeedConfig().tenantId),
+        supabase_using_service_role: usingServiceRole
+      },
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'SERVER_ERROR',
+        message: error.message
+      }
+    });
+  }
 });
 
-app.post('/api/v1/integrations/zapimoveis/leads', zapImoveisXmlTextParser, validateZapImoveisWebhook, createZapImoveisLead);
-app.post('/api/v1/integrations/grupo-olx/leads', zapImoveisXmlTextParser, validateZapImoveisWebhook, createZapImoveisLead);
+app.get('/api/v1/integrations/zapimoveis/debug', validateZapFeedAccess, async (req, res) => {
+  try {
+    const debugInfo = await getZapFeedDebugInfo(req.tenantId);
+
+    res.json({
+      success: true,
+      integration: 'zapimoveis-vrsync',
+      tenant_id: req.tenantId,
+      supabase_using_service_role: usingServiceRole,
+      ...debugInfo,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('❌ Erro ao diagnosticar feed VRSync Zap/OLX:', error);
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'SERVER_ERROR',
+        message: error.message
+      }
+    });
+  }
+});
+
+app.get('/api/v1/integrations/zapimoveis/vrsync.xml', validateZapFeedAccess, createZapVRSyncFeed);
+app.get('/api/v1/integrations/zapimoveis/feed.xml', validateZapFeedAccess, createZapVRSyncFeed);
+app.get('/api/v1/integrations/grupo-olx/vrsync.xml', validateZapFeedAccess, createZapVRSyncFeed);
 
 // POST /api/v1/leads - Criar lead com atribuição automática
 // Pipeline: attendedBy → XML/cache → Meus Imóveis → Roleta
@@ -4057,9 +3981,10 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log('   ├─ 📊 GET /health        → Health check completo');
   console.log('   ├─ ✅ GET /ready         → Readiness probe');
   console.log('   ├─ 📡 ALL /api/kenlo     → Proxy para XML Kenlo');
-  console.log('   ├─ 🏠 GET /api/v1/integrations/zapimoveis/health → Diagnóstico Zap/OLX');
-  console.log('   ├─ 📬 POST /api/v1/integrations/zapimoveis/leads → Webhook leads Zap');
-  console.log('   ├─ 📬 POST /api/v1/integrations/grupo-olx/leads  → Webhook leads OLX');
+  console.log('   ├─ 🏠 GET /api/v1/integrations/zapimoveis/health → Diagnóstico feed Zap/OLX');
+  console.log('   ├─ 🔎 GET /api/v1/integrations/zapimoveis/debug  → Motivos de imóveis fora do feed');
+  console.log('   ├─ 🧾 GET /api/v1/integrations/zapimoveis/vrsync.xml → Feed VRSync Zap');
+  console.log('   ├─ 🧾 GET /api/v1/integrations/grupo-olx/vrsync.xml  → Feed VRSync OLX');
   console.log('   ├─ ℹ️  GET /api/info      → Informações do servidor');
   console.log('   └─ 🌐 GET /*             → Aplicação React (SPA)');
   console.log('');
