@@ -28,6 +28,7 @@ const COLUNAS_LITE =
 
 const normalizar = (s: string | null | undefined): string => (s ?? '').trim().toLowerCase();
 const somenteDigitos = (s: string | null | undefined): string => (s ?? '').replace(/\D/g, '');
+const termoIlike = (s: string): string => `%${s.trim().replace(/\s+/g, '%')}%`;
 
 /** Busca condomínios cujo nome contenha o termo (ILIKE), ordenado por mais usados primeiro. */
 export async function buscarCondominiosPorNome(
@@ -97,29 +98,46 @@ export async function verificarCondominioDuplicado(
   const nome = args.nome.trim();
   if (!args.tenantId || nome.length < 2) return [];
 
-  // Buscamos por nome (ILIKE para tolerar variações de capitalização/espaçamento).
-  // Para endereço, fazemos um filtro adicional client-side já que dependeria de
-  // múltiplos AND/OR e o conjunto retornado costuma ser pequeno por tenant.
-  const { data, error } = await supabase
-    .from('condominios')
-    .select(COLUNAS_LITE)
-    .eq('tenant_id', args.tenantId);
-
-  if (error) {
-    console.error('[condominioService] erro ao verificar duplicidade:', error.message);
-    return [];
-  }
-
   const nomeNorm = normalizar(nome);
   const logNorm = normalizar(args.logradouro);
   const numNorm = normalizar(args.numero);
   const cepNorm = somenteDigitos(args.cep);
   const ignorar = args.ignorarId ?? null;
 
+  const { data: matchesPorNome, error: nomeError } = await supabase
+    .from('condominios')
+    .select(COLUNAS_LITE)
+    .eq('tenant_id', args.tenantId)
+    .ilike('nome', termoIlike(nome))
+    .limit(30);
+
+  if (nomeError) {
+    console.error('[condominioService] erro ao verificar duplicidade por nome:', nomeError.message);
+    return [];
+  }
+
+  let matchesPorEndereco: CondominioMatch[] = [];
+  if (logNorm && numNorm) {
+    const { data: enderecoData, error: enderecoError } = await supabase
+      .from('condominios')
+      .select(COLUNAS_LITE)
+      .eq('tenant_id', args.tenantId)
+      .ilike('logradouro', termoIlike(args.logradouro || ''))
+      .eq('numero', args.numero?.trim() || '')
+      .limit(30);
+
+    if (enderecoError) {
+      console.error('[condominioService] erro ao verificar duplicidade por endereço:', enderecoError.message);
+    } else {
+      matchesPorEndereco = (enderecoData ?? []) as CondominioMatch[];
+    }
+  }
+
   const matches: CondominioDuplicadoMatch[] = [];
   const visto = new Set<string>();
+  const candidatos = [...((matchesPorNome ?? []) as CondominioMatch[]), ...matchesPorEndereco];
 
-  for (const row of data ?? []) {
+  for (const row of candidatos) {
     if (ignorar && row.id === ignorar) continue;
     if (visto.has(row.id)) continue;
 

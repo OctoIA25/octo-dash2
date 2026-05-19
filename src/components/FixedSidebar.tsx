@@ -655,7 +655,7 @@ export const FixedSidebar = ({
       { id: 'bolsao', label: 'Bolsão', icon: Inbox },
       { id: 'cliente-interessado', label: 'Funil Cliente Interessado', icon: Users },
       { id: 'cliente-proprietario', label: 'Cliente Proprietário', icon: Building2 },
-      { id: 'proposta', label: 'Proposta', icon: FileText }
+      { id: 'proposta', label: 'Propostas', icon: FileText }
     ],
     'agentes-ia': [
       { id: 'agente-marketing', label: 'Marketing', icon: Bot },
@@ -1212,4 +1212,3 @@ export const FixedSidebar = ({
     </>
   );
 };
-

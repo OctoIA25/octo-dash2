@@ -8,6 +8,7 @@ import { useAuth } from './useAuth';
 import { supabase } from '@/lib/supabaseClient';
 import { format, startOfWeek, endOfWeek, addWeeks, subWeeks, isSameWeek } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { useGoogleCalendar } from '@/features/agenda';
 
 // Tipos
 export type PrioridadeTarefa = 'baixa' | 'media' | 'alta' | 'urgente';
@@ -35,6 +36,7 @@ export interface TarefaSemanal {
   criado_por?: string;
   criado_em: string;
   atualizado_em: string;
+  agenda_evento_id?: string | null;
 }
 
 export interface CreateTarefaSemanal {
@@ -92,7 +94,10 @@ export const DIAS_SEMANA_ABREV: Record<DiaSemana, string> = {
 // Funções utilitárias
 const calcularSemanaAn = (data: Date): number => {
   const year = data.getFullYear();
-  const week = Math.ceil((data.getTime() - new Date(year, 0, 1).getTime()) / (7 * 24 * 60 * 60 * 1000));
+  const week = Math.max(
+    1,
+    Math.ceil((data.getTime() - new Date(year, 0, 1).getTime()) / (7 * 24 * 60 * 60 * 1000))
+  );
   return year * 100 + week;
 };
 
@@ -120,6 +125,7 @@ const getDataPorDia = (semana: SemanaInfo, dia: DiaSemana): Date => {
 // Hook principal
 export const useTarefasSemanais = () => {
   const { user, tenantId } = useAuth();
+  const { isConnected, syncEvent, syncAllEvents } = useGoogleCalendar();
   const [tarefas, setTarefas] = useState<TarefaSemanal[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -207,7 +213,131 @@ export const useTarefasSemanais = () => {
     setSemanaAtual(getSemanaInfo(new Date()));
   }, []);
 
-  // CRUD Operations
+  const prioridadeParaAgenda = useCallback((prioridade: PrioridadeTarefa): 'alta' | 'media' | 'baixa' => {
+    if (prioridade === 'urgente' || prioridade === 'alta') return 'alta';
+    if (prioridade === 'baixa') return 'baixa';
+    return 'media';
+  }, []);
+
+  const getHorarioTarefa = useCallback((tarefa: Pick<TarefaSemanal, 'dados_recorrencia'>): string | null => {
+    const dados = tarefa.dados_recorrencia as { horario?: string } | null | undefined;
+    return typeof dados?.horario === 'string' && dados.horario ? dados.horario.slice(0, 5) : null;
+  }, []);
+
+  const tarefaParaAgendaEvento = useCallback((tarefa: TarefaSemanal) => {
+    if (!tenantId || tenantId === 'owner' || !user?.id || !user?.email) return null;
+
+    return {
+      tenant_id: tenantId,
+      corretor_email: user.email,
+      corretor_id: user.id,
+      titulo: tarefa.titulo,
+      descricao: tarefa.descricao || null,
+      data: tarefa.data_especifica,
+      horario: getHorarioTarefa(tarefa),
+      tipo: 'tarefa',
+      status: tarefa.concluida ? 'concluido' : 'pendente',
+      prioridade: prioridadeParaAgenda(tarefa.prioridade),
+      recorrencia: 'nenhuma',
+    };
+  }, [tenantId, user?.id, user?.email, getHorarioTarefa, prioridadeParaAgenda]);
+
+  const criarEventoAgendaParaTarefa = useCallback(async (tarefa: TarefaSemanal): Promise<string | null> => {
+    const eventoPayload = tarefaParaAgendaEvento(tarefa);
+    if (!eventoPayload) return null;
+
+    const { data: evento, error: eventoError } = await supabase
+      .from('agenda_eventos')
+      .insert(eventoPayload)
+      .select('*')
+      .single();
+
+    if (eventoError) {
+      console.error('Erro ao criar evento da agenda para tarefa:', eventoError);
+      return null;
+    }
+
+    const { error: tarefaError } = await supabase
+      .from('tarefas_semanais')
+      .update({
+        agenda_evento_id: evento.id,
+        atualizado_em: new Date().toISOString(),
+      })
+      .eq('id', tarefa.id);
+
+    if (tarefaError) {
+      console.error('Erro ao vincular tarefa ao evento da agenda:', tarefaError);
+    }
+
+    if (isConnected) {
+      await syncEvent(evento, 'create');
+    }
+
+    return evento.id;
+  }, [tarefaParaAgendaEvento, isConnected, syncEvent]);
+
+  const atualizarEventoAgendaDaTarefa = useCallback(async (
+    tarefaOriginal: TarefaSemanal,
+    updates: Partial<TarefaSemanal>
+  ): Promise<string | null> => {
+    const tarefaAtualizada = { ...tarefaOriginal, ...updates };
+    const eventoPayload = tarefaParaAgendaEvento(tarefaAtualizada);
+    if (!eventoPayload) return tarefaOriginal.agenda_evento_id ?? null;
+
+    if (!tarefaOriginal.agenda_evento_id) {
+      return criarEventoAgendaParaTarefa(tarefaAtualizada);
+    }
+
+    const { data: evento, error } = await supabase
+      .from('agenda_eventos')
+      .update(eventoPayload)
+      .eq('id', tarefaOriginal.agenda_evento_id)
+      .eq('tenant_id', tarefaOriginal.tenant_id)
+      .select('*')
+      .single();
+
+    if (error) {
+      console.error('Erro ao atualizar evento da agenda da tarefa:', error);
+      return tarefaOriginal.agenda_evento_id;
+    }
+
+    if (isConnected) {
+      await syncEvent(evento, evento.google_event_id ? 'update' : 'create');
+    }
+
+    return tarefaOriginal.agenda_evento_id;
+  }, [tarefaParaAgendaEvento, criarEventoAgendaParaTarefa, isConnected, syncEvent]);
+
+  const removerEventoAgendaDaTarefa = useCallback(async (tarefa: TarefaSemanal): Promise<void> => {
+    if (!tarefa.agenda_evento_id) return;
+
+    const { data: evento, error: fetchError } = await supabase
+      .from('agenda_eventos')
+      .select('*')
+      .eq('id', tarefa.agenda_evento_id)
+      .eq('tenant_id', tarefa.tenant_id)
+      .maybeSingle();
+
+    if (fetchError) {
+      console.error('Erro ao buscar evento da agenda da tarefa:', fetchError);
+    }
+
+    if (evento && isConnected) {
+      await syncEvent(evento, 'delete');
+    }
+
+    const { error } = await supabase
+      .from('agenda_eventos')
+      .delete()
+      .eq('id', tarefa.agenda_evento_id)
+      .eq('tenant_id', tarefa.tenant_id);
+
+    if (error) {
+      console.error('Erro ao remover evento da agenda da tarefa:', error);
+    }
+  }, [isConnected, syncEvent]);
+
+  // CRUD
   const criarTarefa = useCallback(async (tarefaData: CreateTarefaSemanal): Promise<TarefaSemanal | null> => {
     if (!user?.id || !tenantId) return null;
 
@@ -234,6 +364,7 @@ export const useTarefasSemanais = () => {
         criado_por: user.id
       };
 
+
       const { data, error } = await supabase
         .from('tarefas_semanais')
         .insert(novaTarefa)
@@ -245,13 +376,20 @@ export const useTarefasSemanais = () => {
         throw error;
       }
 
-      setTarefas(prev => [...prev, data]);
-      return data;
+      const tarefaCriada = data as TarefaSemanal;
+      const agendaEventoId = await criarEventoAgendaParaTarefa(tarefaCriada);
+      const tarefaFinal = {
+        ...tarefaCriada,
+        agenda_evento_id: agendaEventoId,
+      };
+
+      setTarefas(prev => [...prev, tarefaFinal]);
+      return tarefaFinal;
     } catch (err) {
       console.error('Erro ao criar tarefa:', err);
       throw err;
     }
-  }, [user?.id, tenantId, semanaAtual.semana_an, tarefasPorDia]);
+  }, [user?.id, tenantId, semanaAtual.semana_an, tarefasPorDia, criarEventoAgendaParaTarefa]);
 
   const moverTarefa = useCallback(async (tarefaId: string, novoDia: DiaSemana): Promise<void> => {
     if (!user?.id) return;
@@ -278,13 +416,19 @@ export const useTarefasSemanais = () => {
         throw error;
       }
 
+      const updates = {
+        dia_semana: novoDia,
+        data_especifica: novaData.toISOString().split('T')[0],
+        ordem: novaOrdem,
+      };
+      const agendaEventoId = await atualizarEventoAgendaDaTarefa(tarefa, updates);
+
       setTarefas(prev => prev.map(t => 
         t.id === tarefaId 
           ? { 
               ...t, 
-              dia_semana: novoDia, 
-              data_especifica: novaData.toISOString().split('T')[0],
-              ordem: novaOrdem 
+              ...updates,
+              agenda_evento_id: agendaEventoId ?? t.agenda_evento_id,
             }
           : t
       ));
@@ -292,12 +436,14 @@ export const useTarefasSemanais = () => {
       console.error('Erro ao mover tarefa:', err);
       throw err;
     }
-  }, [user?.id, tarefas, semanaAtual, tarefasPorDia]);
+  }, [user?.id, tarefas, semanaAtual, tarefasPorDia, atualizarEventoAgendaDaTarefa]);
 
   const atualizarTarefa = useCallback(async (tarefaId: string, updates: Partial<TarefaSemanal>): Promise<void> => {
     if (!user?.id) return;
 
     try {
+      const tarefaAtual = tarefas.find(t => t.id === tarefaId);
+
       const { error } = await supabase
         .from('tarefas_semanais')
         .update({
@@ -311,19 +457,30 @@ export const useTarefasSemanais = () => {
         throw error;
       }
 
+      const agendaEventoId = tarefaAtual
+        ? await atualizarEventoAgendaDaTarefa(tarefaAtual, updates)
+        : null;
+
       setTarefas(prev => prev.map(t => 
-        t.id === tarefaId ? { ...t, ...updates } : t
+        t.id === tarefaId
+          ? { ...t, ...updates, agenda_evento_id: agendaEventoId ?? t.agenda_evento_id }
+          : t
       ));
     } catch (err) {
       console.error('Erro ao atualizar tarefa:', err);
       throw err;
     }
-  }, [user?.id]);
+  }, [user?.id, tarefas, atualizarEventoAgendaDaTarefa]);
 
   const deletarTarefa = useCallback(async (tarefaId: string): Promise<void> => {
     if (!user?.id) return;
 
     try {
+      const tarefa = tarefas.find(t => t.id === tarefaId);
+      if (tarefa) {
+        await removerEventoAgendaDaTarefa(tarefa);
+      }
+
       const { error } = await supabase
         .from('tarefas_semanais')
         .delete()
@@ -339,7 +496,7 @@ export const useTarefasSemanais = () => {
       console.error('Erro ao deletar tarefa:', err);
       throw err;
     }
-  }, [user?.id]);
+  }, [user?.id, tarefas, removerEventoAgendaDaTarefa]);
 
   const toggleConcluida = useCallback(async (tarefaId: string): Promise<void> => {
     const tarefa = tarefas.find(t => t.id === tarefaId);
@@ -434,6 +591,77 @@ export const useTarefasSemanais = () => {
   useEffect(() => {
     carregarTarefas();
   }, [carregarTarefas]);
+
+  useEffect(() => {
+    if (!user?.id || !tenantId || tenantId === 'owner') return;
+
+    const channel = supabase
+      .channel(`tarefas_semanais_changes_${tenantId}_${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'tarefas_semanais',
+        },
+        (payload: any) => {
+          const registro = payload.new || payload.old || {};
+          const tenantConfere = !registro.tenant_id || registro.tenant_id === tenantId;
+          const usuarioConfere = !registro.user_id || registro.user_id === user.id;
+
+          if (tenantConfere && usuarioConfere) {
+            void carregarTarefas();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [user?.id, tenantId, carregarTarefas]);
+
+  useEffect(() => {
+    if (!user?.id || !tenantId || tenantId === 'owner' || !isConnected) return;
+
+    let cancelled = false;
+
+    const sincronizarAlteracoesDoGoogle = async () => {
+      try {
+        await syncAllEvents({ silent: true, minIntervalMs: 60_000 });
+      } finally {
+        if (!cancelled) {
+          await carregarTarefas();
+        }
+      }
+    };
+
+    void sincronizarAlteracoesDoGoogle();
+
+    const intervalId = window.setInterval(() => {
+      void sincronizarAlteracoesDoGoogle();
+    }, 2 * 60 * 1000);
+
+    const handleFocus = () => {
+      void sincronizarAlteracoesDoGoogle();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void sincronizarAlteracoesDoGoogle();
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [user?.id, tenantId, isConnected, syncAllEvents, carregarTarefas]);
 
   useEffect(() => {
     carregarHistorico();

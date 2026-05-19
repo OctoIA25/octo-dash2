@@ -56,6 +56,10 @@ import { CorretorMetricCard } from '@/components/metrics/individual';
 import { useRelatorios } from '../hooks/useRelatorios';
 import { buildCorretorMetricasCompletas } from '../utils/buildCorretorMetricasCompletas';
 import { buscarValorTotal, formatarValorMonetario, buscarImoveisAtivos } from '../services/relatoriosService';
+import {
+  buscarFinanceiroVendasComerciaisComFallback,
+  type CommercialSalesFinanceSummary,
+} from '@/features/metricas/services/commercialSalesService';
 
 // Registrar componentes do Chart.js
 ChartJS.register(
@@ -254,8 +258,9 @@ export const RelatoriosPage = () => {
   const initialRankingMonth = useMemo(() => new Date().getMonth() + 1, []);
   const [rankingYear, setRankingYear] = useState<number>(initialRankingYear);
   const [rankingMonth, setRankingMonth] = useState<number>(initialRankingMonth);
-  const [rankingPeriod, setRankingPeriod] = useState<'monthly' | 'quarterly' | 'semiannual' | 'yearly'>('monthly');
+  const [rankingPeriod, setRankingPeriod] = useState<'monthly' | 'quarterly' | 'semiannual' | 'yearly'>('yearly');
   const [rankingCurrentPage, setRankingCurrentPage] = useState<number>(1);
+  const [financeiroImoveis, setFinanceiroImoveis] = useState<CommercialSalesFinanceSummary | null>(null);
   const rankingItemsPerPage = 10;
 
   // Reset page when period or filters change
@@ -281,6 +286,38 @@ export const RelatoriosPage = () => {
     setRankingMes(rankingMonth);
     setRankingPeriodo(rankingPeriod);
   }, [rankingYear, rankingMonth, rankingPeriod, setRankingAno, setRankingMes, setRankingPeriodo]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadFinanceiroImoveis = async () => {
+      if (!tenantId || activeSubArea !== 'imoveis') return;
+
+      try {
+        const financeiro = await buscarFinanceiroVendasComerciaisComFallback(
+          tenantId,
+          new Date().getFullYear(),
+        );
+
+        if (mounted) {
+          setFinanceiroImoveis(financeiro);
+        }
+      } catch (error) {
+        console.error('Erro ao carregar financeiro de imóveis:', error);
+        if (mounted) {
+          setFinanceiroImoveis(null);
+        }
+      }
+    };
+
+    loadFinanceiroImoveis();
+    const interval = setInterval(loadFinanceiroImoveis, 30000);
+
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, [tenantId, activeSubArea]);
 
   const normalizeName = (value: string) =>
     value
@@ -435,80 +472,8 @@ export const RelatoriosPage = () => {
       }));
     }
 
-    const seeded01 = (seed: string) => {
-      let h = 2166136261;
-      for (let i = 0; i < seed.length; i += 1) {
-        h ^= seed.charCodeAt(i);
-        h = Math.imul(h, 16777619);
-      }
-      const x = (h >>> 0) / 4294967295;
-      return x;
-    };
-
-    const computeRow = (corretor: string, base: { valorComissao: number; vendasFeitas: number; gestaoAtiva: number }, year: number, month: number, period: 'monthly' | 'quarterly' | 'semiannual' | 'yearly') => {
-      let seed = `${corretor}|${year}`;
-      
-      if (period === 'monthly') {
-        seed += `-${String(month).padStart(2, '0')}`;
-      } else if (period === 'quarterly') {
-        seed += `-Q${Math.ceil(month / 3)}`;
-      } else if (period === 'semiannual') {
-        seed += `-S${Math.ceil(month / 6)}`;
-      }
-      // yearly doesn't add anything to the seed
-
-      const r1 = seeded01(`${seed}|a`);
-      const r2 = seeded01(`${seed}|b`);
-      const r3 = seeded01(`${seed}|c`);
-
-      // Ajuste dos valores baseado no período
-      let periodMultiplier = 1;
-      if (period === 'quarterly') periodMultiplier = 3;
-      else if (period === 'semiannual') periodMultiplier = 6;
-      else if (period === 'yearly') periodMultiplier = 12;
-
-      // Variação intencionalmente mais forte por competência para que o Top 3 mude ao trocar mês/ano.
-      // Mantém determinístico (mesmo corretor + ano + mês => mesmos números).
-      const vendas = Math.max(0, Math.round(base.vendasFeitas * periodMultiplier + (r1 - 0.5) * 10 * periodMultiplier + r3 * 3 * periodMultiplier));
-
-      const multiplier = 0.55 + r2 * 1.35; // 0.55 .. 1.90
-      const spike = r3 > 0.82 ? 1.18 : 1; // pico ocasional
-      const comissao = Math.max(0, Math.round(base.valorComissao * multiplier * spike * periodMultiplier * 100) / 100);
-
-      return {
-        corretor,
-        valorComissao: comissao,
-        vendasFeitas: vendas,
-        gestaoAtiva: base.gestaoAtiva,
-      };
-    };
-
-    const base = [
-      { corretor: 'ANA E KARLA', valorComissao: 42005, vendasFeitas: 4, gestaoAtiva: 0 },
-      { corretor: 'BARBARA FABRICIO', valorComissao: 26380, vendasFeitas: 3, gestaoAtiva: 0 },
-      { corretor: 'FELIPE MARTINS', valorComissao: 19050, vendasFeitas: 5, gestaoAtiva: 0 },
-      { corretor: 'FELIPE CAMARGO', valorComissao: 16012.5, vendasFeitas: 4, gestaoAtiva: 0 },
-      { corretor: 'CAIO VINICIUS ZORIGNANI', valorComissao: 14602.5, vendasFeitas: 1, gestaoAtiva: 0 },
-      { corretor: 'EDNA SILVA', valorComissao: 10192.5, vendasFeitas: 2, gestaoAtiva: 0 },
-      { corretor: 'CARLOS EDUARDO DOS SANTOS', valorComissao: 8750, vendasFeitas: 0, gestaoAtiva: 0 },
-      { corretor: 'RENATO FARAÇO', valorComissao: 8691.75, vendasFeitas: 0, gestaoAtiva: 0 },
-      { corretor: 'GUSTAVO TEO', valorComissao: 7416.75, vendasFeitas: 1, gestaoAtiva: 0 },
-      { corretor: 'GISELLE ALVES', valorComissao: 5100, vendasFeitas: 0, gestaoAtiva: 0 },
-    ];
-
-    return base
-      .slice()
-      .map((item) => computeRow(item.corretor, item, rankingYear, rankingMonth, rankingPeriod))
-      .sort((a, b) => b.valorComissao - a.valorComissao)
-      .map((item, index) => ({
-        ...item,
-        ranking: index + 1,
-        fotoUrl: getCorretorPhoto(item.corretor) || `/avatars/${slugify(item.corretor)}.jpg`,
-      }));
+    return [];
   }, [
-    rankingMonth,
-    rankingYear,
-    rankingPeriod,
     corretorPhotoMap,
     usandoDadosReaisRanking,
     rankingCorretoresRelatorio,
@@ -524,49 +489,15 @@ export const RelatoriosPage = () => {
   }, [rankingMetricasIndividuais, metricasIndCorretor, setMetricasIndCorretor]);
 
   const bestSellerForSelectedYear = useMemo(() => {
-    if (rankingYear >= 2026) return null;
+    if (usandoDadosReaisRanking && rankingMetricasIndividuais.length > 0) {
+      const best = [...rankingMetricasIndividuais]
+        .sort((a, b) => b.vendasFeitas - a.vendasFeitas || b.valorComissao - a.valorComissao)[0];
 
-    const base = [
-      { corretor: 'ANA E KARLA', valorComissao: 42005, vendasFeitas: 4, gestaoAtiva: 0 },
-      { corretor: 'BARBARA FABRICIO', valorComissao: 26380, vendasFeitas: 3, gestaoAtiva: 0 },
-      { corretor: 'FELIPE MARTINS', valorComissao: 19050, vendasFeitas: 5, gestaoAtiva: 0 },
-      { corretor: 'FELIPE CAMARGO', valorComissao: 16012.5, vendasFeitas: 4, gestaoAtiva: 0 },
-      { corretor: 'CAIO VINICIUS ZORIGNANI', valorComissao: 14602.5, vendasFeitas: 1, gestaoAtiva: 0 },
-      { corretor: 'EDNA SILVA', valorComissao: 10192.5, vendasFeitas: 2, gestaoAtiva: 0 },
-      { corretor: 'CARLOS EDUARDO DOS SANTOS', valorComissao: 8750, vendasFeitas: 0, gestaoAtiva: 0 },
-      { corretor: 'RENATO FARAÇO', valorComissao: 8691.75, vendasFeitas: 0, gestaoAtiva: 0 },
-      { corretor: 'GUSTAVO TEO', valorComissao: 7416.75, vendasFeitas: 1, gestaoAtiva: 0 },
-      { corretor: 'GISELLE ALVES', valorComissao: 5100, vendasFeitas: 0, gestaoAtiva: 0 },
-    ];
+      return best ? { corretor: best.corretor, totalVendas: best.vendasFeitas } : null;
+    }
 
-    const seeded01 = (seed: string) => {
-      let h = 2166136261;
-      for (let i = 0; i < seed.length; i += 1) {
-        h ^= seed.charCodeAt(i);
-        h = Math.imul(h, 16777619);
-      }
-      const x = (h >>> 0) / 4294967295;
-      return x;
-    };
-
-    const computeVendas = (corretor: string, baseVendas: number, year: number, month: number) => {
-      const seed = `${corretor}|${year}-${String(month).padStart(2, '0')}`;
-      const r1 = seeded01(`${seed}|a`);
-      const r3 = seeded01(`${seed}|c`);
-      return Math.max(0, Math.round(baseVendas + (r1 - 0.5) * 10 + r3 * 3));
-    };
-
-    const totals = base.map((c) => {
-      let totalVendas = 0;
-      for (let m = 1; m <= 12; m += 1) {
-        totalVendas += computeVendas(c.corretor, c.vendasFeitas, rankingYear, m);
-      }
-      return { corretor: c.corretor, totalVendas };
-    });
-
-    totals.sort((a, b) => b.totalVendas - a.totalVendas);
-    return totals[0] ?? null;
-  }, [rankingYear]);
+    return null;
+  }, [usandoDadosReaisRanking, rankingMetricasIndividuais]);
 
   const metricasIndLeadsView = useMemo(() => {
     const emptyBairro = [{ label: 'Sem dados', value: 0 }];
@@ -800,6 +731,22 @@ export const RelatoriosPage = () => {
       maximumFractionDigits: 2,
     });
   }, []);
+
+  const formatCompactCurrencyBRL = useCallback(
+    (value: number) => {
+      const absolute = Math.abs(value);
+      const formatter = new Intl.NumberFormat('pt-BR', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 1,
+      });
+
+      if (absolute >= 1000000) return `R$ ${formatter.format(value / 1000000)}M`;
+      if (absolute >= 1000) return `R$ ${formatter.format(value / 1000)}K`;
+
+      return formatCurrencyBRL.format(value);
+    },
+    [formatCurrencyBRL],
+  );
 
   const metricasIndComissaoMetasView = useMemo(() => {
     const row = rankingMetricasIndividuais.find((x) => x.corretor === metricasIndCorretor);
@@ -1356,29 +1303,42 @@ export const RelatoriosPage = () => {
     }]
   };
 
-  // 13. Leads por Mês (VGV e VGC usam os mesmos dados mensais como proxy)
+  const financeiroImoveisMensal = useMemo(() => {
+    return financeiroImoveis?.monthly ?? [
+      'Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun',
+      'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez',
+    ].map((mes, index) => ({
+      mes,
+      mesNumero: index + 1,
+      vgv: 0,
+      vgc: 0,
+      vendas: 0,
+    }));
+  }, [financeiroImoveis]);
+
+  const financeiroImoveisKpis = useMemo(() => ({
+    vgvTotal: financeiroImoveis?.vgvTotal ?? 0,
+    vgcTotal: financeiroImoveis?.vgcTotal ?? 0,
+    vendasTotal: financeiroImoveis?.vendasTotal ?? 0,
+    ticketMedio: financeiroImoveis?.ticketMedio ?? 0,
+  }), [financeiroImoveis]);
+
+  // 13. Financeiro de imóveis: commercial_sales quando existir, com fallback em transações/leads
   const vgvChartData = {
-    labels: mensalData.labels,
+    labels: financeiroImoveisMensal.map((item) => item.mes),
     datasets: [{
-      label: 'Leads recebidos',
-      data: mensalData.values,
+      label: 'VGV',
+      data: financeiroImoveisMensal.map((item) => item.vgv),
       backgroundColor: CHART_COLORS.primary,
       borderRadius: 4,
     }]
   };
 
   const vgcChartData = {
-    labels: mensalData.labels,
+    labels: financeiroImoveisMensal.map((item) => item.mes),
     datasets: [{
-      label: 'Leads convertidos',
-      data: mensalData.labels.map((_, idx) => {
-        const monthStr = (() => {
-          const now = new Date();
-          const d = new Date(now.getFullYear(), now.getMonth() - (11 - idx), 1);
-          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-        })();
-        return convertidos.filter(l => (l.data_entrada || '').startsWith(monthStr)).length;
-      }),
+      label: 'VGC',
+      data: financeiroImoveisMensal.map((item) => item.vgc),
       backgroundColor: CHART_COLORS.primary,
       borderRadius: 4,
     }]
@@ -2184,85 +2144,91 @@ export const RelatoriosPage = () => {
                       </div>
                     )}
 
-                    <div className="mt-7 grid grid-cols-1 md:grid-cols-3 gap-6 items-end flex-1">
-                      <div className="w-full">
-                        {top3MetricasIndividuais[1] && (
-                          <div className="text-center">
-                            <div className="flex flex-col items-center">
-                              <div className="text-xs font-semibold text-gray-500 dark:text-slate-400">2º</div>
-                              <Avatar className="mt-2 h-16 w-16 ring-1 ring-gray-200 shadow-sm">
-                                <AvatarImage src={(top3MetricasIndividuais[1] as any).fotoUrl} alt={top3MetricasIndividuais[1].corretor} />
-                                <AvatarFallback className="bg-blue-100 text-blue-700 text-xs font-semibold">
-                                  {getInitials(top3MetricasIndividuais[1].corretor)}
-                                </AvatarFallback>
-                              </Avatar>
-                              <div className="mt-2 text-xs font-semibold text-gray-900 dark:text-slate-100 truncate max-w-[180px]">{top3MetricasIndividuais[1].corretor}</div>
-                            </div>
-                            <div
-                              className="mt-3 rounded-2xl bg-sky-200/80 border border-sky-300 shadow-sm flex flex-col justify-end px-6 py-7 transition-[height] duration-500"
-                              style={{ height: top3PodiumHeights.second }}
-                            >
-                              <div className="text-2xl font-extrabold tracking-tight leading-none text-sky-950">
-                                {(top3MetricasIndividuais[1].valorComissao / 1000).toFixed(2)} Mil
-                              </div>
-                              <div className="text-xs mt-1 text-sky-900">Comissão</div>
-                            </div>
-                          </div>
-                        )}
+                    {rankingMetricasIndividuais.length === 0 ? (
+                      <div className="mt-7 flex flex-1 items-center justify-center rounded-xl border border-dashed border-gray-200 bg-gray-50/80 px-6 py-16 text-center text-sm text-gray-500 dark:border-slate-700 dark:bg-slate-950/60 dark:text-slate-400">
+                        Nenhum dado de ranking encontrado para o período selecionado.
                       </div>
+                    ) : (
+                      <div className="mt-7 grid grid-cols-1 md:grid-cols-3 gap-6 items-end flex-1">
+                        <div className="w-full">
+                          {top3MetricasIndividuais[1] && (
+                            <div className="text-center">
+                              <div className="flex flex-col items-center">
+                                <div className="text-xs font-semibold text-gray-500 dark:text-slate-400">2º</div>
+                                <Avatar className="mt-2 h-16 w-16 ring-1 ring-gray-200 shadow-sm">
+                                  <AvatarImage src={(top3MetricasIndividuais[1] as any).fotoUrl} alt={top3MetricasIndividuais[1].corretor} />
+                                  <AvatarFallback className="bg-blue-100 text-blue-700 text-xs font-semibold">
+                                    {getInitials(top3MetricasIndividuais[1].corretor)}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <div className="mt-2 text-xs font-semibold text-gray-900 dark:text-slate-100 truncate max-w-[180px]">{top3MetricasIndividuais[1].corretor}</div>
+                              </div>
+                              <div
+                                className="mt-3 rounded-2xl bg-sky-200/80 border border-sky-300 shadow-sm flex flex-col justify-end px-6 py-7 transition-[height] duration-500"
+                                style={{ height: top3PodiumHeights.second }}
+                              >
+                                <div className="text-2xl font-extrabold tracking-tight leading-none text-sky-950">
+                                  {(top3MetricasIndividuais[1].valorComissao / 1000).toFixed(2)} Mil
+                                </div>
+                                <div className="text-xs mt-1 text-sky-900">Comissão</div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
 
-                      <div className="w-full md:-mt-6">
-                        {top3MetricasIndividuais[0] && (
-                          <div className="text-center">
-                            <div className="flex flex-col items-center">
-                              <div className="text-xs font-semibold text-gray-500 dark:text-slate-400">1º</div>
-                              <Avatar className="mt-2 h-20 w-20 ring-1 ring-gray-200 shadow-sm">
-                                <AvatarImage src={(top3MetricasIndividuais[0] as any).fotoUrl} alt={top3MetricasIndividuais[0].corretor} />
-                                <AvatarFallback className="bg-blue-100 text-blue-700 text-xs font-semibold">
-                                  {getInitials(top3MetricasIndividuais[0].corretor)}
-                                </AvatarFallback>
-                              </Avatar>
-                              <div className="mt-2 text-xs font-semibold text-gray-900 dark:text-slate-100 truncate max-w-[200px]">{top3MetricasIndividuais[0].corretor}</div>
-                            </div>
-                            <div
-                              className="mt-3 rounded-2xl bg-blue-200/80 border border-blue-300 shadow-sm flex flex-col justify-end px-7 py-8 transition-[height] duration-500"
-                              style={{ height: top3PodiumHeights.first }}
-                            >
-                              <div className="text-3xl font-extrabold tracking-tight leading-none text-blue-950">
-                                {(top3MetricasIndividuais[0].valorComissao / 1000).toFixed(2)} Mil
+                        <div className="w-full md:-mt-6">
+                          {top3MetricasIndividuais[0] && (
+                            <div className="text-center">
+                              <div className="flex flex-col items-center">
+                                <div className="text-xs font-semibold text-gray-500 dark:text-slate-400">1º</div>
+                                <Avatar className="mt-2 h-20 w-20 ring-1 ring-gray-200 shadow-sm">
+                                  <AvatarImage src={(top3MetricasIndividuais[0] as any).fotoUrl} alt={top3MetricasIndividuais[0].corretor} />
+                                  <AvatarFallback className="bg-blue-100 text-blue-700 text-xs font-semibold">
+                                    {getInitials(top3MetricasIndividuais[0].corretor)}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <div className="mt-2 text-xs font-semibold text-gray-900 dark:text-slate-100 truncate max-w-[200px]">{top3MetricasIndividuais[0].corretor}</div>
                               </div>
-                              <div className="text-xs mt-1 text-blue-900">Comissão</div>
+                              <div
+                                className="mt-3 rounded-2xl bg-blue-200/80 border border-blue-300 shadow-sm flex flex-col justify-end px-7 py-8 transition-[height] duration-500"
+                                style={{ height: top3PodiumHeights.first }}
+                              >
+                                <div className="text-3xl font-extrabold tracking-tight leading-none text-blue-950">
+                                  {(top3MetricasIndividuais[0].valorComissao / 1000).toFixed(2)} Mil
+                                </div>
+                                <div className="text-xs mt-1 text-blue-900">Comissão</div>
+                              </div>
                             </div>
-                          </div>
-                        )}
-                      </div>
+                          )}
+                        </div>
 
-                      <div className="w-full">
-                        {top3MetricasIndividuais[2] && (
-                          <div className="text-center">
-                            <div className="flex flex-col items-center">
-                              <div className="text-xs font-semibold text-gray-500 dark:text-slate-400">3º</div>
-                              <Avatar className="mt-2 h-16 w-16 ring-1 ring-gray-200 shadow-sm">
-                                <AvatarImage src={(top3MetricasIndividuais[2] as any).fotoUrl} alt={top3MetricasIndividuais[2].corretor} />
-                                <AvatarFallback className="bg-blue-100 text-blue-700 text-xs font-semibold">
-                                  {getInitials(top3MetricasIndividuais[2].corretor)}
-                                </AvatarFallback>
-                              </Avatar>
-                              <div className="mt-2 text-xs font-semibold text-gray-900 dark:text-slate-100 truncate max-w-[180px]">{top3MetricasIndividuais[2].corretor}</div>
-                            </div>
-                            <div
-                              className="mt-3 rounded-2xl bg-indigo-200/80 border border-indigo-300 shadow-sm flex flex-col justify-end px-6 py-7 transition-[height] duration-500"
-                              style={{ height: top3PodiumHeights.third }}
-                            >
-                              <div className="text-2xl font-extrabold tracking-tight leading-none text-indigo-950">
-                                {(top3MetricasIndividuais[2].valorComissao / 1000).toFixed(2)} Mil
+                        <div className="w-full">
+                          {top3MetricasIndividuais[2] && (
+                            <div className="text-center">
+                              <div className="flex flex-col items-center">
+                                <div className="text-xs font-semibold text-gray-500 dark:text-slate-400">3º</div>
+                                <Avatar className="mt-2 h-16 w-16 ring-1 ring-gray-200 shadow-sm">
+                                  <AvatarImage src={(top3MetricasIndividuais[2] as any).fotoUrl} alt={top3MetricasIndividuais[2].corretor} />
+                                  <AvatarFallback className="bg-blue-100 text-blue-700 text-xs font-semibold">
+                                    {getInitials(top3MetricasIndividuais[2].corretor)}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <div className="mt-2 text-xs font-semibold text-gray-900 dark:text-slate-100 truncate max-w-[180px]">{top3MetricasIndividuais[2].corretor}</div>
                               </div>
-                              <div className="text-xs mt-1 text-indigo-900">Comissão</div>
+                              <div
+                                className="mt-3 rounded-2xl bg-indigo-200/80 border border-indigo-300 shadow-sm flex flex-col justify-end px-6 py-7 transition-[height] duration-500"
+                                style={{ height: top3PodiumHeights.third }}
+                              >
+                                <div className="text-2xl font-extrabold tracking-tight leading-none text-indigo-950">
+                                  {(top3MetricasIndividuais[2].valorComissao / 1000).toFixed(2)} Mil
+                                </div>
+                                <div className="text-xs mt-1 text-indigo-900">Comissão</div>
+                              </div>
                             </div>
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
 
                   <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-6 overflow-hidden h-full min-h-[640px] flex flex-col">
@@ -2282,48 +2248,58 @@ export const RelatoriosPage = () => {
                           </tr>
                         </thead>
                         <tbody>
-                          {rankingMetricasIndividuais
-                            .slice((rankingCurrentPage - 1) * rankingItemsPerPage, rankingCurrentPage * rankingItemsPerPage)
-                            .map((row, idx) => {
-                              const globalIdx = (rankingCurrentPage - 1) * rankingItemsPerPage + idx;
-                              return (
-                                <tr
-                                  key={row.corretor}
-                                  className={`${globalIdx % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-gray-50 dark:bg-slate-950'} hover:bg-blue-50/40 transition-colors`}
-                                >
-                                  <td className="py-2.5 pl-3 pr-3 text-xs font-semibold text-gray-900 dark:text-slate-100">
-                                    <div className="flex items-center gap-2">
-                                      <Avatar className="h-7 w-7 ring-1 ring-gray-200">
-                                        <AvatarImage src={(row as any).fotoUrl} alt={row.corretor} />
-                                        <AvatarFallback className="bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-slate-300 text-[10px] font-semibold">
-                                          {getInitials(row.corretor)}
-                                        </AvatarFallback>
-                                      </Avatar>
-                                      <span className="truncate">{row.corretor}</span>
-                                    </div>
-                                  </td>
-                                  <td className="py-2.5 px-3 text-right text-xs">
-                                    <span className="inline-flex min-w-8 justify-center rounded-full bg-blue-50 text-blue-700 border border-blue-100 px-2 py-0.5 font-semibold">
-                                      {row.ranking}
-                                    </span>
-                                  </td>
-                                  <td className="py-2.5 px-3 text-right text-xs text-gray-800">{formatCurrencyBRL.format(row.valorComissao)}</td>
-                                  <td className="py-2.5 px-3 text-right text-xs text-gray-800">{row.vendasFeitas}</td>
-                                  <td className="py-2.5 pr-3 text-right text-xs text-gray-800">{row.gestaoAtiva}</td>
-                                </tr>
-                              );
-                            })}
-                          <tr className="bg-gray-100 dark:bg-slate-800">
-                            <td className="py-2.5 pl-3 pr-3 text-xs font-semibold text-gray-800">Total</td>
-                            <td className="py-2.5 px-3" />
-                            <td className="py-2.5 px-3 text-right text-xs font-semibold text-gray-800">
-                              {formatCurrencyBRL.format(rankingMetricasIndividuais.reduce((acc, item) => acc + item.valorComissao, 0))}
-                            </td>
-                            <td className="py-2.5 px-3 text-right text-xs font-semibold text-gray-800">
-                              {rankingMetricasIndividuais.reduce((acc, item) => acc + item.vendasFeitas, 0)}
-                            </td>
-                            <td className="py-2.5 pr-3" />
-                          </tr>
+                          {rankingMetricasIndividuais.length === 0 ? (
+                            <tr className="bg-white dark:bg-slate-900">
+                              <td colSpan={5} className="py-10 px-3 text-center text-xs text-gray-500 dark:text-slate-400">
+                                Nenhum dado de ranking encontrado para o período selecionado.
+                              </td>
+                            </tr>
+                          ) : (
+                            <>
+                              {rankingMetricasIndividuais
+                                .slice((rankingCurrentPage - 1) * rankingItemsPerPage, rankingCurrentPage * rankingItemsPerPage)
+                                .map((row, idx) => {
+                                  const globalIdx = (rankingCurrentPage - 1) * rankingItemsPerPage + idx;
+                                  return (
+                                    <tr
+                                      key={row.corretor}
+                                      className={`${globalIdx % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-gray-50 dark:bg-slate-950'} hover:bg-blue-50/40 transition-colors`}
+                                    >
+                                      <td className="py-2.5 pl-3 pr-3 text-xs font-semibold text-gray-900 dark:text-slate-100">
+                                        <div className="flex items-center gap-2">
+                                          <Avatar className="h-7 w-7 ring-1 ring-gray-200">
+                                            <AvatarImage src={(row as any).fotoUrl} alt={row.corretor} />
+                                            <AvatarFallback className="bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-slate-300 text-[10px] font-semibold">
+                                              {getInitials(row.corretor)}
+                                            </AvatarFallback>
+                                          </Avatar>
+                                          <span className="truncate">{row.corretor}</span>
+                                        </div>
+                                      </td>
+                                      <td className="py-2.5 px-3 text-right text-xs">
+                                        <span className="inline-flex min-w-8 justify-center rounded-full bg-blue-50 text-blue-700 border border-blue-100 px-2 py-0.5 font-semibold">
+                                          {row.ranking}
+                                        </span>
+                                      </td>
+                                      <td className="py-2.5 px-3 text-right text-xs text-gray-800">{formatCurrencyBRL.format(row.valorComissao)}</td>
+                                      <td className="py-2.5 px-3 text-right text-xs text-gray-800">{row.vendasFeitas}</td>
+                                      <td className="py-2.5 pr-3 text-right text-xs text-gray-800">{row.gestaoAtiva}</td>
+                                    </tr>
+                                  );
+                                })}
+                              <tr className="bg-gray-100 dark:bg-slate-800">
+                                <td className="py-2.5 pl-3 pr-3 text-xs font-semibold text-gray-800">Total</td>
+                                <td className="py-2.5 px-3" />
+                                <td className="py-2.5 px-3 text-right text-xs font-semibold text-gray-800">
+                                  {formatCurrencyBRL.format(rankingMetricasIndividuais.reduce((acc, item) => acc + item.valorComissao, 0))}
+                                </td>
+                                <td className="py-2.5 px-3 text-right text-xs font-semibold text-gray-800">
+                                  {rankingMetricasIndividuais.reduce((acc, item) => acc + item.vendasFeitas, 0)}
+                                </td>
+                                <td className="py-2.5 pr-3" />
+                              </tr>
+                            </>
+                          )}
                         </tbody>
                       </table>
                     </div>
@@ -3018,7 +2994,9 @@ export const RelatoriosPage = () => {
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Imóveis Ativos</p>
-                  <p className="text-xl font-bold text-gray-900 dark:text-slate-100">448</p>
+                  <p className="text-xl font-bold text-gray-900 dark:text-slate-100">
+                    {Number(imoveisAtivos || 0).toLocaleString('pt-BR')}
+                  </p>
                 </div>
               </div>
             </div>
@@ -3030,7 +3008,9 @@ export const RelatoriosPage = () => {
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">VGV Total</p>
-                  <p className="text-xl font-bold text-gray-900 dark:text-slate-100">R$ 68.9M</p>
+                  <p className="text-xl font-bold text-gray-900 dark:text-slate-100">
+                    {formatCompactCurrencyBRL(financeiroImoveisKpis.vgvTotal)}
+                  </p>
                 </div>
               </div>
             </div>
@@ -3042,7 +3022,9 @@ export const RelatoriosPage = () => {
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">VGC Total</p>
-                  <p className="text-xl font-bold text-gray-900 dark:text-slate-100">R$ 5.2M</p>
+                  <p className="text-xl font-bold text-gray-900 dark:text-slate-100">
+                    {formatCompactCurrencyBRL(financeiroImoveisKpis.vgcTotal)}
+                  </p>
                 </div>
               </div>
             </div>
@@ -3054,7 +3036,9 @@ export const RelatoriosPage = () => {
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Preço Médio</p>
-                  <p className="text-xl font-bold text-gray-900 dark:text-slate-100">R$ 850K</p>
+                  <p className="text-xl font-bold text-gray-900 dark:text-slate-100">
+                    {formatCompactCurrencyBRL(financeiroImoveisKpis.ticketMedio)}
+                  </p>
                 </div>
               </div>
             </div>
@@ -3066,7 +3050,9 @@ export const RelatoriosPage = () => {
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Vendidos</p>
-                  <p className="text-xl font-bold text-gray-900 dark:text-slate-100">187</p>
+                  <p className="text-xl font-bold text-gray-900 dark:text-slate-100">
+                    {financeiroImoveisKpis.vendasTotal.toLocaleString('pt-BR')}
+                  </p>
                 </div>
               </div>
             </div>

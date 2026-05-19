@@ -103,7 +103,7 @@ export const GoogleCalendarConnect = () => {
 
             <div className="flex gap-2">
               <Button
-                onClick={syncAllEvents}
+                onClick={() => syncAllEvents()}
                 disabled={isSyncing}
                 variant="outline"
                 className="flex-1"

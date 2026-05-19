@@ -73,7 +73,7 @@ const GROUPS: SidebarGroup[] = [
           { id: 'bolsao', label: 'Bolsão', icon: Inbox, route: '/bolsao' },
           { id: 'cliente-interessado', label: 'Funil Cliente Interessado', icon: Users, route: '/metricas/cliente-interessado' },
           { id: 'cliente-proprietario', label: 'Cliente Proprietário', icon: Building2, route: '/metricas/cliente-proprietario' },
-          { id: 'proposta', label: 'Proposta', icon: FileText, route: '/metricas/proposta' },
+          { id: 'proposta', label: 'Propostas', icon: FileText, route: '/metricas/proposta' },
         ],
       },
       { id: 'imoveis', label: 'Imóveis', icon: Building2, route: '/imoveis', permission: 'imoveis' },

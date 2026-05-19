@@ -22,6 +22,7 @@ import { dirname } from 'path';
 import fs from 'fs';
 import { createClient } from '@supabase/supabase-js';
 import { registerScrapeRoute } from './scrapers/index.js';
+import { promises } from 'dns';
 
 // =============================================================================
 // SUPABASE CLIENT - API INTEGRATION
@@ -288,6 +289,93 @@ const validateApiKey = async (req, res, next) => {
     });
   }
 };
+
+async function dispatchWebhookEvent(tenantId, event, data) {
+  try {
+    const { data: webhooks, error } = await supabase
+      .from('webhook_subscriptions')
+      .select('id, url, secret, events')
+      .eq('tenant_id', tenantId)
+      .eq('status', 'active')
+      .contains('events', [event]);
+
+    if (error) {
+      console.error('Erro ao buscar webhooks:', error);
+      return;
+    }
+
+    if (!webhooks || webhooks.length === 0) return;
+
+    await Promise.allSettled(webhooks.map(async (webhook) => {
+      const payload = {
+        event,
+        timestamp: new Date().toISOString(),
+        webhook_id: webhook.id,
+        data
+      };
+
+      const body = JSON.stringify(payload);
+
+      const signature = `sha256=${crypto
+        .createHmac('sha256', webhook.secret)
+        .update(body)
+        .digest('hex')}`;
+
+      const response = await fetch(webhook.url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-OctoDash-Event': event,
+          'X-OctoDash-Signature': signature
+        },
+        body
+      });
+
+      if (!response.ok) {
+        console.error(`Webhook ${webhook.id} falhou com status ${response.status}`);
+      }
+    }));
+  } catch (error) {
+    console.error('Erro ao disparar webhook:', error);
+  }
+}
+
+async function processWebhookEvents() {
+  const { data: events, error } = await supabase
+    .from('webhook_events')
+    .select('*')
+    .eq('status', 'pending')
+    .lte('next_attempt_at', new Date().toISOString())
+    .order('created_at', { ascending: true })
+    .limit(20);
+
+  if (error) {
+    console.error('Erro ao buscar eventos de webhook:', error);
+    return;
+  }
+
+  if (!events?.length) return;
+
+  for (const webhookEvent of events) {
+    const eventType = webhookEvent.event_type || webhookEvent.event;
+    if (!eventType) {
+      console.error('Evento de webhook sem event_type:', webhookEvent);
+      continue;
+    }
+
+    await dispatchWebhookEvent(webhookEvent.tenant_id, eventType, webhookEvent.payload);
+
+    await supabase
+      .from('webhook_events')
+      .update({
+        status: 'delivered',
+        delivered_at: new Date().toISOString()
+      })
+      .eq('id', webhookEvent.id);
+  }
+}
+
+setInterval(processWebhookEvents, 5000);
 
 // ============================================
 // HEALTH CHECK ENDPOINTS (públicos - sem autenticação)
@@ -3766,53 +3854,122 @@ app.delete('/api/v1/property-assignments/:code', validateApiKey, async (req, res
 // API v1 - WEBHOOKS
 // ============================================
 
-const webhooks = new Map();
-
 // GET /api/v1/webhooks - Listar webhooks
 app.get('/api/v1/webhooks', validateApiKey, async (req, res) => {
-  const userWebhooks = Array.from(webhooks.values())
-    .filter(w => w.api_key === req.apiKey);
+  try {
+    const { data, error } = await supabase
+      .from('webhook_subscriptions')
+      .select('id, name, url, events, status, created_at, updated_at')
+      .eq('tenant_id', req.tenantId)
+      .order('created_at', { ascending: false });
 
-  res.json({
-    success: true,
-    data: userWebhooks,
-    count: userWebhooks.length
-  });
+    if (error) throw error;
+
+    res.json({
+      success: true,
+      data: data || [],
+      count: data?.length || 0
+    });
+  } catch (error) {
+    console.error('❌ Erro ao listar webhooks:', error);
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'SERVER_ERROR',
+        message: error.message
+      }
+    });
+  }
 });
 
 // POST /api/v1/webhooks - Criar webhook
 app.post('/api/v1/webhooks', validateApiKey, async (req, res) => {
   try {
-    const { url, events, name } = req.body;
+    const { url, events = ['lead.created'], name, active = true } = req.body;
     
-    if (!url || !events || !Array.isArray(events)) {
+    if (!url) {
       return res.status(400).json({
         success: false,
         error: {
           code: 'VALIDATION_ERROR',
-          message: 'url e events (array) são obrigatórios'
+          message: 'url é obrigatório'
         }
       });
     }
-    
-    const id = `wh_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const webhook = {
-      id,
-      url,
-      events,
-      name: name || 'Webhook',
-      api_key: req.apiKey,
-      created_at: new Date().toISOString(),
-      status: 'active'
+
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(url);
+    } catch {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'URL do webhook inválida'
+        }
+      });
+    }
+
+    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'URL do webhook deve usar http ou https'
+        }
+      });
+    }
+
+    if (!Array.isArray(events) || events.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'events deve ser um array com pelo menos um evento'
+        }
+      });
+    }
+
+    const validEvents = ['lead.created'];
+    const webhookEvents = events.filter(event => validEvents.includes(event));
+
+    if (webhookEvents.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: `events deve conter pelo menos um evento válido: ${validEvents.join(', ')}`
+        }
+      });
+    }
+
+    const { data: webhook, error } = await supabase
+      .from('webhook_subscriptions')
+      .insert({
+        tenant_id: req.tenantId,
+        name: name || 'Webhook',
+        url,
+        events: webhookEvents,
+        status: active ? 'active' : 'inactive',
+        updated_at: new Date().toISOString()
+      })
+      .select('id, name, url, events, secret, status, created_at, updated_at')
+      .single();
+
+    if (error) throw error;
+
+    const responseWebhook = {
+      ...webhook,
+      secret_note: 'Guarde este secret para validar a assinatura X-OctoDash-Signature.'
     };
-    
-    webhooks.set(id, webhook);
-    
+
     res.status(201).json({
       success: true,
-      data: webhook
+      data: responseWebhook,
+      message: 'Webhook criado com sucesso'
     });
   } catch (error) {
+    console.error('❌ Erro ao criar webhook:', error);
     res.status(500).json({
       success: false,
       error: {
@@ -3825,35 +3982,42 @@ app.post('/api/v1/webhooks', validateApiKey, async (req, res) => {
 
 // DELETE /api/v1/webhooks/:id - Remover webhook
 app.delete('/api/v1/webhooks/:id', validateApiKey, async (req, res) => {
-  const { id } = req.params;
-  
-  if (!webhooks.has(id)) {
-    return res.status(404).json({
+  try {
+    const { id } = req.params;
+
+    const { data, error } = await supabase
+      .from('webhook_subscriptions')
+      .delete()
+      .eq('id', id)
+      .eq('tenant_id', req.tenantId)
+      .select('id, name, url')
+      .single();
+
+    if (error || !data) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'NOT_FOUND',
+          message: 'Webhook não encontrado'
+        }
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Webhook removido',
+      data
+    });
+  } catch (error) {
+    console.error('❌ Erro ao remover webhook:', error);
+    res.status(500).json({
       success: false,
       error: {
-        code: 'NOT_FOUND',
-        message: 'Webhook não encontrado'
+        code: 'SERVER_ERROR',
+        message: error.message
       }
     });
   }
-  
-  const webhook = webhooks.get(id);
-  if (webhook.api_key !== req.apiKey) {
-    return res.status(403).json({
-      success: false,
-      error: {
-        code: 'FORBIDDEN',
-        message: 'Sem permissão para remover este webhook'
-      }
-    });
-  }
-  
-  webhooks.delete(id);
-  
-  res.json({
-    success: true,
-    message: 'Webhook removido'
-  });
 });
 
 // 404 para rotas da API não encontradas

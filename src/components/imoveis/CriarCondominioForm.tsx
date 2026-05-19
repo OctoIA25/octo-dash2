@@ -378,13 +378,16 @@ export const CriarCondominioForm = ({
     setOpenSections(prev => ({ ...prev, [section]: !prev[section] }));
   };
 
-  const handleInputChange = (field: keyof CondominioFormData, value: string | boolean) => {
+  const handleInputChange = useCallback((field: keyof CondominioFormData, value: string | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
-    if (submitStatus !== 'idle') {
-      setSubmitStatus('idle');
-      setSubmitMessage('');
-    }
-  };
+    setSubmitStatus((currentStatus) => {
+      if (currentStatus !== 'idle') {
+        setSubmitMessage('');
+        return 'idle';
+      }
+      return currentStatus;
+    });
+  }, []);
 
   // Adicionar metragem à lista
   const handleAdicionarMetragem = () => {
@@ -454,7 +457,7 @@ export const CriarCondominioForm = ({
       
       setIsBuscandoCep(false);
     }
-  }, [cepStatus]);
+  }, [cepStatus, handleInputChange]);
 
   useEffect(() => {
     if (isOpen) {
@@ -693,49 +696,68 @@ export const CriarCondominioForm = ({
         status_aprovacao: 'aguardando', // Novo condomínio sempre inicia aguardando aprovação
       };
 
-      const runSave = async (payload: typeof condominioData) => {
+      type CondominioPayload = typeof condominioData;
+      const runSave = async (payload: Partial<CondominioPayload>) => {
         if (isEdit && editingId) {
           return supabase
             .from('condominios')
             .update(payload)
             .eq('id', editingId)
-            .select()
+            .select('id')
             .single();
         }
         return supabase
           .from('condominios')
           .insert(payload)
-          .select()
+          .select('id')
           .single();
       };
 
-      let { data: savedRow, error } = await runSave(condominioData);
+      const getMissingSchemaColumn = (message?: string): string | null => {
+        const match = message?.match(/Could not find the '([^']+)' column/);
+        return match?.[1] ?? null;
+      };
+
+      const unsupportedColumns = new Set<string>();
+      let payloadToSave: Partial<CondominioPayload> = condominioData;
+      let { data: savedRow, error } = await runSave(payloadToSave);
+
+      const retryWithoutColumn = async (column: string) => {
+        unsupportedColumns.add(column);
+        payloadToSave = { ...payloadToSave };
+        delete payloadToSave[column as keyof CondominioPayload];
+
+        console.warn(`⚠️ Retry salvando sem coluna ${column}: schema do banco desatualizado`);
+        const retry = await runSave(payloadToSave);
+        savedRow = retry.data;
+        error = retry.error;
+      };
 
       // Retry sem a coluna fotos se ela não existir (schema desatualizado)
       if (error && error.message?.includes('fotos')) {
-        console.warn('⚠️ Retry salvando sem coluna fotos:', error.message);
-        const { fotos, ...condominioDataSemFotos } = condominioData as any;
-        const retry = await runSave(condominioDataSemFotos);
-        savedRow = retry.data;
-        error = retry.error;
+        await retryWithoutColumn('fotos');
       }
 
       // Retry sem metragens_disponiveis se ela não existir (schema antigo)
       if (error && error.message?.includes('metragens_disponiveis')) {
-        console.warn('⚠️ Retry salvando sem coluna metragens_disponiveis:', error.message);
-        const { metragens_disponiveis, ...condominioDataSemMetragens } = condominioData as any;
-        const retry = await runSave(condominioDataSemMetragens);
-        savedRow = retry.data;
-        error = retry.error;
+        await retryWithoutColumn('metragens_disponiveis');
+      }
+
+      // Retry genérico para campos opcionais adicionados em migrations que ainda
+      // não foram aplicadas em produção ou cujo schema cache ainda não recarregou.
+      while (error?.code === 'PGRST204') {
+        const missingColumn = getMissingSchemaColumn(error.message);
+        if (!missingColumn || unsupportedColumns.has(missingColumn)) break;
+        await retryWithoutColumn(missingColumn);
       }
 
       if (error) {
         // Logar todos os detalhes do erro do PostgREST/Postgres para diagnóstico
         console.error('❌ Erro do Supabase ao salvar condomínio:', {
           message: error.message,
-          code: (error as any).code,
-          details: (error as any).details,
-          hint: (error as any).hint,
+          code: error.code,
+          details: error.details,
+          hint: error.hint,
           payload: {
             tenant_id: condominioData.tenant_id,
             nome: condominioData.nome,
@@ -744,7 +766,7 @@ export const CriarCondominioForm = ({
         });
 
         // Mensagens mais amigáveis por código de erro
-        const pgCode = (error as any).code as string | undefined;
+        const pgCode = error.code;
         if (pgCode === '42501' || error.message?.toLowerCase().includes('row-level security')) {
           throw new Error(
             'Sem permissão para criar condomínio neste tenant. Verifique se seu usuário está vinculado à imobiliária atual.'
@@ -758,6 +780,16 @@ export const CriarCondominioForm = ({
         }
         if (error.message?.toLowerCase().includes('jwt') || error.message?.toLowerCase().includes('expired')) {
           throw new Error('Sessão expirada. Faça logout e login novamente.');
+        }
+        if (
+          error.message?.toLowerCase().includes('statement timeout') ||
+          error.message?.toLowerCase().includes('canceling statement') ||
+          error.message?.toLowerCase().includes('cancelling statement')
+        ) {
+          throw new Error(
+            'O banco demorou demais para salvar este condomínio. Isso costuma acontecer com muitas fotos pesadas ou dados muito grandes. ' +
+            'Tente salvar com menos fotos ou imagens menores.'
+          );
         }
         throw error;
       }
@@ -779,10 +811,10 @@ export const CriarCondominioForm = ({
       setEditingId(null);
       onSuccess();
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('❌ Erro ao salvar condomínio:', err);
       setSubmitStatus('error');
-      setSubmitMessage(err.message || 'Erro ao salvar condomínio. Tente novamente.');
+      setSubmitMessage(err instanceof Error ? err.message : 'Erro ao salvar condomínio. Tente novamente.');
     } finally {
       setIsSubmitting(false);
     }

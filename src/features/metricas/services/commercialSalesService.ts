@@ -10,6 +10,40 @@ interface CommercialSaleRow {
   origem: string | null;
 }
 
+interface CommercialSalesRankingRow {
+  corretor_nome: string | null;
+  corretor_email: string | null;
+  valor_vgv: number | string | null;
+  valor_vgc: number | string | null;
+  comissao_total_venda: number | string | null;
+  mes_referencia: number | string | null;
+  data_assinatura: string | null;
+  data_recebimento: string | null;
+}
+
+interface CommercialSalesUserProfile {
+  id: string;
+  email: string | null;
+  full_name: string | null;
+  avatar_url: string | null;
+}
+
+interface CommercialSalesTenantMember {
+  user_id: string;
+  email?: string | null;
+  name?: string | null;
+  user_email?: string | null;
+  role?: string | null;
+  status?: string | null;
+}
+
+interface CommercialSalesUserMatch {
+  userId: string;
+  displayName: string;
+  email: string | null;
+  avatarUrl: string | null;
+}
+
 export interface CommercialSalesSyncParams {
   tenantId: string;
   anoReferencia?: number;
@@ -76,12 +110,14 @@ export interface CommercialSalesSource {
 
 export interface CommercialSalesBrokerRanking {
   corretor: string;
+  userId?: string;
   ranking: number;
   vendasFeitas: number;
   vgvTotal: number;
   vgcTotal: number;
   comissaoTotal: number;
   ticketMedio: number;
+  fotoUrl?: string;
 }
 
 export interface KPIsSalesCommercial {
@@ -92,6 +128,300 @@ export interface KPIsSalesCommercial {
   vgcTotal: number;
   comissaoTotal: number;
   ticketMedio: number;
+}
+
+export type CommercialSalesFinanceSource = 'commercial_sales' | 'sales_transactions' | 'leads' | 'empty';
+
+export interface CommercialSalesFinanceMonthly {
+  mesNumero: number;
+  mes: string;
+  vgv: number;
+  vgc: number;
+  vendas: number;
+}
+
+export interface CommercialSalesFinanceSummary {
+  source: CommercialSalesFinanceSource;
+  vgvSource: CommercialSalesFinanceSource;
+  vgcSource: CommercialSalesFinanceSource;
+  vendasSource: CommercialSalesFinanceSource;
+  vgvTotal: number;
+  vgcTotal: number;
+  vendasTotal: number;
+  ticketMedio: number;
+  monthly: CommercialSalesFinanceMonthly[];
+  updatedAt?: string | null;
+}
+
+interface SalesTransactionFinanceRow {
+  valor_imovel: number | string | null;
+  valor_comissao: number | string | null;
+  data_transacao: string | null;
+}
+
+interface LeadFinanceRow {
+  final_sale_value: number | string | null;
+  closing_date: string | null;
+  created_at: string | null;
+  custom_fields?: Record<string, unknown> | null;
+}
+
+const COMMERCIAL_SALES_PAGE_SIZE = 1000;
+
+function toCommercialNumber(value: unknown): number {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+
+  const raw = String(value ?? '').trim();
+  if (!raw) return 0;
+
+  const compact = raw
+    .replace(/R\$/gi, '')
+    .replace(/\s/g, '')
+    .replace(/%/g, '')
+    .replace(/[^\d,.-]/g, '');
+
+  if (!compact || compact === '-' || compact === ',' || compact === '.') return 0;
+
+  const lastComma = compact.lastIndexOf(',');
+  const lastDot = compact.lastIndexOf('.');
+  let cleaned = compact;
+
+  if (lastComma !== -1 && lastDot !== -1) {
+    cleaned = lastComma > lastDot
+      ? compact.replace(/\./g, '').replace(',', '.')
+      : compact.replace(/,/g, '');
+  } else if (lastComma !== -1) {
+    cleaned = compact.replace(/\./g, '').replace(',', '.');
+  } else if (lastDot !== -1) {
+    const decimalDigits = compact.length - lastDot - 1;
+    cleaned = decimalDigits > 2 ? compact.replace(/\./g, '') : compact;
+  }
+
+  const parsed = Number(cleaned);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function emptyFinanceMonthly(): CommercialSalesFinanceMonthly[] {
+  return MES_LABELS.map((mes, index) => ({
+    mesNumero: index + 1,
+    mes,
+    vgv: 0,
+    vgc: 0,
+    vendas: 0,
+  }));
+}
+
+function buildFinanceSummary(
+  source: CommercialSalesFinanceSource,
+  monthly: CommercialSalesFinanceMonthly,
+  updatedAt?: string | null,
+): CommercialSalesFinanceSummary;
+function buildFinanceSummary(
+  source: CommercialSalesFinanceSource,
+  monthly: CommercialSalesFinanceMonthly[],
+  updatedAt?: string | null,
+): CommercialSalesFinanceSummary;
+function buildFinanceSummary(
+  source: CommercialSalesFinanceSource,
+  monthlyInput: CommercialSalesFinanceMonthly | CommercialSalesFinanceMonthly[],
+  updatedAt?: string | null,
+): CommercialSalesFinanceSummary {
+  const monthly = Array.isArray(monthlyInput) ? monthlyInput : [monthlyInput];
+  const vgvTotal = monthly.reduce((sum, mes) => sum + mes.vgv, 0);
+  const vgcTotal = monthly.reduce((sum, mes) => sum + mes.vgc, 0);
+  const vendasTotal = monthly.reduce((sum, mes) => sum + mes.vendas, 0);
+
+  return {
+    source,
+    vgvSource: source,
+    vgcSource: source,
+    vendasSource: source,
+    vgvTotal,
+    vgcTotal,
+    vendasTotal,
+    ticketMedio: vendasTotal > 0 ? vgvTotal / vendasTotal : 0,
+    monthly,
+    updatedAt,
+  };
+}
+
+function emptyFinanceSummary(): CommercialSalesFinanceSummary {
+  return buildFinanceSummary('empty', emptyFinanceMonthly());
+}
+
+function getMonthFromDate(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const date = new Date(value.includes('T') ? value : `${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return null;
+
+  const month = date.getMonth() + 1;
+  return month >= 1 && month <= 12 ? month : null;
+}
+
+function getYearFromDate(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const date = new Date(value.includes('T') ? value : `${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return null;
+
+  return date.getFullYear();
+}
+
+function getLeadVgcFallback(lead: LeadFinanceRow): number {
+  const customFields = lead.custom_fields || {};
+  const possibleKeys = [
+    'valor_vgc',
+    'vgc',
+    'valor_comissao',
+    'comissao',
+    'commission',
+    'comissao_total_venda',
+  ];
+
+  for (const key of possibleKeys) {
+    const parsed = toCommercialNumber(customFields[key]);
+    if (parsed > 0) return parsed;
+  }
+
+  return 0;
+}
+
+function summarizeCommercialMonthlyRows(rows: CommercialSalesMonthlySummary[]): CommercialSalesFinanceSummary {
+  const monthly = emptyFinanceMonthly();
+  let updatedAt: string | null = null;
+
+  rows.forEach((row) => {
+    const mesNumero = Number(row.mes_referencia);
+    if (mesNumero < 1 || mesNumero > 12) return;
+
+    const bucket = monthly[mesNumero - 1];
+    bucket.vendas += Number(row.total_vendas || 0);
+    bucket.vgv += toCommercialNumber(row.total_vgv);
+    bucket.vgc += toCommercialNumber(row.total_vgc);
+    updatedAt = row.atualizado_em || updatedAt;
+  });
+
+  return buildFinanceSummary('commercial_sales', monthly, updatedAt);
+}
+
+function summarizeSalesTransactionRows(rows: SalesTransactionFinanceRow[]): CommercialSalesFinanceSummary {
+  const monthly = emptyFinanceMonthly();
+
+  rows.forEach((row) => {
+    const mesNumero = getMonthFromDate(row.data_transacao);
+    if (!mesNumero) return;
+
+    const valorImovel = toCommercialNumber(row.valor_imovel);
+    const valorComissao = toCommercialNumber(row.valor_comissao);
+    if (valorImovel <= 0 && valorComissao <= 0) return;
+
+    const bucket = monthly[mesNumero - 1];
+    bucket.vendas += 1;
+    bucket.vgv += valorImovel;
+    bucket.vgc += valorComissao;
+  });
+
+  return buildFinanceSummary('sales_transactions', monthly);
+}
+
+function summarizeLeadFinanceRows(rows: LeadFinanceRow[], anoReferencia: number): CommercialSalesFinanceSummary {
+  const monthly = emptyFinanceMonthly();
+
+  rows.forEach((row) => {
+    const dataReferencia = row.closing_date || row.created_at;
+    const ano = getYearFromDate(dataReferencia);
+    const mesNumero = getMonthFromDate(dataReferencia);
+    if (ano !== anoReferencia || !mesNumero) return;
+
+    const valorFinalVenda = toCommercialNumber(row.final_sale_value);
+    if (valorFinalVenda <= 0) return;
+
+    const bucket = monthly[mesNumero - 1];
+    bucket.vendas += 1;
+    bucket.vgv += valorFinalVenda;
+    bucket.vgc += getLeadVgcFallback(row);
+  });
+
+  return buildFinanceSummary('leads', monthly);
+}
+
+async function buscarFinanceiroSalesTransactions(
+  tenantId: string,
+  anoReferencia: number,
+): Promise<CommercialSalesFinanceSummary> {
+  const { data, error } = await supabase
+    .from('sales_transactions' as any)
+    .select('valor_imovel, valor_comissao, data_transacao')
+    .eq('tenant_id', tenantId)
+    .eq('status', 'concluida')
+    .gte('data_transacao', `${anoReferencia}-01-01`)
+    .lt('data_transacao', `${anoReferencia + 1}-01-01`)
+    .order('data_transacao', { ascending: true });
+
+  if (error) {
+    console.warn('[commercialSalesService] sales_transactions indisponível para financeiro:', error);
+    return emptyFinanceSummary();
+  }
+
+  return summarizeSalesTransactionRows((data || []) as SalesTransactionFinanceRow[]);
+}
+
+async function buscarFinanceiroLeads(
+  tenantId: string,
+  anoReferencia: number,
+): Promise<CommercialSalesFinanceSummary> {
+  const rows: LeadFinanceRow[] = [];
+  let page = 0;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from('leads' as any)
+      .select('final_sale_value, closing_date, created_at, custom_fields')
+      .eq('tenant_id', tenantId)
+      .not('final_sale_value', 'is', null)
+      .gt('final_sale_value', 0)
+      .order('created_at', { ascending: true })
+      .range(page * COMMERCIAL_SALES_PAGE_SIZE, (page + 1) * COMMERCIAL_SALES_PAGE_SIZE - 1);
+
+    if (error) {
+      console.warn('[commercialSalesService] leads indisponível para financeiro:', error);
+      return emptyFinanceSummary();
+    }
+
+    const pageRows = (data || []) as LeadFinanceRow[];
+    rows.push(...pageRows);
+
+    if (pageRows.length < COMMERCIAL_SALES_PAGE_SIZE) break;
+    page += 1;
+  }
+
+  return summarizeLeadFinanceRows(rows, anoReferencia);
+}
+
+function getCommercialSaleMonth(venda: Pick<CommercialSalesRankingRow, 'mes_referencia' | 'data_assinatura' | 'data_recebimento'>): number | null {
+  const mesReferencia = Number(venda.mes_referencia);
+  if (mesReferencia >= 1 && mesReferencia <= 12) return mesReferencia;
+
+  const dateValue = venda.data_assinatura || venda.data_recebimento;
+  if (!dateValue) return null;
+
+  const month = new Date(`${dateValue}T00:00:00`).getMonth() + 1;
+  return month >= 1 && month <= 12 ? month : null;
+}
+
+function filtrarVendasPorPeriodoComercial(
+  vendas: CommercialSalesRankingRow[],
+  mesReferencia?: MesReferencia
+): CommercialSalesRankingRow[] {
+  if (!mesReferencia) return vendas;
+
+  const vendasComMesIdentificavel = vendas.filter((venda) => getCommercialSaleMonth(venda));
+  if (vendasComMesIdentificavel.length === 0) return vendas;
+
+  const meses = new Set(Array.isArray(mesReferencia) ? mesReferencia : [mesReferencia]);
+  return vendasComMesIdentificavel.filter((venda) => {
+    const mes = getCommercialSaleMonth(venda);
+    return Boolean(mes && meses.has(mes));
+  });
 }
 
 export async function sincronizarVendasComerciais(
@@ -251,30 +581,59 @@ export async function buscarRankingCorretoresComercial(
   anoReferencia = new Date().getFullYear(),
   mesReferencia?: MesReferencia,
 ): Promise<CommercialSalesBrokerRanking[]> {
-  const corretores = await buscarResumoVendasComerciaisPorCorretor(
-    tenantId,
-    anoReferencia,
-    mesReferencia,
-  );
+  const data: CommercialSalesRankingRow[] = [];
+  let page = 0;
 
+  while (true) {
+    let query = supabase
+      .from('commercial_sales')
+      .select('corretor_nome, corretor_email, valor_vgv, valor_vgc, comissao_total_venda, mes_referencia, data_assinatura, data_recebimento')
+      .eq('tenant_id', tenantId)
+      .eq('ano_referencia', anoReferencia)
+      .eq('is_active', true)
+      .or('corretor_nome.not.is.null,corretor_email.not.is.null')
+      .range(page * COMMERCIAL_SALES_PAGE_SIZE, (page + 1) * COMMERCIAL_SALES_PAGE_SIZE - 1);
+
+    const { data: pageData, error } = await query;
+
+    if (error) throw error;
+
+    data.push(...((pageData || []) as CommercialSalesRankingRow[]));
+
+    if (!pageData || pageData.length < COMMERCIAL_SALES_PAGE_SIZE) break;
+    page += 1;
+  }
+
+  const userResolver = await buscarResolverUsuariosComerciais(tenantId);
   const porCorretor = new Map<string, Omit<CommercialSalesBrokerRanking, 'ranking' | 'ticketMedio'>>();
+  const vendasDoPeriodo = filtrarVendasPorPeriodoComercial(data, mesReferencia);
 
-  corretores.forEach((corretor) => {
-    const nome = corretor.corretor_nome?.trim() || 'Não informado';
-    const atual = porCorretor.get(nome) || {
-      corretor: nome,
+  vendasDoPeriodo.forEach((venda) => {
+    const userMatch = resolverUsuarioVendaComercial(userResolver, venda);
+    const nomeFallback = venda.corretor_nome?.trim() || venda.corretor_email?.trim() || 'Não informado';
+    const aggregationKey = userMatch?.userId || normalizeCommercialKey(nomeFallback);
+    const atual = porCorretor.get(aggregationKey) || {
+      corretor: userMatch?.displayName || nomeFallback,
+      userId: userMatch?.userId,
       vendasFeitas: 0,
       vgvTotal: 0,
       vgcTotal: 0,
       comissaoTotal: 0,
+      fotoUrl: userMatch?.avatarUrl || undefined,
     };
 
-    atual.vendasFeitas += Number(corretor.total_vendas || 0);
-    atual.vgvTotal += Number(corretor.total_vgv || 0);
-    atual.vgcTotal += Number(corretor.total_vgc || 0);
-    atual.comissaoTotal += Number(corretor.total_vgc || 0);
+    if (userMatch) {
+      atual.corretor = userMatch.displayName;
+      atual.userId = userMatch.userId;
+      atual.fotoUrl = userMatch.avatarUrl || atual.fotoUrl;
+    }
 
-    porCorretor.set(nome, atual);
+    atual.vendasFeitas += 1;
+    atual.vgvTotal += toCommercialNumber(venda.valor_vgv);
+    atual.vgcTotal += toCommercialNumber(venda.valor_vgc);
+    atual.comissaoTotal += toCommercialNumber(venda.comissao_total_venda);
+
+    porCorretor.set(aggregationKey, atual);
   });
 
   const ranking = Array.from(porCorretor.values())
@@ -283,12 +642,182 @@ export async function buscarRankingCorretoresComercial(
       ranking: 0,
       ticketMedio: corretor.vendasFeitas > 0 ? corretor.vgvTotal / corretor.vendasFeitas : 0,
     }))
-    .sort((a, b) => b.vgcTotal - a.vgcTotal);
+    .sort((a, b) => b.comissaoTotal - a.comissaoTotal);
 
   return ranking.map((corretor, index) => ({
     ...corretor,
     ranking: index + 1,
   }));
+}
+
+export async function tenantTemVendasComerciais(tenantId: string): Promise<boolean> {
+  const { count, error } = await supabase
+    .from('commercial_sales')
+    .select('id', { count: 'exact', head: true })
+    .eq('tenant_id', tenantId)
+    .eq('is_active', true);
+
+  if (error) throw error;
+
+  return Number(count || 0) > 0;
+}
+
+export async function buscarFinanceiroVendasComerciaisComFallback(
+  tenantId: string,
+  anoReferencia = new Date().getFullYear(),
+): Promise<CommercialSalesFinanceSummary> {
+  const empty = emptyFinanceSummary();
+  const summaries: CommercialSalesFinanceSummary[] = [];
+
+  try {
+    const comercial = await buscarResumoVendasComerciaisMensal(tenantId, anoReferencia);
+    summaries.push(summarizeCommercialMonthlyRows(comercial));
+  } catch (error) {
+    console.warn('[commercialSalesService] commercial_sales indisponível para financeiro:', error);
+  }
+
+  summaries.push(await buscarFinanceiroSalesTransactions(tenantId, anoReferencia));
+  summaries.push(await buscarFinanceiroLeads(tenantId, anoReferencia));
+
+  const vgvSummary = summaries.find((summary) => summary.vgvTotal > 0) || empty;
+  const vgcSummary = summaries.find((summary) => summary.vgcTotal > 0) || empty;
+  const vendasSummary =
+    (vgvSummary.vendasTotal > 0 ? vgvSummary : undefined) ||
+    (vgcSummary.vendasTotal > 0 ? vgcSummary : undefined) ||
+    summaries.find((summary) => summary.vendasTotal > 0) ||
+    empty;
+
+  const monthly = emptyFinanceMonthly().map((mes, index) => ({
+    ...mes,
+    vgv: vgvSummary.monthly[index]?.vgv || 0,
+    vgc: vgcSummary.monthly[index]?.vgc || 0,
+    vendas: vendasSummary.monthly[index]?.vendas || 0,
+  }));
+
+  const vgvTotal = monthly.reduce((sum, mes) => sum + mes.vgv, 0);
+  const vgcTotal = monthly.reduce((sum, mes) => sum + mes.vgc, 0);
+  const vendasTotal = monthly.reduce((sum, mes) => sum + mes.vendas, 0);
+  const source =
+    vgvSummary.source !== 'empty'
+      ? vgvSummary.source
+      : vgcSummary.source !== 'empty'
+        ? vgcSummary.source
+        : vendasSummary.source;
+
+  return {
+    source,
+    vgvSource: vgvSummary.source,
+    vgcSource: vgcSummary.source,
+    vendasSource: vendasSummary.source,
+    vgvTotal,
+    vgcTotal,
+    vendasTotal,
+    ticketMedio: vendasTotal > 0 ? vgvTotal / vendasTotal : 0,
+    monthly,
+    updatedAt: vgvSummary.updatedAt || vgcSummary.updatedAt || vendasSummary.updatedAt,
+  };
+}
+
+function normalizeCommercialKey(value: unknown): string {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+async function buscarResolverUsuariosComerciais(tenantId: string) {
+  const empty = {
+    byEmail: new Map<string, CommercialSalesUserMatch>(),
+    byName: new Map<string, CommercialSalesUserMatch>(),
+  };
+
+  const { data: memberships, error: membershipsError } = await supabase
+    .from('tenant_memberships' as any)
+    .select('*')
+    .eq('tenant_id', tenantId);
+
+  if (membershipsError) {
+    console.warn('[commercialSalesService] Erro ao buscar membros do tenant:', membershipsError);
+    return empty;
+  }
+
+  const memberRows = ((memberships || []) as CommercialSalesTenantMember[])
+    .filter((member) => member.user_id && member.status !== 'inactive');
+  const userIds = [...new Set(memberRows.map((member) => member.user_id))];
+
+  if (userIds.length === 0) return empty;
+
+  const { data: profiles, error: profilesError } = await supabase
+    .from('user_profiles' as any)
+    .select('id, email, full_name, avatar_url')
+    .in('id', userIds);
+
+  if (profilesError) {
+    console.warn('[commercialSalesService] Erro ao buscar perfis dos usuários:', profilesError);
+  }
+
+  const profileById = new Map(
+    ((profiles || []) as CommercialSalesUserProfile[]).map((profile) => [profile.id, profile])
+  );
+
+  const byEmail = new Map<string, CommercialSalesUserMatch>();
+  const byName = new Map<string, CommercialSalesUserMatch>();
+
+  const addAlias = (
+    map: Map<string, CommercialSalesUserMatch>,
+    value: unknown,
+    match: CommercialSalesUserMatch
+  ) => {
+    const key = normalizeCommercialKey(value);
+    if (!key || map.has(key)) return;
+    map.set(key, match);
+  };
+
+  memberRows.forEach((member) => {
+    const profile = profileById.get(member.user_id);
+    const displayName =
+      profile?.full_name?.trim() ||
+      member.name?.trim() ||
+      profile?.email?.split('@')[0] ||
+      member.email?.split('@')[0] ||
+      member.user_email?.split('@')[0] ||
+      'Usuário';
+
+    const match: CommercialSalesUserMatch = {
+      userId: member.user_id,
+      displayName,
+      email: profile?.email || member.email || member.user_email || null,
+      avatarUrl: profile?.avatar_url || null,
+    };
+
+    addAlias(byName, profile?.full_name, match);
+    addAlias(byName, member.name, match);
+    addAlias(byName, member.email, match);
+    addAlias(byName, member.user_email, match);
+    addAlias(byEmail, profile?.email, match);
+    addAlias(byEmail, member.email, match);
+    addAlias(byEmail, member.user_email, match);
+  });
+
+  return { byEmail, byName };
+}
+
+function resolverUsuarioVendaComercial(
+  resolver: Awaited<ReturnType<typeof buscarResolverUsuariosComerciais>>,
+  venda: CommercialSalesRankingRow
+): CommercialSalesUserMatch | null {
+  const byEmail = resolver.byEmail.get(normalizeCommercialKey(venda.corretor_email));
+  if (byEmail) return byEmail;
+
+  const byName = resolver.byName.get(normalizeCommercialKey(venda.corretor_nome));
+  if (byName) return byName;
+
+  const byNameAsEmail = resolver.byEmail.get(normalizeCommercialKey(venda.corretor_nome));
+  if (byNameAsEmail) return byNameAsEmail;
+
+  return null;
 }
 
 export async function buscarKPIsVendasComerciais(

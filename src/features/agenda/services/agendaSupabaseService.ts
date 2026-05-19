@@ -20,6 +20,8 @@ interface AgendaEventoSupabase {
   lead_telefone?: string;
   imovel_ref?: string;
   imovel_titulo?: string;
+  google_event_id?: string | null;
+  google_calendar_synced?: boolean | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -41,7 +43,9 @@ export function eventoToSupabase(evento: any, corretorEmail: string, corretorId?
     lead_nome: evento.leadNome,
     lead_telefone: evento.leadTelefone,
     imovel_ref: evento.imovelRef,
-    imovel_titulo: evento.imovelTitulo
+    imovel_titulo: evento.imovelTitulo,
+    google_event_id: evento.google_event_id,
+    google_calendar_synced: evento.google_calendar_synced
   };
 }
 
@@ -49,6 +53,7 @@ export function eventoToSupabase(evento: any, corretorEmail: string, corretorId?
 export function supabaseToEvento(eventoSupabase: AgendaEventoSupabase): any {
   return {
     id: eventoSupabase.id,
+    corretor_id: eventoSupabase.corretor_id,
     titulo: eventoSupabase.titulo,
     descricao: eventoSupabase.descricao,
     data: new Date(eventoSupabase.data + 'T12:00:00'),
@@ -61,7 +66,9 @@ export function supabaseToEvento(eventoSupabase: AgendaEventoSupabase): any {
     leadNome: eventoSupabase.lead_nome,
     leadTelefone: eventoSupabase.lead_telefone,
     imovelRef: eventoSupabase.imovel_ref,
-    imovelTitulo: eventoSupabase.imovel_titulo
+    imovelTitulo: eventoSupabase.imovel_titulo,
+    google_event_id: eventoSupabase.google_event_id,
+    google_calendar_synced: eventoSupabase.google_calendar_synced
   };
 }
 

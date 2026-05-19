@@ -304,7 +304,7 @@ export async function updateGoogleCalendarEvent(
 /**
  * Deletar evento do Google Calendar
  */
-export async function deleteGoogleCalendarEvent(
+export async function d(
   accessToken: string,
   eventId: string
 ): Promise<void> {
@@ -318,7 +318,7 @@ export async function deleteGoogleCalendarEvent(
     }
   );
 
-  if (!response.ok && response.status !== 404) {
+  if (!response.ok && response.status !== 404 && response.status !== 410) {
     const error = await response.json();
     throw new Error(`Erro ao deletar evento: ${error.error?.message || 'Erro desconhecido'}`);
   }
@@ -327,6 +327,29 @@ export async function deleteGoogleCalendarEvent(
 /**
  * Converter evento da agenda para formato Google Calendar
  */
+const STATUS_CONCLUIDO_PREFIX = '[Concluído]';
+const STATUS_CONCLUIDO_DESCRICAO_REGEX = /^Status:\s*Conclu[ií]do/im;
+
+function getGoogleEventDisplayFields(evento: any): {
+  summary: string;
+  description: string;
+  colorId: string;
+} {
+  const tituloBase = String(evento.titulo || 'Evento sem título').replace(/^\[Conclu[ií]do\]\s*/i, '');
+  const concluido = evento.status === 'concluido';
+  const descricaoBase = String(evento.descricao || '')
+    .replace(STATUS_CONCLUIDO_DESCRICAO_REGEX, '')
+    .trim();
+
+  return {
+    summary: concluido ? `${STATUS_CONCLUIDO_PREFIX} ${tituloBase}` : tituloBase,
+    description: concluido
+      ? ['Status: Concluído', descricaoBase].filter(Boolean).join('\n\n')
+      : descricaoBase,
+    colorId: concluido ? '2' : getPriorityColorId(evento.prioridade),
+  };
+}
+
 export function agendaEventoToGoogleEvent(
   evento: any,
   tenantId: string
@@ -339,6 +362,7 @@ export function agendaEventoToGoogleEvent(
   }
   
   const [year, month, day] = dateString.split('-').map(Number);
+  const display = getGoogleEventDisplayFields(evento);
   
   // Se tem horário, usar dateTime
   if (evento.horario) {
@@ -350,8 +374,8 @@ export function agendaEventoToGoogleEvent(
     endDateTime.setHours(endDateTime.getHours() + 1); // 1 hora de duração padrão
 
     return {
-      summary: evento.titulo,
-      description: evento.descricao || '',
+      summary: display.summary,
+      description: display.description,
       start: {
         dateTime: startDateTime.toISOString(),
         timeZone: 'America/Sao_Paulo',
@@ -361,7 +385,7 @@ export function agendaEventoToGoogleEvent(
         timeZone: 'America/Sao_Paulo',
       },
       status: evento.status === 'cancelado' ? 'cancelled' : 'confirmed',
-      colorId: getPriorityColorId(evento.prioridade),
+      colorId: display.colorId,
       extendedProperties: {
         private: {
           octo_event_id: evento.id,
@@ -372,8 +396,8 @@ export function agendaEventoToGoogleEvent(
   } else {
     // Evento de dia inteiro - usar a string YYYY-MM-DD diretamente
     return {
-      summary: evento.titulo,
-      description: evento.descricao || '',
+      summary: display.summary,
+      description: display.description,
       start: {
         date: dateString,
       },
@@ -381,7 +405,7 @@ export function agendaEventoToGoogleEvent(
         date: dateString,
       },
       status: evento.status === 'cancelado' ? 'cancelled' : 'confirmed',
-      colorId: getPriorityColorId(evento.prioridade),
+      colorId: display.colorId,
       extendedProperties: {
         private: {
           octo_event_id: evento.id,
@@ -429,6 +453,7 @@ export async function listGoogleCalendarEvents(
   const params = new URLSearchParams({
     timeMin,
     singleEvents: 'true',
+    showDeleted: 'true',
     orderBy: 'startTime',
     maxResults: '250'
   });

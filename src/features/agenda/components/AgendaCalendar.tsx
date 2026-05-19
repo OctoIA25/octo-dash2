@@ -54,6 +54,11 @@ import { useTarefas } from '@/hooks/useTarefas';
 import { ComboBox } from '@/components/ui/combobox';
 import { ImoveisComboBox } from '@/components/ui/imovel-combobox';
 import { eventoToSupabase, supabaseToEvento, AgendaQueries } from '../services/agendaSupabaseService';
+import {
+  removerTarefaSemanalDaAgenda,
+  sincronizarStatusTarefaSemanalDaAgenda,
+  sincronizarTarefaSemanalDaAgenda
+} from '../services/tarefasAgendaSyncService';
 import { hasAnyPendingBlockingActivity, unblockCorretor } from '@/features/corretores/services/activityBlockingService';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
@@ -72,31 +77,12 @@ interface Evento {
   imovelTitulo?: string;
   prioridade?: 'alta' | 'media' | 'baixa';
   recorrencia?: 'nenhuma' | 'diaria' | 'semanal' | 'quinzenal' | 'mensal' | 'anual';
+  google_event_id?: string | null;
+  google_calendar_synced?: boolean | null;
 }
 
 // Project ID do Supabase
 const SUPABASE_PROJECT_ID = 'icpgzclbhhfmavihtetf';
-
-const criarEventoExemploVisitaAtraso = (): Evento => {
-  const ontem = new Date();
-  ontem.setDate(ontem.getDate() - 1);
-  ontem.setHours(0, 0, 0, 0);
-
-  return {
-    id: 'exemplo-visita-atraso',
-    titulo: 'Visita em atraso',
-    descricao: 'Exemplo: visita agendada que ainda não foi concluída.',
-    data: ontem,
-    horario: '10:00',
-    tipo: 'visita_agendada',
-    status: 'pendente',
-    prioridade: 'alta',
-    leadNome: 'Cliente Exemplo',
-    leadTelefone: '(11) 99999-9999',
-    imovelRef: 'AP0000',
-    imovelTitulo: 'Imóvel Exemplo'
-  };
-};
 
 export type AgendaCalendarProps = {
   corretorEmail?: string;
@@ -177,13 +163,9 @@ export const AgendaCalendar = ({ corretorEmail }: AgendaCalendarProps) => {
       
       if (data && Array.isArray(data)) {
         const eventosConvertidos = data.map((e: any) => supabaseToEvento(e));
-        if (eventosConvertidos.length === 0) {
-          setEventosCustomizados([criarEventoExemploVisitaAtraso()]);
-        } else {
-          setEventosCustomizados(eventosConvertidos);
-        }
+        setEventosCustomizados(eventosConvertidos);
       } else {
-        setEventosCustomizados([criarEventoExemploVisitaAtraso()]);
+        setEventosCustomizados([]);
       }
     } catch (error) {
       console.error('❌ Erro ao carregar eventos:', error);
@@ -509,6 +491,13 @@ export const AgendaCalendar = ({ corretorEmail }: AgendaCalendarProps) => {
         console.error('❌ Erro Supabase:', error);
         throw new Error(`Erro ao atualizar: ${error.message}`);
       }
+
+      if (eventoEditando.tipo === 'tarefa' && tenantId && tenantId !== 'owner') {
+        await sincronizarTarefaSemanalDaAgenda(eventoEditando.id, tenantId, {
+          ...eventoParaAtualizar,
+          status: eventoEditando.status,
+        });
+      }
       
       
       // Sincronizar com Google Calendar se conectado
@@ -573,6 +562,18 @@ export const AgendaCalendar = ({ corretorEmail }: AgendaCalendarProps) => {
         throw error;
       }
 
+      if (evento.tipo === 'tarefa' && tenantId && tenantId !== 'owner') {
+        await sincronizarStatusTarefaSemanalDaAgenda(evento.id, tenantId, novoStatus);
+      }
+
+      if (isConnected && evento.google_event_id) {
+        try {
+          await syncEvent({ ...evento, status: novoStatus }, 'update');
+        } catch (syncError) {
+          console.error('⚠️ Erro ao sincronizar status com Google Calendar:', syncError);
+        }
+      }
+
       if (novoStatus === 'concluido' && (evento.tipo === 'retornar_cliente' || evento.tipo === 'visita_agendada') && tenantId && tenantId !== 'owner' && emailParaOperacao) {
         const stillHas = await hasAnyPendingBlockingActivity(tenantId, emailParaOperacao);
         if (!stillHas) {
@@ -599,19 +600,78 @@ export const AgendaCalendar = ({ corretorEmail }: AgendaCalendarProps) => {
     setConfirmarExclusaoOpen(true);
   };
 
-  const excluirEvento = async () => {
-    if (!eventoParaExcluir || !user?.email) return;
-
-    const isBlockingType = eventoParaExcluir.tipo === 'retornar_cliente' || eventoParaExcluir.tipo === 'visita_agendada';
-    const eventDate = new Date(eventoParaExcluir.data);
-    if (eventoParaExcluir.horario && /^\d{2}:\d{2}/.test(eventoParaExcluir.horario)) {
-      const [hh, mm] = eventoParaExcluir.horario.split(':').map(Number);
+  const getDataHoraEvento = (evento: Evento): Date => {
+    const eventDate = new Date(evento.data);
+    if (evento.horario && /^\d{2}:\d{2}/.test(evento.horario)) {
+      const [hh, mm] = evento.horario.split(':').map(Number);
       eventDate.setHours(hh || 0, mm || 0, 0, 0);
     } else {
       eventDate.setHours(23, 59, 59, 999);
     }
+    return eventDate;
+  };
+
+  const podeExcluirEvento = (evento: Evento): boolean => {
+    const isBlockingType = evento.tipo === 'retornar_cliente' || evento.tipo === 'visita_agendada';
+    const eventDate = getDataHoraEvento(evento);
     const isPast = eventDate.getTime() < Date.now();
-    if (isBlockingType && isPast && !isAdmin) {
+    return !(isBlockingType && isPast && !isAdmin);
+  };
+
+  const excluirEventoSincronizado = async (evento: Evento): Promise<void> => {
+    if (!tenantId || !emailParaOperacao) {
+      throw new Error('Dados do usuário ou tenant ausentes para excluir o evento.');
+    }
+
+    let erroSyncGoogle: unknown = null;
+    if (isConnected && evento.google_event_id) {
+      try {
+        const googleRemovido = await syncEvent(evento, 'delete');
+        if (!googleRemovido) {
+          erroSyncGoogle = new Error('O Google Calendar não confirmou a remoção.');
+        }
+      } catch (error) {
+        erroSyncGoogle = error;
+      }
+    }
+
+    let q = supabase
+      .from('agenda_eventos')
+      .delete()
+      .eq('id', evento.id)
+      .eq('tenant_id', tenantId);
+    if (!isAdmin) {
+      q = q.eq('corretor_email', emailParaOperacao);
+    }
+
+    await removerTarefaSemanalDaAgenda(evento.id, tenantId) // Code Review
+
+    const { data: eventoRemovido, error } = await q.select('id').maybeSingle();
+    if (error) {
+      console.error('❌ Erro Supabase:', error);
+      throw error;
+    }
+
+    if (!eventoRemovido) {
+      throw new Error('Nenhum evento foi removido. Verifique se o evento pertence ao usuário atual.');
+    }
+
+    if (tenantId !== 'owner') {
+      await removerTarefaSemanalDaAgenda(evento.id, tenantId);
+    }
+
+    if (erroSyncGoogle) {
+      const mensagem = erroSyncGoogle instanceof Error ? erroSyncGoogle.message : 'Erro desconhecido';
+      toast.warning('Evento removido do CRM, mas o Google Calendar não confirmou a exclusão.', {
+        description: mensagem
+      });
+    }
+  };
+
+  const excluirEvento = async () => {
+    if (!eventoParaExcluir || !user?.email) return;
+
+    if (!podeExcluirEvento(eventoParaExcluir)) {
       toast.error('Após o prazo do evento, apenas o gestor pode excluir esta atividade.');
       setConfirmarExclusaoOpen(false);
       setEventoParaExcluir(null);
@@ -619,31 +679,7 @@ export const AgendaCalendar = ({ corretorEmail }: AgendaCalendarProps) => {
     }
 
     try {
-
-      let q = supabase
-        .from('agenda_eventos')
-        .delete()
-        .eq('id', eventoParaExcluir.id)
-        .eq('tenant_id', tenantId);
-      if (!isAdmin) {
-        q = q.eq('corretor_email', emailParaOperacao);
-      }
-      const { error } = await q;
-
-      if (error) {
-        console.error('❌ Erro Supabase:', error);
-        throw error;
-      }
-
-      
-      // Sincronizar exclusão com Google Calendar
-      if (isConnected && eventoParaExcluir.google_event_id) {
-        try {
-          await syncEvent(eventoParaExcluir, 'delete');
-        } catch (syncError) {
-          console.error('⚠️ Erro ao remover do Google Calendar:', syncError);
-        }
-      }
+      await excluirEventoSincronizado(eventoParaExcluir);
 
       toast.success('Evento excluído com sucesso!');
       
@@ -656,7 +692,10 @@ export const AgendaCalendar = ({ corretorEmail }: AgendaCalendarProps) => {
       setEventoParaExcluir(null);
     } catch (error) {
       console.error('❌ Erro ao excluir evento:', error);
-      toast.error('Erro ao excluir evento do Supabase');
+      const mensagem = error instanceof Error ? error.message : 'Erro desconhecido';
+      toast.error('Erro ao excluir evento', {
+        description: mensagem
+      });
     }
   };
 
@@ -665,25 +704,29 @@ export const AgendaCalendar = ({ corretorEmail }: AgendaCalendarProps) => {
     
     if (window.confirm('Tem certeza que deseja excluir TODOS os eventos? Esta ação não pode ser desfeita.')) {
       try {
-        
-        const { error } = await supabase
-          .from('agenda_eventos')
-          .delete()
-          .eq('tenant_id', tenantId)
-          .eq('corretor_email', emailParaOperacao);
-        
-        if (error) {
-          console.error('❌ Erro Supabase:', error);
-          throw error;
+        const eventosParaExcluir = eventosCustomizados;
+        const eventosBloqueados = eventosParaExcluir.filter(evento => !podeExcluirEvento(evento));
+
+        if (eventosBloqueados.length > 0) {
+          toast.error('Há eventos vencidos que apenas o gestor pode excluir.', {
+            description: `${eventosBloqueados.length} evento(s) não foram removidos.`
+          });
+          return;
+        }
+
+        for (const evento of eventosParaExcluir) {
+          await excluirEventoSincronizado(evento);
         }
         
-        const count = eventosCustomizados.length;
         await carregarEventosDoSupabase();
         
-        toast.success(`Todos os eventos foram excluídos! (${count} eventos removidos)`);
+        toast.success(`Todos os eventos foram excluídos! (${eventosParaExcluir.length} eventos removidos)`);
       } catch (error) {
         console.error('❌ Erro ao excluir eventos:', error);
-        toast.error('Erro ao excluir eventos do Supabase');
+        const mensagem = error instanceof Error ? error.message : 'Erro desconhecido';
+        toast.error('Erro ao excluir eventos', {
+          description: mensagem
+        });
       }
     }
   };
