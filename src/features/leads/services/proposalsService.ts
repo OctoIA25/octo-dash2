@@ -14,6 +14,7 @@ export type SavedSignatureChannel = 'whatsapp' | 'email';
 export type SavedSignatureStatus = 'pendente' | 'enviado' | 'assinado' | 'recusado';
 export type SavedCreditSupport = 'aprovado' | 'suporte';
 export type SavedProposalPartyType = 'comprador' | 'vendedor';
+export type SavedProposalTransactionForm = Record<string, string>;
 
 export interface SavedProposalParty {
   id: string;
@@ -72,6 +73,7 @@ export interface SavedProposal {
   down_payment: string;
   banking_support: SavedCreditSupport;
   specific_conditions: string;
+  transaction_form?: SavedProposalTransactionForm | null;
   external_partners: boolean;
   reviewed: boolean;
   sent_to_proponent: boolean;
@@ -134,6 +136,7 @@ export interface SaveProposalInput {
   downPayment: string;
   bankingSupport: SavedCreditSupport;
   specificConditions: string;
+  transactionForm?: SavedProposalTransactionForm;
   externalPartners: boolean;
   reviewed: boolean;
   sentToProponent: boolean;
@@ -175,6 +178,7 @@ const mapProposalRow = (input: SaveProposalInput) => ({
   down_payment: input.downPayment,
   banking_support: input.bankingSupport,
   specific_conditions: input.specificConditions,
+  transaction_form: input.transactionForm || {},
   external_partners: input.externalPartners,
   reviewed: input.reviewed,
   sent_to_proponent: input.sentToProponent,

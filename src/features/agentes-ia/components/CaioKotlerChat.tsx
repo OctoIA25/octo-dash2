@@ -23,6 +23,96 @@ interface CaioKotlerChatProps {
   onPromptSelect?: (prompt: string) => void;
 }
 
+declare global {
+  interface Window {
+    sendCaioKotlerMessage?: (text: string, displayText?: string) => Promise<void>;
+  }
+}
+
+function InlineMarkdown({ text }: { text: string }) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+
+  return (
+    <>
+      {parts.map((part, index) => {
+        if (part.startsWith('**') && part.endsWith('**')) {
+          return (
+            <strong key={`${part}-${index}`} className="font-semibold">
+              {part.slice(2, -2)}
+            </strong>
+          );
+        }
+
+        return <span key={`${part}-${index}`}>{part}</span>;
+      })}
+    </>
+  );
+}
+
+function MessageText({ text }: { text: string }) {
+  const lines = text.split('\n');
+
+  return (
+    <div className="space-y-2 text-sm leading-relaxed">
+      {lines.map((line, index) => {
+        const trimmed = line.trim();
+
+        if (!trimmed) {
+          return <div key={`blank-${index}`} className="h-1" />;
+        }
+
+        const heading = trimmed.match(/^(#{1,3})\s+(.+)$/); // Regex de markdown
+        if (heading) {
+          const level = heading[1].length;
+
+          const className =
+            level === 1
+              ? 'text-base font-bold'
+              : level === 2
+                ? 'text-[15px] font-bold'
+                : 'text-sm font-semibold';
+
+          return (
+            <p key={`heading-${index}`} className={className}>
+              <InlineMarkdown text={heading[2]} />
+            </p>
+          );
+        }
+
+        const bullet = trimmed.match(/^[-*]\s+(.+)$/);
+        if (bullet) {
+          return (
+            <div key={`bullet-${index}`} className="flex gap-2">
+              <span className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-current opacity-60" />
+              <span className="min-w-0">
+                <InlineMarkdown text={bullet[1]} />
+              </span>
+            </div>
+          );
+        }
+
+        const numbered = trimmed.match(/^(\d+)\.\s+(.+)$/);
+        if (numbered) {
+          return (
+            <div key={`numbered-${index}`} className="flex gap-2">
+              <span className="shrink-0 font-semibold opacity-70">{numbered[1]}.</span>
+              <span className="min-w-0">
+                <InlineMarkdown text={numbered[2]} />
+              </span>
+            </div>
+          );
+        }
+
+        return (
+          <p key={`line-${index}`}>
+            <InlineMarkdown text={line} />
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
 export const CaioKotlerChat = ({ onPromptSelect }: CaioKotlerChatProps = {}) => { // Nome do componente mantido para compatibilidade
   const { user } = useAuth();
   const { toast } = useToast();
@@ -60,7 +150,7 @@ export const CaioKotlerChat = ({ onPromptSelect }: CaioKotlerChatProps = {}) => 
     // Criar referência para a função que envia mensagem automaticamente
     // text: mensagem completa enviada ao webhook
     // displayText: mensagem resumida exibida no chat (opcional)
-    (window as any).sendCaioKotlerMessage = async (text: string, displayText?: string) => { // Função mantida para compatibilidade
+    window.sendCaioKotlerMessage = async (text: string, displayText?: string) => { // Função mantida para compatibilidade
       if (!text.trim()) return;
       
       // Adicionar mensagem do usuário no chat
@@ -126,7 +216,7 @@ export const CaioKotlerChat = ({ onPromptSelect }: CaioKotlerChatProps = {}) => 
     };
     
     return () => {
-      delete (window as any).sendCaioKotlerMessage;
+      delete window.sendCaioKotlerMessage;
     };
   }, [webhookUrl, user?.name, toast]);
 
@@ -315,7 +405,7 @@ export const CaioKotlerChat = ({ onPromptSelect }: CaioKotlerChatProps = {}) => 
                     ? 'bg-gradient-to-br from-neutral-800/80 to-neutral-900/80 text-gray-100 border border-purple-500/20 shadow-lg shadow-purple-500/10'
                     : 'bg-white text-gray-900 border border-blue-200/60 shadow-md shadow-blue-100/40'
               }`}>
-                <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.text}</p>
+                <MessageText text={message.text} />
               </div>
               
               <span className={`text-xs mt-1.5 px-2 ${isDarkMode ? 'text-gray-500' : 'text-gray-600'}`}>

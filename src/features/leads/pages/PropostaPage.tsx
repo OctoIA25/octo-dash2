@@ -13,24 +13,33 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import {
   AlertCircle,
+  BriefcaseBusiness,
   Building2,
   CalendarDays,
+  CalendarPlus,
   CheckCircle2,
   ChevronRight,
+  ClipboardCheck,
+  ClipboardList,
   Clock3,
+  Copy,
   CreditCard,
   DollarSign,
   Download,
+  FileSignature,
   FileText,
+  FileUp,
   Filter,
   GripVertical,
   History,
   Landmark,
   LayoutGrid,
+  Link,
   List,
   Loader2,
   MapPin,
   Mail,
+  MessageCircle,
   Phone,
   Plus,
   RefreshCw,
@@ -38,6 +47,7 @@ import {
   Send,
   ShieldCheck,
   TrendingUp,
+  UserPlus,
   Users,
   WalletCards,
   XCircle,
@@ -60,6 +70,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/lib/utils';
@@ -77,6 +89,7 @@ import {
   type SavedProposal,
   type SavedProposalHistory,
   type SavedProposalParty,
+  type SavedProposalTransactionForm,
 } from '@/features/leads/services/proposalsService';
 
 const PROPOSAL_STAGES = [
@@ -234,10 +247,13 @@ interface HistoryItem {
   date: string;
 }
 
+type TransactionFormData = SavedProposalTransactionForm;
+
 interface ProposalDetailState {
   compradores: ProposalParty[];
   vendedores: ProposalParty[];
   pagamento: PaymentDetails;
+  transactionForm: TransactionFormData;
   propertyOrigin: PropertyOrigin;
   endereco?: ProposalAddress;
   agenteResponsavel: string;
@@ -288,6 +304,152 @@ const GENERAL_CONDITIONS = [
   'Fica eleito o foro da comarca da situação do imóvel para dirimir quaisquer dúvidas ou controvérsias oriundas desta proposta, com renúncia expressa a qualquer outro, por mais privilegiado que seja.',
 ];
 
+const DEAL_NAV_ITEMS = [
+  { id: 'negocios', label: 'Negócios', icon: BriefcaseBusiness },
+  { id: 'formulario', label: 'Formulário', icon: ClipboardList },
+  { id: 'documentos', label: 'Documentos', icon: FileText },
+  { id: 'certidoes', label: 'Certidões', icon: ShieldCheck },
+  { id: 'participantes', label: 'Participantes', icon: Users },
+  { id: 'historico', label: 'Histórico', icon: History },
+  { id: 'ccv', label: 'CCV Conjurer', icon: FileSignature },
+  { id: 'escriturar', label: 'Escriturar', icon: Landmark },
+  { id: 'convidar', label: 'Convidar', icon: UserPlus },
+  { id: 'agenda', label: 'Agenda', icon: CalendarPlus },
+  { id: 'solicitacao', label: 'Solicitação', icon: ClipboardCheck },
+  { id: 'assinatura', label: 'Assinatura eletrônica', icon: FileUp },
+] as const;
+
+type DealTabId = (typeof DEAL_NAV_ITEMS)[number]['id'];
+
+const DEAL_WORKFLOW_GROUPS = [
+  {
+    title: 'FEITURA DE CONTRATO',
+    status: 'Em preparação',
+    items: [
+      'Anexar proposta no sistema iList.',
+      'Completar valor total de comissão e nome dos corretores.',
+      'Documentos do vendedor.',
+      'Documentos dos compradores.',
+      'ERICK: Comissões.',
+      'VANESSA: baixa do imóvel de veículos promocionais, site e portais.',
+      'JURÍDICO: atualizações de certidões reais e pessoais reipersecutórias.',
+      'Upload do contrato assinado via Clicksign ou pessoalmente.',
+    ],
+  },
+  {
+    title: 'EM ANÁLISE: Leitura',
+    status: 'ANDAMENTO',
+    items: [
+      'Enviar ao cartório a documentação para feitura da escritura.',
+      'Corretor informa ao comprador a data de quitação do boleto.',
+      'Corretor informa ao comprador valores de ITBI e custas cartorárias.',
+    ],
+  },
+  {
+    title: 'RECEBIDO: Em andamento',
+    status: 'Pós-venda',
+    items: [
+      'Transferências de titularidade: condomínio, CPFL, Comgás e DAE quando aplicável.',
+      'Fazer upload da certidão de IPTU, matrícula e mudança do mesmo com data.',
+      'Pós-vendas GRV: instruir proprietário sobre alteração da conta de água.',
+      'Corretor agenda a entrega das chaves aos compradores.',
+      'VANESSA: pagamento de comissões e emissão de NFs, recibos ou RPAs.',
+    ],
+  },
+] as const;
+
+const DOCUMENT_CHECKLIST = [
+  'Proposta anexada',
+  'Contrato assinado via Clicksign ou presencialmente',
+  'Documentos do vendedor',
+  'Documentos dos compradores',
+  'Comissões conferidas',
+  'Baixa do imóvel em site e portais',
+] as const;
+
+const CERTIFICATE_CHECKLIST = [
+  'Matrícula atualizada',
+  'Certidão de IPTU',
+  'Certidões reais e pessoais reipersecutórias',
+  'Certidões de protesto dos vendedores',
+  'Guia de ITBI',
+  'Custas cartorárias calculadas',
+] as const;
+
+const SERVICE_REQUEST_OPTIONS = [
+  { title: 'Aditamento/Alteração de minuta', deadline: 'Sem prazo mínimo informado', price: 'Solicitação gratuita' },
+  { title: 'Agendamento da escrituração pública, digitalmente', deadline: 'Mínimo de 4 dias úteis de antecedência', price: 'Solicitação gratuita' },
+  { title: 'Agendar/encaminhar procuração pública (física) outorgando plenos poderes', deadline: 'Mínimo de 4 dias úteis de antecedência', price: 'Solicitação gratuita' },
+  { title: 'Agendar/encaminhar procuração pública outorgando plenos poderes, digitalmente', deadline: 'Mínimo de 4 dias úteis de antecedência', price: 'Solicitação gratuita' },
+  { title: 'Apurar e gerar guia de ITBI', deadline: 'Até 2 dias úteis', price: 'Solicitação gratuita' },
+  { title: 'Calcular custos e emolumentos da transação, para comprador', deadline: 'Até 1 dia útil', price: 'Solicitação gratuita' },
+  { title: 'Diligência de motoboy para entrega/busca de documentos, e outros', deadline: 'Até 1 dia útil', price: 'Solicitação gratuita' },
+  { title: 'Elaborar/gerar Termo de Imissão de Comprador à posse do Imóvel', deadline: 'Até 2 dias úteis', price: 'Solicitação gratuita' },
+  { title: 'Enviar CCV para assinatura (eletrônica) das partes', deadline: '1 dia útil', price: 'Solicitação gratuita' },
+  { title: 'Mídias Sociais: responder formalmente a questionamento/reclamação', deadline: 'Até 3 dias úteis', price: 'Solicitação gratuita' },
+  { title: 'Modificar a minuta do Contrato de Compromisso', deadline: 'Em até 1 dia útil', price: 'Solicitação gratuita' },
+  { title: 'Modificar a minuta do Termo de Autorização de Benfeitorias', deadline: 'Em até 2 dias úteis', price: 'Solicitação gratuita' },
+  { title: 'Modificar a minuta do Termo de Imissão na Posse', deadline: 'Em até 2 dias úteis', price: 'Solicitação gratuita' },
+  { title: 'Preparar mini-recepção/coquetel para clientes (com lembrancinhas)', deadline: 'Até 2 dias úteis de antecedência', price: 'Solicitação paga (R$100,00)' },
+  { title: 'Preparar mini-recepção/coquetel para clientes (sem lembrancinhas)', deadline: 'Até 2 dias úteis de antecedência', price: 'Solicitação paga (R$50,00)' },
+  { title: 'Puxar/pegar certidão atualizada de matrícula', deadline: 'Até 1 dia útil', price: 'Solicitação gratuita' },
+  { title: 'Puxar/pegar Certidões de Protesto dos vendedores', deadline: 'Até 3 dias úteis', price: 'Solicitação gratuita' },
+  { title: 'Simular custo do GCAP para Vendedor', deadline: 'Até 3 dias úteis', price: 'Solicitação gratuita' },
+] as const;
+
+const TRANSACTION_FORM_NAV = [
+  'Negócio',
+  'Documentos',
+  'Certidões',
+  'Participantes',
+  'Histórico',
+] as const;
+
+const TRANSACTION_FORM_SECTIONS = [
+  'Imóvel & Valores',
+  'Vendedores',
+  'Compradores',
+  'Negociações',
+  'Comissões',
+  'Parceiros',
+] as const;
+
+type TransactionFormSection = (typeof TRANSACTION_FORM_SECTIONS)[number];
+
+const PROPERTY_VALUE_SECTIONS = [
+  'Código',
+  'Endereço',
+  'Matrícula',
+  'Propriedade atual',
+  'Valor e Natureza',
+  'Pagamento',
+  'Cartório de Notas',
+] as const;
+
+const PROPERTY_STATUS_OPTIONS = [
+  'Financiamento consta à matrícula (alienação fiduciária registrada), mas já foi quitado',
+  'Imóvel atualmente financiado (com saldo devedor)',
+  'Imóvel quitado e registrado (sem ônus à matrícula)',
+  'Outra situação',
+] as const;
+
+const PRICE_COMPOSITION_ITEMS = [
+  '1. Sinal e princípio de pagamento',
+  '2. Parcela(s) anteriormente à escritura',
+  '3. Parcela concomitante à escritura',
+  '4. Parcela(s) posteriormente à escritura',
+  '5. Recursos provenientes do FGTS',
+  '6. Imóvel como parte de pagamento',
+  '7. Veículo como parte de pagamento',
+  '8. Cessão de cota não contemplada de consórcio',
+  '9. Outras formas',
+] as const;
+
+const COMMISSION_PAYERS = ['Vendedor', 'Comprador', 'Outra composição'] as const;
+const COMMISSION_MOMENTS = ['Sinal', 'CCV', 'Escrituração', 'Crédito AF', 'Outros'] as const;
+const COMMISSION_ROLES = ['corretor', 'imobiliária'] as const;
+const TRANSACTION_FORM_DATA_MARKER = '\n\n---OCTODASH_TRANSACTION_FORM_JSON---\n';
+
 const normalize = (value: string | null | undefined) =>
   String(value || '')
     .normalize('NFD')
@@ -324,6 +486,14 @@ const formatCurrency = (value: number) =>
     maximumFractionDigits: 0,
   }).format(value || 0);
 
+const formatCurrencyWithCents = (value: number) =>
+  new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value || 0);
+
 const formatDate = (value: string | null | undefined) => {
   if (!value) return 'Sem data';
   const date = new Date(value);
@@ -353,6 +523,42 @@ const formatAddress = (address?: ProposalAddress) => {
   const street = [address.logradouro, address.numero].filter(Boolean).join(', ');
   const city = [address.cidade, address.uf].filter(Boolean).join(' - ');
   return [street, address.bairro, city].filter(Boolean).join(' | ') || 'Endereço não informado';
+};
+
+const formatFullAddress = (address?: ProposalAddress) => {
+  if (!address) return '';
+  const street = [address.logradouro, address.numero].filter(Boolean).join(', ');
+  const complement = address.complemento ? `, ${address.complemento}` : '';
+  const city = [address.cidade, address.uf].filter(Boolean).join(' - ');
+  const cep = address.cep ? `CEP ${address.cep.replace(/\D/g, '')}` : '';
+  return [street ? `${street}${complement}` : '', address.bairro, city, cep].filter(Boolean).join(', ');
+};
+
+const splitSpecificConditions = (value: string | null | undefined) => {
+  const source = String(value || '');
+  const markerIndex = source.indexOf(TRANSACTION_FORM_DATA_MARKER);
+  if (markerIndex === -1) {
+    return { text: source, transactionForm: {} as TransactionFormData };
+  }
+
+  const text = source.slice(0, markerIndex).trimEnd();
+  const rawJson = source.slice(markerIndex + TRANSACTION_FORM_DATA_MARKER.length);
+
+  try {
+    const parsed = JSON.parse(rawJson);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { text, transactionForm: {} as TransactionFormData };
+    }
+
+    return {
+      text,
+      transactionForm: Object.fromEntries(
+        Object.entries(parsed).map(([key, fieldValue]) => [key, String(fieldValue ?? '')]),
+      ) as TransactionFormData,
+    };
+  } catch {
+    return { text, transactionForm: {} as TransactionFormData };
+  }
 };
 
 const hasAddressData = (address?: ProposalAddress) => Boolean(address && Object.values(address).some(Boolean));
@@ -510,6 +716,7 @@ const buildDefaultProposalDetail = (proposal: ProposalItem): ProposalDetailState
     assessoriaBancaria: 'suporte',
     condicoesEspecificas: '',
   },
+  transactionForm: {},
   propertyOrigin: proposal.propertyOrigin,
   endereco: proposal.endereco,
   agenteResponsavel: proposal.agenteResponsavel,
@@ -579,6 +786,17 @@ const savedProposalToUiState = (saved: SavedProposal): { proposal: ProposalItem;
     .map(savedPartyToProposalParty);
   const firstBuyerName = compradores.find((party) => party.nomeCompleto.trim())?.nomeCompleto.trim();
   const valor = toProposalNumber(saved.value);
+  const legacySpecificConditions = splitSpecificConditions(saved.specific_conditions);
+  const savedTransactionForm =
+    saved.transaction_form && typeof saved.transaction_form === 'object'
+      ? Object.fromEntries(
+          Object.entries(saved.transaction_form).map(([key, value]) => [key, String(value ?? '')]),
+        ) as TransactionFormData
+      : {};
+  const transactionForm = {
+    ...legacySpecificConditions.transactionForm,
+    ...savedTransactionForm,
+  };
   const propertyReference =
     saved.property_reference ||
     (saved.property_origin === 'externo' ? formatAddress(normalizedAddress) : 'Imóvel da carteira');
@@ -602,7 +820,7 @@ const savedProposalToUiState = (saved: SavedProposal): { proposal: ProposalItem;
     stageId,
     criadaEm: saved.created_at,
     atualizadaEm: saved.updated_at,
-    observacoes: saved.specific_conditions || null,
+    observacoes: legacySpecificConditions.text || null,
   };
 
   const historico = saved.history.map(savedHistoryToHistoryItem);
@@ -619,8 +837,9 @@ const savedProposalToUiState = (saved: SavedProposal): { proposal: ProposalItem;
         financiamentoAproximado: saved.financing_amount || '',
         sinalArras: saved.down_payment || '',
         assessoriaBancaria: saved.banking_support || 'suporte',
-        condicoesEspecificas: saved.specific_conditions || '',
+        condicoesEspecificas: legacySpecificConditions.text,
       },
+      transactionForm,
       propertyOrigin: saved.property_origin,
       endereco: normalizedAddress,
       agenteResponsavel: saved.agent_name || '',
@@ -705,6 +924,7 @@ const proposalToSaveInput = (
     downPayment: detail.pagamento.sinalArras,
     bankingSupport: detail.pagamento.assessoriaBancaria,
     specificConditions: detail.pagamento.condicoesEspecificas,
+    transactionForm: detail.transactionForm,
     externalPartners: detail.parceirosExternos,
     reviewed: detail.revisado,
     sentToProponent: detail.enviadoProponente,
@@ -776,6 +996,197 @@ function DetailSection({
       </div>
       <div className="mt-4">{children}</div>
     </section>
+  );
+}
+
+function InfoTile({
+  label,
+  value,
+  detail,
+  icon: Icon,
+}: {
+  label: string;
+  value: React.ReactNode;
+  detail?: string;
+  icon?: LucideIcon;
+}) {
+  return (
+    <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/60">
+      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase text-slate-400">
+        {Icon && <Icon className="h-3.5 w-3.5" />}
+        {label}
+      </div>
+      <div className="mt-1 break-words text-sm font-semibold text-slate-900 dark:text-slate-100">{value}</div>
+      {detail && <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">{detail}</p>}
+    </div>
+  );
+}
+
+function WorkflowChecklist({
+  title,
+  status,
+  items,
+}: {
+  title: string;
+  status: string;
+  items: readonly string[];
+}) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h4 className="text-sm font-semibold text-slate-950 dark:text-slate-50">{title}</h4>
+        <Badge variant="outline" className="text-[11px]">{status}</Badge>
+      </div>
+      <ol className="mt-3 space-y-2">
+        {items.map((item, index) => (
+          <li key={item} className="flex gap-2 text-sm leading-5 text-slate-600 dark:text-slate-300">
+            <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[11px] font-bold text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+              {index + 1}
+            </span>
+            <span>{item}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+function SimpleChecklist({
+  items,
+  completedCount,
+}: {
+  items: readonly string[];
+  completedCount: number;
+}) {
+  return (
+    <div className="grid gap-2 sm:grid-cols-2">
+      {items.map((item, index) => {
+        const done = index < completedCount;
+        return (
+          <div
+            key={item}
+            className={cn(
+              'flex items-center gap-2 rounded-lg border px-3 py-2 text-sm',
+              done
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200'
+                : 'border-slate-200 bg-white text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300',
+            )}
+          >
+            <span className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded-full', done ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-400 dark:bg-slate-800')}>
+              {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Clock3 className="h-3.5 w-3.5" />}
+            </span>
+            <span className="min-w-0 truncate font-medium">{item}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function TransactionField({
+  label,
+  value,
+  defaultValue,
+  placeholder,
+  type = 'text',
+  className,
+  onChange,
+}: {
+  label: string;
+  value?: string;
+  defaultValue?: string;
+  placeholder?: string;
+  type?: string;
+  className?: string;
+  onChange?: (value: string) => void;
+}) {
+  return (
+    <div className={cn('grid gap-1.5', className)}>
+      <label className="text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">{label}</label>
+      <Input
+        type={type}
+        value={value}
+        defaultValue={value === undefined ? defaultValue : undefined}
+        onChange={(event) => onChange?.(event.target.value)}
+        placeholder={placeholder}
+        className="h-9 bg-white text-[13px] dark:bg-slate-950"
+      />
+    </div>
+  );
+}
+
+function SegmentedChoice({
+  label,
+  options,
+  selected,
+  onChange,
+}: {
+  label: string;
+  options: readonly string[];
+  selected?: string;
+  onChange?: (value: string) => void;
+}) {
+  const [currentValue, setCurrentValue] = useState(selected || options[0] || '');
+
+  useEffect(() => {
+    setCurrentValue(selected || options[0] || '');
+  }, [options, selected]);
+
+  return (
+    <div className="grid gap-1.5">
+      <span className="text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">{label}</span>
+      <div className="grid overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}>
+        {options.map((option, index) => {
+          const active = option === currentValue;
+          return (
+            <button
+              key={option}
+              type="button"
+              onClick={() => {
+                setCurrentValue(option);
+                onChange?.(option);
+              }}
+              className={cn(
+                'h-9 min-w-0 px-3 text-[12px] font-semibold transition-colors',
+                index > 0 && 'border-l border-slate-200 dark:border-slate-800',
+                active
+                  ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-950'
+                  : 'bg-white text-slate-600 hover:bg-slate-50 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-900',
+              )}
+            >
+              {option}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function PriceCompositionRow({
+  label,
+  value,
+  detail,
+  onValueChange,
+  onDetailChange,
+}: {
+  label: string;
+  value?: string;
+  detail?: string;
+  onValueChange?: (value: string) => void;
+  onDetailChange?: (value: string) => void;
+}) {
+  return (
+    <div className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/60 md:grid-cols-[minmax(0,1fr)_150px_minmax(0,1.2fr)]">
+      <div className="flex items-center gap-2">
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white text-[11px] font-bold text-slate-500 ring-1 ring-slate-200 dark:bg-slate-900 dark:text-slate-400 dark:ring-slate-800">
+          <Plus className="h-3.5 w-3.5" />
+        </span>
+        <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">{label}</span>
+      </div>
+      <Input value={value || ''} onChange={(event) => onValueChange?.(event.target.value)} placeholder="Valor" className="h-9 bg-white text-[13px] dark:bg-slate-900" />
+      <Input value={detail || ''} onChange={(event) => onDetailChange?.(event.target.value)} placeholder="Detalhamento" className="h-9 bg-white text-[13px] dark:bg-slate-900" />
+    </div>
   );
 }
 
@@ -1277,7 +1688,22 @@ export const PropostaPage = () => {
   const [savedLoading, setSavedLoading] = useState(false);
   const [savedError, setSavedError] = useState<string | null>(null);
   const [savingDraft, setSavingDraft] = useState(false);
+  const [activeDetailTab, setActiveDetailTab] = useState<DealTabId>('negocios');
+  const [activeTransactionFormSection, setActiveTransactionFormSection] = useState<TransactionFormSection>('Imóvel & Valores');
+  const [activePropertyValueSection, setActivePropertyValueSection] = useState<(typeof PROPERTY_VALUE_SECTIONS)[number]>('Código');
+  const [showSellerParticipations, setShowSellerParticipations] = useState(false);
+  const [showBuyerParticipations, setShowBuyerParticipations] = useState(false);
+  const [showCommissionPercent, setShowCommissionPercent] = useState(false);
+  const [agendaDraft, setAgendaDraft] = useState({ title: 'Escritura pública', date: '', time: '' });
+  const [requestDraft, setRequestDraft] = useState({
+    hasProperty: 'sim',
+    area: 'Jurídico',
+    keyword: '',
+    property: '',
+  });
+  const [signatureDocumentName, setSignatureDocumentName] = useState('');
   const saveTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const detailTabsScrollRef = useRef<HTMLDivElement>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -1420,6 +1846,28 @@ export const PropostaPage = () => {
       draftForm.compradores.length > 0 &&
       draftBuyerValidationIssues.length === 0,
   );
+  const selectedAddressText = selectedDetail ? formatFullAddress(selectedDetail.endereco) : '';
+  const selectedDealAddress = selectedAddressText || 'Alameda Candeia, 210, Q4-08, Residencial Vila Victoria, Itupeva - SP, CEP 13295000';
+  const selectedDealTitle = selectedDetail?.endereco?.logradouro
+    ? [selectedDetail.endereco.logradouro, selectedDetail.endereco.numero, selectedDetail.endereco.complemento].filter(Boolean).join(', ')
+    : selectedProposal?.imovelRef || 'Alameda Candeia, 210, Q';
+  const selectedSellerName = selectedDetail?.vendedores.find((party) => party.nomeCompleto.trim())?.nomeCompleto.trim() || 'Leandro';
+  const selectedCommission = selectedProposal ? selectedProposal.valor * 0.055 : 0;
+  const selectedInviteLink = selectedProposal
+    ? `${typeof window !== 'undefined' ? window.location.origin : ''}/propostas/${selectedProposal.id}`
+    : '';
+  const selectedInviteCode = selectedProposal?.id.slice(0, 8).toUpperCase() || '';
+  const transactionForm = selectedDetail?.transactionForm ?? {};
+  const sellerMediaOrigin = transactionForm.sellerMediaOrigin || 'Mídia de Origem';
+  const buyerMediaOrigin = transactionForm.buyerMediaOrigin || 'Mídia de Origem';
+  const commissionPayer = transactionForm.commissionPayer || 'Vendedor';
+  const commissionMoment = transactionForm.commissionMoment || 'Escrituração';
+  const commissionRole = transactionForm.commissionRole || 'corretor';
+  const commissionedPeople = (transactionForm.commissionedPeople || 'Comissionado principal')
+    .split('\n')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const getTransactionFormValue = (key: string, fallback = '') => transactionForm[key] ?? fallback;
 
   const persistExistingProposal = useCallback(
     async (proposal: ProposalItem, detail: ProposalDetailState) => {
@@ -1618,6 +2066,42 @@ export const PropostaPage = () => {
         );
       }
     }
+  };
+
+  const updateAddress = (proposal: ProposalItem, updates: Partial<ProposalAddress>) => {
+    updateProposalDetail(proposal, (current) => ({
+      ...current,
+      endereco: {
+        cep: '',
+        numero: '',
+        logradouro: '',
+        bairro: '',
+        complemento: '',
+        cidade: '',
+        uf: '',
+        ...current.endereco,
+        ...updates,
+      },
+    }));
+  };
+
+  const updateTransactionForm = (proposal: ProposalItem, key: string, value: string) => {
+    updateProposalDetail(proposal, (current) => ({
+      ...current,
+      transactionForm: {
+        ...current.transactionForm,
+        [key]: value,
+      },
+    }));
+  };
+
+  const addCommissionedPerson = (proposal: ProposalItem, label: string) => {
+    const current = (proposalDetails[proposal.id] ?? buildDefaultProposalDetail(proposal)).transactionForm.commissionedPeople;
+    const people = (current || 'Comissionado principal')
+      .split('\n')
+      .map((item) => item.trim())
+      .filter(Boolean);
+    updateTransactionForm(proposal, 'commissionedPeople', [...people, label].join('\n'));
   };
 
   const changeProposalStage = async (proposalId: string, nextStage: ProposalStageId) => {
@@ -1873,6 +2357,301 @@ export const PropostaPage = () => {
     void loadSavedProposalDrafts();
   };
 
+  const downloadTextFile = (filename: string, content: string, type = 'text/plain;charset=utf-8') => {
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const buildInviteMessage = () => {
+    if (!selectedProposal) return '';
+    return [
+      `Olá, você foi convidado para acompanhar o negócio ${selectedProposal.imovelRef}.`,
+      `Link: ${selectedInviteLink}`,
+      `Código: ${selectedInviteCode}`,
+    ].join('\n');
+  };
+
+  const getInviteRecipients = () => {
+    if (!selectedDetail) return { emails: '', whatsappPhone: '' };
+    const parties = [...selectedDetail.compradores, ...selectedDetail.vendedores];
+    const emails = parties.map((party) => party.email.trim()).filter(Boolean).join(',');
+    const whatsappPhone = parties.find((party) => party.celular.trim())?.celular.replace(/\D/g, '') || '';
+    return { emails, whatsappPhone };
+  };
+
+  const openProposalDetail = (proposal: ProposalItem) => {
+    const detail = proposalDetails[proposal.id] ?? buildDefaultProposalDetail(proposal);
+    setSelectedProposal(proposal);
+    setActiveDetailTab('negocios');
+    setSignatureDocumentName(detail.transactionForm.signatureDocumentName || '');
+    setRequestDraft((previous) => ({
+      ...previous,
+      property: proposal.imovelRef,
+    }));
+  };
+
+  const registerInviteAction = (channel: string) => {
+    if (!selectedProposal) return;
+    appendHistory(selectedProposal, 'Convite enviado', `Canal: ${channel}. Código ${selectedInviteCode}.`);
+    toast({
+      title: 'Convite registrado',
+      description: `O convite por ${channel} entrou no histórico do negócio.`,
+    });
+  };
+
+  const copyInviteLink = async () => {
+    if (!selectedProposal || !selectedInviteLink) return;
+
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(selectedInviteLink);
+      }
+      registerInviteAction('link');
+    } catch (err) {
+      toast({
+        title: 'Não foi possível copiar automaticamente',
+        description: selectedInviteLink,
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const copyInviteCode = async () => {
+    if (!selectedProposal || !selectedInviteCode) return;
+
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(selectedInviteCode);
+      }
+      registerInviteAction('código');
+    } catch (err) {
+      toast({
+        title: 'Não foi possível copiar automaticamente',
+        description: selectedInviteCode,
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const sendInviteByEmail = () => {
+    if (!selectedProposal) return;
+    const { emails } = getInviteRecipients();
+    const subject = encodeURIComponent(`Convite para acompanhar ${selectedProposal.imovelRef}`);
+    const body = encodeURIComponent(buildInviteMessage());
+    window.location.href = `mailto:${emails}?subject=${subject}&body=${body}`;
+    registerInviteAction('email');
+  };
+
+  const sendInviteByWhatsapp = () => {
+    if (!selectedProposal) return;
+    const { whatsappPhone } = getInviteRecipients();
+    const phone = whatsappPhone.length >= 10 ? `55${whatsappPhone.replace(/^55/, '')}` : '';
+    const message = encodeURIComponent(buildInviteMessage());
+    window.open(`https://wa.me/${phone}?text=${message}`, '_blank', 'noopener,noreferrer');
+    registerInviteAction('whatsapp');
+  };
+
+  const addAgendaEvent = () => {
+    if (!selectedProposal) return;
+    if (!agendaDraft.date) {
+      toast({
+        title: 'Informe a data do evento',
+        description: 'A agenda precisa de uma data para gerar o compromisso.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const dateLabel = [agendaDraft.date, agendaDraft.time].filter(Boolean).join(' às ') || 'data a definir';
+    const time = agendaDraft.time || '09:00';
+    const start = `${agendaDraft.date.replace(/-/g, '')}T${time.replace(':', '')}00`;
+    const endHour = String(Math.min(Number(time.slice(0, 2)) + 1, 23)).padStart(2, '0');
+    const end = `${agendaDraft.date.replace(/-/g, '')}T${endHour}${time.slice(3, 5)}00`;
+    const title = agendaDraft.title || 'Evento do negócio';
+    const ics = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//OctoDash//Propostas//PT-BR',
+      'BEGIN:VEVENT',
+      `UID:${selectedProposal.id}-${agendaDraft.date}@octodash`,
+      `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')}`,
+      `DTSTART:${start}`,
+      `DTEND:${end}`,
+      `SUMMARY:${title}`,
+      `DESCRIPTION:${selectedProposal.cliente} - ${selectedProposal.imovelRef}`,
+      `LOCATION:${selectedDealAddress}`,
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\r\n');
+
+    downloadTextFile(`agenda-${selectedProposal.imovelRef || selectedProposal.id}.ics`, ics, 'text/calendar;charset=utf-8');
+    updateTransactionForm(selectedProposal, 'lastAgendaEvent', JSON.stringify({ title, date: agendaDraft.date, time }));
+    appendHistory(selectedProposal, 'Evento programado', `${agendaDraft.title || 'Evento'}: ${dateLabel}.`);
+    toast({
+      title: 'Evento adicionado',
+      description: `${agendaDraft.title || 'Evento'} foi registrado e o arquivo de calendário foi gerado.`,
+    });
+  };
+
+  const createServiceRequest = (title: string) => {
+    if (!selectedProposal) return;
+    updateTransactionForm(selectedProposal, 'lastServiceRequest', title);
+    appendHistory(
+      selectedProposal,
+      'Solicitação criada',
+      `${title}. Imóvel: ${requestDraft.property || selectedProposal.imovelRef}. Área: ${requestDraft.area}. Palavra-chave: ${requestDraft.keyword || 'não informada'}.`,
+    );
+    toast({
+      title: 'Solicitação criada',
+      description: title,
+    });
+  };
+
+  const registerCcvAction = (label: string, detail: string) => {
+    if (!selectedProposal) return;
+    appendHistory(selectedProposal, label, detail);
+    toast({
+      title: label,
+      description: detail,
+    });
+  };
+
+  const generateCcvDraft = () => {
+    if (!selectedProposal || !selectedDetail) return;
+    const buyers = selectedDetail.compradores.map((party) => party.nomeCompleto || 'Comprador sem nome').join(', ') || 'Compradores pendentes';
+    const sellers = selectedDetail.vendedores.map((party) => party.nomeCompleto || 'Vendedor sem nome').join(', ') || selectedSellerName;
+    const content = [
+      'CONTRATO DE COMPROMISSO DE COMPRA E VENDA',
+      '',
+      `Imóvel: ${selectedProposal.imovelRef}`,
+      `Endereço: ${selectedDealAddress}`,
+      `Compradores: ${buyers}`,
+      `Vendedores: ${sellers}`,
+      `Valor do negócio: ${formatCurrencyWithCents(selectedProposal.valor)}`,
+      `Comissão geral: ${formatCurrencyWithCents(selectedCommission)}`,
+      `Forma de pagamento: ${selectedDetail.pagamento.formaPagamento}`,
+      '',
+      'Condições específicas:',
+      selectedDetail.pagamento.condicoesEspecificas || 'Sem condições específicas cadastradas.',
+      '',
+      'Condições gerais:',
+      ...GENERAL_CONDITIONS.map((condition, index) => `${index + 1}. ${condition}`),
+    ].join('\n');
+
+    downloadTextFile(`ccv-${selectedProposal.imovelRef || selectedProposal.id}.txt`, content);
+    updateTransactionForm(selectedProposal, 'ccvDraftGeneratedAt', new Date().toISOString());
+    registerCcvAction('CCV Conjurer', 'Minuta de CCV gerada para conferência.');
+  };
+
+  const sendCcvToSignature = () => {
+    if (!selectedProposal) return;
+    updateProposalDetail(selectedProposal, (current) => ({
+      ...current,
+      enviadoProponente: true,
+      enviadoProprietario: true,
+      compradores: current.compradores.map((party) => ({
+        ...party,
+        statusAssinatura: party.statusAssinatura === 'pendente' ? 'enviado' : party.statusAssinatura,
+      })),
+      vendedores: current.vendedores.map((party) => ({
+        ...party,
+        statusAssinatura: party.statusAssinatura === 'pendente' ? 'enviado' : party.statusAssinatura,
+      })),
+    }));
+    setActiveDetailTab('assinatura');
+    updateTransactionForm(selectedProposal, 'ccvSentToSignatureAt', new Date().toISOString());
+    registerCcvAction('CCV enviado', 'CCV enviado para assinatura eletrônica das partes.');
+  };
+
+  const markCcvSigned = () => {
+    if (!selectedProposal) return;
+    updateProposalDetail(selectedProposal, (current) => ({
+      ...current,
+      compradores: current.compradores.map((party) => ({
+        ...party,
+        assinadoPor: party.assinadoPor || party.nomeCompleto,
+        statusAssinatura: 'assinado',
+      })),
+      vendedores: current.vendedores.map((party) => ({
+        ...party,
+        assinadoPor: party.assinadoPor || party.nomeCompleto,
+        statusAssinatura: 'assinado',
+      })),
+    }));
+    updateTransactionForm(selectedProposal, 'ccvSignedAt', new Date().toISOString());
+    registerCcvAction('CCV assinado', 'Contrato marcado como assinado.');
+    void changeProposalStage(selectedProposal.id, 'proposta-assinada');
+  };
+
+  const handleSignatureDocument = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !selectedProposal) return;
+    setSignatureDocumentName(file.name);
+    updateTransactionForm(selectedProposal, 'signatureDocumentName', file.name);
+    appendHistory(selectedProposal, 'Documento enviado para assinatura eletrônica', file.name);
+    toast({
+      title: 'PDF recebido',
+      description: 'O documento foi registrado no histórico da proposta.',
+    });
+  };
+
+  const handleProposalAttachments = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!selectedProposal) return;
+    const files = Array.from(event.target.files || []);
+    if (files.length === 0) return;
+
+    const acceptedFiles = files.filter((file) => file.size <= 10 * 1024 * 1024);
+    const fileNames = acceptedFiles.map((file) => file.name);
+    updateTransactionForm(selectedProposal, 'proposalAttachmentNames', fileNames.join('\n'));
+
+    if (acceptedFiles.length !== files.length) {
+      toast({
+        title: 'Alguns arquivos foram ignorados',
+        description: 'Apenas documentos com até 10Mb foram registrados.',
+        variant: 'destructive',
+      });
+    } else {
+      toast({
+        title: 'Anexos registrados',
+        description: `${fileNames.length} documento(s) vinculado(s) ao formulário.`,
+      });
+    }
+  };
+
+  const sendSignatureDocument = () => {
+    if (!selectedProposal) return;
+    if (!signatureDocumentName) {
+      toast({
+        title: 'Anexe um PDF',
+        description: 'Selecione um documento antes de enviar para assinatura.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    updateProposalDetail(selectedProposal, (current) => ({
+      ...current,
+      compradores: current.compradores.map((party) => ({
+        ...party,
+        statusAssinatura: party.statusAssinatura === 'pendente' ? 'enviado' : party.statusAssinatura,
+      })),
+      vendedores: current.vendedores.map((party) => ({
+        ...party,
+        statusAssinatura: party.statusAssinatura === 'pendente' ? 'enviado' : party.statusAssinatura,
+      })),
+    }));
+    appendHistory(selectedProposal, 'Assinatura eletrônica enviada', signatureDocumentName);
+    toast({
+      title: 'Assinatura enviada',
+      description: 'Os participantes pendentes foram marcados como enviados.',
+    });
+  };
+
   return (
     <div className="min-h-full bg-slate-50 dark:bg-slate-950">
       <div className="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
@@ -2095,7 +2874,7 @@ export const PropostaPage = () => {
                     key={stage.id}
                     stage={stage}
                     proposals={filtered.filter((proposal) => proposal.stageId === stage.id)}
-                    onOpen={setSelectedProposal}
+                    onOpen={openProposalDetail}
                   />
                 ))}
               </div>
@@ -2106,7 +2885,7 @@ export const PropostaPage = () => {
                 <div className="w-[270px] rotate-2 shadow-2xl">
                   <ProposalCardContent
                     proposal={activeCard}
-                    onOpen={setSelectedProposal}
+                    onOpen={openProposalDetail}
                     dragHandle={
                       <span className="mt-1 flex h-6 w-5 shrink-0 items-center justify-center text-slate-400">
                         <GripVertical className="h-4 w-4" />
@@ -2137,7 +2916,7 @@ export const PropostaPage = () => {
                     <tr
                       key={proposal.id}
                       className="cursor-pointer transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
-                      onClick={() => setSelectedProposal(proposal)}
+                      onClick={() => openProposalDetail(proposal)}
                     >
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2.5">
@@ -2210,6 +2989,988 @@ export const PropostaPage = () => {
             </DialogHeader>
 
             <div className="max-h-[calc(92vh-92px)] overflow-y-auto bg-slate-50 px-6 py-5 dark:bg-slate-950">
+              <Tabs value={activeDetailTab} onValueChange={(value) => setActiveDetailTab(value as DealTabId)} className="min-w-0 max-w-full space-y-4">
+                <div
+                  ref={detailTabsScrollRef}
+                  className="-mx-1 min-w-0 max-w-full overflow-x-auto overscroll-contain scroll-smooth px-1 pb-1"
+                >
+                  <TabsList className="inline-flex h-auto min-w-max justify-start gap-1 rounded-lg border border-slate-200 bg-white p-1 dark:border-slate-800 dark:bg-slate-900">
+                    {DEAL_NAV_ITEMS.map((item) => {
+                      const Icon = item.icon;
+                      return (
+                        <TabsTrigger
+                          key={item.id}
+                          value={item.id}
+                          className="h-9 gap-2 rounded-md px-3 text-[12px] data-[state=active]:bg-slate-900 data-[state=active]:text-white dark:data-[state=active]:bg-slate-100 dark:data-[state=active]:text-slate-950"
+                        >
+                          <Icon className="h-3.5 w-3.5" />
+                          {item.label}
+                        </TabsTrigger>
+                      );
+                    })}
+                  </TabsList>
+                </div>
+
+                <TabsContent value="negocios" className="mt-0 space-y-4">
+                  <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+                    <div className="space-y-4">
+                      <DetailSection title="Negócios" icon={BriefcaseBusiness}>
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-800/50">
+                          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                            <div className="min-w-0">
+                              <p className="text-[12px] font-semibold uppercase text-slate-400">Imóvel sendo vendido</p>
+                              <h3 className="mt-1 text-lg font-semibold text-slate-950 dark:text-slate-50">{selectedDealTitle}</h3>
+                              <p className="mt-2 text-sm leading-5 text-slate-600 dark:text-slate-300">{selectedDealAddress}</p>
+                              <p className="mt-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                                {selectedDetail.pagamento.comFinanciamento ? 'com análise de financiamento' : 'sem alienação fiduciária'}
+                              </p>
+                            </div>
+                            <div className="flex shrink-0 flex-wrap gap-2">
+                              <Badge variant="outline">Clientes</Badge>
+                              <Badge variant="outline">Parceiros</Badge>
+                              <Badge variant="outline">Contratos</Badge>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                          <InfoTile label="Código do Imóvel" value={selectedProposal.imovelRef || 'TE0031'} icon={Building2} />
+                          <InfoTile label="Valor do Negócio" value={formatCurrencyWithCents(selectedProposal.valor)} icon={DollarSign} />
+                          <InfoTile label="Comissão Geral" value={formatCurrencyWithCents(selectedCommission)} detail="Estimativa de 5,5%" icon={WalletCards} />
+                          <InfoTile label="Subida Negócio" value={formatDate(selectedProposal.criadaEm)} icon={CalendarDays} />
+                        </div>
+
+                        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                          {[
+                            ['CCV Assinado', selectedProposal.stageId === 'proposta-assinada' ? 'Concluído' : 'Pendente'],
+                            ['Data Escritura', 'A programar'],
+                            ['Comissão Paga', selectedProposal.stageId === 'proposta-assinada' ? 'Validar pagamento' : 'Aguardando'],
+                            ['Entrega Chaves', 'A programar'],
+                          ].map(([label, value]) => (
+                            <InfoTile key={label} label={label} value={value} />
+                          ))}
+                        </div>
+                      </DetailSection>
+
+                      <div className="grid gap-3">
+                        {DEAL_WORKFLOW_GROUPS.map((group) => (
+                          <WorkflowChecklist key={group.title} title={group.title} status={group.status} items={group.items} />
+                        ))}
+                      </div>
+                    </div>
+
+                    <aside className="space-y-4 lg:sticky lg:top-0 lg:self-start">
+                      <DetailSection title="Responsáveis" icon={Users}>
+                        <div className="space-y-3">
+                          <InfoTile label="Vendedor" value={selectedSellerName} />
+                          <InfoTile label="Corretor" value={selectedProposal.corretor || 'Não atribuído'} />
+                          <InfoTile label="Agente responsável" value={selectedDetail.agenteResponsavel || selectedProposal.agenteResponsavel || 'Não atribuído'} />
+                        </div>
+                      </DetailSection>
+
+                      <DetailSection title="Mover etapa" icon={TrendingUp}>
+                        <div className="space-y-2">
+                          {PROPOSAL_STAGES.map((stage) => {
+                            const Icon = stage.icon;
+                            const active = selectedProposal.stageId === stage.id;
+                            return (
+                              <button
+                                key={stage.id}
+                                type="button"
+                                onClick={() => void changeProposalStage(selectedProposal.id, stage.id)}
+                                disabled={updatingId === selectedProposal.id}
+                                className={cn(
+                                  'flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left transition-colors disabled:opacity-60',
+                                  active
+                                    ? 'border-transparent text-white'
+                                    : 'border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800',
+                                )}
+                                style={active ? { backgroundColor: stage.color } : undefined}
+                              >
+                                <span className="flex min-w-0 items-center gap-2">
+                                  <Icon className="h-4 w-4 shrink-0" />
+                                  <span className="truncate text-sm font-semibold">{stage.label}</span>
+                                </span>
+                                <span className={cn('text-xs font-semibold', active ? 'text-white/80' : 'text-slate-400')}>
+                                  {stage.probability}%
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </DetailSection>
+                    </aside>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="formulario" className="mt-0 space-y-4">
+                  <DetailSection title="Formulário de Transação" icon={ClipboardList}>
+                    <div className="space-y-4">
+                      <div className="grid gap-3 md:grid-cols-4">
+                        <InfoTile label="Cliente" value={selectedProposal.cliente || 'Leandro'} icon={Users} />
+                        <InfoTile label="Código do Imóvel" value={selectedProposal.imovelRef || 'TE0031'} icon={Building2} />
+                        <InfoTile label="Valor do Negócio" value={formatCurrencyWithCents(selectedProposal.valor)} icon={DollarSign} />
+                        <InfoTile label="Envio da Venda" value="CompraSegura" icon={ShieldCheck} />
+                      </div>
+
+                      <div className="overflow-x-auto">
+                        <div className="inline-flex min-w-max rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-slate-800 dark:bg-slate-950">
+                          {TRANSACTION_FORM_NAV.map((item, index) => (
+                            <button
+                              key={item}
+                              type="button"
+                              onClick={() => {
+                                const targetTab =
+                                  item === 'Negócio' ? 'negocios'
+                                  : item === 'Documentos' ? 'documentos'
+                                  : item === 'Certidões' ? 'certidoes'
+                                  : item === 'Participantes' ? 'participantes'
+                                  : 'historico';
+                                setActiveDetailTab(targetTab as DealTabId);
+                              }}
+                              className={cn(
+                                'h-8 rounded-md px-3 text-[12px] font-semibold transition-colors',
+                                index === 0
+                                  ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-950'
+                                  : 'text-slate-600 hover:bg-white dark:text-slate-300 dark:hover:bg-slate-900',
+                              )}
+                            >
+                              {item}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="overflow-x-auto">
+                        <div className="inline-flex min-w-max gap-1 rounded-lg border border-slate-200 bg-white p-1 dark:border-slate-800 dark:bg-slate-900">
+                          {TRANSACTION_FORM_SECTIONS.map((item) => (
+                            <button
+                              key={item}
+                              type="button"
+                              onClick={() => setActiveTransactionFormSection(item)}
+                              className={cn(
+                                'h-8 rounded-md px-3 text-[12px] font-semibold transition-colors',
+                                activeTransactionFormSection === item
+                                  ? 'bg-blue-600 text-white'
+                                  : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800',
+                              )}
+                            >
+                              {item}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </DetailSection>
+
+                  {activeTransactionFormSection === 'Imóvel & Valores' && (
+                  <DetailSection title="Imóvel & Valores" icon={Building2}>
+                    <div className="space-y-5">
+                      <div className="overflow-x-auto">
+                        <div className="inline-flex min-w-max gap-1 rounded-lg bg-slate-100 p-1 dark:bg-slate-950">
+                          {PROPERTY_VALUE_SECTIONS.map((item) => (
+                            <button
+                              key={item}
+                              type="button"
+                              onClick={() => setActivePropertyValueSection(item)}
+                              className={cn(
+                                'h-8 rounded-md px-3 text-[12px] font-semibold transition-colors',
+                                activePropertyValueSection === item
+                                  ? 'bg-white text-slate-950 shadow-sm dark:bg-slate-900 dark:text-slate-100'
+                                  : 'text-slate-500 hover:bg-white/70 dark:text-slate-400 dark:hover:bg-slate-900/70',
+                              )}
+                            >
+                              {item}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-800">
+                        <div className="mb-4">
+                          <h4 className="text-sm font-semibold text-slate-950 dark:text-slate-50">Identificação do imóvel e status da propriedade</h4>
+                        </div>
+
+                        <div className="grid gap-3 sm:grid-cols-6">
+                          <TransactionField label="CEP" value={selectedDetail.endereco?.cep || ''} onChange={(value) => updateAddress(selectedProposal, { cep: value })} className="sm:col-span-2" />
+                          <TransactionField label="Número" value={selectedDetail.endereco?.numero || ''} onChange={(value) => updateAddress(selectedProposal, { numero: value })} />
+                          <TransactionField label="Complemento" value={selectedDetail.endereco?.complemento || ''} onChange={(value) => updateAddress(selectedProposal, { complemento: value })} className="sm:col-span-3" />
+                          <TransactionField label="Logradouro" value={selectedDetail.endereco?.logradouro || ''} onChange={(value) => updateAddress(selectedProposal, { logradouro: value })} className="sm:col-span-3" />
+                          <TransactionField label="Bairro" value={selectedDetail.endereco?.bairro || ''} onChange={(value) => updateAddress(selectedProposal, { bairro: value })} className="sm:col-span-2" />
+                          <TransactionField label="Cidade" value={selectedDetail.endereco?.cidade || ''} onChange={(value) => updateAddress(selectedProposal, { cidade: value })} className="sm:col-span-2" />
+                          <TransactionField label="UF" value={selectedDetail.endereco?.uf || ''} onChange={(value) => updateAddress(selectedProposal, { uf: value })} />
+                          <TransactionField label="Código do Imóvel" value={getTransactionFormValue('propertyCode', selectedProposal.imovelRef || 'TE0031')} onChange={(value) => updateTransactionForm(selectedProposal, 'propertyCode', value)} className="sm:col-span-2" />
+                          <TransactionField label="Código Alternativo" value={getTransactionFormValue('alternativeCode')} onChange={(value) => updateTransactionForm(selectedProposal, 'alternativeCode', value)} placeholder="Código alternativo" className="sm:col-span-2" />
+                          <TransactionField label="Matrícula" value={getTransactionFormValue('registryNumber')} onChange={(value) => updateTransactionForm(selectedProposal, 'registryNumber', value)} placeholder="Número da matrícula" className="sm:col-span-2" />
+                          <TransactionField label="Cartório de Imóveis" value={getTransactionFormValue('propertyRegistryOffice')} onChange={(value) => updateTransactionForm(selectedProposal, 'propertyRegistryOffice', value)} placeholder="Cartório responsável" className="sm:col-span-3" />
+                          <TransactionField label="Contribuinte da Prefeitura" value={getTransactionFormValue('municipalTaxpayer')} onChange={(value) => updateTransactionForm(selectedProposal, 'municipalTaxpayer', value)} placeholder="Inscrição municipal" className="sm:col-span-3" />
+                          <div className="grid gap-1.5 sm:col-span-6">
+                            <label className="text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">Descrição Jurídica</label>
+                            <Textarea value={getTransactionFormValue('legalDescription')} onChange={(event) => updateTransactionForm(selectedProposal, 'legalDescription', event.target.value)} placeholder="Descrição jurídica do imóvel conforme matrícula." className="min-h-[88px] resize-y bg-white text-[13px] dark:bg-slate-950" />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-800">
+                        <div className="mb-4 flex items-center justify-between gap-3">
+                          <h4 className="text-sm font-semibold text-slate-950 dark:text-slate-50">Serviços e Concessionárias</h4>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8"
+                            onClick={() => {
+                              const currentCount = Number(getTransactionFormValue('additionalUtilitiesCount', '0')) || 0;
+                              updateTransactionForm(selectedProposal, 'additionalUtilitiesCount', String(currentCount + 1));
+                            }}
+                          >
+                            <Plus className="mr-2 h-3.5 w-3.5" />
+                            incluir nova
+                          </Button>
+                        </div>
+
+                        <div className="grid gap-3 sm:grid-cols-4">
+                          <TransactionField label="Empreendimento" value={getTransactionFormValue('development')} onChange={(value) => updateTransactionForm(selectedProposal, 'development', value)} placeholder="Nome do empreendimento" className="sm:col-span-2" />
+                          <TransactionField label="Adm. Condomínio" value={getTransactionFormValue('condoAdmin')} onChange={(value) => updateTransactionForm(selectedProposal, 'condoAdmin', value)} placeholder="Administradora" className="sm:col-span-2" />
+                          <TransactionField label="RIP" value={getTransactionFormValue('rip')} onChange={(value) => updateTransactionForm(selectedProposal, 'rip', value)} placeholder="RIP" />
+                          <TransactionField label="Água" value={getTransactionFormValue('waterUtility')} onChange={(value) => updateTransactionForm(selectedProposal, 'waterUtility', value)} placeholder="Concessionária" />
+                          <TransactionField label="Energia Elétrica" value={getTransactionFormValue('electricUtility')} onChange={(value) => updateTransactionForm(selectedProposal, 'electricUtility', value)} placeholder="Concessionária" />
+                          <TransactionField label="Gás" value={getTransactionFormValue('gasUtility')} onChange={(value) => updateTransactionForm(selectedProposal, 'gasUtility', value)} placeholder="Concessionária" />
+                          {Array.from({ length: Number(getTransactionFormValue('additionalUtilitiesCount', '0')) || 0 }).map((_, index) => (
+                            <TransactionField
+                              key={`additional-utility-${index}`}
+                              label={`Concessionária ${index + 1}`}
+                              value={getTransactionFormValue(`additionalUtility.${index}`)}
+                              onChange={(value) => updateTransactionForm(selectedProposal, `additionalUtility.${index}`, value)}
+                              placeholder="Serviço ou concessionária"
+                            />
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-800">
+                        <h4 className="mb-4 text-sm font-semibold text-slate-950 dark:text-slate-50">Dados Comerciais</h4>
+                        <div className="grid gap-3 sm:grid-cols-6">
+                          <TransactionField label="Tipologia" value={getTransactionFormValue('typology')} onChange={(value) => updateTransactionForm(selectedProposal, 'typology', value)} placeholder="Casa, terreno, apto..." className="sm:col-span-2" />
+                          <TransactionField label="Área Útil" value={getTransactionFormValue('usableArea')} onChange={(value) => updateTransactionForm(selectedProposal, 'usableArea', value)} placeholder="m²" />
+                          <TransactionField label="Área Total" value={getTransactionFormValue('totalArea')} onChange={(value) => updateTransactionForm(selectedProposal, 'totalArea', value)} placeholder="m²" />
+                          <TransactionField label="Qtd. Quartos" value={getTransactionFormValue('bedrooms')} onChange={(value) => updateTransactionForm(selectedProposal, 'bedrooms', value)} type="number" />
+                          <TransactionField label="Qtd. Banheiros" value={getTransactionFormValue('bathrooms')} onChange={(value) => updateTransactionForm(selectedProposal, 'bathrooms', value)} type="number" />
+                          <TransactionField label="Qtd. Vagas" value={getTransactionFormValue('parkingSpaces')} onChange={(value) => updateTransactionForm(selectedProposal, 'parkingSpaces', value)} type="number" />
+                          <TransactionField label="Ano Construção" value={getTransactionFormValue('constructionYear')} onChange={(value) => updateTransactionForm(selectedProposal, 'constructionYear', value)} type="number" />
+                          <TransactionField label="IPTU anual" value={getTransactionFormValue('annualIptu')} onChange={(value) => updateTransactionForm(selectedProposal, 'annualIptu', value)} placeholder="R$" />
+                          <TransactionField label="Condomínio Mensal" value={getTransactionFormValue('monthlyCondo')} onChange={(value) => updateTransactionForm(selectedProposal, 'monthlyCondo', value)} placeholder="R$" />
+                          <div className="sm:col-span-2">
+                            <SegmentedChoice label="Uso Predominante" options={['Residencial', 'Comercial']} selected={getTransactionFormValue('predominantUse', 'Residencial')} onChange={(value) => updateTransactionForm(selectedProposal, 'predominantUse', value)} />
+                          </div>
+                          <SegmentedChoice label="Público" options={['Sim', 'Não']} selected={getTransactionFormValue('isPublic', 'Não')} onChange={(value) => updateTransactionForm(selectedProposal, 'isPublic', value)} />
+                          <SegmentedChoice label="Tem Placa" options={['Sim', 'Não']} selected={getTransactionFormValue('hasSign', 'Não')} onChange={(value) => updateTransactionForm(selectedProposal, 'hasSign', value)} />
+                          <SegmentedChoice label="Exclusivo" options={['Sim', 'Não']} selected={getTransactionFormValue('isExclusive', 'Não')} onChange={(value) => updateTransactionForm(selectedProposal, 'isExclusive', value)} />
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-800">
+                        <h4 className="mb-4 text-sm font-semibold text-slate-950 dark:text-slate-50">Propriedade atual</h4>
+                        <div className="grid gap-2">
+                          {PROPERTY_STATUS_OPTIONS.map((option, index) => (
+                            <button
+                              key={option}
+                              type="button"
+                              onClick={() => updateTransactionForm(selectedProposal, 'propertyStatus', option)}
+                              className={cn(
+                                'rounded-lg border px-3 py-2 text-left text-sm font-medium transition-colors',
+                                getTransactionFormValue('propertyStatus', PROPERTY_STATUS_OPTIONS[2]) === option
+                                  ? 'border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200'
+                                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-900',
+                              )}
+                            >
+                              {option}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-800">
+                        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                          <h4 className="text-sm font-semibold text-slate-950 dark:text-slate-50">Valor e Forma de Pagamento</h4>
+                          <div className="grid w-full max-w-sm grid-cols-2 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
+                            <button
+                              type="button"
+                              onClick={() => updateTransactionForm(selectedProposal, 'fiduciaryAlienation', 'Sem alienação fiduciária')}
+                              className={cn(
+                                'h-9 px-3 text-[12px] font-semibold',
+                                getTransactionFormValue('fiduciaryAlienation', 'Sem alienação fiduciária') === 'Sem alienação fiduciária'
+                                  ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-950'
+                                  : 'bg-white text-slate-600 hover:bg-slate-50 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-900',
+                              )}
+                            >
+                              Sem alienação fiduciária
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => updateTransactionForm(selectedProposal, 'fiduciaryAlienation', 'Com alienação fiduciária')}
+                              className={cn(
+                                'h-9 border-l border-slate-200 px-3 text-[12px] font-semibold dark:border-slate-800',
+                                getTransactionFormValue('fiduciaryAlienation', 'Sem alienação fiduciária') === 'Com alienação fiduciária'
+                                  ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-950'
+                                  : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-900',
+                              )}
+                            >
+                              Com alienação fiduciária
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="grid gap-3 sm:grid-cols-4">
+                          <TransactionField label="Valor da Transação" value={selectedDetail.pagamento.valor} onChange={(value) => updatePayment(selectedProposal, { valor: value })} />
+                          <TransactionField label="Comissão R$" value={getTransactionFormValue('commissionAmount', formatCurrencyWithCents(selectedCommission))} onChange={(value) => updateTransactionForm(selectedProposal, 'commissionAmount', value)} />
+                          <TransactionField label="Comissão %" value={getTransactionFormValue('commissionPercent', '5,5%')} onChange={(value) => updateTransactionForm(selectedProposal, 'commissionPercent', value)} />
+                          <TransactionField label="Forma de pagamento" value={selectedDetail.pagamento.formaPagamento} onChange={(value) => updatePayment(selectedProposal, { formaPagamento: value })} />
+                        </div>
+
+                        <div className="mt-5 space-y-3">
+                          <div>
+                            <h5 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Composição do Preço</h5>
+                            <p className="text-[12px] text-slate-500 dark:text-slate-400">Informe valores e detalhes, e adicione clicando no sinal.</p>
+                          </div>
+                          {PRICE_COMPOSITION_ITEMS.map((item, index) => (
+                            <PriceCompositionRow
+                              key={item}
+                              label={item}
+                              value={getTransactionFormValue(`priceComposition.${index}.value`, index === 0 ? selectedDetail.pagamento.sinalArras : '')}
+                              detail={getTransactionFormValue(`priceComposition.${index}.detail`)}
+                              onValueChange={(value) => {
+                                updateTransactionForm(selectedProposal, `priceComposition.${index}.value`, value);
+                                if (index === 0) updatePayment(selectedProposal, { sinalArras: value });
+                              }}
+                              onDetailChange={(value) => updateTransactionForm(selectedProposal, `priceComposition.${index}.detail`, value)}
+                            />
+                          ))}
+                          <div className="grid gap-3 rounded-lg bg-slate-100 p-3 text-sm dark:bg-slate-950 sm:grid-cols-2">
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="font-semibold text-slate-600 dark:text-slate-300">Subtotal</span>
+                              <span className="font-bold text-slate-950 dark:text-slate-50">{formatCurrencyWithCents(selectedProposal.valor)}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="font-semibold text-slate-600 dark:text-slate-300">Saldo</span>
+                              <span className="font-bold text-emerald-700 dark:text-emerald-300">Tudo certo!</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 grid gap-1.5">
+                          <label className="text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">Condições específicas</label>
+                          <Textarea
+                            value={selectedDetail.pagamento.condicoesEspecificas}
+                            onChange={(event) => updatePayment(selectedProposal, { condicoesEspecificas: event.target.value })}
+                            placeholder="Detalhes da negociação, prazos, inclusões, mobília, taxas, comissão, contraproposta..."
+                            className="min-h-[96px] resize-y bg-white text-[13px] dark:bg-slate-950"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-800">
+                        <h4 className="mb-4 text-sm font-semibold text-slate-950 dark:text-slate-50">Em qual cartório será lavrada a Escritura Pública?</h4>
+                        <div className="grid gap-3 lg:grid-cols-[1fr_1fr_220px]">
+                          <button
+                            type="button"
+                            onClick={() => updateTransactionForm(selectedProposal, 'notaryDefinition', 'definido')}
+                            className={cn(
+                              'rounded-lg border px-3 py-3 text-left text-sm font-semibold',
+                              getTransactionFormValue('notaryDefinition', 'definido') === 'definido'
+                                ? 'border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200'
+                                : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-900',
+                            )}
+                          >
+                            Já há definição do Cartório de Notas que se pretende usar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => updateTransactionForm(selectedProposal, 'notaryDefinition', 'indefinido')}
+                            className={cn(
+                              'rounded-lg border px-3 py-3 text-left text-sm font-semibold',
+                              getTransactionFormValue('notaryDefinition', 'definido') === 'indefinido'
+                                ? 'border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200'
+                                : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-900',
+                            )}
+                          >
+                            Ainda não há definição do Cartório de Notas
+                          </button>
+                          <TransactionField label="Cartório de Notas" value={getTransactionFormValue('notaryOffice')} onChange={(value) => updateTransactionForm(selectedProposal, 'notaryOffice', value)} placeholder="Nome do cartório" />
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-800">
+                        <h4 className="mb-4 text-sm font-semibold text-slate-950 dark:text-slate-50">Anexo da formalização da Proposta de Compra</h4>
+                        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
+                          <div className="space-y-3">
+                            <SegmentedChoice label="Este negócio nasceu de uma Proposta que foi conduzida dentro do PipeImob?" options={['Não', 'Sim']} selected={getTransactionFormValue('cameFromPipeImob', 'Não')} onChange={(value) => updateTransactionForm(selectedProposal, 'cameFromPipeImob', value)} />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                toast({
+                                  title: 'Proposta de origem',
+                                  description: 'Nenhuma proposta PipeImob vinculada a este negócio.',
+                                });
+                              }}
+                              className="inline-flex h-8 items-center rounded-md border border-slate-200 px-3 text-[12px] font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-900"
+                            >
+                              ver
+                            </button>
+                          </div>
+                          <label className="flex min-h-[112px] cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center transition-colors hover:border-blue-300 hover:bg-blue-50/40 dark:border-slate-700 dark:bg-slate-950 dark:hover:border-blue-900 dark:hover:bg-blue-950/20">
+                            <FileUp className="h-7 w-7 text-slate-400" />
+                            <span className="mt-2 text-[12px] font-semibold text-slate-700 dark:text-slate-200">Clique para anexar outros documentos da Proposta</span>
+                            <span className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">{getTransactionFormValue('proposalAttachmentNames') || 'máximo 10Mb'}</span>
+                            <input type="file" multiple className="sr-only" onChange={handleProposalAttachments} />
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  </DetailSection>
+                  )}
+
+                  {activeTransactionFormSection === 'Vendedores' && (
+                    <DetailSection
+                      title="Vendedores"
+                      icon={Users}
+                      action={
+                        <Button type="button" size="sm" onClick={() => addParty(selectedProposal, 'vendedores')}>
+                          <Plus className="mr-2 h-3.5 w-3.5" />
+                          Cadastrar vendedor
+                        </Button>
+                      }
+                    >
+                      <div className="space-y-4">
+                        <div className="grid gap-3 md:grid-cols-3">
+                          <InfoTile label="Vendedor com cadastro completo" value={ownerValidationIssues.length === 0 && selectedDetail.vendedores.length > 0 ? 'Sim' : 'Pendente'} icon={CheckCircle2} />
+                          <InfoTile label="Mídia de origem dos Vendedores" value={sellerMediaOrigin} icon={Filter} />
+                          <InfoTile label="Vendedores cadastrados" value={selectedDetail.vendedores.length || 'Nenhum'} icon={Users} />
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button type="button" variant="outline" size="sm" onClick={() => setShowSellerParticipations((current) => !current)}>
+                            Ver participações %
+                          </Button>
+                          {['Mídia de Origem', 'Indicação', 'Portal', 'Carteira', 'Outro'].map((item) => (
+                            <button
+                              key={item}
+                              type="button"
+                              onClick={() => updateTransactionForm(selectedProposal, 'sellerMediaOrigin', item)}
+                              className={cn(
+                                'h-8 rounded-md border px-3 text-[12px] font-semibold transition-colors',
+                                sellerMediaOrigin === item
+                                  ? 'border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200'
+                                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-900',
+                              )}
+                            >
+                              {item}
+                            </button>
+                          ))}
+                        </div>
+
+                        <div className="space-y-3">
+                          {selectedDetail.vendedores.length === 0 && (
+                            <div className="rounded-lg border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                              Eduardo de Lima Sabbadini e Sueli Aparecida da Silva Sabbadini
+                              <div className="mt-3">
+                                <Button type="button" variant="outline" size="sm" onClick={() => addParty(selectedProposal, 'vendedores')}>
+                                  Cadastrar vendedor
+                                </Button>
+                                <span className="mx-3 text-xs text-slate-400">ou</span>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    toast({
+                                      title: 'Busca de vendedores',
+                                      description: 'A vinculação com cadastro existente foi aberta para este negócio.',
+                                    });
+                                  }}
+                                >
+                                  Vincular cadastro existente
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+
+                          {selectedDetail.vendedores.map((party, index) => (
+                            <div key={party.id} className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-950 dark:text-slate-50">{party.nomeCompleto || `Vendedor ${index + 1}`}</p>
+                                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">PF</p>
+                                </div>
+                                <Badge variant={getPartyMissingFields(party).length === 0 ? 'default' : 'secondary'}>
+                                  {getPartyMissingFields(party).length === 0 ? 'Cadastro completo' : 'Cadastro pendente'}
+                                </Badge>
+                              </div>
+                              {showSellerParticipations && (
+                                <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                                  <TransactionField label="Participação" value={getTransactionFormValue(`seller.${party.id}.participation`, `${Math.round(100 / Math.max(selectedDetail.vendedores.length, 1))}%`)} onChange={(value) => updateTransactionForm(selectedProposal, `seller.${party.id}.participation`, value)} />
+                                  <TransactionField label="Mídia de Origem" value={getTransactionFormValue(`seller.${party.id}.mediaOrigin`, sellerMediaOrigin)} onChange={(value) => updateTransactionForm(selectedProposal, `seller.${party.id}.mediaOrigin`, value)} />
+                                  <TransactionField label="Tipo" value={getTransactionFormValue(`seller.${party.id}.personType`, 'PF')} onChange={(value) => updateTransactionForm(selectedProposal, `seller.${party.id}.personType`, value)} />
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </DetailSection>
+                  )}
+
+                  {activeTransactionFormSection === 'Compradores' && (
+                    <DetailSection
+                      title="Compradores"
+                      icon={UserPlus}
+                      action={
+                        <Button type="button" size="sm" onClick={() => addParty(selectedProposal, 'compradores')}>
+                          <Plus className="mr-2 h-3.5 w-3.5" />
+                          Cadastrar comprador
+                        </Button>
+                      }
+                    >
+                      <div className="space-y-4">
+                        <div className="grid gap-3 md:grid-cols-3">
+                          <InfoTile label="Comprador com cadastro completo" value={buyerValidationIssues.length === 0 && selectedDetail.compradores.length > 0 ? 'Sim' : 'Pendente'} icon={CheckCircle2} />
+                          <InfoTile label="Mídia de origem dos Compradores" value={buyerMediaOrigin} icon={Filter} />
+                          <InfoTile label="Compradores cadastrados" value={selectedDetail.compradores.length || 'Nenhum'} icon={Users} />
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button type="button" variant="outline" size="sm" onClick={() => setShowBuyerParticipations((current) => !current)}>
+                            Ver participações %
+                          </Button>
+                          {['Mídia de Origem', 'Indicação', 'Portal', 'Carteira', 'Outro'].map((item) => (
+                            <button
+                              key={item}
+                              type="button"
+                              onClick={() => updateTransactionForm(selectedProposal, 'buyerMediaOrigin', item)}
+                              className={cn(
+                                'h-8 rounded-md border px-3 text-[12px] font-semibold transition-colors',
+                                buyerMediaOrigin === item
+                                  ? 'border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200'
+                                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-900',
+                              )}
+                            >
+                              {item}
+                            </button>
+                          ))}
+                        </div>
+
+                        <div className="space-y-3">
+                          {selectedDetail.compradores.length === 0 && (
+                            <div className="rounded-lg border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                              Regilaine Aparecida Miguel Leme e Luis Fernando Iervolino de Franla Leme
+                              <div className="mt-3">
+                                <Button type="button" variant="outline" size="sm" onClick={() => addParty(selectedProposal, 'compradores')}>
+                                  Cadastrar comprador
+                                </Button>
+                                <span className="mx-3 text-xs text-slate-400">ou</span>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    toast({
+                                      title: 'Busca de compradores',
+                                      description: 'A vinculação com cadastro existente foi aberta para este negócio.',
+                                    });
+                                  }}
+                                >
+                                  Vincular cadastro existente
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+
+                          {selectedDetail.compradores.map((party, index) => (
+                            <div key={party.id} className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-950 dark:text-slate-50">{party.nomeCompleto || `Comprador ${index + 1}`}</p>
+                                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">PF</p>
+                                </div>
+                                <Badge variant={getPartyMissingFields(party).length === 0 ? 'default' : 'secondary'}>
+                                  {getPartyMissingFields(party).length === 0 ? 'Cadastro completo' : 'Cadastro pendente'}
+                                </Badge>
+                              </div>
+                              {showBuyerParticipations && (
+                                <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                                  <TransactionField label="Participação" value={getTransactionFormValue(`buyer.${party.id}.participation`, `${Math.round(100 / Math.max(selectedDetail.compradores.length, 1))}%`)} onChange={(value) => updateTransactionForm(selectedProposal, `buyer.${party.id}.participation`, value)} />
+                                  <TransactionField label="Mídia de Origem" value={getTransactionFormValue(`buyer.${party.id}.mediaOrigin`, buyerMediaOrigin)} onChange={(value) => updateTransactionForm(selectedProposal, `buyer.${party.id}.mediaOrigin`, value)} />
+                                  <TransactionField label="Tipo" value={getTransactionFormValue(`buyer.${party.id}.personType`, 'PF')} onChange={(value) => updateTransactionForm(selectedProposal, `buyer.${party.id}.personType`, value)} />
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </DetailSection>
+                  )}
+
+                  {activeTransactionFormSection === 'Negociações' && (
+                    <DetailSection title="Negociações" icon={MessageCircle}>
+                      <div className="space-y-4">
+                        <div className="grid gap-3 md:grid-cols-4">
+                          <InfoTile label="Incluso no preço" value="A conferir" />
+                          <InfoTile label="Ocupação atual" value="A informar" />
+                          <InfoTile label="Entrega das chaves" value="A combinar" />
+                          <InfoTile label="Débitos" value="A verificar" />
+                        </div>
+                        <div className="grid gap-4 lg:grid-cols-2">
+                          <div className="grid gap-1.5">
+                            <label className="text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">O que está incluso no preço?</label>
+                            <Textarea value={getTransactionFormValue('includedInPrice')} onChange={(event) => updateTransactionForm(selectedProposal, 'includedInPrice', event.target.value)} placeholder="Mobília, planejados, eletros, benfeitorias ou exclusões negociadas." className="min-h-[100px] bg-white text-[13px] dark:bg-slate-950" />
+                          </div>
+                          <div className="grid gap-1.5">
+                            <label className="text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">Ocupação e Entrega da Posse</label>
+                            <Textarea value={getTransactionFormValue('occupancyAndPossession')} onChange={(event) => updateTransactionForm(selectedProposal, 'occupancyAndPossession', event.target.value)} placeholder="Imóvel ocupado, desocupado, locado, prazo de desocupação e entrega das chaves." className="min-h-[100px] bg-white text-[13px] dark:bg-slate-950" />
+                          </div>
+                          <div className="grid gap-1.5">
+                            <label className="text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">Débitos sobre o imóvel</label>
+                            <Textarea value={getTransactionFormValue('propertyDebts')} onChange={(event) => updateTransactionForm(selectedProposal, 'propertyDebts', event.target.value)} placeholder="IPTU, condomínio, água, energia, gás, financiamento, alienação ou outros débitos." className="min-h-[100px] bg-white text-[13px] dark:bg-slate-950" />
+                          </div>
+                          <div className="space-y-3">
+                            <SegmentedChoice label="O imóvel pertence a algum condomínio?" options={['Sim', 'Não']} selected={getTransactionFormValue('belongsToCondo', 'Não')} onChange={(value) => updateTransactionForm(selectedProposal, 'belongsToCondo', value)} />
+                            <div className="grid gap-1.5">
+                              <label className="text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">Alguma outra observação/especificidade negociada relevante?</label>
+                              <Textarea value={selectedDetail.pagamento.condicoesEspecificas} onChange={(event) => updatePayment(selectedProposal, { condicoesEspecificas: event.target.value })} placeholder="Observações relevantes da negociação." className="min-h-[100px] bg-white text-[13px] dark:bg-slate-950" />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </DetailSection>
+                  )}
+
+                  {activeTransactionFormSection === 'Comissões' && (
+                    <DetailSection title="Comissões" icon={WalletCards}>
+                      <div className="space-y-5">
+                        <div className="grid gap-3 md:grid-cols-4">
+                          <InfoTile label="Quem paga comissão" value={commissionPayer} />
+                          <InfoTile label="Quando paga comissão" value={commissionMoment} />
+                          <InfoTile label="Comissionados" value={commissionedPeople.length} />
+                          <InfoTile label="Participações dos Comissionados" value={showCommissionPercent ? 'Visível' : 'Oculta'} />
+                        </div>
+
+                        <div className="grid gap-4 lg:grid-cols-2">
+                          <div className="space-y-3">
+                            <span className="text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">Quem pagará a comissão?</span>
+                            <div className="flex flex-wrap gap-2">
+                              {COMMISSION_PAYERS.map((item) => (
+                                <Button key={item} type="button" variant={commissionPayer === item ? 'default' : 'outline'} size="sm" onClick={() => updateTransactionForm(selectedProposal, 'commissionPayer', item)}>
+                                  {item}
+                                </Button>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="space-y-3">
+                            <span className="text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">Quando será paga a comissão?</span>
+                            <div className="flex flex-wrap gap-2">
+                              {COMMISSION_MOMENTS.map((item) => (
+                                <Button key={item} type="button" variant={commissionMoment === item ? 'default' : 'outline'} size="sm" onClick={() => updateTransactionForm(selectedProposal, 'commissionMoment', item)}>
+                                  {item}
+                                </Button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-800">
+                          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <h4 className="text-sm font-semibold text-slate-950 dark:text-slate-50">Estrutura de Comissionados</h4>
+                              <p className="mt-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300">comissão total {formatCurrencyWithCents(selectedCommission)}</p>
+                            </div>
+                            <Button type="button" variant="outline" size="sm" onClick={() => setShowCommissionPercent((current) => !current)}>
+                              ver %
+                            </Button>
+                          </div>
+
+                          <div className="mb-4 flex flex-wrap gap-2">
+                            <Button type="button" variant="outline" size="sm" onClick={() => addCommissionedPerson(selectedProposal, 'Usuário PipeImob da agência')}>
+                              incluir comissionado da base da Agência
+                            </Button>
+                            <Button type="button" variant="outline" size="sm" onClick={() => addCommissionedPerson(selectedProposal, 'Parceiro externo')}>
+                              incluir parceiro externo
+                            </Button>
+                            <Button type="button" variant="outline" size="sm" onClick={() => addCommissionedPerson(selectedProposal, 'Usuário PipeImob externo')}>
+                              incluir imobiliária/corretor externo
+                            </Button>
+                          </div>
+
+                          <div className="mb-4 flex flex-wrap gap-2">
+                            {COMMISSION_ROLES.map((item) => (
+                              <Button key={item} type="button" variant={commissionRole === item ? 'default' : 'outline'} size="sm" onClick={() => updateTransactionForm(selectedProposal, 'commissionRole', item)}>
+                                {item}
+                              </Button>
+                            ))}
+                          </div>
+
+                          <div className="space-y-3">
+                            {commissionedPeople.map((label, index) => (
+                              <div key={`${label}-${index}`} className="grid gap-3 rounded-lg bg-slate-50 p-3 dark:bg-slate-950 md:grid-cols-[minmax(0,1.4fr)_150px_120px_120px_120px]">
+                                <TransactionField label="Nome Completo" value={getTransactionFormValue(`commissioned.${index}.name`, index === 0 ? selectedProposal.corretor || label : label)} onChange={(value) => updateTransactionForm(selectedProposal, `commissioned.${index}.name`, value)} />
+                                <TransactionField label="CPF/CNPJ" value={getTransactionFormValue(`commissioned.${index}.document`)} onChange={(value) => updateTransactionForm(selectedProposal, `commissioned.${index}.document`, value)} placeholder="Documento" />
+                                <TransactionField label="CRECI" value={getTransactionFormValue(`commissioned.${index}.creci`)} onChange={(value) => updateTransactionForm(selectedProposal, `commissioned.${index}.creci`, value)} placeholder="CRECI" />
+                                <TransactionField label="Comissão" value={getTransactionFormValue(`commissioned.${index}.commission`, index === 0 ? formatCurrencyWithCents(selectedCommission) : '')} onChange={(value) => updateTransactionForm(selectedProposal, `commissioned.${index}.commission`, value)} />
+                                {showCommissionPercent ? <TransactionField label="Participação" value={getTransactionFormValue(`commissioned.${index}.participation`, index === 0 ? '100%' : '0%')} onChange={(value) => updateTransactionForm(selectedProposal, `commissioned.${index}.participation`, value)} /> : <InfoTile label="Participação" value="Oculta" />}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="grid gap-1.5">
+                          <label className="text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">Detalhes sobre o pagamento da comissão</label>
+                          <Textarea value={getTransactionFormValue('commissionPaymentDetails')} onChange={(event) => updateTransactionForm(selectedProposal, 'commissionPaymentDetails', event.target.value)} placeholder="Condições, divisão, datas, responsáveis e observações sobre comissão." className="min-h-[96px] bg-white text-[13px] dark:bg-slate-950" />
+                        </div>
+                        <SegmentedChoice label="Há bonificações que não constarão ao contrato?" options={['Sim', 'Não']} selected={getTransactionFormValue('hasOffContractBonuses', 'Não')} onChange={(value) => updateTransactionForm(selectedProposal, 'hasOffContractBonuses', value)} />
+                      </div>
+                    </DetailSection>
+                  )}
+
+                  {activeTransactionFormSection === 'Parceiros' && (
+                    <DetailSection title="Parceiros" icon={Users}>
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <TransactionField label="Parceiro externo" value={getTransactionFormValue('externalPartner')} onChange={(value) => updateTransactionForm(selectedProposal, 'externalPartner', value)} placeholder="Corretor, imobiliária ou parceiro homologado" />
+                        <TransactionField label="Contato" value={getTransactionFormValue('externalPartnerContact')} onChange={(value) => updateTransactionForm(selectedProposal, 'externalPartnerContact', value)} placeholder="Telefone ou email" />
+                        <Textarea value={getTransactionFormValue('externalPartnerNotes')} onChange={(event) => updateTransactionForm(selectedProposal, 'externalPartnerNotes', event.target.value)} placeholder="Observações sobre participação de parceiros externos." className="min-h-[96px] bg-white text-[13px] dark:bg-slate-950 md:col-span-2" />
+                      </div>
+                    </DetailSection>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="documentos" className="mt-0">
+                  <DetailSection title="Documentos" icon={FileText}>
+                    <SimpleChecklist items={DOCUMENT_CHECKLIST} completedCount={selectedDetail.enviadoProponente ? 3 : 1} />
+                  </DetailSection>
+                </TabsContent>
+
+                <TabsContent value="certidoes" className="mt-0">
+                  <DetailSection title="Certidões" icon={ShieldCheck}>
+                    <SimpleChecklist items={CERTIFICATE_CHECKLIST} completedCount={selectedProposal.stageId === 'proposta-assinada' ? 4 : 1} />
+                  </DetailSection>
+                </TabsContent>
+
+                <TabsContent value="participantes" className="mt-0 space-y-4">
+                  <DetailSection
+                    title="Proponentes (Compradores)"
+                    icon={Users}
+                    action={
+                      <Button type="button" variant="outline" size="sm" onClick={() => addParty(selectedProposal, 'compradores')}>
+                        <Plus className="mr-2 h-3.5 w-3.5" />
+                        Adicionar proponente
+                      </Button>
+                    }
+                  >
+                    <div className="space-y-3">
+                      {selectedDetail.compradores.length === 0 && (
+                        <div className="rounded-lg border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                          Ainda não há proponentes cadastrados. Crie-os, clicando no ícone acima.
+                        </div>
+                      )}
+                      {selectedDetail.compradores.map((party, index) => (
+                        <PartyEditor
+                          key={party.id}
+                          party={party}
+                          label={`Comprador ${index + 1}`}
+                          participantType="proponente"
+                          isCollapsed={collapsedPartyIds.has(party.id)}
+                          onToggleCollapsed={() => togglePartyCollapsed(party.id)}
+                          onChange={(updates) => updateParty(selectedProposal, 'compradores', party.id, updates)}
+                          onRemove={() => removeParty(selectedProposal, 'compradores', party.id)}
+                        />
+                      ))}
+                    </div>
+                  </DetailSection>
+
+                  <DetailSection
+                    title="Proprietários (Vendedores)"
+                    icon={Building2}
+                    action={
+                      <Button type="button" variant="outline" size="sm" onClick={() => addParty(selectedProposal, 'vendedores')}>
+                        <Plus className="mr-2 h-3.5 w-3.5" />
+                        Adicionar proprietário
+                      </Button>
+                    }
+                  >
+                    <div className="space-y-3">
+                      {selectedDetail.vendedores.length === 0 && (
+                        <div className="rounded-lg border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                          Ainda não há proprietários cadastrados. Crie-os, clicando no ícone acima.
+                        </div>
+                      )}
+                      {selectedDetail.vendedores.map((party, index) => (
+                        <PartyEditor
+                          key={party.id}
+                          party={party}
+                          label={`Proprietário ${index + 1}`}
+                          participantType="proprietario"
+                          isCollapsed={collapsedPartyIds.has(party.id)}
+                          onToggleCollapsed={() => togglePartyCollapsed(party.id)}
+                          onChange={(updates) => updateParty(selectedProposal, 'vendedores', party.id, updates)}
+                          onRemove={() => removeParty(selectedProposal, 'vendedores', party.id)}
+                        />
+                      ))}
+                    </div>
+                  </DetailSection>
+                </TabsContent>
+
+                <TabsContent value="historico" className="mt-0">
+                  <DetailSection title="Histórico" icon={History}>
+                    <div className="space-y-3">
+                      {selectedDetail.historico.map((item) => (
+                        <div key={item.id} className="rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-800/60">
+                          <p className="text-[13px] font-semibold text-slate-900 dark:text-slate-100">{item.label}</p>
+                          <p className="mt-0.5 text-[12px] text-slate-500 dark:text-slate-400">{item.detail}</p>
+                          <p className="mt-1 text-[11px] font-medium text-slate-400 dark:text-slate-500">{formatDateTime(item.date)}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </DetailSection>
+                </TabsContent>
+
+                <TabsContent value="ccv" className="mt-0">
+                  <DetailSection title="CCV Conjurer" icon={FileSignature}>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <Button type="button" variant="outline" onClick={generateCcvDraft}>
+                        <FileSignature className="mr-2 h-4 w-4" />
+                        Gerar CCV
+                      </Button>
+                      <Button type="button" variant="outline" onClick={sendCcvToSignature}>
+                        <Send className="mr-2 h-4 w-4" />
+                        Enviar CCV
+                      </Button>
+                      <Button type="button" variant="outline" onClick={markCcvSigned}>
+                        <CheckCircle2 className="mr-2 h-4 w-4" />
+                        Marcar assinado
+                      </Button>
+                    </div>
+                  </DetailSection>
+                </TabsContent>
+
+                <TabsContent value="escriturar" className="mt-0 space-y-4">
+                  <DetailSection title="Escriturar" icon={Landmark}>
+                    <div className="grid gap-3">
+                      {DEAL_WORKFLOW_GROUPS.slice(1).map((group) => (
+                        <WorkflowChecklist key={group.title} title={group.title} status={group.status} items={group.items} />
+                      ))}
+                    </div>
+                  </DetailSection>
+                </TabsContent>
+
+                <TabsContent value="convidar" className="mt-0">
+                  <DetailSection title="Convidar" icon={UserPlus}>
+                    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+                      <div className="grid gap-3">
+                        <InfoTile label="Link de convite" value={selectedInviteLink} icon={Link} />
+                        <InfoTile label="Código de acesso" value={selectedInviteCode} icon={Copy} />
+                      </div>
+                      <div className="grid gap-2">
+                        <Button type="button" variant="outline" onClick={() => void copyInviteLink()}>
+                          <Copy className="mr-2 h-4 w-4" />
+                          Copiar link
+                        </Button>
+                        <Button type="button" variant="outline" onClick={() => void copyInviteCode()}>
+                          <ClipboardCheck className="mr-2 h-4 w-4" />
+                          Copiar código
+                        </Button>
+                        <Button type="button" variant="outline" onClick={sendInviteByEmail}>
+                          <Mail className="mr-2 h-4 w-4" />
+                          Enviar por email
+                        </Button>
+                        <Button type="button" variant="outline" onClick={sendInviteByWhatsapp}>
+                          <MessageCircle className="mr-2 h-4 w-4" />
+                          Enviar por WhatsApp
+                        </Button>
+                      </div>
+                    </div>
+                  </DetailSection>
+                </TabsContent>
+
+                <TabsContent value="agenda" className="mt-0">
+                  <DetailSection title="Agenda" icon={CalendarPlus}>
+                    <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_160px_120px_auto]">
+                      <Input value={agendaDraft.title} onChange={(event) => setAgendaDraft((previous) => ({ ...previous, title: event.target.value }))} placeholder="Evento programado" className="h-9 text-[13px]" />
+                      <Input type="date" value={agendaDraft.date} onChange={(event) => setAgendaDraft((previous) => ({ ...previous, date: event.target.value }))} className="h-9 text-[13px]" />
+                      <Input type="time" value={agendaDraft.time} onChange={(event) => setAgendaDraft((previous) => ({ ...previous, time: event.target.value }))} className="h-9 text-[13px]" />
+                      <Button type="button" onClick={addAgendaEvent} className="h-9 bg-blue-600 text-white hover:bg-blue-700">
+                        <CalendarPlus className="mr-2 h-4 w-4" />
+                        Adicionar
+                      </Button>
+                    </div>
+                  </DetailSection>
+                </TabsContent>
+
+                <TabsContent value="solicitacao" className="mt-0 space-y-4">
+                  <DetailSection title="Nova solicitação" icon={ClipboardCheck}>
+                    <div className="grid gap-3 md:grid-cols-4">
+                      <Select value={requestDraft.hasProperty} onValueChange={(value) => setRequestDraft((previous) => ({ ...previous, hasProperty: value }))}>
+                        <SelectTrigger className="h-9 text-[13px]"><SelectValue placeholder="Tem imóvel?" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="sim">Tem a ver com um imóvel</SelectItem>
+                          <SelectItem value="nao">Não tem imóvel</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Input value={requestDraft.area} onChange={(event) => setRequestDraft((previous) => ({ ...previous, area: event.target.value }))} placeholder="Área específica" className="h-9 text-[13px]" />
+                      <Input value={requestDraft.keyword} onChange={(event) => setRequestDraft((previous) => ({ ...previous, keyword: event.target.value }))} placeholder="Palavra-chave" className="h-9 text-[13px]" />
+                      <Input value={requestDraft.property} onChange={(event) => setRequestDraft((previous) => ({ ...previous, property: event.target.value }))} placeholder="Qual o imóvel?" className="h-9 text-[13px]" />
+                    </div>
+                  </DetailSection>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {SERVICE_REQUEST_OPTIONS.map((option) => (
+                      <button
+                        key={option.title}
+                        type="button"
+                        onClick={() => createServiceRequest(option.title)}
+                        className="rounded-lg border border-slate-200 bg-white p-4 text-left transition-colors hover:border-blue-200 hover:bg-blue-50/40 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-blue-900 dark:hover:bg-blue-950/20"
+                      >
+                        <p className="text-sm font-semibold text-slate-950 dark:text-slate-50">{option.title}</p>
+                        <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">{option.deadline}</p>
+                        <p className="mt-2 text-[12px] font-semibold text-emerald-700 dark:text-emerald-300">{option.price}</p>
+                      </button>
+                    ))}
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="assinatura" className="mt-0">
+                  <DetailSection title="Assinatura eletrônica" icon={FileUp}>
+                    <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_260px]">
+                      <label className="flex min-h-[150px] cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white px-4 py-6 text-center transition-colors hover:border-blue-300 hover:bg-blue-50/40 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-blue-900 dark:hover:bg-blue-950/20">
+                        <FileUp className="h-8 w-8 text-slate-400" />
+                        <span className="mt-3 text-sm font-semibold text-slate-900 dark:text-slate-100">Enviar documento em PDF</span>
+                        <span className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">{signatureDocumentName || 'Nenhum arquivo selecionado'}</span>
+                        <input type="file" accept="application/pdf,.pdf" className="sr-only" onChange={handleSignatureDocument} />
+                      </label>
+                      <div className="space-y-3">
+                        <Button type="button" className="w-full bg-blue-600 text-white hover:bg-blue-700" onClick={sendSignatureDocument}>
+                          <Send className="mr-2 h-4 w-4" />
+                          Enviar para assinatura
+                        </Button>
+                        <Button type="button" variant="outline" className="w-full" onClick={markCcvSigned}>
+                          <CheckCircle2 className="mr-2 h-4 w-4" />
+                          Marcar todos como assinados
+                        </Button>
+                        {[...selectedDetail.compradores, ...selectedDetail.vendedores].map((party) => (
+                          <div key={party.id} className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/60">
+                            <div className="flex items-start justify-between gap-3">
+                              <p className="truncate text-[13px] font-semibold text-slate-900 dark:text-slate-100">{party.nomeCompleto || 'Participante sem nome'}</p>
+                              <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold', signatureStatusClass[party.statusAssinatura])}>
+                                {signatureStatusLabel[party.statusAssinatura]}
+                              </span>
+                            </div>
+                            <p className="mt-1 truncate text-[11px] text-slate-500 dark:text-slate-400">{signatureChannelLabel[party.assinaturaPor]}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </DetailSection>
+                </TabsContent>
+              </Tabs>
+
+              <div className="hidden">
               <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
                 <div className="space-y-4">
                   <div className="grid gap-3 md:grid-cols-3">
@@ -2666,6 +4427,7 @@ export const PropostaPage = () => {
                     </div>
                   </DetailSection>
                 </aside>
+              </div>
               </div>
             </div>
           </DialogContent>
