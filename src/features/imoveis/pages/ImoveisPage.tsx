@@ -12,6 +12,7 @@ import { ImoveisMetrics } from '@/components/imoveis/ImoveisMetrics';
 import { ImovelCard } from '@/components/imoveis/ImovelCard';
 import { MeusImoveisTab } from '@/components/imoveis/MeusImoveisTab';
 import { CondominiosTab } from '@/components/imoveis/CondominiosTab';
+import { LancamentosTab } from '@/components/imoveis/LancamentosTab';
 import { CriarImovelForm } from '@/components/imoveis/CriarImovelForm';
 import { Imovel } from '../services/kenloService';
 import { supabase } from '@/lib/supabaseClient';
@@ -855,6 +856,10 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
 
         <TabsContent value="condominios">
           <CondominiosTab />
+        </TabsContent>
+
+        <TabsContent value="lancamentos">
+          <LancamentosTab />
         </TabsContent>
 
         <TabsContent value="catalogo">

@@ -4020,6 +4020,123 @@ app.delete('/api/v1/webhooks/:id', validateApiKey, async (req, res) => {
   }
 });
 
+// ============================================
+// ROUTES - LANÇAMENTOS (consumo por agentes de IA)
+// ============================================
+
+const mapLancamentoFromDB = (row) => ({
+  id: row.id,
+  nome: row.nome,
+  descricao: row.descricao || null,
+  book_pdf_url: row.book_pdf || null,
+  book_pdf_filename: row.book_pdf_filename || null,
+  fotos: (Array.isArray(row.fotos) ? row.fotos : []).map((f) => ({
+    url: f?.url || null,
+    legenda: f?.legenda || null,
+    is_capa: !!f?.isCapa,
+  })),
+  created_at: row.created_at,
+  updated_at: row.updated_at,
+});
+
+// GET /api/v1/lancamentos - Listar lançamentos do tenant (resumido)
+app.get('/api/v1/lancamentos', validateApiKey, async (req, res) => {
+  try {
+    const { search } = req.query;
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
+    const offset = (page - 1) * limit;
+
+    let query = supabase
+      .from('lancamentos')
+      .select('id, nome, descricao, book_pdf, book_pdf_filename, fotos, created_at, updated_at', { count: 'exact' })
+      .eq('tenant_id', req.tenantId)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (search && String(search).trim()) {
+      query = query.ilike('nome', `%${String(search).trim()}%`);
+    }
+
+    const { data, error, count } = await query;
+
+    if (error) {
+      console.error('Erro ao listar lançamentos:', error);
+      return res.status(500).json({
+        success: false,
+        error: { code: 'INTERNAL_ERROR', message: 'Falha ao listar lançamentos' },
+      });
+    }
+
+    const items = (data || []).map((row) => {
+      const fotos = Array.isArray(row.fotos) ? row.fotos : [];
+      const capa = fotos.find((f) => f?.isCapa) || fotos[0] || null;
+      return {
+        id: row.id,
+        nome: row.nome,
+        capa_url: capa?.url || null,
+        total_fotos: fotos.length,
+        tem_book: !!row.book_pdf,
+        updated_at: row.updated_at,
+      };
+    });
+
+    res.json({
+      success: true,
+      data: items,
+      pagination: {
+        page,
+        limit,
+        total: count || 0,
+        total_pages: count ? Math.ceil(count / limit) : 0,
+      },
+    });
+  } catch (err) {
+    console.error('Erro inesperado em /lancamentos:', err);
+    res.status(500).json({
+      success: false,
+      error: { code: 'INTERNAL_ERROR', message: 'Erro inesperado' },
+    });
+  }
+});
+
+// GET /api/v1/lancamentos/:id - Detalhe completo de um lançamento
+app.get('/api/v1/lancamentos/:id', validateApiKey, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { data, error } = await supabase
+      .from('lancamentos')
+      .select('*')
+      .eq('tenant_id', req.tenantId)
+      .eq('id', id)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Erro ao buscar lançamento:', error);
+      return res.status(500).json({
+        success: false,
+        error: { code: 'INTERNAL_ERROR', message: 'Falha ao buscar lançamento' },
+      });
+    }
+
+    if (!data) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'Lançamento não encontrado' },
+      });
+    }
+
+    res.json({ success: true, data: mapLancamentoFromDB(data) });
+  } catch (err) {
+    console.error('Erro inesperado em /lancamentos/:id:', err);
+    res.status(500).json({
+      success: false,
+      error: { code: 'INTERNAL_ERROR', message: 'Erro inesperado' },
+    });
+  }
+});
+
 // 404 para rotas da API não encontradas
 app.use('/api/v1/*', (req, res) => {
   res.status(404).json({

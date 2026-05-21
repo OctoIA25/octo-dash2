@@ -1702,6 +1702,14 @@ export const PropostaPage = () => {
     property: '',
   });
   const [signatureDocumentName, setSignatureDocumentName] = useState('');
+  const [linkLeadTarget, setLinkLeadTarget] = useState<
+    | { mode: 'detail'; proposalId: string; group: 'compradores' | 'vendedores' }
+    | { mode: 'draft'; group: 'compradores' | 'vendedores' }
+    | null
+  >(null);
+  const [linkLeadSearch, setLinkLeadSearch] = useState('');
+  const [autosaveStatus, setAutosaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const autosaveResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const detailTabsScrollRef = useRef<HTMLDivElement>(null);
 
@@ -1748,6 +1756,7 @@ export const PropostaPage = () => {
     const timers = saveTimersRef.current;
     return () => {
       Object.values(timers).forEach((timer) => clearTimeout(timer));
+      if (autosaveResetRef.current) clearTimeout(autosaveResetRef.current);
     };
   }, []);
 
@@ -1847,11 +1856,11 @@ export const PropostaPage = () => {
       draftBuyerValidationIssues.length === 0,
   );
   const selectedAddressText = selectedDetail ? formatFullAddress(selectedDetail.endereco) : '';
-  const selectedDealAddress = selectedAddressText || 'Alameda Candeia, 210, Q4-08, Residencial Vila Victoria, Itupeva - SP, CEP 13295000';
+  const selectedDealAddress = selectedAddressText || 'Endereço não informado';
   const selectedDealTitle = selectedDetail?.endereco?.logradouro
     ? [selectedDetail.endereco.logradouro, selectedDetail.endereco.numero, selectedDetail.endereco.complemento].filter(Boolean).join(', ')
-    : selectedProposal?.imovelRef || 'Alameda Candeia, 210, Q';
-  const selectedSellerName = selectedDetail?.vendedores.find((party) => party.nomeCompleto.trim())?.nomeCompleto.trim() || 'Leandro';
+    : selectedProposal?.imovelRef || 'Imóvel sem identificação';
+  const selectedSellerName = selectedDetail?.vendedores.find((party) => party.nomeCompleto.trim())?.nomeCompleto.trim() || 'A definir';
   const selectedCommission = selectedProposal ? selectedProposal.valor * 0.055 : 0;
   const selectedInviteLink = selectedProposal
     ? `${typeof window !== 'undefined' ? window.location.origin : ''}/propostas/${selectedProposal.id}`
@@ -1873,12 +1882,17 @@ export const PropostaPage = () => {
     async (proposal: ProposalItem, detail: ProposalDetailState) => {
       if (!currentTenantId || proposal.source !== 'draft' || !isUuidLike(proposal.id)) return;
 
+      setAutosaveStatus('saving');
       try {
         const payload = proposalToSaveInput(proposal, detail, currentTenantId, user?.id);
         await updateSavedProposal({ ...payload, id: proposal.id });
+        setAutosaveStatus('saved');
+        if (autosaveResetRef.current) clearTimeout(autosaveResetRef.current);
+        autosaveResetRef.current = setTimeout(() => setAutosaveStatus('idle'), 2500);
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Erro ao salvar proposta.';
         setSavedError(message);
+        setAutosaveStatus('error');
         console.error('Erro ao salvar proposta:', err);
       }
     },
@@ -2000,6 +2014,85 @@ export const PropostaPage = () => {
     }));
     appendHistory(proposal, label, 'Novo participante incluído na proposta.');
   };
+
+  const openLinkLeadDialog = (
+    target:
+      | { mode: 'detail'; proposalId: string; group: 'compradores' | 'vendedores' }
+      | { mode: 'draft'; group: 'compradores' | 'vendedores' },
+  ) => {
+    setLinkLeadSearch('');
+    setLinkLeadTarget(target);
+  };
+
+  const partyFromLead = (lead: CRMLead): ProposalParty =>
+    createParty({
+      nomeCompleto: lead.name || '',
+      celular: lead.phone || '',
+      email: lead.email || '',
+    });
+
+  const linkLeadAsParty = (lead: CRMLead) => {
+    if (!linkLeadTarget) return;
+    const newParty = partyFromLead(lead);
+    const groupLabel = linkLeadTarget.group === 'compradores' ? 'comprador' : 'proprietário';
+
+    if (linkLeadTarget.mode === 'detail') {
+      const proposal = proposals.find((item) => item.id === linkLeadTarget.proposalId);
+      if (!proposal) {
+        setLinkLeadTarget(null);
+        return;
+      }
+      const current = proposalDetails[proposal.id] ?? buildDefaultProposalDetail(proposal);
+      setCollapsedPartyIds((previous) => {
+        const next = new Set(previous);
+        current[linkLeadTarget.group].forEach((party) => next.add(party.id));
+        next.delete(newParty.id);
+        return next;
+      });
+      updateProposalDetail(proposal, (currentDetail) => ({
+        ...currentDetail,
+        [linkLeadTarget.group]: [...currentDetail[linkLeadTarget.group], newParty],
+      }));
+      appendHistory(
+        proposal,
+        `Vinculado ${groupLabel} do CRM`,
+        `${lead.name || 'Lead sem nome'} (${lead.email || lead.phone || 'sem contato'}) vinculado à proposta.`,
+      );
+    } else {
+      setCollapsedPartyIds((previous) => {
+        const next = new Set(previous);
+        draftForm[linkLeadTarget.group].forEach((party) => next.add(party.id));
+        next.delete(newParty.id);
+        return next;
+      });
+      setDraftForm((previous) => ({
+        ...previous,
+        [linkLeadTarget.group]: [...previous[linkLeadTarget.group], newParty],
+      }));
+    }
+
+    toast({
+      title: 'Cadastro vinculado',
+      description: `${lead.name || 'Lead sem nome'} foi adicionado como ${groupLabel}.`,
+    });
+    setLinkLeadTarget(null);
+  };
+
+  const linkLeadCandidates = useMemo(() => {
+    const q = normalize(linkLeadSearch);
+    return leads
+      .filter((lead) => {
+        if (!q) return true;
+        return (
+          normalize(lead.name).includes(q) ||
+          normalize(lead.phone || '').includes(q) ||
+          normalize(lead.email || '').includes(q) ||
+          normalize(lead.property_code || '').includes(q) ||
+          normalize(lead.assigned_agent_name || '').includes(q)
+        );
+      })
+      .slice(0, 60);
+  }, [leads, linkLeadSearch]);
 
   const removeParty = (proposal: ProposalItem, group: 'compradores' | 'vendedores', partyId: string) => {
     forgetCollapsedParty(partyId);
@@ -2979,12 +3072,37 @@ export const PropostaPage = () => {
                     {selectedProposal.source === 'draft' && <Badge variant="secondary">Rascunho</Badge>}
                   </div>
                 </div>
-                {updatingId === selectedProposal.id && (
-                  <div className="flex shrink-0 items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    Salvando
-                  </div>
-                )}
+                <div className="flex shrink-0 items-center gap-2">
+                  {selectedProposal.source === 'draft' && (
+                    autosaveStatus === 'saving' ? (
+                      <div className="flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        Salvando
+                      </div>
+                    ) : autosaveStatus === 'saved' ? (
+                      <div className="flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        Salvo
+                      </div>
+                    ) : autosaveStatus === 'error' ? (
+                      <div className="flex items-center gap-1.5 rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
+                        <AlertCircle className="h-3.5 w-3.5" />
+                        Erro ao salvar
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        Sincronizado
+                      </div>
+                    )
+                  )}
+                  {updatingId === selectedProposal.id && (
+                    <div className="flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Movendo etapa
+                    </div>
+                  )}
+                </div>
               </div>
             </DialogHeader>
 
@@ -3034,7 +3152,7 @@ export const PropostaPage = () => {
                         </div>
 
                         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                          <InfoTile label="Código do Imóvel" value={selectedProposal.imovelRef || 'TE0031'} icon={Building2} />
+                          <InfoTile label="Código do Imóvel" value={selectedProposal.imovelRef || 'Sem código'} icon={Building2} />
                           <InfoTile label="Valor do Negócio" value={formatCurrencyWithCents(selectedProposal.valor)} icon={DollarSign} />
                           <InfoTile label="Comissão Geral" value={formatCurrencyWithCents(selectedCommission)} detail="Estimativa de 5,5%" icon={WalletCards} />
                           <InfoTile label="Subida Negócio" value={formatDate(selectedProposal.criadaEm)} icon={CalendarDays} />
@@ -3107,8 +3225,8 @@ export const PropostaPage = () => {
                   <DetailSection title="Formulário de Transação" icon={ClipboardList}>
                     <div className="space-y-4">
                       <div className="grid gap-3 md:grid-cols-4">
-                        <InfoTile label="Cliente" value={selectedProposal.cliente || 'Leandro'} icon={Users} />
-                        <InfoTile label="Código do Imóvel" value={selectedProposal.imovelRef || 'TE0031'} icon={Building2} />
+                        <InfoTile label="Cliente" value={selectedProposal.cliente || 'Sem proponente'} icon={Users} />
+                        <InfoTile label="Código do Imóvel" value={selectedProposal.imovelRef || 'Sem código'} icon={Building2} />
                         <InfoTile label="Valor do Negócio" value={formatCurrencyWithCents(selectedProposal.valor)} icon={DollarSign} />
                         <InfoTile label="Envio da Venda" value="CompraSegura" icon={ShieldCheck} />
                       </div>
@@ -3199,7 +3317,7 @@ export const PropostaPage = () => {
                           <TransactionField label="Bairro" value={selectedDetail.endereco?.bairro || ''} onChange={(value) => updateAddress(selectedProposal, { bairro: value })} className="sm:col-span-2" />
                           <TransactionField label="Cidade" value={selectedDetail.endereco?.cidade || ''} onChange={(value) => updateAddress(selectedProposal, { cidade: value })} className="sm:col-span-2" />
                           <TransactionField label="UF" value={selectedDetail.endereco?.uf || ''} onChange={(value) => updateAddress(selectedProposal, { uf: value })} />
-                          <TransactionField label="Código do Imóvel" value={getTransactionFormValue('propertyCode', selectedProposal.imovelRef || 'TE0031')} onChange={(value) => updateTransactionForm(selectedProposal, 'propertyCode', value)} className="sm:col-span-2" />
+                          <TransactionField label="Código do Imóvel" value={getTransactionFormValue('propertyCode', selectedProposal.imovelRef || '')} onChange={(value) => updateTransactionForm(selectedProposal, 'propertyCode', value)} placeholder="Código do imóvel" className="sm:col-span-2" />
                           <TransactionField label="Código Alternativo" value={getTransactionFormValue('alternativeCode')} onChange={(value) => updateTransactionForm(selectedProposal, 'alternativeCode', value)} placeholder="Código alternativo" className="sm:col-span-2" />
                           <TransactionField label="Matrícula" value={getTransactionFormValue('registryNumber')} onChange={(value) => updateTransactionForm(selectedProposal, 'registryNumber', value)} placeholder="Número da matrícula" className="sm:col-span-2" />
                           <TransactionField label="Cartório de Imóveis" value={getTransactionFormValue('propertyRegistryOffice')} onChange={(value) => updateTransactionForm(selectedProposal, 'propertyRegistryOffice', value)} placeholder="Cartório responsável" className="sm:col-span-3" />
@@ -3405,18 +3523,14 @@ export const PropostaPage = () => {
                         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
                           <div className="space-y-3">
                             <SegmentedChoice label="Este negócio nasceu de uma Proposta que foi conduzida dentro do PipeImob?" options={['Não', 'Sim']} selected={getTransactionFormValue('cameFromPipeImob', 'Não')} onChange={(value) => updateTransactionForm(selectedProposal, 'cameFromPipeImob', value)} />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                toast({
-                                  title: 'Proposta de origem',
-                                  description: 'Nenhuma proposta PipeImob vinculada a este negócio.',
-                                });
-                              }}
-                              className="inline-flex h-8 items-center rounded-md border border-slate-200 px-3 text-[12px] font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-900"
-                            >
-                              ver
-                            </button>
+                            {getTransactionFormValue('cameFromPipeImob', 'Não') === 'Sim' && (
+                              <TransactionField
+                                label="Código da proposta PipeImob"
+                                value={getTransactionFormValue('pipeImobProposalRef')}
+                                onChange={(value) => updateTransactionForm(selectedProposal, 'pipeImobProposalRef', value)}
+                                placeholder="Ex.: PRP-000123"
+                              />
+                            )}
                           </div>
                           <label className="flex min-h-[112px] cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center transition-colors hover:border-blue-300 hover:bg-blue-50/40 dark:border-slate-700 dark:bg-slate-950 dark:hover:border-blue-900 dark:hover:bg-blue-950/20">
                             <FileUp className="h-7 w-7 text-slate-400" />
@@ -3472,9 +3586,10 @@ export const PropostaPage = () => {
                         <div className="space-y-3">
                           {selectedDetail.vendedores.length === 0 && (
                             <div className="rounded-lg border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
-                              Eduardo de Lima Sabbadini e Sueli Aparecida da Silva Sabbadini
+                              Nenhum vendedor cadastrado ainda.
                               <div className="mt-3">
                                 <Button type="button" variant="outline" size="sm" onClick={() => addParty(selectedProposal, 'vendedores')}>
+                                  <Plus className="mr-1.5 h-3.5 w-3.5" />
                                   Cadastrar vendedor
                                 </Button>
                                 <span className="mx-3 text-xs text-slate-400">ou</span>
@@ -3482,13 +3597,9 @@ export const PropostaPage = () => {
                                   type="button"
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => {
-                                    toast({
-                                      title: 'Busca de vendedores',
-                                      description: 'A vinculação com cadastro existente foi aberta para este negócio.',
-                                    });
-                                  }}
+                                  onClick={() => openLinkLeadDialog({ mode: 'detail', proposalId: selectedProposal.id, group: 'vendedores' })}
                                 >
+                                  <Link className="mr-1.5 h-3.5 w-3.5" />
                                   Vincular cadastro existente
                                 </Button>
                               </div>
@@ -3562,9 +3673,10 @@ export const PropostaPage = () => {
                         <div className="space-y-3">
                           {selectedDetail.compradores.length === 0 && (
                             <div className="rounded-lg border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
-                              Regilaine Aparecida Miguel Leme e Luis Fernando Iervolino de Franla Leme
+                              Nenhum comprador cadastrado ainda.
                               <div className="mt-3">
                                 <Button type="button" variant="outline" size="sm" onClick={() => addParty(selectedProposal, 'compradores')}>
+                                  <Plus className="mr-1.5 h-3.5 w-3.5" />
                                   Cadastrar comprador
                                 </Button>
                                 <span className="mx-3 text-xs text-slate-400">ou</span>
@@ -3572,13 +3684,9 @@ export const PropostaPage = () => {
                                   type="button"
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => {
-                                    toast({
-                                      title: 'Busca de compradores',
-                                      description: 'A vinculação com cadastro existente foi aberta para este negócio.',
-                                    });
-                                  }}
+                                  onClick={() => openLinkLeadDialog({ mode: 'detail', proposalId: selectedProposal.id, group: 'compradores' })}
                                 >
+                                  <Link className="mr-1.5 h-3.5 w-3.5" />
                                   Vincular cadastro existente
                                 </Button>
                               </div>
@@ -3758,16 +3866,33 @@ export const PropostaPage = () => {
                     title="Proponentes (Compradores)"
                     icon={Users}
                     action={
-                      <Button type="button" variant="outline" size="sm" onClick={() => addParty(selectedProposal, 'compradores')}>
-                        <Plus className="mr-2 h-3.5 w-3.5" />
-                        Adicionar proponente
-                      </Button>
+                      <div className="flex flex-wrap gap-2">
+                        <Button type="button" variant="outline" size="sm" onClick={() => openLinkLeadDialog({ mode: 'detail', proposalId: selectedProposal.id, group: 'compradores' })}>
+                          <Link className="mr-2 h-3.5 w-3.5" />
+                          Vincular cadastro
+                        </Button>
+                        <Button type="button" size="sm" onClick={() => addParty(selectedProposal, 'compradores')}>
+                          <Plus className="mr-2 h-3.5 w-3.5" />
+                          Adicionar proponente
+                        </Button>
+                      </div>
                     }
                   >
                     <div className="space-y-3">
                       {selectedDetail.compradores.length === 0 && (
-                        <div className="rounded-lg border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
-                          Ainda não há proponentes cadastrados. Crie-os, clicando no ícone acima.
+                        <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                          <Users className="h-6 w-6 text-slate-300 dark:text-slate-600" />
+                          <span>Ainda não há proponentes cadastrados.</span>
+                          <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                            <Button type="button" variant="outline" size="sm" onClick={() => addParty(selectedProposal, 'compradores')}>
+                              <Plus className="mr-1.5 h-3.5 w-3.5" />
+                              Adicionar manualmente
+                            </Button>
+                            <Button type="button" size="sm" onClick={() => openLinkLeadDialog({ mode: 'detail', proposalId: selectedProposal.id, group: 'compradores' })}>
+                              <Link className="mr-1.5 h-3.5 w-3.5" />
+                              Vincular do CRM
+                            </Button>
+                          </div>
                         </div>
                       )}
                       {selectedDetail.compradores.map((party, index) => (
@@ -3789,16 +3914,33 @@ export const PropostaPage = () => {
                     title="Proprietários (Vendedores)"
                     icon={Building2}
                     action={
-                      <Button type="button" variant="outline" size="sm" onClick={() => addParty(selectedProposal, 'vendedores')}>
-                        <Plus className="mr-2 h-3.5 w-3.5" />
-                        Adicionar proprietário
-                      </Button>
+                      <div className="flex flex-wrap gap-2">
+                        <Button type="button" variant="outline" size="sm" onClick={() => openLinkLeadDialog({ mode: 'detail', proposalId: selectedProposal.id, group: 'vendedores' })}>
+                          <Link className="mr-2 h-3.5 w-3.5" />
+                          Vincular cadastro
+                        </Button>
+                        <Button type="button" size="sm" onClick={() => addParty(selectedProposal, 'vendedores')}>
+                          <Plus className="mr-2 h-3.5 w-3.5" />
+                          Adicionar proprietário
+                        </Button>
+                      </div>
                     }
                   >
                     <div className="space-y-3">
                       {selectedDetail.vendedores.length === 0 && (
-                        <div className="rounded-lg border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
-                          Ainda não há proprietários cadastrados. Crie-os, clicando no ícone acima.
+                        <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                          <Building2 className="h-6 w-6 text-slate-300 dark:text-slate-600" />
+                          <span>Ainda não há proprietários cadastrados.</span>
+                          <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                            <Button type="button" variant="outline" size="sm" onClick={() => addParty(selectedProposal, 'vendedores')}>
+                              <Plus className="mr-1.5 h-3.5 w-3.5" />
+                              Adicionar manualmente
+                            </Button>
+                            <Button type="button" size="sm" onClick={() => openLinkLeadDialog({ mode: 'detail', proposalId: selectedProposal.id, group: 'vendedores' })}>
+                              <Link className="mr-1.5 h-3.5 w-3.5" />
+                              Vincular do CRM
+                            </Button>
+                          </div>
                         </div>
                       )}
                       {selectedDetail.vendedores.map((party, index) => (
@@ -4558,15 +4700,32 @@ export const PropostaPage = () => {
                       </span>
                       <h3 className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">Proponentes (Compradores)</h3>
                     </div>
-                    <Button type="button" variant="outline" size="sm" onClick={() => addDraftParty('compradores')}>
-                      <Plus className="mr-2 h-3.5 w-3.5" />
-                      Adicionar proponente
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button type="button" variant="ghost" size="sm" onClick={() => openLinkLeadDialog({ mode: 'draft', group: 'compradores' })}>
+                        <Link className="mr-2 h-3.5 w-3.5" />
+                        Vincular CRM
+                      </Button>
+                      <Button type="button" variant="outline" size="sm" onClick={() => addDraftParty('compradores')}>
+                        <Plus className="mr-2 h-3.5 w-3.5" />
+                        Adicionar proponente
+                      </Button>
+                    </div>
                   </div>
                   <div className="mt-4 space-y-3">
                     {draftForm.compradores.length === 0 && (
-                      <div className="rounded-lg border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
-                        Ainda não há proponentes cadastrados. Crie-os, clicando no ícone acima.
+                      <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                        <Users className="h-6 w-6 text-slate-300 dark:text-slate-600" />
+                        <span>Ainda não há proponentes cadastrados.</span>
+                        <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                          <Button type="button" variant="outline" size="sm" onClick={() => addDraftParty('compradores')}>
+                            <Plus className="mr-1.5 h-3.5 w-3.5" />
+                            Adicionar manualmente
+                          </Button>
+                          <Button type="button" size="sm" onClick={() => openLinkLeadDialog({ mode: 'draft', group: 'compradores' })}>
+                            <Link className="mr-1.5 h-3.5 w-3.5" />
+                            Vincular do CRM
+                          </Button>
+                        </div>
                       </div>
                     )}
                     {draftForm.compradores.map((party, index) => (
@@ -4592,15 +4751,32 @@ export const PropostaPage = () => {
                       </span>
                       <h3 className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">Proprietários (Vendedores)</h3>
                     </div>
-                    <Button type="button" variant="outline" size="sm" onClick={() => addDraftParty('vendedores')}>
-                      <Plus className="mr-2 h-3.5 w-3.5" />
-                      Adicionar proprietário
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button type="button" variant="ghost" size="sm" onClick={() => openLinkLeadDialog({ mode: 'draft', group: 'vendedores' })}>
+                        <Link className="mr-2 h-3.5 w-3.5" />
+                        Vincular CRM
+                      </Button>
+                      <Button type="button" variant="outline" size="sm" onClick={() => addDraftParty('vendedores')}>
+                        <Plus className="mr-2 h-3.5 w-3.5" />
+                        Adicionar proprietário
+                      </Button>
+                    </div>
                   </div>
                   <div className="mt-4 space-y-3">
                     {draftForm.vendedores.length === 0 && (
-                      <div className="rounded-lg border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
-                        Ainda não há proprietários cadastrados. Crie-os, clicando no ícone acima.
+                      <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                        <Building2 className="h-6 w-6 text-slate-300 dark:text-slate-600" />
+                        <span>Ainda não há proprietários cadastrados.</span>
+                        <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                          <Button type="button" variant="outline" size="sm" onClick={() => addDraftParty('vendedores')}>
+                            <Plus className="mr-1.5 h-3.5 w-3.5" />
+                            Adicionar manualmente
+                          </Button>
+                          <Button type="button" size="sm" onClick={() => openLinkLeadDialog({ mode: 'draft', group: 'vendedores' })}>
+                            <Link className="mr-1.5 h-3.5 w-3.5" />
+                            Vincular do CRM
+                          </Button>
+                        </div>
                       </div>
                     )}
                     {draftForm.vendedores.map((party, index) => (
@@ -4790,6 +4966,110 @@ export const PropostaPage = () => {
 
           <DialogFooter className="border-t border-slate-200 bg-white px-6 py-4 dark:border-slate-800 dark:bg-slate-900">
             <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
+              Cancelar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!linkLeadTarget} onOpenChange={(open) => !open && setLinkLeadTarget(null)}>
+        <DialogContent className="max-h-[85vh] max-w-2xl gap-0 overflow-hidden p-0">
+          <DialogHeader className="border-b border-slate-200 px-6 py-4 dark:border-slate-800">
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <Link className="h-4 w-4" />
+              Vincular cadastro existente
+            </DialogTitle>
+            <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
+              Selecione um lead do CRM para preencher automaticamente os dados do{' '}
+              {linkLeadTarget?.group === 'compradores' ? 'comprador' : 'vendedor'}.
+            </p>
+          </DialogHeader>
+
+          <div className="border-b border-slate-200 px-6 py-3 dark:border-slate-800">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Input
+                value={linkLeadSearch}
+                onChange={(event) => setLinkLeadSearch(event.target.value)}
+                placeholder="Buscar por nome, telefone, email, corretor ou código do imóvel..."
+                className="h-9 pl-9 text-[13px]"
+                autoFocus
+              />
+            </div>
+          </div>
+
+          <div className="max-h-[55vh] overflow-y-auto bg-slate-50 px-6 py-4 dark:bg-slate-950">
+            {isLoading && leads.length === 0 ? (
+              <div className="flex min-h-[160px] items-center justify-center gap-2 text-sm text-slate-500">
+                <Loader2 className="h-4 w-4 animate-spin" /> Carregando cadastros do CRM...
+              </div>
+            ) : linkLeadCandidates.length === 0 ? (
+              <div className="flex min-h-[160px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-slate-200 bg-white p-6 text-center text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+                <Users className="h-6 w-6 text-slate-300 dark:text-slate-600" />
+                {linkLeadSearch
+                  ? 'Nenhum cadastro corresponde à busca.'
+                  : 'Nenhum lead disponível no CRM para este tenant.'}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {linkLeadCandidates.map((lead) => (
+                  <button
+                    key={lead.id}
+                    type="button"
+                    onClick={() => linkLeadAsParty(lead)}
+                    className="flex w-full items-start gap-3 rounded-lg border border-slate-200 bg-white p-3 text-left transition-colors hover:border-blue-300 hover:bg-blue-50/40 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-blue-900 dark:hover:bg-blue-950/20"
+                  >
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-[11px] font-bold text-white">
+                      {getInitials(lead.name || '?')}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[13px] font-semibold text-slate-900 dark:text-slate-100">
+                        {lead.name || 'Lead sem nome'}
+                      </p>
+                      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11.5px] text-slate-500 dark:text-slate-400">
+                        {lead.phone && (
+                          <span className="inline-flex items-center gap-1">
+                            <Phone className="h-3 w-3" /> {lead.phone}
+                          </span>
+                        )}
+                        {lead.email && (
+                          <span className="inline-flex items-center gap-1">
+                            <Mail className="h-3 w-3" /> {lead.email}
+                          </span>
+                        )}
+                        {lead.property_code && (
+                          <span className="inline-flex items-center gap-1">
+                            <Building2 className="h-3 w-3" /> {lead.property_code}
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px]">
+                        <Badge variant="outline" className="px-1.5 py-0">
+                          {lead.lead_type === 2 ? 'Proprietário' : 'Interessado'}
+                        </Badge>
+                        {lead.status && (
+                          <Badge variant="secondary" className="px-1.5 py-0">
+                            {lead.status}
+                          </Badge>
+                        )}
+                        {lead.assigned_agent_name && (
+                          <span className="text-slate-400">• {lead.assigned_agent_name}</span>
+                        )}
+                      </div>
+                    </div>
+                    <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-slate-400" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="flex items-center justify-between gap-2 border-t border-slate-200 bg-white px-6 py-3 text-[12px] text-slate-500 dark:border-slate-800 dark:bg-slate-900">
+            <span>
+              {linkLeadCandidates.length} resultado{linkLeadCandidates.length === 1 ? '' : 's'}
+              {linkLeadCandidates.length === 60 ? ' (refine a busca)' : ''}
+            </span>
+            <Button type="button" variant="outline" size="sm" onClick={() => setLinkLeadTarget(null)}>
               Cancelar
             </Button>
           </DialogFooter>

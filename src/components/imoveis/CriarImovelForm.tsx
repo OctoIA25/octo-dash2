@@ -66,9 +66,11 @@ import {
   Sofa,
   Dumbbell,
   Wrench,
-  Shield
+  Shield,
+  Sparkles
 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
+import { sendMessageToAgent } from '@/features/agentes-ia/services/agentWebhookService';
 
 interface CondominioOption {
   id: string;
@@ -439,6 +441,10 @@ export const CriarImovelForm = ({
   const [duplicadosDetectados, setDuplicadosDetectados] = useState<ImovelDuplicadoMatch[]>([]);
   const [showDuplicadoDialog, setShowDuplicadoDialog] = useState(false);
 
+  // Geração de descrição via agente de IA (webhook n8n)
+  const [isGerandoDescricao, setIsGerandoDescricao] = useState(false);
+  const [descricaoIaErro, setDescricaoIaErro] = useState<string | null>(null);
+
   // Buscar condomínios do banco
   useEffect(() => {
     const loadCondominios = async () => {
@@ -642,6 +648,71 @@ export const CriarImovelForm = ({
         ? prev.caracteristicas.filter(c => c !== caracteristica)
         : [...prev.caracteristicas, caracteristica]
     }));
+  };
+
+  const gerarDescricaoIA = async () => {
+    if (isGerandoDescricao) return;
+
+    setDescricaoIaErro(null);
+
+    const dadosImovel = {
+      finalidade: formData.finalidade,
+      tipo: formData.tipo,
+      bairro: formData.bairro,
+      cidade: formData.cidade,
+      estado: formData.estado,
+      condominio: formData.condominio,
+      area_total: formData.area_total,
+      area_util: formData.area_util,
+      metragem_m2: formData.metragem_m2,
+      quartos: formData.quartos,
+      suites: formData.suites,
+      banheiros: formData.banheiros,
+      vagas: formData.vagas,
+      salas: formData.salas,
+      valor_venda: formData.valor_venda,
+      valor_locacao: formData.valor_locacao,
+      valor_condominio: formData.valor_condominio,
+      valor_iptu: formData.valor_iptu,
+      caracteristicas: formData.caracteristicas,
+      titulo: formData.titulo,
+    };
+
+    const camposPreenchidos = Object.entries(dadosImovel)
+      .filter(([, v]) => Array.isArray(v) ? v.length > 0 : Boolean(v))
+      .map(([k, v]) => `- ${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
+      .join('\n');
+
+    if (!camposPreenchidos) {
+      setDescricaoIaErro('Preencha algum dado do imóvel antes de gerar a descrição.');
+      return;
+    }
+
+    const prompt = `O usuário nao está lendo suas saudaçoes apenas gere uma descrição comercial vendedora para um anúncio imobiliário com base nos dados abaixo. Use português do Brasil, tom envolvente, destaque diferenciais e termine com um CTA discreto. 2 a 4 parágrafos. Não invente dados que não foram informados.\n\nDados do imóvel:\n${camposPreenchidos}`;
+
+    const userName = user?.name || user?.email?.split('@')[0] || 'Corretor';
+
+    setIsGerandoDescricao(true);
+    try {
+      const result = await sendMessageToAgent('GerarDescricaoImovel', prompt, userName);
+
+      if (!result.success || !result.response) {
+        setDescricaoIaErro(result.error || 'O agente não retornou uma descrição.');
+        return;
+      }
+
+      const textoGerado = result.response.trim();
+      setFormData(prev => ({
+        ...prev,
+        descricao: prev.descricao
+          ? `${prev.descricao.trimEnd()}\n\n${textoGerado}`
+          : textoGerado,
+      }));
+    } catch (err: any) {
+      setDescricaoIaErro(err?.message || 'Erro ao gerar descrição.');
+    } finally {
+      setIsGerandoDescricao(false);
+    }
   };
 
   const getCategoriaIcon = (categoria: string) => {
@@ -1641,13 +1712,39 @@ export const CriarImovelForm = ({
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Descrição do Site (diferenciais e detalhes)</Label>
+                  <div className="flex items-center justify-between gap-2">
+                    <Label>Descrição do Site (diferenciais e detalhes)</Label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={gerarDescricaoIA}
+                      disabled={isGerandoDescricao}
+                      title="Gerar descrição com IA"
+                      className="gap-1.5"
+                    >
+                      {isGerandoDescricao ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Sparkles className="h-4 w-4 text-amber-500" />
+                      )}
+                      <span className="text-xs">
+                        {isGerandoDescricao ? 'Gerando...' : 'Gerar com IA'}
+                      </span>
+                    </Button>
+                  </div>
                   <Textarea
                     placeholder="Descreva o imóvel, seus diferenciais, acabamentos, etc."
                     value={formData.descricao}
                     onChange={(e) => handleInputChange('descricao', e.target.value)}
                     rows={5}
                   />
+                  {descricaoIaErro && (
+                    <p className="text-xs text-red-500 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" />
+                      {descricaoIaErro}
+                    </p>
+                  )}
                 </div>
               </div>
             </CollapsibleContent>

@@ -32,6 +32,7 @@ import {
   Zap,
   Tag,
   Settings2,
+  Sparkles,
 } from 'lucide-react';
 
 interface Tab {
@@ -167,6 +168,7 @@ const TAB_CONFIGS: TabConfig[] = [
       { id: 'catalogo', label: 'Catálogo Completo', icon: Home, href: '/imoveis?tab=catalogo', isQuery: true },
       { id: 'meus-imoveis', label: 'Meus Imóveis', icon: User, href: '/imoveis?tab=meus-imoveis', isQuery: true },
       { id: 'condominios', label: 'Condomínios', icon: Building2, href: '/imoveis?tab=condominios', isQuery: true },
+      { id: 'lancamentos', label: 'Lançamentos', icon: Sparkles, href: '/imoveis?tab=lancamentos', isQuery: true },
     ],
   },
   {

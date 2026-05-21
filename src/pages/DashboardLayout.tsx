@@ -81,6 +81,7 @@ const CentralLeadsPage = lazy(() => import('@/features/leads/pages/CentralLeadsP
 const CorretoresPage = lazy(() => import('@/features/corretores/pages/CorretoresPage').then(m => ({ default: m.CorretoresPage })));
 const ImoveisPage = lazy(() => import('@/features/imoveis/pages/ImoveisPage').then(m => ({ default: m.ImoveisPage })));
 const ImoveisMapPage = lazy(() => import('@/features/imoveis/pages/ImoveisMapPage'));
+const LancamentoViewPage = lazy(() => import('@/features/imoveis/pages/LancamentoViewPage').then(m => ({ default: m.LancamentoViewPage })));
 const AgentesIaPage = lazy(() => import('@/features/agentes-ia/pages/AgentesIaPage').then(m => ({ default: m.AgentesIaPage })));
 const OctoChatPage = lazy(() => import('@/features/agentes-ia/pages/OctoChatPage').then(m => ({ default: m.OctoChatPage })));
 const ConfiguracoesPage = lazy(() => import('@/features/settings/pages/ConfiguracoesPage').then(m => ({ default: m.ConfiguracoesPage })));
@@ -341,6 +342,13 @@ const DashboardLayout = () => {
             path="imoveis"
             element={
               canAccess('imoveis') ? <ImoveisPage /> : <Navigate to={defaultAllowedRoute} replace />
+            }
+          />
+
+          <Route
+            path="imoveis/lancamentos/:id"
+            element={
+              canAccess('imoveis') ? <LancamentoViewPage /> : <Navigate to={defaultAllowedRoute} replace />
             }
           />
 
