@@ -462,6 +462,16 @@ export async function deleteMemberCompletely(
       .eq('user_id', userId)
       .eq('tenant_id', tenantId);
     
+    const { error: historicoError } = await supabase
+      .from('agent_conversations')
+      .delete()
+      .eq('user_id', userId)
+      .eq('tenant_id', tenantId);
+
+    if (historicoError) {
+      console.error('Erro ao remover o histórico de conversas', historicoError);
+    }
+
     if (brokerError) {
     } else {
     }

@@ -8,6 +8,9 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { CaioKotlerChat } from '../components/CaioKotlerChat';
 import { ElaineChat } from '../components/ElaineChat';
+import { ConversationsSidebar } from '../components/ConversationsSidebar';
+import { useAgentConversations } from '../hooks/useAgentConversations';
+import type { AgentSlug } from '../services/agentConversationService';
 import { useTheme } from '@/hooks/useTheme';
 import { useAuth } from "@/hooks/useAuth";
 import { TestesComportamentaisOnboarding } from '@/features/corretores/components/TestesComportamentaisOnboarding';
@@ -262,7 +265,7 @@ export const AgentesIaPage = () => {
   const [selectedEspecialidade, setSelectedEspecialidade] = useState<string | null>(null);
   
   // Detectar tema atual
-  const { currentTheme } = useTheme();
+ const { currentTheme } = useTheme();
   const isDarkMode = currentTheme === 'preto' || currentTheme === 'cinza';
 
   // Autenticação e verificação de testes
@@ -332,6 +335,33 @@ export const AgentesIaPage = () => {
   const [mostrarResultadoMBTI, setMostrarResultadoMBTI] = useState(false);
   const [resultadoCorretor, setResultadoCorretor] = useState<any>(null);
   const [loadingResultado, setLoadingResultado] = useState(false);
+
+  // 📜 Histórico de conversas do agente ativo
+  const agentSlug: AgentSlug = agent === 'agente-comportamental' ? 'elaine' : 'caio';
+  const isManagerView = isGestao || isOwner;
+  const [viewingUserId, setViewingUserId] = useState<string | null>(null);
+  const [historyCollapsed, setHistoryCollapsed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem('agentes-ia:history-collapsed') === '1';
+  });
+  const toggleHistoryCollapsed = () => {
+    setHistoryCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('agentes-ia:history-collapsed', next ? '1' : '0');
+      } catch { /* ignore storage errors */ }
+      return next;
+    });
+  };
+  const conversationCtx = useAgentConversations({
+    agent: agentSlug,
+    userId: user?.id,
+    tenantId: user?.tenantId,
+    userName: user?.name,
+    userEmail: user?.email,
+    viewingUserId,
+    isManagerView,
+  });
 
   // Buscar ID numérico e nome do corretor a partir do email do usuário logado
   useEffect(() => {
@@ -580,7 +610,12 @@ export const AgentesIaPage = () => {
       );
     }
 
-    if (loadingTestes || testesCompletos === null) {
+    // Gate de testes comportamentais aplica-se SOMENTE à Elaine.
+    // Marketing (Caio) não depende de DISC/Eneagrama/MBTI, então corretor
+    // entra direto independente do status dos testes.
+    const isElainePage = agent === 'agente-comportamental';
+
+    if (isElainePage && (loadingTestes || testesCompletos === null)) {
       return (
         <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--bg-primary)' }}>
           <div className="text-center">
@@ -591,7 +626,7 @@ export const AgentesIaPage = () => {
       );
     }
 
-    if (testesCompletos === false) {
+    if (isElainePage && testesCompletos === false) {
       return (
         <TestesComportamentaisOnboarding
           corretorId={corretorIdNumerico ? corretorIdNumerico.toString() : ''}
@@ -789,7 +824,7 @@ export const AgentesIaPage = () => {
       <div className={`border-b ${isDarkMode ? 'border-neutral-800/40' : 'border-pink-200'} bg-gradient-to-br ${isDarkMode ? 'from-pink-600/10 via-purple-600/10 to-pink-600/5' : 'from-pink-50/30 via-purple-50/30 to-pink-50/30'} backdrop-blur-sm flex-shrink-0`}>
         <div className="w-full px-4 py-3">
           <div className="flex items-center justify-between">
-            
+
             {/* ESQUERDA: Avatar da Elaine + Info */}
             <div className="flex items-center gap-4 flex-shrink-0">
               {/* Avatar da Elaine - Ícone Profissional */}
@@ -803,7 +838,7 @@ export const AgentesIaPage = () => {
                   <span className="text-white text-[9px] font-bold">Online</span>
                 </div>
               </div>
-              
+
               {/* Informações da Agente */}
               <div>
                 <h1 className={`text-xl font-black mb-0.5 bg-gradient-to-r ${isDarkMode ? 'from-pink-400 via-purple-400 to-pink-400' : 'from-pink-600 via-purple-600 to-pink-600'} bg-clip-text text-transparent`}>
@@ -849,13 +884,20 @@ export const AgentesIaPage = () => {
         </div>
       </div>
 
-      {/* Grid Layout: Info + Chat - ESTÁTICO - SEM SCROLL NA PÁGINA */}
-      <div className="flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-4 gap-0" style={{ minHeight: 0, maxHeight: 'calc(100vh - 120px)' }}>
-        
+      {/* Grid Layout: Info + Histórico + Chat - ESTÁTICO - SEM SCROLL NA PÁGINA */}
+      <div
+        className={`flex-1 overflow-hidden grid grid-cols-1 gap-0 ${
+          historyCollapsed
+            ? 'lg:grid-cols-[1fr_48px_4fr]'
+            : 'lg:grid-cols-[1fr_1fr_3fr]'
+        }`}
+        style={{ minHeight: 0, maxHeight: 'calc(100vh - 120px)' }}
+      >
+
         {/* Sidebar de Informações - Compacta com Scroll Interno */}
-        <div className={`lg:col-span-1 border-r ${isDarkMode ? 'border-neutral-800/40' : 'border-pink-200'} overflow-y-auto p-4 bg-gradient-to-b ${isDarkMode ? 'from-neutral-900/30 to-transparent' : 'from-pink-50/20 to-transparent'}`}>
+        <div className={`border-r ${isDarkMode ? 'border-neutral-800/40' : 'border-pink-200'} overflow-y-auto p-4 bg-gradient-to-b ${isDarkMode ? 'from-neutral-900/30 to-transparent' : 'from-pink-50/20 to-transparent'}`}>
           <div className="space-y-4">
-            
+
             {/* Sobre o Agente - Compacto */}
             <div className={`bg-gradient-to-br ${isDarkMode ? 'from-neutral-800/50 to-neutral-900/50 border border-neutral-700/50 p-3' : 'from-gray-100/80 to-gray-50/80 border-2 border-gray-200/60 p-3.5'} rounded-xl shadow-md`}>
               <h3 className={`${isDarkMode ? 'text-white' : 'text-gray-800'} font-bold text-sm mb-2 flex items-center gap-2`}>
@@ -865,7 +907,7 @@ export const AgentesIaPage = () => {
                 </span>
               </h3>
               <p className={`${isDarkMode ? 'text-white' : 'text-gray-600'} text-xs leading-relaxed`}>
-                <span className={`${isDarkMode ? 'text-pink-400 font-semibold' : 'text-pink-600 font-bold'}`}>Agente de Inteligência Comportamental</span>, 
+                <span className={`${isDarkMode ? 'text-pink-400 font-semibold' : 'text-pink-600 font-bold'}`}>Agente de Inteligência Comportamental</span>,
                 especialista em decodificar perfis humanos (DISC, Eneagrama, MBTI) e criar estratégias personalizadas de liderança, comunicação e desenvolvimento.
               </p>
             </div>
@@ -883,7 +925,6 @@ export const AgentesIaPage = () => {
               </p>
               <div className="space-y-1.5">
                 {isCorretor ? (
-                  // CORRETOR: Botões para visualizar seus próprios testes
                   <>
                     <button
                       onClick={() => handleElaineEspecialidadeClick('disc')}
@@ -897,7 +938,7 @@ export const AgentesIaPage = () => {
                         {statusTestes.disc ? '✓' : '○'}
                       </span>
                     </button>
-                    
+
                     <button
                       onClick={() => handleElaineEspecialidadeClick('eneagrama')}
                       className={`w-full flex items-center gap-2 ${isDarkMode ? 'p-2' : 'p-2.5'} rounded-lg ${isDarkMode ? 'border' : 'border-2'} transition-all duration-200 cursor-pointer group ${getEspecialidadeColors('eneagrama', selectedEspecialidade === 'eneagrama', isDarkMode).bg} hover:shadow-sm`}
@@ -910,7 +951,7 @@ export const AgentesIaPage = () => {
                         {statusTestes.eneagrama ? '✓' : '○'}
                       </span>
                     </button>
-                    
+
                     <button
                       onClick={() => handleElaineEspecialidadeClick('mbti')}
                       className={`w-full flex items-center gap-2 ${isDarkMode ? 'p-2' : 'p-2.5'} rounded-lg ${isDarkMode ? 'border' : 'border-2'} transition-all duration-200 cursor-pointer group ${getEspecialidadeColors('mbti', selectedEspecialidade === 'mbti', isDarkMode).bg} hover:shadow-sm`}
@@ -923,8 +964,7 @@ export const AgentesIaPage = () => {
                         {statusTestes.mbti ? '✓' : '○'}
                       </span>
                     </button>
-                    
-                    {/* Botão Meu Resumo */}
+
                     <button
                       onClick={() => {
                         setMostrarMeuResumo(true);
@@ -938,20 +978,17 @@ export const AgentesIaPage = () => {
                     </button>
                   </>
                 ) : (
-                  // ADMIN: Especialidades + Botões de Testes Próprios
                   <>
-                    {/* Botões de Testes do Admin (ANTES das especialidades) */}
                     <div className={`mb-3 pb-3 border-b ${isDarkMode ? 'border-neutral-700/50' : 'border-gray-200'}`}>
                       <p className={`text-[10px] font-semibold mb-2 ${isDarkMode ? 'text-pink-400' : 'text-pink-600'}`}>
                         📝 Meus Testes (Gestor)
                       </p>
-                      
-                      {/* Botão Realizar Testes */}
+
                       <button
                         onClick={() => setShowAdminTestSelector(true)}
                         className={`w-full flex items-center gap-2 p-2.5 rounded-lg border-2 transition-all duration-200 cursor-pointer group mb-2 ${
-                          isDarkMode 
-                            ? 'bg-gradient-to-r from-cyan-600/20 to-blue-600/20 border-cyan-500/50 hover:from-cyan-600/30 hover:to-blue-600/30' 
+                          isDarkMode
+                            ? 'bg-gradient-to-r from-cyan-600/20 to-blue-600/20 border-cyan-500/50 hover:from-cyan-600/30 hover:to-blue-600/30'
                             : 'bg-gradient-to-r from-cyan-50 to-blue-50 border-cyan-400 hover:from-cyan-100 hover:to-blue-100'
                         } shadow-sm hover:shadow-md`}
                       >
@@ -967,15 +1004,14 @@ export const AgentesIaPage = () => {
                           {[adminTestesStatus.disc, adminTestesStatus.eneagrama, adminTestesStatus.mbti].filter(Boolean).length}/3
                         </span>
                       </button>
-                      
-                      {/* Botão Meus Resultados */}
+
                       <button
                         onClick={handleAnexarResultadosAdmin}
                         disabled={!adminResultados}
                         className={`w-full flex items-center gap-2 p-2.5 rounded-lg border-2 transition-all duration-200 cursor-pointer group mb-2 ${
                           adminResultados
-                            ? isDarkMode 
-                              ? 'bg-gradient-to-r from-purple-600/20 to-pink-600/20 border-purple-500/50 hover:from-purple-600/30 hover:to-pink-600/30' 
+                            ? isDarkMode
+                              ? 'bg-gradient-to-r from-purple-600/20 to-pink-600/20 border-purple-500/50 hover:from-purple-600/30 hover:to-pink-600/30'
                               : 'bg-gradient-to-r from-purple-50 to-pink-50 border-purple-400 hover:from-purple-100 hover:to-pink-100'
                             : isDarkMode
                               ? 'bg-neutral-800/30 border-neutral-700/30 opacity-50 cursor-not-allowed'
@@ -991,15 +1027,14 @@ export const AgentesIaPage = () => {
                           Meus Resultados
                         </span>
                       </button>
-                      
-                      {/* Botão Excluir Meus Resultados */}
+
                       {adminResultados && (
                         <button
                           onClick={handleExcluirResultadosAdmin}
                           disabled={loadingAdminTestes}
                           className={`w-full flex items-center gap-2 p-2 rounded-lg border transition-all duration-200 cursor-pointer group ${
-                            isDarkMode 
-                              ? 'bg-red-900/20 border-red-500/30 hover:bg-red-900/30 hover:border-red-500/50' 
+                            isDarkMode
+                              ? 'bg-red-900/20 border-red-500/30 hover:bg-red-900/30 hover:border-red-500/50'
                               : 'bg-red-50 border-red-300 hover:bg-red-100 hover:border-red-400'
                           }`}
                         >
@@ -1010,8 +1045,7 @@ export const AgentesIaPage = () => {
                         </button>
                       )}
                     </div>
-                    
-                    {/* Especialidades normais do Admin */}
+
                     {especialidadesElaine
                       .filter(item => !item.adminOnly || isGestao)
                       .map((item) => {
@@ -1044,10 +1078,32 @@ export const AgentesIaPage = () => {
           </div>
         </div>
 
-        {/* Área de Chat - 3/4 - ESTÁTICO */}
-        <div className="lg:col-span-3 flex flex-col overflow-hidden p-4" style={{ maxHeight: 'calc(100vh - 120px)' }}>
-          <ElaineChat 
-            onPromptSelect={(prompt) => console.log('Prompt selected:', prompt)} 
+        {/* Sidebar de Histórico de Conversas */}
+        <div className="h-full overflow-hidden">
+          <ConversationsSidebar
+            agent="elaine"
+            isDarkMode={isDarkMode}
+            isManager={isManagerView}
+            tenantId={user?.tenantId}
+            conversations={conversationCtx.conversations}
+            activeConversationId={conversationCtx.activeConversationId}
+            onSelect={conversationCtx.selectConversation}
+            onNew={conversationCtx.startNewConversation}
+            onRename={conversationCtx.renameConversation}
+            onArchive={conversationCtx.archiveConversation}
+            onDelete={conversationCtx.deleteConversation}
+            viewingUserId={viewingUserId}
+            onViewingUserChange={setViewingUserId}
+            loading={conversationCtx.loadingConversations}
+            isCollapsed={historyCollapsed}
+            onToggleCollapsed={toggleHistoryCollapsed}
+          />
+        </div>
+
+        {/* Área de Chat - ESTÁTICO */}
+        <div className="flex flex-col overflow-hidden p-4" style={{ maxHeight: 'calc(100vh - 120px)' }}>
+          <ElaineChat
+            onPromptSelect={(prompt) => console.log('Prompt selected:', prompt)}
             selectedCorretor={selectedCorretor}
             onClearCorretor={handleClearCorretor}
             selectedEspecialidade={selectedEspecialidade}
@@ -1057,11 +1113,17 @@ export const AgentesIaPage = () => {
             selectedCorretorMBTI={selectedCorretorMBTI}
             onClearCorretorMBTI={handleClearCorretorMBTI}
             selectedCorretorGestaoLiderados={selectedCorretorGestaoLiderados}
+            activeConversationId={conversationCtx.activeConversationId}
+            persistedMessages={conversationCtx.messages}
+            isReadOnly={conversationCtx.isReadOnly}
+            ensureConversation={conversationCtx.ensureConversation}
+            addMessage={conversationCtx.addMessage}
+            loadingHistory={conversationCtx.loadingMessages}
           />
         </div>
 
       </div>
-      
+
       {/* Modal Estatísticas DISC (Admin Only) */}
       <DISCStatistics
         isOpen={showDISCSelector}
@@ -1744,13 +1806,20 @@ export const AgentesIaPage = () => {
         </div>
       </div>
 
-      {/* Grid Layout: Info + Chat - ESTÁTICO - SEM SCROLL NA PÁGINA */}
-      <div className="flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-4 gap-0" style={{ minHeight: 0, maxHeight: 'calc(100vh - 120px)' }}>
-        
+      {/* Grid Layout: Info + Histórico + Chat - ESTÁTICO - SEM SCROLL NA PÁGINA */}
+      <div
+        className={`flex-1 overflow-hidden grid grid-cols-1 gap-0 ${
+          historyCollapsed
+            ? 'lg:grid-cols-[1fr_48px_4fr]'
+            : 'lg:grid-cols-[1fr_1fr_3fr]'
+        }`}
+        style={{ minHeight: 0, maxHeight: 'calc(100vh - 120px)' }}
+      >
+
         {/* Sidebar de Informações - Compacta com Scroll Interno */}
-        <div className={`lg:col-span-1 border-r ${isDarkMode ? 'border-neutral-800/40' : 'border-gray-200'} overflow-y-auto p-4 bg-gradient-to-b ${isDarkMode ? 'from-neutral-900/30 to-transparent' : 'from-gray-50/30 to-transparent'}`}>
+        <div className={`border-r ${isDarkMode ? 'border-neutral-800/40' : 'border-gray-200'} overflow-y-auto p-4 bg-gradient-to-b ${isDarkMode ? 'from-neutral-900/30 to-transparent' : 'from-gray-50/30 to-transparent'}`}>
           <div className="space-y-4">
-            
+
             {/* Sobre o Agente - Compacto */}
             <div className={`bg-gradient-to-br ${isDarkMode ? 'from-neutral-800/50 to-neutral-900/50 border border-neutral-700/50' : 'from-gray-100/80 to-gray-50/80 border-2 border-gray-200/60'} rounded-xl ${isDarkMode ? 'p-3' : 'p-3.5'} shadow-md`}>
               <h3 className={`${isDarkMode ? 'text-white' : 'text-gray-800'} font-bold text-sm mb-2 flex items-center gap-2`}>
@@ -1824,9 +1893,39 @@ export const AgentesIaPage = () => {
           </div>
         </div>
 
-        {/* Área de Chat - 3/4 - ESTÁTICO */}
-        <div className="lg:col-span-3 flex flex-col overflow-hidden p-4" style={{ maxHeight: 'calc(100vh - 120px)' }}>
-          <CaioKotlerChat onPromptSelect={(prompt) => console.log('Prompt selected:', prompt)} />
+        {/* Sidebar de Histórico de Conversas */}
+        <div className="h-full overflow-hidden">
+          <ConversationsSidebar
+            agent="caio"
+            isDarkMode={isDarkMode}
+            isManager={isManagerView}
+            tenantId={user?.tenantId}
+            conversations={conversationCtx.conversations}
+            activeConversationId={conversationCtx.activeConversationId}
+            onSelect={conversationCtx.selectConversation}
+            onNew={conversationCtx.startNewConversation}
+            onRename={conversationCtx.renameConversation}
+            onArchive={conversationCtx.archiveConversation}
+            onDelete={conversationCtx.deleteConversation}
+            viewingUserId={viewingUserId}
+            onViewingUserChange={setViewingUserId}
+            loading={conversationCtx.loadingConversations}
+            isCollapsed={historyCollapsed}
+            onToggleCollapsed={toggleHistoryCollapsed}
+          />
+        </div>
+
+        {/* Área de Chat - ESTÁTICO */}
+        <div className="flex flex-col overflow-hidden p-4" style={{ maxHeight: 'calc(100vh - 120px)' }}>
+          <CaioKotlerChat
+            onPromptSelect={(prompt) => console.log('Prompt selected:', prompt)}
+            activeConversationId={conversationCtx.activeConversationId}
+            persistedMessages={conversationCtx.messages}
+            isReadOnly={conversationCtx.isReadOnly}
+            ensureConversation={conversationCtx.ensureConversation}
+            addMessage={conversationCtx.addMessage}
+            loadingHistory={conversationCtx.loadingMessages}
+          />
         </div>
 
       </div>

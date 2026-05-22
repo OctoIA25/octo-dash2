@@ -9,7 +9,20 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Card, CardContent } from '@/components/ui/card';
-import { CheckCircle, Circle, Lock, Unlock, Sparkles, X, Info, ChevronRight } from 'lucide-react';
+import {
+  CheckCircle,
+  Circle,
+  Lock,
+  Unlock,
+  Sparkles,
+  X,
+  Info,
+  ChevronRight,
+  GraduationCap,
+  Target,
+  Compass,
+} from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
   DialogContent,
@@ -130,286 +143,185 @@ export const TestesComportamentaisOnboarding = ({
 
   const proximoTeste = getProximoTeste();
 
+  const TESTES_META = [
+    {
+      id: 'disc' as const,
+      label: 'DISC',
+      Icon: Target,
+      completo: !!testes?.disc_completo,
+      onView: () => onIniciarTeste('disc'),
+      onInfo: () => setModalAberto('disc'),
+      descricao:
+        'Desenvolvido por William Marston nos anos 1920, o DISC é uma das ferramentas mais utilizadas no mundo corporativo para compreender estilos comportamentais. Revela como você responde a desafios, influencia pessoas, mantém o ritmo e segue normas no ambiente profissional.',
+    },
+    {
+      id: 'eneagrama' as const,
+      label: 'Eneagrama',
+      Icon: Sparkles,
+      completo: !!testes?.eneagrama_completo,
+      onView: () => onIniciarTeste('eneagrama'),
+      onInfo: () => setModalAberto('eneagrama'),
+      descricao:
+        'Sistema milenar de compreensão da personalidade humana, vai além do comportamento observável e revela motivações inconscientes, medos básicos e padrões automáticos de pensamento. Descubra o "porquê" por trás de suas ações.',
+    },
+    {
+      id: 'mbti' as const,
+      label: 'MBTI',
+      Icon: Compass,
+      completo: !!testes?.mbti_completo,
+      onView: () => navigate('/importar-16personalities'),
+      onInfo: () => setModalAberto('mbti'),
+      descricao:
+        'Baseado na teoria de Carl Jung, o Indicador de Tipos Myers-Briggs é o teste de personalidade mais aplicado mundialmente. Revela preferências cognitivas naturais e como você processa informações, toma decisões e interage com o mundo ao seu redor.',
+    },
+  ];
+
   return (
-    <div className="min-h-screen py-12 px-4 flex items-center justify-center" style={{ backgroundColor: 'var(--bg-primary)' }}>
-      <div className="max-w-6xl w-full mx-auto">
-        
+    <div className="min-h-screen py-10 px-4" style={{ backgroundColor: 'var(--bg-primary)' }}>
+      <div className="max-w-5xl w-full mx-auto">
+
         {/* Header */}
-        <div className="text-center mb-8 animate-in fade-in slide-in-from-bottom duration-700">
-          <div className="flex items-center justify-center mx-auto mb-6">
-            <Sparkles className="w-16 h-16 text-blue-500" />
+        <div className="mb-8 flex items-start gap-3">
+          <div className="h-10 w-10 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center flex-shrink-0">
+            <GraduationCap className="h-5 w-5 text-slate-600 dark:text-slate-300" />
           </div>
-          
-          <h1 className="text-4xl font-black mb-3 bg-gradient-to-r from-purple-600 via-pink-600 to-blue-600 bg-clip-text text-transparent">
-            Desbloqueie a Agente Elaine
-          </h1>
-          
-          <p className="text-lg max-w-2xl mx-auto" style={{ color: 'var(--text-primary)' }}>
-            Complete os <strong>3 testes comportamentais</strong> e tenha acesso à sua assistente de IA especializada em análise de perfil profissional!
-          </p>
+          <div className="min-w-0">
+            <h1 className="text-[22px] font-semibold tracking-tight text-slate-900 dark:text-slate-100">
+              Testes comportamentais
+            </h1>
+            <p className="text-[13px] text-slate-500 dark:text-slate-400 mt-0.5">
+              Complete os 3 testes para liberar as análises personalizadas da Agente Elaine.
+            </p>
+          </div>
         </div>
 
-        {/* Call to Action */}
-        <Card className="mb-8 animate-in fade-in slide-in-from-bottom duration-700 delay-150" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', borderWidth: '2px', boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }}>
-          <CardContent className="p-8 text-center">
+        {/* CTA / Status principal */}
+        <Card className="mb-6">
+          <CardContent className="p-6">
             {testes?.todos_completos ? (
-              <>
-                <Unlock className="w-16 h-16 text-green-600 dark:text-green-300 mx-auto mb-4" />
-                <h2 className="text-2xl font-bold mb-3" style={{ color: 'var(--text-primary)' }}>
-                  Agente Elaine Desbloqueada!
-                </h2>
-                <p className="mb-6" style={{ color: 'var(--text-secondary)' }}>
-                  Parabéns! Você completou todos os testes e agora tem acesso total à Agente Elaine.
-                </p>
-                <Button 
-                  size="lg"
-                  onClick={onTestesCompletos}
-                  className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-bold px-8"
-                >
-                  Acessar Agente Elaine →
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div className="flex items-start gap-3 min-w-0">
+                  <div className="h-10 w-10 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center flex-shrink-0">
+                    <Unlock className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                  </div>
+                  <div className="min-w-0">
+                    <h2 className="text-[15px] font-semibold text-slate-900 dark:text-slate-100">
+                      Tudo pronto
+                    </h2>
+                    <p className="text-[13px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      Você completou os 3 testes. A Agente Elaine está liberada com seu perfil completo.
+                    </p>
+                  </div>
+                </div>
+                <Button onClick={onTestesCompletos}>
+                  Acessar a Elaine
+                  <ChevronRight className="ml-1 h-4 w-4" />
                 </Button>
-              </>
+              </div>
             ) : (
-              <>
-                <Lock className="w-16 h-16 text-gray-600 dark:text-slate-400 mx-auto mb-4" />
-                <h2 className="text-2xl font-bold mb-3" style={{ color: 'var(--text-primary)' }}>
-                  {testes ? 'Continue sua jornada' : 'Comece sua jornada'}
-                </h2>
-                <p className="mb-6" style={{ color: 'var(--text-secondary)' }}>
-                  {testes 
-                    ? `Complete o teste ${proximoTeste} para desbloquear a Agente Elaine.`
-                    : 'Complete os 3 testes comportamentais e desbloqueie acesso à sua assistente de IA pessoal.'
-                  }
-                </p>
-                <Button 
-                  size="lg"
-                  onClick={handleIniciar}
-                  disabled={iniciando}
-                  className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-black text-lg px-12 py-6 rounded-xl transition-all duration-300 hover:scale-105 transform border-2 border-blue-700/40 hover:border-blue-600/60"
-                  style={{
-                    boxShadow: '0 0 12px rgba(29, 78, 216, 0.25), 0 0 24px rgba(29, 78, 216, 0.15)'
-                  }}
-                >
-                  {iniciando ? 'Carregando...' : testes ? `Continuar com ${proximoTeste}` : 'Iniciar Testes'}
-                </Button>
-                
-                {/* Barra de Progresso */}
+              <div className="space-y-5">
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <div className="flex items-start gap-3 min-w-0">
+                    <div className="h-10 w-10 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center flex-shrink-0">
+                      <Lock className="h-5 w-5 text-slate-600 dark:text-slate-300" />
+                    </div>
+                    <div className="min-w-0">
+                      <h2 className="text-[15px] font-semibold text-slate-900 dark:text-slate-100">
+                        {testes ? `Próximo: ${proximoTeste}` : 'Comece pelo primeiro teste'}
+                      </h2>
+                      <p className="text-[13px] text-slate-500 dark:text-slate-400 mt-0.5">
+                        {testes
+                          ? 'Continue de onde parou — você não perde o que já respondeu.'
+                          : 'Os 3 testes levam cerca de 30 minutos no total e podem ser feitos em momentos diferentes.'}
+                      </p>
+                    </div>
+                  </div>
+                  <Button onClick={handleIniciar} disabled={iniciando}>
+                    {iniciando ? 'Carregando...' : testes ? `Continuar com ${proximoTeste}` : 'Iniciar testes'}
+                    <ChevronRight className="ml-1 h-4 w-4" />
+                  </Button>
+                </div>
+
                 {testes && (
-                  <div className="mt-6 pt-6" style={{ borderTop: '1px solid var(--border)' }}>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
+                  <div className="pt-1">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                         Progresso
                       </span>
-                      <span className="text-sm font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+                      <span className="text-[13px] font-semibold text-slate-700 dark:text-slate-200">
                         {progresso}%
                       </span>
                     </div>
-                    <Progress value={progresso} className="h-2" />
+                    <Progress value={progresso} className="h-1.5" />
                   </div>
                 )}
-              </>
+              </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Cards dos Testes - MOVIDO PARA BAIXO */}
-        <div className="grid md:grid-cols-3 gap-6 items-start">
-          
-          {/* Teste 1: DISC */}
-          <Card 
-            className="relative overflow-hidden transition-all duration-300 animate-in fade-in slide-in-from-bottom duration-700 delay-300 hover:shadow-xl hover:scale-[1.02] h-full"
-            style={{
-              backgroundColor: testes?.disc_completo ? '#3B82F615' : 'var(--bg-card)',
-              borderColor: testes?.disc_completo ? '#3B82F6' : 'var(--border)',
-              borderWidth: '2px',
-              boxShadow: testes?.disc_completo ? '0 8px 24px rgba(59, 130, 246, 0.15)' : '0 2px 8px rgba(0,0,0,0.08)'
-            }}
-          >
-            <CardContent className="p-7 flex flex-col h-full">
-              <div className="flex items-start justify-between mb-5">
-                <div className="w-14 h-14 bg-gray-100 dark:bg-slate-800 dark:bg-gray-800 rounded-xl flex items-center justify-center shadow-lg">
-                  <span className="text-3xl font-bold text-gray-700 dark:text-slate-300 dark:text-gray-300">D</span>
+        {/* Cards dos 3 testes */}
+        <div className="grid md:grid-cols-3 gap-4">
+          {TESTES_META.map(({ id, label, Icon, completo, onView, onInfo, descricao }) => (
+            <Card key={id} className="h-full">
+              <CardContent className="p-5 flex flex-col h-full">
+                <div className="flex items-start justify-between mb-4">
+                  <div className="h-10 w-10 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+                    <Icon className="h-5 w-5 text-slate-600 dark:text-slate-300" />
+                  </div>
+                  {completo ? (
+                    <Badge variant="secondary" className="gap-1 font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 hover:bg-emerald-50">
+                      <CheckCircle className="h-3 w-3" />
+                      Concluído
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="gap-1 font-medium text-slate-500 dark:text-slate-400">
+                      <Circle className="h-3 w-3" />
+                      Pendente
+                    </Badge>
+                  )}
                 </div>
-                {testes?.disc_completo ? (
-                  <CheckCircle className="w-7 h-7 text-green-600 dark:text-green-300" />
-                ) : (
-                  <Circle className="w-7 h-7" style={{ color: 'var(--text-secondary)' }} />
-                )}
-              </div>
-              
-              <h3 className="font-bold text-xl mb-3" style={{ color: 'var(--text-primary)' }}>DISC</h3>
-              <p className="text-base mb-4 leading-relaxed flex-1" style={{ color: 'var(--text-secondary)' }}>
-                Desenvolvido por William Marston nos anos 1920, o <strong>DISC</strong> é uma das ferramentas mais utilizadas no mundo corporativo para compreender estilos comportamentais. Revela como você responde a desafios, influencia pessoas, mantém o ritmo e segue normas no ambiente profissional.
-              </p>
-              
-              {/* Botões sempre alinhados - Ver Resultado (se concluído) + Saber mais */}
-              <div className="space-y-2 mt-auto">
-                {testes?.disc_completo ? (
+
+                <h3 className="text-[15px] font-semibold text-slate-900 dark:text-slate-100 mb-2">
+                  {label}
+                </h3>
+                <p className="text-[12.5px] leading-relaxed text-slate-500 dark:text-slate-400 mb-4 flex-1">
+                  {descricao}
+                </p>
+
+                <div className="flex flex-col gap-0.5 mt-auto -mx-1">
+                  {completo && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onView();
+                      }}
+                      className="justify-start text-[12.5px] font-medium text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-900/20"
+                    >
+                      <CheckCircle className="h-3.5 w-3.5 mr-1.5" />
+                      Ver resultado
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      onIniciarTeste('disc');
+                      onInfo();
                     }}
-                    className="w-full text-sm font-bold text-green-600 dark:text-green-300 hover:text-green-700 hover:bg-green-50 dark:hover:bg-green-950/20 justify-start pl-3 cursor-pointer"
+                    className="justify-start text-[12.5px] font-medium text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
                   >
-                    <CheckCircle className="w-4 h-4 mr-2" />
-                    Ver Resultado
+                    <Info className="h-3.5 w-3.5 mr-1.5" />
+                    Saber mais
                   </Button>
-                ) : (
-                  <div className="h-8"></div>
-                )}
-                
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setModalAberto('disc');
-                  }}
-                  className="w-full text-sm font-medium hover:bg-blue-50 dark:hover:bg-blue-950/20 justify-start pl-3 cursor-pointer"
-                  style={{ color: '#3B82F6' }}
-                >
-                  <Info className="w-4 h-4 mr-2" />
-                  Saber mais
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Teste 2: ENEAGRAMA */}
-          <Card 
-            className="relative overflow-hidden transition-all duration-300 animate-in fade-in slide-in-from-bottom duration-700 delay-400 hover:shadow-xl hover:scale-[1.02] h-full"
-            style={{
-              backgroundColor: testes?.eneagrama_completo ? '#A855F715' : 'var(--bg-card)',
-              borderColor: testes?.eneagrama_completo ? '#A855F7' : 'var(--border)',
-              borderWidth: '2px',
-              boxShadow: testes?.eneagrama_completo ? '0 8px 24px rgba(168, 85, 247, 0.15)' : '0 2px 8px rgba(0,0,0,0.08)'
-            }}
-          >
-            <CardContent className="p-7 flex flex-col h-full">
-              <div className="flex items-start justify-between mb-5">
-                <div className="w-14 h-14 bg-gray-100 dark:bg-slate-800 dark:bg-gray-800 rounded-xl flex items-center justify-center shadow-lg">
-                  <span className="text-3xl font-bold text-gray-700 dark:text-slate-300 dark:text-gray-300">E</span>
                 </div>
-                {testes?.eneagrama_completo ? (
-                  <CheckCircle className="w-7 h-7 text-green-600 dark:text-green-300" />
-                ) : (
-                  <Circle className="w-7 h-7" style={{ color: 'var(--text-secondary)' }} />
-                )}
-              </div>
-              
-              <h3 className="font-bold text-xl mb-3" style={{ color: 'var(--text-primary)' }}>ENEAGRAMA</h3>
-              <p className="text-base mb-4 leading-relaxed flex-1" style={{ color: 'var(--text-secondary)' }}>
-                Sistema milenar de compreensão da personalidade humana, o <strong>Eneagrama</strong> vai além do comportamento observável e revela suas <strong>motivações inconscientes</strong>, medos básicos e padrões automáticos de pensamento. Descubra o "porquê" por trás de suas ações.
-              </p>
-              
-              {/* Botões sempre alinhados - Ver Resultado (se concluído) + Saber mais */}
-              <div className="space-y-2 mt-auto">
-                {testes?.eneagrama_completo ? (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      onIniciarTeste('eneagrama');
-                    }}
-                    className="w-full text-sm font-bold text-green-600 dark:text-green-300 hover:text-green-700 hover:bg-green-50 dark:hover:bg-green-950/20 justify-start pl-3 cursor-pointer"
-                  >
-                    <CheckCircle className="w-4 h-4 mr-2" />
-                    Ver Resultado
-                  </Button>
-                ) : (
-                  <div className="h-8"></div>
-                )}
-                
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setModalAberto('eneagrama');
-                  }}
-                  className="w-full text-sm font-medium hover:bg-blue-50 dark:hover:bg-blue-950/20 justify-start pl-3 cursor-pointer"
-                  style={{ color: '#3B82F6' }}
-                >
-                  <Info className="w-4 h-4 mr-2" />
-                  Saber mais
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Teste 3: MBTI */}
-          <Card 
-            className="relative overflow-hidden transition-all duration-300 animate-in fade-in slide-in-from-bottom duration-700 delay-500 hover:shadow-xl hover:scale-[1.02] h-full"
-            style={{
-              backgroundColor: testes?.mbti_completo ? '#10B98115' : 'var(--bg-card)',
-              borderColor: testes?.mbti_completo ? '#10B981' : 'var(--border)',
-              borderWidth: '2px',
-              boxShadow: testes?.mbti_completo ? '0 8px 24px rgba(16, 185, 129, 0.15)' : '0 2px 8px rgba(0,0,0,0.08)'
-            }}
-          >
-            <CardContent className="p-7 flex flex-col h-full">
-              <div className="flex items-start justify-between mb-5">
-                <div className="w-14 h-14 bg-gray-100 dark:bg-slate-800 dark:bg-gray-800 rounded-xl flex items-center justify-center shadow-lg">
-                  <span className="text-3xl font-bold text-gray-700 dark:text-slate-300 dark:text-gray-300">M</span>
-                </div>
-                {testes?.mbti_completo ? (
-                  <CheckCircle className="w-7 h-7 text-green-600 dark:text-green-300" />
-                ) : (
-                  <Circle className="w-7 h-7" style={{ color: 'var(--text-secondary)' }} />
-                )}
-              </div>
-              
-              <h3 className="font-bold text-xl mb-3" style={{ color: 'var(--text-primary)' }}>MBTI</h3>
-              <p className="text-base mb-4 leading-relaxed flex-1" style={{ color: 'var(--text-secondary)' }}>
-                Baseado na teoria de Carl Jung, o <strong>Indicador de Tipos Myers-Briggs</strong> é o teste de personalidade mais aplicado mundialmente. Revela suas <strong>preferências cognitivas</strong> naturais e como você processa informações, toma decisões e interage com o mundo ao seu redor.
-              </p>
-              
-              {/* Botões sempre alinhados - Ver Resultado (se concluído) + Saber mais */}
-              <div className="space-y-2 mt-auto">
-                {testes?.mbti_completo ? (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      navigate('/importar-16personalities');
-                    }}
-                    className="w-full text-sm font-bold text-green-600 dark:text-green-300 hover:text-green-700 hover:bg-green-50 dark:hover:bg-green-950/20 justify-start pl-3 cursor-pointer"
-                  >
-                    <CheckCircle className="w-4 h-4 mr-2" />
-                    Ver Resultado
-                  </Button>
-                ) : (
-                  <div className="h-8"></div>
-                )}
-                
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setModalAberto('mbti');
-                  }}
-                  className="w-full text-sm font-medium hover:bg-blue-50 dark:hover:bg-blue-950/20 justify-start pl-3 cursor-pointer"
-                  style={{ color: '#3B82F6' }}
-                >
-                  <Info className="w-4 h-4 mr-2" />
-                  Saber mais
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
+              </CardContent>
+            </Card>
+          ))}
         </div>
 
       </div>

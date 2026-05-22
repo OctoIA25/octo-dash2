@@ -76,6 +76,42 @@ interface CriarCondominioFormProps {
   isEdit?: boolean;
 }
 
+const FOTOS_BUCKET = 'condominios-fotos';
+
+const isDataUrl = (s: string | null | undefined): s is string =>
+  typeof s === 'string' && s.startsWith('data:');
+
+const guessExtFromBlob = (blob: Blob, fallback = 'jpg'): string => {
+  const mime = blob.type || '';
+  if (mime === 'image/jpeg') return 'jpg';
+  if (mime === 'image/png') return 'png';
+  if (mime === 'image/webp') return 'webp';
+  if (mime === 'image/gif') return 'gif';
+  return fallback;
+};
+
+const dataUrlToBlob = async (dataUrl: string): Promise<Blob> => {
+  const res = await fetch(dataUrl);
+  return res.blob();
+};
+
+const uploadFotoToStorage = async (blob: Blob, path: string): Promise<string | null> => {
+  const { error } = await supabase.storage
+    .from(FOTOS_BUCKET)
+    .upload(path, blob, {
+      contentType: blob.type || 'image/jpeg',
+      upsert: true,
+    });
+
+  if (error) {
+    console.error('Erro ao subir foto de condomínio para Storage:', error);
+    return null;
+  }
+
+  const { data } = supabase.storage.from(FOTOS_BUCKET).getPublicUrl(path);
+  return data?.publicUrl ?? null;
+};
+
 interface CondominioFormData {
   // Identificação
   nome: string;
@@ -537,22 +573,6 @@ export const CriarCondominioForm = ({
       return;
     }
 
-    // Verificar tamanho total das fotos em base64 (Supabase tem limite ~10-50MB
-    // por request dependendo da configuração — alertar antes de estourar)
-    const fotosTotalBytes = formData.fotos.reduce((sum, f) => {
-      const url = typeof f === 'string' ? f : f?.url || '';
-      return sum + url.length;
-    }, 0);
-    const fotosTotalMB = fotosTotalBytes / (1024 * 1024);
-    if (fotosTotalMB > 40) {
-      setSubmitStatus('error');
-      setSubmitMessage(
-        `As fotos somam ${fotosTotalMB.toFixed(1)}MB, excedendo o limite de 40MB por requisição. ` +
-        `Remova algumas fotos ou reduza a resolução antes de salvar.`
-      );
-      return;
-    }
-
     setIsSubmitting(true);
     setSubmitStatus('idle');
     setSubmitMessage('');
@@ -592,8 +612,36 @@ export const CriarCondominioForm = ({
         }
       }
 
+      // Upload das fotos para o Storage antes do INSERT/UPDATE — fotos que ainda
+      // estão como data URL (recém-selecionadas no FotosUploader) viram URLs
+      // públicas. URLs http(s) já persistidas anteriormente passam direto.
+      // Em modo create geramos o UUID upfront para usar no caminho do Storage,
+      // mantendo um único INSERT (em vez de INSERT + UPDATE).
+      const targetId = editingId ?? crypto.randomUUID();
+      const fotosNormalizadas = normalizeFotos(formData.fotos);
+      
+      const fotosUploaded: typeof fotosNormalizadas = [];
+      for (let i = 0; i < fotosNormalizadas.length; i++) {
+        const f = fotosNormalizadas[i];
+        if (isDataUrl(f.url)) {
+          const blob = await dataUrlToBlob(f.url);
+          const ext = guessExtFromBlob(blob, 'jpg');
+          const path = `${tenantId}/${targetId}/foto-${Date.now()}-${i}.${ext}`;
+          console.log(`[CriarCondominioForm] subindo foto ${i + 1} (${blob.size} bytes) → ${path}`);
+          const publicUrl = await uploadFotoToStorage(blob, path);
+          if (!publicUrl) {
+            throw new Error(`Falha ao enviar a foto ${i + 1} para o storage. Tente novamente.`);
+          }
+          console.log(`[CriarCondominioForm] foto ${i + 1} OK → ${publicUrl}`);
+          fotosUploaded.push({ ...f, url: publicUrl });
+        } else {
+          fotosUploaded.push(f);
+        }
+      }
+
       // Preparar dados para inserção
       const condominioData = {
+        ...(editingId ? {} : { id: targetId }),
         tenant_id: tenantId,
         nome: formData.nome.trim(),
         pais: formData.pais || 'Brasil',
@@ -688,9 +736,9 @@ export const CriarCondominioForm = ({
         destaque: formData.destaque,
         tour_virtual: formData.tour_virtual || null,
         descricao_site: formData.descricao_site || null,
-        // Normaliza as fotos para garantir que exatamente uma esteja marcada como capa
-        // (evita cards sem foto de capa quando o usuário não clicou manualmente na estrela)
-        fotos: normalizeFotos(formData.fotos),
+        // Fotos já foram normalizadas (exatamente uma capa) e tiveram seus
+        // data URLs substituídos por URLs públicas do Storage logo acima.
+        fotos: fotosUploaded,
         metragens_disponiveis: formData.metragens_disponiveis,
         criado_por: user.id,
         status_aprovacao: 'aguardando', // Novo condomínio sempre inicia aguardando aprovação
@@ -733,18 +781,10 @@ export const CriarCondominioForm = ({
         error = retry.error;
       };
 
-      // Retry sem a coluna fotos se ela não existir (schema desatualizado)
-      if (error && error.message?.includes('fotos')) {
-        await retryWithoutColumn('fotos');
-      }
-
-      // Retry sem metragens_disponiveis se ela não existir (schema antigo)
-      if (error && error.message?.includes('metragens_disponiveis')) {
-        await retryWithoutColumn('metragens_disponiveis');
-      }
-
-      // Retry genérico para campos opcionais adicionados em migrations que ainda
-      // não foram aplicadas em produção ou cujo schema cache ainda não recarregou.
+      // Retry só quando o erro for PGRST204 (coluna ausente no schema cache).
+      // Antes este bloco disparava em qualquer mensagem contendo "fotos" ou
+      // "metragens_disponiveis", e acabava silenciosamente removendo as fotos
+      // do payload quando o erro real era outro (ex.: validação de JSON).
       while (error?.code === 'PGRST204') {
         const missingColumn = getMissingSchemaColumn(error.message);
         if (!missingColumn || unsupportedColumns.has(missingColumn)) break;
@@ -787,8 +827,7 @@ export const CriarCondominioForm = ({
           error.message?.toLowerCase().includes('cancelling statement')
         ) {
           throw new Error(
-            'O banco demorou demais para salvar este condomínio. Isso costuma acontecer com muitas fotos pesadas ou dados muito grandes. ' +
-            'Tente salvar com menos fotos ou imagens menores.'
+            'O banco demorou demais para salvar este condomínio. Tente novamente em alguns segundos.'
           );
         }
         throw error;

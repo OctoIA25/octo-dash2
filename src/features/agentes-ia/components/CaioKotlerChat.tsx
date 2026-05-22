@@ -1,6 +1,6 @@
 /**
  * Componente de Chat com Agente de Marketing
- * Chat funcional integrado com webhook
+ * Chat funcional integrado com webhook + persistência de histórico (Supabase)
  */
 
 import { useState, useRef, useEffect } from 'react';
@@ -9,8 +9,9 @@ import { useToast } from '@/hooks/use-toast';
 import { useTheme } from '@/hooks/useTheme';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Send, Loader2, Bot, User } from 'lucide-react';
+import { Send, Loader2, User, Eye } from 'lucide-react';
 import { sendMessageToAgent, getWebhookUrl } from '../services/agentWebhookService';
+import { AgentMessageRecord } from '../services/agentConversationService';
 
 interface Message {
   id: string;
@@ -19,8 +20,36 @@ interface Message {
   timestamp: Date;
 }
 
+const GREETING_MESSAGE: Message = {
+  id: 'greeting',
+  text: 'Olá! 👋 Sou o Caio Kotler, seu parceiro criativo para conteúdos imobiliários! Estou aqui para te ajudar com legendas, roteiros, descrições e muito mais. Como posso te ajudar hoje?',
+  sender: 'agent',
+  timestamp: new Date(),
+};
+
+const persistedToMessage = (row: AgentMessageRecord): Message => ({
+  id: row.id,
+  text: row.display_content || row.content,
+  sender: row.role === 'agent' ? 'agent' : 'user',
+  timestamp: new Date(row.created_at),
+});
+
 interface CaioKotlerChatProps {
   onPromptSelect?: (prompt: string) => void;
+  activeConversationId?: string | null;
+  persistedMessages?: AgentMessageRecord[];
+  isReadOnly?: boolean;
+  ensureConversation?: (firstMessage: string) => Promise<string | null>;
+  addMessage?: (
+    conversationId: string,
+    payload: {
+      role: 'user' | 'agent' | 'system';
+      content: string;
+      displayContent?: string | null;
+      metadata?: Record<string, unknown>;
+    }
+  ) => Promise<unknown>;
+  loadingHistory?: boolean;
 }
 
 declare global {
@@ -113,24 +142,35 @@ function MessageText({ text }: { text: string }) {
   );
 }
 
-export const CaioKotlerChat = ({ onPromptSelect }: CaioKotlerChatProps = {}) => { // Nome do componente mantido para compatibilidade
+export const CaioKotlerChat = ({
+  activeConversationId = null,
+  persistedMessages,
+  isReadOnly = false,
+  ensureConversation,
+  addMessage,
+  loadingHistory = false,
+}: CaioKotlerChatProps = {}) => { // Nome do componente mantido para compatibilidade
   const { user } = useAuth();
   const { toast } = useToast();
   const { currentTheme } = useTheme();
   const isDarkMode = currentTheme === 'preto' || currentTheme === 'cinza';
-  
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      text: 'Olá! 👋 Sou o Caio Kotler, seu parceiro criativo para conteúdos imobiliários! Estou aqui para te ajudar com legendas, roteiros, descrições e muito mais. Como posso te ajudar hoje?',
-      sender: 'agent',
-      timestamp: new Date()
-    }
-  ]);
+
+  const [messages, setMessages] = useState<Message[]>([GREETING_MESSAGE]);
   const [inputMessage, setInputMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Hidratar mensagens a partir do banco quando a conversa ativa mudar.
+  useEffect(() => {
+    if (!activeConversationId) {
+      setMessages([GREETING_MESSAGE]);
+      return;
+    }
+    if (persistedMessages) {
+      setMessages(persistedMessages.length > 0 ? persistedMessages.map(persistedToMessage) : [GREETING_MESSAGE]);
+    }
+  }, [activeConversationId, persistedMessages]);
   
   // Obter webhook URL de forma segura - DECLARAR ANTES DE USAR
   const [webhookUrl, setWebhookUrl] = useState<string | null>(null);
@@ -145,80 +185,91 @@ export const CaioKotlerChat = ({ onPromptSelect }: CaioKotlerChatProps = {}) => 
     }
   }, []);
   
-  // Expor função para enviar mensagem automaticamente - MENSAGEM REAL
-  useEffect(() => {
-    // Criar referência para a função que envia mensagem automaticamente
-    // text: mensagem completa enviada ao webhook
-    // displayText: mensagem resumida exibida no chat (opcional)
-    window.sendCaioKotlerMessage = async (text: string, displayText?: string) => { // Função mantida para compatibilidade
-      if (!text.trim()) return;
-      
-      // Adicionar mensagem do usuário no chat
-      // Usar displayText (resumido) se fornecido, senão usar text (completo)
-      const userMessage: Message = {
-        id: Date.now().toString(),
-        text: displayText || text,
-        sender: 'user',
-        timestamp: new Date()
-      };
-      
-      setMessages(prev => [...prev, userMessage]);
-      setIsSending(true);
-      
-      // Enviar mensagem real para o webhook
-      if (!webhookUrl) {
-        setIsSending(false);
-        toast({
-          title: "Webhook não configurado",
-          description: "Por favor, configure o webhook em Configurações > Agentes de IA.",
-          variant: "destructive",
-          duration: 5000,
-        });
-        return;
-      }
-      
-      // SEMPRE envia a mensagem COMPLETA (text) para o webhook
-      const result = await sendMessageToAgent(
-        'Marketing',
-        text, // Mensagem completa vai para o Marketing
-        user?.name || 'Usuário'
-      );
-      
-      setIsSending(false);
-      
-      if (!result.success) {
-        console.error('❌ Erro ao enviar:', result.error);
-        toast({
-          title: "Erro ao enviar mensagem",
-          description: result.error || "Não foi possível enviar a mensagem para o agente.",
-          variant: "destructive",
-          duration: 5000,
-        });
-        
-        // Adicionar mensagem de erro
-        const errorMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          text: '❌ Desculpe, não consegui processar sua mensagem no momento. Por favor, tente novamente.\n\nDetalhes: ' + (result.error || 'Erro desconhecido'),
-          sender: 'agent',
-          timestamp: new Date()
-        };
-        setMessages(prev => [...prev, errorMessage]);
-      } else {
-        // Adicionar resposta do agente com dados reais do webhook
-        const agentMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          text: result.response || '✅ Mensagem recebida! Estou processando sua solicitação...',
-          sender: 'agent',
-          timestamp: new Date()
-        };
-        setMessages(prev => [...prev, agentMessage]);
-      }
+  // Núcleo do envio: persiste a mensagem do usuário, chama o webhook e persiste a resposta.
+  const sendMessage = async (text: string, displayText?: string) => {
+    if (!text.trim() || isReadOnly) return;
+
+    if (!webhookUrl) {
+      toast({
+        title: "Webhook não configurado",
+        description: "Por favor, configure o webhook em Configurações > Agentes de IA.",
+        variant: "destructive",
+        duration: 5000,
+      });
+      return;
+    }
+
+    const optimisticUser: Message = {
+      id: `local-${Date.now()}`,
+      text: displayText || text,
+      sender: 'user',
+      timestamp: new Date(),
     };
-    
+    setMessages(prev => [...prev.filter(m => m.id !== 'greeting'), optimisticUser]);
+    setIsSending(true);
+
+    const conversationId = ensureConversation ? await ensureConversation(displayText || text) : null;
+    if (conversationId && addMessage) {
+      await addMessage(conversationId, {
+        role: 'user',
+        content: text,
+        displayContent: displayText || null,
+        metadata: displayText ? { specialty_shortcut: true } : undefined,
+      });
+    }
+
+    const result = await sendMessageToAgent('Marketing', text, user?.name || 'Usuário');
+    setIsSending(false);
+
+    if (!result.success) {
+      console.error('❌ Erro ao enviar:', result.error);
+      toast({
+        title: "Erro ao enviar mensagem",
+        description: result.error || "Não foi possível enviar a mensagem para o agente.",
+        variant: "destructive",
+        duration: 5000,
+      });
+      const errorMessage: Message = {
+        id: `local-${Date.now() + 1}`,
+        text: '❌ Desculpe, não consegui processar sua mensagem no momento. Por favor, tente novamente.\n\nDetalhes: ' + (result.error || 'Erro desconhecido'),
+        sender: 'agent',
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, errorMessage]);
+      if (conversationId && addMessage) {
+        await addMessage(conversationId, {
+          role: 'system',
+          content: errorMessage.text,
+          metadata: { error: result.error || 'unknown' },
+        });
+      }
+      return;
+    }
+
+    const responseText = result.response || '✅ Mensagem recebida! Estou processando sua solicitação...';
+    const agentMessage: Message = {
+      id: `local-${Date.now() + 1}`,
+      text: responseText,
+      sender: 'agent',
+      timestamp: new Date(),
+    };
+    setMessages(prev => [...prev, agentMessage]);
+    if (conversationId && addMessage) {
+      await addMessage(conversationId, { role: 'agent', content: responseText });
+    }
+  };
+
+  // Expor função para envio automático a partir dos botões de especialidade
+  useEffect(() => {
+    window.sendCaioKotlerMessage = async (text: string, displayText?: string) => {
+      await sendMessage(text, displayText);
+    };
+
     return () => {
       delete window.sendCaioKotlerMessage;
     };
-  }, [webhookUrl, user?.name, toast]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [webhookUrl, user?.name, isReadOnly, ensureConversation, addMessage, activeConversationId]);
 
   // Auto-scroll para a última mensagem
   const scrollToBottom = () => {
@@ -256,86 +307,10 @@ export const CaioKotlerChat = ({ onPromptSelect }: CaioKotlerChatProps = {}) => 
   }, [inputMessage]);
 
   const handleSendMessage = async () => {
-    if (!inputMessage.trim()) return;
-
-    if (!webhookUrl) {
-      toast({
-        title: "Webhook não configurado",
-        description: "Por favor, configure o webhook em Configurações > Agentes de IA.",
-        variant: "destructive",
-        duration: 5000,
-      });
-      return;
-    }
-
-    // Adicionar mensagem do usuário
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      text: inputMessage,
-      sender: 'user',
-      timestamp: new Date()
-    };
-
-    setMessages(prev => [...prev, userMessage]);
+    if (!inputMessage.trim() || isReadOnly) return;
     const messageToSend = inputMessage;
     setInputMessage('');
-    setIsSending(true);
-
-    // Enviar para o webhook
-    const result = await sendMessageToAgent(
-      'Marketing',
-      messageToSend,
-      user?.name || 'Usuário'
-    );
-
-    setIsSending(false);
-
-    if (!result.success) {
-      console.error('❌ Erro ao enviar:', result.error);
-      toast({
-        title: "Erro ao enviar mensagem",
-        description: result.error || "Não foi possível enviar a mensagem para o agente.",
-        variant: "destructive",
-        duration: 5000,
-      });
-      
-      // Adicionar mensagem de erro
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        text: '❌ Desculpe, não consegui processar sua mensagem no momento. Por favor, tente novamente.\n\nDetalhes: ' + (result.error || 'Erro desconhecido'),
-        sender: 'agent',
-        timestamp: new Date()
-      };
-      setMessages(prev => [...prev, errorMessage]);
-    } else {
-      // Adicionar resposta do agente
-      
-      if (result.response && result.response.trim()) {
-        const agentMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          text: result.response,
-          sender: 'agent',
-          timestamp: new Date()
-        };
-        setMessages(prev => [...prev, agentMessage]);
-        
-        toast({
-          title: "Resposta recebida! ✅",
-          description: "O Marketing respondeu sua mensagem.",
-          duration: 3000,
-        });
-      } else {
-        console.warn('⚠️ Resposta vazia ou undefined');
-        // Fallback se não houver resposta
-        const waitingMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          text: '✅ Mensagem enviada com sucesso, mas não recebi resposta do servidor. Verifique o console para detalhes.',
-          sender: 'agent',
-          timestamp: new Date()
-        };
-        setMessages(prev => [...prev, waitingMessage]);
-      }
-    }
+    await sendMessage(messageToSend);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -356,6 +331,18 @@ export const CaioKotlerChat = ({ onPromptSelect }: CaioKotlerChatProps = {}) => 
 
   return (
     <div className={`flex flex-col h-full bg-gradient-to-b ${isDarkMode ? 'from-neutral-900/20 to-neutral-900/40' : 'from-blue-50/80 via-blue-100/60 to-blue-50/80'} overflow-hidden rounded-xl border ${isDarkMode ? 'border-neutral-800/40' : 'border-blue-200/60'} shadow-2xl`}>
+      {isReadOnly && (
+        <div className={`flex items-center gap-2 px-4 py-2 border-b text-xs font-semibold ${isDarkMode ? 'bg-amber-900/30 border-amber-700/40 text-amber-300' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
+          <Eye className="w-3.5 h-3.5" />
+          <span>Modo leitura — você está visualizando a conversa de outro usuário.</span>
+        </div>
+      )}
+      {loadingHistory && (
+        <div className={`flex items-center gap-2 px-4 py-2 border-b text-xs ${isDarkMode ? 'bg-neutral-800/40 border-neutral-700/40 text-gray-300' : 'bg-blue-50/60 border-blue-200 text-blue-700'}`}>
+          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          <span>Carregando conversa...</span>
+        </div>
+      )}
       {/* Área de Mensagens - Scroll fixo e automático */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-4" style={{ minHeight: 0, maxHeight: 'calc(100vh - 200px)' }}>
         {messages.map((message) => (
@@ -446,15 +433,15 @@ export const CaioKotlerChat = ({ onPromptSelect }: CaioKotlerChatProps = {}) => 
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder="Digite sua mensagem..."
+              placeholder={isReadOnly ? 'Modo leitura: você não pode enviar mensagens.' : 'Digite sua mensagem...'}
               className={`bg-transparent border-none resize-none ${isDarkMode ? 'text-white placeholder:text-gray-400' : 'text-gray-800 placeholder:text-gray-500'} focus:outline-none focus:ring-0 min-h-[20px] max-h-[120px] text-sm w-full`}
               rows={1}
-              disabled={isSending}
+              disabled={isSending || isReadOnly}
             />
           </div>
           <Button
             onClick={handleSendMessage}
-            disabled={!inputMessage.trim() || isSending}
+            disabled={!inputMessage.trim() || isSending || isReadOnly}
             className="h-11 w-11 rounded-xl bg-gradient-to-br from-blue-600 via-purple-600 to-blue-600 hover:from-blue-700 hover:via-purple-700 hover:to-blue-700 shadow-xl shadow-purple-500/30 hover:shadow-2xl hover:shadow-purple-500/40 transition-all duration-200 flex items-center justify-center p-0 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isSending ? (

@@ -24,10 +24,11 @@ import { useState, useRef, useEffect } from 'react';
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from '@/hooks/use-toast';
 import { useTheme } from '@/hooks/useTheme';
-import { User, Send, Loader2, X, Paperclip } from 'lucide-react';
+import { User, Send, Loader2, X, Paperclip, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { getElaineWebhookUrl, sendMessageToElaine, DadosComportamentais } from '../services/agentWebhookService';
+import { AgentMessageRecord } from '../services/agentConversationService';
 
 interface Message {
   id: string;
@@ -35,6 +36,20 @@ interface Message {
   sender: 'user' | 'agent';
   timestamp: Date;
 }
+
+const ELAINE_GREETING: Message = {
+  id: 'greeting',
+  text: 'Olá! 👋 Sou a Elaine, sua Inteligência em Comportamento e Gestão de Pessoas. Estou aqui para ajudar você a decodificar perfis humanos e criar estratégias personalizadas de liderança e desenvolvimento. Como posso te ajudar hoje?',
+  sender: 'agent',
+  timestamp: new Date(),
+};
+
+const persistedToMessage = (row: AgentMessageRecord): Message => ({
+  id: row.id,
+  text: row.display_content || row.content,
+  sender: row.role === 'agent' ? 'agent' : 'user',
+  timestamp: new Date(row.created_at),
+});
 
 interface AdminResultadosAnexadosPayload {
   texto: string;
@@ -71,38 +86,60 @@ interface ElaineChatProps {
   selectedEspecialidade?: string | null;
   especialidadePrompt?: string;
   selectedCorretorGestaoLiderados?: string | null;
+  activeConversationId?: string | null;
+  persistedMessages?: AgentMessageRecord[];
+  isReadOnly?: boolean;
+  ensureConversation?: (firstMessage: string) => Promise<string | null>;
+  addMessage?: (
+    conversationId: string,
+    payload: {
+      role: 'user' | 'agent' | 'system';
+      content: string;
+      displayContent?: string | null;
+      metadata?: Record<string, unknown>;
+    }
+  ) => Promise<unknown>;
+  loadingHistory?: boolean;
 }
 
-export const ElaineChat = ({ 
-  onPromptSelect, 
-  selectedCorretor, 
+export const ElaineChat = ({
+  selectedCorretor,
   onClearCorretor,
   selectedCorretorEneagrama,
   onClearCorretorEneagrama,
   selectedCorretorMBTI,
   onClearCorretorMBTI,
-  selectedEspecialidade,
   especialidadePrompt,
-  selectedCorretorGestaoLiderados
+  selectedCorretorGestaoLiderados,
+  activeConversationId = null,
+  persistedMessages,
+  isReadOnly = false,
+  ensureConversation,
+  addMessage,
+  loadingHistory = false,
 }: ElaineChatProps = {}) => {
   const { user } = useAuth();
   const { toast } = useToast();
   const { currentTheme } = useTheme();
   const isDarkMode = currentTheme === 'preto' || currentTheme === 'cinza';
-  
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      text: 'Olá! 👋 Sou a Elaine, sua Inteligência em Comportamento e Gestão de Pessoas. Estou aqui para ajudar você a decodificar perfis humanos e criar estratégias personalizadas de liderança e desenvolvimento. Como posso te ajudar hoje?',
-      sender: 'agent',
-      timestamp: new Date()
-    }
-  ]);
+
+  const [messages, setMessages] = useState<Message[]>([ELAINE_GREETING]);
   const [inputMessage, setInputMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [adminResultadosAnexados, setAdminResultadosAnexados] = useState<AdminResultadosAnexadosPayload | null>(null);
+
+  // Hidratar mensagens a partir do banco quando a conversa ativa mudar.
+  useEffect(() => {
+    if (!activeConversationId) {
+      setMessages([ELAINE_GREETING]);
+      return;
+    }
+    if (persistedMessages) {
+      setMessages(persistedMessages.length > 0 ? persistedMessages.map(persistedToMessage) : [ELAINE_GREETING]);
+    }
+  }, [activeConversationId, persistedMessages]);
   
   // Estado dos testes disponíveis do corretor (para indicador visual)
   const [testesDisponiveis, setTestesDisponiveis] = useState<{
@@ -199,27 +236,47 @@ export const ElaineChat = ({
     };
   }, []);
   
-  // Expor função para enviar mensagem automaticamente
+  // Helper: cria/recupera conversa ativa e grava a mensagem do usuário.
+  const persistUserAndEnsure = async (
+    content: string,
+    displayContent: string | null,
+    metadata: Record<string, unknown> = {}
+  ): Promise<string | null> => {
+    if (!ensureConversation || !addMessage) return null;
+    const conversationId = await ensureConversation(displayContent || content);
+    if (!conversationId) return null;
+    await addMessage(conversationId, {
+      role: 'user',
+      content,
+      displayContent: displayContent || null,
+      metadata,
+    });
+    return conversationId;
+  };
+
+  // Expor função para enviar mensagem automaticamente (atalhos de especialidade)
   useEffect(() => {
-    (window as any).sendElaineMessage = (fullPrompt: string, displayText: string) => {
-      
-      // Adicionar mensagem do usuário (texto resumido)
+    (window as any).sendElaineMessage = async (fullPrompt: string, displayText: string) => {
+      if (isReadOnly) return;
+
+      // Adicionar mensagem do usuário (texto resumido) no UI
       const userMessage: Message = {
-        id: Date.now().toString(),
+        id: `local-${Date.now()}`,
         text: displayText,
         sender: 'user',
-        timestamp: new Date()
+        timestamp: new Date(),
       };
-      setMessages(prev => [...prev, userMessage]);
-      
-      // Enviar prompt completo para o webhook
-      handleSendToWebhook(fullPrompt);
+      setMessages(prev => [...prev.filter(m => m.id !== 'greeting'), userMessage]);
+
+      const conversationId = await persistUserAndEnsure(fullPrompt, displayText, { specialty_shortcut: true });
+      handleSendToWebhook(fullPrompt, conversationId);
     };
-    
+
     return () => {
       delete (window as any).sendElaineMessage;
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isReadOnly, ensureConversation, addMessage, activeConversationId]);
 
   // Auto-scroll para última mensagem
   useEffect(() => {
@@ -234,7 +291,7 @@ export const ElaineChat = ({
     }
   }, [inputMessage]);
 
-  const handleSendToWebhook = async (message: string) => {
+  const handleSendToWebhook = async (message: string, conversationId?: string | null) => {
     if (!webhookUrl) {
       toast({
         title: "Configuração Pendente",
@@ -526,17 +583,28 @@ export const ElaineChat = ({
       }
 
       // Resposta do Agente Comportamental
+      const responseText = result.response || '✨ Recebi sua solicitação! Estou analisando o perfil comportamental com base em DISC, Eneagrama e MBTI. Em breve você receberá uma análise completa e personalizada.';
       const agentResponse: Message = {
-        id: Date.now().toString() + '-agent',
-        text: result.response || '✨ Recebi sua solicitação! Estou analisando o perfil comportamental com base em DISC, Eneagrama e MBTI. Em breve você receberá uma análise completa e personalizada.',
+        id: `local-${Date.now()}-agent`,
+        text: responseText,
         sender: 'agent',
-        timestamp: new Date()
+        timestamp: new Date(),
       };
-      
+
       setTimeout(() => {
         setMessages(prev => [...prev, agentResponse]);
         setIsSending(false);
       }, 1000);
+
+      if (conversationId && addMessage) {
+        await addMessage(conversationId, {
+          role: 'agent',
+          content: responseText,
+          metadata: Object.keys(dadosComportamentais).length > 0
+            ? { behavioral_snapshot: dadosComportamentais, corretor_nome: corretorNome ?? null, tipo_mbti: tipoMBTI ?? null }
+            : undefined,
+        });
+      }
 
       toast({
         title: "Mensagem Enviada! 🎯",
@@ -563,27 +631,29 @@ export const ElaineChat = ({
   };
 
   const handleSendMessage = async () => {
-    if (!inputMessage.trim() || isSending) return;
+    if (!inputMessage.trim() || isSending || isReadOnly) return;
 
     const userMessage: Message = {
-      id: Date.now().toString(),
+      id: `local-${Date.now()}`,
       text: inputMessage,
       sender: 'user',
-      timestamp: new Date()
+      timestamp: new Date(),
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    setMessages(prev => [...prev.filter(m => m.id !== 'greeting'), userMessage]);
+    const typedText = inputMessage;
     setInputMessage('');
 
-    // Montar mensagem para envio
     // Se tem especialidade selecionada, adiciona o prompt dela antes da mensagem do usuário
-    let messageToSend = inputMessage;
-    if (especialidadePrompt) {
-      messageToSend = `${especialidadePrompt}\n\nContexto adicional do usuário:\n${inputMessage}`;
-    }
+    const messageToSend = especialidadePrompt
+      ? `${especialidadePrompt}\n\nContexto adicional do usuário:\n${typedText}`
+      : typedText;
 
-    // Enviar para webhook
-    await handleSendToWebhook(messageToSend);
+    const conversationId = await persistUserAndEnsure(messageToSend, typedText, {
+      especialidade: especialidadePrompt ? true : false,
+    });
+
+    await handleSendToWebhook(messageToSend, conversationId);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -608,7 +678,20 @@ export const ElaineChat = ({
 
   return (
     <div className={`flex flex-col h-full ${isDarkMode ? 'bg-gradient-to-b from-neutral-900/20 to-neutral-900/40 border-neutral-800/40' : 'bg-gradient-to-b from-blue-50/80 via-blue-100/60 to-blue-50/80 border-blue-200/60'} overflow-hidden rounded-xl border shadow-2xl`}>
-      
+
+      {isReadOnly && (
+        <div className={`flex items-center gap-2 px-4 py-2 border-b text-xs font-semibold ${isDarkMode ? 'bg-amber-900/30 border-amber-700/40 text-amber-300' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
+          <Eye className="w-3.5 h-3.5" />
+          <span>Modo leitura — você está visualizando a conversa de outro usuário.</span>
+        </div>
+      )}
+      {loadingHistory && (
+        <div className={`flex items-center gap-2 px-4 py-2 border-b text-xs ${isDarkMode ? 'bg-neutral-800/40 border-neutral-700/40 text-gray-300' : 'bg-pink-50/60 border-pink-200 text-pink-700'}`}>
+          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          <span>Carregando conversa...</span>
+        </div>
+      )}
+
       {/* ⭐ STATUS: Corretor Selecionado para Análise */}
       {(selectedCorretor || selectedCorretorEneagrama || selectedCorretorMBTI || selectedCorretorGestaoLiderados || adminResultadosAnexados) && (
         <div className={`flex-shrink-0 px-4 py-3 border-b ${isDarkMode ? 'border-neutral-700/50 bg-neutral-800/30' : 'border-pink-200 bg-pink-50/50'}`}>
@@ -844,15 +927,15 @@ export const ElaineChat = ({
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder="Digite sua mensagem..."
+              placeholder={isReadOnly ? 'Modo leitura: você não pode enviar mensagens.' : 'Digite sua mensagem...'}
               className={`bg-transparent border-none resize-none ${isDarkMode ? 'text-white placeholder:text-gray-400' : 'text-gray-800 placeholder:text-gray-500'} focus:outline-none focus:ring-0 min-h-[20px] max-h-[120px] text-sm w-full`}
               rows={1}
-              disabled={isSending}
+              disabled={isSending || isReadOnly}
             />
           </div>
           <Button
             onClick={handleSendMessage}
-            disabled={!inputMessage.trim() || isSending}
+            disabled={!inputMessage.trim() || isSending || isReadOnly}
             className="h-11 w-11 rounded-xl bg-gradient-to-br from-pink-600 via-purple-600 to-pink-600 hover:from-pink-700 hover:via-purple-700 hover:to-pink-700 shadow-xl shadow-pink-500/30 hover:shadow-2xl hover:shadow-pink-500/40 transition-all duration-200 flex items-center justify-center p-0 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isSending ? (
