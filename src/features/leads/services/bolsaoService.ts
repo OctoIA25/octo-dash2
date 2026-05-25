@@ -190,6 +190,10 @@ export async function verificarLeadsExpirados(): Promise<number> {
     if (!leadsExpirados || leadsExpirados.length === 0) return 0;
     
     let movidosComSucesso = 0;
+    // Cache de config por tenant — evita N+1 quando vários leads do mesmo
+    // tenant expiram na mesma execução.
+    const configCache = new Map<string, Awaited<ReturnType<typeof fetchTenantBolsaoConfig>>>();
+
     for (const lead of leadsExpirados) {
       const tenantId = lead.tenant_id;
       if (!tenantId) continue;
@@ -200,7 +204,11 @@ export async function verificarLeadsExpirados(): Promise<number> {
         continue;
       }
 
-      const config = await fetchTenantBolsaoConfig(tenantId);
+      let config = configCache.get(tenantId);
+      if (!config) {
+        config = await fetchTenantBolsaoConfig(tenantId);
+        configCache.set(tenantId, config);
+      }
       const limiteMinutos = lead.is_exclusive
         ? config.tempoExpiracaoExclusivo
         : config.tempoExpiracaoNaoExclusivo;

@@ -168,7 +168,8 @@ export async function checkBrokerEligibility(
   tenantId: string,
   agentId: string,
   config: TenantLeadLimitConfig,
-  override?: BrokerLeadLimitOverride
+  override?: BrokerLeadLimitOverride,
+  countsOverride?: BrokerLeadCounts
 ): Promise<BrokerEligibility> {
   // Se o override desabilita recebimento automático
   if (override?.receives_auto_leads === false) {
@@ -223,7 +224,8 @@ export async function checkBrokerEligibility(
       ? override.custom_max_pending_response_leads
       : config.max_pending_response_leads_per_broker;
 
-  const counts = await getBrokerLeadCounts(tenantId, agentId, config.pending_statuses);
+  const counts =
+    countsOverride ?? await getBrokerLeadCounts(tenantId, agentId, config.pending_statuses);
 
   const { active_leads, pending_response_leads } = counts;
   const { blocking_mode } = config;
@@ -285,30 +287,45 @@ export async function checkBrokerEligibility(
 }
 
 // ============================================================
-// Batch: conta leads de todos os corretores em 2 queries
+// Batch: conta leads de corretores em 2 queries
 // ============================================================
 
 export async function getBrokerLeadCountsBatch(
   tenantId: string,
-  pendingStatuses: string[]
+  pendingStatuses: string[],
+  agentIds?: string[]
 ): Promise<Record<string, BrokerLeadCounts>> {
   if (!tenantId) return {};
   try {
-    const [activeRes, pendingRes] = await Promise.all([
-      (supabase as any)
+    const scopedAgentIds = Array.from(new Set((agentIds || []).filter(Boolean)));
+    let activeQuery = (supabase as any)
+      .from('leads')
+      .select('assigned_agent_id')
+      .eq('tenant_id', tenantId)
+      .neq('status', 'Arquivado')
+      .not('assigned_agent_id', 'is', null);
+
+    if (scopedAgentIds.length > 0) {
+      activeQuery = activeQuery.in('assigned_agent_id', scopedAgentIds);
+    }
+
+    let pendingQuery = null;
+    if (pendingStatuses.length > 0) {
+      pendingQuery = (supabase as any)
         .from('leads')
         .select('assigned_agent_id')
         .eq('tenant_id', tenantId)
-        .neq('status', 'Arquivado')
-        .not('assigned_agent_id', 'is', null),
-      pendingStatuses.length > 0
-        ? (supabase as any)
-            .from('leads')
-            .select('assigned_agent_id')
-            .eq('tenant_id', tenantId)
-            .in('status', pendingStatuses)
-            .not('assigned_agent_id', 'is', null)
-        : Promise.resolve({ data: [] }),
+        .in('status', pendingStatuses)
+        .not('assigned_agent_id', 'is', null);
+
+      if (scopedAgentIds.length > 0) {
+        pendingQuery = pendingQuery.in('assigned_agent_id', scopedAgentIds);
+      }
+    }
+
+    const [activeRes, pendingRes] = await Promise.all([
+      activeQuery,
+      pendingQuery ?? Promise.resolve({ data: [] }),
     ]);
 
     const result: Record<string, BrokerLeadCounts> = {};

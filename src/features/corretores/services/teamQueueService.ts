@@ -15,7 +15,13 @@
  */
 
 import { supabase } from '@/integrations/supabase/client';
-import { fetchLeadLimitConfig, checkBrokerEligibility, BrokerLeadLimitOverride } from './tenantLeadLimitService';
+import {
+  fetchLeadLimitConfig,
+  checkBrokerEligibility,
+  getBrokerLeadCountsBatch,
+  BrokerLeadLimitOverride,
+  BrokerLeadCounts,
+} from './tenantLeadLimitService';
 import type { TeamQueueOrder } from '@/features/leads/services/tenantBolsaoConfigService';
 
 export interface TeamQueueMember {
@@ -25,6 +31,7 @@ export interface TeamQueueMember {
   phone: string | null;
   team: string;
   leader_user_id: string;
+  leadLimitOverride?: BrokerLeadLimitOverride;
 }
 
 export interface TeamQueueResult {
@@ -139,10 +146,13 @@ export async function getTeamQueueCandidates(
     .select('id, full_name, email, phone')
     .in('id', userIds);
 
+  const profilesById = new Map((profiles || []).map((profile) => [profile.id, profile]));
+
   return sameTeam
     .map((m) => {
-      const profile = profiles?.find((p) => p.id === m.user_id);
+      const profile = profilesById.get(m.user_id);
       if (!profile) return null;
+      const permissions = m.permissions as any;
       return {
         user_id: m.user_id,
         name:
@@ -153,6 +163,7 @@ export async function getTeamQueueCandidates(
         phone: (profile as any).phone ?? null,
         team: teamInfo.team!,
         leader_user_id: teamInfo.leader_user_id!,
+        leadLimitOverride: permissions?.lead_limit as BrokerLeadLimitOverride | undefined,
       } as TeamQueueMember;
     })
     .filter(Boolean) as TeamQueueMember[];
@@ -191,7 +202,8 @@ async function filterAlreadyTriedForLead(
 async function pickCandidate(
   candidates: TeamQueueMember[],
   tenantId: string,
-  order: TeamQueueOrder = 'balanced'
+  order: TeamQueueOrder = 'balanced',
+  precomputedCounts?: Record<string, BrokerLeadCounts>
 ): Promise<TeamQueueMember | null> {
   if (candidates.length === 0) return null;
   if (candidates.length === 1) return candidates[0];
@@ -213,18 +225,14 @@ async function pickCandidate(
   // 'balanced' — round-robin
   const userIds = candidates.map((c) => c.user_id);
 
-  // 1) Contagem de leads ativos por corretor (tabela leads)
+  // 1) Contagem de leads ativos por corretor — reusa o batch quando disponível
   const leadCounts = new Map<string, number>();
   try {
-    const { data: leadsRows } = await (supabase as any)
-      .from('leads')
-      .select('assigned_agent_name')
-      .eq('tenant_id', tenantId)
-      .in('assigned_agent_name', candidates.map((c) => c.name))
-      .is('archived_at', null);
-    (leadsRows || []).forEach((row: any) => {
-      const cand = candidates.find((c) => c.name === row.assigned_agent_name);
-      if (cand) leadCounts.set(cand.user_id, (leadCounts.get(cand.user_id) ?? 0) + 1);
+    const counts =
+      precomputedCounts ??
+      (await getBrokerLeadCountsBatch(tenantId, [], userIds));
+    candidates.forEach((c) => {
+      leadCounts.set(c.user_id, counts[c.user_id]?.active_leads ?? 0);
     });
   } catch (e) {
     console.warn('[teamQueue] não foi possível contar leads ativos:', e);
@@ -297,22 +305,49 @@ export async function redistributeLeadToTeamQueue(
       return { success: true, redistributed: false, reason: 'all_team_members_already_tried' };
     }
 
-    // Filtrar candidatos pelo limite de leads (se habilitado)
+    // Filtrar candidatos pelo limite de leads.
+    // Roda quando o limite global está ativo OU quando algum candidato tem
+    // override individual de limite/recebimento automático — caso contrário
+    // `receives_auto_leads: false` e `lead_limit_enabled` por corretor seriam ignorados.
     let eligibleCandidates = notTriedCandidates;
+    let leadCountsByBroker: Record<string, BrokerLeadCounts> | undefined;
     try {
       const limitConfig = await fetchLeadLimitConfig(tenantId);
-      if (limitConfig && limitConfig.lead_limit_enabled) {
+
+      const hasRelevantOverride = notTriedCandidates.some((c) => {
+        const o = c.leadLimitOverride;
+        return !!o && (
+          o.receives_auto_leads === false ||
+          o.lead_limit_enabled === true
+        );
+      });
+
+      if (limitConfig && (limitConfig.lead_limit_enabled || hasRelevantOverride)) {
+        // Só busca contagens se algum check de limite realmente vai usar.
+        const needsCounts =
+          limitConfig.lead_limit_enabled ||
+          notTriedCandidates.some(
+            (c) => c.leadLimitOverride?.lead_limit_enabled === true
+          );
+
+        const counts = needsCounts
+          ? await getBrokerLeadCountsBatch(
+              tenantId,
+              limitConfig.pending_statuses,
+              notTriedCandidates.map((c) => c.user_id)
+            )
+          : {};
+        leadCountsByBroker = counts;
+
         const eligibilityResults = await Promise.all(
           notTriedCandidates.map(async (c) => {
-            // Buscar override individual do corretor
-            const { data: memberData } = await supabase
-              .from('tenant_memberships')
-              .select('permissions')
-              .eq('tenant_id', tenantId)
-              .eq('user_id', c.user_id)
-              .maybeSingle();
-            const brokerOverride = (memberData?.permissions as any)?.lead_limit as BrokerLeadLimitOverride | undefined;
-            const result = await checkBrokerEligibility(tenantId, c.user_id, limitConfig, brokerOverride);
+            const result = await checkBrokerEligibility(
+              tenantId,
+              c.user_id,
+              limitConfig,
+              c.leadLimitOverride,
+              counts[c.user_id] ?? { active_leads: 0, pending_response_leads: 0 }
+            );
             return { candidate: c, eligible: result.eligible };
           })
         );
@@ -325,16 +360,10 @@ export async function redistributeLeadToTeamQueue(
       console.warn('[teamQueue] Erro ao verificar limites de leads, prosseguindo sem filtro:', e);
     }
 
-    const chosen = await pickCandidate(eligibleCandidates, tenantId, order);
+    const chosen = await pickCandidate(eligibleCandidates, tenantId, order, leadCountsByBroker);
     if (!chosen) {
       return { success: true, redistributed: false, reason: 'no_candidate_picked' };
     }
-
-    const teamInfo = await getCorretorTeamInfo(
-      tenantId,
-      originalCorretorUserId,
-      originalCorretorName
-    );
 
     const agora = new Date().toISOString();
     const { error: updateError } = await supabase
@@ -363,8 +392,8 @@ export async function redistributeLeadToTeamQueue(
       original_corretor_user_id: originalCorretorUserId,
       redistributed_to_name: chosen.name,
       redistributed_to_user_id: chosen.user_id,
-      team: teamInfo?.team ?? null,
-      leader_user_id: teamInfo?.leader_user_id ?? null,
+      team: chosen.team,
+      leader_user_id: chosen.leader_user_id,
       reason: 'expired_no_response_team_queue',
       attempt_number: attemptNumber,
       success: true,

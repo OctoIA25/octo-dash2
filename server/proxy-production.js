@@ -1764,6 +1764,404 @@ const createZapVRSyncFeed = async (req, res) => {
   }
 };
 
+const pickFirstNonEmpty = (...values) => {
+  for (const value of values) {
+    if (value === undefined || value === null) continue;
+    if (Array.isArray(value)) {
+      const nested = pickFirstNonEmpty(...value);
+      if (nested) return nested;
+      continue;
+    }
+    if (typeof value === 'object') continue;
+    const text = String(value).trim();
+    if (text) return text;
+  }
+  return null;
+};
+
+const getNestedValue = (source, path) => {
+  if (!source || !path) return undefined;
+  return path.split('.').reduce((current, key) => {
+    if (current === undefined || current === null) return undefined;
+    return current[key];
+  }, source);
+};
+
+const pickNestedText = (source, paths) => pickFirstNonEmpty(
+  ...paths.map((path) => getNestedValue(source, path))
+);
+
+const extractZapPhone = (payload) => {
+  const rawPhone = pickNestedText(payload, [
+    'phone',
+    'telefone',
+    'lead.phone',
+    'lead.telefone',
+    'lead.client.phone',
+    'lead.customer.phone',
+    'customer.phone',
+    'customer.telefone',
+    'contact.phone',
+    'contact.telefone',
+    'client.phone',
+    'client.telefone',
+    'person.phone',
+    'person.telefone',
+    'buyer.phone',
+    'buyer.telefone',
+    'phoneNumber',
+    'lead.phoneNumber',
+    'customer.phoneNumber',
+  ]);
+
+  if (rawPhone) return rawPhone;
+
+  const phoneCollections = [
+    payload?.phones,
+    payload?.telefones,
+    payload?.lead?.phones,
+    payload?.lead?.telefones,
+    payload?.customer?.phones,
+    payload?.customer?.telefones,
+    payload?.contact?.phones,
+    payload?.contact?.telefones,
+  ];
+
+  for (const collection of phoneCollections) {
+    if (!Array.isArray(collection)) continue;
+    for (const entry of collection) {
+      const phone = typeof entry === 'object'
+        ? pickFirstNonEmpty(entry.number, entry.phone, entry.value, entry.telefone)
+        : pickFirstNonEmpty(entry);
+      if (phone) return phone;
+    }
+  }
+
+  return null;
+};
+
+const getZapTransactionHints = (payload) => {
+  const raw = normalizeFeedText(pickNestedText(payload, [
+    'transactionType',
+    'transaction_type',
+    'lead.transactionType',
+    'listing.transactionType',
+    'listing.transaction_type',
+    'property.transactionType',
+    'property.transaction_type',
+    'imovel.finalidade',
+  ])).toLowerCase();
+
+  return {
+    interest_is_sale: raw ? raw.includes('sale') || raw.includes('venda') : undefined,
+    interest_is_rent: raw ? raw.includes('rent') || raw.includes('loca') || raw.includes('aluguel') : undefined,
+  };
+};
+
+const normalizeZapLeadPayload = (payload) => {
+  const body = payload || {};
+  const lead = body.lead || body.data?.lead || body.payload?.lead || {};
+  const customer = body.customer || body.client || body.contact || lead.customer || lead.client || lead.contact || {};
+  const listing = body.listing || body.property || body.imovel || lead.listing || lead.property || lead.imovel || {};
+  const transactionHints = getZapTransactionHints(body);
+  const zapLeadId = pickNestedText(body, [
+    'id',
+    'leadId',
+    'lead_id',
+    'lead.id',
+    'lead.leadId',
+    'data.id',
+    'data.leadId',
+    'payload.id',
+    'payload.leadId',
+  ]);
+  const propertyCode = pickFirstNonEmpty(
+    body.interest_reference,
+    body.property_code,
+    body.codigo_imovel,
+    body.listingId,
+    body.listing_id,
+    body.externalListingId,
+    body.external_listing_id,
+    body.propertyId,
+    body.property_id,
+    listing.externalId,
+    listing.external_id,
+    listing.externalCode,
+    listing.code,
+    listing.id,
+    lead.listingId,
+    lead.propertyId
+  );
+  const name = pickFirstNonEmpty(
+    body.name,
+    body.nome,
+    lead.name,
+    lead.nome,
+    customer.name,
+    customer.nome,
+    customer.fullName,
+    customer.full_name
+  );
+  const email = pickFirstNonEmpty(
+    body.email,
+    lead.email,
+    customer.email,
+    customer.mail,
+    body.contactEmail,
+    lead.contactEmail
+  );
+  const phone = extractZapPhone({ ...body, lead, customer });
+  const message = pickFirstNonEmpty(
+    body.message,
+    body.mensagem,
+    body.comments,
+    body.observacoes,
+    lead.message,
+    lead.mensagem,
+    lead.comments,
+    customer.message,
+    body.description,
+    body.text
+  );
+  const brokerName = pickFirstNonEmpty(
+    body.attended_by,
+    body.assigned_agent,
+    body.corretor,
+    listing.brokerName,
+    listing.agentName,
+    listing.contactName,
+    lead.attended_by,
+    lead.assigned_agent
+  );
+
+  return {
+    name,
+    phone,
+    email,
+    portal: pickFirstNonEmpty(body.portal, body.source, body.origin, body.origem) || 'ZAP Imóveis',
+    message,
+    comments: message,
+    interest_reference: propertyCode,
+    property_code: propertyCode,
+    interest_type: propertyCode ? 'property' : null,
+    interest_is_sale: transactionHints.interest_is_sale,
+    interest_is_rent: transactionHints.interest_is_rent,
+    interest_image: pickFirstNonEmpty(
+      body.interest_image,
+      body.image,
+      body.imageUrl,
+      listing.image,
+      listing.imageUrl,
+      listing.thumbnail
+    ),
+    attended_by: brokerName,
+    external_id: zapLeadId ? `zap_${zapLeadId}` : null,
+    raw_data: {
+      source: 'zapimoveis_webhook',
+      zap_lead_id: zapLeadId,
+      original_request: body,
+    },
+  };
+};
+
+const createIncomingLead = async ({ tenantId, body, source = 'API' }) => {
+  const {
+    name, phone, email, portal, message, comments,
+    interest_reference, property_code, codigo_imovel,
+    is_exclusive, exclusivo, imovel_exclusivo,
+    interest_type, interest_is_sale, interest_is_rent, interest_image,
+    attended_by, assigned_agent, corretor, broker_id,
+    stage, etapa_funil, temperature, temperatura,
+    lead_type, tipo_lead,
+    raw_data, auto_assign = true, external_id
+  } = body;
+
+  const normalizedLeadType = (() => {
+    const rawType = lead_type || tipo_lead;
+    if (rawType === 2 || rawType === '2' || String(rawType).toLowerCase() === 'proprietario' || String(rawType).toLowerCase() === 'proprietário') {
+      return 2;
+    }
+    return 1;
+  })();
+
+  const propertyCode = interest_reference || property_code || codigo_imovel;
+  const explicitBroker = attended_by || assigned_agent || corretor;
+  const leadStage = normalizeStage(stage || etapa_funil);
+  const leadTemperature = normalizeTemperature(temperature || temperatura);
+  const leadMessage = message || comments;
+  const explicitExclusiveValue = is_exclusive ?? exclusivo ?? imovel_exclusivo;
+  const normalizedExclusive = explicitExclusiveValue === undefined || explicitExclusiveValue === null
+    ? null
+    : explicitExclusiveValue === true || explicitExclusiveValue === 'true' || explicitExclusiveValue === '1' || explicitExclusiveValue === 1 || String(explicitExclusiveValue).toLowerCase() === 'sim';
+  const normalizedExternalId = external_id || `${source.toLowerCase().replace(/[^a-z0-9]+/g, '_')}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+  if (!name && !phone) {
+    const error = new Error('Nome ou telefone é obrigatório');
+    error.statusCode = 400;
+    error.code = 'VALIDATION_ERROR';
+    throw error;
+  }
+
+  if (external_id) {
+    const { data: existingLead } = await supabase
+      .from('leads')
+      .select('id, tenant_id, source_lead_id, name, phone, email, source, property_code, created_at')
+      .eq('tenant_id', tenantId)
+      .eq('source_lead_id', external_id)
+      .maybeSingle();
+
+    if (existingLead) {
+      return {
+        statusCode: 200,
+        response: {
+          success: true,
+          duplicate: true,
+          data: {
+            id: existingLead.id,
+            crm_id: existingLead.id,
+            tenant_id: existingLead.tenant_id,
+            external_id: existingLead.source_lead_id,
+            name: existingLead.name,
+            phone: existingLead.phone,
+            email: existingLead.email,
+            portal: existingLead.source,
+            property_code: existingLead.property_code,
+            created_at: existingLead.created_at,
+          },
+          message: 'Lead já recebido anteriormente.'
+        }
+      };
+    }
+  }
+
+  let assignedBroker = null;
+  let assignedBrokerId = broker_id || null;
+  let assignmentMethod = null;
+  let propertyImage = interest_image;
+  const resolvedIsExclusive = normalizedExclusive !== null
+    ? normalizedExclusive
+    : await resolvePropertyExclusivity(tenantId, propertyCode);
+
+  if (!explicitBroker && auto_assign !== false) {
+    const { broker, method } = await resolveBrokerForLead(propertyCode, tenantId, raw_data);
+    if (broker) {
+      assignedBroker = broker.name;
+      assignedBrokerId = broker.id || broker.auth_user_id || null;
+      assignmentMethod = method;
+    }
+  } else if (explicitBroker) {
+    assignedBroker = explicitBroker;
+    assignmentMethod = 'explicit';
+    if (!assignedBrokerId) {
+      const foundBroker = await findBrokerByIdentifier(tenantId, { name: explicitBroker });
+      if (foundBroker) {
+        assignedBrokerId = foundBroker.id || foundBroker.auth_user_id;
+      }
+    }
+  }
+
+  if (!propertyImage && propertyCode) {
+    const { data: cached } = await supabase
+      .from('properties_cache')
+      .select('main_photo')
+      .eq('tenant_id', tenantId)
+      .eq('property_code', propertyCode.trim().toUpperCase())
+      .single();
+    propertyImage = cached?.main_photo || null;
+  }
+
+  const now = new Date().toISOString();
+  const kanbanStatus = mapStageToKanbanStatus(stage || etapa_funil || 1);
+  const kanbanTemperature = mapTemperatureToCRM(temperature || temperatura || 'cold');
+  const crmLeadData = {
+    tenant_id: tenantId,
+    name: name || 'Lead sem nome',
+    phone,
+    email,
+    source: portal || source,
+    source_lead_id: normalizedExternalId,
+    status: kanbanStatus,
+    temperature: kanbanTemperature,
+    property_code: propertyCode?.trim().toUpperCase() || null,
+    is_exclusive: resolvedIsExclusive,
+    assigned_agent_id: assignedBrokerId,
+    assigned_agent_name: assignedBroker,
+    comments: leadMessage,
+    lead_type: normalizedLeadType,
+    custom_fields: {
+      source,
+      external_id: normalizedExternalId,
+      interest_type: interest_type || (propertyCode ? 'property' : null),
+      interest_is_sale,
+      interest_is_rent,
+      interest_image: propertyImage,
+      raw_data: raw_data || null,
+      auto_assigned: assignmentMethod !== 'explicit' && assignedBroker ? { broker: assignedBroker, method: assignmentMethod } : null
+    },
+    created_at: now,
+    updated_at: now
+  };
+
+  const { data: crmData, error: crmError } = await supabase
+    .from('leads')
+    .insert(crmLeadData)
+    .select()
+    .single();
+
+  if (crmError) {
+    console.error('❌ Erro ao inserir em leads (CRM):', crmError);
+    throw crmError;
+  } else {
+    console.log(`✅ Lead criado no Kanban: ${crmData.id} → ${assignedBroker || 'Sem corretor'} (${kanbanStatus})`);
+  }
+
+  const mappedLead = {
+    id: crmData.id,
+    crm_id: crmData.id,
+    tenant_id: crmData.tenant_id,
+    external_id: crmData.source_lead_id,
+    name: crmData.name,
+    phone: crmData.phone,
+    email: crmData.email,
+    portal: crmData.source,
+    message: crmData.comments,
+    property_code: crmData.property_code,
+    interest_reference: crmData.property_code,
+    is_exclusive: resolvedIsExclusive,
+    interest_image: propertyImage,
+    interest_type: interest_type || (propertyCode ? 'property' : null),
+    interest_is_sale,
+    interest_is_rent,
+    assigned_agent: crmData.assigned_agent_name,
+    assigned_agent_id: assignedBrokerId,
+    attended_by: crmData.assigned_agent_name,
+    stage: leadStage,
+    kanban_status: kanbanStatus,
+    temperature: leadTemperature,
+    lead_timestamp: crmData.created_at,
+    created_at: crmData.created_at
+  };
+
+  const response = {
+    success: true,
+    data: mappedLead,
+    message: assignedBroker
+      ? `Lead criado e atribuído a ${assignedBroker} (via ${assignmentMethod})`
+      : 'Lead criado com sucesso no CRM'
+  };
+
+  if (assignedBroker && assignmentMethod !== 'explicit') {
+    response.auto_assigned = {
+      broker_name: assignedBroker,
+      broker_id: assignedBrokerId,
+      method: assignmentMethod
+    };
+  }
+
+  return { statusCode: 201, response };
+};
+
 app.get('/api/v1/integrations/zapimoveis/health', validateZapFeedAccess, async (req, res) => {
   try {
     const listings = await getZapFeedListings(req.tenantId);
@@ -1777,6 +2175,8 @@ app.get('/api/v1/integrations/zapimoveis/health', validateZapFeedAccess, async (
         'GET /api/v1/integrations/zapimoveis/vrsync.xml',
         'GET /api/v1/integrations/zapimoveis/feed.xml',
         'GET /api/v1/integrations/zapimoveis/debug',
+        'POST /api/v1/integrations/zapimoveis/webhook',
+        'POST /api/v1/integrations/grupo-olx/webhook',
         'GET /api/v1/integrations/grupo-olx/vrsync.xml'
       ],
       auth: {
@@ -1825,9 +2225,72 @@ app.get('/api/v1/integrations/zapimoveis/vrsync.xml', validateZapFeedAccess, cre
 app.get('/api/v1/integrations/zapimoveis/feed.xml', validateZapFeedAccess, createZapVRSyncFeed);
 app.get('/api/v1/integrations/grupo-olx/vrsync.xml', validateZapFeedAccess, createZapVRSyncFeed);
 
+app.post('/api/v1/integrations/zapimoveis/webhook', validateZapFeedAccess, async (req, res) => {
+  try {
+    const normalizedLead = normalizeZapLeadPayload(req.body);
+    const result = await createIncomingLead({
+      tenantId: req.tenantId,
+      body: normalizedLead,
+      source: 'ZAP Imóveis'
+    });
+
+    console.log('📥 Webhook ZAP recebido e salvo:', {
+      tenant_id: req.tenantId,
+      lead_id: result.response?.data?.id,
+      external_id: result.response?.data?.external_id,
+      property_code: result.response?.data?.property_code,
+      duplicate: Boolean(result.response?.duplicate)
+    });
+
+    res.status(result.statusCode).json({
+      ...result.response,
+      integration: 'zapimoveis-webhook'
+    });
+  } catch (error) {
+    console.error('❌ Erro no webhook ZAP:', error);
+    res.status(error.statusCode || 500).json({
+      success: false,
+      integration: 'zapimoveis-webhook',
+      error: {
+        code: error.code || 'SERVER_ERROR',
+        message: error.message
+      }
+    });
+  }
+});
+
+app.post('/api/v1/integrations/grupo-olx/webhook', validateZapFeedAccess, async (req, res) => {
+  try {
+    const normalizedLead = {
+      ...normalizeZapLeadPayload(req.body),
+      portal: 'Grupo OLX',
+    };
+    const result = await createIncomingLead({
+      tenantId: req.tenantId,
+      body: normalizedLead,
+      source: 'Grupo OLX'
+    });
+
+    res.status(result.statusCode).json({
+      ...result.response,
+      integration: 'grupo-olx-webhook'
+    });
+  } catch (error) {
+    console.error('❌ Erro no webhook Grupo OLX:', error);
+    res.status(error.statusCode || 500).json({
+      success: false,
+      integration: 'grupo-olx-webhook',
+      error: {
+        code: error.code || 'SERVER_ERROR',
+        message: error.message
+      }
+    });
+  }
+});
+
 // POST /api/v1/leads - Criar lead com atribuição automática
 // Pipeline: attendedBy → XML/cache → Meus Imóveis → Roleta
-// INSERE EM: kenlo_leads (Central de Leads) + leads (Kanban do Corretor)
+// INSERE EM: leads (CRM/Kanban do Corretor)
 app.post('/api/v1/leads', validateApiKey, async (req, res) => {
   try {
     const { 
@@ -1911,50 +2374,10 @@ app.post('/api/v1/leads', validateApiKey, async (req, res) => {
     }
 
     // ============================================
-    // 1. INSERIR EM kenlo_leads (Central de Leads)
+    // INSERIR EM leads (CRM/Kanban do Corretor)
     // ============================================
-    const kenloLeadData = {
-      tenant_id: req.tenantId,
-      client_name: name,
-      client_phone: phone,
-      client_email: email,
-      portal: portal || 'API',
-      message: leadMessage,
-      interest_reference: propertyCode?.trim().toUpperCase() || null,
-      interest_type: interest_type || (propertyCode ? 'property' : null),
-      interest_is_sale: interest_is_sale,
-      interest_is_rent: interest_is_rent,
-      interest_image: propertyImage,
-      is_exclusive: resolvedIsExclusive,
-      attended_by_name: assignedBroker,
-      stage: leadStage,
-      temperature: leadTemperature,
-      external_id: `api_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      lead_timestamp: new Date().toISOString(),
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      raw_data: { 
-        source: 'API', 
-        original_request: req.body, 
-        auto_assigned: assignmentMethod !== 'explicit' && assignedBroker ? { broker: assignedBroker, method: assignmentMethod } : null
-      }
-    };
-
-    const { data: kenloData, error: kenloError } = await supabase
-      .from('kenlo_leads')
-      .insert(kenloLeadData)
-      .select()
-      .single();
-
-    if (kenloError) {
-      console.error('❌ Erro ao inserir em kenlo_leads:', kenloError);
-      throw kenloError;
-    }
-
-    // ============================================
-    // 2. INSERIR EM leads (Kanban do Corretor)
-    // Esta é a tabela que o Kanban "Meus Leads" lê
-    // ============================================
+    const now = new Date().toISOString();
+    const sourceLeadId = `api_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const kanbanStatus = mapStageToKanbanStatus(stage || etapa_funil || 1);
     const kanbanTemperature = mapTemperatureToCRM(temperature || temperatura || 'cold');
 
@@ -1964,7 +2387,7 @@ app.post('/api/v1/leads', validateApiKey, async (req, res) => {
       phone: phone,
       email: email,
       source: portal || 'API',
-      source_lead_id: kenloData.id, // Referência ao kenlo_leads
+      source_lead_id: sourceLeadId,
       status: kanbanStatus,
       temperature: kanbanTemperature,
       property_code: propertyCode?.trim().toUpperCase() || null,
@@ -1973,8 +2396,18 @@ app.post('/api/v1/leads', validateApiKey, async (req, res) => {
       assigned_agent_name: assignedBroker,
       comments: leadMessage,
       lead_type: normalizedLeadType, // 1 = Interessado (default), 2 = Proprietário
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      custom_fields: {
+        source: 'API',
+        external_id: sourceLeadId,
+        interest_type: interest_type || (propertyCode ? 'property' : null),
+        interest_is_sale,
+        interest_is_rent,
+        interest_image: propertyImage,
+        raw_data: raw_data || req.body,
+        auto_assigned: assignmentMethod !== 'explicit' && assignedBroker ? { broker: assignedBroker, method: assignmentMethod } : null
+      },
+      created_at: now,
+      updated_at: now
     };
 
     const { data: crmData, error: crmError } = await supabase
@@ -1985,37 +2418,37 @@ app.post('/api/v1/leads', validateApiKey, async (req, res) => {
 
     if (crmError) {
       console.error('❌ Erro ao inserir em leads (CRM):', crmError);
-      // Não falhar a requisição, apenas logar (lead já foi criado em kenlo_leads)
+      throw crmError;
     } else {
       console.log(`✅ Lead criado no Kanban: ${crmData.id} → ${assignedBroker || 'Sem corretor'} (${kanbanStatus})`);
     }
 
     // Mapear resposta
     const mappedLead = {
-      id: kenloData.id,
-      crm_id: crmData?.id || null,
-      tenant_id: kenloData.tenant_id,
-      external_id: kenloData.external_id,
-      name: kenloData.client_name,
-      phone: kenloData.client_phone,
-      email: kenloData.client_email,
-      portal: kenloData.portal,
-      message: kenloData.message,
-      property_code: kenloData.interest_reference,
-      interest_reference: kenloData.interest_reference,
+      id: crmData.id,
+      crm_id: crmData.id,
+      tenant_id: crmData.tenant_id,
+      external_id: crmData.source_lead_id,
+      name: crmData.name,
+      phone: crmData.phone,
+      email: crmData.email,
+      portal: crmData.source,
+      message: crmData.comments,
+      property_code: crmData.property_code,
+      interest_reference: crmData.property_code,
       is_exclusive: resolvedIsExclusive,
-      interest_image: kenloData.interest_image,
-      interest_type: kenloData.interest_type,
-      interest_is_sale: kenloData.interest_is_sale,
-      interest_is_rent: kenloData.interest_is_rent,
-      assigned_agent: kenloData.attended_by_name,
+      interest_image: propertyImage,
+      interest_type: interest_type || (propertyCode ? 'property' : null),
+      interest_is_sale,
+      interest_is_rent,
+      assigned_agent: crmData.assigned_agent_name,
       assigned_agent_id: assignedBrokerId,
-      attended_by: kenloData.attended_by_name,
-      stage: kenloData.stage,
+      attended_by: crmData.assigned_agent_name,
+      stage: leadStage,
       kanban_status: kanbanStatus,
-      temperature: kenloData.temperature,
-      lead_timestamp: kenloData.lead_timestamp,
-      created_at: kenloData.created_at
+      temperature: leadTemperature,
+      lead_timestamp: crmData.created_at,
+      created_at: crmData.created_at
     };
 
     const response = {
@@ -2023,7 +2456,7 @@ app.post('/api/v1/leads', validateApiKey, async (req, res) => {
       data: mappedLead,
       message: assignedBroker 
         ? `Lead criado e atribuído a ${assignedBroker} (via ${assignmentMethod})`
-        : 'Lead criado com sucesso na Central de Leads'
+        : 'Lead criado com sucesso no CRM'
     };
     
     if (assignedBroker && assignmentMethod !== 'explicit') {
@@ -2908,45 +3341,9 @@ app.post('/api/v1/leads/roleta', validateApiKey, async (req, res) => {
       propertyImage = cached?.main_photo || null;
     }
 
-    // 1. INSERIR EM kenlo_leads (Central de Leads)
-    const kenloLeadData = {
-      tenant_id: req.tenantId,
-      client_name: name,
-      client_phone: phone,
-      client_email: email,
-      portal: portal || 'API',
-      message: leadMessage,
-      interest_reference: propertyCode?.trim().toUpperCase() || null,
-      interest_type: interest_type || (propertyCode ? 'property' : null),
-      interest_is_sale: interest_is_sale,
-      interest_is_rent: interest_is_rent,
-      interest_image: propertyImage,
-      attended_by_name: assignedBroker,
-      stage: leadStage,
-      temperature: leadTemperature,
-      external_id: `api_roleta_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      lead_timestamp: new Date().toISOString(),
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      raw_data: {
-        source: 'API_ROLETA',
-        original_request: req.body,
-        auto_assigned: { broker: assignedBroker, method: 'roleta_forced' }
-      }
-    };
-
-    const { data: kenloData, error: kenloError } = await supabase
-      .from('kenlo_leads')
-      .insert(kenloLeadData)
-      .select()
-      .single();
-
-    if (kenloError) {
-      console.error('❌ Erro ao inserir em kenlo_leads (roleta):', kenloError);
-      throw kenloError;
-    }
-
-    // 2. INSERIR EM leads (Kanban do Corretor)
+    // INSERIR EM leads (CRM/Kanban do Corretor)
+    const now = new Date().toISOString();
+    const sourceLeadId = `api_roleta_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const kanbanStatus = mapStageToKanbanStatus(stage || etapa_funil || 1);
     const kanbanTemperature = mapTemperatureToCRM(temperature || temperatura || 'cold');
 
@@ -2956,7 +3353,7 @@ app.post('/api/v1/leads/roleta', validateApiKey, async (req, res) => {
       phone: phone,
       email: email,
       source: portal || 'API',
-      source_lead_id: kenloData.id,
+      source_lead_id: sourceLeadId,
       status: kanbanStatus,
       temperature: kanbanTemperature,
       property_code: propertyCode?.trim().toUpperCase() || null,
@@ -2964,8 +3361,18 @@ app.post('/api/v1/leads/roleta', validateApiKey, async (req, res) => {
       assigned_agent_name: assignedBroker,
       comments: leadMessage,
       lead_type: normalizedLeadType,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      custom_fields: {
+        source: 'API_ROLETA',
+        external_id: sourceLeadId,
+        interest_type: interest_type || (propertyCode ? 'property' : null),
+        interest_is_sale,
+        interest_is_rent,
+        interest_image: propertyImage,
+        raw_data: req.body,
+        auto_assigned: { broker: assignedBroker, method: 'roleta_forced' }
+      },
+      created_at: now,
+      updated_at: now
     };
 
     const { data: crmData, error: crmError } = await supabase
@@ -2976,29 +3383,30 @@ app.post('/api/v1/leads/roleta', validateApiKey, async (req, res) => {
 
     if (crmError) {
       console.error('❌ Erro ao inserir em leads/Kanban (roleta):', crmError);
+      throw crmError;
     } else {
       console.log(`✅ Lead roleta criado no Kanban: ${crmData.id} → ${assignedBroker} (${kanbanStatus})`);
     }
 
     // Mapear resposta
     const mappedLead = {
-      id: kenloData.id,
-      crm_id: crmData?.id || null,
-      tenant_id: kenloData.tenant_id,
-      external_id: kenloData.external_id,
-      name: kenloData.client_name,
-      phone: kenloData.client_phone,
-      email: kenloData.client_email,
-      portal: kenloData.portal,
-      message: kenloData.message,
-      property_code: kenloData.interest_reference,
+      id: crmData.id,
+      crm_id: crmData.id,
+      tenant_id: crmData.tenant_id,
+      external_id: crmData.source_lead_id,
+      name: crmData.name,
+      phone: crmData.phone,
+      email: crmData.email,
+      portal: crmData.source,
+      message: crmData.comments,
+      property_code: crmData.property_code,
       assigned_agent: assignedBroker,
       assigned_agent_id: assignedBrokerId,
-      stage: kenloData.stage,
+      stage: leadStage,
       kanban_status: kanbanStatus,
-      temperature: kenloData.temperature,
-      lead_timestamp: kenloData.lead_timestamp,
-      created_at: kenloData.created_at
+      temperature: leadTemperature,
+      lead_timestamp: crmData.created_at,
+      created_at: crmData.created_at
     };
 
     res.status(201).json({

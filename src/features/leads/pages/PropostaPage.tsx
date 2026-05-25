@@ -321,42 +321,64 @@ const DEAL_NAV_ITEMS = [
 
 type DealTabId = (typeof DEAL_NAV_ITEMS)[number]['id'];
 
+interface DealWorkflowItem {
+  id: string;
+  label: string;
+  owner: string;
+  stageId: ProposalStageId;
+  targetTab: DealTabId;
+}
+
+interface DealWorkflowGroup {
+  id: string;
+  title: string;
+  status: string;
+  stageId: ProposalStageId;
+  items: readonly DealWorkflowItem[];
+}
+
 const DEAL_WORKFLOW_GROUPS = [
   {
-    title: 'FEITURA DE CONTRATO',
-    status: 'Em preparação',
+    id: 'feitura-contrato',
+    title: 'Feitura de Contrato',
+    status: 'Contrato',
+    stageId: 'feitura-contrato',
     items: [
-      'Anexar proposta no sistema iList.',
-      'Completar valor total de comissão e nome dos corretores.',
-      'Documentos do vendedor.',
-      'Documentos dos compradores.',
-      'ERICK: Comissões.',
-      'VANESSA: baixa do imóvel de veículos promocionais, site e portais.',
-      'JURÍDICO: atualizações de certidões reais e pessoais reipersecutórias.',
-      'Upload do contrato assinado via Clicksign ou pessoalmente.',
+      { id: 'proposta-anexada', label: 'Anexar proposta no iList', owner: 'Corretor', stageId: 'feitura-contrato', targetTab: 'documentos' },
+      { id: 'comissao-cadastrada', label: 'Completar comissão e corretores', owner: 'Financeiro', stageId: 'feitura-contrato', targetTab: 'formulario' },
+      { id: 'docs-vendedor', label: 'Documentos dos vendedores', owner: 'Vendedor', stageId: 'feitura-contrato', targetTab: 'participantes' },
+      { id: 'docs-comprador', label: 'Documentos dos compradores', owner: 'Comprador', stageId: 'feitura-contrato', targetTab: 'participantes' },
+      { id: 'comissoes-conferidas', label: 'Comissões conferidas', owner: 'Financeiro', stageId: 'feitura-contrato', targetTab: 'formulario' },
+      { id: 'baixa-portais', label: 'Baixa do imóvel em site e portais', owner: 'Operações', stageId: 'feitura-contrato', targetTab: 'documentos' },
+      { id: 'certidoes-atualizadas', label: 'Certidões reais e pessoais atualizadas', owner: 'Jurídico', stageId: 'feitura-contrato', targetTab: 'certidoes' },
+      { id: 'contrato-assinado-upload', label: 'Upload do contrato assinado', owner: 'Jurídico', stageId: 'feitura-contrato', targetTab: 'assinatura' },
     ],
   },
   {
-    title: 'EM ANÁLISE: Leitura',
-    status: 'ANDAMENTO',
+    id: 'escrituracao',
+    title: 'Escrituração',
+    status: 'Em análise',
+    stageId: 'proposta-assinada',
     items: [
-      'Enviar ao cartório a documentação para feitura da escritura.',
-      'Corretor informa ao comprador a data de quitação do boleto.',
-      'Corretor informa ao comprador valores de ITBI e custas cartorárias.',
+      { id: 'cartorio-documentacao', label: 'Enviar documentação ao cartório', owner: 'Jurídico', stageId: 'proposta-assinada', targetTab: 'escriturar' },
+      { id: 'boleto-quitacao', label: 'Informar data de quitação do boleto', owner: 'Corretor', stageId: 'proposta-assinada', targetTab: 'agenda' },
+      { id: 'itbi-custas', label: 'Informar ITBI e custas cartorárias', owner: 'Corretor', stageId: 'proposta-assinada', targetTab: 'certidoes' },
     ],
   },
   {
-    title: 'RECEBIDO: Em andamento',
+    id: 'pos-venda',
+    title: 'Pós-venda',
     status: 'Pós-venda',
+    stageId: 'proposta-assinada',
     items: [
-      'Transferências de titularidade: condomínio, CPFL, Comgás e DAE quando aplicável.',
-      'Fazer upload da certidão de IPTU, matrícula e mudança do mesmo com data.',
-      'Pós-vendas GRV: instruir proprietário sobre alteração da conta de água.',
-      'Corretor agenda a entrega das chaves aos compradores.',
-      'VANESSA: pagamento de comissões e emissão de NFs, recibos ou RPAs.',
+      { id: 'titularidade-transferencias', label: 'Transferir titularidade de condomínio e concessionárias', owner: 'Pós-venda', stageId: 'proposta-assinada', targetTab: 'solicitacao' },
+      { id: 'iptu-matricula-upload', label: 'Anexar IPTU, matrícula e alteração com data', owner: 'Pós-venda', stageId: 'proposta-assinada', targetTab: 'documentos' },
+      { id: 'agua-orientacao', label: 'Orientar alteração da conta de água', owner: 'Pós-venda', stageId: 'proposta-assinada', targetTab: 'solicitacao' },
+      { id: 'entrega-chaves', label: 'Agendar entrega das chaves', owner: 'Corretor', stageId: 'proposta-assinada', targetTab: 'agenda' },
+      { id: 'pagamento-comissoes', label: 'Pagar comissões e emitir NFs, recibos ou RPAs', owner: 'Financeiro', stageId: 'proposta-assinada', targetTab: 'formulario' },
     ],
   },
-] as const;
+] as const satisfies readonly DealWorkflowGroup[];
 
 const DOCUMENT_CHECKLIST = [
   'Proposta anexada',
@@ -1023,30 +1045,120 @@ function InfoTile({
 }
 
 function WorkflowChecklist({
-  title,
-  status,
-  items,
+  group,
+  activeItemId,
+  pendingItemId,
+  currentStageId,
+  onSelectItem,
+  onActivateItem,
 }: {
-  title: string;
-  status: string;
-  items: readonly string[];
+  group: DealWorkflowGroup;
+  activeItemId?: string;
+  pendingItemId?: string | null;
+  currentStageId: ProposalStageId;
+  onSelectItem: (itemId: string) => void;
+  onActivateItem: (item: DealWorkflowItem) => void;
 }) {
+  const groupStage = STAGE_BY_ID[group.stageId];
+  const GroupIcon = groupStage.icon;
+
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+    <div
+      className="rounded-lg border bg-white p-4 dark:bg-slate-900"
+      style={{
+        borderColor: currentStageId === group.stageId ? `${groupStage.color}66` : undefined,
+        boxShadow: currentStageId === group.stageId ? `0 0 0 1px ${groupStage.color}14` : undefined,
+      }}
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h4 className="text-sm font-semibold text-slate-950 dark:text-slate-50">{title}</h4>
-        <Badge variant="outline" className="text-[11px]">{status}</Badge>
+        <div className="flex min-w-0 items-center gap-2">
+          <span
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md"
+            style={{ backgroundColor: `${groupStage.color}14`, color: groupStage.color }}
+          >
+            <GroupIcon className="h-3.5 w-3.5" />
+          </span>
+          <h4 className="truncate text-sm font-semibold text-slate-950 dark:text-slate-50">{group.title}</h4>
+        </div>
+        <Badge variant="outline" className="text-[11px]">{group.status}</Badge>
       </div>
-      <ol className="mt-3 space-y-2">
-        {items.map((item, index) => (
-          <li key={item} className="flex gap-2 text-sm leading-5 text-slate-600 dark:text-slate-300">
-            <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[11px] font-bold text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-              {index + 1}
-            </span>
-            <span>{item}</span>
-          </li>
-        ))}
-      </ol>
+      <div className="mt-3 grid gap-2">
+        {group.items.map((item, index) => {
+          const isActive = activeItemId === item.id;
+          const isPending = pendingItemId === item.id;
+          const isSameStage = currentStageId === item.stageId;
+          const itemStage = STAGE_BY_ID[item.stageId];
+
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => onSelectItem(pendingItemId === item.id ? '' : item.id)}
+              className={cn(
+                'w-full rounded-lg border px-3 py-2.5 text-left transition-colors',
+                isActive
+                  ? 'border-transparent bg-emerald-50 dark:bg-emerald-950/30'
+                  : isPending
+                    ? 'bg-white dark:bg-slate-950'
+                    : 'border-slate-200 bg-slate-50 hover:bg-white dark:border-slate-800 dark:bg-slate-800/60 dark:hover:bg-slate-950',
+              )}
+              style={
+                isActive
+                  ? { borderColor: '#10b98133' }
+                  : isPending
+                    ? { borderColor: `${itemStage.color}66` }
+                    : undefined
+              }
+            >
+              <div className="flex items-start gap-2">
+                <span
+                  className={cn(
+                    'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold',
+                    isActive
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-white text-slate-500 dark:bg-slate-900 dark:text-slate-400',
+                  )}
+                >
+                  {isActive ? <CheckCircle2 className="h-3.5 w-3.5" /> : index + 1}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold leading-5 text-slate-800 dark:text-slate-100">{item.label}</span>
+                  <span className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+                    <span>{item.owner}</span>
+                    <span
+                      className="rounded-full px-2 py-0.5 font-semibold"
+                      style={{ backgroundColor: `${itemStage.color}12`, color: itemStage.color }}
+                    >
+                      {itemStage.label}
+                    </span>
+                    {isSameStage && !isActive && <span>etapa atual</span>}
+                  </span>
+                </span>
+              </div>
+              {isPending && (
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 dark:border-slate-800">
+                  <span className="text-[12px] text-slate-500 dark:text-slate-400">
+                    Ativar esta subetapa no negócio.
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={isActive}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onActivateItem(item);
+                    }}
+                    className="h-8"
+                  >
+                    <CheckCircle2 className="mr-2 h-3.5 w-3.5" />
+                    {isActive ? 'Subetapa ativa' : 'Ativar subetapa'}
+                  </Button>
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -1702,6 +1814,7 @@ export const PropostaPage = () => {
     property: '',
   });
   const [signatureDocumentName, setSignatureDocumentName] = useState('');
+  const [pendingWorkflowItemId, setPendingWorkflowItemId] = useState<string | null>(null);
   const [linkLeadTarget, setLinkLeadTarget] = useState<
     | { mode: 'detail'; proposalId: string; group: 'compradores' | 'vendedores' }
     | { mode: 'draft'; group: 'compradores' | 'vendedores' }
@@ -1877,6 +1990,8 @@ export const PropostaPage = () => {
     .map((item) => item.trim())
     .filter(Boolean);
   const getTransactionFormValue = (key: string, fallback = '') => transactionForm[key] ?? fallback;
+  const activeDealSubstageId = getTransactionFormValue('activeDealSubstageId');
+  const activeDealSubstageLabel = getTransactionFormValue('activeDealSubstageLabel');
 
   const persistExistingProposal = useCallback(
     async (proposal: ProposalItem, detail: ProposalDetailState) => {
@@ -2268,6 +2383,35 @@ export const PropostaPage = () => {
     setUpdatingId(null);
   };
 
+  const activateDealSubstage = (proposal: ProposalItem, group: DealWorkflowGroup, item: DealWorkflowItem) => {
+    const activatedAt = new Date().toISOString();
+
+    updateProposalDetail(proposal, (current) => ({
+      ...current,
+      transactionForm: {
+        ...current.transactionForm,
+        activeDealSubstageId: item.id,
+        activeDealSubstageLabel: item.label,
+        activeDealSubstageGroup: group.title,
+        activeDealSubstageOwner: item.owner,
+        activeDealSubstageActivatedAt: activatedAt,
+      },
+    }));
+
+    appendHistory(proposal, 'Subetapa ativada', `${group.title}: ${item.label}. Responsável: ${item.owner}.`);
+    setPendingWorkflowItemId(null);
+    setActiveDetailTab(item.targetTab);
+
+    if (proposal.stageId !== item.stageId) {
+      void changeProposalStage(proposal.id, item.stageId);
+    }
+
+    toast({
+      title: 'Subetapa ativada',
+      description: item.label,
+    });
+  };
+
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(String(event.active.id));
   };
@@ -2380,6 +2524,7 @@ export const PropostaPage = () => {
         assessoriaBancaria: 'suporte',
         condicoesEspecificas: draftForm.condicoesEspecificas,
       },
+      transactionForm: {},
       propertyOrigin: draft.propertyOrigin,
       endereco: draft.endereco,
       agenteResponsavel: draft.agenteResponsavel,
@@ -2481,6 +2626,7 @@ export const PropostaPage = () => {
     const detail = proposalDetails[proposal.id] ?? buildDefaultProposalDetail(proposal);
     setSelectedProposal(proposal);
     setActiveDetailTab('negocios');
+    setPendingWorkflowItemId(null);
     setSignatureDocumentName(detail.transactionForm.signatureDocumentName || '');
     setRequestDraft((previous) => ({
       ...previous,
@@ -3168,11 +3314,29 @@ export const PropostaPage = () => {
                             <InfoTile key={label} label={label} value={value} />
                           ))}
                         </div>
+                        {activeDealSubstageLabel && (
+                          <div className="mt-4">
+                            <InfoTile
+                              label="Subetapa ativa"
+                              value={activeDealSubstageLabel}
+                              detail={getTransactionFormValue('activeDealSubstageGroup')}
+                              icon={ClipboardCheck}
+                            />
+                          </div>
+                        )}
                       </DetailSection>
 
                       <div className="grid gap-3">
                         {DEAL_WORKFLOW_GROUPS.map((group) => (
-                          <WorkflowChecklist key={group.title} title={group.title} status={group.status} items={group.items} />
+                          <WorkflowChecklist
+                            key={group.id}
+                            group={group}
+                            activeItemId={activeDealSubstageId}
+                            pendingItemId={pendingWorkflowItemId}
+                            currentStageId={selectedProposal.stageId}
+                            onSelectItem={(itemId) => setPendingWorkflowItemId(itemId || null)}
+                            onActivateItem={(item) => activateDealSubstage(selectedProposal, group, item)}
+                          />
                         ))}
                       </div>
                     </div>
@@ -3996,7 +4160,15 @@ export const PropostaPage = () => {
                   <DetailSection title="Escriturar" icon={Landmark}>
                     <div className="grid gap-3">
                       {DEAL_WORKFLOW_GROUPS.slice(1).map((group) => (
-                        <WorkflowChecklist key={group.title} title={group.title} status={group.status} items={group.items} />
+                        <WorkflowChecklist
+                          key={group.id}
+                          group={group}
+                          activeItemId={activeDealSubstageId}
+                          pendingItemId={pendingWorkflowItemId}
+                          currentStageId={selectedProposal.stageId}
+                          onSelectItem={(itemId) => setPendingWorkflowItemId(itemId || null)}
+                          onActivateItem={(item) => activateDealSubstage(selectedProposal, group, item)}
+                        />
                       ))}
                     </div>
                   </DetailSection>

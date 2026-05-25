@@ -6,6 +6,7 @@
 
 import express from 'express';
 import cors from 'cors';
+import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 
 const app = express();
@@ -113,6 +114,51 @@ const validateApiKey = async (req, res, next) => {
   next();
 };
 
+const safeStringEquals = (left, right) => {
+  if (!left || !right) return false;
+  const leftBuffer = Buffer.from(String(left));
+  const rightBuffer = Buffer.from(String(right));
+  if (leftBuffer.length !== rightBuffer.length) return false;
+  return crypto.timingSafeEqual(leftBuffer, rightBuffer);
+};
+
+const firstHeaderValue = (value) => Array.isArray(value) ? value[0] : value;
+
+const getZapWebhookConfig = () => ({
+  secret: process.env.ZAPIMOVEIS_WEBHOOK_SECRET
+    || process.env.ZAPIMOVEIS_FEED_SECRET
+    || process.env.OLX_FEED_SECRET,
+  tenantId: process.env.ZAPIMOVEIS_TENANT_ID
+    || process.env.OLX_TENANT_ID
+    || process.env.VITE_SANTA_ANGELA_TENANT_ID,
+});
+
+const validateZapWebhookAccess = async (req, res, next) => {
+  const config = getZapWebhookConfig();
+  const providedSecret = firstHeaderValue(req.headers['x-zapimoveis-webhook-secret'])
+    || firstHeaderValue(req.headers['x-zapimoveis-secret'])
+    || firstHeaderValue(req.headers['x-olx-webhook-secret'])
+    || req.query.token
+    || req.query.secret;
+
+  if (config.secret && safeStringEquals(providedSecret, config.secret)) {
+    const tenantId = req.query.tenant_id || req.query.tenantId || config.tenantId;
+    if (!tenantId) {
+      return res.status(500).json({
+        success: false,
+        error: {
+          code: 'MISSING_TENANT_ID',
+          message: 'Configure ZAPIMOVEIS_TENANT_ID ou envie tenant_id na URL do webhook.'
+        }
+      });
+    }
+    req.tenantId = tenantId;
+    return next();
+  }
+
+  return validateApiKey(req, res, next);
+};
+
 // ============================================
 // HELPERS - kenlo_leads table structure
 // ============================================
@@ -217,6 +263,121 @@ const mapLeadToDB = (lead) => {
   if (lead.raw_data !== undefined) mapped.raw_data = lead.raw_data;
   
   return mapped;
+};
+
+const pickFirstNonEmpty = (...values) => {
+  for (const value of values) {
+    if (value === undefined || value === null) continue;
+    if (Array.isArray(value)) {
+      const nested = pickFirstNonEmpty(...value);
+      if (nested) return nested;
+      continue;
+    }
+    if (typeof value === 'object') continue;
+    const text = String(value).trim();
+    if (text) return text;
+  }
+  return null;
+};
+
+const getNestedValue = (source, path) => {
+  if (!source || !path) return undefined;
+  return path.split('.').reduce((current, key) => {
+    if (current === undefined || current === null) return undefined;
+    return current[key];
+  }, source);
+};
+
+const pickNestedText = (source, paths) => pickFirstNonEmpty(
+  ...paths.map((path) => getNestedValue(source, path))
+);
+
+const extractZapPhone = (payload) => {
+  const rawPhone = pickNestedText(payload, [
+    'phone',
+    'telefone',
+    'lead.phone',
+    'lead.telefone',
+    'customer.phone',
+    'customer.telefone',
+    'contact.phone',
+    'contact.telefone',
+    'client.phone',
+    'client.telefone',
+    'phoneNumber',
+  ]);
+  if (rawPhone) return rawPhone;
+
+  const collections = [
+    payload?.phones,
+    payload?.telefones,
+    payload?.lead?.phones,
+    payload?.customer?.phones,
+    payload?.contact?.phones,
+  ];
+
+  for (const collection of collections) {
+    if (!Array.isArray(collection)) continue;
+    for (const entry of collection) {
+      const phone = typeof entry === 'object'
+        ? pickFirstNonEmpty(entry.number, entry.phone, entry.value, entry.telefone)
+        : pickFirstNonEmpty(entry);
+      if (phone) return phone;
+    }
+  }
+
+  return null;
+};
+
+const normalizeZapLeadPayload = (payload) => {
+  const body = payload || {};
+  const lead = body.lead || body.data?.lead || body.payload?.lead || {};
+  const customer = body.customer || body.client || body.contact || lead.customer || lead.client || {};
+  const listing = body.listing || body.property || body.imovel || lead.listing || lead.property || {};
+  const zapLeadId = pickNestedText(body, ['id', 'leadId', 'lead_id', 'lead.id', 'data.id', 'payload.id']);
+  const propertyCode = pickFirstNonEmpty(
+    body.interest_reference,
+    body.property_code,
+    body.codigo_imovel,
+    body.listingId,
+    body.externalListingId,
+    body.propertyId,
+    listing.externalId,
+    listing.external_id,
+    listing.externalCode,
+    listing.code,
+    listing.id,
+    lead.listingId,
+    lead.propertyId
+  );
+  const transactionType = String(pickFirstNonEmpty(
+    body.transactionType,
+    body.transaction_type,
+    listing.transactionType,
+    listing.transaction_type,
+    listing.finalidade
+  ) || '').toLowerCase();
+
+  return {
+    name: pickFirstNonEmpty(body.name, body.nome, lead.name, lead.nome, customer.name, customer.nome, customer.fullName),
+    phone: extractZapPhone({ ...body, lead, customer }),
+    email: pickFirstNonEmpty(body.email, lead.email, customer.email, customer.mail),
+    portal: pickFirstNonEmpty(body.portal, body.source, body.origin, body.origem) || 'ZAP Imóveis',
+    message: pickFirstNonEmpty(body.message, body.mensagem, body.comments, lead.message, lead.mensagem, body.description, body.text),
+    interest_reference: propertyCode,
+    property_code: propertyCode,
+    interest_type: propertyCode ? 'property' : null,
+    interest_is_sale: transactionType ? transactionType.includes('sale') || transactionType.includes('venda') : undefined,
+    interest_is_rent: transactionType ? transactionType.includes('rent') || transactionType.includes('loca') || transactionType.includes('aluguel') : undefined,
+    interest_image: pickFirstNonEmpty(body.interest_image, body.image, body.imageUrl, listing.image, listing.imageUrl, listing.thumbnail),
+    attended_by: pickFirstNonEmpty(body.attended_by, body.assigned_agent, body.corretor, listing.brokerName, listing.agentName, lead.attended_by),
+    external_id: zapLeadId ? `zap_${zapLeadId}` : null,
+    raw_data: {
+      source: 'zapimoveis_webhook',
+      zap_lead_id: zapLeadId,
+      original_request: body,
+    },
+  };
 };
 
 const resolvePropertyExclusivity = async (tenantId, propertyCode) => {
@@ -694,6 +855,118 @@ const getNextBrokerFromRoleta = async (tenantId) => {
 
 // POST /api/v1/leads - Criar lead com atribuição automática
 // Pipeline: 1) attendedBy → 2) XML/cache → 3) Meus Imóveis → 4) Roleta
+app.post('/api/v1/integrations/zapimoveis/webhook', validateZapWebhookAccess, async (req, res) => {
+  try {
+    const normalized = normalizeZapLeadPayload(req.body);
+    const tenantId = req.tenantId || normalized.tenant_id;
+    const now = new Date().toISOString();
+    const propertyCode = normalized.property_code || normalized.interest_reference || null;
+    const sourceLeadId = normalized.external_id || `zap-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+    if (!normalized.name && !normalized.phone) {
+      return res.status(400).json({
+        success: false,
+        integration: 'zapimoveis-webhook',
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Nome ou telefone é obrigatório'
+        }
+      });
+    }
+
+    const { data: existingLead } = await supabase
+      .from('leads')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .eq('source_lead_id', sourceLeadId)
+      .maybeSingle();
+
+    if (existingLead) {
+      return res.status(200).json({
+        success: true,
+        duplicate: true,
+        integration: 'zapimoveis-webhook',
+        data: existingLead,
+        message: 'Lead já recebido anteriormente.'
+      });
+    }
+
+    const normalizedPropertyCode = propertyCode ? String(propertyCode).trim().toUpperCase() : null;
+    const isExclusive = await resolvePropertyExclusivity(tenantId, normalizedPropertyCode);
+    const assignmentLeadData = {
+      tenant_id: tenantId,
+      interest_reference: normalizedPropertyCode,
+      raw_data: normalized.raw_data,
+    };
+    const { broker, method } = await resolveBrokerForLead(assignmentLeadData, tenantId, normalized.raw_data);
+    const crmLeadData = {
+      tenant_id: tenantId,
+      name: normalized.name || 'Lead sem nome',
+      phone: normalized.phone,
+      email: normalized.email,
+      source: normalized.portal || 'ZAP Imóveis',
+      source_lead_id: sourceLeadId,
+      status: 'Novos Leads',
+      temperature: 'Frio',
+      property_code: normalizedPropertyCode,
+      is_exclusive: isExclusive,
+      assigned_agent_id: broker?.id || null,
+      assigned_agent_name: broker?.name || normalized.attended_by || null,
+      comments: normalized.message,
+      lead_type: 1,
+      custom_fields: {
+        source: 'zapimoveis_webhook',
+        external_id: sourceLeadId,
+        interest_type: normalized.interest_type,
+        interest_is_sale: normalized.interest_is_sale,
+        interest_is_rent: normalized.interest_is_rent,
+        interest_image: normalized.interest_image,
+        raw_data: normalized.raw_data,
+        auto_assigned: broker ? { broker: broker.name, method } : null,
+      },
+      created_at: now,
+      updated_at: now,
+    };
+
+    if (broker) {
+      crmLeadData.assigned_agent_name = broker.name;
+      crmLeadData.assigned_agent_id = broker.id || null;
+    }
+
+    const { data, error } = await supabase
+      .from('leads')
+      .insert(crmLeadData)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    res.status(201).json({
+      success: true,
+      integration: 'zapimoveis-webhook',
+      data,
+      auto_assigned: broker ? {
+        broker_name: broker.name,
+        broker_id: crmLeadData.assigned_agent_id,
+        method
+      } : null,
+      message: broker
+        ? `Lead do ZAP recebido e atribuído a ${broker.name} (via ${method})`
+        : 'Lead do ZAP recebido e salvo.'
+    });
+  } catch (error) {
+    console.error('❌ Erro no webhook ZAP:', error);
+    res.status(500).json({
+      success: false,
+      integration: 'zapimoveis-webhook',
+      error: {
+        code: 'SERVER_ERROR',
+        message: error.message
+      }
+    });
+  }
+});
+
 app.post('/api/v1/leads', validateApiKey, async (req, res) => {
   try {
     const leadData = mapLeadToDB(req.body);
