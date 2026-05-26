@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/button';
 import { InteractiveButton } from '@/components/ui/interactive-button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Download, FileSpreadsheet, CheckCircle, Loader2 } from 'lucide-react';
-import * as XLSX from 'xlsx';
 
 interface ExportSpreadsheetProps {
   leads: ProcessedLead[];
@@ -20,6 +19,8 @@ export const ExportSpreadsheet = ({ leads }: ExportSpreadsheetProps) => {
     setExportComplete(false);
 
     try {
+      const XLSX = await import('xlsx');
+
       // Preparar dados para exportação mantendo a estrutura original
       const exportData = leads.map((lead, index) => ({
         'Linha': index + 2, // +2 porque começamos da linha 2 (linha 1 é header)

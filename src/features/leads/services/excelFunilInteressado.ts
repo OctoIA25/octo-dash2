@@ -1,5 +1,4 @@
 import { supabase } from '@/lib/supabaseClient';
-import * as XLSX from 'xlsx';
 
 const TENANT_ID = 'e2d9bca4-3ce3-4733-b3ea-ed65ce09c832';
 const EXCEL_PATH = '/excel_ler.xlsx';
@@ -15,9 +14,8 @@ function parseDataExcel(valor: unknown) {
     }
 
     if (typeof valor === 'number') {
-        const data = XLSX.SSF.parse_date_code(valor);
-        if (!data) return null;
-        return new Date(Date.UTC(data.y, data.m - 1, data.d, data.H, data.M, data.S)).toISOString();
+        const data = new Date(Date.UTC(1899, 11, 30) + valor * 86400000);
+        return isNaN(data.getTime()) ? null : data.toISOString();
     }
 
     const texto = limpar(valor);
@@ -27,6 +25,7 @@ function parseDataExcel(valor: unknown) {
 }
 
 export async function importarExcelFunilInteressado() {
+    const XLSX = await import('xlsx');
     const response = await fetch(EXCEL_PATH);
     const arrayBuffer = await response.arrayBuffer();
 

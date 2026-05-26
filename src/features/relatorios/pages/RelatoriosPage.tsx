@@ -36,8 +36,6 @@ import {
 } from 'lucide-react';
 import { format, subDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
 
 import { ErrorBoundary } from '@/shared/components/ErrorBoundary';
 import { MetricsDashboard } from '@/features/metricas/components/MetricsDashboard';
@@ -1427,7 +1425,11 @@ export const RelatoriosPage = () => {
         console.error('Elemento de exportação não encontrado');
         return;
       }
-      
+
+      const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
+        import('jspdf'),
+        import('html2canvas'),
+      ]);
 
       const pdf = new jsPDF({
         orientation: 'p',

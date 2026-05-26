@@ -1,5 +1,11 @@
-import * as XLSX from 'xlsx';
+import type * as XLSXType from 'xlsx';
 import { ExcelRow } from '../types';
+
+let xlsxPromise: Promise<typeof XLSXType> | null = null;
+const loadXLSX = (): Promise<typeof XLSXType> => {
+    if (!xlsxPromise) xlsxPromise = import('xlsx');
+    return xlsxPromise;
+};
 
 type MonthKey =
     | 'janeiro'
@@ -76,6 +82,7 @@ const MONTH_KEYS: MonthKey[] = [
 
 export class ExcelService {
     static async readExcelFile(file: File, options: ExcelParseOptions = {}): Promise<ExcelRow[]> {
+        const XLSX = await loadXLSX();
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
 
@@ -83,7 +90,7 @@ export class ExcelService {
                 try {
                     const data = e.target?.result;
                     const workbook = XLSX.read(data, { type: 'array' });
-                    const worksheets = this.getWorksheetRows(workbook);
+                    const worksheets = this.getWorksheetRows(XLSX, workbook);
 
                     for (const worksheet of worksheets) {
                         const rows = this.parseExcelData(worksheet.rows, options, worksheet.sheetName);
@@ -105,6 +112,7 @@ export class ExcelService {
     }
 
     static async getColumnOptions(file: File): Promise<ExcelColumnOption[]> {
+        const XLSX = await loadXLSX();
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
 
@@ -112,7 +120,7 @@ export class ExcelService {
                 try {
                     const data = e.target?.result;
                     const workbook = XLSX.read(data, { type: 'array' });
-                    const worksheet = this.getWorksheetRows(workbook)[0];
+                    const worksheet = this.getWorksheetRows(XLSX, workbook)[0];
                     const jsonData = worksheet?.rows ?? [];
                     const headerRow = this.findBestHeaderRow(jsonData);
 
@@ -130,7 +138,7 @@ export class ExcelService {
         });
     }
 
-    private static getWorksheetRows(workbook: XLSX.WorkBook): WorksheetRows[] {
+    private static getWorksheetRows(XLSX: typeof XLSXType, workbook: XLSXType.WorkBook): WorksheetRows[] {
         const rankingSheets = workbook.SheetNames.filter((sheetName) => this.normalizeText(sheetName) === 'RANKING');
         const sheetNames = rankingSheets.length > 0 ? rankingSheets : workbook.SheetNames;
 
@@ -809,8 +817,11 @@ export class ExcelService {
         if (!this.isValidReceivedDate(value)) return '';
 
         if (typeof value === 'number') {
-            const parsedDate = XLSX.SSF.parse_date_code(value);
-            return parsedDate?.m ? MONTH_KEYS[parsedDate.m - 1] : '';
+            const fromExcelEpoch = new Date(Date.UTC(1899, 11, 30) + value * 86400000);
+            if (!isNaN(fromExcelEpoch.getTime())) {
+                return MONTH_KEYS[fromExcelEpoch.getUTCMonth()];
+            }
+            return '';
         }
 
         if (value instanceof Date && !isNaN(value.getTime())) {

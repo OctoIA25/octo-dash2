@@ -9,18 +9,37 @@ import { startPolling, stopPolling, isPollingRunning } from '../services/kenloPo
 
 export const useKenloPolling = () => {
   const { isAuthenticated, tenantId } = useAuth();
+  const canPoll = isAuthenticated && !!tenantId && tenantId !== 'owner';
 
   useEffect(() => {
-    if (isAuthenticated && tenantId && tenantId !== 'owner') {
-      // Sempre pedir para iniciar: o próprio startPolling evita duplicar interval
-      startPolling(tenantId);
+    if (!canPoll) {
+      if (isPollingRunning()) stopPolling();
+      return;
     }
-  }, [isAuthenticated, tenantId]);
 
-  // Parar polling quando deslogar
-  useEffect(() => {
-    if (!isAuthenticated && isPollingRunning()) {
-      stopPolling();
+    const tid = tenantId as string;
+    const start = () => startPolling(tid);
+    const stopIfRunning = () => {
+      if (isPollingRunning()) stopPolling();
+    };
+
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+      stopIfRunning();
+    } else {
+      start();
     }
-  }, [isAuthenticated]);
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        stopIfRunning();
+      } else {
+        start();
+      }
+    };
+
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [canPoll, tenantId]);
 };

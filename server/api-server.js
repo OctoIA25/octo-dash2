@@ -1990,6 +1990,54 @@ app.get('/api/v1/brokers', validateApiKey, async (req, res) => {
   }
 });
 
+// GET /api/v1/brokers/active - Listar APENAS corretores ativos (payload enxuto)
+// Endpoint otimizado para consumo por IA: retorna apenas o necessário (id, nome,
+// email, telefone, foto) sem joins pesados de imóveis/leads.
+app.get('/api/v1/brokers/active', validateApiKey, async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+
+    if (!tenantId) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: 'tenant_id não identificado na API Key' }
+      });
+    }
+
+    const { data, error } = await supabase
+      .from('tenant_brokers')
+      .select('id, auth_user_id, name, email, phone, photo_url, source')
+      .eq('tenant_id', tenantId)
+      .eq('status', 'active')
+      .order('name', { ascending: true });
+
+    if (error) throw error;
+
+    const brokers = (data || []).map((b) => ({
+      id: b.auth_user_id || b.id,
+      broker_id: b.id,
+      auth_user_id: b.auth_user_id,
+      name: b.name,
+      email: b.email,
+      phone: b.phone,
+      photo_url: b.photo_url,
+      source: b.source || 'manual',
+    }));
+
+    res.json({
+      success: true,
+      data: brokers,
+      count: brokers.length,
+    });
+  } catch (error) {
+    console.error('❌ Erro ao listar corretores ativos:', error);
+    res.status(500).json({
+      success: false,
+      error: { code: 'SERVER_ERROR', message: error.message }
+    });
+  }
+});
+
 // GET /api/v1/brokers/:id - Buscar corretor por ID ou nome
 app.get('/api/v1/brokers/:id', validateApiKey, async (req, res) => {
   try {
@@ -2105,6 +2153,273 @@ app.post('/api/v1/brokers/:id/assign', validateApiKey, async (req, res) => {
         code: 'SERVER_ERROR',
         message: error.message
       }
+    });
+  }
+});
+
+// ============================================
+// ROUTES - AI KANBAN (opera sobre public.leads, NÃO kenlo_leads)
+// ============================================
+
+// Statuses válidos na tabela public.leads (constraint leads_status_check).
+const INTERESSADO_STATUSES = [
+  'Novos Leads', 'Em Atendimento', 'Interação', 'Visita Agendada', 'Visita Realizada',
+  'Negociação', 'Proposta Criada', 'Proposta Enviada', 'Proposta Assinada'
+];
+const PROPRIETARIO_STATUSES = [
+  'Novos Proprietários', 'Primeira Visita', 'Criação do Estudo de Mercado',
+  'Apresentação do Estudo de Mercado', 'Não Exclusivo', 'Exclusivo', 'Cadastro',
+  'Plano de Marketing', 'Propostas Respondidas', 'Feitura de Contrato'
+];
+const ARCHIVED_STATUS = 'Arquivado';
+const ALLOWED_STATUSES = [...INTERESSADO_STATUSES, ...PROPRIETARIO_STATUSES, ARCHIVED_STATUS];
+
+// Atalhos numéricos para Interessado (1..10). Stage 10 = Arquivado.
+const STAGE_NUM_TO_STATUS = {
+  1: 'Novos Leads', 2: 'Em Atendimento', 3: 'Interação',
+  4: 'Visita Agendada', 5: 'Visita Realizada', 6: 'Negociação',
+  7: 'Proposta Criada', 8: 'Proposta Enviada', 9: 'Proposta Assinada', 10: 'Arquivado',
+};
+
+const normalizeStr = (s) => String(s ?? '').trim().toLowerCase();
+const stripAccents = (s) => normalizeStr(s).normalize('NFD').replace(/\p{Diacritic}/gu, '');
+
+// Index acento-insensível para casar nomes da IA com o status canônico.
+const STATUS_BY_NORMALIZED = ALLOWED_STATUSES.reduce((acc, status) => {
+  acc[stripAccents(status)] = status;
+  return acc;
+}, {});
+
+// Sinônimos que a IA pode mandar.
+const STATUS_SYNONYMS = {
+  'novo': 'Novos Leads',
+  'novos': 'Novos Leads',
+  'atendimento': 'Em Atendimento',
+  'qualificado': 'Interação',
+  'qualificacao': 'Interação',
+  'agendada': 'Visita Agendada',
+  'realizada': 'Visita Realizada',
+  'negociacao': 'Negociação',
+  'em negociacao': 'Negociação',
+  'fechado': 'Proposta Assinada',
+  'ganho': 'Proposta Assinada',
+  'perdido': 'Arquivado',
+};
+
+const resolveStatus = (input) => {
+  if (input === undefined || input === null || input === '') return { ok: true, value: undefined };
+  if (typeof input === 'number' && STAGE_NUM_TO_STATUS[input]) {
+    return { ok: true, value: STAGE_NUM_TO_STATUS[input] };
+  }
+  const asNum = parseInt(input, 10);
+  if (!Number.isNaN(asNum) && STAGE_NUM_TO_STATUS[asNum]) {
+    return { ok: true, value: STAGE_NUM_TO_STATUS[asNum] };
+  }
+  const norm = stripAccents(input);
+  if (STATUS_BY_NORMALIZED[norm]) return { ok: true, value: STATUS_BY_NORMALIZED[norm] };
+  if (STATUS_SYNONYMS[norm]) return { ok: true, value: STATUS_SYNONYMS[norm] };
+  return {
+    ok: false,
+    error: `status inválido: "${input}". Use 1-10 ou um dos nomes: ${ALLOWED_STATUSES.join(', ')}`,
+  };
+};
+
+// public.leads.temperature usa pt-BR: Frio | Morno | Quente.
+const TEMP_BY_INPUT = {
+  1: 'Frio', 2: 'Morno', 3: 'Quente',
+  cold: 'Frio', warm: 'Morno', hot: 'Quente',
+  frio: 'Frio', morno: 'Morno', quente: 'Quente',
+};
+
+const resolveTemperature = (input) => {
+  if (input === undefined || input === null || input === '') return { ok: true, value: undefined };
+  const key = typeof input === 'number' ? input : normalizeStr(input);
+  const value = TEMP_BY_INPUT[key];
+  if (!value) return { ok: false, error: `temperature inválida: "${input}". Use Frio/Morno/Quente, cold/warm/hot ou 1/2/3` };
+  return { ok: true, value };
+};
+
+// Resolve corretor a partir de id (auth_user_id ou tenant_brokers.id), nome ou telefone.
+// Valida que pertence ao tenant e está ativo. Retorna { name, id, phone, email }.
+const resolveBrokerForAssignment = async (tenantId, input) => {
+  if (!input || typeof input !== 'object') return { ok: false, error: 'broker deve ser objeto com id, name ou phone' };
+  const { id, name, phone } = input;
+
+  if (!id && !name && !phone) {
+    return { ok: false, error: 'broker precisa de id, name ou phone' };
+  }
+
+  let query = supabase
+    .from('tenant_brokers')
+    .select('id, auth_user_id, name, email, phone, status')
+    .eq('tenant_id', tenantId)
+    .eq('status', 'active');
+
+  if (id) {
+    query = query.or(`id.eq.${id},auth_user_id.eq.${id}`);
+  } else if (phone) {
+    const clean = normalizePhone(phone);
+    query = query.or(`phone.eq.${clean},phone.eq.${phone}`);
+  } else if (name) {
+    query = query.ilike('name', name);
+  }
+
+  const { data, error } = await query.limit(1);
+  if (error) return { ok: false, error: `Erro ao buscar corretor: ${error.message}` };
+  if (!data || data.length === 0) {
+    return { ok: false, error: `Corretor não encontrado/ativo (id=${id || '-'}, name=${name || '-'}, phone=${phone || '-'})` };
+  }
+
+  const broker = data[0];
+  return {
+    ok: true,
+    broker: {
+      name: broker.name,
+      id: broker.auth_user_id || broker.id,
+      auth_user_id: broker.auth_user_id,
+      phone: broker.phone,
+      email: broker.email,
+    }
+  };
+};
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// POST /api/v1/ai/kanban/leads/:id
+// Endpoint unificado para a IA mover leads no kanban em uma única chamada.
+// Opera sobre public.leads. :id aceita UUID (leads.id) ou string (source_lead_id).
+// Body (todos opcionais, ao menos um obrigatório):
+//   status (ou stage): number 1..10 | nome (ex.: "Interação", "Negociação")
+//   temperature:       "Frio"|"Morno"|"Quente" | "cold"|"warm"|"hot" | 1|2|3
+//   broker:            { id?, name?, phone? } — corretor precisa estar ativo no tenant
+//   archive:           true (arquiva) | false (desarquiva)
+//   archive_reason:    string (usado quando archive=true)
+app.post('/api/v1/ai/kanban/leads/:id', validateApiKey, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const tenantId = req.tenantId;
+
+    if (!tenantId) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: 'tenant_id não identificado na API Key' }
+      });
+    }
+
+    const { stage, status, temperature, broker, archive, archive_reason } = req.body || {};
+    const statusInput = status !== undefined ? status : stage;
+
+    if (statusInput === undefined && temperature === undefined && broker === undefined && archive === undefined) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Forneça ao menos um dos campos: status (ou stage), temperature, broker, archive'
+        }
+      });
+    }
+
+    // Carregar lead atual (e validar tenant)
+    let selectQuery = supabase.from('leads').select('*').eq('tenant_id', tenantId);
+    selectQuery = UUID_REGEX.test(id)
+      ? selectQuery.eq('id', id)
+      : selectQuery.eq('source_lead_id', id);
+    const { data: currentLead, error: selectError } = await selectQuery.maybeSingle();
+
+    if (selectError) throw selectError;
+    if (!currentLead) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: `Lead ${id} não encontrado no tenant` }
+      });
+    }
+
+    const update = { updated_at: new Date().toISOString() };
+    const changes = {};
+    const errors = [];
+
+    // status (alias: stage)
+    const statusResolved = resolveStatus(statusInput);
+    if (!statusResolved.ok) errors.push(statusResolved.error);
+    else if (statusResolved.value !== undefined) {
+      update.status = statusResolved.value;
+      changes.status = {
+        from: currentLead.status ?? null,
+        to: statusResolved.value,
+      };
+    }
+
+    // temperature
+    const tempResolved = resolveTemperature(temperature);
+    if (!tempResolved.ok) errors.push(tempResolved.error);
+    else if (tempResolved.value !== undefined) {
+      update.temperature = tempResolved.value;
+      changes.temperature = {
+        from: currentLead.temperature ?? null,
+        to: tempResolved.value,
+      };
+    }
+
+    // broker
+    if (broker !== undefined && broker !== null) {
+      const brokerResolved = await resolveBrokerForAssignment(tenantId, broker);
+      if (!brokerResolved.ok) errors.push(brokerResolved.error);
+      else {
+        update.assigned_agent_name = brokerResolved.broker.name;
+        update.assigned_agent_id = brokerResolved.broker.id;
+        if (!currentLead.assigned_at) update.assigned_at = new Date().toISOString();
+        changes.broker = {
+          from: currentLead.assigned_agent_name ?? null,
+          to: brokerResolved.broker.name,
+          id: brokerResolved.broker.id,
+        };
+      }
+    }
+
+    // archive / unarchive
+    if (archive === true) {
+      const reason = archive_reason || 'Arquivado via IA';
+      update.archived_at = new Date().toISOString();
+      update.archive_reason = reason;
+      changes.archived = { from: !!currentLead.archived_at, to: true, reason };
+    } else if (archive === false) {
+      update.archived_at = null;
+      update.archive_reason = null;
+      changes.archived = { from: !!currentLead.archived_at, to: false };
+    }
+
+    if (errors.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: 'Falha na validação', details: errors }
+      });
+    }
+
+    if (Object.keys(changes).length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'NO_OP', message: 'Nenhuma alteração aplicável foi fornecida' }
+      });
+    }
+
+    let updateQuery = supabase.from('leads').update(update).eq('tenant_id', tenantId);
+    updateQuery = UUID_REGEX.test(id)
+      ? updateQuery.eq('id', id)
+      : updateQuery.eq('source_lead_id', id);
+    const { data, error } = await updateQuery.select().single();
+    if (error) throw error;
+
+    res.json({
+      success: true,
+      data,
+      changes,
+      message: `Lead ${id} atualizado: ${Object.keys(changes).join(', ')}`
+    });
+  } catch (error) {
+    console.error('❌ Erro no AI kanban:', error);
+    res.status(500).json({
+      success: false,
+      error: { code: 'SERVER_ERROR', message: error.message }
     });
   }
 });
