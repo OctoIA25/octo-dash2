@@ -86,12 +86,15 @@ import {
   createSavedProposal,
   fetchSavedProposals,
   updateSavedProposal,
+  updateSavedProposalFields,
+  updateSavedProposalStage,
   type SaveProposalInput,
   type SavedProposal,
   type SavedProposalHistory,
   type SavedProposalParty,
   type SavedProposalTransactionForm,
 } from '@/features/leads/services/proposalsService';
+import { propostaStageToLeadStatus } from '@/features/leads/utils/stageBridge';
 
 const PROPOSAL_STAGES = [
   {
@@ -174,6 +177,7 @@ interface ProposalAddress {
 interface ProposalItem {
   id: string;
   source: ProposalSource;
+  leadId?: string;
   propertyOrigin: PropertyOrigin;
   cliente: string;
   telefone?: string | null;
@@ -675,6 +679,7 @@ const leadToProposal = (lead: CRMLead): ProposalItem | null => {
   return {
     id: lead.id,
     source: 'crm',
+    leadId: lead.id,
     propertyOrigin: 'interno',
     cliente: lead.name || 'Lead sem nome',
     telefone: lead.phone,
@@ -868,6 +873,7 @@ const savedProposalToUiState = (saved: SavedProposal): { proposal: ProposalItem;
   const proposal: ProposalItem = {
     id: saved.id,
     source: 'draft',
+    leadId: saved.lead_id || undefined,
     propertyOrigin: saved.property_origin,
     cliente: firstBuyerName || 'Proposta sem proponente',
     telefone: compradores.find((party) => party.celular)?.celular || null,
@@ -938,6 +944,23 @@ const historyItemToSaveInput = (item: HistoryItem): NonNullable<SaveProposalInpu
   detail: item.detail,
   createdAt: item.date,
 });
+
+const partiesHashKey = (parties: SaveProposalInput['parties']): string =>
+  JSON.stringify(
+    parties.map((party) => [
+      party.id,
+      party.partyType,
+      party.fullName,
+      party.cpf,
+      party.rg,
+      party.phone,
+      party.email,
+      party.isCompany,
+      party.signatureChannel,
+      party.signedBy,
+      party.signatureStatus,
+    ]),
+  );
 
 const proposalToSaveInput = (
   proposal: ProposalItem,
@@ -1877,6 +1900,10 @@ export const PropostaPage = ({
   const [autosaveStatus, setAutosaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const autosaveResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const materializingLeadIdsRef = useRef<Set<string>>(new Set());
+  const movingProposalIdsRef = useRef<Set<string>>(new Set());
+  const reconcilingProposalIdsRef = useRef<Set<string>>(new Set());
+  const lastPersistedPartiesRef = useRef<Record<string, string>>({});
   const detailTabsScrollRef = useRef<HTMLDivElement>(null);
 
   const sensors = useSensors(
@@ -1896,6 +1923,14 @@ export const PropostaPage = ({
     try {
       const saved = await fetchSavedProposals(currentTenantId);
       const converted = saved.map(savedProposalToUiState);
+
+      converted.forEach(({ proposal, detail }) => {
+        const partiesInput = [
+          ...detail.compradores.map((p) => proposalPartyToSaveInput(p, 'comprador')),
+          ...detail.vendedores.map((p) => proposalPartyToSaveInput(p, 'vendedor')),
+        ];
+        lastPersistedPartiesRef.current[proposal.id] = partiesHashKey(partiesInput);
+      });
 
       setDrafts(converted.map((item) => item.proposal));
       setProposalDetails((previous) => {
@@ -1926,12 +1961,86 @@ export const PropostaPage = ({
     };
   }, []);
 
+  const leadById = useMemo(
+    () => new Map(leads.map((lead) => [lead.id, lead])),
+    [leads],
+  );
+
+  useEffect(() => {
+    if (!currentTenantId) return;
+
+    drafts.forEach((proposal) => {
+      if (!proposal.leadId || !isUuidLike(proposal.id)) return;
+      if (reconcilingProposalIdsRef.current.has(proposal.id)) return;
+
+      const lead = leadById.get(proposal.leadId);
+      if (!lead) return;
+
+      const leadStage = getStageFromStatus(lead.status, lead.final_sale_value);
+      if (!leadStage || leadStage === proposal.stageId) return;
+
+      const leadUpdated = lead.updated_at ? Date.parse(lead.updated_at) : NaN;
+      const proposalUpdated = Date.parse(proposal.atualizadaEm);
+      if (!Number.isFinite(leadUpdated) || !Number.isFinite(proposalUpdated)) return;
+      if (leadUpdated <= proposalUpdated) return;
+
+      reconcilingProposalIdsRef.current.add(proposal.id);
+      const nextStatus = STAGE_BY_ID[leadStage].dbStatus;
+
+      void updateSavedProposalStage(proposal.id, currentTenantId, leadStage, nextStatus)
+        .then(() => {
+          const reconciledAt = new Date().toISOString();
+          setDrafts((previous) =>
+            previous.map((item) =>
+              item.id === proposal.id
+                ? { ...item, stageId: leadStage, status: nextStatus, atualizadaEm: reconciledAt }
+                : item,
+            ),
+          );
+          setSelectedProposal((current) =>
+            current?.id === proposal.id
+              ? { ...current, stageId: leadStage, status: nextStatus, atualizadaEm: reconciledAt }
+              : current,
+          );
+        })
+        .catch((err) => {
+          console.error('Erro ao reconciliar etapa da proposta com o lead:', err);
+        })
+        .finally(() => {
+          reconcilingProposalIdsRef.current.delete(proposal.id);
+        });
+    });
+  }, [currentTenantId, drafts, leadById]);
+
   const proposals = useMemo(() => {
+    const materializedLeadIds = new Set(
+      drafts.map((item) => item.leadId).filter((id): id is string => Boolean(id)),
+    );
     const crmProposals = leads
       .map(leadToProposal)
-      .filter((proposal): proposal is ProposalItem => proposal !== null);
+      .filter((proposal): proposal is ProposalItem => proposal !== null)
+      .filter((proposal) => !materializedLeadIds.has(proposal.id));
 
-    return [...drafts, ...crmProposals]
+    const reconciledDrafts = drafts.map((proposal) => {
+      if (!proposal.leadId) return proposal;
+      const lead = leadById.get(proposal.leadId);
+      if (!lead) return proposal;
+      const leadStage = getStageFromStatus(lead.status, lead.final_sale_value);
+      if (!leadStage || leadStage === proposal.stageId) return proposal;
+
+      const leadUpdated = lead.updated_at ? Date.parse(lead.updated_at) : NaN;
+      const proposalUpdated = Date.parse(proposal.atualizadaEm);
+      if (!Number.isFinite(leadUpdated) || !Number.isFinite(proposalUpdated)) return proposal;
+      if (leadUpdated <= proposalUpdated) return proposal;
+
+      return {
+        ...proposal,
+        stageId: leadStage,
+        status: STAGE_BY_ID[leadStage].dbStatus,
+      };
+    });
+
+    return [...reconciledDrafts, ...crmProposals]
       .map((proposal) => {
         const override = stageOverrides[proposal.id];
         if (!override) return proposal;
@@ -1942,7 +2051,7 @@ export const PropostaPage = ({
         };
       })
       .sort((a, b) => new Date(b.atualizadaEm).getTime() - new Date(a.atualizadaEm).getTime());
-  }, [drafts, leads, stageOverrides]);
+  }, [drafts, leads, leadById, stageOverrides]);
 
   const agents = useMemo(() => {
     return Array.from(new Set(proposals.map((proposal) => proposal.corretor).filter(Boolean))).sort((a, b) =>
@@ -1974,7 +2083,9 @@ export const PropostaPage = ({
     const signed = filtered.filter((proposal) => proposal.stageId === 'proposta-assinada');
     const archived = filtered.filter((proposal) => proposal.stageId === 'arquivado');
     const active = filtered.length - signed.length - archived.length;
-    const totalValue = filtered.reduce((sum, proposal) => sum + proposal.valor, 0);
+    const totalValue = filtered
+      .filter((proposal) => proposal.stageId !== 'arquivado')
+      .reduce((sum, proposal) => sum + proposal.valor, 0);
     const signedValue = signed.reduce((sum, proposal) => sum + proposal.valor, 0);
     const conversion = filtered.length ? Math.round((signed.length / filtered.length) * 100) : 0;
 
@@ -2048,14 +2159,84 @@ export const PropostaPage = ({
   const isFinanciado = Boolean(selectedDetail?.pagamento.comFinanciamento);
   const dealWorkflowGroups = getDealWorkflowGroups(isFinanciado);
 
+  const materializeCrmProposal = useCallback(
+    async (proposal: ProposalItem, detail: ProposalDetailState): Promise<ProposalItem | null> => {
+      if (!currentTenantId || proposal.source !== 'crm' || !isUuidLike(proposal.id)) return null;
+      if (materializingLeadIdsRef.current.has(proposal.id)) return null;
+
+      materializingLeadIdsRef.current.add(proposal.id);
+      setAutosaveStatus('saving');
+
+      try {
+        const payload = proposalToSaveInput(proposal, detail, currentTenantId, user?.id, detail.historico);
+        const saved = await createSavedProposal(payload);
+        const { proposal: newProposal, detail: newDetail } = savedProposalToUiState(saved);
+        const leadId = saved.lead_id || proposal.id;
+        newProposal.leadId = leadId;
+        lastPersistedPartiesRef.current[newProposal.id] = partiesHashKey(payload.parties);
+
+        setDrafts((previous) => [
+          newProposal,
+          ...previous.filter((item) => item.id !== newProposal.id && item.leadId !== leadId),
+        ]);
+        setProposalDetails((previous) => {
+          const carryForward = previous[proposal.id] ?? newDetail;
+          const next = { ...previous };
+          next[newProposal.id] = carryForward;
+          return next;
+        });
+        setSelectedProposal((current) =>
+          current?.id === proposal.id ? newProposal : current,
+        );
+        setStageOverrides((previous) => {
+          if (!previous[proposal.id]) return previous;
+          const next = { ...previous };
+          next[newProposal.id] = next[proposal.id];
+          delete next[proposal.id];
+          return next;
+        });
+
+        setAutosaveStatus('saved');
+        if (autosaveResetRef.current) clearTimeout(autosaveResetRef.current);
+        autosaveResetRef.current = setTimeout(() => setAutosaveStatus('idle'), 2500);
+
+        return newProposal;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Erro ao salvar proposta.';
+        setSavedError(message);
+        setAutosaveStatus('error');
+        materializingLeadIdsRef.current.delete(proposal.id);
+        console.error('Erro ao materializar proposta a partir do lead:', err);
+        return null;
+      }
+    },
+    [currentTenantId, user?.id],
+  );
+
   const persistExistingProposal = useCallback(
     async (proposal: ProposalItem, detail: ProposalDetailState) => {
-      if (!currentTenantId || proposal.source !== 'draft' || !isUuidLike(proposal.id)) return;
+      if (!currentTenantId) return;
+
+      if (proposal.source === 'crm') {
+        await materializeCrmProposal(proposal, detail);
+        return;
+      }
+
+      if (proposal.source !== 'draft' || !isUuidLike(proposal.id)) return;
 
       setAutosaveStatus('saving');
       try {
         const payload = proposalToSaveInput(proposal, detail, currentTenantId, user?.id);
-        await updateSavedProposal({ ...payload, id: proposal.id });
+        const partiesKey = partiesHashKey(payload.parties);
+        const lastKey = lastPersistedPartiesRef.current[proposal.id];
+
+        if (lastKey === partiesKey) {
+          await updateSavedProposalFields({ ...payload, id: proposal.id });
+        } else {
+          await updateSavedProposal({ ...payload, id: proposal.id });
+          lastPersistedPartiesRef.current[proposal.id] = partiesKey;
+        }
+
         setAutosaveStatus('saved');
         if (autosaveResetRef.current) clearTimeout(autosaveResetRef.current);
         autosaveResetRef.current = setTimeout(() => setAutosaveStatus('idle'), 2500);
@@ -2066,12 +2247,14 @@ export const PropostaPage = ({
         console.error('Erro ao salvar proposta:', err);
       }
     },
-    [currentTenantId, user?.id],
+    [currentTenantId, materializeCrmProposal, user?.id],
   );
 
   const schedulePersistProposal = useCallback(
     (proposal: ProposalItem, detail: ProposalDetailState) => {
-      if (!currentTenantId || proposal.source !== 'draft' || !isUuidLike(proposal.id)) return;
+      if (!currentTenantId) return;
+      if (proposal.source !== 'draft' && proposal.source !== 'crm') return;
+      if (!isUuidLike(proposal.id)) return;
 
       const previousTimer = saveTimersRef.current[proposal.id];
       if (previousTimer) clearTimeout(previousTimer);
@@ -2368,74 +2551,132 @@ export const PropostaPage = ({
   };
 
   const changeProposalStage = async (proposalId: string, nextStage: ProposalStageId) => {
+    if (movingProposalIdsRef.current.has(proposalId)) return;
+
     const proposal = proposals.find((item) => item.id === proposalId);
     if (!proposal || proposal.stageId === nextStage) return;
 
-    if (proposal.source === 'draft') {
-      const updatedProposal: ProposalItem = {
-        ...proposal,
-        stageId: nextStage,
-        status: STAGE_BY_ID[nextStage].dbStatus,
-        atualizadaEm: new Date().toISOString(),
-      };
+    movingProposalIdsRef.current.add(proposalId);
 
-      setDrafts((previous) =>
-        previous.map((item) =>
-          item.id === proposalId ? updatedProposal : item,
-        ),
-      );
-      setSelectedProposal((current) =>
-        current?.id === proposalId ? updatedProposal : current,
-      );
-      appendHistory(updatedProposal, 'Etapa alterada', `Movida para ${STAGE_BY_ID[nextStage].label}.`);
+    if (proposal.source === 'draft') {
+      const previousState: ProposalItem = { ...proposal };
+      try {
+        const updatedProposal: ProposalItem = {
+          ...proposal,
+          stageId: nextStage,
+          status: STAGE_BY_ID[nextStage].dbStatus,
+          atualizadaEm: new Date().toISOString(),
+        };
+
+        setDrafts((previous) =>
+          previous.map((item) =>
+            item.id === proposalId ? updatedProposal : item,
+          ),
+        );
+        setSelectedProposal((current) =>
+          current?.id === proposalId ? updatedProposal : current,
+        );
+        appendHistory(updatedProposal, 'Etapa alterada', `Movida para ${STAGE_BY_ID[nextStage].label}.`);
+
+        // Persiste stage_id no banco. Sem isso, ao recarregar a página, a
+        // proposta voltava para a etapa anterior (estado só vivia no React).
+        if (currentTenantId && isUuidLike(proposalId)) {
+          try {
+            await updateSavedProposalStage(
+              proposalId,
+              currentTenantId,
+              nextStage,
+              STAGE_BY_ID[nextStage].dbStatus,
+            );
+          } catch (err) {
+            setDrafts((previous) =>
+              previous.map((item) => (item.id === proposalId ? previousState : item)),
+            );
+            setSelectedProposal((current) =>
+              current?.id === proposalId ? previousState : current,
+            );
+            const message = err instanceof Error ? err.message : 'Erro ao salvar etapa da proposta.';
+            toast({
+              title: 'Não foi possível salvar a etapa',
+              description: message,
+              variant: 'destructive',
+            });
+            return;
+          }
+        }
+
+        if (proposal.leadId && isUuidLike(proposal.leadId)) {
+          const lead = leadById.get(proposal.leadId);
+          const targetStatus = propostaStageToLeadStatus(nextStage, lead?.lead_type);
+          const result = await atualizarStatusLeadCRM(proposal.leadId, targetStatus);
+          if (!result.success) {
+            toast({
+              title: 'Proposta movida, mas lead não sincronizou',
+              description: result.message,
+              variant: 'destructive',
+            });
+          } else {
+            void refetch();
+          }
+        } else {
+          void refetch();
+        }
+      } finally {
+        movingProposalIdsRef.current.delete(proposalId);
+      }
       return;
     }
 
-    const previousStage = proposal.stageId;
-    setUpdatingId(proposalId);
-    setStageOverrides((previous) => ({ ...previous, [proposalId]: nextStage }));
-    setSelectedProposal((current) =>
-      current?.id === proposalId
-        ? { ...current, stageId: nextStage, status: STAGE_BY_ID[nextStage].dbStatus }
-        : current,
-    );
-
-    const result = await atualizarStatusLeadCRM(proposalId, nextStage);
-
-    if (!result.success) {
-      setStageOverrides((previous) => {
-        const next = { ...previous };
-        if (previousStage) next[proposalId] = previousStage;
-        return next;
-      });
+    try {
+      const previousStage = proposal.stageId;
+      setUpdatingId(proposalId);
+      setStageOverrides((previous) => ({ ...previous, [proposalId]: nextStage }));
       setSelectedProposal((current) =>
         current?.id === proposalId
-          ? { ...current, stageId: previousStage, status: STAGE_BY_ID[previousStage].dbStatus }
+          ? { ...current, stageId: nextStage, status: STAGE_BY_ID[nextStage].dbStatus }
           : current,
       );
+
+      const leadForCrm = proposal.leadId ? leadById.get(proposal.leadId) : leadById.get(proposalId);
+      const targetStatusCrm = propostaStageToLeadStatus(nextStage, leadForCrm?.lead_type);
+      const result = await atualizarStatusLeadCRM(proposalId, targetStatusCrm);
+
+      if (!result.success) {
+        setStageOverrides((previous) => {
+          const next = { ...previous };
+          if (previousStage) next[proposalId] = previousStage;
+          return next;
+        });
+        setSelectedProposal((current) =>
+          current?.id === proposalId
+            ? { ...current, stageId: previousStage, status: STAGE_BY_ID[previousStage].dbStatus }
+            : current,
+        );
+        toast({
+          title: 'Não foi possível mover a proposta',
+          description: result.message,
+          variant: 'destructive',
+        });
+        return;
+      }
+
       toast({
-        title: 'Não foi possível mover a proposta',
-        description: result.message,
-        variant: 'destructive',
+        title: 'Proposta atualizada',
+        description: `${proposal.cliente} agora está em ${STAGE_BY_ID[nextStage].label}.`,
       });
+
+      appendHistory(proposal, 'Etapa alterada', `Movida para ${STAGE_BY_ID[nextStage].label}.`);
+
+      await refetch();
+      setStageOverrides((previous) => {
+        const next = { ...previous };
+        delete next[proposalId];
+        return next;
+      });
+    } finally {
       setUpdatingId(null);
-      return;
+      movingProposalIdsRef.current.delete(proposalId);
     }
-
-    toast({
-      title: 'Proposta atualizada',
-      description: `${proposal.cliente} agora está em ${STAGE_BY_ID[nextStage].label}.`,
-    });
-
-    appendHistory(proposal, 'Etapa alterada', `Movida para ${STAGE_BY_ID[nextStage].label}.`);
-
-    await refetch();
-    setStageOverrides((previous) => {
-      const next = { ...previous };
-      delete next[proposalId];
-      return next;
-    });
-    setUpdatingId(null);
   };
 
   const activateDealSubstage = (proposal: ProposalItem, group: DealWorkflowGroup, item: DealWorkflowItem) => {
@@ -2594,10 +2835,10 @@ export const PropostaPage = ({
     setSavedError(null);
 
     try {
-      const saved = await createSavedProposal(
-        proposalToSaveInput(draft, detail, currentTenantId, user?.id, detail.historico),
-      );
+      const payload = proposalToSaveInput(draft, detail, currentTenantId, user?.id, detail.historico);
+      const saved = await createSavedProposal(payload);
       const savedState = savedProposalToUiState(saved);
+      lastPersistedPartiesRef.current[savedState.proposal.id] = partiesHashKey(payload.parties);
 
       setDrafts((previous) => [savedState.proposal, ...previous.filter((item) => item.id !== savedState.proposal.id)]);
       setProposalDetails((previous) => ({ ...previous, [savedState.proposal.id]: savedState.detail }));

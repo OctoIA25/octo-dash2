@@ -65,6 +65,8 @@ import {
   type KanbanLead,
   type LeadType,
 } from '../services/leadsService';
+import { syncProposalStageFromLead } from '../services/proposalsService';
+import { leadStatusToPropostaStage } from '../utils/stageBridge';
 import {
   fetchTenantBolsaoConfig,
   type TenantBolsaoConfig,
@@ -1065,6 +1067,18 @@ const handleDragEnd = useCallback(async (event: DragEndEvent) => {
       throw new Error(result.message || 'Falha ao atualizar status');
     }
 
+    // Sincroniza a proposta vinculada (se houver) para a etapa equivalente.
+    // Quando o lead está em fase pré-proposta (e.g. "Novos Leads"), o mapper
+    // retorna null e o sync é pulado.
+    const propostaStage = leadStatusToPropostaStage(statusParaSalvar);
+    if (propostaStage && tenantId && tenantId !== 'owner') {
+      try {
+        await syncProposalStageFromLead(leadId, tenantId, propostaStage, statusParaSalvar);
+      } catch (syncErr) {
+        console.warn('Lead movido, mas proposta não sincronizou:', syncErr);
+      }
+    }
+
     toast({
       title: '✅ Etapa atualizada',
       description: `Lead movido para ${kanbanColumns.find((c) => c.id === destColumnId)?.title}`,
@@ -1081,7 +1095,7 @@ const handleDragEnd = useCallback(async (event: DragEndEvent) => {
       variant: 'destructive',
     });
   }
-}, [findLeadById, kanbanColumns, findContainerByItemId, toast]);
+}, [findLeadById, kanbanColumns, findContainerByItemId, toast, tenantId]);
 
   // Lead ativo sendo arrastado
   const activeLead = activeId ? meusLeads.find(l => l.id === activeId) : null;
@@ -1392,14 +1406,25 @@ const handleDragEnd = useCallback(async (event: DragEndEvent) => {
             if (!result.success) {
               throw new Error(result.message || 'Falha ao atualizar status');
             }
-            
+
             // Atualizar estado local
             setMeusLeads(prevLeads =>
               prevLeads.map(l =>
                 l.id === String(leadId) ? { ...l, status: novoStatus } : l
               )
             );
-            
+
+            // Sincroniza a proposta vinculada (se houver). Status pré-proposta
+            // (e.g. "Novos Leads") retorna null e o sync é pulado.
+            const propostaStage = leadStatusToPropostaStage(novoStatus);
+            if (propostaStage && tenantId && tenantId !== 'owner') {
+              try {
+                await syncProposalStageFromLead(String(leadId), tenantId, propostaStage, novoStatus);
+              } catch (syncErr) {
+                console.warn('Lead movido, mas proposta não sincronizou:', syncErr);
+              }
+            }
+
             toast({
               title: "✅ Status atualizado!",
               description: `Lead movido para ${kanbanColumns.find(c => c.id === novoStatus)?.title || novoStatus}`,

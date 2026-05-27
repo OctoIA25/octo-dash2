@@ -358,11 +358,20 @@ export async function fetchLeadsForMetrics(
       return [];
     }
 
-    let crmLeads = (data || []) as CRMLead[];
+    const crmLeads = (data || []) as CRMLead[];
 
-    // Buscar kenlo_leads e unificar com leads do CRM
     const kenloLeads = await fetchKenloLeadsAsCRM(tenantId, agentId, includeArchived);
-    let results = [...crmLeads, ...kenloLeads];
+
+    // Dedupe kenlo_leads que já foram migrados para `leads`.
+    // O vínculo é leads.source_lead_id === kenlo_leads.external_id (após conversão,
+    // kenlo.external_id vira CRMLead.source_lead_id em ambos os lados).
+    const migratedExternalIds = new Set(
+      crmLeads.map((l) => l.source_lead_id).filter(Boolean) as string[]
+    );
+    const dedupeKenlo = kenloLeads.filter(
+      (k) => !k.source_lead_id || !migratedExternalIds.has(k.source_lead_id)
+    );
+    let results = [...crmLeads, ...dedupeKenlo];
 
     // Filtrar por tipo Interessado no código (inclui leads com lead_type null/undefined)
     if (leadType === LEAD_TYPE_INTERESSADO) {

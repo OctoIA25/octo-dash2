@@ -235,54 +235,70 @@ function composeSavedProposal(
 export async function fetchSavedProposals(tenantId: string): Promise<SavedProposal[]> {
   if (!tenantId || tenantId === 'owner') return [];
 
-  const { data: proposalRows, error: proposalError } = await supabase
+  const { data, error } = await supabase
     .from('proposals')
-    .select('*')
+    .select(`
+      *,
+      parties:proposal_parties(*),
+      history:proposal_history(*)
+    `)
     .eq('tenant_id', tenantId)
     .order('updated_at', { ascending: false });
 
-  if (proposalError) {
-    throw new Error(proposalError.message || 'Erro ao buscar propostas.');
+  if (error) {
+    throw new Error(error.message || 'Erro ao buscar propostas.');
   }
 
-  const proposals = (proposalRows || []) as Array<Omit<SavedProposal, 'parties' | 'history'>>;
-  if (proposals.length === 0) return [];
+  const rows = (data || []) as Array<
+    Omit<SavedProposal, 'parties' | 'history'> & {
+      parties: SavedProposalParty[] | null;
+      history: SavedProposalHistory[] | null;
+    }
+  >;
 
-  const proposalIds = proposals.map((proposal) => proposal.id);
-  const [{ data: partyRows, error: partyError }, { data: historyRows, error: historyError }] = await Promise.all([
-    supabase
-      .from('proposal_parties')
-      .select('*')
-      .in('proposal_id', proposalIds)
-      .order('created_at', { ascending: true }),
-    supabase
-      .from('proposal_history')
-      .select('*')
-      .in('proposal_id', proposalIds)
-      .order('created_at', { ascending: false }),
-  ]);
-
-  if (partyError) {
-    throw new Error(partyError.message || 'Erro ao buscar participantes da proposta.');
-  }
-
-  if (historyError) {
-    throw new Error(historyError.message || 'Erro ao buscar histórico da proposta.');
-  }
-
-  const parties = (partyRows || []) as SavedProposalParty[];
-  const history = (historyRows || []) as SavedProposalHistory[];
-
-  return proposals.map((proposal) =>
-    composeSavedProposal(
-      proposal,
-      parties.filter((party) => party.proposal_id === proposal.id),
-      history.filter((item) => item.proposal_id === proposal.id),
+  return rows.map((row) => composeSavedProposal(
+    row,
+    (row.parties || []).slice().sort(
+      (a, b) => Date.parse(a.created_at) - Date.parse(b.created_at),
     ),
-  );
+    (row.history || []).slice().sort(
+      (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at),
+    ),
+  ));
 }
 
 export async function createSavedProposal(input: SaveProposalInput): Promise<SavedProposal> {
+  if (input.leadId && isUuid(input.leadId)) {
+    const { data: existing, error: existingError } = await supabase
+      .from('proposals')
+      .select('id')
+      .eq('tenant_id', input.tenantId)
+      .eq('lead_id', input.leadId)
+      .order('updated_at', { ascending: false })
+      .limit(1);
+
+    if (existingError) {
+      throw new Error(existingError.message || 'Erro ao verificar proposta existente.');
+    }
+
+    const existingId = existing?.[0]?.id as string | undefined;
+    if (existingId) {
+      const updated = await updateSavedProposal({ ...input, id: existingId });
+
+      if (!input.history?.length) return updated;
+
+      const appendedHistory = await appendSavedProposalHistoryItems({
+        proposalId: existingId,
+        tenantId: input.tenantId,
+        userId: input.userId,
+        items: input.history,
+      });
+      const { parties, history, ...proposalRow } = updated;
+
+      return composeSavedProposal(proposalRow, parties, [...appendedHistory, ...history]);
+    }
+  }
+
   const { data: proposalRow, error: proposalError } = await supabase
     .from('proposals')
     .insert({
@@ -343,6 +359,63 @@ export async function updateSavedProposal(input: SaveProposalInput & { id: strin
     parties,
     (historyRows || []) as SavedProposalHistory[],
   );
+}
+
+export async function updateSavedProposalFields(
+  input: SaveProposalInput & { id: string },
+): Promise<void> {
+  const { error } = await supabase
+    .from('proposals')
+    .update(mapProposalRow(input))
+    .eq('id', input.id)
+    .eq('tenant_id', input.tenantId);
+
+  if (error) {
+    throw new Error(error.message || 'Erro ao atualizar proposta.');
+  }
+}
+
+export async function updateSavedProposalStage(
+  id: string,
+  tenantId: string,
+  stageId: SavedProposalStageId,
+  status: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from('proposals')
+    .update({ stage_id: stageId, status })
+    .eq('id', id)
+    .eq('tenant_id', tenantId);
+
+  if (error) {
+    throw new Error(error.message || 'Erro ao sincronizar etapa da proposta.');
+  }
+}
+
+/**
+ * Atualiza o `stage_id` (e o `status` legível) de todas as propostas vinculadas
+ * a um lead. Usado quando o lead muda de etapa no kanban de leads — assim a
+ * proposta correspondente não fica congelada na etapa antiga.
+ * Retorna o número de propostas atualizadas.
+ */
+export async function syncProposalStageFromLead(
+  leadId: string,
+  tenantId: string,
+  stageId: SavedProposalStageId,
+  status: string,
+): Promise<number> {
+  const { data, error } = await supabase
+    .from('proposals')
+    .update({ stage_id: stageId, status })
+    .eq('lead_id', leadId)
+    .eq('tenant_id', tenantId)
+    .select('id');
+
+  if (error) {
+    throw new Error(error.message || 'Erro ao sincronizar proposta a partir do lead.');
+  }
+
+  return data?.length ?? 0;
 }
 
 export async function replaceSavedProposalParties(
