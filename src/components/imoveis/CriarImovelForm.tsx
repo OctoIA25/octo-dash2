@@ -8,6 +8,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { buscarCep, formatarCepExibicao, validarCep } from '@/services/viaCepService';
 import { supabase } from '@/lib/supabaseClient';
+import { uploadImoveisFotos } from '@/lib/uploadImoveisFotos';
+import { normalizeFotos } from './fotos-helpers';
 import { FotosUploader } from './FotosUploader';
 import { ProprietarioAutocomplete } from './ProprietarioAutocomplete';
 import { ImovelDuplicadoDialog } from './ImovelDuplicadoDialog';
@@ -929,8 +931,19 @@ export const CriarImovelForm = ({
   };
 
   const saveImovelLocal = async (codigoImovel: string) => {
+    // Sobe pro Storage as fotos que ainda estão em data URL (base64).
+    // Necessário pra feeds externos (ZAP/OLX) que só aceitam https?:// nas <Media>.
+    const fotosNormalizadas = normalizeFotos(formData.fotos);
+    const fotosComUrls = tenantId
+      ? await uploadImoveisFotos({
+          fotos: fotosNormalizadas,
+          tenantId,
+          codigoImovel,
+        })
+      : fotosNormalizadas;
+
     // Gerar título automático se não preenchido
-    const tituloAuto = formData.titulo || 
+    const tituloAuto = formData.titulo ||
       `${formData.tipo || 'Imóvel'} ${formData.bairro ? `- ${formData.bairro}` : ''} ${formData.cidade ? `- ${formData.cidade}` : ''}`;
     
     // Determinar finalidade para exibição
@@ -975,7 +988,7 @@ export const CriarImovelForm = ({
       valor_condominio: parseCurrency(formData.valor_condominio) || 0,
       valor_iptu: parseCurrency(formData.valor_iptu) || 0,
       descricao: formData.descricao || null,
-      fotos: formData.fotos.length > 0 ? formData.fotos : [],
+      fotos: fotosComUrls,
       proprietario_nome: formData.proprietario_nome || null,
       proprietario_telefone: formData.proprietario_celular || formData.proprietario_tel_residencial || null,
       proprietario_email: formData.proprietario_email || null,

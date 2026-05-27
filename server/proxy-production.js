@@ -1699,6 +1699,7 @@ const getZapFeedDebugInfo = async (tenantId) => {
       valor_venda,
       valor_locacao,
       criado_por,
+      fotos,
       status_aprovacao,
       updated_at
     `)
