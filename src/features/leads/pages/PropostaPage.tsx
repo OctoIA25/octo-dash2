@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   DndContext,
   DragOverlay,
@@ -337,7 +338,7 @@ interface DealWorkflowGroup {
   items: readonly DealWorkflowItem[];
 }
 
-const DEAL_WORKFLOW_GROUPS = [
+const DEAL_WORKFLOW_GROUPS_FINANCIADO = [
   {
     id: 'feitura-contrato',
     title: 'Feitura de Contrato',
@@ -345,40 +346,81 @@ const DEAL_WORKFLOW_GROUPS = [
     stageId: 'feitura-contrato',
     items: [
       { id: 'proposta-anexada', label: 'Anexar proposta no iList', owner: 'Corretor', stageId: 'feitura-contrato', targetTab: 'documentos' },
-      { id: 'comissao-cadastrada', label: 'Completar comissão e corretores', owner: 'Financeiro', stageId: 'feitura-contrato', targetTab: 'formulario' },
-      { id: 'docs-vendedor', label: 'Documentos dos vendedores', owner: 'Vendedor', stageId: 'feitura-contrato', targetTab: 'participantes' },
+      { id: 'comissao-cadastrada', label: 'Completar valor total de comissão e nome dos corretores', owner: 'Financeiro', stageId: 'feitura-contrato', targetTab: 'formulario' },
+      { id: 'docs-vendedor', label: 'Documentos do vendedor', owner: 'Vendedor', stageId: 'feitura-contrato', targetTab: 'participantes' },
       { id: 'docs-comprador', label: 'Documentos dos compradores', owner: 'Comprador', stageId: 'feitura-contrato', targetTab: 'participantes' },
-      { id: 'comissoes-conferidas', label: 'Comissões conferidas', owner: 'Financeiro', stageId: 'feitura-contrato', targetTab: 'formulario' },
-      { id: 'baixa-portais', label: 'Baixa do imóvel em site e portais', owner: 'Operações', stageId: 'feitura-contrato', targetTab: 'documentos' },
-      { id: 'certidoes-atualizadas', label: 'Certidões reais e pessoais atualizadas', owner: 'Jurídico', stageId: 'feitura-contrato', targetTab: 'certidoes' },
-      { id: 'contrato-assinado-upload', label: 'Upload do contrato assinado', owner: 'Jurídico', stageId: 'feitura-contrato', targetTab: 'assinatura' },
+      { id: 'comissoes-erick', label: 'Comissões', owner: 'Financeiro', stageId: 'feitura-contrato', targetTab: 'formulario' },
+      { id: 'baixa-portais', label: 'Baixa do imóvel em veículos promocionais (site e portais)', owner: 'Operações', stageId: 'feitura-contrato', targetTab: 'documentos' },
+      { id: 'certidoes-atualizadas', label: 'JURÍDICO - Atualizações de certidões reais e pessoais reipersecutórias', owner: 'Jurídico', stageId: 'feitura-contrato', targetTab: 'certidoes' },
+      { id: 'contrato-assinado-upload', label: 'Upload do contrato assinado via Clicksign ou pessoalmente', owner: 'Jurídico', stageId: 'feitura-contrato', targetTab: 'assinatura' },
     ],
   },
   {
-    id: 'escrituracao',
-    title: 'Escrituração',
-    status: 'Em análise',
+    id: 'em-analise-andamento',
+    title: 'Em análise / Andamento',
+    status: 'Leitura',
     stageId: 'proposta-assinada',
     items: [
-      { id: 'cartorio-documentacao', label: 'Enviar documentação ao cartório', owner: 'Jurídico', stageId: 'proposta-assinada', targetTab: 'escriturar' },
-      { id: 'boleto-quitacao', label: 'Informar data de quitação do boleto', owner: 'Corretor', stageId: 'proposta-assinada', targetTab: 'agenda' },
-      { id: 'itbi-custas', label: 'Informar ITBI e custas cartorárias', owner: 'Corretor', stageId: 'proposta-assinada', targetTab: 'certidoes' },
+      { id: 'cartorio-documentacao', label: 'Enviar ao CARTÓRIO documentação para feitura da ESCRITURA', owner: 'Jurídico', stageId: 'proposta-assinada', targetTab: 'escriturar' },
+      { id: 'boleto-quitacao', label: 'CORRETOR - Informar ao COMPRADOR data da quitação do boleto', owner: 'Corretor', stageId: 'proposta-assinada', targetTab: 'agenda' },
+      { id: 'itbi-custas', label: 'CORRETOR - Informar ao COMPRADOR valores de ITBI e custas cartorárias', owner: 'Corretor', stageId: 'proposta-assinada', targetTab: 'certidoes' },
     ],
   },
   {
-    id: 'pos-venda',
-    title: 'Pós-venda',
-    status: 'Pós-venda',
+    id: 'recebido',
+    title: 'Recebido',
+    status: 'Em andamento',
     stageId: 'proposta-assinada',
     items: [
-      { id: 'titularidade-transferencias', label: 'Transferir titularidade de condomínio e concessionárias', owner: 'Pós-venda', stageId: 'proposta-assinada', targetTab: 'solicitacao' },
-      { id: 'iptu-matricula-upload', label: 'Anexar IPTU, matrícula e alteração com data', owner: 'Pós-venda', stageId: 'proposta-assinada', targetTab: 'documentos' },
-      { id: 'agua-orientacao', label: 'Orientar alteração da conta de água', owner: 'Pós-venda', stageId: 'proposta-assinada', targetTab: 'solicitacao' },
-      { id: 'entrega-chaves', label: 'Agendar entrega das chaves', owner: 'Corretor', stageId: 'proposta-assinada', targetTab: 'agenda' },
-      { id: 'pagamento-comissoes', label: 'Pagar comissões e emitir NFs, recibos ou RPAs', owner: 'Financeiro', stageId: 'proposta-assinada', targetTab: 'formulario' },
+      { id: 'titularidade-transferencias', label: 'Transferências de titularidades - COND, CPFL, CONGAS (consultar), DAE', owner: 'Pós-venda', stageId: 'proposta-assinada', targetTab: 'solicitacao' },
+      { id: 'iptu-matricula-upload', label: 'Upload da certidão de IPTU, matrícula e mudança com data', owner: 'Pós-venda', stageId: 'proposta-assinada', targetTab: 'documentos' },
+      { id: 'agua-orientacao', label: 'PÓS-VENDAS GRV: Instruir Proprietário como alterar conta de água', owner: 'Pós-venda', stageId: 'proposta-assinada', targetTab: 'solicitacao' },
+      { id: 'entrega-chaves', label: 'CORRETOR - Agendar data da entrega das chaves aos COMPRADORES', owner: 'Corretor', stageId: 'proposta-assinada', targetTab: 'agenda' },
+      { id: 'pagamento-comissoes', label: 'Pagamento de comissões e emissões de NFs, recibos e RPAs', owner: 'Financeiro', stageId: 'proposta-assinada', targetTab: 'formulario' },
     ],
   },
 ] as const satisfies readonly DealWorkflowGroup[];
+
+const DEAL_WORKFLOW_GROUPS_VISTA = [
+  {
+    id: 'feitura-contrato',
+    title: 'Feitura de Contrato',
+    status: 'Contrato',
+    stageId: 'feitura-contrato',
+    items: [
+      { id: 'proposta-anexada', label: 'Anexar proposta', owner: 'Corretor', stageId: 'feitura-contrato', targetTab: 'documentos' },
+      { id: 'kenlo-vendido', label: 'Colocar como VENDIDO no Kenlo', owner: 'Corretor', stageId: 'feitura-contrato', targetTab: 'documentos' },
+      { id: 'docs-comprador', label: 'Documentos dos compradores', owner: 'Comprador', stageId: 'feitura-contrato', targetTab: 'participantes' },
+      { id: 'docs-vendedor', label: 'Documentos dos vendedores', owner: 'Vendedor', stageId: 'feitura-contrato', targetTab: 'participantes' },
+      { id: 'comissao-gabi', label: 'Cálculo de comissões', owner: 'Financeiro', stageId: 'feitura-contrato', targetTab: 'formulario' },
+      { id: 'contrato-assinado-upload', label: 'Upload do contrato assinado via Clicksign ou pessoalmente', owner: 'Jurídico', stageId: 'feitura-contrato', targetTab: 'assinatura' },
+    ],
+  },
+  {
+    id: 'em-analise',
+    title: 'Em análise',
+    status: 'Leitura',
+    stageId: 'proposta-assinada',
+    items: [
+      { id: 'quitacao-totalidade', label: 'CORRETOR - VERIFICAR: quitação da totalidade com recursos próprios', owner: 'Corretor', stageId: 'proposta-assinada', targetTab: 'formulario' },
+      { id: 'venda-parada-juridico', label: 'Venda parada - JURÍDICO', owner: 'Jurídico', stageId: 'proposta-assinada', targetTab: 'certidoes' },
+    ],
+  },
+  {
+    id: 'recebido',
+    title: 'Recebido',
+    status: 'Em andamento',
+    stageId: 'proposta-assinada',
+    items: [
+      { id: 'titularidade-transferencias', label: 'Transferências de titularidades: COND, CPFL, CONGAS, DAE', owner: 'Pós-venda', stageId: 'proposta-assinada', targetTab: 'solicitacao' },
+      { id: 'matricula-iptu', label: 'Anexar matrícula e trocar IPTU', owner: 'Pós-venda', stageId: 'proposta-assinada', targetTab: 'documentos' },
+      { id: 'entrega-chaves', label: 'Entrega de chaves', owner: 'Corretor', stageId: 'proposta-assinada', targetTab: 'agenda' },
+    ],
+  },
+] as const satisfies readonly DealWorkflowGroup[];
+
+const getDealWorkflowGroups = (comFinanciamento: boolean): readonly DealWorkflowGroup[] =>
+  comFinanciamento ? DEAL_WORKFLOW_GROUPS_FINANCIADO : DEAL_WORKFLOW_GROUPS_VISTA;
 
 const DOCUMENT_CHECKLIST = [
   'Proposta anexada',
@@ -1776,7 +1818,18 @@ function KanbanColumn({
   );
 }
 
-export const PropostaPage = () => {
+interface PropostaPageProps {
+  embeddedProposalId?: string | null;
+  embeddedProposal?: SavedProposal | null;
+  onEmbeddedClose?: () => void;
+}
+
+export const PropostaPage = ({
+  embeddedProposalId = null,
+  embeddedProposal = null,
+  onEmbeddedClose,
+}: PropostaPageProps = {}) => {
+  const isEmbedded = Boolean(embeddedProposalId);
   const { toast } = useToast();
   const { user, tenantId } = useAuth();
   const { leads, isLoading, error, refetch } = useLeadsMetrics();
@@ -1992,6 +2045,8 @@ export const PropostaPage = () => {
   const getTransactionFormValue = (key: string, fallback = '') => transactionForm[key] ?? fallback;
   const activeDealSubstageId = getTransactionFormValue('activeDealSubstageId');
   const activeDealSubstageLabel = getTransactionFormValue('activeDealSubstageLabel');
+  const isFinanciado = Boolean(selectedDetail?.pagamento.comFinanciamento);
+  const dealWorkflowGroups = getDealWorkflowGroups(isFinanciado);
 
   const persistExistingProposal = useCallback(
     async (proposal: ProposalItem, detail: ProposalDetailState) => {
@@ -2634,6 +2689,49 @@ export const PropostaPage = () => {
     }));
   };
 
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedProposalId = isEmbedded ? embeddedProposalId : searchParams.get('id');
+  const consumedProposalIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!requestedProposalId) {
+      consumedProposalIdRef.current = null;
+      return;
+    }
+    if (consumedProposalIdRef.current === requestedProposalId) return;
+    if (selectedProposal?.id === requestedProposalId) return;
+
+    let match = proposals.find((proposal) => proposal.id === requestedProposalId);
+
+    if (!match && isEmbedded && embeddedProposal && embeddedProposal.id === requestedProposalId) {
+      const converted = savedProposalToUiState(embeddedProposal);
+      setProposalDetails((previous) => ({ ...previous, [converted.proposal.id]: converted.detail }));
+      setDrafts((previous) => [
+        converted.proposal,
+        ...previous.filter((item) => item.id !== converted.proposal.id),
+      ]);
+      match = converted.proposal;
+    }
+
+    if (!match) return;
+
+    consumedProposalIdRef.current = requestedProposalId;
+    openProposalDetail(match);
+
+    if (!isEmbedded) {
+      setSearchParams(
+        (current) => {
+          const next = new URLSearchParams(current);
+          next.delete('id');
+          return next;
+        },
+        { replace: true },
+      );
+    }
+    // openProposalDetail captures setters that are stable; safe to omit
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedProposalId, proposals, selectedProposal?.id, setSearchParams, isEmbedded, embeddedProposal]);
+
   const registerInviteAction = (channel: string) => {
     if (!selectedProposal) return;
     appendHistory(selectedProposal, 'Convite enviado', `Canal: ${channel}. Código ${selectedInviteCode}.`);
@@ -2892,7 +2990,7 @@ export const PropostaPage = () => {
   };
 
   return (
-    <div className="min-h-full bg-slate-50 dark:bg-slate-950">
+    <div className={isEmbedded ? 'hidden' : 'min-h-full bg-slate-50 dark:bg-slate-950'}>
       <div className="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
         <div className="flex flex-col gap-4 px-6 py-5">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -3202,7 +3300,17 @@ export const PropostaPage = () => {
         )}
       </div>
 
-      <Dialog open={!!selectedProposal} onOpenChange={(open) => !open && setSelectedProposal(null)}>
+      <Dialog
+        open={!!selectedProposal}
+        onOpenChange={(open) => {
+          if (open) return;
+          setSelectedProposal(null);
+          if (isEmbedded) {
+            consumedProposalIdRef.current = null;
+            onEmbeddedClose?.();
+          }
+        }}
+      >
         {selectedProposal && selectedDetail && (
           <DialogContent className="max-h-[92vh] max-w-6xl gap-0 overflow-hidden p-0">
             <DialogHeader className="border-b border-slate-200 px-6 py-5 dark:border-slate-800">
@@ -3290,6 +3398,17 @@ export const PropostaPage = () => {
                               </p>
                             </div>
                             <div className="flex shrink-0 flex-wrap gap-2">
+                              <Badge
+                                variant="outline"
+                                className={cn(
+                                  'font-semibold',
+                                  isFinanciado
+                                    ? 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300'
+                                    : 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300',
+                                )}
+                              >
+                                Fluxo: {isFinanciado ? 'Financiado' : 'À vista'}
+                              </Badge>
                               <Badge variant="outline">Clientes</Badge>
                               <Badge variant="outline">Parceiros</Badge>
                               <Badge variant="outline">Contratos</Badge>
@@ -3327,7 +3446,7 @@ export const PropostaPage = () => {
                       </DetailSection>
 
                       <div className="grid gap-3">
-                        {DEAL_WORKFLOW_GROUPS.map((group) => (
+                        {dealWorkflowGroups.map((group) => (
                           <WorkflowChecklist
                             key={group.id}
                             group={group}
@@ -4159,7 +4278,7 @@ export const PropostaPage = () => {
                 <TabsContent value="escriturar" className="mt-0 space-y-4">
                   <DetailSection title="Escriturar" icon={Landmark}>
                     <div className="grid gap-3">
-                      {DEAL_WORKFLOW_GROUPS.slice(1).map((group) => (
+                      {dealWorkflowGroups.slice(1).map((group) => (
                         <WorkflowChecklist
                           key={group.id}
                           group={group}

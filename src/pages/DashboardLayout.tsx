@@ -25,6 +25,7 @@ const SIDEBAR_PERMISSION_ORDER: SidebarPermission[] = [
   'leads',
   'notificacoes',
   'metricas',
+  'juridico',
   'estudo-mercado',
   'recrutamento',
   'gestao-equipe',
@@ -41,6 +42,7 @@ const DEFAULT_ROUTE_BY_PERMISSION: Partial<Record<SidebarPermission, string>> = 
   leads: '/leads',
   notificacoes: '/notificacoes',
   metricas: '/metricas/cliente-interessado',
+  juridico: '/juridico/visao-geral',
   'estudo-mercado': '/estudo-mercado/avaliacao',
   recrutamento: '/recrutamento',
   'gestao-equipe': '/gestao-equipe',
@@ -95,6 +97,7 @@ const EstudoMercadoAgentePage = lazy(() => import('@/features/estudo-mercado/pag
 const EstudoMercadoMetricasPage = lazy(() => import('@/features/estudo-mercado/pages/EstudoMercadoMetricasPage').then(m => ({ default: m.EstudoMercadoMetricasPage })));
 const NotificacoesPage = lazy(() => import('@/features/notificacoes/pages/NotificacoesPage').then(m => ({ default: m.NotificacoesPage })));
 const ExcelPage = lazy(() => import('@/features/excel/pages/ExcelPage').then(m => ({ default: m.ExcelPage })));
+const JuridicoPage = lazy(() => import('@/features/juridico/pages/JuridicoPage').then(m => ({ default: m.JuridicoPage })));
 
 // Loading Fallback para páginas individuais
 const PageLoader = () => (
@@ -273,9 +276,19 @@ const DashboardLayout = () => {
             } 
           />
           
-          <Route 
-            path="metricas/:subsection/:subsubsection?" 
-            element={canAccess('metricas') ? <MetricasPage /> : <Navigate to={defaultAllowedRoute} replace />} 
+          <Route
+            path="metricas/proposta"
+            element={<Navigate to="/juridico/proposta" replace />}
+          />
+
+          <Route
+            path="metricas/:subsection/:subsubsection?"
+            element={canAccess('metricas') ? <MetricasPage /> : <Navigate to={defaultAllowedRoute} replace />}
+          />
+
+          <Route
+            path="juridico/:section?"
+            element={canAccess('juridico') ? <JuridicoPage /> : <Navigate to={defaultAllowedRoute} replace />}
           />
           
           <Route 

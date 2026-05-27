@@ -12,7 +12,6 @@ import { GestaoSectionWithMetrics } from '@/components/sections/GestaoSectionWit
 import { MetricasSubSection, ClienteInteressadoSubSection, ClienteProprietarioSubSection } from '@/components/FixedSidebar';
 
 import { BolsaoSection } from '@/features/leads/components/BolsaoSection';
-import { PropostaPage } from '@/features/leads/pages/PropostaPage';
 
 interface MetricasPageProps {
   onRefresh?: () => void;
@@ -24,10 +23,10 @@ export const MetricasPage = ({ onRefresh, isRefreshing }: MetricasPageProps) => 
   const navigate = useNavigate();
   
   // Validar e obter subsection
-  const validSubsections: MetricasSubSection[] = ['cliente-interessado', 'cliente-proprietario', 'bolsao', 'proposta'];
-  const activeSubsection: MetricasSubSection = 
-    (subsection && validSubsections.includes(subsection as MetricasSubSection)) 
-      ? subsection as MetricasSubSection 
+  const validSubsections: MetricasSubSection[] = ['cliente-interessado', 'cliente-proprietario', 'bolsao'];
+  const activeSubsection: MetricasSubSection =
+    (subsection && validSubsections.includes(subsection as MetricasSubSection))
+      ? subsection as MetricasSubSection
       : 'cliente-interessado';
 
   // Validar e obter sub-subsection para Cliente Interessado
@@ -131,10 +130,6 @@ export const MetricasPage = ({ onRefresh, isRefreshing }: MetricasPageProps) => 
     return (
       <BolsaoSection />
     );
-  }
-
-  if (activeSubsection === 'proposta') {
-    return <PropostaPage />;
   }
 
   return (

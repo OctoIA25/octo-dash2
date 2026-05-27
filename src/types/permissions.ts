@@ -16,10 +16,11 @@ export type UserRole = 'owner' | 'admin' | 'team_leader' | 'corretor';
 export type TeamColor = 'vermelha' | 'verde' | 'amarela' | 'azul';
 
 // Permissões de menu baseadas nas seções do sidebar
-export type SidebarPermission = 
+export type SidebarPermission =
   | 'leads'           // Início/Leads
   | 'notificacoes'    // Notificações
   | 'metricas'        // Comercial/Métricas
+  | 'juridico'        // Jurídico (Visão Geral + Propostas)
   | 'estudo-mercado'  // Estudo de Mercado
   | 'recrutamento'    // Recrutamento
   | 'gestao-equipe'   // Gestão de Equipe
@@ -82,24 +83,24 @@ export interface PermissionsConfig {
 
 // Owner: Acesso total a tudo
 export const OWNER_SIDEBAR_PERMISSIONS: SidebarPermission[] = [
-  'leads', 'notificacoes', 'metricas', 'estudo-mercado', 'recrutamento', 'gestao-equipe',
+  'leads', 'notificacoes', 'metricas', 'juridico', 'estudo-mercado', 'recrutamento', 'gestao-equipe',
   'imoveis', 'agentes-ia', 'octo-chat', 'integracoes', 'central-leads', 'atividades', 'relatorios', 'excel'
 ];
 
 // Admin: Acesso total ao tenant
 export const ADMIN_SIDEBAR_PERMISSIONS: SidebarPermission[] = [
-  'leads', 'notificacoes', 'metricas', 'estudo-mercado', 'recrutamento', 'gestao-equipe',
+  'leads', 'notificacoes', 'metricas', 'juridico', 'estudo-mercado', 'recrutamento', 'gestao-equipe',
   'imoveis', 'agentes-ia', 'octo-chat', 'integracoes', 'central-leads', 'atividades', 'relatorios', 'excel'
 ];
 
 // Team Leader: Acesso intermediário
 export const TEAM_LEADER_SIDEBAR_PERMISSIONS: SidebarPermission[] = [
-  'leads', 'notificacoes', 'metricas', 'estudo-mercado', 'gestao-equipe', 'imoveis', 'octo-chat', 'excel'
+  'leads', 'notificacoes', 'metricas', 'juridico', 'estudo-mercado', 'gestao-equipe', 'imoveis', 'octo-chat', 'excel'
 ];
 
 // Corretor: Acesso restrito (bloqueado por padrão em várias áreas)
 export const CORRETOR_SIDEBAR_PERMISSIONS: SidebarPermission[] = [
-  'leads', 'notificacoes', 'metricas', 'estudo-mercado', 'imoveis', 'octo-chat', 'excel'
+  'leads', 'notificacoes', 'metricas', 'juridico', 'estudo-mercado', 'imoveis', 'octo-chat', 'excel'
 ];
 
 // Abas bloqueadas por padrão para corretores

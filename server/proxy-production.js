@@ -1300,7 +1300,9 @@ const getZapFeedConfig = () => ({
   contactEmail: process.env.ZAPIMOVEIS_CONTACT_EMAIL || 'contato@octoia.com',
   contactPhone: process.env.ZAPIMOVEIS_CONTACT_PHONE || '',
   publicationType: process.env.ZAPIMOVEIS_PUBLICATION_TYPE || 'STANDARD',
-  detailBaseUrl: process.env.ZAPIMOVEIS_DETAIL_BASE_URL || process.env.PUBLIC_APP_URL || ''
+  detailBaseUrl: process.env.ZAPIMOVEIS_DETAIL_BASE_URL || process.env.PUBLIC_APP_URL || '',
+  resyncUrl: process.env.ZAPIMOVEIS_RESYNC_URL || '',
+  resyncToken: process.env.ZAPIMOVEIS_RESYNC_TOKEN || ''
 });
 
 const validateZapFeedAccess = async (req, res, next) => {
@@ -2207,6 +2209,7 @@ app.get('/api/v1/integrations/zapimoveis/health', validateZapFeedAccess, async (
         'GET /api/v1/integrations/zapimoveis/feed.xml',
         'GET /api/v1/integrations/zapimoveis/debug',
         'POST /api/v1/integrations/zapimoveis/webhook',
+        'POST /api/v1/integrations/zapimoveis/notify-update',
         'POST /api/v1/integrations/grupo-olx/webhook',
         'GET /api/v1/integrations/grupo-olx/vrsync.xml'
       ],
@@ -2313,6 +2316,107 @@ app.post('/api/v1/integrations/grupo-olx/webhook', validateZapFeedAccess, async 
       integration: 'grupo-olx-webhook',
       error: {
         code: error.code || 'SERVER_ERROR',
+        message: error.message
+      }
+    });
+  }
+});
+
+const buildPublicFeedUrl = (req, tenantId) => {
+  const baseFromHeader = firstHeaderValue(req.headers['x-forwarded-host']) || req.headers.host;
+  const proto = firstHeaderValue(req.headers['x-forwarded-proto']) || (req.secure ? 'https' : 'http');
+  if (!baseFromHeader) return null;
+  return `${proto}://${baseFromHeader}/api/v1/integrations/zapimoveis/vrsync.xml?tenant_id=${encodeURIComponent(tenantId)}`;
+};
+
+const notifyZapResync = async ({ tenantId, propertyCodes = [], action = 'update', feedUrl }) => {
+  const config = getZapFeedConfig();
+  const payload = {
+    tenant_id: tenantId,
+    action,
+    property_codes: propertyCodes,
+    feed_url: feedUrl,
+    timestamp: new Date().toISOString()
+  };
+
+  if (!config.resyncUrl) {
+    return { notified: false, reason: 'ZAPIMOVEIS_RESYNC_URL not configured' };
+  }
+
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (config.resyncToken) {
+      headers['Authorization'] = `Bearer ${config.resyncToken}`;
+    }
+
+    const response = await fetch(config.resyncUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload)
+    });
+
+    return {
+      notified: response.ok,
+      status: response.status,
+      reason: response.ok ? 'sent' : `upstream returned ${response.status}`
+    };
+  } catch (error) {
+    return { notified: false, reason: `upstream error: ${error.message}` };
+  }
+};
+
+// POST /api/v1/integrations/zapimoveis/notify-update
+// Webhook outbound: dispara quando um imóvel é criado/editado/excluído no CRM
+// Loga o evento e (se ZAPIMOVEIS_RESYNC_URL estiver configurada) avisa o ZAP para re-puxar o feed.
+app.post('/api/v1/integrations/zapimoveis/notify-update', validateZapFeedAccess, async (req, res) => {
+  try {
+    const rawCodes = req.body?.property_code ?? req.body?.codigo_imovel ?? req.body?.property_codes ?? [];
+    const propertyCodes = (Array.isArray(rawCodes) ? rawCodes : [rawCodes])
+      .map((code) => normalizeFeedText(code).toUpperCase())
+      .filter(Boolean);
+    const action = ['create', 'update', 'delete'].includes(req.body?.action) ? req.body.action : 'update';
+
+    const listings = await getZapFeedListings(req.tenantId);
+    const eligibleCodes = new Set(listings.map((l) => normalizeFeedText(l.codigo_imovel).toUpperCase()));
+    const missing = propertyCodes.filter((code) => !eligibleCodes.has(code));
+
+    const feedUrl = buildPublicFeedUrl(req, req.tenantId);
+    const notifyResult = await notifyZapResync({
+      tenantId: req.tenantId,
+      propertyCodes,
+      action,
+      feedUrl
+    });
+
+    console.log('📤 Webhook ZAP notify-update:', {
+      tenant_id: req.tenantId,
+      action,
+      property_codes: propertyCodes,
+      eligible_count: listings.length,
+      missing_from_feed: missing,
+      notified: notifyResult.notified,
+      reason: notifyResult.reason
+    });
+
+    res.json({
+      success: true,
+      integration: 'zapimoveis-notify-update',
+      tenant_id: req.tenantId,
+      action,
+      property_codes: propertyCodes,
+      eligible_listings_count: listings.length,
+      missing_from_feed: missing,
+      feed_url: feedUrl,
+      zap_resync: notifyResult,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('❌ Erro no notify-update do ZAP:', error);
+    res.status(500).json({
+      success: false,
+      integration: 'zapimoveis-notify-update',
+      error: {
+        code: 'SERVER_ERROR',
         message: error.message
       }
     });
