@@ -220,6 +220,7 @@ export const BolsaoSection = (props: BolsaoSectionProps) => {
   }, [activeTab, config.teamQueueEnabled]);
 
   // Carregar leads do Bolsão
+
   const carregarLeads = async () => {
     try {
       setLoading(true);
@@ -234,8 +235,8 @@ export const BolsaoSection = (props: BolsaoSectionProps) => {
       
       // Proteção: Apenas admins podem ver todos os leads
       const data = (activeTab === 'geral' && isAdmin)
-        ? await fetchTodosLeadsBolsao()
-        : await fetchBolsaoLeads();
+        ? await fetchTodosLeadsBolsao(tenantId)
+        : await fetchBolsaoLeads(tenantId);
       
       setLeads(data);
       

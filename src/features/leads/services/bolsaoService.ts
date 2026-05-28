@@ -40,13 +40,13 @@ const BOLSAO_TABLE = 'bolsao'; // Nome da tabela (sem acento)
  * Busca leads disponíveis no Bolsão
  * Leads disponíveis são aqueles com status "bolsao" (expirados sem atendimento)
  */
-export async function fetchBolsaoLeads(): Promise<BolsaoLead[]> {
+export async function fetchBolsaoLeads(tenantId: string): Promise<BolsaoLead[]> {
   try {
-    
     const { data, error } = await supabase
       .from(BOLSAO_TABLE)
       .select('*')
       .eq('status', 'bolsao')
+      .eq('tenant_id', tenantId)
       .order('created_at', { ascending: true });
     
     if (error) {
@@ -67,12 +67,13 @@ export async function fetchBolsaoLeads(): Promise<BolsaoLead[]> {
  * portanto identifica de forma confiável leads que cairam no pool.
  * Inclui status atuais 'bolsao', 'assumido', 'atendido', 'finalizado'.
  */
-export async function fetchTodosLeadsBolsao(): Promise<BolsaoLead[]> {
+export async function fetchTodosLeadsBolsao(tenantId: string): Promise<BolsaoLead[]> {
   try {
     const { data, error } = await supabase
       .from(BOLSAO_TABLE)
       .select('*')
       .not('data_expiracao', 'is', null)
+      .eq('tenant_id', tenantId)
       .order('data_expiracao', { ascending: false });
 
     if (error) {
