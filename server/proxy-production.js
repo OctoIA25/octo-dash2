@@ -677,6 +677,27 @@ app.get('/api/v1/leads/phone/:phone', validateApiKey, async (req, res) => {
   }
 });
 
+const extractZapCode = async (message, tenantId) => {
+  if (!message || !tenantId) return null;
+
+  const bairro = message.match(/\d+\s*-\s*([^,]+),/)?.[1]?.trim();
+  if (!bairro) return null;
+
+  const { data, error } = await supabase
+    .from('imoveis_locais')
+    .select('codigo_imovel')
+    .eq('tenant_id', tenantId)
+    .ilike('bairro', `%${bairro}%`)
+    .limit(1);
+
+  if (error) {
+    console.log('❌ Erro ao buscar código do Zap:', error);
+    return null;
+  }
+
+  return data?.[0]?.codigo_imovel ?? null;
+};
+
 // Helper: Normalize stage value (accepts numeric or string)
 const normalizeStage = (value) => {
   if (!value) return 'new';
@@ -2263,6 +2284,15 @@ app.get('/api/v1/integrations/grupo-olx/vrsync.xml', validateZapFeedAccess, crea
 app.post('/api/v1/integrations/zapimoveis/webhook', validateZapFeedAccess, async (req, res) => {
   try {
     const normalizedLead = normalizeZapLeadPayload(req.body);
+
+    const zapCode = await extractZapCode(normalizedLead.message, req.tenantId);
+    if (zapCode) {
+      normalizedLead.interest_reference = zapCode;
+      normalizedLead.property_code = zapCode;
+      normalizedLead.codigo_imovel = zapCode;
+      normalizedLead.interest_type = 'property';
+    }
+
     const result = await createIncomingLead({
       tenantId: req.tenantId,
       body: normalizedLead,

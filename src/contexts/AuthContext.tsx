@@ -8,6 +8,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { clearAllXmlStorage } from '@/features/imoveis/services/imoveisXmlService';
 import {
   SidebarPermission,
   ADMIN_SIDEBAR_PERMISSIONS,
@@ -291,6 +292,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const logout = useCallback(async () => {
     localStorage.removeItem('owner-impersonation');
+    clearAllXmlStorage();
     await supabase.auth.signOut();
     setAuthState({ isAuthenticated: false, user: null, isLoading: false });
   }, []);

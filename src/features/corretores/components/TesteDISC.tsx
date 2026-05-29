@@ -17,6 +17,7 @@ import {
 } from '../services/discTestService';
 import { salvarResultadoDISC as salvarNaTabelaCorretores } from '../services/personalityTestsService';
 import { buscarResultadosAdmin, salvarResultadoDISCAdmin } from '../services/adminTestsService';
+import { normalizarPercentuaisDISC } from '../services/personalityAnalysisService';
 import type { ResultadoDISC } from '../services/personalityTestsService';
 import { getSupabaseConfig, getAuthenticatedHeaders } from '@/utils/encryption';
 
@@ -61,12 +62,14 @@ export const TesteDISC = ({
             return;
           }
 
-          const resultado = {
+          // Normalizar — dados salvos antes do fix de divisor dinâmico
+          // podem ter sido gravados com escala incoerente.
+          const resultado = normalizarPercentuaisDISC({
             D: resultadoAdmin.disc.percentuais.D || 0,
             I: resultadoAdmin.disc.percentuais.I || 0,
             S: resultadoAdmin.disc.percentuais.S || 0,
             C: resultadoAdmin.disc.percentuais.C || 0
-          };
+          });
 
           const dominantes = Object.entries(resultado)
             .filter(([_, percentual]) => percentual >= 0.25)
@@ -101,15 +104,15 @@ export const TesteDISC = ({
         }
         
         const corretor = data[0];
-        
-        // Montar resultado para exibição
-        const resultado = {
+
+        // Montar resultado normalizado (dados antigos podem não somar 1.0)
+        const resultado = normalizarPercentuaisDISC({
           D: corretor.disc_percentual_d || 0,
           I: corretor.disc_percentual_i || 0,
           S: corretor.disc_percentual_s || 0,
           C: corretor.disc_percentual_c || 0
-        };
-        
+        });
+
         // Calcular dominantes (perfis >= 25%)
         const dominantes = Object.entries(resultado)
           .filter(([_, percentual]) => percentual >= 0.25)

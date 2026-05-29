@@ -3658,6 +3658,12 @@ app.get('/api/v1/health', (req, res) => {
 import { registerScrapeRoute } from './scrapers/index.js';
 registerScrapeRoute(app, supabase);
 
+// ============================================
+// WHATSAPP - Chat (Meta Cloud API)
+// ============================================
+import { registerWhatsappRoutes } from './whatsapp/index.js';
+registerWhatsappRoutes(app, supabase);
+
 // 404 Handler (DEVE ficar DEPOIS de todas as rotas)
 app.use('/api/v1/*', (req, res) => {
   res.status(404).json({

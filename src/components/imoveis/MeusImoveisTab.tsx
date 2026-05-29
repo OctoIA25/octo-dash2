@@ -462,18 +462,18 @@ export const MeusImoveisTab = ({ allImoveis, onViewDetails, onPropertyCreated }:
 
   // Filtrar imóveis que o corretor é responsável (XML + Locais)
   const meusImoveis = useMemo(() => {
+    const isOwner = systemRole?.toLowerCase() === 'owner';
     const meusCodigos = new Set(assignments.map(a => a.property_code.toUpperCase()));
-    
-    // Imóveis do XML que estão atribuídos ao corretor
-    const imoveisXml = allImoveis.filter(imovel => 
-      meusCodigos.has(imovel.referencia?.toUpperCase())
-    );
-    
-    // Imóveis criados localmente (convertidos para formato Imovel)
-    // Filtrar apenas os que estão nas atribuições do corretor
-    const imoveisLocaisConvertidos = imoveisLocais
-      .filter(local => meusCodigos.has(local.codigo_imovel.toUpperCase()))
-      .map(convertLocalToImovel);
+
+    // Owner vê todos os imóveis do tenant, mesmo sem registro em imoveis_corretores.
+    const imoveisXml = isOwner
+      ? allImoveis
+      : allImoveis.filter(imovel => meusCodigos.has(imovel.referencia?.toUpperCase()));
+
+    const imoveisLocaisConvertidos = (isOwner
+      ? imoveisLocais
+      : imoveisLocais.filter(local => meusCodigos.has(local.codigo_imovel.toUpperCase()))
+    ).map(convertLocalToImovel);
     
     // Criar um Set dos códigos que já existem no XML para evitar duplicatas
     const codigosXml = new Set(imoveisXml.map(i => i.referencia?.toUpperCase()));
@@ -497,7 +497,7 @@ export const MeusImoveisTab = ({ allImoveis, onViewDetails, onPropertyCreated }:
     }
     
     return combined;
-  }, [allImoveis, assignments, imoveisLocais, searchTerm]);
+  }, [allImoveis, assignments, imoveisLocais, searchTerm, systemRole]);
 
   // Adicionar código de imóvel
   const handleAddProperty = async () => {

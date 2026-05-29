@@ -32,6 +32,7 @@ const SIDEBAR_PERMISSION_ORDER: SidebarPermission[] = [
   'imoveis',
   'agentes-ia',
   'octo-chat',
+  'chat',
   'integracoes',
   'central-leads',
   'relatorios',
@@ -49,6 +50,7 @@ const DEFAULT_ROUTE_BY_PERMISSION: Partial<Record<SidebarPermission, string>> = 
   imoveis: '/imoveis',
   'agentes-ia': '/agentes-ia/agente-marketing',
   'octo-chat': '/octo-chat',
+  chat: '/chat',
   integracoes: '/integracoes',
   'central-leads': '/central-leads',
   relatorios: '/relatorios',
@@ -86,6 +88,7 @@ const ImoveisMapPage = lazy(() => import('@/features/imoveis/pages/ImoveisMapPag
 const LancamentoViewPage = lazy(() => import('@/features/imoveis/pages/LancamentoViewPage').then(m => ({ default: m.LancamentoViewPage })));
 const AgentesIaPage = lazy(() => import('@/features/agentes-ia/pages/AgentesIaPage').then(m => ({ default: m.AgentesIaPage })));
 const OctoChatPage = lazy(() => import('@/features/agentes-ia/pages/OctoChatPage').then(m => ({ default: m.OctoChatPage })));
+const ChatPage = lazy(() => import('@/features/chat/pages/ChatPage').then(m => ({ default: m.ChatPage })));
 const ConfiguracoesPage = lazy(() => import('@/features/settings/pages/ConfiguracoesPage').then(m => ({ default: m.ConfiguracoesPage })));
 const Importar16PersonalitiesPage = lazy(() => import('@/features/corretores/pages/Importar16PersonalitiesPage'));
 const AdminTestesDashboard = lazy(() => import('@/features/corretores/components/AdminTestesDashboard').then(m => ({ default: m.AdminTestesDashboard })));
@@ -377,13 +380,18 @@ const DashboardLayout = () => {
             element={canAccess('agentes-ia') ? <AgentesIaPage /> : <Navigate to={defaultAllowedRoute} replace />} 
           />
           
-          <Route 
-            path="octo-chat" 
-            element={canAccess('octo-chat') ? <OctoChatPage /> : <Navigate to={defaultAllowedRoute} replace />} 
+          <Route
+            path="octo-chat"
+            element={canAccess('octo-chat') ? <OctoChatPage /> : <Navigate to={defaultAllowedRoute} replace />}
           />
-          
-          <Route 
-            path="configuracoes" 
+
+          <Route
+            path="chat"
+            element={canAccess('chat') ? <ChatPage /> : <Navigate to={defaultAllowedRoute} replace />}
+          />
+
+          <Route
+            path="configuracoes"
             element={<ConfiguracoesPage leads={leads} />} 
           />
           

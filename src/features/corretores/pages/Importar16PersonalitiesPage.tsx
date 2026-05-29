@@ -196,12 +196,15 @@ export default function Importar16PersonalitiesPage() {
         // Obter informações do tipo do MBTI_TIPOS
         const dadosTipo = MBTI_TIPOS[tipoBase];
         
-        const energiaInfo = getLadoELetra(corretor.mbti_percent_energy || 50, 'energia');
-        const menteInfo = getLadoELetra(corretor.mbti_percent_mind || 50, 'mente');
+        // No banco: mbti_percent_mind = dimensão Mind (I/E, 1ª letra),
+        // mbti_percent_energy = dimensão Energy (S/N, 2ª letra).
+        // No vocabulário PT deste código: "energia" = 1ª letra (I/E), "mente" = 2ª letra (S/N).
+        const energiaInfo = getLadoELetra(corretor.mbti_percent_mind || 50, 'energia');
+        const menteInfo = getLadoELetra(corretor.mbti_percent_energy || 50, 'mente');
         const naturezaInfo = getLadoELetra(corretor.mbti_percent_nature || 50, 'natureza');
         const abordagemInfo = getLadoELetra(corretor.mbti_percent_tactics || 50, 'abordagem');
         const identidadeInfo = getLadoELetra(corretor.mbti_percent_identity || 50, 'identidade');
-        
+
         // Montar preview com os dados salvos
         const dadosPreview: DadosExtraidos16P = {
           url: '',
@@ -214,12 +217,12 @@ export default function Importar16PersonalitiesPage() {
           genero: '',
           percentuais: {
             energia: {
-              percentual: corretor.mbti_percent_energy || 50,
+              percentual: corretor.mbti_percent_mind || 50,
               lado: energiaInfo.lado,
               letra: energiaInfo.letra
             },
             mente: {
-              percentual: corretor.mbti_percent_mind || 50,
+              percentual: corretor.mbti_percent_energy || 50,
               lado: menteInfo.lado,
               letra: menteInfo.letra
             },

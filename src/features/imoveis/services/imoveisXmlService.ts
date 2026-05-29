@@ -4,10 +4,31 @@ import { supabase } from '@/lib/supabaseClient';
 const XML_URL_STORAGE_KEY_PREFIX = 'xml_imoveis_url__tenant__';
 const IMOVEIS_STORAGE_KEY_PREFIX = 'xml_imoveis_data__tenant__';
 const CORRETORES_STORAGE_KEY_PREFIX = 'xml_corretores_data__tenant__';
+const SYNC_ALL_BROKERS_KEY_PREFIX = 'last_sync_all_brokers_';
 
 export const getXmlUrlStorageKey = (tenantId: string) => `${XML_URL_STORAGE_KEY_PREFIX}${tenantId}`;
 export const getImoveisStorageKey = (tenantId: string) => `${IMOVEIS_STORAGE_KEY_PREFIX}${tenantId}`;
 export const getCorretoresStorageKey = (tenantId: string) => `${CORRETORES_STORAGE_KEY_PREFIX}${tenantId}`;
+
+const XML_STORAGE_PREFIXES = [
+  XML_URL_STORAGE_KEY_PREFIX,
+  IMOVEIS_STORAGE_KEY_PREFIX,
+  CORRETORES_STORAGE_KEY_PREFIX,
+  SYNC_ALL_BROKERS_KEY_PREFIX,
+];
+
+export const clearAllXmlStorage = (): void => {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+
+  const keysToRemove: string[] = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && XML_STORAGE_PREFIXES.some((prefix) => key.startsWith(prefix))) {
+      keysToRemove.push(key);
+    }
+  }
+  keysToRemove.forEach((key) => localStorage.removeItem(key));
+};
 
 export type TenantCorretor = {
   nome: string;

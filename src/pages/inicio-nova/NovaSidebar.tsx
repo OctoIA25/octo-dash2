@@ -116,6 +116,7 @@ const GROUPS: SidebarGroup[] = [
         ],
       },
       { id: 'octo-chat', label: 'Octo Chat', icon: MessageCircle, route: '/octo-chat', permission: 'octo-chat' },
+      { id: 'chat', label: 'Chat', icon: MessageCircle, route: '/chat', permission: 'chat' },
     ],
   },
   {

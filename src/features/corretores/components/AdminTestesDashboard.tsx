@@ -17,6 +17,7 @@ import {
   BarChart3
 } from 'lucide-react';
 import { buscarEstatisticasTestes } from '../services/personalityTestsService';
+import { normalizarPercentuaisDISC } from '../services/personalityAnalysisService';
 import { DISC_PROFILES } from '@/data/discQuestions';
 import { getSupabaseConfig, getAuthenticatedHeaders } from '@/utils/encryption';
 import { useAuth } from '@/hooks/useAuth';
@@ -390,12 +391,12 @@ export const AdminTestesDashboard = () => {
                     </div>
                     
                     <div className="space-y-3">
-                      {Object.entries({
-                        D: corretorSelecionado.disc_percentual_d,
-                        I: corretorSelecionado.disc_percentual_i,
-                        S: corretorSelecionado.disc_percentual_s,
-                        C: corretorSelecionado.disc_percentual_c
-                      }).map(([letra, percentual]: [string, any]) => {
+                      {Object.entries(normalizarPercentuaisDISC({
+                        D: corretorSelecionado.disc_percentual_d ?? 0,
+                        I: corretorSelecionado.disc_percentual_i ?? 0,
+                        S: corretorSelecionado.disc_percentual_s ?? 0,
+                        C: corretorSelecionado.disc_percentual_c ?? 0
+                      })).map(([letra, percentual]: [string, any]) => {
                         const profile = DISC_PROFILES[letra];
                         const percent = (percentual * 100).toFixed(1);
                         

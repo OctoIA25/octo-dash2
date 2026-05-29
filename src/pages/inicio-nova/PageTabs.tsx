@@ -33,6 +33,7 @@ import {
   Tag,
   Settings2,
   Sparkles,
+  MessageCircle,
 } from 'lucide-react';
 
 interface Tab {
@@ -185,6 +186,7 @@ const TAB_CONFIGS: TabConfig[] = [
     tabs: [
       { id: 'integrations', label: 'Integrações', icon: Plug, href: '/integracoes?tab=integrations', isQuery: true },
       { id: 'xml', label: 'XML', icon: Building2, href: '/integracoes?tab=xml', isQuery: true },
+      { id: 'whatsapp', label: 'WhatsApp', icon: MessageCircle, href: '/integracoes?tab=whatsapp', isQuery: true },
       { id: 'api', label: 'API', icon: Code, href: '/integracoes?tab=api', isQuery: true },
     ],
   },
@@ -197,6 +199,12 @@ const TAB_CONFIGS: TabConfig[] = [
   {
     basePath: '/octo-chat',
     label: 'OctoChat',
+    matchStrategy: 'pathSegment',
+    tabs: [],
+  },
+  {
+    basePath: '/chat',
+    label: 'Chat',
     matchStrategy: 'pathSegment',
     tabs: [],
   },

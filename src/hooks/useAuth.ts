@@ -10,6 +10,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { clearAllXmlStorage } from '@/features/imoveis/services/imoveisXmlService';
 import { 
   SidebarPermission, 
   OWNER_SIDEBAR_PERMISSIONS,
@@ -528,6 +529,7 @@ export const useAuth = () => {
   const logout = useCallback(async () => {
     localStorage.removeItem(OWNER_IMPERSONATION_KEY);
     localStorage.removeItem(AUTH_CACHE_KEY);
+    clearAllXmlStorage();
     await supabase.auth.signOut();
   }, []);
 

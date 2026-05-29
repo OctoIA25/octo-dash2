@@ -86,18 +86,19 @@ import {
   disconnectKenloIntegration 
 } from '@/features/imoveis/services/kenloLeadsService';
 import { ApiIntegrationTab } from '@/components/integrations/ApiIntegrationTab';
+import { WhatsAppIntegrationTab } from '@/features/chat/components/WhatsAppIntegrationTab';
 
-type ActiveTab = 'integrations' | 'api' | 'xml';
+type ActiveTab = 'integrations' | 'api' | 'xml' | 'whatsapp';
 
 // Componente principal da página
 export const IntegracoesPage: React.FC = () => {
   const { tenantId } = useAuth();
   const location = useLocation();
 
-  // Aba ativa via URL (?tab=integrations|xml|api)
+  // Aba ativa via URL (?tab=integrations|xml|api|whatsapp)
   const activeTab = useMemo<ActiveTab>(() => {
     const t = new URLSearchParams(location.search).get('tab');
-    if (t === 'xml' || t === 'api' || t === 'integrations') return t;
+    if (t === 'xml' || t === 'api' || t === 'integrations' || t === 'whatsapp') return t;
     return 'integrations';
   }, [location.search]);
 
@@ -448,6 +449,8 @@ export const IntegracoesPage: React.FC = () => {
       {/* Conteúdo da Aba */}
       {activeTab === 'api' ? (
         <ApiIntegrationTab />
+      ) : activeTab === 'whatsapp' ? (
+        <WhatsAppIntegrationTab />
       ) : activeTab === 'xml' ? (
         <div className="p-6">
           <div className="max-w-3xl">

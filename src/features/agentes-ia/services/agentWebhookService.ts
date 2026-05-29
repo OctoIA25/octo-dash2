@@ -305,10 +305,20 @@ ${analises.disc.interpretacao}
       );
       
       // Formatar análise Eneagrama como texto estruturado
+      const distribuicaoEneagrama = Object.entries(analises.eneagrama.percentuais)
+        .map(([num, p]: [string, any]) => `- Tipo ${num}: ${p.percentual}`)
+        .join('\n');
+
+      const secundariosEneagrama = analises.eneagrama.tiposSecundarios.length > 0
+        ? analises.eneagrama.tiposSecundarios
+            .map((s: any) => `- Tipo ${s.tipo} (${s.nome}): ${s.percentual}`)
+            .join('\n')
+        : '- Nenhum tipo secundário com presença significativa (≥ 15%)';
+
       payload.eneagrama = `
 ENEAGRAMA:
 
-TIPO: ${analises.eneagrama.emoji} Tipo ${analises.eneagrama.tipoPrincipal} - ${analises.eneagrama.nome}
+TIPO PRINCIPAL: ${analises.eneagrama.emoji} Tipo ${analises.eneagrama.tipoPrincipal} - ${analises.eneagrama.nome} (${analises.eneagrama.percentuais[analises.eneagrama.tipoPrincipal].percentual})
 
 DESCRIÇÃO BREVE:
 ${analises.eneagrama.descricaoBreve}
@@ -333,6 +343,12 @@ ${analises.eneagrama.direcaoDeCrescimento}
 
 DIREÇÃO DE ESTRESSE:
 ${analises.eneagrama.direcaoDeEstresse}
+
+DISTRIBUIÇÃO PERCENTUAL (9 tipos):
+${distribuicaoEneagrama}
+
+TIPOS SECUNDÁRIOS RELEVANTES:
+${secundariosEneagrama}
 
 INTERPRETAÇÃO E IMPLICAÇÕES:
 ${analises.eneagrama.interpretacao}

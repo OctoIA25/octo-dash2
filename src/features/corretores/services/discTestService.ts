@@ -143,32 +143,28 @@ export function calcularResultadoDISC(respostas: DISCResponse[]): {
   
   // Contagem inicial
   const contagem = { D: 0, I: 0, S: 0, C: 0 };
-  
-  // Somar pontos de cada perfil
-  respostas.forEach((resposta, index) => {
-    contagem.D += pontosPorNota[resposta.D];
-    contagem.I += pontosPorNota[resposta.I];
-    contagem.S += pontosPorNota[resposta.S];
-    contagem.C += pontosPorNota[resposta.C];
-    
+
+  // Somar pontos de cada perfil (ignora notas fora do mapa 1-4)
+  respostas.forEach((resposta) => {
+    contagem.D += pontosPorNota[resposta.D] || 0;
+    contagem.I += pontosPorNota[resposta.I] || 0;
+    contagem.S += pontosPorNota[resposta.S] || 0;
+    contagem.C += pontosPorNota[resposta.C] || 0;
   });
-  
-  
-  // Calcular percentuais
-  const divisor = 100; // 10 perguntas × 10 pontos (4+3+2+1)
+
+  // Divisor dinâmico: como a validação permite notas repetidas (ex.: o
+  // usuário pode dar "4" para todas as palavras de uma pergunta), o total
+  // de pontos varia. Dividir pela soma real garante que os percentuais
+  // sempre somem 1.0 (100%).
+  const totalPontos = contagem.D + contagem.I + contagem.S + contagem.C;
+  const divisor = totalPontos > 0 ? totalPontos : 1;
+
   const resultado: DISCResult = {
     D: contagem.D / divisor,
     I: contagem.I / divisor,
     S: contagem.S / divisor,
     C: contagem.C / divisor
   };
-  
-  // Verificar se soma = 1.0
-  const soma = resultado.D + resultado.I + resultado.S + resultado.C;
-  
-  if (Math.abs(soma - 1.0) > 0.001) {
-    console.warn('⚠️ Atenção: Soma dos percentuais não é 1.0:', soma);
-  }
   
   // Identificar perfis dominantes (>= 25%)
   const dominantes: DominantProfile[] = [];

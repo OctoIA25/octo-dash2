@@ -50,6 +50,8 @@ export interface AnaliseEneagrama {
   direcaoDeCrescimento: string;
   direcaoDeEstresse: string;
   scores: { [key: number]: number };
+  percentuais: { [key: number]: { valor: number; percentual: string } };
+  tiposSecundarios: Array<{ tipo: number; nome: string; percentual: string }>;
   interpretacao: string;
 }
 
@@ -74,20 +76,42 @@ export interface AnaliseMBTI {
 }
 
 /**
+ * Reescala percentuais DISC (0-1) para que somem exatamente 1.0.
+ * Necessário porque dados antigos no banco podem ter valores incoerentes
+ * (ex.: somatório 0.62 em vez de 1.0).
+ */
+export function normalizarPercentuaisDISC(
+  percentuais: { D: number; I: number; S: number; C: number }
+): { D: number; I: number; S: number; C: number } {
+  const soma = (percentuais.D || 0) + (percentuais.I || 0) + (percentuais.S || 0) + (percentuais.C || 0);
+  if (soma <= 0) return { D: 0, I: 0, S: 0, C: 0 };
+  return {
+    D: (percentuais.D || 0) / soma,
+    I: (percentuais.I || 0) / soma,
+    S: (percentuais.S || 0) / soma,
+    C: (percentuais.C || 0) / soma,
+  };
+}
+
+/**
  * Gera análise completa do perfil DISC
  */
 export function gerarAnaliseDISC(
   tipoPrincipal: string,
-  percentuais: { D: number; I: number; S: number; C: number },
+  percentuaisRaw: { D: number; I: number; S: number; C: number },
   perfisDominantes?: string[]
 ): AnaliseDISC {
   const perfil = DISC_PROFILES[tipoPrincipal];
-  
-  // Calcular perfis dominantes se não fornecidos
-  const dominantes = perfisDominantes || Object.entries(percentuais)
-    .filter(([_, valor]) => valor >= 0.25)
-    .sort((a, b) => b[1] - a[1])
-    .map(([perfil]) => perfil);
+  const percentuais = normalizarPercentuaisDISC(percentuaisRaw);
+
+  // Recalcular se não foi fornecido OU se veio vazio (dados antigos podem gerar
+  // listas vazias quando os valores brutos não somam 1.0).
+  const dominantes = (perfisDominantes && perfisDominantes.length > 0)
+    ? perfisDominantes
+    : Object.entries(percentuais)
+        .filter(([_, valor]) => valor >= 0.25)
+        .sort((a, b) => b[1] - a[1])
+        .map(([perfil]) => perfil);
 
   // Formatar percentuais
   const percentuaisFormatados = {
@@ -150,26 +174,45 @@ export function gerarAnaliseEneagrama(
   scores: { [key: number]: number }
 ): AnaliseEneagrama {
   const tipo = ENEAGRAMA_TIPOS[tipoPrincipal];
-  
-  // Identificar tipos secundários (com pontuação significativa)
-  const tiposSecundarios = Object.entries(scores)
-    .filter(([num, score]) => parseInt(num) !== tipoPrincipal && score >= 50)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 2);
+
+  // Cada uma das 10 perguntas distribui 1 ponto entre os 9 tipos,
+  // então a soma dos scores equivale ao total de perguntas respondidas.
+  const totalPontos = Object.values(scores).reduce((acc, v) => acc + (v || 0), 0) || 10;
+
+  // Normalizar scores para 0-100%
+  const percentuais: { [key: number]: { valor: number; percentual: string } } = {};
+  for (let i = 1; i <= 9; i++) {
+    const valor = ((scores[i] || 0) / totalPontos) * 100;
+    percentuais[i] = {
+      valor,
+      percentual: `${valor.toFixed(1)}%`
+    };
+  }
+
+  // Identificar tipos secundários: >= 15% e diferente do principal
+  const tiposSecundarios = Object.entries(percentuais)
+    .filter(([num, p]) => parseInt(num) !== tipoPrincipal && p.valor >= 15)
+    .sort((a, b) => b[1].valor - a[1].valor)
+    .slice(0, 2)
+    .map(([num, p]) => ({
+      tipo: parseInt(num),
+      nome: ENEAGRAMA_TIPOS[parseInt(num)].nome,
+      percentual: p.percentual
+    }));
 
   // Gerar interpretação
-  let interpretacao = `Este corretor é do Tipo ${tipoPrincipal} - ${tipo.nome}. `;
+  let interpretacao = `Este corretor é do Tipo ${tipoPrincipal} - ${tipo.nome} (${percentuais[tipoPrincipal].percentual}). `;
   interpretacao += `${tipo.descricaoBreve}\n\n`;
-  
+
   if (tiposSecundarios.length > 0) {
     interpretacao += `INFLUÊNCIAS SECUNDÁRIAS:\n`;
-    tiposSecundarios.forEach(([num, score]) => {
-      const tipoSec = ENEAGRAMA_TIPOS[parseInt(num)];
-      interpretacao += `- Tipo ${num} (${tipoSec.nome}): ${score} pontos - ${tipoSec.descricaoBreve}\n`;
+    tiposSecundarios.forEach((sec) => {
+      const tipoSec = ENEAGRAMA_TIPOS[sec.tipo];
+      interpretacao += `- Tipo ${sec.tipo} (${sec.nome}): ${sec.percentual} - ${tipoSec.descricaoBreve}\n`;
     });
     interpretacao += `\n`;
   }
-  
+
   interpretacao += `COMO GERENCIAR:\n`;
   interpretacao += `- Motivação: ${tipo.motivacaoCentral}\n`;
   interpretacao += `- Evitar despertar: ${tipo.medoBasico}\n`;
@@ -189,6 +232,8 @@ export function gerarAnaliseEneagrama(
     direcaoDeCrescimento: tipo.direcaoDeCrescimento,
     direcaoDeEstresse: tipo.direcaoDeEstresse,
     scores,
+    percentuais,
+    tiposSecundarios,
     interpretacao
   };
 }

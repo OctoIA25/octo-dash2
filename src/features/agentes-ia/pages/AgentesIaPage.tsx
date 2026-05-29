@@ -23,6 +23,7 @@ import { DISCStatistics } from '@/features/corretores/components/DISCStatistics'
 import { EneagramaStatistics } from '@/features/corretores/components/EneagramaStatistics';
 import { MBTIStatistics } from '@/features/corretores/components/MBTIStatistics';
 import { DISCCorretorProfile } from '@/features/corretores/services/discResultsService';
+import { normalizarPercentuaisDISC } from '@/features/corretores/services/personalityAnalysisService';
 import { DISC_PROFILES } from '@/data/discQuestions';
 import { EneagramaCorretorProfile } from '@/features/corretores/services/eneagramaResultsService';
 import { ENEAGRAMA_TIPOS } from '@/data/eneagramaQuestions';
@@ -1502,12 +1503,17 @@ export const AgentesIaPage = () => {
                       <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                         Perfil: <span className="font-semibold">{adminResultados.disc.tipoPrincipal}</span>
                       </p>
-                      <p className={`text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-500'}`}>
-                        D: {(adminResultados.disc.percentuais.D * 100).toFixed(0)}% | 
-                        I: {(adminResultados.disc.percentuais.I * 100).toFixed(0)}% | 
-                        S: {(adminResultados.disc.percentuais.S * 100).toFixed(0)}% | 
-                        C: {(adminResultados.disc.percentuais.C * 100).toFixed(0)}%
-                      </p>
+                      {(() => {
+                        const discNorm = normalizarPercentuaisDISC(adminResultados.disc.percentuais);
+                        return (
+                          <p className={`text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-500'}`}>
+                            D: {(discNorm.D * 100).toFixed(0)}% |
+                            I: {(discNorm.I * 100).toFixed(0)}% |
+                            S: {(discNorm.S * 100).toFixed(0)}% |
+                            C: {(discNorm.C * 100).toFixed(0)}%
+                          </p>
+                        );
+                      })()}
                     </div>
                   </label>
                 )}

@@ -58,7 +58,7 @@ interface CompanyConfig {
   color: string;
 }
 
-export type SidebarSection = 'leads' | 'notificacoes' | 'meus-leads' | 'metricas' | 'estudo-mercado' | 'recrutamento' | 'gestao-equipe' | 'bolsao' | 'imoveis' | 'agentes-ia' | 'octo-chat' | 'integracoes' | 'central-leads' | 'relatorios' | 'configuracoes';
+export type SidebarSection = 'leads' | 'notificacoes' | 'meus-leads' | 'metricas' | 'estudo-mercado' | 'recrutamento' | 'gestao-equipe' | 'bolsao' | 'imoveis' | 'agentes-ia' | 'octo-chat' | 'chat' | 'integracoes' | 'central-leads' | 'relatorios' | 'configuracoes';
 export type MetricasSubSection = 'meus-leads' | 'bolsao' | 'cliente-interessado' | 'cliente-proprietario' | 'proposta';
 export type ClienteInteressadoSubSection = 'geral' | 'pre-atendimento' | 'atendimento';
 export type ClienteProprietarioSubSection = 'cliente-proprietario' | 'estudo-mercado';
@@ -520,6 +520,15 @@ export const FixedSidebar = ({
       description: 'Assistente de chat inteligente',
       hasSubMenu: false,
       permissionKey: 'octo-chat' as SidebarPermission
+    },
+    // Chat WhatsApp (API Oficial)
+    {
+      id: 'chat' as SidebarSection,
+      label: 'Chat',
+      icon: MessageCircle,
+      description: 'WhatsApp (API Oficial)',
+      hasSubMenu: false,
+      permissionKey: 'chat' as SidebarPermission
     },
     // Integrações
     {

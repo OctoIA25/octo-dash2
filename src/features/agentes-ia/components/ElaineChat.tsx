@@ -394,11 +394,11 @@ export const ElaineChat = ({
               dadosComportamentais.mbti = {
                 tipo: corretor.mbti_tipo,
                 percentuais: {
-                  energy: corretor.mbti_percent_energy || 0,
-                  mind: corretor.mbti_percent_mind || 0,
-                  nature: corretor.mbti_percent_nature || 0,
-                  tactics: corretor.mbti_percent_tactics || 0,
-                  identity: corretor.mbti_percent_identity || 0
+                  Mind: corretor.mbti_percent_mind || 0,
+                  Energy: corretor.mbti_percent_energy || 0,
+                  Nature: corretor.mbti_percent_nature || 0,
+                  Tactics: corretor.mbti_percent_tactics || 0,
+                  Identity: corretor.mbti_percent_identity || 0
                 }
               };
             }
@@ -475,11 +475,11 @@ export const ElaineChat = ({
                   dadosComportamentais.mbti = {
                     tipo: corretor.mbti_tipo,
                     percentuais: {
-                      energy: corretor.mbti_percent_energy || 0,
-                      mind: corretor.mbti_percent_mind || 0,
-                      nature: corretor.mbti_percent_nature || 0,
-                      tactics: corretor.mbti_percent_tactics || 0,
-                      identity: corretor.mbti_percent_identity || 0
+                      Mind: corretor.mbti_percent_mind || 0,
+                      Energy: corretor.mbti_percent_energy || 0,
+                      Nature: corretor.mbti_percent_nature || 0,
+                      Tactics: corretor.mbti_percent_tactics || 0,
+                      Identity: corretor.mbti_percent_identity || 0
                     }
                   };
                 }
