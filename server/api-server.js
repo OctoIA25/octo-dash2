@@ -363,6 +363,71 @@ const getConfiguredDetailBaseUrl = () => {
   return '';
 };
 
+const toFeatureList = (value) => {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    const text = value.trim();
+    if (!text) return [];
+    try {
+      const parsed = JSON.parse(text);
+      return Array.isArray(parsed) ? parsed : [text];
+    } catch {
+      return [text];
+    }
+  }
+  return [];
+};
+
+// Aceita só YouTube; normaliza para a URL canônica de watch. Null caso contrário.
+const normalizeYouTubeUrl = (url) => {
+  const s = String(url || '').trim();
+  if (!s) return null;
+  const patterns = [
+    /(?:youtube\.com\/watch\?(?:.*&)?v=)([A-Za-z0-9_-]{11})/,
+    /(?:youtu\.be\/)([A-Za-z0-9_-]{11})/,
+    /(?:youtube\.com\/embed\/)([A-Za-z0-9_-]{11})/,
+    /(?:youtube\.com\/shorts\/)([A-Za-z0-9_-]{11})/,
+    /(?:youtube\.com\/v\/)([A-Za-z0-9_-]{11})/,
+  ];
+  for (const re of patterns) {
+    const m = s.match(re);
+    if (m) return `https://www.youtube.com/watch?v=${m[1]}`;
+  }
+  return null;
+};
+
+const buildFeaturesXml = (imovel) => {
+  const seen = new Set();
+  const features = [];
+  const pushFeature = (raw) => {
+    const feature = normalizeFeedText(raw);
+    if (!feature) return;
+    const key = feature.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    features.push(feature);
+  };
+
+  // VRSync tem uma única lista <Features>: comum + privativa se fundem.
+  toFeatureList(imovel.area_comum).forEach(pushFeature);
+  toFeatureList(imovel.area_privativa).forEach(pushFeature);
+  // VRSync não tem campo nativo de permuta -> vira uma feature.
+  if (imovel.aceita_troca === true || imovel.aceita_troca === 'true') {
+    pushFeature('Aceita Permuta');
+  }
+  // VRSync não tem campo nativo de salas -> vira uma feature.
+  const salas = toPositiveInteger(imovel.salas);
+  if (salas > 0) {
+    pushFeature(`${salas} ${salas === 1 ? 'sala' : 'salas'}`);
+  }
+
+  if (features.length === 0) return '';
+  const items = features
+    .map((feature) => `        <Feature>${xmlCdata(feature)}</Feature>`)
+    .join('\n');
+  return `      <Features>\n${items}\n      </Features>`;
+};
+
 const buildZapListingXml = (imovel) => {
   const propertyType = mapZapPropertyType(imovel);
   const transactionType = mapZapTransactionType(imovel);
@@ -391,8 +456,15 @@ const buildZapListingXml = (imovel) => {
     yearlyTax ? `      <YearlyTax currency="BRL">${yearlyTax}</YearlyTax>` : null
   ].filter(Boolean).join('\n');
 
-  const mediaXml = photos.length > 0
-    ? `    <Media>\n${photos.map((url, index) => `      <Item medium="image" caption="img${index + 1}">${xmlEscape(url)}</Item>`).join('\n')}\n    </Media>`
+  const videoUrl = normalizeYouTubeUrl(imovel.link_video);
+  const tourUrl = normalizeFeedText(imovel.tour_virtual);
+  const mediaItems = [
+    ...photos.map((url, index) => `      <Item medium="image" caption="img${index + 1}">${xmlEscape(url)}</Item>`),
+    videoUrl ? `      <Item medium="video" caption="video">${xmlEscape(videoUrl)}</Item>` : null,
+    /^https?:\/\//i.test(tourUrl) ? `      <Item medium="virtual_tour" caption="tour">${xmlEscape(tourUrl)}</Item>` : null
+  ].filter(Boolean);
+  const mediaXml = mediaItems.length > 0
+    ? `    <Media>\n${mediaItems.join('\n')}\n    </Media>`
     : '';
 
   return `  <Listing>
@@ -409,7 +481,7 @@ ${lotArea > 0 ? `      <LotArea unit="square metres">${lotArea}</LotArea>\n` : '
       <Bathrooms>${toPositiveInteger(imovel.banheiros)}</Bathrooms>
       <Suites>${toPositiveInteger(imovel.suites)}</Suites>
       <Garage>${toPositiveInteger(imovel.vagas)}</Garage>
-    </Details>
+${buildFeaturesXml(imovel) ? `${buildFeaturesXml(imovel)}\n` : ''}    </Details>
     <Location displayAddress="All">
       <Country abbreviation="BR">Brasil</Country>
       <State abbreviation="${xmlEscape(normalizeFeedText(imovel.estado, 'SP').toUpperCase())}">${xmlEscape(normalizeFeedText(imovel.estado, 'SP').toUpperCase())}</State>
@@ -475,6 +547,12 @@ const getZapFeedListings = async (tenantId, { includeAllStatuses = false } = {})
       valor_iptu,
       descricao,
       fotos,
+      salas,
+      area_comum,
+      area_privativa,
+      aceita_troca,
+      link_video,
+      tour_virtual,
       criado_por,
       status_aprovacao,
       updated_at
@@ -1654,9 +1732,10 @@ app.post('/api/v1/leads', validateApiKey, async (req, res) => {
         const { data: brokerData } = await supabase
           .from('imoveis_corretores')
           .select('corretor_nome, corretor_id')
+          .eq('tenant_id', tenantId)
           .eq('corretor_id', broker_id)
           .limit(1);
-        
+
         if (brokerData && brokerData.length > 0) {
           leadData.attended_by_name = brokerData[0].corretor_nome;
           assignedBroker = brokerData[0].corretor_nome;
@@ -1667,6 +1746,7 @@ app.post('/api/v1/leads', validateApiKey, async (req, res) => {
         const { data: brokerData } = await supabase
           .from('imoveis_corretores')
           .select('corretor_nome, corretor_id, corretor_telefone')
+          .eq('tenant_id', tenantId)
           .or(`corretor_telefone.eq.${cleanPhone},corretor_telefone.eq.${broker_phone}`)
           .limit(1);
         
@@ -2414,7 +2494,15 @@ app.post('/api/v1/leads/roleta', validateApiKey, async (req, res) => {
 app.get('/api/v1/brokers', validateApiKey, async (req, res) => {
   try {
     const { phone, tenant_id, include_assignments } = req.query;
-    const effectiveTenantId = tenant_id || req.tenantId;
+    // Escopo obrigatório por tenant: prioriza o tenant da API key; só usa o
+    // tenant_id da query quando a key não está vinculada a um tenant (ex.: 'demo').
+    const effectiveTenantId = req.tenantId || tenant_id;
+    if (!effectiveTenantId) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'MISSING_TENANT_ID', message: 'tenant_id é obrigatório' }
+      });
+    }
 
     // Se busca por telefone específico
     if (phone) {
@@ -3070,11 +3158,21 @@ app.get('/api/v1/property-assignments', validateApiKey, async (req, res) => {
   try {
     const { tenant_id, broker_id, broker_phone } = req.query;
 
+    // Escopo obrigatório por tenant: usa o tenant da API key; só aceita tenant_id
+    // da query quando a key não está vinculada a um tenant (ex.: key 'demo').
+    const effectiveTenantId = req.tenantId || tenant_id;
+    if (!effectiveTenantId) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'MISSING_TENANT_ID', message: 'tenant_id é obrigatório' }
+      });
+    }
+
     let query = supabase
       .from(IMOVEIS_CORRETORES_TABLE)
-      .select('*');
+      .select('*')
+      .eq('tenant_id', effectiveTenantId);
 
-    if (tenant_id) query = query.eq('tenant_id', tenant_id);
     if (broker_id) query = query.eq('corretor_id', broker_id);
     if (broker_phone) {
       const cleanPhone = broker_phone.replace(/\D/g, '');
@@ -3119,23 +3217,37 @@ app.get('/api/v1/property-assignments', validateApiKey, async (req, res) => {
 // Se código já tem dono, só gestão pode transferir
 app.post('/api/v1/property-assignments', validateApiKey, async (req, res) => {
   try {
-    const { 
-      tenant_id, 
-      property_code, 
-      broker_id, 
-      broker_name, 
-      broker_email, 
+    const {
+      tenant_id,
+      property_code,
+      broker_id,
+      broker_name,
+      broker_email,
       broker_phone,
       requester_id,
-      requester_role 
+      requester_role
     } = req.body;
 
-    if (!tenant_id || !property_code) {
+    // Escopo obrigatório por tenant: a API key manda; tenant_id do corpo só vale
+    // quando a key não está vinculada a um tenant (ex.: 'demo').
+    const effectiveTenantId = req.tenantId || tenant_id;
+
+    if (!effectiveTenantId || !property_code) {
       return res.status(400).json({
         success: false,
         error: {
           code: 'VALIDATION_ERROR',
           message: 'tenant_id e property_code são obrigatórios'
+        }
+      });
+    }
+
+    if (req.tenantId && tenant_id && tenant_id !== req.tenantId) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'TENANT_MISMATCH',
+          message: 'tenant_id não corresponde à API key'
         }
       });
     }
@@ -3156,7 +3268,7 @@ app.post('/api/v1/property-assignments', validateApiKey, async (req, res) => {
     const { data: existing } = await supabase
       .from(IMOVEIS_CORRETORES_TABLE)
       .select('*')
-      .eq('tenant_id', tenant_id)
+      .eq('tenant_id', effectiveTenantId)
       .eq('codigo_imovel', codigoNormalizado)
       .limit(1);
 
@@ -3212,7 +3324,7 @@ app.post('/api/v1/property-assignments', validateApiKey, async (req, res) => {
     const { data, error } = await supabase
       .from(IMOVEIS_CORRETORES_TABLE)
       .insert({
-        tenant_id,
+        tenant_id: effectiveTenantId,
         codigo_imovel: codigoNormalizado,
         corretor_id: broker_id || null,
         corretor_nome: broker_name,
@@ -3253,12 +3365,23 @@ app.delete('/api/v1/property-assignments/:codigo', validateApiKey, async (req, r
     const { codigo } = req.params;
     const { tenant_id, requester_id, requester_role } = req.query;
 
-    if (!tenant_id) {
+    const effectiveTenantId = req.tenantId || tenant_id;
+    if (!effectiveTenantId) {
       return res.status(400).json({
         success: false,
         error: {
           code: 'VALIDATION_ERROR',
           message: 'tenant_id é obrigatório'
+        }
+      });
+    }
+
+    if (req.tenantId && tenant_id && tenant_id !== req.tenantId) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'TENANT_MISMATCH',
+          message: 'tenant_id não corresponde à API key'
         }
       });
     }
@@ -3269,7 +3392,7 @@ app.delete('/api/v1/property-assignments/:codigo', validateApiKey, async (req, r
     const { data: existing } = await supabase
       .from(IMOVEIS_CORRETORES_TABLE)
       .select('*')
-      .eq('tenant_id', tenant_id)
+      .eq('tenant_id', effectiveTenantId)
       .eq('codigo_imovel', codigoNormalizado)
       .limit(1);
 
@@ -3326,11 +3449,18 @@ app.get('/api/v1/property-assignments/broker/:identifier', validateApiKey, async
     const { identifier } = req.params;
     const { tenant_id } = req.query;
 
+    const effectiveTenantId = req.tenantId || tenant_id;
+    if (!effectiveTenantId) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'MISSING_TENANT_ID', message: 'tenant_id é obrigatório' }
+      });
+    }
+
     let query = supabase
       .from(IMOVEIS_CORRETORES_TABLE)
-      .select('*');
-
-    if (tenant_id) query = query.eq('tenant_id', tenant_id);
+      .select('*')
+      .eq('tenant_id', effectiveTenantId);
 
     // Verificar se é UUID (broker_id) ou telefone
     const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier);

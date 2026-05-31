@@ -75,6 +75,12 @@ interface ImovelLocal {
   valor_iptu: number;
   descricao: string | null;
   fotos: FotoInput[];
+  area_comum?: string[] | null;
+  area_privativa?: string[] | null;
+  aceita_troca?: boolean | null;
+  link_video?: string | null;
+  tour_virtual?: string | null;
+  salas?: number | null;
   created_at: string;
   status_aprovacao?: 'aprovado' | 'nao_aprovado' | 'aguardando';
   aprovado_por?: string;
@@ -398,6 +404,14 @@ export const MeusImoveisTab = ({ allImoveis, onViewDetails, onPropertyCreated }:
       titulo: local.titulo || '',
       descricao: local.descricao || '',
       fotos: normalizeFotos(local.fotos),
+      caracteristicas: [
+        ...(Array.isArray(local.area_privativa) ? local.area_privativa : []),
+        ...(Array.isArray(local.area_comum) ? local.area_comum : []),
+      ],
+      aceita_troca: local.aceita_troca ? 'sim' : 'nao',
+      link_video: local.link_video || '',
+      tour_virtual: local.tour_virtual || '',
+      salas: local.salas ? String(local.salas) : '',
       status_aprovacao: local.status_aprovacao,
     };
   };

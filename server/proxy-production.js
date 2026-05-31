@@ -1535,6 +1535,71 @@ const getConfiguredDetailBaseUrl = () => {
   return '';
 };
 
+const toFeatureList = (value) => {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    const text = value.trim();
+    if (!text) return [];
+    try {
+      const parsed = JSON.parse(text);
+      return Array.isArray(parsed) ? parsed : [text];
+    } catch {
+      return [text];
+    }
+  }
+  return [];
+};
+
+// Aceita só YouTube; normaliza para a URL canônica de watch. Null caso contrário.
+const normalizeYouTubeUrl = (url) => {
+  const s = String(url || '').trim();
+  if (!s) return null;
+  const patterns = [
+    /(?:youtube\.com\/watch\?(?:.*&)?v=)([A-Za-z0-9_-]{11})/,
+    /(?:youtu\.be\/)([A-Za-z0-9_-]{11})/,
+    /(?:youtube\.com\/embed\/)([A-Za-z0-9_-]{11})/,
+    /(?:youtube\.com\/shorts\/)([A-Za-z0-9_-]{11})/,
+    /(?:youtube\.com\/v\/)([A-Za-z0-9_-]{11})/,
+  ];
+  for (const re of patterns) {
+    const m = s.match(re);
+    if (m) return `https://www.youtube.com/watch?v=${m[1]}`;
+  }
+  return null;
+};
+
+const buildFeaturesXml = (imovel) => {
+  const seen = new Set();
+  const features = [];
+  const pushFeature = (raw) => {
+    const feature = normalizeFeedText(raw);
+    if (!feature) return;
+    const key = feature.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    features.push(feature);
+  };
+
+  // VRSync tem uma única lista <Features>: comum + privativa se fundem.
+  toFeatureList(imovel.area_comum).forEach(pushFeature);
+  toFeatureList(imovel.area_privativa).forEach(pushFeature);
+  // VRSync não tem campo nativo de permuta -> vira uma feature.
+  if (imovel.aceita_troca === true || imovel.aceita_troca === 'true') {
+    pushFeature('Aceita Permuta');
+  }
+  // VRSync não tem campo nativo de salas -> vira uma feature.
+  const salas = toPositiveInteger(imovel.salas);
+  if (salas > 0) {
+    pushFeature(`${salas} ${salas === 1 ? 'sala' : 'salas'}`);
+  }
+
+  if (features.length === 0) return '';
+  const items = features
+    .map((feature) => `        <Feature>${xmlCdata(feature)}</Feature>`)
+    .join('\n');
+  return `      <Features>\n${items}\n      </Features>`;
+};
+
 const buildZapListingXml = (imovel) => {
   const propertyType = mapZapPropertyType(imovel);
   const transactionType = mapZapTransactionType(imovel);
@@ -1563,8 +1628,15 @@ const buildZapListingXml = (imovel) => {
     yearlyTax ? `      <YearlyTax currency="BRL">${yearlyTax}</YearlyTax>` : null
   ].filter(Boolean).join('\n');
 
-  const mediaXml = photos.length > 0
-    ? `    <Media>\n${photos.map((url, index) => `      <Item medium="image" caption="img${index + 1}">${xmlEscape(url)}</Item>`).join('\n')}\n    </Media>`
+  const videoUrl = normalizeYouTubeUrl(imovel.link_video);
+  const tourUrl = normalizeFeedText(imovel.tour_virtual);
+  const mediaItems = [
+    ...photos.map((url, index) => `      <Item medium="image" caption="img${index + 1}">${xmlEscape(url)}</Item>`),
+    videoUrl ? `      <Item medium="video" caption="video">${xmlEscape(videoUrl)}</Item>` : null,
+    /^https?:\/\//i.test(tourUrl) ? `      <Item medium="virtual_tour" caption="tour">${xmlEscape(tourUrl)}</Item>` : null
+  ].filter(Boolean);
+  const mediaXml = mediaItems.length > 0
+    ? `    <Media>\n${mediaItems.join('\n')}\n    </Media>`
     : '';
 
   return `  <Listing>
@@ -1581,7 +1653,7 @@ ${lotArea > 0 ? `      <LotArea unit="square metres">${lotArea}</LotArea>\n` : '
       <Bathrooms>${toPositiveInteger(imovel.banheiros)}</Bathrooms>
       <Suites>${toPositiveInteger(imovel.suites)}</Suites>
       <Garage>${toPositiveInteger(imovel.vagas)}</Garage>
-    </Details>
+${buildFeaturesXml(imovel) ? `${buildFeaturesXml(imovel)}\n` : ''}    </Details>
     <Location displayAddress="All">
       <Country abbreviation="BR">Brasil</Country>
       <State abbreviation="${xmlEscape(normalizeFeedText(imovel.estado, 'SP').toUpperCase())}">${xmlEscape(normalizeFeedText(imovel.estado, 'SP').toUpperCase())}</State>
@@ -1647,6 +1719,12 @@ const getZapFeedListings = async (tenantId, { includeAllStatuses = false } = {})
       valor_iptu,
       descricao,
       fotos,
+      salas,
+      area_comum,
+      area_privativa,
+      aceita_troca,
+      link_video,
+      tour_virtual,
       criado_por,
       status_aprovacao,
       updated_at
@@ -3794,7 +3872,15 @@ app.get('/api/v1/properties/:code', validateApiKey, async (req, res) => {
 app.get('/api/v1/brokers', validateApiKey, async (req, res) => {
   try {
     const { phone, tenant_id, include_assignments } = req.query;
-    const effectiveTenantId = tenant_id || req.tenantId;
+    // Escopo obrigatório por tenant: prioriza o tenant da API key; só usa o
+    // tenant_id da query quando a key não está vinculada a um tenant (ex.: 'demo').
+    const effectiveTenantId = req.tenantId || tenant_id;
+    if (!effectiveTenantId) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'MISSING_TENANT_ID', message: 'tenant_id é obrigatório' }
+      });
+    }
 
     // Se busca por telefone específico
     if (phone) {

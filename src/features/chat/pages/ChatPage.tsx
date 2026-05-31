@@ -202,18 +202,6 @@ export const ChatPage = () => {
                 ? 'Nenhum número WhatsApp configurado para este tenant.'
                 : 'Integração WhatsApp inativa.'}
           </span>
-          {canConfigure ? (
-            <button
-              type="button"
-              onClick={() => setSetupOpen(true)}
-              className="inline-flex flex-none items-center gap-1.5 rounded-md bg-yellow-600 px-3 py-1 text-xs font-medium text-white hover:bg-yellow-700"
-            >
-              <Settings className="h-3.5 w-3.5" />
-              Configurar agora
-            </button>
-          ) : (
-            <span className="flex-none text-[11px] opacity-70">Peça ao administrador.</span>
-          )}
         </div>
       )}
 

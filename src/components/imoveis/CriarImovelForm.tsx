@@ -169,6 +169,7 @@ interface ImovelFormData {
   
   // Características / Amenidades
   caracteristicas: string[];
+  aceita_troca: string;
 }
 
 const initialFormData: ImovelFormData = {
@@ -227,6 +228,7 @@ const initialFormData: ImovelFormData = {
   projeto_aprovado: '',
   obs_documentacao: '',
   caracteristicas: [],
+  aceita_troca: 'nao',
 };
 
 const TIPOS_RESIDENCIAL = [
@@ -408,6 +410,57 @@ const CARACTERISTICAS_IMOVEL = {
       'Vigia'
     ]
   }
+};
+
+// Extrai o ID de um vídeo do YouTube a partir das URLs mais comuns.
+// Aceita só YouTube; retorna null para qualquer outra coisa.
+const extractYouTubeId = (url: string): string | null => {
+  const s = (url || '').trim();
+  if (!s) return null;
+  const patterns = [
+    /(?:youtube\.com\/watch\?(?:.*&)?v=)([A-Za-z0-9_-]{11})/,
+    /(?:youtu\.be\/)([A-Za-z0-9_-]{11})/,
+    /(?:youtube\.com\/embed\/)([A-Za-z0-9_-]{11})/,
+    /(?:youtube\.com\/shorts\/)([A-Za-z0-9_-]{11})/,
+    /(?:youtube\.com\/v\/)([A-Za-z0-9_-]{11})/,
+  ];
+  for (const re of patterns) {
+    const m = s.match(re);
+    if (m) return m[1];
+  }
+  return null;
+};
+
+// Normaliza para a URL canônica de watch; null se não for YouTube válido.
+const normalizeYouTubeUrl = (url: string): string | null => {
+  const id = extractYouTubeId(url);
+  return id ? `https://www.youtube.com/watch?v=${id}` : null;
+};
+
+// Tour virtual aceita qualquer provedor — valida só que seja URL http(s).
+const isHttpUrl = (url: string): boolean => {
+  const s = (url || '').trim();
+  if (!s) return false;
+  try {
+    const parsed = new URL(s);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
+// Itens da categoria "interno" são comodidades da unidade (área privativa).
+// As demais categorias (lazer, serviços, segurança) são da área comum/condomínio.
+const ITENS_AREA_PRIVATIVA = new Set(CARACTERISTICAS_IMOVEL.interno.items);
+
+const splitCaracteristicas = (caracteristicas: string[]) => {
+  const area_privativa: string[] = [];
+  const area_comum: string[] = [];
+  for (const item of caracteristicas) {
+    if (ITENS_AREA_PRIVATIVA.has(item)) area_privativa.push(item);
+    else area_comum.push(item);
+  }
+  return { area_comum, area_privativa };
 };
 
 export const CriarImovelForm = ({
@@ -790,6 +843,20 @@ export const CriarImovelForm = ({
       return;
     }
 
+    // Validar link de vídeo: se preenchido, precisa ser um YouTube válido
+    if (formData.link_video.trim() && !normalizeYouTubeUrl(formData.link_video)) {
+      setSubmitStatus('error');
+      setSubmitMessage('Link de vídeo inválido. Use um link do YouTube ou deixe em branco.');
+      return;
+    }
+
+    // Validar tour virtual: se preenchido, precisa ser uma URL http(s)
+    if (formData.tour_virtual.trim() && !isHttpUrl(formData.tour_virtual)) {
+      setSubmitStatus('error');
+      setSubmitMessage('Tour virtual inválido. Use uma URL http(s) ou deixe em branco.');
+      return;
+    }
+
     setIsSubmitting(true);
     setSubmitStatus('idle');
     setSubmitMessage('');
@@ -989,6 +1056,10 @@ export const CriarImovelForm = ({
       valor_iptu: parseCurrency(formData.valor_iptu) || 0,
       descricao: formData.descricao || null,
       fotos: fotosComUrls,
+      ...splitCaracteristicas(formData.caracteristicas || []),
+      aceita_troca: formData.aceita_troca === 'sim',
+      link_video: normalizeYouTubeUrl(formData.link_video) || null,
+      tour_virtual: isHttpUrl(formData.tour_virtual) ? formData.tour_virtual.trim() : null,
       proprietario_nome: formData.proprietario_nome || null,
       proprietario_telefone: formData.proprietario_celular || formData.proprietario_tel_residencial || null,
       proprietario_email: formData.proprietario_email || null,
@@ -1802,7 +1873,13 @@ export const CriarImovelForm = ({
                     placeholder="https://www.youtube.com/watch?v=..."
                     value={formData.link_video}
                     onChange={(e) => handleInputChange('link_video', e.target.value)}
+                    className={formData.link_video && !normalizeYouTubeUrl(formData.link_video) ? 'border-red-500 focus-visible:ring-red-500' : ''}
                   />
+                  {formData.link_video && !normalizeYouTubeUrl(formData.link_video) && (
+                    <p className="text-xs text-red-500">
+                      Informe um link válido do YouTube (ex.: https://www.youtube.com/watch?v=...).
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label>Tour Virtual</Label>
@@ -1810,7 +1887,13 @@ export const CriarImovelForm = ({
                     placeholder="URL do tour virtual 360°"
                     value={formData.tour_virtual}
                     onChange={(e) => handleInputChange('tour_virtual', e.target.value)}
+                    className={formData.tour_virtual && !isHttpUrl(formData.tour_virtual) ? 'border-red-500 focus-visible:ring-red-500' : ''}
                   />
+                  {formData.tour_virtual && !isHttpUrl(formData.tour_virtual) && (
+                    <p className="text-xs text-red-500">
+                      Informe uma URL válida começando com http:// ou https://.
+                    </p>
+                  )}
                 </div>
               </div>
             </CollapsibleContent>
@@ -1934,7 +2017,28 @@ export const CriarImovelForm = ({
                 <p className="text-sm text-muted-foreground">
                   Selecione as características e amenidades disponíveis no imóvel
                 </p>
-                
+
+                <div className="flex items-center justify-between gap-4 pb-2 border-b border-border/50">
+                  <div className="space-y-0.5">
+                    <Label>Aceita permuta</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Publicado no feed (ZAP/OLX/VivaReal) como "Aceita Permuta".
+                    </p>
+                  </div>
+                  <Select
+                    value={formData.aceita_troca}
+                    onValueChange={(value) => handleInputChange('aceita_troca', value)}
+                  >
+                    <SelectTrigger className="w-32">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="nao">Não</SelectItem>
+                      <SelectItem value="sim">Sim</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 {Object.entries(CARACTERISTICAS_IMOVEL).map(([categoria, { label, items }]) => (
                   <div key={categoria} className="space-y-3">
                     <div className="flex items-center gap-2 pb-2 border-b border-border/50">
