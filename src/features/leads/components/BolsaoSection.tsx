@@ -86,8 +86,7 @@ interface BolsaoSectionProps {}
 type BolsaoTab = 'geral' | 'disponiveis' | 'configuracoes' | 'equipes';
 
 export const BolsaoSection = (props: BolsaoSectionProps) => {
-  const { user, isCorretor, isAdmin, tenantId } = useAuth();
-  const { toast } = useToast();
+  const { user, isCorretor } = useAuth();
 
   const bolsaoBlockedInfo = useMemo(() => {
     const perms = user?.permissions && typeof user.permissions === 'object' ? (user.permissions as any) : undefined;
@@ -98,6 +97,11 @@ export const BolsaoSection = (props: BolsaoSectionProps) => {
     return { isBlocked, until };
   }, [user?.permissions]);
 
+  // Corretor bloqueado vê apenas a tela de bloqueio.
+  // IMPORTANTE: este early-return precisa ficar ANTES de qualquer outro hook.
+  // Por isso todo o restante da lógica (que usa dezenas de hooks) vive em
+  // <BolsaoSectionContent/> — assim a ordem de hooks nunca muda entre renders,
+  // respeitando as Rules of Hooks do React.
   if (isCorretor && bolsaoBlockedInfo.isBlocked) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-6">
@@ -125,7 +129,14 @@ export const BolsaoSection = (props: BolsaoSectionProps) => {
       </div>
     );
   }
-  
+
+  return <BolsaoSectionContent {...props} />;
+};
+
+const BolsaoSectionContent = (props: BolsaoSectionProps) => {
+  const { user, isCorretor, isAdmin, tenantId } = useAuth();
+  const { toast } = useToast();
+
   // Tab agora vem da URL (?tab=...) — sincronizada com o PageTabs do header global
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get('tab') as BolsaoTab | null;

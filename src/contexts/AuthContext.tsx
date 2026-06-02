@@ -302,6 +302,30 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     await loadUserFromSession();
   }, [loadUserFromSession]);
 
+  // Recarrega permissões (sidebar_permissions / allowed_features) quando o usuário
+  // volta à aba, sem precisar deslogar. Cobre o caso de um admin/owner conceder
+  // acesso (ex.: Jurídico) enquanto o usuário-alvo está com a sessão aberta.
+  useEffect(() => {
+    const REFRESH_THROTTLE_MS = 10_000;
+    let lastReload = 0;
+
+    const maybeReload = () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      if (!authStateRef.current.isAuthenticated) return;
+      const now = Date.now();
+      if (now - lastReload < REFRESH_THROTTLE_MS) return;
+      lastReload = now;
+      void reloadUser();
+    };
+
+    window.addEventListener('focus', maybeReload);
+    document.addEventListener('visibilitychange', maybeReload);
+    return () => {
+      window.removeEventListener('focus', maybeReload);
+      document.removeEventListener('visibilitychange', maybeReload);
+    };
+  }, [reloadUser]);
+
   // Derivar valores
   const isOwner = useMemo(() => {
     return authState.user?.systemRole === 'owner' ||

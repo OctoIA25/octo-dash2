@@ -34,6 +34,7 @@ import {
   Settings2,
   Sparkles,
   MessageCircle,
+  DollarSign,
 } from 'lucide-react';
 
 interface Tab {
@@ -117,6 +118,7 @@ const TAB_CONFIGS: TabConfig[] = [
       { id: 'metricas', label: 'Métricas da Equipe', icon: Users, href: '/relatorios?tab=metricas', isQuery: true },
       { id: 'metricas-individuais', label: 'Métricas Individuais', icon: User, href: '/relatorios?tab=metricas-individuais', isQuery: true },
       { id: 'imoveis', label: 'Imóveis', icon: Building2, href: '/relatorios?tab=imoveis', isQuery: true },
+      { id: 'financeiro', label: 'Financeiro', icon: DollarSign, href: '/relatorios?tab=financeiro', isQuery: true },
     ],
   },
   {

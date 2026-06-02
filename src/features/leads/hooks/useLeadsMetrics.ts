@@ -85,8 +85,20 @@ export function useLeadsMetrics(options: UseLeadsMetricsOptions = {}): UseLeadsM
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Coalesce de buscas concorrentes: um único move no kanban dispara o
+  // leadsEventEmitter E um refetch() explícito. Sem isto, a base inteira de
+  // leads (+ todas as páginas de kenlo_leads) era recarregada duas vezes por
+  // move, dobrando a latência percebida.
+  const inFlightFetchRef = useRef<Promise<void> | null>(null);
+
   // Fetch leads based on role
-  const fetchLeads = useCallback(async () => {
+  const fetchLeads = useCallback(async (): Promise<void> => {
+    // Se já existe uma busca em andamento, reaproveita a mesma promise em vez
+    // de disparar outra requisição idêntica.
+    if (inFlightFetchRef.current) {
+      return inFlightFetchRef.current;
+    }
+
     // Fallback para localStorage se tenantId não estiver disponível via useAuth
     let effectiveTenantId = tenantId;
     if (!effectiveTenantId) {
@@ -100,29 +112,37 @@ export function useLeadsMetrics(options: UseLeadsMetricsOptions = {}): UseLeadsM
         // Ignorar erros de parse
       }
     }
-    
+
     if (!effectiveTenantId) {
       console.warn('⚠️ useLeadsMetrics: tenantId não disponível');
       setIsLoading(false);
       return;
     }
 
-    try {
-      setIsLoading(true);
-      setError(null);
+    const run = (async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
 
-      // Admin vê todos, corretor vê só os próprios
-      const agentId = isAdmin ? null : user?.id || null;
-      
-      
-      const data = await fetchLeadsForMetrics(effectiveTenantId, agentId, leadType);
-      
-      setLeads(data);
-    } catch (err) {
-      console.error('❌ useLeadsMetrics: Erro ao buscar leads:', err);
-      setError(err instanceof Error ? err.message : 'Erro ao carregar métricas');
+        // Admin vê todos, corretor vê só os próprios
+        const agentId = isAdmin ? null : user?.id || null;
+
+        const data = await fetchLeadsForMetrics(effectiveTenantId, agentId, leadType);
+
+        setLeads(data);
+      } catch (err) {
+        console.error('❌ useLeadsMetrics: Erro ao buscar leads:', err);
+        setError(err instanceof Error ? err.message : 'Erro ao carregar métricas');
+      } finally {
+        setIsLoading(false);
+      }
+    })();
+
+    inFlightFetchRef.current = run;
+    try {
+      await run;
     } finally {
-      setIsLoading(false);
+      inFlightFetchRef.current = null;
     }
   }, [tenantId, isAdmin, user?.id, leadType]);
 

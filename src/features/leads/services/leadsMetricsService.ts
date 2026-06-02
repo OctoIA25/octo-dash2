@@ -12,7 +12,7 @@
 
 import { supabase } from '@/lib/supabaseClient';
 import { CRMLead, LeadType, LEAD_TYPE_INTERESSADO, LEAD_TYPE_PROPRIETARIO } from './leadsService';
-import { ProcessedLead } from '@/data/realLeadsProcessor';
+import { ProcessedLead, canonicalizeOrigemLeads } from '@/data/realLeadsProcessor';
 
 const TEST_TENANT_ID = 'tenant-area-de-teste';
 
@@ -556,7 +556,9 @@ export function crmLeadToProcessedLead(crmLead: Partial<CRMLead>, index: number 
  * @param crmLeads Lista de leads do CRM
  */
 export function crmLeadsToProcessedLeads(crmLeads: CRMLead[]): ProcessedLead[] {
-  return crmLeads.map((lead, index) => crmLeadToProcessedLead(lead, index));
+  const processed = crmLeads.map((lead, index) => crmLeadToProcessedLead(lead, index));
+  // Unifica variações de capitalização da origem (ex: "ZAP Imoveis" vs "Zap Imoveis").
+  return canonicalizeOrigemLeads(processed);
 }
 
 /**

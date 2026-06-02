@@ -77,8 +77,6 @@ export const EquipeDetailsSidebar = ({ membro, onClose, onDelete }: EquipeDetail
   const podeEditar = isAdmin || isProprioDono;
   const podeEditarPermissoes = isAdmin; // Apenas admin pode editar permissões
 
-  if (!membro) return null;
-
   // Carregar permissões do Supabase
   useEffect(() => {
     const loadPermissions = async () => {
@@ -145,6 +143,10 @@ export const EquipeDetailsSidebar = ({ membro, onClose, onDelete }: EquipeDetail
 
     loadPermissions();
   }, [membro?.broker_uuid]);
+
+  // Guard movido para DEPOIS de todos os hooks: garante ordem de hooks estável
+  // entre renders (Rules of Hooks). Sem membro selecionado, nada é renderizado.
+  if (!membro) return null;
 
   // Salvar permissões no Supabase
   const handleSavePermissions = async (updatedPermissions: Partial<BrokerPermissions>) => {

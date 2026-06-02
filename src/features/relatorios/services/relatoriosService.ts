@@ -4,6 +4,7 @@
  */
 
 import { supabase } from '@/lib/supabaseClient';
+import { canonicalizeFonteCounts } from '@/data/realLeadsProcessor';
 
 const UUID_AGENT_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -451,15 +452,13 @@ export async function buscarMetricasIndividuaisLeads(
     .sort((a, b) => b.value - a.value)
     .slice(0, 6);
 
-  // Agrupar por fonte
-  const fontesCount = new Map<string, number>();
-  leads?.forEach(lead => {
-    const row = lead as Record<string, unknown>;
-    const fonte = String(
-      row.origem_lead ?? row.source ?? row.lead_source ?? 'Não informado'
-    );
-    fontesCount.set(fonte, (fontesCount.get(fonte) || 0) + 1);
-  });
+  // Agrupar por fonte (deduplicando variações de capitalização)
+  const fontesCount = canonicalizeFonteCounts(
+    (leads ?? []).map(lead => {
+      const row = lead as Record<string, unknown>;
+      return String(row.origem_lead ?? row.source ?? row.lead_source ?? 'Não informado');
+    })
+  );
 
   const porFonte = Array.from(fontesCount.entries())
     .map(([fonte, quantidade]) => ({ label: fonte, value: quantidade }))
@@ -541,13 +540,13 @@ export async function buscarMetricasIndividuaisVendas(
     };
   }) || [];
 
-  // Agrupar por fonte
-  const fontesCount = new Map<string, number>();
-  vendas?.forEach(venda => {
-    const row = venda as Record<string, unknown>;
-    const fonte = String(row.lead_source ?? row.source ?? 'Não informado');
-    fontesCount.set(fonte, (fontesCount.get(fonte) || 0) + 1);
-  });
+  // Agrupar por fonte (deduplicando variações de capitalização)
+  const fontesCount = canonicalizeFonteCounts(
+    (vendas ?? []).map(venda => {
+      const row = venda as Record<string, unknown>;
+      return String(row.lead_source ?? row.source ?? 'Não informado');
+    })
+  );
 
   const fonteBreakdown = Array.from(fontesCount.entries())
     .map(([fonte, quantidade]) => ({ fonte, quantidade }))
@@ -574,11 +573,9 @@ export async function buscarVendasPorFonte(tenantId: string): Promise<VendasPorF
 
   if (error) throw error;
 
-  const fontesCount = new Map<string, number>();
-  vendas?.forEach(venda => {
-    const fonte = venda.source || 'Não informado';
-    fontesCount.set(fonte, (fontesCount.get(fonte) || 0) + 1);
-  });
+  const fontesCount = canonicalizeFonteCounts(
+    (vendas ?? []).map(venda => venda.source || 'Não informado')
+  );
 
   return Array.from(fontesCount.entries())
     .map(([fonte, quantidade]) => ({ fonte, quantidade }))

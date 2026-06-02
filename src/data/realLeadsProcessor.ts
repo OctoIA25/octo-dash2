@@ -324,6 +324,87 @@ export interface ProcessedLead {
   Conversa: string;
 }
 
+/**
+ * Canonicaliza o campo `origem_lead` de uma lista de leads para evitar que
+ * variações de capitalização (ex: "ZAP Imoveis" vs "Zap Imoveis") apareçam
+ * como origens distintas em contagens/gráficos.
+ *
+ * NÃO faz lowercase no rótulo exibido: para cada chave normalizada
+ * (trim + lowercase) escolhe a variante de capitalização MAIS FREQUENTE
+ * como rótulo canônico (empate → ordem alfabética, determinística). Assim
+ * "ZAP Imoveis" prevalece sobre "zap imoveis" e o dado sai bonito e único.
+ *
+ * Não normaliza acentuação (por escopo) — "Orgânico" e "Organico" seguem
+ * distintos. Retorna um novo array (objetos só são clonados se mudarem).
+ */
+export function canonicalizeOrigemLeads<T extends { origem_lead?: string }>(leads: T[]): T[] {
+  // chave normalizada -> (variante exibida -> contagem)
+  const variantesPorChave = new Map<string, Map<string, number>>();
+  for (const lead of leads) {
+    const label = (lead.origem_lead || '').trim();
+    if (!label) continue;
+    const key = label.toLowerCase();
+    if (!variantesPorChave.has(key)) variantesPorChave.set(key, new Map());
+    const variantes = variantesPorChave.get(key)!;
+    variantes.set(label, (variantes.get(label) || 0) + 1);
+  }
+
+  // chave -> rótulo canônico (variante mais frequente, empate alfabético)
+  const canonico = new Map<string, string>();
+  variantesPorChave.forEach((variantes, key) => {
+    let melhorLabel = '';
+    let melhorCount = -1;
+    variantes.forEach((count, variante) => {
+      if (count > melhorCount || (count === melhorCount && variante.localeCompare(melhorLabel, 'pt-BR') < 0)) {
+        melhorCount = count;
+        melhorLabel = variante;
+      }
+    });
+    canonico.set(key, melhorLabel);
+  });
+
+  return leads.map((lead) => {
+    const label = (lead.origem_lead || '').trim();
+    if (!label) return lead;
+    const alvo = canonico.get(label.toLowerCase());
+    return alvo && alvo !== lead.origem_lead ? { ...lead, origem_lead: alvo } : lead;
+  });
+}
+
+/**
+ * Conta uma lista de rótulos de fonte/origem deduplicando variações de
+ * capitalização. Para cada chave normalizada (trim + lowercase) soma todas
+ * as contagens e usa a variante MAIS FREQUENTE como rótulo (empate
+ * alfabético). Útil para agregações que vêm direto de query SQL (não
+ * passam por ProcessedLead). Retorna Map<rótulo canônico, total>.
+ */
+export function canonicalizeFonteCounts(fontes: string[]): Map<string, number> {
+  const variantesPorChave = new Map<string, Map<string, number>>();
+  for (const raw of fontes) {
+    const label = (raw || '').trim() || 'Não informado';
+    const key = label.toLowerCase();
+    if (!variantesPorChave.has(key)) variantesPorChave.set(key, new Map());
+    const variantes = variantesPorChave.get(key)!;
+    variantes.set(label, (variantes.get(label) || 0) + 1);
+  }
+
+  const resultado = new Map<string, number>();
+  variantesPorChave.forEach((variantes) => {
+    let melhorLabel = '';
+    let melhorCount = -1;
+    let total = 0;
+    variantes.forEach((count, variante) => {
+      total += count;
+      if (count > melhorCount || (count === melhorCount && variante.localeCompare(melhorLabel, 'pt-BR') < 0)) {
+        melhorCount = count;
+        melhorLabel = variante;
+      }
+    });
+    resultado.set(melhorLabel, total);
+  });
+  return resultado;
+}
+
 // Função para processar dados reais do Supabase
 export function processRealLeadsData(rawData: any[]): ProcessedLead[] {
   
@@ -366,7 +447,7 @@ export function processRealLeadsData(rawData: any[]): ProcessedLead[] {
       processedLeads.push(lead);
   });
 
-  return processedLeads;
+  return canonicalizeOrigemLeads(processedLeads);
 }
 
 // Função para calcular métricas específicas solicitadas

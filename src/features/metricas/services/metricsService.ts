@@ -7,6 +7,7 @@
 
 import { calcularMetricasCorretores, CorretorMetrica } from '@/features/leads/services/bolsaoService';
 import { supabase } from '@/lib/supabaseClient';
+import { canonicalizeFonteCounts } from '@/data/realLeadsProcessor';
 import { useAuth } from '@/hooks/useAuth';
 import { useAuthContext } from '@/contexts/AuthContext';
 import {
@@ -244,12 +245,10 @@ export async function buscarNegociosFechadosPorFonte(tenantId?: string): Promise
       return [];
     }
 
-    // Contar por fonte
-    const fonteCount = new Map<string, number>();
-    (leads as any[]).forEach(lead => {
-      const fonte = lead.source || 'Outros';
-      fonteCount.set(fonte, (fonteCount.get(fonte) || 0) + 1);
-    });
+    // Contar por fonte (deduplicando variações de capitalização)
+    const fonteCount = canonicalizeFonteCounts(
+      (leads as any[]).map(lead => lead.source || 'Outros')
+    );
 
     const resultado = Array.from(fonteCount.entries()).map(([fonte, quantidade]) => ({
       fonte,

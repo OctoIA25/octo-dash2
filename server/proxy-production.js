@@ -65,7 +65,22 @@ const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-app.use(cors());
+// CORS: allowlist via env CORS_ORIGINS (origens separadas por vírgula).
+// Em produção o frontend é servido por este mesmo processo (same-origin), então
+// CORS quase não é exercido; a allowlist protege chamadas cross-origin à API.
+// Requisições sem Origin (webhooks/server-to-server) são permitidas.
+const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:8080')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+const corsOptions = {
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error(`Origem não permitida pelo CORS: ${origin}`));
+  },
+};
+
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
@@ -493,7 +508,8 @@ app.get('/api/v1/leads', validateApiKey, async (req, res) => {
     if (portal) query = query.eq('portal', portal);
     if (attended_by) query = query.eq('attended_by_name', attended_by);
     if (search) {
-      query = query.or(`client_name.ilike.%${search}%,client_phone.ilike.%${search}%,client_email.ilike.%${search}%`);
+      const s = sanitizeFilterValue(search);
+      query = query.or(`client_name.ilike.%${s}%,client_phone.ilike.%${s}%,client_email.ilike.%${s}%`);
     }
     if (start_date) query = query.gte('lead_timestamp', start_date);
     if (end_date) query = query.lte('lead_timestamp', end_date);
@@ -1306,6 +1322,10 @@ const safeStringEquals = (left, right) => {
   if (leftBuffer.length !== rightBuffer.length) return false;
   return crypto.timingSafeEqual(leftBuffer, rightBuffer);
 };
+
+// Remove metacaracteres do PostgREST (vírgula, parênteses, asterisco, barra) que
+// poderiam alterar a estrutura de um filtro .or() ao interpolar input do usuário.
+const sanitizeFilterValue = (value) => String(value ?? '').replace(/[,()*\\]/g, ' ').trim();
 
 const firstHeaderValue = (value) => Array.isArray(value) ? value[0] : value;
 
@@ -4591,11 +4611,12 @@ app.get('/api/v1/property-assignments/broker/:identifier', validateApiKey, async
       .select('*')
       .eq('tenant_id', req.tenantId);
     
+    const safeId = sanitizeFilterValue(identifier);
     if (isPhone) {
       const cleanPhone = identifier.replace(/\D/g, '');
-      query = query.or(`corretor_telefone.eq.${cleanPhone},corretor_telefone.eq.${identifier}`);
+      query = query.or(`corretor_telefone.eq.${cleanPhone},corretor_telefone.eq.${safeId}`);
     } else {
-      query = query.or(`corretor_id.eq.${identifier},corretor_nome.ilike.%${identifier}%`);
+      query = query.or(`corretor_id.eq.${safeId},corretor_nome.ilike.%${safeId}%`);
     }
     
     const { data, error } = await query;
@@ -5107,20 +5128,41 @@ app.use('/api/v1/*', (req, res) => {
 
 // Servir arquivos estáticos do build
 const buildPath = path.join(__dirname, '..', 'dist');
+const assetsDir = path.join(buildPath, 'assets');
+const indexHtmlPath = path.join(buildPath, 'index.html');
 app.use(express.static(buildPath, {
+  etag: true,
   maxAge: '1d',
-  etag: true
+  setHeaders: (res, filePath) => {
+    if (filePath === indexHtmlPath) {
+      // index.html NUNCA pode ser cacheado: ele aponta para os chunks com hash.
+      // Se cachear, o browser fica preso em chunks antigos após um deploy e quebra
+      // com "MIME type text/html" ao tentar carregar um .js que não existe mais.
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    } else if (filePath.startsWith(assetsDir)) {
+      // Assets têm hash no nome (immutable): pode cachear agressivamente.
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    }
+  }
 }));
 
-// SPA fallback - todas as rotas não-API retornam index.html
+// SPA fallback - rotas de navegação do React Router retornam index.html
 app.get('*', (req, res, next) => {
   // Ignorar rotas de API
   if (req.path.startsWith('/api/') || req.path.startsWith('/health')) {
     return next();
   }
-  
-  // Retornar index.html para rotas do React Router
-  res.sendFile(path.join(buildPath, 'index.html'));
+
+  // NÃO servir index.html para requisições de arquivo (ex.: /assets/*.js que não
+  // existe mais após um deploy). Devolver 404 limpo evita o erro de MIME type
+  // text/html no carregamento de módulos dinâmicos.
+  if (req.path.startsWith('/assets/') || path.extname(req.path)) {
+    return res.status(404).type('text/plain').send('Not found');
+  }
+
+  // Retornar index.html para rotas do React Router (sem cache)
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.sendFile(indexHtmlPath);
 });
 
 // ===================================

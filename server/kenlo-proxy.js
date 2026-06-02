@@ -16,8 +16,18 @@ const PORT = process.env.PORT || 3001;
 // URL do XML do Kenlo
 const KENLO_XML_URL = 'https://imob.valuegaia.com.br/integra/midia.ashx?midia=ChaveNaMao&p=pQdBmFcGRFgUiPu6qbT5CB0b4QQUZf5v';
 
-// Habilitar CORS para todas as origens
-app.use(cors());
+// CORS: allowlist via env CORS_ORIGINS (origens separadas por vírgula).
+// Default: dev local. Requisições sem Origin (server-to-server) são permitidas.
+const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:8080')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error(`Origem não permitida pelo CORS: ${origin}`));
+  },
+}));
 
 // Endpoint de healthcheck
 app.get('/health', (req, res) => {

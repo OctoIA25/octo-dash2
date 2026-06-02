@@ -308,6 +308,42 @@ export async function createSavedProposal(input: SaveProposalInput): Promise<Sav
     .select('*')
     .single();
 
+  // Corrida entre o SELECT de dedup acima e este INSERT (duas abas/dois usuários
+  // criando a proposta do mesmo lead ao mesmo tempo): o índice único parcial
+  // (tenant_id, lead_id) rejeita a 2ª inserção com 23505. Em vez de duplicar,
+  // reaproveita a proposta existente.
+  if (
+    proposalError &&
+    (proposalError as { code?: string }).code === '23505' &&
+    input.leadId &&
+    isUuid(input.leadId)
+  ) {
+    const { data: existing } = await supabase
+      .from('proposals')
+      .select('id')
+      .eq('tenant_id', input.tenantId)
+      .eq('lead_id', input.leadId)
+      .order('updated_at', { ascending: false })
+      .limit(1);
+
+    const existingId = existing?.[0]?.id as string | undefined;
+    if (existingId) {
+      const updated = await updateSavedProposal({ ...input, id: existingId });
+
+      if (!input.history?.length) return updated;
+
+      const appendedHistory = await appendSavedProposalHistoryItems({
+        proposalId: existingId,
+        tenantId: input.tenantId,
+        userId: input.userId,
+        items: input.history,
+      });
+      const { parties, history, ...existingRow } = updated;
+
+      return composeSavedProposal(existingRow, parties, [...appendedHistory, ...history]);
+    }
+  }
+
   if (proposalError || !proposalRow) {
     throw new Error(proposalError?.message || 'Erro ao criar proposta.');
   }

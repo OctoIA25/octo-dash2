@@ -12,8 +12,23 @@ import { createClient } from '@supabase/supabase-js';
 const app = express();
 const PORT = process.env.API_PORT || 3001;
 
+// CORS: allowlist via env CORS_ORIGINS (origens separadas por vírgula).
+// Default: dev local. Em produção, defina CORS_ORIGINS com o(s) domínio(s) do app.
+// Requisições sem Origin (webhooks/server-to-server/curl) são permitidas — CORS
+// é uma proteção de navegador e não se aplica a elas.
+const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:8080')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+const corsOptions = {
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error(`Origem não permitida pelo CORS: ${origin}`));
+  },
+};
+
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Supabase Client
@@ -75,41 +90,59 @@ const validateApiKey = async (req, res, next) => {
     });
   }
   
-  // Validar API Key contra banco de dados
-  if (apiKey !== 'demo') {
-    try {
-      const { data: keyData, error: keyError } = await supabase
-        .from('tenant_api_keys')
-        .select('id, tenant_id, status')
-        .eq('api_key', apiKey)
-        .eq('provider', 'crm')
-        .eq('status', 'active')
-        .single();
-      
-      if (keyError || !keyData) {
-        return res.status(401).json({
-          success: false,
-          error: {
-            code: 'INVALID_API_KEY',
-            message: 'API Key não encontrada ou inativa'
-          }
-        });
-      }
-      
-      req.tenantId = keyData.tenant_id;
-      req.apiKeyId = keyData.id;
-    } catch (err) {
-      console.error('Erro ao validar API Key:', err);
-      return res.status(500).json({
+  // Chave 'demo': acesso restrito a um tenant de demonstração FIXO.
+  // SEGURANÇA: a key demo NUNCA pode escolher tenant via ?tenant_id= — isso
+  // permitiria ler PII (nome/telefone/email) de qualquer imobiliária. Ela fica
+  // amarrada a DEMO_TENANT_ID; sem essa env, o modo demo falha fechado.
+  if (apiKey === 'demo') {
+    const demoTenantId = process.env.DEMO_TENANT_ID;
+    if (!demoTenantId) {
+      return res.status(403).json({
         success: false,
         error: {
-          code: 'INTERNAL_ERROR',
-          message: 'Erro ao validar API Key'
+          code: 'DEMO_DISABLED',
+          message: 'Modo demo desabilitado. Configure DEMO_TENANT_ID para habilitá-lo.'
         }
       });
     }
+    req.tenantId = demoTenantId;
+    req.apiKey = apiKey;
+    return next();
   }
-  
+
+  // Validar API Key contra banco de dados
+  try {
+    const { data: keyData, error: keyError } = await supabase
+      .from('tenant_api_keys')
+      .select('id, tenant_id, status')
+      .eq('api_key', apiKey)
+      .eq('provider', 'crm')
+      .eq('status', 'active')
+      .single();
+
+    if (keyError || !keyData) {
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'INVALID_API_KEY',
+          message: 'API Key não encontrada ou inativa'
+        }
+      });
+    }
+
+    req.tenantId = keyData.tenant_id;
+    req.apiKeyId = keyData.id;
+  } catch (err) {
+    console.error('Erro ao validar API Key:', err);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Erro ao validar API Key'
+      }
+    });
+  }
+
   req.apiKey = apiKey;
   next();
 };
@@ -121,6 +154,10 @@ const safeStringEquals = (left, right) => {
   if (leftBuffer.length !== rightBuffer.length) return false;
   return crypto.timingSafeEqual(leftBuffer, rightBuffer);
 };
+
+// Remove metacaracteres do PostgREST (vírgula, parênteses, asterisco, barra) que
+// poderiam alterar a estrutura de um filtro .or() ao interpolar input do usuário.
+const sanitizeFilterValue = (value) => String(value ?? '').replace(/[,()*\\]/g, ' ').trim();
 
 const firstHeaderValue = (value) => Array.isArray(value) ? value[0] : value;
 
@@ -1071,9 +1108,11 @@ app.get('/api/v1/leads', validateApiKey, async (req, res) => {
     // Filtros adicionais
     if (portal) query = query.eq('portal', portal);
     if (source) query = query.eq('portal', source);
-    if (tenant_id && !req.tenantId) query = query.eq('tenant_id', tenant_id);
+    // O escopo de tenant já vem da API key (req.tenantId, sempre definido).
+    // NÃO honrar ?tenant_id= da query — seria um vetor de acesso cross-tenant.
     if (search) {
-      query = query.or(`client_name.ilike.%${search}%,client_phone.ilike.%${search}%,client_email.ilike.%${search}%`);
+      const s = sanitizeFilterValue(search);
+      query = query.or(`client_name.ilike.%${s}%,client_phone.ilike.%${s}%,client_email.ilike.%${s}%`);
     }
     if (start_date) query = query.gte('lead_timestamp', start_date);
     if (end_date) query = query.lte('lead_timestamp', end_date);
@@ -1128,7 +1167,8 @@ app.get('/api/v1/leads/archived', validateApiKey, async (req, res) => {
 
     if (req.tenantId) query = query.eq('tenant_id', req.tenantId);
     if (search) {
-      query = query.or(`client_name.ilike.%${search}%,client_phone.ilike.%${search}%,client_email.ilike.%${search}%`);
+      const s = sanitizeFilterValue(search);
+      query = query.or(`client_name.ilike.%${s}%,client_phone.ilike.%${s}%,client_email.ilike.%${s}%`);
     }
     if (assigned_agent) query = query.eq('attended_by_name', assigned_agent);
 
@@ -3656,6 +3696,10 @@ const mapLancamentoFromDB = (row) => ({
   id: row.id,
   nome: row.nome,
   descricao: row.descricao || null,
+  // Endereço do plantão (estande de vendas). null = não cadastrado:
+  // nesse caso a Lia deve dizer que o corretor entrará em contato para
+  // informar o endereço e combinar a melhor data.
+  endereco_plantao: row.endereco_plantao || null,
   book_pdf_url: row.book_pdf || null,
   book_pdf_filename: row.book_pdf_filename || null,
   fotos: (Array.isArray(row.fotos) ? row.fotos : []).map((f) => ({
@@ -3680,7 +3724,7 @@ app.get('/api/v1/lancamentos', validateApiKey, async (req, res) => {
 
     let query = supabase
       .from('lancamentos')
-      .select('id, nome, descricao, book_pdf, book_pdf_filename, fotos, created_at, updated_at', { count: 'exact' })
+      .select('id, nome, descricao, endereco_plantao, book_pdf, book_pdf_filename, fotos, created_at, updated_at', { count: 'exact' })
       .eq('tenant_id', req.tenantId)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
@@ -3707,6 +3751,7 @@ app.get('/api/v1/lancamentos', validateApiKey, async (req, res) => {
       return {
         id: row.id,
         nome: row.nome,
+        endereco_plantao: row.endereco_plantao || null,
         capa_url: capa?.url || null,
         total_fotos: fotos.length,
         tem_book: !!row.book_pdf,

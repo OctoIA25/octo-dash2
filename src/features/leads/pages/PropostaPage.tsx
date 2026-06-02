@@ -1970,8 +1970,15 @@ export const PropostaPage = ({
     if (!currentTenantId) return;
 
     drafts.forEach((proposal) => {
+      // Stubs do board Jurídico (source 'crm', ainda não persistidos) materializam
+      // ao editar — não devem receber escrita de etapa por reconciliação.
+      if (proposal.source === 'crm') return;
       if (!proposal.leadId || !isUuidLike(proposal.id)) return;
       if (reconcilingProposalIdsRef.current.has(proposal.id)) return;
+      // Não reconcilia enquanto o usuário move o card ou há override otimista ativo:
+      // evita escrita extra no banco e re-render durante/logo após o move.
+      if (movingProposalIdsRef.current.has(proposal.id)) return;
+      if (stageOverrides[proposal.id]) return;
 
       const lead = leadById.get(proposal.leadId);
       if (!lead) return;
@@ -2010,7 +2017,7 @@ export const PropostaPage = ({
           reconcilingProposalIdsRef.current.delete(proposal.id);
         });
     });
-  }, [currentTenantId, drafts, leadById]);
+  }, [currentTenantId, drafts, leadById, stageOverrides]);
 
   const proposals = useMemo(() => {
     const materializedLeadIds = new Set(
@@ -2667,12 +2674,20 @@ export const PropostaPage = ({
 
       appendHistory(proposal, 'Etapa alterada', `Movida para ${STAGE_BY_ID[nextStage].label}.`);
 
-      await refetch();
-      setStageOverrides((previous) => {
-        const next = { ...previous };
-        delete next[proposalId];
-        return next;
-      });
+      // Não bloqueia a UI no refetch: o card já está na coluna certa via override
+      // otimista e o atualizarStatusLeadCRM acima já dispara o refetch pelo
+      // leadsEventEmitter. Removemos o override em background quando os leads
+      // recarregados chegarem, em vez de travar o "Movendo etapa" até o reload.
+      void refetch()
+        .catch(() => undefined)
+        .finally(() => {
+          setStageOverrides((previous) => {
+            if (!(proposalId in previous)) return previous;
+            const next = { ...previous };
+            delete next[proposalId];
+            return next;
+          });
+        });
     } finally {
       setUpdatingId(null);
       movingProposalIdsRef.current.delete(proposalId);
@@ -2946,6 +2961,15 @@ export const PropostaPage = ({
 
     if (!match && isEmbedded && embeddedProposal && embeddedProposal.id === requestedProposalId) {
       const converted = savedProposalToUiState(embeddedProposal);
+      // Stubs vindos do board Jurídico (crmLeadToSavedProposal) têm id = lead.id e
+      // ainda NÃO existem na tabela proposals. Mantendo source='crm', a edição
+      // materializa a proposta (createSavedProposal dedupa por lead_id) em vez de
+      // chamar updateSavedProposal num id de proposta inexistente — que falhava
+      // silenciosamente e fazia o lead reaparecer como card duplicado.
+      if (embeddedProposal.source === 'crm') {
+        converted.proposal.source = 'crm';
+        converted.proposal.leadId = embeddedProposal.lead_id || converted.proposal.leadId;
+      }
       setProposalDetails((previous) => ({ ...previous, [converted.proposal.id]: converted.detail }));
       setDrafts((previous) => [
         converted.proposal,

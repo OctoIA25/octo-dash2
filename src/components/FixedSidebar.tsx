@@ -44,6 +44,7 @@ import {
   Camera,
   Pencil,
   MessageCircle,
+  MessageSquare,
   Plug,
   TrendingUp,
   Bell,
@@ -524,8 +525,8 @@ export const FixedSidebar = ({
     // Chat WhatsApp (API Oficial)
     {
       id: 'chat' as SidebarSection,
-      label: 'Chat',
-      icon: MessageCircle,
+      label: 'WhatsApp',
+      icon: MessageSquare,
       description: 'WhatsApp (API Oficial)',
       hasSubMenu: false,
       permissionKey: 'chat' as SidebarPermission

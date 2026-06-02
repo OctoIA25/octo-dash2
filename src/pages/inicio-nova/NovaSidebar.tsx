@@ -15,6 +15,7 @@ import {
   Building2,
   Bot,
   MessageCircle,
+  MessageSquare,
   Plug,
   ChevronDown,
   ChevronRight,
@@ -116,7 +117,7 @@ const GROUPS: SidebarGroup[] = [
         ],
       },
       { id: 'octo-chat', label: 'Octo Chat', icon: MessageCircle, route: '/octo-chat', permission: 'octo-chat' },
-      { id: 'chat', label: 'Chat', icon: MessageCircle, route: '/chat', permission: 'chat' },
+      { id: 'chat', label: 'WhatsApp', icon: MessageSquare, route: '/chat', permission: 'chat' },
     ],
   },
   {

@@ -14,6 +14,8 @@ import { MeusImoveisTab } from '@/components/imoveis/MeusImoveisTab';
 import { CondominiosTab } from '@/components/imoveis/CondominiosTab';
 import { LancamentosTab } from '@/components/imoveis/LancamentosTab';
 import { CriarImovelForm } from '@/components/imoveis/CriarImovelForm';
+import { ImovelDetalhesModal } from '@/components/imoveis/ImovelDetalhesModal';
+import { normalizeFotos } from '@/components/imoveis/fotos-helpers';
 import { Imovel } from '../services/kenloService';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/hooks/useAuth';
@@ -28,13 +30,7 @@ import {
   Home, 
   Building2, 
   Plus,
-  Tag,
   Key,
-  MapPin,
-  Bed,
-  Bath,
-  Car,
-  ExternalLink,
   X,
   SlidersHorizontal,
   User
@@ -208,7 +204,53 @@ interface ImovelLocal {
   valor_iptu: number;
   descricao: string | null;
   fotos: string[];
+  logradouro?: string | null;
+  numero?: string | null;
+  salas?: number | null;
+  aceita_troca?: boolean | null;
+  link_video?: string | null;
+  tour_virtual?: string | null;
+  area_comum?: string[] | null;
+  area_privativa?: string[] | null;
+  status_aprovacao?: 'aprovado' | 'nao_aprovado' | 'aguardando';
 }
+
+// Converte o registro local (imoveis_locais) no formato de initialData esperado
+// pelo CriarImovelForm em modo edição.
+const buildEditDataFromLocal = (local: ImovelLocal) => {
+  return {
+    codigo_imovel: local.codigo_imovel,
+    tipo: local.tipo || '',
+    finalidade: (local.finalidade || '') as 'residencial' | 'comercial' | 'industrial' | 'rural' | 'temporada' | 'corporativa' | '',
+    bairro: local.bairro || '',
+    cidade: local.cidade || '',
+    estado: local.estado || 'SP',
+    logradouro: local.logradouro || '',
+    numero: local.numero || '',
+    area_total: local.area_total ? String(local.area_total) : '',
+    area_util: local.area_util ? String(local.area_util) : '',
+    quartos: local.quartos ? String(local.quartos) : '',
+    suites: local.suites ? String(local.suites) : '',
+    banheiros: local.banheiros ? String(local.banheiros) : '',
+    vagas: local.vagas ? String(local.vagas) : '',
+    valor_venda: local.valor_venda ? String(local.valor_venda) : '',
+    valor_locacao: local.valor_locacao ? String(local.valor_locacao) : '',
+    valor_condominio: local.valor_condominio ? String(local.valor_condominio) : '',
+    valor_iptu: local.valor_iptu ? String(local.valor_iptu) : '',
+    titulo: local.titulo || '',
+    descricao: local.descricao || '',
+    fotos: normalizeFotos(local.fotos),
+    caracteristicas: [
+      ...(Array.isArray(local.area_privativa) ? local.area_privativa : []),
+      ...(Array.isArray(local.area_comum) ? local.area_comum : []),
+    ],
+    aceita_troca: local.aceita_troca ? 'sim' : 'nao',
+    link_video: local.link_video || '',
+    tour_virtual: local.tour_virtual || '',
+    salas: local.salas ? String(local.salas) : '',
+    status_aprovacao: local.status_aprovacao,
+  };
+};
 
 export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
   const { user } = useAuth();
@@ -288,6 +330,7 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
   const [selectedImovel, setSelectedImovel] = useState<Imovel | null>(null);
   const [showDetails, setShowDetails] = useState(false);
   const [isCriarImovelOpen, setIsCriarImovelOpen] = useState(false);
+  const [editingImovelData, setEditingImovelData] = useState<ReturnType<typeof buildEditDataFromLocal> | null>(null);
 
   // Registra ação do botão "Novo" do header quando a aba Catálogo está ativa.
   useRegisterNovoActions(
@@ -782,6 +825,23 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
     setSelectedImovel(null);
   };
 
+  // Encontra o registro local (editável) correspondente a uma referência
+  const findImovelLocal = (referencia?: string | null) => {
+    if (!referencia) return undefined;
+    return imoveisLocais.find(
+      (l) => l.codigo_imovel.toUpperCase() === referencia.toUpperCase()
+    );
+  };
+
+  // Abre o formulário de edição a partir do imóvel atualmente selecionado no modal
+  const handleEditarSelecionado = () => {
+    const local = findImovelLocal(selectedImovel?.referencia);
+    if (!local) return;
+    setEditingImovelData(buildEditDataFromLocal(local));
+    setIsCriarImovelOpen(true);
+    closeDetails();
+  };
+
   const formatCurrency = (value: number) => {
     if (!value || value === 0) return '-';
     return new Intl.NumberFormat('pt-BR', {
@@ -805,10 +865,7 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
 
   return (
     <div className="min-h-screen flex">
-      <div
-        className="flex-1 p-6 space-y-6 transition-all duration-300 ease-in-out"
-        style={{ marginRight: showDetails ? '400px' : '0' }}
-      >
+      <div className="flex-1 p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -819,7 +876,10 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
         </div>
         <div className="flex items-center gap-2">
           <Button
-            onClick={() => setIsCriarImovelOpen(true)}
+            onClick={() => {
+              setEditingImovelData(null);
+              setIsCriarImovelOpen(true);
+            }}
           >
             <Plus className="h-4 w-4 mr-2" />
             Novo Imóvel
@@ -840,8 +900,16 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
 
       <CriarImovelForm
         isOpen={isCriarImovelOpen}
-        onClose={() => setIsCriarImovelOpen(false)}
-        onSuccess={reloadCatalogoBanco}
+        onClose={() => {
+          setIsCriarImovelOpen(false);
+          setEditingImovelData(null);
+        }}
+        onSuccess={() => {
+          void reloadCatalogoBanco();
+          setEditingImovelData(null);
+        }}
+        initialData={editingImovelData || undefined}
+        isEdit={Boolean(editingImovelData)}
       />
 
       {/* Tabs são renderizadas no NovoHeader via PageTabs. Aqui usamos Tabs controlado pelo query param. */}
@@ -1422,235 +1490,13 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
 
       </div>
 
-      {showDetails && selectedImovel && (
-        <>
-          <div
-            className="fixed top-[96px] right-0 w-[400px] z-40 overflow-hidden border-l border-border bg-background shadow-xl flex flex-col"
-            style={{ animation: 'slideIn 0.2s ease-out', height: 'calc(100vh - 96px)' }}
-          >
-            <div className="flex-shrink-0 flex items-center justify-between p-4 border-b border-border bg-background">
-              <div className="min-w-0">
-                <h2 className="text-base font-semibold text-foreground truncate">Detalhes do Imóvel</h2>
-                <p className="text-xs text-muted-foreground truncate">Ref: {selectedImovel.referencia}</p>
-              </div>
-              <button
-                onClick={closeDetails}
-                className="w-7 h-7 rounded-lg hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-4 pb-8" style={{ scrollBehavior: 'smooth' }}>
-              {/* Imagem principal */}
-              {selectedImovel.fotos && selectedImovel.fotos.length > 0 && (
-                <div className="mb-4 -mx-4 -mt-4">
-                  <img
-                    src={selectedImovel.fotos[0]}
-                    alt={selectedImovel.titulo}
-                    className="w-full h-48 object-cover"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).style.display = 'none';
-                    }}
-                  />
-                </div>
-              )}
-              
-              <div className="mb-4">
-                <h3 className="text-lg font-semibold text-foreground leading-tight">{selectedImovel.titulo}</h3>
-                <p className="text-sm text-muted-foreground mt-1">{selectedImovel.tipo}</p>
-              </div>
-
-              <div className="space-y-2 mb-6">
-                <div className="flex items-center gap-2 text-sm">
-                  <Tag className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-foreground capitalize">{selectedImovel.finalidade.replace('_', ' + ')}</span>
-                </div>
-                <div className="flex items-center gap-2 text-sm">
-                  <MapPin className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-foreground">
-                    {selectedImovel.bairro}, {selectedImovel.cidade} - {selectedImovel.estado}
-                  </span>
-                </div>
-              </div>
-
-              <div className="border-t border-border my-5" />
-
-              <div className="mb-6">
-                <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">Corretor responsável</h4>
-                <div className="space-y-3">
-                  {(selectedImovel.corretor_foto || selectedImovel.corretor_nome) && (
-                    <div className="flex items-center gap-3">
-                      {selectedImovel.corretor_foto ? (
-                        <img
-                          src={selectedImovel.corretor_foto}
-                          alt={selectedImovel.corretor_nome || 'Corretor'}
-                          className="w-10 h-10 rounded-lg object-cover border border-border"
-                          loading="lazy"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).style.display = 'none';
-                          }}
-                        />
-                      ) : (
-                        <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center text-foreground font-medium text-sm">
-                          {(selectedImovel.corretor_nome || '?').charAt(0).toUpperCase()}
-                        </div>
-                      )}
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-foreground truncate">{selectedImovel.corretor_nome || '-'}</p>
-                        {selectedImovel.corretor_email ? (
-                          <p className="text-xs text-muted-foreground truncate">{selectedImovel.corretor_email}</p>
-                        ) : null}
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Nome</span>
-                      <span className="text-foreground font-medium">{selectedImovel.corretor_nome || '-'}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Número</span>
-                      <span className="text-foreground font-medium">{selectedImovel.corretor_numero || '-'}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">E-mail</span>
-                      <span className="text-foreground font-medium">{selectedImovel.corretor_email || '-'}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mb-6">
-                <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">Valores</h4>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Venda</span>
-                    <span className="text-foreground font-medium">{formatCurrency(selectedImovel.valor_venda)}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Locação</span>
-                    <span className="text-foreground font-medium">{selectedImovel.valor_locacao > 0 ? `${formatCurrency(selectedImovel.valor_locacao)}/mês` : '-'}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Condomínio</span>
-                    <span className="text-foreground font-medium">{formatCurrency(selectedImovel.valor_condominio)}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">IPTU</span>
-                    <span className="text-foreground font-medium">{formatCurrency(selectedImovel.valor_iptu)}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mb-6">
-                <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">Áreas</h4>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="p-3 rounded-lg border border-border">
-                    <p className="text-xs text-muted-foreground">Área total</p>
-                    <p className="text-sm font-semibold text-foreground">{selectedImovel.area_total > 0 ? `${selectedImovel.area_total} m²` : '-'}</p>
-                  </div>
-                  <div className="p-3 rounded-lg border border-border">
-                    <p className="text-xs text-muted-foreground">Área útil</p>
-                    <p className="text-sm font-semibold text-foreground">{selectedImovel.area_util > 0 ? `${selectedImovel.area_util} m²` : '-'}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mb-6">
-                <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">Características</h4>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="flex items-center gap-2 text-sm">
-                    <Bed className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-foreground">{selectedImovel.quartos || 0}</span>
-                    <span className="text-muted-foreground">Quartos</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <Bath className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-foreground">{selectedImovel.banheiro || 0}</span>
-                    <span className="text-muted-foreground">Banheiros</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <Car className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-foreground">{selectedImovel.garagem || 0}</span>
-                    <span className="text-muted-foreground">Vagas</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <Home className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-foreground">{selectedImovel.suites || 0}</span>
-                    <span className="text-muted-foreground">Suítes</span>
-                  </div>
-                </div>
-              </div>
-
-              {selectedImovel.descricao && (
-                <div className="mb-6">
-                  <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Descrição</h4>
-                  <p className="text-sm text-foreground leading-relaxed whitespace-pre-line">{selectedImovel.descricao}</p>
-                </div>
-              )}
-
-              {selectedImovel.fotos && selectedImovel.fotos.length > 0 && (
-                <div className="mb-6">
-                  <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">Fotos</h4>
-                  <div className="grid grid-cols-2 gap-2">
-                    {selectedImovel.fotos.slice(0, 8).map((url, idx) => (
-                      <a
-                        key={`${url}-${idx}`}
-                        href={url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="block rounded-lg overflow-hidden border border-border"
-                      >
-                        <img
-                          src={url}
-                          alt={`Foto ${idx + 1}`}
-                          className="w-full h-24 object-cover"
-                          loading="lazy"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).style.display = 'none';
-                          }}
-                        />
-                      </a>
-                    ))}
-                  </div>
-                  {selectedImovel.fotos.length > 8 && (
-                    <p className="text-xs text-muted-foreground mt-2">Mostrando 8 de {selectedImovel.fotos.length} fotos</p>
-                  )}
-                </div>
-              )}
-
-              {selectedImovel.videos && selectedImovel.videos.length > 0 && (
-                <div className="mb-6">
-                  <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Vídeos</h4>
-                  <div className="space-y-2">
-                    {selectedImovel.videos.map((url, idx) => (
-                      <a
-                        key={`${url}-${idx}`}
-                        href={url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex items-center gap-2 text-sm text-foreground hover:underline"
-                      >
-                        <ExternalLink className="w-4 h-4 text-muted-foreground" />
-                        <span className="truncate">{url}</span>
-                      </a>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <style>{`
-            @keyframes slideIn {
-              from { transform: translateX(100%); }
-              to { transform: translateX(0); }
-            }
-          `}</style>
-        </>
-      )}
+      <ImovelDetalhesModal
+        imovel={selectedImovel}
+        open={showDetails}
+        onOpenChange={(o) => { if (!o) closeDetails(); }}
+        canEdit={Boolean(findImovelLocal(selectedImovel?.referencia))}
+        onEditar={handleEditarSelecionado}
+      />
     </div>
   );
 };

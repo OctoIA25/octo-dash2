@@ -47,7 +47,7 @@ import { useLeadsMetrics } from '@/features/leads/hooks/useLeadsMetrics';
 import { useAuth } from '@/hooks/useAuth';
 import { fetchTenantMembers, type TenantMember } from '@/features/corretores/services/tenantMembersService';
 import { LEAD_TYPE_INTERESSADO, LEAD_TYPE_PROPRIETARIO } from '@/features/leads/services/leadsService';
-import { ProcessedLead } from '@/data/realLeadsProcessor';
+import { ProcessedLead, canonicalizeOrigemLeads } from '@/data/realLeadsProcessor';
 import { getRankingColor } from '@/utils/colors';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { CorretorMetricCard } from '@/components/metrics/individual';
@@ -58,6 +58,7 @@ import {
   buscarFinanceiroVendasComerciaisComFallback,
   type CommercialSalesFinanceSummary,
 } from '@/features/metricas/services/commercialSalesService';
+import { FinanceiroTab } from '../components/FinanceiroTab';
 
 // Registrar componentes do Chart.js
 ChartJS.register(
@@ -208,8 +209,8 @@ export const RelatoriosPage = () => {
   const [dataFinal, setDataFinal] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [exibirValores, setExibirValores] = useState(true);
   const _tab = searchParams.get('tab');
-  const activeSubArea: 'marketing' | 'metricas' | 'metricas-individuais' | 'imoveis' =
-    _tab === 'metricas' || _tab === 'imoveis' || _tab === 'metricas-individuais' ? _tab : 'marketing';
+  const activeSubArea: 'marketing' | 'metricas' | 'metricas-individuais' | 'imoveis' | 'financeiro' =
+    _tab === 'metricas' || _tab === 'imoveis' || _tab === 'metricas-individuais' || _tab === 'financeiro' ? _tab : 'marketing';
 
   const initialMetricasSubArea = useMemo(() => {
     const fromQuery = searchParams.get('metricasSubArea');
@@ -919,7 +920,7 @@ export const RelatoriosPage = () => {
   };
 
   // ═══ DADOS BASE (declarados cedo para uso em modais e gráficos) ═══
-  const allLeadsEarly = useMemo(() => [...processedLeadsInteressado, ...processedLeadsProprietario], [processedLeadsInteressado, processedLeadsProprietario]);
+  const allLeadsEarly = useMemo(() => canonicalizeOrigemLeads([...processedLeadsInteressado, ...processedLeadsProprietario]), [processedLeadsInteressado, processedLeadsProprietario]);
   const convertidosEarly = useMemo(() => allLeadsEarly.filter(l => {
     const etapa = (l.etapa_atual || '').toLowerCase();
     return etapa.includes('assinada') || etapa.includes('fechamento') || etapa.includes('contrato');
@@ -1082,7 +1083,7 @@ export const RelatoriosPage = () => {
   }, [stackedBarOptions]);
 
   // ═══ DADOS REAIS DOS GRÁFICOS (calculados a partir dos leads do Supabase) ═══
-  const allLeads = useMemo(() => [...processedLeadsInteressado, ...processedLeadsProprietario], [processedLeadsInteressado, processedLeadsProprietario]);
+  const allLeads = useMemo(() => canonicalizeOrigemLeads([...processedLeadsInteressado, ...processedLeadsProprietario]), [processedLeadsInteressado, processedLeadsProprietario]);
 
   const BLUE_STACKED_SHADES = [
     CHART_COLORS.primaryDark,
@@ -1814,6 +1815,11 @@ export const RelatoriosPage = () => {
         </div>
       </div>
         </>
+      )}
+
+      {/* SEÇÃO FINANCEIRO */}
+      {activeSubArea === 'financeiro' && (
+        <FinanceiroTab leads={allLeads} />
       )}
 
       {/* SEÇÃO MÉTRICAS DA EQUIPE */}

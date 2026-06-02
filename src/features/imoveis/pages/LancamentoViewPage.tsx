@@ -25,6 +25,7 @@ interface Lancamento {
   tenant_id: string;
   nome: string;
   descricao: string | null;
+  endereco_plantao: string | null;
   book_pdf: string | null;
   book_pdf_filename: string | null;
   fotos: Foto[];
@@ -90,6 +91,7 @@ export const LancamentoViewPage = () => {
   const [nome, setNome] = useState('');
   const [editandoNome, setEditandoNome] = useState(false);
   const [descricao, setDescricao] = useState('');
+  const [enderecoPlantao, setEnderecoPlantao] = useState('');
   const [fotos, setFotos] = useState<Foto[]>([]);
   const [bookPdf, setBookPdf] = useState<string | null>(null);
   const [bookFilename, setBookFilename] = useState<string | null>(null);
@@ -123,6 +125,7 @@ export const LancamentoViewPage = () => {
     setLancamento(normalized);
     setNome(normalized.nome);
     setDescricao(normalized.descricao ?? '');
+    setEnderecoPlantao(normalized.endereco_plantao ?? '');
     setFotos(normalized.fotos);
     setBookPdf(normalized.book_pdf);
     setBookFilename(normalized.book_pdf_filename);
@@ -218,6 +221,7 @@ export const LancamentoViewPage = () => {
         .update({
           nome: nomeTrim,
           descricao: descricao || null,
+          endereco_plantao: enderecoPlantao.trim() || null,
           book_pdf: bookPdfUrl,
           book_pdf_filename: bookPdfName,
           fotos: fotosFinais,
@@ -410,6 +414,24 @@ export const LancamentoViewPage = () => {
           value={descricao}
           onChange={(e) => setDescricao(e.target.value)}
           rows={8}
+        />
+      </section>
+
+      <section className="rounded-xl border border-border bg-card p-5 space-y-3">
+        <div>
+          <h2 className="text-lg font-semibold text-text-primary">
+            Endereço do plantão{' '}
+            <span className="text-sm font-normal text-text-secondary">(opcional)</span>
+          </h2>
+          <p className="text-xs text-text-secondary mt-1">
+            Endereço do estande de vendas do lançamento. Se ficar em branco, a Lia informa ao
+            cliente que o corretor entrará em contato para passar o endereço e combinar a melhor data.
+          </p>
+        </div>
+        <Input
+          placeholder="Ex: Av. Brasil, 1000 — Centro, São Paulo/SP"
+          value={enderecoPlantao}
+          onChange={(e) => setEnderecoPlantao(e.target.value)}
         />
       </section>
 
