@@ -14,10 +14,13 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import {
   AlertCircle,
+  Bath,
+  Bed,
   BriefcaseBusiness,
   Building2,
   CalendarDays,
   CalendarPlus,
+  Car,
   CheckCircle2,
   ChevronRight,
   ClipboardCheck,
@@ -44,6 +47,7 @@ import {
   Phone,
   Plus,
   RefreshCw,
+  Ruler,
   Search,
   Send,
   ShieldCheck,
@@ -63,6 +67,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -95,6 +100,9 @@ import {
   type SavedProposalTransactionForm,
 } from '@/features/leads/services/proposalsService';
 import { propostaStageToLeadStatus } from '@/features/leads/utils/stageBridge';
+import { ImoveisComboBox } from '@/components/ui/imovel-combobox';
+import { useImoveisData } from '@/features/imoveis/hooks/useImoveisData';
+import type { Imovel } from '@/features/imoveis/services/kenloService';
 
 const PROPOSAL_STAGES = [
   {
@@ -220,6 +228,9 @@ interface DraftFormState {
   stageId: ProposalStageId;
   compradores: ProposalParty[];
   vendedores: ProposalParty[];
+  // Mapa de campos da transação (mesmas chaves usadas na visão de detalhe e
+  // persistidas em proposals.transaction_form). Editado via getDraftTx/setDraftTx.
+  transactionDraft: TransactionFormData;
 }
 
 interface ProposalParty {
@@ -298,6 +309,7 @@ const INITIAL_DRAFT_FORM: DraftFormState = {
   stageId: 'proposta-criada',
   compradores: [],
   vendedores: [],
+  transactionDraft: {},
 };
 
 const GENERAL_CONDITIONS = [
@@ -513,6 +525,27 @@ const PRICE_COMPOSITION_ITEMS = [
   '9. Outras formas',
 ] as const;
 
+const INCLUDED_IN_PRICE_ITEMS = [
+  'Móveis planejados/embutidos',
+  'Painel (em madeira) da sala',
+  'Coifa',
+  'Persianas',
+  'Louças (vasos e cerâmicas)',
+  'Condensador e evaporador de ar condicionado',
+  'Eletrodomésticos embutidos em móveis planejados',
+  'Cooktop',
+  'Metálicos (chuveiros e torneiras)',
+  'Lustres',
+  'Aquecedor (de água)',
+] as const;
+
+const PROPTER_REM_OPTIONS = [
+  'Não há dívidas, atualmente, de natureza propter rem (IPTU e/ou condomínio)',
+  'Há dívidas, atualmente, de natureza propter rem (IPTU e/ou condomínio)',
+] as const;
+
+const PAYMENT_MODE_OPTIONS = ['À vista', 'Com alienação fiduciária'] as const;
+
 const COMMISSION_PAYERS = ['Vendedor', 'Comprador', 'Outra composição'] as const;
 const COMMISSION_MOMENTS = ['Sinal', 'CCV', 'Escrituração', 'Crédito AF', 'Outros'] as const;
 const COMMISSION_ROLES = ['corretor', 'imobiliária'] as const;
@@ -561,6 +594,14 @@ const formatCurrencyWithCents = (value: number) =>
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value || 0);
+
+// Normaliza um campo de moeda digitado para o formato pt-BR (R$ 0.000,00).
+// Vazio permanece vazio para não poluir o formulário com "R$ 0,00".
+const formatCurrencyField = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  return formatCurrencyWithCents(parseCurrencyInput(trimmed));
+};
 
 const formatDate = (value: string | null | undefined) => {
   if (!value) return 'Sem data';
@@ -1367,6 +1408,64 @@ function PriceCompositionRow({
   );
 }
 
+// Pergunta com resposta confirmável: enquanto não há resposta (ou em edição)
+// mostra as opções; depois exibe a resposta com um botão "Alterar resposta".
+function AnswerToggle({
+  question,
+  options,
+  value,
+  answered,
+  onChange,
+}: {
+  question: string;
+  options: readonly string[];
+  value: string;
+  answered: boolean;
+  onChange: (value: string) => void;
+}) {
+  const [editing, setEditing] = useState(!answered);
+
+  useEffect(() => {
+    if (!answered) setEditing(true);
+  }, [answered]);
+
+  return (
+    <div className="grid gap-2">
+      <span className="text-[12px] font-medium text-slate-600 dark:text-slate-300">{question}</span>
+      {editing || !answered ? (
+        <div className="grid overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}>
+          {options.map((option, index) => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => {
+                onChange(option);
+                setEditing(false);
+              }}
+              className={cn(
+                'h-9 min-w-0 px-3 text-[12px] font-semibold transition-colors',
+                index > 0 && 'border-l border-slate-200 dark:border-slate-800',
+                value === option
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-white text-slate-600 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800',
+              )}
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-950">
+          <span className="text-[13px] font-semibold text-slate-800 dark:text-slate-100">{value}</span>
+          <Button type="button" variant="outline" size="sm" className="h-7 shrink-0 text-[12px]" onClick={() => setEditing(true)}>
+            Alterar resposta
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PartyEditor({
   party,
   label,
@@ -1870,6 +1969,90 @@ export const PropostaPage = ({
   const [stageOverrides, setStageOverrides] = useState<Record<string, ProposalStageId>>({});
   const [createOpen, setCreateOpen] = useState(false);
   const [draftForm, setDraftForm] = useState<DraftFormState>(INITIAL_DRAFT_FORM);
+  const { imoveis: carteiraImoveis = [] } = useImoveisData();
+  const selectedCarteiraImovel = useMemo<Imovel | undefined>(
+    () =>
+      draftForm.propertyOrigin === 'interno'
+        ? carteiraImoveis.find((imovel) => imovel.referencia === draftForm.imovelRef)
+        : undefined,
+    [carteiraImoveis, draftForm.propertyOrigin, draftForm.imovelRef],
+  );
+  const handleSelectCarteiraImovel = useCallback((value: string, imovel?: Imovel) => {
+    setDraftForm((previous) => {
+      if (!imovel) {
+        return { ...previous, imovelRef: value };
+      }
+      const ufFromImovel =
+        imovel.estado && imovel.estado.length === 2 ? imovel.estado.toUpperCase() : previous.uf;
+      return {
+        ...previous,
+        imovelRef: value,
+        cep: imovel.cep ?? previous.cep,
+        logradouro: imovel.endereco ?? previous.logradouro,
+        numero: imovel.numero ?? previous.numero,
+        bairro: imovel.bairro && imovel.bairro !== 'Sem Bairro' ? imovel.bairro : previous.bairro,
+        cidade: imovel.cidade && imovel.cidade !== 'Sem Cidade' ? imovel.cidade : previous.cidade,
+        uf: ufFromImovel,
+        transactionDraft: { ...previous.transactionDraft, propertyCode: value },
+      };
+    });
+  }, []);
+  // Helpers para o mapa transactionDraft do formulário de criação (mesmas chaves da visão de detalhe).
+  const getDraftTx = useCallback(
+    (key: string, fallback = '') => {
+      // Só recai no fallback quando a chave nunca foi definida (mesma semântica do
+      // getTransactionFormValue da visão de detalhe), preservando string vazia
+      // deliberada para que campos com fallback não-vazio possam ser limpos.
+      const value = draftForm.transactionDraft[key];
+      return value === undefined ? fallback : value;
+    },
+    [draftForm.transactionDraft],
+  );
+  const setDraftTx = useCallback((key: string, value: string) => {
+    setDraftForm((previous) => ({
+      ...previous,
+      transactionDraft: { ...previous.transactionDraft, [key]: value },
+    }));
+  }, []);
+  const toggleDraftIncludedItem = useCallback((label: string) => {
+    setDraftForm((previous) => {
+      const current = (previous.transactionDraft.includedInPriceItems || '')
+        .split('\n')
+        .map((item) => item.trim())
+        .filter(Boolean);
+      const next = current.includes(label)
+        ? current.filter((item) => item !== label)
+        : [...current, label];
+      return {
+        ...previous,
+        transactionDraft: { ...previous.transactionDraft, includedInPriceItems: next.join('\n') },
+      };
+    });
+  }, []);
+  const draftIncludedItems = useMemo(
+    () =>
+      (draftForm.transactionDraft.includedInPriceItems || '')
+        .split('\n')
+        .map((item) => item.trim())
+        .filter(Boolean),
+    [draftForm.transactionDraft.includedInPriceItems],
+  );
+  const handleDraftProposalAttachments = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(event.target.files || []);
+      if (files.length === 0) return;
+      const acceptedFiles = files.filter((file) => file.size <= 10 * 1024 * 1024);
+      setDraftTx('proposalAttachmentNames', acceptedFiles.map((file) => file.name).join('\n'));
+      if (acceptedFiles.length !== files.length) {
+        toast({
+          title: 'Alguns arquivos foram ignorados',
+          description: 'Apenas documentos com até 10Mb foram registrados.',
+          variant: 'destructive',
+        });
+      }
+    },
+    [setDraftTx, toast],
+  );
   const [draftStartedAt, setDraftStartedAt] = useState(new Date().toISOString());
   const [proposalDetails, setProposalDetails] = useState<Record<string, ProposalDetailState>>({});
   const [collapsedPartyIds, setCollapsedPartyIds] = useState<Set<string>>(() => new Set());
@@ -2785,6 +2968,43 @@ export const PropostaPage = ({
         ? draftForm.imovelRef.trim() || 'Imóvel da carteira'
         : formatAddress(enderecoInformado ? endereco : undefined);
 
+    // Monta o mapa transaction_form a partir do formulário de criação, reutilizando
+    // exatamente as chaves consumidas na visão de detalhe (sem migração de schema).
+    const draftTx = draftForm.transactionDraft;
+    const includedOther = (draftTx.includedInPriceOther || '').trim();
+    const includedSummary = [
+      ...draftIncludedItems,
+      includedOther ? `Outras: ${includedOther}` : '',
+    ]
+      .filter(Boolean)
+      .join('; ');
+    const propterRemValue = draftTx.propterRem || PROPTER_REM_OPTIONS[0];
+    const debtsSummary = [
+      draftTx.hasPropertyDebts === 'Sim'
+        ? 'Há débitos sobre o imóvel (desconsiderando eventuais débitos de consumo: saneamento básico, energia elétrica, gás etc.).'
+        : 'Sem débitos sobre o imóvel além de eventuais débitos de consumo (saneamento básico, energia elétrica, gás etc.).',
+      propterRemValue,
+    ]
+      .filter(Boolean)
+      .join(' ');
+    const draftTransactionForm: TransactionFormData = {
+      ...draftTx,
+      propertyCode: draftTx.propertyCode || imovelRef,
+      propertyStatus: draftTx.propertyStatus || PROPERTY_STATUS_OPTIONS[2],
+      fiduciaryAlienation:
+        (draftTx.paymentMode || PAYMENT_MODE_OPTIONS[0]) === 'Com alienação fiduciária'
+          ? 'Com alienação fiduciária'
+          : 'Sem alienação fiduciária',
+      notaryDefinition: draftTx.notaryDefinition || 'definido',
+      cameFromPipeImob: draftTx.cameFromPipeImob || 'Não',
+      belongsToCondo: draftTx.belongsToCondo || 'Não',
+      hasGarage: draftTx.hasGarage || 'Não',
+      hasOffContractBonuses: draftTx.hasOffContractBonuses || 'Não',
+      propterRem: propterRemValue,
+      ...(includedSummary ? { includedInPrice: includedSummary } : {}),
+      ...(debtsSummary ? { propertyDebts: debtsSummary } : {}),
+    };
+
     const draft: ProposalItem = {
       id: `draft-${Date.now()}`,
       source: 'draft',
@@ -2835,7 +3055,7 @@ export const PropostaPage = ({
         assessoriaBancaria: 'suporte',
         condicoesEspecificas: draftForm.condicoesEspecificas,
       },
-      transactionForm: {},
+      transactionForm: draftTransactionForm,
       propertyOrigin: draft.propertyOrigin,
       endereco: draft.endereco,
       agenteResponsavel: draft.agenteResponsavel,
@@ -3932,6 +4152,7 @@ export const PropostaPage = ({
                           <SegmentedChoice label="Público" options={['Sim', 'Não']} selected={getTransactionFormValue('isPublic', 'Não')} onChange={(value) => updateTransactionForm(selectedProposal, 'isPublic', value)} />
                           <SegmentedChoice label="Tem Placa" options={['Sim', 'Não']} selected={getTransactionFormValue('hasSign', 'Não')} onChange={(value) => updateTransactionForm(selectedProposal, 'hasSign', value)} />
                           <SegmentedChoice label="Exclusivo" options={['Sim', 'Não']} selected={getTransactionFormValue('isExclusive', 'Não')} onChange={(value) => updateTransactionForm(selectedProposal, 'isExclusive', value)} />
+                          <SegmentedChoice label="Possui vaga de garagem?" options={['Sim', 'Não']} selected={getTransactionFormValue('hasGarage', 'Não')} onChange={(value) => updateTransactionForm(selectedProposal, 'hasGarage', value)} />
                         </div>
                       </div>
 
@@ -3954,6 +4175,12 @@ export const PropostaPage = ({
                             </button>
                           ))}
                         </div>
+                        {(getTransactionFormValue('propertyStatus', PROPERTY_STATUS_OPTIONS[2]) === PROPERTY_STATUS_OPTIONS[0] ||
+                          getTransactionFormValue('propertyStatus', PROPERTY_STATUS_OPTIONS[2]) === PROPERTY_STATUS_OPTIONS[1]) && (
+                          <div className="mt-3">
+                            <TransactionField label="Saldo devedor atual da alienação fiduciária" value={getTransactionFormValue('fiduciaryBalance')} onChange={(value) => updateTransactionForm(selectedProposal, 'fiduciaryBalance', value)} placeholder="R$ 0,00" />
+                          </div>
+                        )}
                       </div>
 
                       <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-800">
@@ -4291,6 +4518,10 @@ export const PropostaPage = ({
                           <div className="space-y-3">
                             <SegmentedChoice label="O imóvel pertence a algum condomínio?" options={['Sim', 'Não']} selected={getTransactionFormValue('belongsToCondo', 'Não')} onChange={(value) => updateTransactionForm(selectedProposal, 'belongsToCondo', value)} />
                             <div className="grid gap-1.5">
+                              <label className="text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">Observações do condomínio</label>
+                              <Textarea value={getTransactionFormValue('condoNotes')} onChange={(event) => updateTransactionForm(selectedProposal, 'condoNotes', event.target.value)} placeholder="Administradora, taxa, regras, vagas vinculadas, observações." className="min-h-[80px] bg-white text-[13px] dark:bg-slate-950" />
+                            </div>
+                            <div className="grid gap-1.5">
                               <label className="text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">Alguma outra observação/especificidade negociada relevante?</label>
                               <Textarea value={selectedDetail.pagamento.condicoesEspecificas} onChange={(event) => updatePayment(selectedProposal, { condicoesEspecificas: event.target.value })} placeholder="Observações relevantes da negociação." className="min-h-[100px] bg-white text-[13px] dark:bg-slate-950" />
                             </div>
@@ -4382,6 +4613,12 @@ export const PropostaPage = ({
                           <Textarea value={getTransactionFormValue('commissionPaymentDetails')} onChange={(event) => updateTransactionForm(selectedProposal, 'commissionPaymentDetails', event.target.value)} placeholder="Condições, divisão, datas, responsáveis e observações sobre comissão." className="min-h-[96px] bg-white text-[13px] dark:bg-slate-950" />
                         </div>
                         <SegmentedChoice label="Há bonificações que não constarão ao contrato?" options={['Sim', 'Não']} selected={getTransactionFormValue('hasOffContractBonuses', 'Não')} onChange={(value) => updateTransactionForm(selectedProposal, 'hasOffContractBonuses', value)} />
+                        {getTransactionFormValue('hasOffContractBonuses', 'Não') === 'Sim' && (
+                          <div className="grid gap-1.5">
+                            <label className="text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">Detalhes das bonificações</label>
+                            <Textarea value={getTransactionFormValue('offContractBonusesNotes')} onChange={(event) => updateTransactionForm(selectedProposal, 'offContractBonusesNotes', event.target.value)} placeholder="Descreva as bonificações acordadas que não constarão no contrato." className="min-h-[80px] bg-white text-[13px] dark:bg-slate-950" />
+                          </div>
+                        )}
                       </div>
                     </DetailSection>
                   )}
@@ -5173,12 +5410,130 @@ export const PropostaPage = ({
                   {draftForm.propertyOrigin === 'interno' && (
                     <div className="mt-4 grid gap-2">
                       <label className="text-[12px] font-medium text-slate-600 dark:text-slate-300">Imóvel da carteira</label>
-                      <Input
+                      <ImoveisComboBox
+                        imoveis={carteiraImoveis}
                         value={draftForm.imovelRef}
-                        onChange={(event) => setDraftForm((previous) => ({ ...previous, imovelRef: event.target.value }))}
-                        placeholder="Código, endereço ou referência do imóvel"
-                        className="h-9 text-[13px]"
+                        onChange={handleSelectCarteiraImovel}
+                        placeholder="Busque por código, título ou bairro"
+                        emptyText="Nenhum imóvel encontrado na carteira"
                       />
+
+                      {selectedCarteiraImovel ? (
+                        <div className="mt-1 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950">
+                          <div className="flex items-start gap-3">
+                            <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-lg bg-slate-200 dark:bg-slate-800">
+                              {selectedCarteiraImovel.fotos?.[0] ? (
+                                <img
+                                  src={selectedCarteiraImovel.fotos[0]}
+                                  alt={selectedCarteiraImovel.titulo}
+                                  className="h-full w-full object-cover"
+                                  onError={(event) => {
+                                    (event.target as HTMLImageElement).style.display = 'none';
+                                  }}
+                                />
+                              ) : (
+                                <div className="flex h-full w-full items-center justify-center">
+                                  <Building2 className="h-5 w-5 text-slate-400" />
+                                </div>
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[13px] font-semibold text-slate-900 dark:text-slate-100">
+                                  {selectedCarteiraImovel.referencia}
+                                </span>
+                                <span className="rounded bg-slate-100 px-2 py-0.5 text-[11px] capitalize text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                  {selectedCarteiraImovel.tipoSimplificado}
+                                </span>
+                              </div>
+                              <p className="mt-0.5 truncate text-[13px] text-slate-700 dark:text-slate-200">
+                                {selectedCarteiraImovel.titulo}
+                              </p>
+                              <div className="mt-0.5 flex items-center gap-1 text-[12px] text-slate-500 dark:text-slate-400">
+                                <MapPin className="h-3.5 w-3.5" />
+                                <span className="truncate">
+                                  {selectedCarteiraImovel.bairro}
+                                  {selectedCarteiraImovel.cidade ? `, ${selectedCarteiraImovel.cidade}` : ''}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {(selectedCarteiraImovel.valor_venda > 0 || selectedCarteiraImovel.valor_locacao > 0) && (
+                            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+                              {selectedCarteiraImovel.valor_venda > 0 && (
+                                <div className="flex items-center gap-1.5 text-[12px]">
+                                  <DollarSign className="h-3.5 w-3.5 text-emerald-500" />
+                                  <span className="text-slate-500 dark:text-slate-400">Venda</span>
+                                  <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                                    R$ {selectedCarteiraImovel.valor_venda.toLocaleString('pt-BR')}
+                                  </span>
+                                </div>
+                              )}
+                              {selectedCarteiraImovel.valor_locacao > 0 && (
+                                <div className="flex items-center gap-1.5 text-[12px]">
+                                  <DollarSign className="h-3.5 w-3.5 text-blue-500" />
+                                  <span className="text-slate-500 dark:text-slate-400">Locação</span>
+                                  <span className="font-semibold text-blue-600 dark:text-blue-400">
+                                    R$ {selectedCarteiraImovel.valor_locacao.toLocaleString('pt-BR')}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {(selectedCarteiraImovel.quartos > 0 ||
+                            selectedCarteiraImovel.banheiro > 0 ||
+                            selectedCarteiraImovel.garagem > 0 ||
+                            selectedCarteiraImovel.area_total > 0) && (
+                            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-slate-600 dark:text-slate-300">
+                              {selectedCarteiraImovel.quartos > 0 && (
+                                <span className="flex items-center gap-1">
+                                  <Bed className="h-3.5 w-3.5 text-slate-400" />
+                                  {selectedCarteiraImovel.quartos} quartos
+                                </span>
+                              )}
+                              {selectedCarteiraImovel.banheiro > 0 && (
+                                <span className="flex items-center gap-1">
+                                  <Bath className="h-3.5 w-3.5 text-slate-400" />
+                                  {selectedCarteiraImovel.banheiro} banheiros
+                                </span>
+                              )}
+                              {selectedCarteiraImovel.garagem > 0 && (
+                                <span className="flex items-center gap-1">
+                                  <Car className="h-3.5 w-3.5 text-slate-400" />
+                                  {selectedCarteiraImovel.garagem} vagas
+                                </span>
+                              )}
+                              {selectedCarteiraImovel.area_total > 0 && (
+                                <span className="flex items-center gap-1">
+                                  <Ruler className="h-3.5 w-3.5 text-slate-400" />
+                                  {selectedCarteiraImovel.area_total}m²
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {selectedCarteiraImovel.corretor_nome && (
+                            <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
+                              Captador:{' '}
+                              <span className="font-medium text-slate-700 dark:text-slate-200">
+                                {selectedCarteiraImovel.corretor_nome}
+                              </span>
+                            </p>
+                          )}
+
+                          <p className="mt-2 text-[11px] text-slate-400 dark:text-slate-500">
+                            Endereço preenchido automaticamente abaixo a partir do imóvel selecionado.
+                          </p>
+                        </div>
+                      ) : (
+                        draftForm.imovelRef.trim().length > 0 && (
+                          <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                            Imóvel não encontrado na carteira. Verifique o código ou use a opção "Externo".
+                          </p>
+                        )
+                      )}
                     </div>
                   )}
                 </section>
@@ -5219,6 +5574,78 @@ export const PropostaPage = ({
                       <label className="text-[12px] font-medium text-slate-600 dark:text-slate-300">UF</label>
                       <Input value={draftForm.uf} onChange={(event) => setDraftForm((previous) => ({ ...previous, uf: event.target.value.toUpperCase().slice(0, 2) }))} placeholder="SP" className="h-9 text-[13px]" />
                     </div>
+                  </div>
+                </section>
+
+                <section className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                      <FileText className="h-4 w-4" />
+                    </span>
+                    <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Identificação do imóvel</h3>
+                  </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-6">
+                    <div className="grid gap-1.5 sm:col-span-2">
+                      <label className="text-[12px] font-medium text-slate-600 dark:text-slate-300">Código do Imóvel</label>
+                      <Input value={getDraftTx('propertyCode', draftForm.imovelRef)} onChange={(event) => setDraftTx('propertyCode', event.target.value)} placeholder="Código do imóvel" className="h-9 text-[13px]" />
+                    </div>
+                    <div className="grid gap-1.5 sm:col-span-2">
+                      <label className="text-[12px] font-medium text-slate-600 dark:text-slate-300">Código Alternativo</label>
+                      <Input value={getDraftTx('alternativeCode')} onChange={(event) => setDraftTx('alternativeCode', event.target.value)} placeholder="Código alternativo" className="h-9 text-[13px]" />
+                    </div>
+                    <div className="grid gap-1.5 sm:col-span-2">
+                      <label className="text-[12px] font-medium text-slate-600 dark:text-slate-300">Matrícula</label>
+                      <Input value={getDraftTx('registryNumber')} onChange={(event) => setDraftTx('registryNumber', event.target.value)} placeholder="Número da matrícula" className="h-9 text-[13px]" />
+                    </div>
+                    <div className="grid gap-1.5 sm:col-span-3">
+                      <label className="text-[12px] font-medium text-slate-600 dark:text-slate-300">Cartório de Imóveis</label>
+                      <Input value={getDraftTx('propertyRegistryOffice')} onChange={(event) => setDraftTx('propertyRegistryOffice', event.target.value)} placeholder="Cartório responsável" className="h-9 text-[13px]" />
+                    </div>
+                    <div className="grid gap-1.5 sm:col-span-3">
+                      <label className="text-[12px] font-medium text-slate-600 dark:text-slate-300">Contribuinte da Prefeitura</label>
+                      <Input value={getDraftTx('municipalTaxpayer')} onChange={(event) => setDraftTx('municipalTaxpayer', event.target.value)} placeholder="Inscrição municipal" className="h-9 text-[13px]" />
+                    </div>
+                    <div className="grid gap-1.5 sm:col-span-6">
+                      <label className="text-[12px] font-medium text-slate-600 dark:text-slate-300">Descrição Jurídica</label>
+                      <Textarea value={getDraftTx('legalDescription')} onChange={(event) => setDraftTx('legalDescription', event.target.value)} placeholder="Descrição jurídica do imóvel conforme matrícula." className="min-h-[80px] resize-y text-[13px]" />
+                    </div>
+                  </div>
+
+                  <div className="mt-5">
+                    <label className="text-[12px] font-medium text-slate-600 dark:text-slate-300">Status atual da propriedade</label>
+                    <div className="mt-2 grid gap-2">
+                      {PROPERTY_STATUS_OPTIONS.map((option) => {
+                        const currentStatus = getDraftTx('propertyStatus', PROPERTY_STATUS_OPTIONS[2]);
+                        return (
+                          <button
+                            key={option}
+                            type="button"
+                            onClick={() => setDraftTx('propertyStatus', option)}
+                            className={cn(
+                              'rounded-lg border px-3 py-2 text-left text-sm font-medium transition-colors',
+                              currentStatus === option
+                                ? 'border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200'
+                                : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-900',
+                            )}
+                          >
+                            {option}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {(getDraftTx('propertyStatus', PROPERTY_STATUS_OPTIONS[2]) === PROPERTY_STATUS_OPTIONS[0] ||
+                      getDraftTx('propertyStatus', PROPERTY_STATUS_OPTIONS[2]) === PROPERTY_STATUS_OPTIONS[1]) && (
+                      <div className="mt-3 grid gap-1.5">
+                        <label className="text-[12px] font-medium text-slate-600 dark:text-slate-300">Saldo devedor atual da alienação fiduciária</label>
+                        <Input
+                          value={getDraftTx('fiduciaryBalance')}
+                          onChange={(event) => setDraftTx('fiduciaryBalance', event.target.value)}
+                          onBlur={(event) => setDraftTx('fiduciaryBalance', formatCurrencyField(event.target.value))}
+                          placeholder="R$ 0,00"
+                          className="h-9 text-[13px]"
+                        />
+                      </div>
+                    )}
                   </div>
                 </section>
 
@@ -5393,15 +5820,284 @@ export const PropostaPage = ({
                 </section>
 
                 <section className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                      <DollarSign className="h-4 w-4" />
+                    </span>
+                    <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Valores, comissões e composição do preço</h3>
+                  </div>
+
+                  <div className="mt-4 grid gap-1.5">
+                    <label className="text-[12px] font-medium text-slate-600 dark:text-slate-300">Pagamento</label>
+                    <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
+                      {PAYMENT_MODE_OPTIONS.map((option, index) => (
+                        <button
+                          key={option}
+                          type="button"
+                          onClick={() => setDraftTx('paymentMode', option)}
+                          className={cn(
+                            'h-9 text-[12px] font-semibold transition-colors',
+                            index > 0 && 'border-l border-slate-200 dark:border-slate-800',
+                            getDraftTx('paymentMode', PAYMENT_MODE_OPTIONS[0]) === option
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-white text-slate-600 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800',
+                          )}
+                        >
+                          {option}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <div className="grid gap-1.5">
+                      <label className="text-[12px] font-medium text-slate-600 dark:text-slate-300">Comissão R$</label>
+                      <Input
+                        value={getDraftTx('commissionAmount')}
+                        onChange={(event) => setDraftTx('commissionAmount', event.target.value)}
+                        onBlur={(event) => setDraftTx('commissionAmount', formatCurrencyField(event.target.value))}
+                        placeholder="R$ 0,00"
+                        className="h-9 text-[13px]"
+                      />
+                    </div>
+                    <div className="grid gap-1.5">
+                      <label className="text-[12px] font-medium text-slate-600 dark:text-slate-300">Comissão %</label>
+                      <Input value={getDraftTx('commissionPercent', '5,5%')} onChange={(event) => setDraftTx('commissionPercent', event.target.value)} placeholder="5,5%" className="h-9 text-[13px]" />
+                    </div>
+                  </div>
+
+                  <div className="mt-5 space-y-3">
+                    <div>
+                      <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Composição do Preço</h4>
+                      <p className="text-[12px] text-slate-500 dark:text-slate-400">Informe valores e detalhes de cada parcela que compõe o preço.</p>
+                    </div>
+                    {PRICE_COMPOSITION_ITEMS.map((item, index) => (
+                      <PriceCompositionRow
+                        key={item}
+                        label={item}
+                        value={getDraftTx(`priceComposition.${index}.value`, index === 0 ? draftForm.sinalArras : '')}
+                        detail={getDraftTx(`priceComposition.${index}.detail`)}
+                        onValueChange={(value) => {
+                          setDraftTx(`priceComposition.${index}.value`, value);
+                          if (index === 0) setDraftForm((previous) => ({ ...previous, sinalArras: value }));
+                        }}
+                        onDetailChange={(value) => setDraftTx(`priceComposition.${index}.detail`, value)}
+                      />
+                    ))}
+                  </div>
+                </section>
+
+                <section className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                      <Landmark className="h-4 w-4" />
+                    </span>
+                    <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Em qual cartório será lavrada a Escritura Pública?</h3>
+                  </div>
+                  <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr_220px]">
+                    <button
+                      type="button"
+                      onClick={() => setDraftTx('notaryDefinition', 'definido')}
+                      className={cn(
+                        'rounded-lg border px-3 py-3 text-left text-sm font-semibold transition-colors',
+                        getDraftTx('notaryDefinition', 'definido') === 'definido'
+                          ? 'border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200'
+                          : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-900',
+                      )}
+                    >
+                      Já há definição do Cartório de Notas que se pretende usar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDraftTx('notaryDefinition', 'indefinido')}
+                      className={cn(
+                        'rounded-lg border px-3 py-3 text-left text-sm font-semibold transition-colors',
+                        getDraftTx('notaryDefinition', 'definido') === 'indefinido'
+                          ? 'border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200'
+                          : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-900',
+                      )}
+                    >
+                      Ainda não há definição do Cartório de Notas
+                    </button>
+                    <div className="grid gap-1.5">
+                      <label className="text-[12px] font-medium text-slate-600 dark:text-slate-300">Cartório de Notas</label>
+                      <Input
+                        value={getDraftTx('notaryOffice')}
+                        onChange={(event) => setDraftTx('notaryOffice', event.target.value)}
+                        placeholder="Nome do cartório"
+                        className="h-9 text-[13px]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
+                    <div className="space-y-3">
+                      <div className="grid gap-2">
+                        <span className="text-[12px] font-medium text-slate-600 dark:text-slate-300">Este negócio nasceu de uma Proposta conduzida dentro do PipeImob?</span>
+                        <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
+                          {(['Não', 'Sim'] as const).map((option, index) => (
+                            <button
+                              key={option}
+                              type="button"
+                              onClick={() => setDraftTx('cameFromPipeImob', option)}
+                              className={cn(
+                                'h-9 text-[12px] font-semibold transition-colors',
+                                index > 0 && 'border-l border-slate-200 dark:border-slate-800',
+                                getDraftTx('cameFromPipeImob', 'Não') === option
+                                  ? 'bg-blue-600 text-white'
+                                  : 'bg-white text-slate-600 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800',
+                              )}
+                            >
+                              {option}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      {getDraftTx('cameFromPipeImob', 'Não') === 'Sim' && (
+                        <div className="grid gap-1.5">
+                          <label className="text-[12px] font-medium text-slate-600 dark:text-slate-300">Código da proposta PipeImob</label>
+                          <Input value={getDraftTx('pipeImobProposalRef')} onChange={(event) => setDraftTx('pipeImobProposalRef', event.target.value)} placeholder="Ex.: PRP-000123" className="h-9 text-[13px]" />
+                        </div>
+                      )}
+                    </div>
+                    <label className="flex min-h-[112px] cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center transition-colors hover:border-blue-300 hover:bg-blue-50/40 dark:border-slate-700 dark:bg-slate-950 dark:hover:border-blue-900 dark:hover:bg-blue-950/20">
+                      <FileUp className="h-7 w-7 text-slate-400" />
+                      <span className="mt-2 text-[12px] font-semibold text-slate-700 dark:text-slate-200">Anexo da formalização da Proposta de Compra</span>
+                      <span className="mt-1 whitespace-pre-line text-[11px] text-slate-500 dark:text-slate-400">{getDraftTx('proposalAttachmentNames') || 'Clique para anexar (máx. 10Mb)'}</span>
+                      <input type="file" multiple className="sr-only" onChange={handleDraftProposalAttachments} />
+                    </label>
+                  </div>
+                </section>
+
+                <section className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                      <ClipboardList className="h-4 w-4" />
+                    </span>
+                    <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">O que está incluso no preço?</h3>
+                  </div>
+                  <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                    {INCLUDED_IN_PRICE_ITEMS.map((item) => (
+                      <label
+                        key={item}
+                        className="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-900"
+                      >
+                        <Checkbox checked={draftIncludedItems.includes(item)} onCheckedChange={() => toggleDraftIncludedItem(item)} />
+                        <span>{item}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <div className="mt-3 grid gap-1.5">
+                    <label className="text-[12px] font-medium text-slate-600 dark:text-slate-300">Outras inclusões</label>
+                    <Input value={getDraftTx('includedInPriceOther')} onChange={(event) => setDraftTx('includedInPriceOther', event.target.value)} placeholder="Descreva outros itens inclusos no preço" className="h-9 text-[13px]" />
+                  </div>
+                </section>
+
+                <section className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                      <WalletCards className="h-4 w-4" />
+                    </span>
+                    <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Débitos sobre o imóvel</h3>
+                  </div>
+                  <label className="mt-4 flex cursor-pointer items-start gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-900">
+                    <Checkbox className="mt-0.5" checked={getDraftTx('hasPropertyDebts') === 'Sim'} onCheckedChange={(checked) => setDraftTx('hasPropertyDebts', checked ? 'Sim' : 'Não')} />
+                    <span>Há débitos sobre o imóvel (desconsiderando eventuais débitos de consumo: saneamento básico, energia elétrica, gás etc.).</span>
+                  </label>
+                  <div className="mt-4 grid gap-2">
+                    <span className="text-[12px] font-medium text-slate-600 dark:text-slate-300">Dívidas de natureza propter rem (IPTU e/ou condomínio)</span>
+                    {PROPTER_REM_OPTIONS.map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        onClick={() => setDraftTx('propterRem', option)}
+                        className={cn(
+                          'rounded-lg border px-3 py-2 text-left text-sm font-medium transition-colors',
+                          getDraftTx('propterRem', PROPTER_REM_OPTIONS[0]) === option
+                            ? 'border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200'
+                            : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-900',
+                        )}
+                      >
+                        {option}
+                      </button>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                      <Building2 className="h-4 w-4" />
+                    </span>
+                    <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Condomínio</h3>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    <AnswerToggle
+                      question="O imóvel pertence a algum condomínio?"
+                      options={['Sim', 'Não']}
+                      value={draftForm.transactionDraft.belongsToCondo || ''}
+                      answered={Boolean(draftForm.transactionDraft.belongsToCondo)}
+                      onChange={(value) => setDraftTx('belongsToCondo', value)}
+                    />
+                    <div className="grid gap-1.5">
+                      <label className="text-[12px] font-medium text-slate-600 dark:text-slate-300">Observações do condomínio</label>
+                      <Textarea value={getDraftTx('condoNotes')} onChange={(event) => setDraftTx('condoNotes', event.target.value)} placeholder="Administradora, taxa, regras, vagas vinculadas, observações." className="min-h-[80px] resize-y text-[13px]" />
+                    </div>
+                  </div>
+                </section>
+
+                <section className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                      <Car className="h-4 w-4" />
+                    </span>
+                    <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Vaga de garagem</h3>
+                  </div>
+                  <div className="mt-4">
+                    <AnswerToggle
+                      question="Possui vaga de garagem?"
+                      options={['Sim', 'Não']}
+                      value={draftForm.transactionDraft.hasGarage || ''}
+                      answered={Boolean(draftForm.transactionDraft.hasGarage)}
+                      onChange={(value) => setDraftTx('hasGarage', value)}
+                    />
+                  </div>
+                </section>
+
+                <section className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                      <TrendingUp className="h-4 w-4" />
+                    </span>
+                    <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Bonificações</h3>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    <AnswerToggle
+                      question="Há bonificações que não constarão ao contrato?"
+                      options={['Sim', 'Não']}
+                      value={draftForm.transactionDraft.hasOffContractBonuses || ''}
+                      answered={Boolean(draftForm.transactionDraft.hasOffContractBonuses)}
+                      onChange={(value) => setDraftTx('hasOffContractBonuses', value)}
+                    />
+                    {getDraftTx('hasOffContractBonuses') === 'Sim' && (
+                      <div className="grid gap-1.5">
+                        <label className="text-[12px] font-medium text-slate-600 dark:text-slate-300">Detalhes das bonificações</label>
+                        <Textarea value={getDraftTx('offContractBonusesNotes')} onChange={(event) => setDraftTx('offContractBonusesNotes', event.target.value)} placeholder="Descreva as bonificações acordadas que não constarão no contrato." className="min-h-[80px] resize-y text-[13px]" />
+                      </div>
+                    )}
+                  </div>
+                </section>
+
+                <section className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
                   <div className="flex items-center justify-between gap-3">
-                    <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Condições Específicas (detalhes)</h3>
+                    <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Outra observação/especificidade negociada relevante?</h3>
                     <span className="text-[12px] text-slate-400">{draftForm.condicoesEspecificas.length}/2000 caracteres</span>
                   </div>
                   <textarea
                     value={draftForm.condicoesEspecificas}
                     maxLength={2000}
                     onChange={(event) => setDraftForm((previous) => ({ ...previous, condicoesEspecificas: event.target.value }))}
-                    placeholder="Detalhes da negociação, prazos, condições e observações."
+                    placeholder="Detalhes da negociação, prazos, condições e observações relevantes."
                     className="mt-4 min-h-[132px] w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none transition-colors placeholder:text-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:focus:border-blue-700 dark:focus:ring-blue-950/40"
                   />
                 </section>

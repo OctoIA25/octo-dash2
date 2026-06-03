@@ -4,7 +4,9 @@
  * Gerencia sidebar e renderização de páginas por rota
  */
 
-import React, { lazy, Suspense, useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { Suspense, useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { lazyWithRetry } from '@/lib/lazyWithRetry';
+import { RouteErrorBoundary } from '@/shared/components/RouteErrorBoundary';
 import { Routes, Route, Navigate, useOutletContext, useLocation } from 'react-router-dom';
 import { NovoLayout } from './inicio-nova/NovoLayout';
 import { InicioNovaPage } from './inicio-nova/InicioNovaPage';
@@ -58,7 +60,7 @@ const DEFAULT_ROUTE_BY_PERMISSION: Partial<Record<SidebarPermission, string>> = 
 };
 
 // 🚀 LAZY LOADING - Páginas carregadas sob demanda
-const LeadsPage = lazy(() => import('@/features/leads/pages/LeadsPage').then(
+const LeadsPage = lazyWithRetry(() => import('@/features/leads/pages/LeadsPage').then(
   m => ({ default: m.LeadsPage }),
   error => {
     console.error('❌ Erro ao carregar LeadsPage:', error);
@@ -73,34 +75,34 @@ const LeadsPage = lazy(() => import('@/features/leads/pages/LeadsPage').then(
     };
   }
 ));
-const MeusLeadsPage = lazy(() => import('@/features/leads/pages/MeusLeadsPage').then(m => ({ default: m.MeusLeadsPage })));
-const MetricasPage = lazy(() => import('@/features/metricas/pages/MetricasPage').then(m => ({ default: m.MetricasPage })));
-const ClienteInteressadoPage = lazy(() => import('@/features/leads/pages/ClienteInteressadoPage').then(m => ({ default: m.ClienteInteressadoPage })));
-const ClienteProprietarioPage = lazy(() => import('@/features/leads/pages/ClienteProprietarioPage').then(m => ({ default: m.ClienteProprietarioPage })));
-const EquipePage = lazy(() => import('@/features/corretores/pages/EquipePage').then(m => ({ default: m.EquipePage })));
-const RecrutamentoPage = lazy(() => import('@/features/corretores/pages/RecrutamentoPage').then(m => ({ default: m.RecrutamentoPage })));
-const GestaoEquipePage = lazy(() => import('@/features/corretores/pages/GestaoEquipePage').then(m => ({ default: m.GestaoEquipePage })));
-const BolsaoPage = lazy(() => import('@/features/leads/pages/BolsaoPage').then(m => ({ default: m.BolsaoPage })));
-const CentralLeadsPage = lazy(() => import('@/features/leads/pages/CentralLeadsPage').then(m => ({ default: m.CentralLeadsPage })));
-const CorretoresPage = lazy(() => import('@/features/corretores/pages/CorretoresPage').then(m => ({ default: m.CorretoresPage })));
-const ImoveisPage = lazy(() => import('@/features/imoveis/pages/ImoveisPage').then(m => ({ default: m.ImoveisPage })));
-const ImoveisMapPage = lazy(() => import('@/features/imoveis/pages/ImoveisMapPage'));
-const LancamentoViewPage = lazy(() => import('@/features/imoveis/pages/LancamentoViewPage').then(m => ({ default: m.LancamentoViewPage })));
-const AgentesIaPage = lazy(() => import('@/features/agentes-ia/pages/AgentesIaPage').then(m => ({ default: m.AgentesIaPage })));
-const OctoChatPage = lazy(() => import('@/features/agentes-ia/pages/OctoChatPage').then(m => ({ default: m.OctoChatPage })));
-const ChatPage = lazy(() => import('@/features/chat/pages/ChatPage').then(m => ({ default: m.ChatPage })));
-const ConfiguracoesPage = lazy(() => import('@/features/settings/pages/ConfiguracoesPage').then(m => ({ default: m.ConfiguracoesPage })));
-const Importar16PersonalitiesPage = lazy(() => import('@/features/corretores/pages/Importar16PersonalitiesPage'));
-const AdminTestesDashboard = lazy(() => import('@/features/corretores/components/AdminTestesDashboard').then(m => ({ default: m.AdminTestesDashboard })));
-const AdminTestesGeraisPage = lazy(() => import('@/features/corretores/pages/AdminTestesGeraisPage').then(m => ({ default: m.AdminTestesGeraisPage })));
-const IntegracoesPage = lazy(() => import('@/features/settings/pages/IntegracoesPage').then(m => ({ default: m.IntegracoesPage })));
-const RelatoriosPage = lazy(() => import('@/features/relatorios/pages/RelatoriosPage').then(m => ({ default: m.RelatoriosPage })));
-const EstudoMercadoPage = lazy(() => import('@/features/estudo-mercado/pages/EstudoMercadoPage').then(m => ({ default: m.EstudoMercadoPage })));
-const EstudoMercadoAgentePage = lazy(() => import('@/features/estudo-mercado/pages/EstudoMercadoAgentePage').then(m => ({ default: m.EstudoMercadoAgentePage })));
-const EstudoMercadoMetricasPage = lazy(() => import('@/features/estudo-mercado/pages/EstudoMercadoMetricasPage').then(m => ({ default: m.EstudoMercadoMetricasPage })));
-const NotificacoesPage = lazy(() => import('@/features/notificacoes/pages/NotificacoesPage').then(m => ({ default: m.NotificacoesPage })));
-const ExcelPage = lazy(() => import('@/features/excel/pages/ExcelPage').then(m => ({ default: m.ExcelPage })));
-const JuridicoPage = lazy(() => import('@/features/juridico/pages/JuridicoPage').then(m => ({ default: m.JuridicoPage })));
+const MeusLeadsPage = lazyWithRetry(() => import('@/features/leads/pages/MeusLeadsPage').then(m => ({ default: m.MeusLeadsPage })));
+const MetricasPage = lazyWithRetry(() => import('@/features/metricas/pages/MetricasPage').then(m => ({ default: m.MetricasPage })));
+const ClienteInteressadoPage = lazyWithRetry(() => import('@/features/leads/pages/ClienteInteressadoPage').then(m => ({ default: m.ClienteInteressadoPage })));
+const ClienteProprietarioPage = lazyWithRetry(() => import('@/features/leads/pages/ClienteProprietarioPage').then(m => ({ default: m.ClienteProprietarioPage })));
+const EquipePage = lazyWithRetry(() => import('@/features/corretores/pages/EquipePage').then(m => ({ default: m.EquipePage })));
+const RecrutamentoPage = lazyWithRetry(() => import('@/features/corretores/pages/RecrutamentoPage').then(m => ({ default: m.RecrutamentoPage })));
+const GestaoEquipePage = lazyWithRetry(() => import('@/features/corretores/pages/GestaoEquipePage').then(m => ({ default: m.GestaoEquipePage })));
+const BolsaoPage = lazyWithRetry(() => import('@/features/leads/pages/BolsaoPage').then(m => ({ default: m.BolsaoPage })));
+const CentralLeadsPage = lazyWithRetry(() => import('@/features/leads/pages/CentralLeadsPage').then(m => ({ default: m.CentralLeadsPage })));
+const CorretoresPage = lazyWithRetry(() => import('@/features/corretores/pages/CorretoresPage').then(m => ({ default: m.CorretoresPage })));
+const ImoveisPage = lazyWithRetry(() => import('@/features/imoveis/pages/ImoveisPage').then(m => ({ default: m.ImoveisPage })));
+const ImoveisMapPage = lazyWithRetry(() => import('@/features/imoveis/pages/ImoveisMapPage'));
+const LancamentoViewPage = lazyWithRetry(() => import('@/features/imoveis/pages/LancamentoViewPage').then(m => ({ default: m.LancamentoViewPage })));
+const AgentesIaPage = lazyWithRetry(() => import('@/features/agentes-ia/pages/AgentesIaPage').then(m => ({ default: m.AgentesIaPage })));
+const OctoChatPage = lazyWithRetry(() => import('@/features/agentes-ia/pages/OctoChatPage').then(m => ({ default: m.OctoChatPage })));
+const ChatPage = lazyWithRetry(() => import('@/features/chat/pages/ChatPage').then(m => ({ default: m.ChatPage })));
+const ConfiguracoesPage = lazyWithRetry(() => import('@/features/settings/pages/ConfiguracoesPage').then(m => ({ default: m.ConfiguracoesPage })));
+const Importar16PersonalitiesPage = lazyWithRetry(() => import('@/features/corretores/pages/Importar16PersonalitiesPage'));
+const AdminTestesDashboard = lazyWithRetry(() => import('@/features/corretores/components/AdminTestesDashboard').then(m => ({ default: m.AdminTestesDashboard })));
+const AdminTestesGeraisPage = lazyWithRetry(() => import('@/features/corretores/pages/AdminTestesGeraisPage').then(m => ({ default: m.AdminTestesGeraisPage })));
+const IntegracoesPage = lazyWithRetry(() => import('@/features/settings/pages/IntegracoesPage').then(m => ({ default: m.IntegracoesPage })));
+const RelatoriosPage = lazyWithRetry(() => import('@/features/relatorios/pages/RelatoriosPage').then(m => ({ default: m.RelatoriosPage })));
+const EstudoMercadoPage = lazyWithRetry(() => import('@/features/estudo-mercado/pages/EstudoMercadoPage').then(m => ({ default: m.EstudoMercadoPage })));
+const EstudoMercadoAgentePage = lazyWithRetry(() => import('@/features/estudo-mercado/pages/EstudoMercadoAgentePage').then(m => ({ default: m.EstudoMercadoAgentePage })));
+const EstudoMercadoMetricasPage = lazyWithRetry(() => import('@/features/estudo-mercado/pages/EstudoMercadoMetricasPage').then(m => ({ default: m.EstudoMercadoMetricasPage })));
+const NotificacoesPage = lazyWithRetry(() => import('@/features/notificacoes/pages/NotificacoesPage').then(m => ({ default: m.NotificacoesPage })));
+const ExcelPage = lazyWithRetry(() => import('@/features/excel/pages/ExcelPage').then(m => ({ default: m.ExcelPage })));
+const JuridicoPage = lazyWithRetry(() => import('@/features/juridico/pages/JuridicoPage').then(m => ({ default: m.JuridicoPage })));
 
 // Loading Fallback para páginas individuais
 const PageLoader = () => (
@@ -253,6 +255,7 @@ const DashboardLayout = () => {
       onRefresh={handleDirectSupabaseCall}
       isRefreshing={isDirectUpdating || isRefetching}
     >
+      <RouteErrorBoundary>
       <Suspense fallback={<PageLoader />}>
         <Routes>
           <Route index element={<Navigate to={defaultAllowedRoute} replace />} />
@@ -460,6 +463,7 @@ const DashboardLayout = () => {
           <Route path="*" element={<Navigate to={defaultAllowedRoute} replace />} />
         </Routes>
       </Suspense>
+      </RouteErrorBoundary>
     </NovoLayout>
   );
 };

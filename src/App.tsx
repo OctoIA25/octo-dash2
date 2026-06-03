@@ -14,7 +14,9 @@
  * - Navegação instantânea sem re-render completo
  */
 
-import { lazy, Suspense } from "react";
+import { Suspense } from "react";
+import { lazyWithRetry } from "@/lib/lazyWithRetry";
+import { RouteErrorBoundary } from "@/shared/components/RouteErrorBoundary";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
@@ -30,18 +32,18 @@ import { NotificationsProvider } from "@/contexts/NotificationsContext";
 import { AuthProvider, useAuthContext } from "@/contexts/AuthContext";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 
-const DashboardLayout = lazy(() => import("./pages/DashboardLayout"));
-const LeadViewPage = lazy(() =>
+const DashboardLayout = lazyWithRetry(() => import("./pages/DashboardLayout"));
+const LeadViewPage = lazyWithRetry(() =>
   import("@/features/leads/pages/LeadViewPage").then((module) => ({ default: module.LeadViewPage }))
 );
-const ImovelViewPage = lazy(() =>
+const ImovelViewPage = lazyWithRetry(() =>
   import("@/features/imoveis/pages/ImovelViewPage").then((module) => ({ default: module.ImovelViewPage }))
 );
-const OwnerDashboard = lazy(() =>
+const OwnerDashboard = lazyWithRetry(() =>
   import("@/components/OwnerDashboard").then((module) => ({ default: module.OwnerDashboard }))
 );
-const ApiDocsPage = lazy(() => import("@/features/api-docs/pages/ApiDocsPage"));
-const GoogleOAuthCallbackPage = lazy(() =>
+const ApiDocsPage = lazyWithRetry(() => import("@/features/api-docs/pages/ApiDocsPage"));
+const GoogleOAuthCallbackPage = lazyWithRetry(() =>
   import("@/features/agenda/pages/GoogleOAuthCallbackPage").then((module) => ({ default: module.GoogleOAuthCallbackPage }))
 );
 
@@ -87,6 +89,7 @@ const AppContent = () => {
     <BrowserRouter>
             <div className="min-h-screen transition-colors duration-300" style={{ backgroundColor: 'var(--bg-primary)' }}>
               <div className="animate-in fade-in duration-700">
+                <RouteErrorBoundary>
                 <Suspense fallback={<OctoDashLoader message="Carregando..." size="md" />}>
                 <Routes>
                   {/* 🌐 ROTA PÚBLICA - Documentação da API (sem autenticação) */}
@@ -113,6 +116,7 @@ const AppContent = () => {
                   } />
                 </Routes>
                 </Suspense>
+                </RouteErrorBoundary>
               </div>
             </div>
     </BrowserRouter>
