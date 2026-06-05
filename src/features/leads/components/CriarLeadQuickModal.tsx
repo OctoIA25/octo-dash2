@@ -10,6 +10,7 @@ import { X, Plus, Save, User as UserIcon, Phone, Mail, Home, Loader2, Thermomete
 import { supabase } from '@/lib/supabaseClient';
 import { leadsEventEmitter } from '@/lib/leadsEventEmitter';
 import { useToast } from '@/hooks/use-toast';
+import { useAuthContext } from '@/contexts/AuthContext';
 import {
   LEAD_TYPE_INTERESSADO,
   LEAD_TYPE_PROPRIETARIO,
@@ -76,6 +77,11 @@ export const CriarLeadQuickModal = ({
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
 
+  // Apenas gestores podem criar/editar leads. Não-gestores abrem o modal
+  // em modo somente leitura.
+  const { isGestao } = useAuthContext();
+  const canEdit = isGestao;
+
   // Hidrata o form sempre que o lead muda ou o modal abre.
   useEffect(() => {
     if (!isOpen) return;
@@ -101,6 +107,10 @@ export const CriarLeadQuickModal = ({
   };
 
   const handleSubmit = async () => {
+    if (!canEdit) {
+      setError('Apenas gestores podem criar ou editar leads.');
+      return;
+    }
     if (!form.name.trim()) {
       setError('Nome é obrigatório');
       return;
@@ -247,6 +257,12 @@ export const CriarLeadQuickModal = ({
 
           {/* Form */}
           <div className="flex-1 px-5 py-4 overflow-y-auto bg-slate-50/50 dark:bg-slate-950/40">
+            {!canEdit && (
+              <p className="mb-4 text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 rounded-lg px-3 py-2">
+                Somente gestores podem editar leads. Você está visualizando em modo somente leitura.
+              </p>
+            )}
+
             {/* Seção: Informações do cliente */}
             <SectionTitle>Informações do cliente</SectionTitle>
             <div className="space-y-3 mb-5">
@@ -257,6 +273,7 @@ export const CriarLeadQuickModal = ({
                 placeholder="Nome do cliente"
                 value={form.name}
                 onChange={(v) => setForm((f) => ({ ...f, name: v }))}
+                disabled={!canEdit}
               />
               <div className="grid grid-cols-2 gap-3">
                 <Field
@@ -266,6 +283,7 @@ export const CriarLeadQuickModal = ({
                   placeholder="(11) 99999-9999"
                   value={form.phone}
                   onChange={(v) => setForm((f) => ({ ...f, phone: v }))}
+                  disabled={!canEdit}
                 />
                 <Field
                   icon={<Mail className="w-4 h-4 text-slate-400" />}
@@ -274,6 +292,7 @@ export const CriarLeadQuickModal = ({
                   placeholder="email@exemplo.com"
                   value={form.email}
                   onChange={(v) => setForm((f) => ({ ...f, email: v }))}
+                  disabled={!canEdit}
                 />
               </div>
             </div>
@@ -289,6 +308,7 @@ export const CriarLeadQuickModal = ({
                 value={form.interest_reference}
                 onChange={(v) => setForm((f) => ({ ...f, interest_reference: v.toUpperCase() }))}
                 mono
+                disabled={!canEdit}
               />
 
               <div>
@@ -306,7 +326,8 @@ export const CriarLeadQuickModal = ({
                         key={t}
                         type="button"
                         onClick={() => setForm((f) => ({ ...f, temperature: t }))}
-                        className="flex-1 py-2 text-xs font-semibold rounded-lg border transition-all bg-white dark:bg-slate-900"
+                        disabled={!canEdit}
+                        className="flex-1 py-2 text-xs font-semibold rounded-lg border transition-all bg-white dark:bg-slate-900 disabled:opacity-60 disabled:cursor-not-allowed"
                         style={{
                           borderColor: active ? color : '#e2e8f0',
                           backgroundColor: active ? color + '15' : undefined,
@@ -328,7 +349,8 @@ export const CriarLeadQuickModal = ({
               onChange={(e) => setForm((f) => ({ ...f, message: e.target.value }))}
               rows={3}
               placeholder="Informações adicionais sobre o lead"
-              className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all resize-none"
+              disabled={!canEdit}
+              className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all resize-none disabled:opacity-60 disabled:cursor-not-allowed"
             />
 
             {/* Seção: Bolsão */}
@@ -338,7 +360,8 @@ export const CriarLeadQuickModal = ({
               role="switch"
               aria-checked={form.participa_bolsao}
               onClick={() => setForm((f) => ({ ...f, participa_bolsao: !f.participa_bolsao }))}
-              className={`w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border transition-colors ${
+              disabled={!canEdit}
+              className={`w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
                 form.participa_bolsao
                   ? 'bg-orange-50 dark:bg-orange-950/30 border-orange-200 dark:border-orange-900'
                   : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
@@ -382,22 +405,24 @@ export const CriarLeadQuickModal = ({
               disabled={isSubmitting}
               className="px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors disabled:opacity-50"
             >
-              Cancelar
+              {canEdit ? 'Cancelar' : 'Fechar'}
             </button>
-            <button
-              onClick={handleSubmit}
-              disabled={isSubmitting}
-              className="px-5 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors flex items-center gap-2 disabled:opacity-60 shadow-sm"
-            >
-              {isSubmitting
-                ? <Loader2 className="w-4 h-4 animate-spin" />
-                : isEditMode
-                  ? <Save className="w-4 h-4" />
-                  : <Plus className="w-4 h-4" />}
-              {isSubmitting
-                ? (isEditMode ? 'Salvando...' : 'Criando...')
-                : (isEditMode ? 'Salvar' : `Criar ${typeLabel}`)}
-            </button>
+            {canEdit && (
+              <button
+                onClick={handleSubmit}
+                disabled={isSubmitting}
+                className="px-5 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors flex items-center gap-2 disabled:opacity-60 shadow-sm"
+              >
+                {isSubmitting
+                  ? <Loader2 className="w-4 h-4 animate-spin" />
+                  : isEditMode
+                    ? <Save className="w-4 h-4" />
+                    : <Plus className="w-4 h-4" />}
+                {isSubmitting
+                  ? (isEditMode ? 'Salvando...' : 'Criando...')
+                  : (isEditMode ? 'Salvar' : `Criar ${typeLabel}`)}
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -420,9 +445,10 @@ interface FieldProps {
   value: string;
   onChange: (v: string) => void;
   mono?: boolean;
+  disabled?: boolean;
 }
 
-const Field = ({ icon, label, type, placeholder, value, onChange, mono }: FieldProps) => (
+const Field = ({ icon, label, type, placeholder, value, onChange, mono, disabled }: FieldProps) => (
   <div>
     <label className="flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
       {icon}
@@ -433,7 +459,8 @@ const Field = ({ icon, label, type, placeholder, value, onChange, mono }: FieldP
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
-      className={`w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all ${mono ? 'font-mono' : ''}`}
+      disabled={disabled}
+      className={`w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all disabled:opacity-60 disabled:cursor-not-allowed ${mono ? 'font-mono' : ''}`}
     />
   </div>
 );

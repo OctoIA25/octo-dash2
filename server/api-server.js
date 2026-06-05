@@ -1942,57 +1942,73 @@ app.patch('/api/v1/leads/:id', validateApiKey, async (req, res) => {
   }
 });
 
-// PATCH /api/v1/leads/:id/stage - Alterar etapa do funil
+// Etapa numérica (1..10, contrato público) -> slug real da coluna kenlo_leads.stage.
+// Espelha normalizeStage de proxy-production.js. kenlo_leads.stage é TEXT (slug),
+// não número — gravar número quebra a leitura no front (KENLO_STAGE_TO_STATUS).
+const STAGE_NUM_TO_KENLO_STAGE = {
+  1: 'new', 2: 'contacted', 3: 'qualified', 4: 'visit_scheduled', 5: 'visit_done',
+  6: 'negotiation', 7: 'proposal', 8: 'proposal', 9: 'closed_won', 10: 'closed_lost',
+};
+
+const STAGE_NUM_NAMES = {
+  1: 'Novos Leads', 2: 'Em Atendimento', 3: 'Qualificado',
+  4: 'Visita Agendada', 5: 'Visita Realizada', 6: 'Em Negociação',
+  7: 'Proposta Criada', 8: 'Proposta Enviada', 9: 'Proposta Assinada', 10: 'Arquivado'
+};
+
+// PATCH /api/v1/leads/:id/stage - Alterar etapa do funil (kenlo_leads)
 app.patch('/api/v1/leads/:id/stage', validateApiKey, async (req, res) => {
   try {
     const { id } = req.params;
-    const { stage } = req.body;
+    const stageNum = Number(req.body?.stage);
 
-    if (!stage || stage < 1 || stage > 10) {
+    if (!Number.isInteger(stageNum) || stageNum < 1 || stageNum > 10) {
       return res.status(400).json({
         success: false,
         error: {
           code: 'VALIDATION_ERROR',
-          message: 'Etapa deve ser um número entre 1 e 10'
+          message: 'Etapa deve ser um número inteiro entre 1 e 10'
         }
       });
     }
 
-    // Buscar lead atual para pegar etapa anterior
-    let selectQuery = supabase.from(LEADS_TABLE).select('etapa_funil');
-    if (!isNaN(id)) {
-      selectQuery = selectQuery.eq('id', id);
-    } else {
-      selectQuery = selectQuery.eq('external_id', id);
-    }
-    const { data: currentLead } = await selectQuery.single();
+    const kenloStage = STAGE_NUM_TO_KENLO_STAGE[stageNum];
 
-    const previousStage = currentLead?.etapa_funil || 1;
-
-    let updateQuery = supabase.from(LEADS_TABLE).update({ 
-      etapa_funil: stage,
-      updated_at: new Date().toISOString()
-    });
-    if (!isNaN(id)) {
-      updateQuery = updateQuery.eq('id', id);
-    } else {
-      updateQuery = updateQuery.eq('external_id', id);
-    }
-    const { data, error } = await updateQuery.select().single();
-
-    if (error) throw error;
-
-    const stageNames = {
-      1: 'Novos Leads', 2: 'Em Atendimento', 3: 'Qualificado',
-      4: 'Visita Agendada', 5: 'Visita Realizada', 6: 'Em Negociação',
-      7: 'Proposta Criada', 8: 'Proposta Enviada', 9: 'Proposta Assinada', 10: 'Arquivado'
+    // Escopo por tenant da API Key (evita escrita cross-tenant) + match por id/external_id.
+    const applyScope = (query) => {
+      const scoped = query.eq('tenant_id', req.tenantId);
+      return !isNaN(id) ? scoped.eq('id', id) : scoped.eq('external_id', id);
     };
+
+    // Buscar lead atual para a etapa anterior (coluna real é 'stage', não 'etapa_funil').
+    const { data: currentLead } = await applyScope(
+      supabase.from(LEADS_TABLE).select('stage')
+    ).single();
+
+    const previousStage = currentLead?.stage || 'new';
+
+    const { data, error } = await applyScope(
+      supabase.from(LEADS_TABLE).update({
+        stage: kenloStage,
+        updated_at: new Date().toISOString()
+      })
+    ).select().single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return res.status(404).json({
+          success: false,
+          error: { code: 'NOT_FOUND', message: `Lead com ID ${id} não encontrado` }
+        });
+      }
+      throw error;
+    }
 
     res.json({
       success: true,
       data: {
         ...mapLeadFromDB(data),
-        stage_name: stageNames[stage],
+        stage_name: STAGE_NUM_NAMES[stageNum],
         previous_stage: previousStage
       }
     });
@@ -3180,6 +3196,171 @@ app.post('/api/v1/ai/kanban/leads/:id', validateApiKey, async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Erro no AI kanban:', error);
+    res.status(500).json({
+      success: false,
+      error: { code: 'SERVER_ERROR', message: error.message }
+    });
+  }
+});
+
+// Inverso de STAGE_NUM_TO_STATUS: nome canônico (pt-BR) -> número da etapa (1..10).
+const STATUS_TO_STAGE_NUM = Object.fromEntries(
+  Object.entries(STAGE_NUM_TO_STATUS).map(([num, status]) => [status, Number(num)])
+);
+
+// Deriva o número da etapa (1..10) a partir de número, string numérica ou nome.
+// Retorna undefined para entradas que não pertençam ao funil interessado numerado
+// (ex.: status de proprietário não têm número e não existem em kenlo_leads).
+const resolveStageNumber = (input) => {
+  if (typeof input === 'number' && STAGE_NUM_TO_STATUS[input]) return input;
+  const asNum = parseInt(input, 10);
+  if (!Number.isNaN(asNum) && STAGE_NUM_TO_STATUS[asNum]) return asNum;
+  const r = resolveStatus(input);
+  if (r.ok && r.value) return STATUS_TO_STAGE_NUM[r.value];
+  return undefined;
+};
+
+// POST /api/v1/ai/leads/:id/stage
+// Endpoint focado para a IA mudar APENAS a etapa (stage) de um lead.
+// Opera sobre AMBAS as tabelas: tenta primeiro public.leads (origem da maioria
+// dos leads) e, se não encontrar, cai para kenlo_leads (leads de portais).
+// :id aceita UUID/source_lead_id (leads) ou id numérico/external_id (kenlo_leads).
+//
+// Body:
+//   { "stage": <1..10> }   — número é o caminho preferido (1=Novos Leads ... 10=Arquivado)
+//   também aceita o nome do status (ex.: "Negociação") por conveniência.
+//
+// Sucesso: 200 { success: true, source: 'leads'|'kenlo_leads', data: <lead>, changes: {...} }
+app.post('/api/v1/ai/leads/:id/stage', validateApiKey, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const tenantId = req.tenantId;
+
+    if (!tenantId) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: 'tenant_id não identificado na API Key' }
+      });
+    }
+
+    const { stage } = req.body || {};
+
+    if (stage === undefined || stage === null || stage === '') {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Forneça o campo "stage" (número 1-10 ou o nome da etapa).',
+          stages: STAGE_NUM_TO_STATUS
+        }
+      });
+    }
+
+    // Resolve número (1..10) ou nome para o status canônico de public.leads.
+    const resolved = resolveStatus(stage);
+    if (!resolved.ok) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: resolved.error, stages: STAGE_NUM_TO_STATUS }
+      });
+    }
+    const newStatus = resolved.value;
+
+    const now = new Date().toISOString();
+
+    // ── 1) public.leads (caminho principal) ─────────────────────────────────
+    // Escopo por tenant da API Key (evita acesso cross-tenant). :id = UUID -> id,
+    // caso contrário -> source_lead_id.
+    const scopeLeads = (query) => {
+      const scoped = query.eq('tenant_id', tenantId);
+      return UUID_REGEX.test(id) ? scoped.eq('id', id) : scoped.eq('source_lead_id', id);
+    };
+
+    const { data: lead, error: leadSelErr } = await scopeLeads(
+      supabase.from('leads').select('*')
+    ).maybeSingle();
+    if (leadSelErr) throw leadSelErr;
+
+    if (lead) {
+      if (lead.status === newStatus) {
+        return res.status(200).json({
+          success: true,
+          source: 'leads',
+          data: lead,
+          changes: {},
+          message: `Lead ${id} já está na etapa "${newStatus}"`
+        });
+      }
+      const { data, error } = await scopeLeads(
+        supabase.from('leads').update({ status: newStatus, updated_at: now })
+      ).select().single();
+      if (error) throw error;
+
+      return res.status(200).json({
+        success: true,
+        source: 'leads',
+        data,
+        changes: { status: { from: lead.status ?? null, to: newStatus } },
+        message: `Etapa do lead ${id} alterada para "${newStatus}"`
+      });
+    }
+
+    // ── 2) Fallback: kenlo_leads (leads de portais) ─────────────────────────
+    // kenlo_leads.stage é TEXT com slug ('new','negotiation',...). Precisa da
+    // etapa numérica (funil interessado); status de proprietário não se aplica.
+    const stageNum = resolveStageNumber(stage);
+    if (!stageNum) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'NOT_FOUND',
+          message: `Lead ${id} não encontrado em 'leads'. A etapa "${newStatus}" não tem equivalente em kenlo_leads (apenas etapas 1-10 do funil interessado).`
+        }
+      });
+    }
+    const kenloStage = STAGE_NUM_TO_KENLO_STAGE[stageNum];
+
+    const scopeKenlo = (query) => {
+      const scoped = query.eq('tenant_id', tenantId);
+      return !isNaN(id) ? scoped.eq('id', id) : scoped.eq('external_id', id);
+    };
+
+    const { data: kenloLead, error: kenloSelErr } = await scopeKenlo(
+      supabase.from(LEADS_TABLE).select('*')
+    ).maybeSingle();
+    if (kenloSelErr) throw kenloSelErr;
+
+    if (!kenloLead) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: `Lead ${id} não encontrado no tenant (nem em 'leads' nem em 'kenlo_leads')` }
+      });
+    }
+
+    if (kenloLead.stage === kenloStage) {
+      return res.status(200).json({
+        success: true,
+        source: 'kenlo_leads',
+        data: { ...mapLeadFromDB(kenloLead), stage_name: STAGE_NUM_NAMES[stageNum] },
+        changes: {},
+        message: `Lead ${id} já está na etapa "${STAGE_NUM_NAMES[stageNum]}"`
+      });
+    }
+
+    const { data, error } = await scopeKenlo(
+      supabase.from(LEADS_TABLE).update({ stage: kenloStage, updated_at: now })
+    ).select().single();
+    if (error) throw error;
+
+    res.status(200).json({
+      success: true,
+      source: 'kenlo_leads',
+      data: { ...mapLeadFromDB(data), stage_name: STAGE_NUM_NAMES[stageNum] },
+      changes: { stage: { from: kenloLead.stage ?? null, to: kenloStage } },
+      message: `Etapa do lead ${id} alterada para "${STAGE_NUM_NAMES[stageNum]}"`
+    });
+  } catch (error) {
+    console.error('❌ Erro ao alterar etapa do lead (IA):', error);
     res.status(500).json({
       success: false,
       error: { code: 'SERVER_ERROR', message: error.message }
