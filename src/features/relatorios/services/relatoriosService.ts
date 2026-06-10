@@ -331,8 +331,8 @@ export async function buscarRankingCorretores(
 ): Promise<MetricasIndividuais[]> {
   let startMonth = mes;
   let endMonth = mes;
-  let startYear = ano;
-  let endYear = ano;
+  const startYear = ano;
+  const endYear = ano;
 
   if (periodo === 'quarterly') {
     startMonth = ((mes - 1) / 3) * 3 + 1;

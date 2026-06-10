@@ -175,7 +175,7 @@ export const ModernRegionChart = ({ leads, tipoNegocioFilter = 'todos', onFilter
     });
 
     const totalLeads = leadsFiltrados.length;
-    let statsArray = Array.from(statsMap.values()).map(stat => ({
+    const statsArray = Array.from(statsMap.values()).map(stat => ({
       ...stat,
       percentual: (stat.total / totalLeads) * 100,
       densidade: stat.total > 0 ? (stat.quentes / stat.total) : 0

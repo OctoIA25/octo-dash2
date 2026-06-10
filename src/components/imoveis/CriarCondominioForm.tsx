@@ -18,6 +18,7 @@ import {
   type CondominioDuplicadoMatch,
 } from '@/features/imoveis/services/condominioService';
 import { normalizeFotos } from './fotos-helpers';
+import { uploadFotoComMarca } from '@/lib/watermarkUpload';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -628,12 +629,18 @@ export const CriarCondominioForm = ({
           const ext = guessExtFromBlob(blob, 'jpg');
           const path = `${tenantId}/${targetId}/foto-${Date.now()}-${i}.${ext}`;
           console.log(`[CriarCondominioForm] subindo foto ${i + 1} (${blob.size} bytes) → ${path}`);
-          const publicUrl = await uploadFotoToStorage(blob, path);
+          // Pipeline de marca d'água (fallback: upload cru no bucket de condomínios).
+          const { url: publicUrl, id } = await uploadFotoComMarca({
+            blob,
+            tenantId,
+            propertyId: targetId,
+            rawUpload: () => uploadFotoToStorage(blob, path),
+          });
           if (!publicUrl) {
             throw new Error(`Falha ao enviar a foto ${i + 1} para o storage. Tente novamente.`);
           }
           console.log(`[CriarCondominioForm] foto ${i + 1} OK → ${publicUrl}`);
-          fotosUploaded.push({ ...f, url: publicUrl });
+          fotosUploaded.push({ ...f, url: publicUrl, id });
         } else {
           fotosUploaded.push(f);
         }

@@ -585,7 +585,7 @@ export async function buscarRankingCorretoresComercial(
   let page = 0;
 
   while (true) {
-    let query = supabase
+    const query = supabase
       .from('commercial_sales')
       .select('corretor_nome, corretor_email, valor_vgv, valor_vgc, comissao_total_venda, mes_referencia, data_assinatura, data_recebimento')
       .eq('tenant_id', tenantId)

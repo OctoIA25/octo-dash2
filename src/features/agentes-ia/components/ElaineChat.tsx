@@ -575,7 +575,8 @@ export const ElaineChat = ({
         corretorNome, // SEMPRE enviar o nome do corretor selecionado
         user?.role, // Enviar role do usuário para escolher webhook correto
         tipoMBTI, // Enviar tipo MBTI quando disponível
-        resultadoUsuario
+        resultadoUsuario,
+        user?.tenantName || '' // empresa = imobiliária do usuário (tenant)
       );
 
       if (!result.success) {

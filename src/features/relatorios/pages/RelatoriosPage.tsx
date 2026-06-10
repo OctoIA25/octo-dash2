@@ -1481,7 +1481,7 @@ export const RelatoriosPage = () => {
       const chartsContainer = el.querySelector('[data-export-layout="charts"]') as HTMLElement;
       const chartCards = chartsContainer ? Array.from(chartsContainer.children) as HTMLElement[] : [];
       
-      let currentY = 24; // Posição Y após KPIs
+      const currentY = 24; // Posição Y após KPIs
       const chartHeight = 22; // Altura bem menor para caber tudo
       const chartGap = 1; // Espaço mínimo entre gráficos
       const chartWidth = (usableWidth / 3) - 2; // 3 colunas

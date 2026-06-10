@@ -23,6 +23,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import type { Foto } from './FotosUploader';
+import { toast } from 'sonner';
 
 interface Lancamento {
   id: string;
@@ -77,6 +78,14 @@ export function LancamentosTab() {
     void loadLancamentos();
   }, [loadLancamentos]);
 
+  // Recarrega as fotos quando o reprocessamento da marca d'água termina, para
+  // refletir as URLs novas (marca aplicada/removida) sem refresh manual.
+  useEffect(() => {
+    const onDone = () => { void loadLancamentos(); };
+    window.addEventListener('watermark:reprocess-done', onDone);
+    return () => window.removeEventListener('watermark:reprocess-done', onDone);
+  }, [loadLancamentos]);
+
   const handleCreate = async () => {
     const nome = novoNome.trim();
     if (!nome || !tenantId) return;
@@ -90,7 +99,7 @@ export function LancamentosTab() {
     setIsSaving(false);
     if (error || !data) {
       console.error('Erro ao criar lançamento:', error);
-      alert('Não foi possível criar o lançamento. Tente novamente.');
+      toast('Não foi possível criar o lançamento. Tente novamente.');
       return;
     }
 

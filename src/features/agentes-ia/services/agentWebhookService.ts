@@ -70,14 +70,15 @@ export const saveWebhookUrl = (url: string): void => {
 export const sendMessageToAgent = async (
   agentName: string,
   message: string,
-  userName: string
+  userName: string,
+  empresa: string = ''
 ): Promise<{ success: boolean; error?: string; response?: string }> => {
   // SEMPRE usar a URL padrão - imutável
   const webhookUrl = DEFAULT_WEBHOOK_URL;
-  
+
 
   const payload: AgentMessage = {
-    empresa: 'Imobiliária Japi',
+    empresa, // nome da imobiliária do usuário (tenant), não um valor fixo
     usuario: userName,
     id_usuario: getDailySessionId(),
     agente: agentName,
@@ -216,14 +217,15 @@ export const sendMessageToElaine = async (
   corretorNome?: string,
   userRole?: 'gestao' | 'corretor',
   tipoMBTI?: string,
-  resultadoUsuario?: string
+  resultadoUsuario?: string,
+  empresa: string = ''
 ): Promise<{ success: boolean; error?: string; response?: string }> => {
   // Escolher webhook baseado no tipo de usuário
-  const webhookUrl = userRole === 'corretor' 
-    ? ELAINE_CORRETOR_WEBHOOK_URL 
+  const webhookUrl = userRole === 'corretor'
+    ? ELAINE_CORRETOR_WEBHOOK_URL
     : ELAINE_ADMIN_WEBHOOK_URL;
-  
-  
+
+
   if (corretorNome) {
   }
   if (tipoMBTI) {
@@ -233,7 +235,7 @@ export const sendMessageToElaine = async (
 
   // Construir payload com dados separados
   const payload: AgentMessage = {
-    empresa: 'Imobiliária Japi',
+    empresa, // nome da imobiliária do usuário (tenant), não um valor fixo
     usuario: userName,
     id_usuario: getDailySessionId(),
     agente: 'Elaine',
@@ -501,9 +503,9 @@ export const getElaineWebhookUrl = (userRole?: 'gestao' | 'corretor'): string =>
 /**
  * Testa a conexão com o webhook
  */
-export const testWebhookConnection = async (url: string): Promise<{ success: boolean; error?: string }> => {
+export const testWebhookConnection = async (url: string, empresa: string = ''): Promise<{ success: boolean; error?: string }> => {
   const testPayload: AgentMessage = {
-    empresa: 'Imobiliária Japi',
+    empresa, // nome da imobiliária do usuário (tenant), não um valor fixo
     usuario: 'Teste de Conexão',
     id_usuario: getDailySessionId(),
     agente: 'Sistema',

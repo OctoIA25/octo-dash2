@@ -411,7 +411,7 @@ export const parseImoveisFromXml = (xmlText: string): Imovel[] => {
   const imoveis: Imovel[] = [];
   
   // Estatísticas de corretor
-  let corretorStats = { total: 0, comNome: 0, comEmail: 0, comTelefone: 0 };
+  const corretorStats = { total: 0, comNome: 0, comEmail: 0, comTelefone: 0 };
 
   for (const imovelXml of matches) {
     const referencia = matchTag(imovelXml, 'CodigoImovel') || matchTag(imovelXml, 'CodigoImovelAuxiliar');

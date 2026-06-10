@@ -116,7 +116,7 @@ export async function fetchTenantMembers(tenantId: string): Promise<TenantMember
     // Mapear resultado da RPC para o formato esperado
     // Buscar leader_user_id diretamente (campo novo, não retornado pela RPC antiga)
     const memberIds = (members as any[]).map((m: any) => m.user_id);
-    let leaderMap: Record<string, string | null> = {};
+    const leaderMap: Record<string, string | null> = {};
     if (memberIds.length > 0) {
       const { data: leaderData } = await supabase
         .from('tenant_memberships')

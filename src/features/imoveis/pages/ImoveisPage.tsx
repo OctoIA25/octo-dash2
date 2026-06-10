@@ -384,7 +384,7 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
       banheiro: local.banheiros || 0,
       salas: 0,
       descricao: local.descricao || '',
-      fotos: Array.isArray(local.fotos) ? local.fotos : [],
+      fotos: Array.isArray(local.fotos) ? normalizeFotos(local.fotos).map((foto) => foto.url) : [],
       videos: [],
       area_comum: [],
       area_privativa: [],
@@ -395,13 +395,29 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
   const imoveis = useMemo(() => {
     const imoveisLocaisConvertidos = imoveisLocais.map(convertLocalToImovel);
     const codigosXml = new Set(imoveisXml.map(i => i.referencia?.toUpperCase()));
-    
+
+    // Índice dos locais por referência para sobrepor dados ao Kenlo.
+    const localPorCodigo = new Map(
+      imoveisLocaisConvertidos.map((l) => [l.referencia?.trim().toUpperCase(), l] as const),
+    );
+
     // Adicionar apenas imóveis locais que não existem no XML
     const locaisSemDuplicata = imoveisLocaisConvertidos.filter(
       local => !codigosXml.has(local.referencia?.toUpperCase())
     );
-    
-    return [...imoveisXml, ...locaisSemDuplicata].map((imovel) => {
+
+    // A CAPA/fotos passam primeiro pelo registro local: se o corretor subiu/curou
+    // fotos próprias, elas têm prioridade. O Kenlo (XML) entra como fallback quando
+    // o local não tem nenhuma foto.
+    const baseComFotosLocais = imoveisXml.map((imovel) => {
+      const codigo = imovel.referencia?.trim().toUpperCase();
+      const local = codigo ? localPorCodigo.get(codigo) : undefined;
+      return local && local.fotos.length > 0
+        ? { ...imovel, fotos: local.fotos }
+        : imovel;
+    });
+
+    return [...baseComFotosLocais, ...locaisSemDuplicata].map((imovel) => {
       const codigo = imovel.referencia?.trim().toUpperCase();
       const corretorNome = codigo ? corretorPorCodigo[codigo] : undefined;
 

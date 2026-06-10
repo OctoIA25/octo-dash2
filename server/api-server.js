@@ -8,6 +8,8 @@ import express from 'express';
 import cors from 'cors';
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
+import { createWatermarkRouter } from './watermark/routes.js';
+import { createWorker } from './watermark/worker.js';
 
 const app = express();
 const PORT = process.env.API_PORT || 3001;
@@ -56,6 +58,16 @@ if (!usingServiceRole) {
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 console.log('🔌 [api-server] Supabase conectado:', usingServiceRole ? '(service_role)' : '(anon)');
+
+// 🖼️ Pipeline de marca d'água (upload de master → fila → derivados versionados → CDN).
+// Montado antes do express.json não interferir: multer trata o multipart internamente.
+app.use('/api/v1/watermark', createWatermarkRouter(supabase));
+
+// Worker embarcado opcional. Em produção prefira um processo/container dedicado
+// (escala independente da API); aqui é conveniência para dev e cargas pequenas.
+if (process.env.WATERMARK_WORKER === '1') {
+  createWorker(supabase).runLoop();
+}
 
 // Tabelas do CRM
 const LEADS_TABLE = 'kenlo_leads';

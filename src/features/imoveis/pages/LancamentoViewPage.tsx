@@ -13,6 +13,7 @@ import {
   X as XIcon,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
+import { uploadFotoComMarca } from '@/lib/watermarkUpload';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -203,13 +204,19 @@ export const LancamentoViewPage = () => {
           const blob = await dataUrlToBlob(f.url);
           const ext = guessExtFromBlob(blob, 'jpg');
           const path = `${tenantId}/${id}/foto-${Date.now()}-${i}.${ext}`;
-          const publicUrl = await uploadBlobToStorage(blob, path);
+          // Pipeline de marca d'água (fallback: upload cru). Só fotos — o book/PDF não passa aqui.
+          const { url: publicUrl, id: photoId } = await uploadFotoComMarca({
+            blob,
+            tenantId,
+            propertyId: id,
+            rawUpload: () => uploadBlobToStorage(blob, path),
+          });
           if (!publicUrl) {
             alert(`Falha ao enviar a imagem ${i + 1}. Tente novamente.`);
             setIsSaving(false);
             return;
           }
-          fotosFinais.push({ ...f, url: publicUrl });
+          fotosFinais.push({ ...f, url: publicUrl, id: photoId });
         } else {
           fotosFinais.push(f);
         }

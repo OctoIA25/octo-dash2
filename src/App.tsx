@@ -30,6 +30,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useKenloPolling } from "@/features/imoveis/hooks/useKenloPolling";
 import { NotificationsProvider } from "@/contexts/NotificationsContext";
 import { AuthProvider, useAuthContext } from "@/contexts/AuthContext";
+import { WatermarkReprocessNotice } from "@/features/settings/components/WatermarkReprocessNotice";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 
 const DashboardLayout = lazyWithRetry(() => import("./pages/DashboardLayout"));
@@ -88,6 +89,7 @@ const AppContent = () => {
   return (
     <BrowserRouter>
             <div className="min-h-screen transition-colors duration-300" style={{ backgroundColor: 'var(--bg-primary)' }}>
+              {isAuthenticated && <WatermarkReprocessNotice />}
               <div className="animate-in fade-in duration-700">
                 <RouteErrorBoundary>
                 <Suspense fallback={<OctoDashLoader message="Carregando..." size="md" />}>

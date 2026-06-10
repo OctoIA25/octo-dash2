@@ -1,5 +1,6 @@
 import { supabase } from './supabaseClient';
 import type { Foto } from '@/components/imoveis/fotos-helpers';
+import { uploadFotoComMarca } from './watermarkUpload';
 
 const BUCKET = 'imoveis-fotos';
 
@@ -49,11 +50,22 @@ export interface UploadImoveisFotosParams {
   codigoImovel: string;
 }
 
+/** Upload CRU (sem marca) direto no bucket — fallback se o pipeline estiver indisponível. */
+async function uploadRaw(blob: Blob, ext: string, tenantSeg: string, codigoSeg: string): Promise<string | null> {
+  const path = `${tenantSeg}/${codigoSeg}/${randomId()}.${ext}`;
+  const { error } = await supabase.storage.from(BUCKET).upload(path, blob, { contentType: blob.type, upsert: false });
+  if (error) {
+    console.error(`❌ Falha no upload cru (${path}):`, error.message);
+    return null;
+  }
+  return supabase.storage.from(BUCKET).getPublicUrl(path).data?.publicUrl ?? null;
+}
+
 /**
- * Faz upload das fotos que ainda estão em data URL (base64) pro bucket `imoveis-fotos`
- * e devolve o array com `url` apontando pra URL pública. Fotos que já são URLs HTTP
- * passam direto. Falhas individuais não derrubam o lote — a foto é mantida como veio
- * e o erro é logado pra inspeção.
+ * Faz upload das fotos que ainda estão em data URL (base64). Cada foto nova passa
+ * pelo PIPELINE DE MARCA D'ÁGUA; a URL persistida aponta para o derivado com marca
+ * na CDN. URLs http(s) já persistidas passam direto. Se o pipeline falhar numa foto,
+ * cai no upload cru (sem marca) para nunca derrubar o save do imóvel.
  */
 export async function uploadImoveisFotos({
   fotos,
@@ -76,23 +88,14 @@ export async function uploadImoveisFotos({
         return foto;
       }
 
-      const path = `${tenantSeg}/${codigoSeg}/${randomId()}.${parsed.ext}`;
-      const { error: uploadError } = await supabase.storage
-        .from(BUCKET)
-        .upload(path, parsed.blob, { contentType: parsed.blob.type, upsert: false });
-
-      if (uploadError) {
-        console.error(`❌ Falha ao subir foto pro bucket ${BUCKET} (${path}):`, uploadError.message);
-        return foto;
-      }
-
-      const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
-      if (!data?.publicUrl) {
-        console.error(`❌ Não consegui obter URL pública pra ${path}`);
-        return foto;
-      }
-
-      return { ...foto, url: data.publicUrl };
+      // Pipeline de marca d'água com fallback para upload cru (nunca derruba o save).
+      const { url, id } = await uploadFotoComMarca({
+        blob: parsed.blob,
+        tenantId,
+        propertyId: codigoImovel,
+        rawUpload: () => uploadRaw(parsed.blob, parsed.ext, tenantSeg, codigoSeg),
+      });
+      return url ? { ...foto, url, id } : foto;
     }),
   );
 }

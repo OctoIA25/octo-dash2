@@ -218,7 +218,7 @@ export const CaioKotlerChat = ({
       });
     }
 
-    const result = await sendMessageToAgent('Marketing', text, user?.name || 'Usuário');
+    const result = await sendMessageToAgent('Marketing', text, user?.name || 'Usuário', user?.tenantName || '');
     setIsSending(false);
 
     if (!result.success) {

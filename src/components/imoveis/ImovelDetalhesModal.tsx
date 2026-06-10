@@ -35,6 +35,7 @@ import {
   Phone,
 } from 'lucide-react';
 import type { Imovel } from '@/features/imoveis/services/kenloService';
+import { getFotoCapaUrl, getFotoUrl, type FotoInput } from './fotos-helpers';
 
 interface ImovelDetalhesModalProps {
   imovel: Imovel | null;
@@ -140,7 +141,8 @@ export const ImovelDetalhesModal = ({
 }: ImovelDetalhesModalProps) => {
   if (!imovel) return null;
 
-  const capa = imovel.fotos?.[0];
+  const fotos = (imovel.fotos || []) as FotoInput[];
+  const capa = getFotoCapaUrl(fotos);
   const temAreaUtil = imovel.area_util > 0;
   const temAreaTotal = imovel.area_total > 0;
 
@@ -306,25 +308,29 @@ export const ImovelDetalhesModal = ({
             <div>
               <SectionTitle>Fotos</SectionTitle>
               <div className="grid grid-cols-3 gap-2">
-                {imovel.fotos.slice(0, 9).map((url, idx) => (
-                  <a
-                    key={`${url}-${idx}`}
-                    href={url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="block rounded-lg overflow-hidden border border-border hover:opacity-90 transition-opacity"
-                  >
-                    <img
-                      src={url}
-                      alt={`Foto ${idx + 1}`}
-                      className="w-full h-24 object-cover"
-                      loading="lazy"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).style.display = 'none';
-                      }}
-                    />
-                  </a>
-                ))}
+                {fotos.slice(0, 9).map((foto, idx) => {
+                  const url = getFotoUrl(foto);
+                  if (!url) return null;
+                  return (
+                    <a
+                      key={`${url}-${idx}`}
+                      href={url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block rounded-lg overflow-hidden border border-border hover:opacity-90 transition-opacity"
+                    >
+                      <img
+                        src={url}
+                        alt={`Foto ${idx + 1}`}
+                        className="w-full h-24 object-cover"
+                        loading="lazy"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = 'none';
+                        }}
+                      />
+                    </a>
+                  );
+                })}
               </div>
               {imovel.fotos.length > 9 && (
                 <p className="text-xs text-text-secondary mt-2">

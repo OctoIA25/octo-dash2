@@ -749,7 +749,7 @@ export const CriarImovelForm = ({
 
     setIsGerandoDescricao(true);
     try {
-      const result = await sendMessageToAgent('GerarDescricaoImovel', prompt, userName);
+      const result = await sendMessageToAgent('GerarDescricaoImovel', prompt, userName, user?.tenantName || '');
 
       if (!result.success || !result.response) {
         setDescricaoIaErro(result.error || 'O agente não retornou uma descrição.');

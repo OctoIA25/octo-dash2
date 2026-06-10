@@ -55,8 +55,10 @@ import {
   Calendar,
   TrendingUp,
   RotateCcw,
-  Inbox
+  Inbox,
+  ShieldCheck
 } from 'lucide-react';
+import { WatermarkSettingsCard } from '@/features/settings/components/WatermarkSettingsCard';
 
 const BOLSAO_TIME_OPTIONS = [5, 10, 15, 20, 30, 45, 60, 90, 120, 240, 360, 480, 720, 1440];
 
@@ -79,14 +81,15 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
   const { toast } = useToast();
   const { currentTheme, changeTheme, themes } = useTheme();
   
-  const [activeTab, setActiveTab] = useState<'perfil' | 'geral' | 'aparencia' | 'agentes-ia' | 'usuarios' | 'bolsao' | 'limite-leads'>('perfil');
+  const [activeTab, setActiveTab] = useState<'perfil' | 'geral' | 'aparencia' | 'agentes-ia' | 'usuarios' | 'bolsao' | 'limite-leads' | 'marca-dagua'>('perfil');
   
   // Estados para os campos do perfil
   const [profileData, setProfileData] = useState({
     name: user?.name || '',
     email: user?.email || '',
-    phone: user?.phone || '',
-    company: user?.company || 'Imobiliária Japi'
+    phone: '',
+    // Empresa = nome da imobiliária do próprio usuário (tenant), nunca um valor fixo.
+    company: user?.tenantName || '',
   });
 
   // Estados para alteração de senha própria
@@ -262,7 +265,7 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
 
     setIsTestingWebhook(true);
     
-    const result = await testWebhookConnection(webhookUrl);
+    const result = await testWebhookConnection(webhookUrl, user?.tenantName || '');
     
     setIsTestingWebhook(false);
 
@@ -352,6 +355,10 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
                   <button type="button" onClick={() => setActiveTab('usuarios')} className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all text-left ${activeTab === 'usuarios' ? 'bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'}`}>
                     <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${activeTab === 'usuarios' ? 'bg-purple-100 dark:bg-purple-900/60' : 'bg-slate-100 dark:bg-slate-800'}`}><UserCog className={`w-3.5 h-3.5 ${activeTab === 'usuarios' ? 'text-purple-600 dark:text-purple-400' : 'text-slate-400'}`} /></div>
                     Usuários
+                  </button>
+                  <button type="button" onClick={() => setActiveTab('marca-dagua')} className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all text-left ${activeTab === 'marca-dagua' ? 'bg-cyan-50 dark:bg-cyan-950/50 text-cyan-700 dark:text-cyan-300' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'}`}>
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${activeTab === 'marca-dagua' ? 'bg-cyan-100 dark:bg-cyan-900/60' : 'bg-slate-100 dark:bg-slate-800'}`}><ShieldCheck className={`w-3.5 h-3.5 ${activeTab === 'marca-dagua' ? 'text-cyan-600 dark:text-cyan-400' : 'text-slate-400'}`} /></div>
+                    Marca d'água
                   </button>
                 </>
               )}
@@ -941,6 +948,21 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
             </div>
           )}
 
+          {activeTab === 'marca-dagua' && (
+            <div>
+              <div className="-mx-6 -mt-6 mb-6 px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-cyan-100 dark:bg-cyan-900/40 flex items-center justify-center">
+                  <ShieldCheck className="w-[18px] h-[18px] text-cyan-600 dark:text-cyan-400" />
+                </div>
+                <div>
+                  <h2 className="text-[15px] font-semibold text-slate-900 dark:text-slate-100">Marca d'água</h2>
+                  <p className="text-[12px] text-slate-500 dark:text-slate-400">Logo aplicado automaticamente nas fotos dos imóveis</p>
+                </div>
+              </div>
+              <WatermarkSettingsCard tenantId={user?.tenantId} />
+            </div>
+          )}
+
           {activeTab === 'agentes-ia' && (
             <div className="space-y-6">
               <div className="-mx-6 -mt-6 mb-6 px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center gap-3">
@@ -977,7 +999,7 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 border border-slate-200 dark:border-slate-800">
                     <p className="text-slate-500 dark:text-slate-400 text-sm mb-1">Empresa</p>
-                    <p className="text-slate-900 dark:text-slate-100 font-semibold">Imobiliária Japi</p>
+                    <p className="text-slate-900 dark:text-slate-100 font-semibold">{user?.tenantName || 'Não identificada'}</p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 border border-slate-200 dark:border-slate-800">
                     <p className="text-slate-500 dark:text-slate-400 text-sm mb-1">Usuário</p>
@@ -1025,7 +1047,7 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
                     <p className="text-slate-700 dark:text-slate-300 font-semibold text-sm mb-3">Estrutura dos dados enviados (POST):</p>
                     <pre className="text-xs text-gray-400 font-mono overflow-x-auto">
 {`{
-  "empresa": "Imobiliária Japi",
+  "empresa": "${user?.tenantName || 'Sua Imobiliária'}",
   "usuario": "${user?.name || 'Nome do Usuário'}",
   "id_usuario": "${sessionId}",
   "agente": "Marketing",
@@ -1078,7 +1100,7 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-blue-400 mt-1">•</span>
-                    <span><strong>Empresa:</strong> Sempre "Imobiliária Japi"</span>
+                    <span><strong>Empresa:</strong> Nome da sua imobiliária</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-blue-400 mt-1">•</span>

@@ -22,6 +22,8 @@ import { dirname } from 'path';
 import fs from 'fs';
 import { createClient } from '@supabase/supabase-js';
 import { registerScrapeRoute } from './scrapers/index.js';
+import { createWatermarkRouter } from './watermark/routes.js';
+import { createWorker } from './watermark/worker.js';
 import { promises } from 'dns';
 
 // =============================================================================
@@ -83,6 +85,14 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// 🖼️ Pipeline de marca d'água (upload de master → fila → derivados versionados → CDN).
+app.use('/api/v1/watermark', createWatermarkRouter(supabase));
+// Worker embarcado opcional (WATERMARK_WORKER=1). Em produção, prefira um
+// processo/container dedicado para escalar independente da API.
+if (process.env.WATERMARK_WORKER === '1') {
+  createWorker(supabase).runLoop();
+}
 
 // =============================================================================
 // BUSCA DE DADOS DO IMÓVEL - Corretor e Foto

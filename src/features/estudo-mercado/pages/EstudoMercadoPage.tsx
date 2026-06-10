@@ -499,7 +499,7 @@ export const EstudoMercadoPage = () => {
         for (let i = 0; i < validas.length; i++) {
           const a = validas[i];
           let imagemUrl = a.imagem || '';
-          let imagemZap = a.imagemZapImoveis || '';
+          const imagemZap = a.imagemZapImoveis || '';
 
           // Se a imagem é base64 (data URL), fazer upload para o Storage
           if (imagemUrl && imagemUrl.startsWith('data:')) {

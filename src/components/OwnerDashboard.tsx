@@ -207,7 +207,7 @@ export const OwnerDashboard = () => {
 
   useEffect(() => {
     loadTenants();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   const filteredTenants = useMemo(() => {

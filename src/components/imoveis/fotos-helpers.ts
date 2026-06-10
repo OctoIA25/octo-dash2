@@ -7,13 +7,24 @@ export interface Foto {
   url: string;
   legenda?: string;
   isCapa?: boolean;
+  /** id da foto no pipeline de marca d'água (property_photos.id), quando aplicável. */
+  id?: string;
 }
 
 export type FotoInput = string | Foto;
 
 export function getFotoUrl(foto: FotoInput | null | undefined): string | null {
   if (!foto) return null;
-  return typeof foto === 'string' ? foto : foto.url ?? null;
+  if (typeof foto === 'string') return foto;
+  // Em registros legados/inconsistentes, `url` pode ter sido gravado como objeto
+  // aninhado (ex.: { url: { url: 'https://...' } }) — o que renderizava
+  // `src="[object Object]"`. Desembrulha até achar a string da fonte.
+  let value: unknown = foto.url;
+  for (let i = 0; value && typeof value === 'object' && i < 5; i++) {
+    const obj = value as { url?: unknown; publicUrl?: unknown };
+    value = obj.url ?? obj.publicUrl;
+  }
+  return typeof value === 'string' ? value : null;
 }
 
 export function getFotoLegenda(foto: FotoInput | null | undefined): string {
@@ -42,11 +53,17 @@ export function getFotoCapaUrl(fotos: FotoInput[] | null | undefined): string | 
  */
 export function normalizeFotos(raw: FotoInput[] | null | undefined): Foto[] {
   const list = (raw || [])
-    .map((f) =>
-      typeof f === 'string'
-        ? { url: f, legenda: '', isCapa: false }
-        : { url: f.url, legenda: f.legenda ?? '', isCapa: !!f.isCapa },
-    )
+    .map((f) => ({
+      // Sempre extrai a string da fonte (desembrulhando objetos aninhados),
+      // garantindo que o que é persistido seja sempre uma URL e não `[object Object]`.
+      url: getFotoUrl(f) ?? '',
+      legenda: getFotoLegenda(f),
+      isCapa: typeof f === 'object' && f !== null ? !!f.isCapa : false,
+      // Preserva o id do pipeline de marca d'água (property_photos.id). Sem ele, o
+      // reprocessamento (repointTenantPhotos) pula a foto e o liga/desliga da marca
+      // nunca reescreve a URL — a marca fica "presa". Mantemos o id ao normalizar.
+      ...(typeof f === 'object' && f !== null && (f as Foto).id ? { id: (f as Foto).id } : {}),
+    }))
     .filter((f) => !!f.url);
   // Se há fotos mas nenhuma é capa, marca a primeira
   if (list.length > 0 && !list.some((f) => f.isCapa)) {

@@ -582,7 +582,7 @@ export const FixedSidebar = ({
       );
     } else if (currentTenantFeatures && currentTenantFeatures.length > 0) {
       // Primeiro filtro: permissões do tenant
-      let filteredByTenant = allMenuItems.filter(item => 
+      const filteredByTenant = allMenuItems.filter(item => 
         currentTenantFeatures.includes(item.permissionKey)
       );
       

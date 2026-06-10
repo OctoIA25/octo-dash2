@@ -150,7 +150,7 @@ export const LeadsChartsSection = ({ leads }: LeadsChartsSectionProps) => {
         chartInstance.current.destroy();
       }
 
-      let chartConfig: any = {
+      const chartConfig: any = {
         theme: "dark2",
         backgroundColor: "transparent",
         creditText: "",

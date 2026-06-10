@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
@@ -131,5 +132,13 @@ export default defineConfig(({ mode }) => ({
         },
       },
     },
+  },
+  test: {
+    globals: true,            // describe/it/expect disponíveis sem import
+    environment: "jsdom",     // DOM simulado para testar componentes React
+    setupFiles: "./src/test/setup.ts",
+    css: false,               // ignora CSS nos testes (mais rápido)
+    exclude: ["node_modules", "dist", "server", "supabase"],
+    // alias "@/" é herdado de resolve.alias acima
   },
 }));

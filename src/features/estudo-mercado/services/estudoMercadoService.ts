@@ -126,9 +126,9 @@ export async function salvarEstudo(
     // ---- 0. Buscar dados completos do corretor no tenant_brokers ----
     let corretorTelefone: string | null = null;
     let corretorFoto: string | null = null;
-    let corretorEquipe: string | null = payload.corretorEquipe || null;
+    const corretorEquipe: string | null = payload.corretorEquipe || null;
     let corretorRole: string | null = payload.corretorRole || null;
-    let corretorCreci: string | null = null;
+    const corretorCreci: string | null = null;
     let corretorNomeFull = payload.corretorNome;
     let corretorEmailFull = payload.corretorEmail;
 

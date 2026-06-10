@@ -440,6 +440,14 @@ export const MeusImoveisTab = ({ allImoveis, onViewDetails, onPropertyCreated }:
     init();
   }, [tenantId, user?.id]);
 
+  // Recarrega as fotos quando o reprocessamento da marca d'água termina (logo/
+  // liga-desliga), para refletir as URLs novas sem o usuário dar refresh manual.
+  useEffect(() => {
+    const onDone = () => { void loadImoveisLocais(); };
+    window.addEventListener('watermark:reprocess-done', onDone);
+    return () => window.removeEventListener('watermark:reprocess-done', onDone);
+  }, [tenantId]);
+
   // Sincronizar imóveis do XML para este corretor
   const handleSyncFromXml = async () => {
     if (!tenantId || !user?.id || isSyncing) return;

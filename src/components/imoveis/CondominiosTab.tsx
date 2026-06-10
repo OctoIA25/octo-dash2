@@ -327,6 +327,14 @@ export const CondominiosTab = () => {
     loadCondominios();
   }, [tenantId]);
 
+  // Recarrega as fotos quando o reprocessamento da marca d'água termina, para
+  // refletir as URLs novas (marca aplicada/removida) sem refresh manual.
+  useEffect(() => {
+    const onDone = () => { loadCondominios(); };
+    window.addEventListener('watermark:reprocess-done', onDone);
+    return () => window.removeEventListener('watermark:reprocess-done', onDone);
+  }, [tenantId]);
+
   // Cidades únicas para o filtro
   const cidades = useMemo(() => {
     const cidadesSet = new Set(condominios.map(c => c.cidade).filter(Boolean));
