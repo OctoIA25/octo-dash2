@@ -9,8 +9,9 @@
  *   1. buildLogoWatermark(logo)  → executada UMA vez por troca de logo.
  *   2. composeWatermark(master, logo, opts) → por imagem/tamanho.
  *
- * A marca preserva as CORES originais do logo, translúcida e centralizada, com
- * um halo escuro atrás para continuar legível em fundos claros e escuros.
+ * A marca preserva as CORES originais do logo, translúcida e na posição
+ * configurada (centro por padrão), com um halo escuro atrás para continuar
+ * legível em fundos claros e escuros.
  */
 import sharp from 'sharp';
 
@@ -64,7 +65,8 @@ export async function buildLogoWatermark(logoBuffer) {
 }
 
 /**
- * Aplica a marca d'água (logo colorido) centralizada e translúcida sobre o master.
+ * Aplica a marca d'água (logo colorido) translúcida sobre o master, na posição
+ * configurada.
  *
  * @param {Buffer} masterBuffer  original sem marca
  * @param {Buffer} logoBuffer    logo RGBA colorido (saída de buildLogoWatermark)
@@ -72,9 +74,10 @@ export async function buildLogoWatermark(logoBuffer) {
  * @param {{width:number,height:number,quality:number,watermark?:boolean}} opts.size
  * @param {number} opts.opacity  0..1
  * @param {number} opts.scale    fração da largura ocupada pelo logo
+ * @param {'center'|'top-left'|'top-right'|'bottom-left'|'bottom-right'} [opts.position]
  * @returns {Promise<Buffer>} WebP final
  */
-export async function composeWatermark(masterBuffer, logoBuffer, { size, opacity, scale }) {
+export async function composeWatermark(masterBuffer, logoBuffer, { size, opacity, scale, position = 'center' }) {
   // 1. Normaliza orientação (EXIF) e redimensiona dentro do bounding box.
   //    Materializa em buffer para ler as dimensões REAIS já redimensionadas —
   //    sharp.metadata() devolve as dimensões da ENTRADA, não do resultado do
@@ -96,7 +99,7 @@ export async function composeWatermark(masterBuffer, logoBuffer, { size, opacity
   // Caixa da marca = fração da base nas DUAS dimensões. fit:inside garante que a
   // marca caiba na foto mesmo em formatos extremos (panorâmica baixa, retrato
   // estreito), evitando "composite must be same dimensions or smaller".
-  const boxW = Math.max(32, Math.round(baseW * scale));
+  const boxW = Math.max(32, Math.round(baseW * scale)); 
   const boxH = Math.max(32, Math.round(baseH * scale));
 
   // 2a. SOMBRA/HALO escuro borrado atrás da marca — torna o logo legível mesmo
@@ -107,14 +110,36 @@ export async function composeWatermark(masterBuffer, logoBuffer, { size, opacity
   // 2b. Logo COLORIDO translúcido (mantém as cores originais).
   const logo = await scaledLogo(logoBuffer, boxW, boxH, clamp01(opacity));
 
-  // 3. Compõe sombra + logo, centralizados, e exporta WebP.
+  // 3. Compõe sombra + logo na posição escolhida e exporta WebP.
+  const anchor = await placement(logo, baseW, baseH, position);
   return sharp(baseBuf)
     .composite([
-      { input: shadow, gravity: 'center' },
-      { input: logo, gravity: 'center' },
+      { input: shadow, ...anchor },
+      { input: logo, ...anchor },
     ])
     .webp({ quality: size.quality })
     .toBuffer();
+}
+
+/**
+ * Âncora do composite para a posição configurada. 'center' usa gravity; os 4
+ * cantos posicionam por coordenada com uma margem de respiro proporcional,
+ * clampada para a marca nunca vazar da foto. Sombra e logo compartilham a mesma
+ * âncora — ambos saem do mesmo resize fit:inside (dimensões idênticas; o blur da
+ * sombra não altera o canvas), então o halo permanece alinhado ao logo.
+ */
+async function placement(logoPng, baseW, baseH, position) {
+  if (!position || position === 'center') return { gravity: 'center' };
+  const meta = await sharp(logoPng).metadata();
+  const w = meta.width || 0;
+  const h = meta.height || 0;
+  const margin = Math.max(12, Math.round(Math.min(baseW, baseH) * 0.03));
+  const x = position.endsWith('left') ? margin : baseW - w - margin;
+  const y = position.startsWith('top') ? margin : baseH - h - margin;
+  return {
+    left: Math.max(0, Math.min(x, baseW - w)),
+    top: Math.max(0, Math.min(y, baseH - h)),
+  };
 }
 
 /** Logo colorido redimensionado p/ caber na caixa, com opacidade global. */

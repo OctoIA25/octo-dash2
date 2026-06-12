@@ -28,7 +28,11 @@ export const DEFAULT_SIZES = ['portal', 'card', 'thumb'];
 export const WATERMARK_DEFAULTS = {
   opacity: 0.35, // 0..1 — translúcida o suficiente para não atrapalhar a foto
   scale: 0.3, // logo ocupa ~30% da largura da foto
+  position: 'center', // default histórico — preserva as chaves de derivado existentes
 };
+
+/** Posições válidas da marca (allowlist compartilhada por rotas/serviço/engine). */
+export const WATERMARK_POSITIONS = ['center', 'top-left', 'top-right', 'bottom-left', 'bottom-right'];
 
 /** Worker / fila. */
 export const WORKER = {

@@ -100,7 +100,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, []);
 
-  const loadUserFromSession = useCallback(async () => {
+  // `background: true` = refresh silencioso (volta de foco, token renovado).
+  // Nesse modo, falhas transitórias (rede, 401 durante refresh de token) NÃO
+  // podem deslogar nem derrubar isAuthenticated — senão cancelar um seletor
+  // de arquivos nativo (que devolve o foco à janela) descartava a sessão e o
+  // CRM inteiro desmontava no meio do uso. Em background, só atualizamos o
+  // estado quando a recarga tem SUCESSO; revogação real continua coberta pelo
+  // RLS nas queries e pela checagem completa no próximo load.
+  const loadUserFromSession = useCallback(async (options?: { background?: boolean }) => {
+    const background = options?.background === true;
     if (isLoadingSession) {
       return;
     }
@@ -109,6 +117,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
       if (sessionError) {
+        if (background) return;
         setAuthState({ isAuthenticated: false, user: null, isLoading: false });
         return;
       }
@@ -172,6 +181,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       if (membershipError || !memberships || memberships.length === 0) {
         console.warn('⚠️ [AuthContext] Nenhum membership encontrado');
+        // Refresh silencioso: pode ser um erro transitório (rede/JWT em
+        // renovação) — mantém a sessão atual em vez de deslogar o usuário.
+        if (background) return;
         await supabase.auth.signOut();
         setAuthState({ isAuthenticated: false, user: null, isLoading: false });
         return;
@@ -249,7 +261,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         setTimeout(() => {
           isLoadingSession = false;
-          loadUserFromSession();
+          // TOKEN_REFRESHED acontece com o usuário em plena sessão: a recarga
+          // é silenciosa e não pode deslogar por falha transitória.
+          loadUserFromSession({ background: event === 'TOKEN_REFRESHED' });
         }, 100);
       } else if (event === 'SIGNED_OUT') {
         isLoadingSession = false;
@@ -299,7 +313,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const reloadUser = useCallback(async () => {
     isLoadingSession = false;
-    await loadUserFromSession();
+    // Disparado por foco/visibilidade da janela (ex.: ao fechar o seletor de
+    // arquivos nativo) — sempre silencioso.
+    await loadUserFromSession({ background: true });
   }, [loadUserFromSession]);
 
   // Recarrega permissões (sidebar_permissions / allowed_features) quando o usuário
@@ -318,10 +334,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       void reloadUser();
     };
 
-    window.addEventListener('focus', maybeReload);
+    // Apenas 'visibilitychange' (retorno real à aba). Evita o 'focus' da janela,
+    // que o seletor de arquivos nativo dispara sem esconder a aba — era um dos
+    // gatilhos do reload de auth que esvaziava modais abertos (tela branca ao
+    // cancelar o envio de PDF). Ver nota equivalente em hooks/useAuth.ts.
     document.addEventListener('visibilitychange', maybeReload);
     return () => {
-      window.removeEventListener('focus', maybeReload);
       document.removeEventListener('visibilitychange', maybeReload);
     };
   }, [reloadUser]);

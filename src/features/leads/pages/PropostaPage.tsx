@@ -30,6 +30,7 @@ import {
   CreditCard,
   DollarSign,
   Download,
+  Eye,
   FileSignature,
   FileText,
   FileUp,
@@ -81,6 +82,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/lib/utils';
+import { pickFiles } from '@/lib/pickFiles';
 import { useLeadsMetrics } from '@/features/leads/hooks/useLeadsMetrics';
 import {
   atualizarStatusLeadCRM,
@@ -100,6 +102,14 @@ import {
   type SavedProposalTransactionForm,
 } from '@/features/leads/services/proposalsService';
 import { propostaStageToLeadStatus } from '@/features/leads/utils/stageBridge';
+import {
+  buildCcvDocumentSafe,
+  formatCurrencyWithCents,
+  GENERAL_CONDITIONS,
+  type CcvDocumentInput,
+} from '@/features/leads/utils/proposalDocuments';
+import { DocumentPreviewDialog } from '@/features/leads/components/DocumentPreviewDialog';
+import { PdfPreviewDialog } from '@/features/leads/components/PdfPreviewDialog';
 import { ImoveisComboBox } from '@/components/ui/imovel-combobox';
 import { useImoveisData } from '@/features/imoveis/hooks/useImoveisData';
 import type { Imovel } from '@/features/imoveis/services/kenloService';
@@ -311,15 +321,6 @@ const INITIAL_DRAFT_FORM: DraftFormState = {
   vendedores: [],
   transactionDraft: {},
 };
-
-const GENERAL_CONDITIONS = [
-  'A presente proposta está submetida às disposições dos artigos 722 a 729 do Código Civil, especialmente ao artigo 723, que estabelece o dever da imobiliária e dos corretores de imóveis de atuarem com diligência, prudência e transparência, prestando espontaneamente todas as informações relevantes sobre o andamento da negociação, inclusive quanto à segurança, riscos envolvidos, alterações de valores e demais fatores que possam influenciar a concretização do negócio.',
-  'Esta proposta terá validade de 03 (três) dias corridos, contados da data de sua assinatura pelo(a)(s) Proponente(s) Comprador(a)(es), ficando condicionada à aceitação expressa do(a)(s) proprietário(a)(s)/vendedor(es). Após a aceitação da proposta, o(a)(s) Proponente(s) Comprador(a)(es) deverá(ão) encaminhar toda a documentação necessária para elaboração do contrato no prazo máximo de 48 (quarenta e oito) horas. O descumprimento deste prazo poderá resultar na liberação do imóvel para nova comercialização, sem qualquer ônus ao proprietário ou à imobiliária.',
-  'A parte que der causa ao arrependimento ou desistência do negócio após a aceitação desta proposta ficará obrigada ao pagamento de multa equivalente a 10% (dez por cento) do valor total do imóvel, além dos honorários de corretagem e intermediação imobiliária no percentual de 6% (seis por cento) sobre o valor do negócio, nos termos do artigo 725 do Código Civil.',
-  'A penalidade prevista no item anterior não será aplicada caso o(a)(s) Proponente(s) Comprador(a)(es) não obtenha(m) aprovação de financiamento imobiliário junto à instituição financeira competente e/ou não consiga(m) a liberação dos recursos provenientes do FGTS, desde que devidamente comprovada a negativa.',
-  'Com a aceitação desta proposta pelo(a)(s) proprietário(a)(s)/vendedor(es), as partes declaram ciência e concordância expressa quanto à coleta, tratamento e armazenamento de dados pessoais e documentos necessários à análise da negociação, incluindo certidões negativas, pesquisas cadastrais e documentos do imóvel e das partes envolvidas, nos termos da Lei nº 13.709/2018 (Lei Geral de Proteção de Dados Pessoais - LGPD). As partes autorizam, ainda, a imobiliária a providenciar a elaboração do instrumento particular de compra e venda, escritura pública e/ou contrato de financiamento, comprometendo-se a fornecer toda a documentação necessária e arcar com as despesas inerentes à formalização da transação.',
-  'Fica eleito o foro da comarca da situação do imóvel para dirimir quaisquer dúvidas ou controvérsias oriundas desta proposta, com renúncia expressa a qualquer outro, por mais privilegiado que seja.',
-];
 
 const DEAL_NAV_ITEMS = [
   { id: 'negocios', label: 'Negócios', icon: BriefcaseBusiness },
@@ -585,14 +586,6 @@ const formatCurrency = (value: number) =>
     style: 'currency',
     currency: 'BRL',
     maximumFractionDigits: 0,
-  }).format(value || 0);
-
-const formatCurrencyWithCents = (value: number) =>
-  new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
   }).format(value || 0);
 
 // Normaliza um campo de moeda digitado para o formato pt-BR (R$ 0.000,00).
@@ -1965,6 +1958,12 @@ export const PropostaPage = ({
   const [activeId, setActiveId] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [selectedProposal, setSelectedProposal] = useState<ProposalItem | null>(null);
+  // Visibilidade do modal de detalhe, separada de selectedProposal: no
+  // fechamento NÃO podemos anular selectedProposal de imediato, senão o
+  // <DialogContent> condicional é arrancado da árvore no meio do dismiss do
+  // Radix (animação de saída/focus return) e o React quebra ao remover nós
+  // que o Radix já gerencia — era a causa da tela branca ao fechar o detalhe.
+  const [detailOpen, setDetailOpen] = useState(false);
   const [drafts, setDrafts] = useState<ProposalItem[]>([]);
   const [stageOverrides, setStageOverrides] = useState<Record<string, ProposalStageId>>({});
   const [createOpen, setCreateOpen] = useState(false);
@@ -2038,8 +2037,7 @@ export const PropostaPage = ({
     [draftForm.transactionDraft.includedInPriceItems],
   );
   const handleDraftProposalAttachments = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => {
-      const files = Array.from(event.target.files || []);
+    (files: File[]) => {
       if (files.length === 0) return;
       const acceptedFiles = files.filter((file) => file.size <= 10 * 1024 * 1024);
       setDraftTx('proposalAttachmentNames', acceptedFiles.map((file) => file.name).join('\n'));
@@ -2053,6 +2051,11 @@ export const PropostaPage = ({
     },
     [setDraftTx, toast],
   );
+  // Seletor destacado do modal (ver pickFiles) — evita a tela branca do
+  // Chrome/macOS ao cancelar o seletor nativo dentro do modal de criação.
+  const openDraftProposalAttachments = useCallback(async () => {
+    handleDraftProposalAttachments(await pickFiles({ multiple: true }));
+  }, [handleDraftProposalAttachments]);
   const [draftStartedAt, setDraftStartedAt] = useState(new Date().toISOString());
   const [proposalDetails, setProposalDetails] = useState<Record<string, ProposalDetailState>>({});
   const [collapsedPartyIds, setCollapsedPartyIds] = useState<Set<string>>(() => new Set());
@@ -2060,6 +2063,13 @@ export const PropostaPage = ({
   const [savedError, setSavedError] = useState<string | null>(null);
   const [savingDraft, setSavingDraft] = useState(false);
   const [activeDetailTab, setActiveDetailTab] = useState<DealTabId>('negocios');
+  const [ccvPreviewOpen, setCcvPreviewOpen] = useState(false);
+  const [draftCcvPreviewOpen, setDraftCcvPreviewOpen] = useState(false);
+  // Arquivo PDF anexado para assinatura NESTA sessão. Só o nome é persistido,
+  // então o preview depende de manter o File em memória enquanto a proposta
+  // estiver aberta.
+  const [signatureDocumentFile, setSignatureDocumentFile] = useState<File | null>(null);
+  const [signaturePdfPreviewOpen, setSignaturePdfPreviewOpen] = useState(false);
   const [activeTransactionFormSection, setActiveTransactionFormSection] = useState<TransactionFormSection>('Imóvel & Valores');
   const [activePropertyValueSection, setActivePropertyValueSection] = useState<(typeof PROPERTY_VALUE_SECTIONS)[number]>('Código');
   const [showSellerParticipations, setShowSellerParticipations] = useState(false);
@@ -2329,6 +2339,77 @@ export const PropostaPage = ({
     : selectedProposal?.imovelRef || 'Imóvel sem identificação';
   const selectedSellerName = selectedDetail?.vendedores.find((party) => party.nomeCompleto.trim())?.nomeCompleto.trim() || 'A definir';
   const selectedCommission = selectedProposal ? selectedProposal.valor * 0.055 : 0;
+
+  // Entrada única do CCV: o download (generateCcvDraft) e o preview consomem o
+  // mesmo objeto, garantindo que a pré-visualização seja idêntica ao arquivo.
+  const selectedCcvInput: CcvDocumentInput | null = useMemo(() => {
+    if (!selectedProposal || !selectedDetail) return null;
+    return {
+      proposalId: selectedProposal.id,
+      imovelRef: selectedProposal.imovelRef,
+      endereco: selectedDealAddress,
+      compradores: selectedDetail.compradores,
+      vendedores: selectedDetail.vendedores,
+      valor: selectedProposal.valor,
+      comissao: selectedCommission,
+      formaPagamento: selectedDetail.pagamento.formaPagamento,
+      condicoesEspecificas: selectedDetail.pagamento.condicoesEspecificas,
+    };
+  }, [selectedProposal, selectedDetail, selectedDealAddress, selectedCommission]);
+
+  // Recalcula somente com o dialog aberto e quando os dados da proposta mudam;
+  // edições feitas nas abas refletem aqui automaticamente na reabertura.
+  const ccvPreview = useMemo(
+    () => (ccvPreviewOpen ? buildCcvDocumentSafe(selectedCcvInput) : { document: null, error: null }),
+    [ccvPreviewOpen, selectedCcvInput],
+  );
+
+  // Espelha o mapeamento de handleCreateDraft (imovelRef, endereço e forma de
+  // pagamento) para que o preview do rascunho corresponda ao CCV que a proposta
+  // gerará depois de criada.
+  const draftCcvInput: CcvDocumentInput = useMemo(() => {
+    const endereco: ProposalAddress = {
+      cep: draftForm.cep.trim(),
+      numero: draftForm.numero.trim(),
+      logradouro: draftForm.logradouro.trim(),
+      bairro: draftForm.bairro.trim(),
+      complemento: draftForm.complemento.trim(),
+      cidade: draftForm.cidade.trim(),
+      uf: draftForm.uf.trim().toUpperCase(),
+    };
+    const enderecoInformado = Object.values(endereco).some(Boolean);
+    const valor = parseCurrencyInput(draftForm.valor);
+    return {
+      proposalId: 'rascunho',
+      imovelRef:
+        draftForm.propertyOrigin === 'interno'
+          ? draftForm.imovelRef.trim() || 'Imóvel da carteira'
+          : formatAddress(enderecoInformado ? endereco : undefined),
+      endereco: (enderecoInformado ? formatFullAddress(endereco) : '') || 'Endereço não informado',
+      compradores: draftForm.compradores,
+      vendedores: draftForm.vendedores,
+      valor,
+      comissao: valor * 0.055,
+      formaPagamento: draftForm.comFinanciamento ? 'Com financiamento' : 'Sem financiamento',
+      condicoesEspecificas: draftForm.condicoesEspecificas,
+    };
+  }, [draftForm]);
+
+  const draftCcvPreview = useMemo(
+    () => (draftCcvPreviewOpen ? buildCcvDocumentSafe(draftCcvInput) : { document: null, error: null }),
+    [draftCcvPreviewOpen, draftCcvInput],
+  );
+
+  // Object URL do PDF de assinatura: criado por arquivo selecionado e revogado
+  // na troca/desmontagem para não vazar memória.
+  const signatureDocumentUrl = useMemo(
+    () => (signatureDocumentFile ? URL.createObjectURL(signatureDocumentFile) : null),
+    [signatureDocumentFile],
+  );
+  useEffect(() => {
+    if (!signatureDocumentUrl) return;
+    return () => URL.revokeObjectURL(signatureDocumentUrl);
+  }, [signatureDocumentUrl]);
   const selectedInviteLink = selectedProposal
     ? `${typeof window !== 'undefined' ? window.location.origin : ''}/propostas/${selectedProposal.id}`
     : '';
@@ -3156,9 +3237,13 @@ export const PropostaPage = ({
   const openProposalDetail = (proposal: ProposalItem) => {
     const detail = proposalDetails[proposal.id] ?? buildDefaultProposalDetail(proposal);
     setSelectedProposal(proposal);
+    setDetailOpen(true);
     setActiveDetailTab('negocios');
     setPendingWorkflowItemId(null);
     setSignatureDocumentName(detail.transactionForm.signatureDocumentName || '');
+    // O File em memória pertence à proposta anterior; o nome persiste, o
+    // arquivo precisa ser anexado de novo para visualizar.
+    setSignatureDocumentFile(null);
     setRequestDraft((previous) => ({
       ...previous,
       property: proposal.imovelRef,
@@ -3175,7 +3260,9 @@ export const PropostaPage = ({
       return;
     }
     if (consumedProposalIdRef.current === requestedProposalId) return;
-    if (selectedProposal?.id === requestedProposalId) return;
+    // selectedProposal sobrevive ao fechamento do modal (ver detailOpen), então
+    // só considera "já aberto" se o dialog estiver de fato visível.
+    if (detailOpen && selectedProposal?.id === requestedProposalId) return;
 
     let match = proposals.find((proposal) => proposal.id === requestedProposalId);
 
@@ -3215,7 +3302,7 @@ export const PropostaPage = ({
     }
     // openProposalDetail captures setters that are stable; safe to omit
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [requestedProposalId, proposals, selectedProposal?.id, setSearchParams, isEmbedded, embeddedProposal]);
+  }, [requestedProposalId, proposals, detailOpen, selectedProposal?.id, setSearchParams, isEmbedded, embeddedProposal]);
 
   const registerInviteAction = (channel: string) => {
     if (!selectedProposal) return;
@@ -3344,28 +3431,18 @@ export const PropostaPage = ({
   };
 
   const generateCcvDraft = () => {
-    if (!selectedProposal || !selectedDetail) return;
-    const buyers = selectedDetail.compradores.map((party) => party.nomeCompleto || 'Comprador sem nome').join(', ') || 'Compradores pendentes';
-    const sellers = selectedDetail.vendedores.map((party) => party.nomeCompleto || 'Vendedor sem nome').join(', ') || selectedSellerName;
-    const content = [
-      'CONTRATO DE COMPROMISSO DE COMPRA E VENDA',
-      '',
-      `Imóvel: ${selectedProposal.imovelRef}`,
-      `Endereço: ${selectedDealAddress}`,
-      `Compradores: ${buyers}`,
-      `Vendedores: ${sellers}`,
-      `Valor do negócio: ${formatCurrencyWithCents(selectedProposal.valor)}`,
-      `Comissão geral: ${formatCurrencyWithCents(selectedCommission)}`,
-      `Forma de pagamento: ${selectedDetail.pagamento.formaPagamento}`,
-      '',
-      'Condições específicas:',
-      selectedDetail.pagamento.condicoesEspecificas || 'Sem condições específicas cadastradas.',
-      '',
-      'Condições gerais:',
-      ...GENERAL_CONDITIONS.map((condition, index) => `${index + 1}. ${condition}`),
-    ].join('\n');
+    if (!selectedProposal || !selectedCcvInput) return;
+    const { document: ccvDocument, error } = buildCcvDocumentSafe(selectedCcvInput);
+    if (!ccvDocument) {
+      toast({
+        title: 'Não foi possível gerar o CCV',
+        description: error || 'Revise os dados da proposta e tente novamente.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
-    downloadTextFile(`ccv-${selectedProposal.imovelRef || selectedProposal.id}.txt`, content);
+    downloadTextFile(ccvDocument.fileName, ccvDocument.content);
     updateTransactionForm(selectedProposal, 'ccvDraftGeneratedAt', new Date().toISOString());
     registerCcvAction('CCV Conjurer', 'Minuta de CCV gerada para conferência.');
   };
@@ -3410,10 +3487,10 @@ export const PropostaPage = ({
     void changeProposalStage(selectedProposal.id, 'proposta-assinada');
   };
 
-  const handleSignatureDocument = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+  const handleSignatureDocument = (file: File | null) => {
     if (!file || !selectedProposal) return;
     setSignatureDocumentName(file.name);
+    setSignatureDocumentFile(file);
     updateTransactionForm(selectedProposal, 'signatureDocumentName', file.name);
     appendHistory(selectedProposal, 'Documento enviado para assinatura eletrônica', file.name);
     toast({
@@ -3422,9 +3499,15 @@ export const PropostaPage = ({
     });
   };
 
-  const handleProposalAttachments = (event: React.ChangeEvent<HTMLInputElement>) => {
+  // Seletor destacado do modal (ver pickFiles) — evita a tela branca do
+  // Chrome/macOS ao cancelar o seletor nativo dentro do modal.
+  const openSignatureDocument = async () => {
+    const [file] = await pickFiles({ accept: 'application/pdf,.pdf' });
+    handleSignatureDocument(file ?? null);
+  };
+
+  const handleProposalAttachments = (files: File[]) => {
     if (!selectedProposal) return;
-    const files = Array.from(event.target.files || []);
     if (files.length === 0) return;
 
     const acceptedFiles = files.filter((file) => file.size <= 10 * 1024 * 1024);
@@ -3443,6 +3526,13 @@ export const PropostaPage = ({
         description: `${fileNames.length} documento(s) vinculado(s) ao formulário.`,
       });
     }
+  };
+
+  // Seletor destacado do modal (ver pickFiles) — evita a tela branca do
+  // Chrome/macOS ao cancelar o seletor nativo dentro do modal.
+  const openProposalAttachments = async () => {
+    const files = await pickFiles({ multiple: true });
+    handleProposalAttachments(files);
   };
 
   const sendSignatureDocument = () => {
@@ -3786,10 +3876,12 @@ export const PropostaPage = ({
       </div>
 
       <Dialog
-        open={!!selectedProposal}
+        open={detailOpen && Boolean(selectedProposal)}
         onOpenChange={(open) => {
           if (open) return;
-          setSelectedProposal(null);
+          // Apenas oculta; selectedProposal permanece para o conteúdo seguir
+          // válido durante a animação de saída (o Radix desmonta sozinho).
+          setDetailOpen(false);
           if (isEmbedded) {
             consumedProposalIdRef.current = null;
             onEmbeddedClose?.();
@@ -3797,7 +3889,10 @@ export const PropostaPage = ({
         }}
       >
         {selectedProposal && selectedDetail && (
-          <DialogContent className="max-h-[92vh] max-w-6xl gap-0 overflow-hidden p-0">
+         <DialogContent
+            className="max-h-[92vh] max-w-6xl gap-0 overflow-hidden p-0"
+            onFocusOutside={(event) => event.preventDefault()}
+          >
             <DialogHeader className="border-b border-slate-200 px-6 py-5 dark:border-slate-800">
               <div className="flex items-start justify-between gap-4 pr-8">
                 <div className="min-w-0">
@@ -4307,12 +4402,11 @@ export const PropostaPage = ({
                               />
                             )}
                           </div>
-                          <label className="flex min-h-[112px] cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center transition-colors hover:border-blue-300 hover:bg-blue-50/40 dark:border-slate-700 dark:bg-slate-950 dark:hover:border-blue-900 dark:hover:bg-blue-950/20">
+                          <button type="button" onClick={openProposalAttachments} className="flex min-h-[112px] cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center transition-colors hover:border-blue-300 hover:bg-blue-50/40 dark:border-slate-700 dark:bg-slate-950 dark:hover:border-blue-900 dark:hover:bg-blue-950/20">
                             <FileUp className="h-7 w-7 text-slate-400" />
                             <span className="mt-2 text-[12px] font-semibold text-slate-700 dark:text-slate-200">Clique para anexar outros documentos da Proposta</span>
                             <span className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">{getTransactionFormValue('proposalAttachmentNames') || 'máximo 10Mb'}</span>
-                            <input type="file" multiple className="sr-only" onChange={handleProposalAttachments} />
-                          </label>
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -4760,7 +4854,11 @@ export const PropostaPage = ({
 
                 <TabsContent value="ccv" className="mt-0">
                   <DetailSection title="CCV Conjurer" icon={FileSignature}>
-                    <div className="grid gap-3 md:grid-cols-3">
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                      <Button type="button" variant="outline" onClick={() => setCcvPreviewOpen(true)}>
+                        <Eye className="mr-2 h-4 w-4" />
+                        Visualizar documento
+                      </Button>
                       <Button type="button" variant="outline" onClick={generateCcvDraft}>
                         <FileSignature className="mr-2 h-4 w-4" />
                         Gerar CCV
@@ -4873,12 +4971,19 @@ export const PropostaPage = ({
                 <TabsContent value="assinatura" className="mt-0">
                   <DetailSection title="Assinatura eletrônica" icon={FileUp}>
                     <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_260px]">
-                      <label className="flex min-h-[150px] cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white px-4 py-6 text-center transition-colors hover:border-blue-300 hover:bg-blue-50/40 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-blue-900 dark:hover:bg-blue-950/20">
-                        <FileUp className="h-8 w-8 text-slate-400" />
-                        <span className="mt-3 text-sm font-semibold text-slate-900 dark:text-slate-100">Enviar documento em PDF</span>
-                        <span className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">{signatureDocumentName || 'Nenhum arquivo selecionado'}</span>
-                        <input type="file" accept="application/pdf,.pdf" className="sr-only" onChange={handleSignatureDocument} />
-                      </label>
+                      <div className="space-y-3">
+                        <button type="button" onClick={openSignatureDocument} className="flex min-h-[150px] w-full cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white px-4 py-6 text-center transition-colors hover:border-blue-300 hover:bg-blue-50/40 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-blue-900 dark:hover:bg-blue-950/20">
+                          <FileUp className="h-8 w-8 text-slate-400" />
+                          <span className="mt-3 text-sm font-semibold text-slate-900 dark:text-slate-100">Enviar documento em PDF</span>
+                          <span className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">{signatureDocumentName || 'Nenhum arquivo selecionado'}</span>
+                        </button>
+                        {signatureDocumentName && (
+                          <Button type="button" variant="outline" className="w-full" onClick={() => setSignaturePdfPreviewOpen(true)}>
+                            <Eye className="mr-2 h-4 w-4" />
+                            Visualizar PDF
+                          </Button>
+                        )}
+                      </div>
                       <div className="space-y-3">
                         <Button type="button" className="w-full bg-blue-600 text-white hover:bg-blue-700" onClick={sendSignatureDocument}>
                           <Send className="mr-2 h-4 w-4" />
@@ -5370,7 +5475,12 @@ export const PropostaPage = ({
       </Dialog>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-h-[92vh] max-w-5xl gap-0 overflow-hidden p-0">
+        {/* onFocusOutside: o retorno de foco ao cancelar o seletor de arquivos
+            nativo não deve fechar o modal (fechava e disparava o bug do unmount). */}
+        <DialogContent
+          className="max-h-[92vh] max-w-5xl gap-0 overflow-hidden p-0"
+          onFocusOutside={(event) => event.preventDefault()}
+        >
           <DialogHeader className="border-b border-slate-200 px-6 py-5 dark:border-slate-800">
             <DialogTitle className="text-xl text-slate-950 dark:text-slate-50">Nova proposta</DialogTitle>
           </DialogHeader>
@@ -5960,12 +6070,11 @@ export const PropostaPage = ({
                         </div>
                       )}
                     </div>
-                    <label className="flex min-h-[112px] cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center transition-colors hover:border-blue-300 hover:bg-blue-50/40 dark:border-slate-700 dark:bg-slate-950 dark:hover:border-blue-900 dark:hover:bg-blue-950/20">
+                    <button type="button" onClick={openDraftProposalAttachments} className="flex min-h-[112px] w-full cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center transition-colors hover:border-blue-300 hover:bg-blue-50/40 dark:border-slate-700 dark:bg-slate-950 dark:hover:border-blue-900 dark:hover:bg-blue-950/20">
                       <FileUp className="h-7 w-7 text-slate-400" />
                       <span className="mt-2 text-[12px] font-semibold text-slate-700 dark:text-slate-200">Anexo da formalização da Proposta de Compra</span>
                       <span className="mt-1 whitespace-pre-line text-[11px] text-slate-500 dark:text-slate-400">{getDraftTx('proposalAttachmentNames') || 'Clique para anexar (máx. 10Mb)'}</span>
-                      <input type="file" multiple className="sr-only" onChange={handleDraftProposalAttachments} />
-                    </label>
+                    </button>
                   </div>
                 </section>
 
@@ -6189,6 +6298,10 @@ export const PropostaPage = ({
                       <span className="text-sm font-semibold">Clique para confirmar que revisou os dados da proposta</span>
                     </button>
 
+                    <Button type="button" variant="outline" className="w-full" onClick={() => setDraftCcvPreviewOpen(true)}>
+                      <Eye className="mr-2 h-4 w-4" />
+                      Pré-visualizar documento
+                    </Button>
                     <Button type="button" variant="outline" className="w-full" disabled={savingDraft} onClick={() => void handleCreateDraft(false)}>
                       {savingDraft && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                       Criar rascunho
@@ -6327,6 +6440,34 @@ export const PropostaPage = ({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <DocumentPreviewDialog
+        open={ccvPreviewOpen}
+        onOpenChange={setCcvPreviewOpen}
+        document={ccvPreview.document}
+        buildError={ccvPreview.error}
+        subtitle={
+          selectedProposal
+            ? `${selectedProposal.imovelRef} — conteúdo idêntico ao arquivo gerado por "Gerar CCV".`
+            : undefined
+        }
+        onDownload={generateCcvDraft}
+      />
+
+      <DocumentPreviewDialog
+        open={draftCcvPreviewOpen}
+        onOpenChange={setDraftCcvPreviewOpen}
+        document={draftCcvPreview.document}
+        buildError={draftCcvPreview.error}
+        subtitle="Espelho fiel do CCV que será gerado para este negócio após a criação da proposta."
+      />
+
+      <PdfPreviewDialog
+        open={signaturePdfPreviewOpen}
+        onOpenChange={setSignaturePdfPreviewOpen}
+        fileName={signatureDocumentName}
+        fileUrl={signatureDocumentUrl}
+      />
     </div>
   );
 };

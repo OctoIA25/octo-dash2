@@ -12,7 +12,7 @@
 import crypto from 'crypto';
 import { buildLogoWatermark, composeWatermark } from './watermarkEngine.js';
 import { createStorageRepo, masterKey, derivedKey, cleanKey } from './storageRepo.js';
-import { SIZES, WATERMARK_DEFAULTS } from './config.js';
+import { SIZES, WATERMARK_DEFAULTS, WATERMARK_POSITIONS } from './config.js';
 
 export function createWatermarkService(supabase) {
   const storage = createStorageRepo(supabase);
@@ -215,19 +215,23 @@ export function createWatermarkService(supabase) {
   async function getWatermarkSettings(tenantId) {
     const { data, error } = await supabase
       .from('tenants')
-      .select('logo_url, logo_version, watermark_enabled, watermark_opacity, watermark_scale')
+      .select('logo_url, logo_version, watermark_enabled, watermark_opacity, watermark_scale, watermark_position')
       .eq('id', tenantId)
       .single();
     if (error) throw new Error(`getWatermarkSettings: ${error.message}`);
     return data;
   }
 
-  /** Atualiza opacidade/escala/on-off. NÃO mexe no logo nem na versão. */
-  async function updateWatermarkSettings(tenantId, { enabled, opacity, scale }) {
+  /** Atualiza opacidade/escala/posição/on-off. NÃO mexe no logo nem na versão. */
+  async function updateWatermarkSettings(tenantId, { enabled, opacity, scale, position }) {
     const patch = {};
     if (enabled !== undefined) patch.watermark_enabled = !!enabled;
     if (opacity !== undefined) patch.watermark_opacity = clampNum(opacity, 0, 1);
     if (scale !== undefined) patch.watermark_scale = clampNum(scale, 0.05, 1);
+    if (position !== undefined) {
+      if (!WATERMARK_POSITIONS.includes(position)) throw new Error(`watermark_position inválida: ${position}`);
+      patch.watermark_position = position;
+    }
     if (Object.keys(patch).length === 0) return getWatermarkSettings(tenantId);
 
     const { error } = await supabase.from('tenants').update(patch).eq('id', tenantId);
@@ -296,20 +300,23 @@ export function createWatermarkService(supabase) {
 
     const { data: tenant } = await supabase
       .from('tenants')
-      .select('logo_version, logo_mask_path, watermark_enabled, watermark_opacity, watermark_scale')
+      .select('logo_version, logo_mask_path, watermark_enabled, watermark_opacity, watermark_scale, watermark_position')
       .eq('id', photo.tenant_id).single();
 
     const version = tenant?.logo_version || 0;
     const enabled = tenant?.watermark_enabled !== false && !!tenant?.logo_mask_path;
     const opacity = tenant?.watermark_opacity ?? WATERMARK_DEFAULTS.opacity;
     const scale = tenant?.watermark_scale ?? WATERMARK_DEFAULTS.scale;
+    const position = WATERMARK_POSITIONS.includes(tenant?.watermark_position)
+      ? tenant.watermark_position
+      : WATERMARK_DEFAULTS.position;
     const ref = { tenantId: photo.tenant_id, propertyId: photo.property_id, imageId: photo.id };
 
     // A chave codifica a VARIANTE (marcado vs limpo) E os parâmetros (versão do
-    // logo + opacidade + escala). Qualquer mudança → chave nova → regenera e troca
-    // a URL, sem servir o arquivo antigo cacheado na CDN. O toggle decide em tempo
-    // de serviço; logo/opacidade/escala refletem ao reapontar (repointTenantPhotos).
-    const expectedKey = enabled ? derivedKey(ref, version, sizeName, opacity, scale) : cleanKey(ref, sizeName);
+    // logo + opacidade + escala + posição). Qualquer mudança → chave nova → regenera
+    // e troca a URL, sem servir o arquivo antigo cacheado na CDN. O toggle decide em
+    // tempo de serviço; os demais parâmetros refletem ao reapontar (repointTenantPhotos).
+    const expectedKey = enabled ? derivedKey(ref, version, sizeName, opacity, scale, position) : cleanKey(ref, sizeName);
 
     // Idempotência pelo banco: o derivado ATIVO já é o esperado? Serve direto.
     if (photo.derivatives?.[sizeName] === expectedKey) {
@@ -322,6 +329,7 @@ export function createWatermarkService(supabase) {
       size: enabled ? size : { ...size, watermark: false },
       opacity,
       scale,
+      position,
     });
     await storage.putDerivative(expectedKey, out);
 

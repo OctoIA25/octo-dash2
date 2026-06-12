@@ -98,12 +98,16 @@ export async function setTenantLogo(tenantId: string, logo: File | Blob): Promis
   return res.json();
 }
 
+/** Posições suportadas da marca (5 presets); 'center' é o padrão. */
+export type WatermarkPosition = 'center' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+
 export interface WatermarkSettings {
   logo_url: string | null;
   logo_version: number;
   watermark_enabled: boolean;
   watermark_opacity: number;
   watermark_scale: number;
+  watermark_position: WatermarkPosition;
 }
 
 export interface ReprocessStatus {
@@ -144,10 +148,10 @@ export async function getWatermarkSettings(tenantId: string): Promise<WatermarkS
   return res.json();
 }
 
-/** Atualiza opacidade / escala / on-off (não mexe no logo). Requer admin. */
+/** Atualiza opacidade / escala / posição / on-off (não mexe no logo). Requer admin. */
 export async function updateWatermarkSettings(
   tenantId: string,
-  patch: { enabled?: boolean; opacity?: number; scale?: number },
+  patch: { enabled?: boolean; opacity?: number; scale?: number; position?: WatermarkPosition },
 ): Promise<WatermarkSettings> {
   const res = await fetch(`${BASE}/tenants/${tenantId}/watermark-settings`, {
     method: 'PATCH',

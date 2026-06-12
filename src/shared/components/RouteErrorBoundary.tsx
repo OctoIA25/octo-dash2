@@ -11,6 +11,7 @@ interface RouteErrorBoundaryInnerProps {
 interface RouteErrorBoundaryState {
   hasError: boolean;
   isChunkError: boolean;
+  errorMessage: string;
 }
 
 /**
@@ -33,17 +34,21 @@ class RouteErrorBoundaryInner extends React.Component<
 > {
   constructor(props: RouteErrorBoundaryInnerProps) {
     super(props);
-    this.state = { hasError: false, isChunkError: false };
+    this.state = { hasError: false, isChunkError: false, errorMessage: '' };
   }
 
   static getDerivedStateFromError(error: Error): RouteErrorBoundaryState {
-    return { hasError: true, isChunkError: isChunkLoadError(error) };
+    return {
+      hasError: true,
+      isChunkError: isChunkLoadError(error),
+      errorMessage: error?.message || String(error),
+    };
   }
 
   componentDidUpdate(prevProps: RouteErrorBoundaryInnerProps) {
     // Navegou para outra rota: limpa o erro e tenta renderizar a nova rota.
     if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
-      this.setState({ hasError: false, isChunkError: false });
+      this.setState({ hasError: false, isChunkError: false, errorMessage: '' });
     }
   }
 
@@ -71,17 +76,22 @@ class RouteErrorBoundaryInner extends React.Component<
       ? "O aplicativo foi atualizado. Recarregue a página para carregar a versão mais recente."
       : "Não foi possível exibir esta seção. Tente outra seção pela barra lateral ou recarregue a página.";
 
+    // Cores explícitas (slate + dark:) em vez de tokens legados: o fallback
+    // precisa ser visível em qualquer tema — `var(--bg-primary)` cru é um
+    // triple HSL inválido como background-color e deixava esta tela "branca".
     return (
-      <div
-        className="min-h-screen flex items-center justify-center p-6"
-        style={{ backgroundColor: "var(--bg-primary)" }}
-      >
-        <div className="max-w-md w-full text-center rounded-2xl border border-white/10 bg-white/5 p-8 backdrop-blur">
-          <h2 className="text-xl font-semibold text-text-primary mb-2">{title}</h2>
-          <p className="text-sm text-text-secondary mb-6">{description}</p>
+      <div className="flex min-h-[60vh] items-center justify-center bg-white p-6 dark:bg-slate-950">
+        <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <h2 className="text-xl font-semibold text-slate-950 dark:text-slate-50">{title}</h2>
+          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{description}</p>
+          {!this.state.isChunkError && this.state.errorMessage && (
+            <p className="mt-4 break-words rounded-lg bg-slate-50 px-3 py-2 text-left text-[12px] leading-5 text-slate-500 dark:bg-slate-800/60 dark:text-slate-400">
+              {this.state.errorMessage}
+            </p>
+          )}
           <button
             onClick={this.handleReload}
-            className="inline-flex items-center justify-center rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-white transition-colors hover:opacity-90"
+            className="mt-6 inline-flex items-center justify-center rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700"
           >
             Recarregar
           </button>

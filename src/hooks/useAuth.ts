@@ -448,21 +448,20 @@ export const useAuth = () => {
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    // Verificar sessão ao dar F5 (beforeunload não ajuda, mas podemos verificar no load)
-    const handleFocus = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        // Fazer refresh preventivo ao ganhar foco
-        await supabase.auth.refreshSession();
-      }
-    };
-    window.addEventListener('focus', handleFocus);
+    // NÃO escutar window 'focus' aqui: o seletor de arquivos nativo (e qualquer
+    // popup/iframe) faz a janela perder e reganhar o foco SEM nunca esconder a
+    // aba, então 'focus' dispara mas 'visibilitychange' não. Como useAuth é
+    // instanciado em dezenas de componentes, um único foco disparava N
+    // refreshSession() simultâneos e sem throttle — uma tempestade de updates de
+    // auth que, no meio da animação de um modal aberto, o esvaziava (tela
+    // branca ao cancelar o envio de PDF). O refresh de token já é garantido pelo
+    // autoRefreshToken do Supabase, pelo sessionCheckInterval (2 min) e pelo
+    // handleVisibilityChange (retorno real à aba).
 
     return () => {
       subscription.subscription.unsubscribe();
       clearInterval(sessionCheckInterval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', handleFocus);
     };
   }, [loadUserFromSession]);
 

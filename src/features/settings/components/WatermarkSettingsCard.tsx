@@ -19,8 +19,30 @@ import {
   getWatermarkSettings,
   setTenantLogo,
   updateWatermarkSettings,
+  type WatermarkPosition,
   type WatermarkSettings,
 } from '@/features/imoveis/services/watermarkService';
+
+const POSITION_LABELS: Record<WatermarkPosition, string> = {
+  'top-left': 'Superior esquerda',
+  'top-right': 'Superior direita',
+  center: 'Centro',
+  'bottom-left': 'Inferior esquerda',
+  'bottom-right': 'Inferior direita',
+};
+
+/** Posições na ordem de leitura (render do seletor). */
+const POSITIONS: WatermarkPosition[] = ['top-left', 'top-right', 'center', 'bottom-left', 'bottom-right'];
+
+// Ancoragem absoluta de cada posição — compartilhada pelo seletor em forma de
+// "tela" e pelo logo no preview, espelhando a margem aplicada no servidor.
+const POSITION_ANCHOR: Record<WatermarkPosition, string> = {
+  'top-left': 'top-2 left-2',
+  'top-right': 'top-2 right-2',
+  center: 'inset-0 m-auto',
+  'bottom-left': 'bottom-2 left-2',
+  'bottom-right': 'bottom-2 right-2',
+};
 
 interface Props {
   tenantId?: string;
@@ -41,12 +63,14 @@ function WatermarkPreview({
   logoUrl,
   scale,
   opacity,
+  position,
 }: {
   enabled: boolean;
   pendingPreview: string | null;
   logoUrl: string | null;
   scale: number;
   opacity: number;
+  position: WatermarkPosition;
 }) {
   const previewLogo = pendingPreview || logoUrl;
   return (
@@ -72,7 +96,7 @@ function WatermarkPreview({
               mixBlendMode: 'multiply',
               filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.35))',
             }}
-            className="object-contain pointer-events-none select-none"
+            className={`absolute object-contain pointer-events-none select-none ${POSITION_ANCHOR[position]}`}
           />
         ) : (
           <div className="text-black/50 text-sm flex flex-col items-center gap-1">
@@ -101,6 +125,7 @@ export function WatermarkSettingsCard({ tenantId }: Props) {
   const [enabled, setEnabled] = useState(true);
   const [opacity, setOpacity] = useState(0.35);
   const [scale, setScale] = useState(0.3);
+  const [position, setPosition] = useState<WatermarkPosition>('center');
 
   // Preview local do logo recém-escolhido (antes de salvar).
   const [pendingFile, setPendingFile] = useState<File | null>(null);
@@ -118,6 +143,7 @@ export function WatermarkSettingsCard({ tenantId }: Props) {
         setEnabled(s.watermark_enabled ?? true);
         setOpacity(s.watermark_opacity ?? 0.35);
         setScale(s.watermark_scale ?? 0.3);
+        setPosition(s.watermark_position ?? 'center');
       } catch {
         // Sem config ainda (ou backend/cota indisponível): mantém os defaults.
       } finally {
@@ -164,7 +190,7 @@ export function WatermarkSettingsCard({ tenantId }: Props) {
     if (!tenantId) return;
     setSavingCfg(true);
     try {
-      await updateWatermarkSettings(tenantId, { enabled, opacity, scale });
+      await updateWatermarkSettings(tenantId, { enabled, opacity, scale, position });
       toast({
         title: enabled ? 'Configuração salva' : 'Marca d\'água desativada',
         description: enabled
@@ -193,8 +219,9 @@ export function WatermarkSettingsCard({ tenantId }: Props) {
             Marca d'água nas fotos
           </p>
           <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
-            O logo da imobiliária é aplicado centralizado e translúcido nas fotos. Você pode
-            desligar a marca a qualquer momento (admin) — as fotos passam a sair limpas.
+            O logo da imobiliária é aplicado translúcido nas fotos, na posição que você escolher
+            (centro ou cantos). Você pode desligar a marca a qualquer momento (admin) — as fotos
+            passam a sair limpas.
           </p>
         </div>
       </div>
@@ -273,6 +300,38 @@ export function WatermarkSettingsCard({ tenantId }: Props) {
             <Slider value={[scale]} min={0.1} max={0.8} step={0.05} onValueChange={([v]) => setScale(v)} />
           </div>
 
+          {/* Posição */}
+          <div className={enabled ? '' : 'opacity-50 pointer-events-none'}>
+            <div className="flex items-center justify-between mb-1.5">
+              <Label className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                Posição do logo
+              </Label>
+              <span className="text-xs text-slate-400">{POSITION_LABELS[position]}</span>
+            </div>
+            {/* "Tela" que representa a foto: clica-se direto no canto/centro desejado.
+                Mesmo gradiente do preview ao lado — os dois leem como a mesma foto. */}
+            <div className="relative aspect-video max-w-[300px] rounded-lg border border-border overflow-hidden bg-gradient-to-br from-stone-200 via-zinc-300 to-stone-400">
+              {POSITIONS.map((pos) => (
+                <button
+                  key={pos}
+                  type="button"
+                  title={POSITION_LABELS[pos]}
+                  aria-label={POSITION_LABELS[pos]}
+                  aria-pressed={position === pos}
+                  onClick={() => setPosition(pos)}
+                  className={`absolute ${POSITION_ANCHOR[pos]} h-7 w-11 rounded-md border-2 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                    position === pos
+                      ? 'border-primary bg-primary/85 shadow-md'
+                      : 'border-black/25 bg-white/45 hover:bg-white/75 hover:border-primary/60'
+                  }`}
+                />
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Toque na área da foto onde a marca deve ficar.
+            </p>
+          </div>
+
           <Button onClick={handleSaveConfig} disabled={savingCfg || loading} variant="outline" className="w-full" size="sm">
             {savingCfg ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
             Salvar configuração e reprocessar fotos
@@ -286,6 +345,7 @@ export function WatermarkSettingsCard({ tenantId }: Props) {
           logoUrl={logoUrl}
           scale={scale}
           opacity={opacity}
+          position={position}
         />
       </div>
     </div>

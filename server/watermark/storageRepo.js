@@ -28,13 +28,19 @@ export function masterKey(ref) {
   return `tenants/${tenantId}/properties/${prop}/${imageId}/original.bin`;
 }
 
-export function derivedKey(ref, logoVersion, size, opacity = 0.35, scale = 0.3) {
+// Código curto da posição na chave do derivado. 'center' (default histórico)
+// fica SEM sufixo de propósito: as chaves existentes continuam válidas e nada
+// é regenerado em massa ao fazer deploy desta feature.
+const POSITION_CODES = { 'top-left': 'tl', 'top-right': 'tr', 'bottom-left': 'bl', 'bottom-right': 'br' };
+
+export function derivedKey(ref, logoVersion, size, opacity = 0.35, scale = 0.3, position = 'center') {
   const { tenantId, prop, imageId } = safeSegments(ref);
-  // opacidade/escala entram na chave: mudar qualquer parâmetro da marca gera uma
-  // chave NOVA → regenera o derivado e troca a URL (evita servir o arquivo cacheado).
+  // opacidade/escala/posição entram na chave: mudar qualquer parâmetro da marca gera
+  // uma chave NOVA → regenera o derivado e troca a URL (evita servir o arquivo cacheado).
   const o = Math.round(Math.min(1, Math.max(0, opacity)) * 100);
   const s = Math.round(Math.min(1, Math.max(0, scale)) * 100);
-  return `tenants/${tenantId}/properties/${prop}/${imageId}/wm_v${logoVersion}_o${o}_s${s}_${size}.webp`;
+  const p = POSITION_CODES[position] ? `_p${POSITION_CODES[position]}` : '';
+  return `tenants/${tenantId}/properties/${prop}/${imageId}/wm_v${logoVersion}_o${o}_s${s}${p}_${size}.webp`;
 }
 
 /** Derivado SEM marca (apenas redimensionado) — servido quando a marca está desligada. */

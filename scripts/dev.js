@@ -86,8 +86,10 @@ const viteProc = spawn(process.execPath, ['--max-old-space-size=4096', viteBin],
 });
 streamOutput(viteProc, 'vite', CYAN);
 
-// 2. API server (Express)
-const apiProc = spawn(process.execPath, [path.join(rootDir, 'server', 'api-server.js')], {
+// 2. API server (Express) — --watch reinicia o processo ao editar arquivos do
+// server/ (o Express não tem HMR como o Vite; sem isso, edições no backend só
+// valem após restart manual e o servidor em memória fica defasado do código).
+const apiProc = spawn(process.execPath, ['--watch', path.join(rootDir, 'server', 'api-server.js')], {
   cwd: rootDir,
   env: processEnv,
   stdio: ['ignore', 'pipe', 'pipe'],

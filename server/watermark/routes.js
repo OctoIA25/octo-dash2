@@ -15,7 +15,7 @@ import express from 'express';
 import multer from 'multer';
 import { createWatermarkService } from './service.js';
 import { createWorker } from './worker.js';
-import { SIZES } from './config.js';
+import { SIZES, WATERMARK_POSITIONS } from './config.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -58,15 +58,24 @@ export function createWatermarkRouter(supabase) {
     return async (req, res, next) => {
       try {
         const user = await verifyUser(req, res);
+        
         if (!user) return;
+        
         const tenantId = from === 'body' ? req.body?.tenantId : req.params.tenantId;
+        
         if (!isUuid(tenantId)) return res.status(400).json({ error: 'tenantId inválido' });
         if ((user.email || '').toLowerCase() === OWNER_EMAIL) return next();
+        
         const { data: m } = await supabase
-          .from('tenant_memberships').select('role')
-          .eq('user_id', user.id).eq('tenant_id', tenantId).maybeSingle();
+          .from('tenant_memberships')
+          .select('role')
+          .eq('user_id', user.id)
+          .eq('tenant_id', tenantId)
+          .maybeSingle();
+
         if (!m) return res.status(403).json({ error: 'sem acesso a esta imobiliária' });
         if (admin && !ADMIN_ROLES.includes(m.role)) return res.status(403).json({ error: 'requer admin da imobiliária' });
+        
         return next();
       } catch (e) {
         return res.status(500).json({ error: e.message });
@@ -80,9 +89,12 @@ export function createWatermarkRouter(supabase) {
   router.post('/photos', upload.single('photo'), requireTenant({ from: 'body' }), async (req, res) => {
     try {
       const { tenantId, propertyId, position, caption } = req.body;
+      
       if (!req.file) return res.status(400).json({ error: 'arquivo `photo` obrigatório' });
       if (!/^image\//.test(req.file.mimetype || '')) return res.status(400).json({ error: 'arquivo deve ser imagem' });
+      
       const cleanProp = cleanPropertyId(propertyId);
+      
       if (cleanProp === undefined) return res.status(400).json({ error: 'propertyId inválido' });
 
       const photo = await service.ingestMaster({
@@ -144,9 +156,12 @@ export function createWatermarkRouter(supabase) {
   async function startRepoint(tenantId) {
     const cur = await service.getReprocessProgress(tenantId);
     const fresh = cur.updated_at && Date.now() - new Date(cur.updated_at).getTime() < STALE_MS;
+    
     if (cur.status === 'running' && fresh) return cur; // já em andamento
     // Fire-and-forget: o request retorna na hora; o trabalho pesado roda em background.
+    
     service.repointTenantPhotos(tenantId).catch((e) => console.error('[watermark] repoint:', e.message));
+    
     return { status: 'running', done: 0, total: cur.total || 0 };
   }
 
@@ -154,12 +169,15 @@ export function createWatermarkRouter(supabase) {
   router.put('/tenants/:tenantId/logo', requireTenantAdmin, upload.single('logo'), async (req, res) => {
     try {
       if (!req.file) return res.status(400).json({ error: 'arquivo `logo` obrigatório' });
+      
       const result = await service.setTenantLogo({
         tenantId: req.params.tenantId,
         logoBuffer: req.file.buffer,
         contentType: req.file.mimetype,
       });
+      
       await startRepoint(req.params.tenantId); // regenera + reaponta as fotos em background
+      
       res.json({ ok: true, reprocessing: true, ...result });
     } catch (e) {
       res.status(500).json({ error: e.message });
@@ -175,12 +193,15 @@ export function createWatermarkRouter(supabase) {
     }
   });
 
-  // PATCH /tenants/:tenantId/watermark-settings — opacidade/escala/on-off. (admin only)
+  // PATCH /tenants/:tenantId/watermark-settings — opacidade/escala/posição/on-off. (admin only)
   router.patch('/tenants/:tenantId/watermark-settings', requireTenantAdmin, async (req, res) => {
     try {
-      const { enabled, opacity, scale } = req.body || {};
-      const settings = await service.updateWatermarkSettings(req.params.tenantId, { enabled, opacity, scale });
-      // Mudar opacidade/escala/toggle muda a chave do derivado → regenera + reaponta.
+      const { enabled, opacity, scale, position } = req.body || {};
+      if (position !== undefined && !WATERMARK_POSITIONS.includes(position)) {
+        return res.status(400).json({ error: `position inválida (use: ${WATERMARK_POSITIONS.join(', ')})` });
+      }
+      const settings = await service.updateWatermarkSettings(req.params.tenantId, { enabled, opacity, scale, position });
+      // Mudar opacidade/escala/posição/toggle muda a chave do derivado → regenera + reaponta.
       await startRepoint(req.params.tenantId);
       res.json({ ...settings, reprocessing: true });
     } catch (e) {
