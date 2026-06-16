@@ -211,7 +211,7 @@ export function WatermarkSettingsCard({ tenantId }: Props) {
   };
 
   return (
-    <div className="p-6 rounded-lg border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+    <div className="p-6 rounded-lg border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'hsl(var(--border))' }}>
       <div className="flex items-center gap-3 mb-6">
         <ShieldCheck className="h-6 w-6 text-blue-400" />
         <div>
