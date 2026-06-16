@@ -35,13 +35,22 @@ import {
   Phone,
 } from 'lucide-react';
 import type { Imovel } from '@/features/imoveis/services/kenloService';
+import { useAuth } from '@/hooks/useAuth';
 import { getFotoCapaUrl, getFotoUrl, type FotoInput } from './fotos-helpers';
+
+// Roles com permissão de edição: diretoria (owner) e administrador (admin).
+// O captador (corretor responsável pelo imóvel) é verificado pelo e-mail.
+const ROLES_EDIT = ['owner', 'admin'];
 
 interface ImovelDetalhesModalProps {
   imovel: Imovel | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Quando true, exibe o botão "Editar" (imóvel possui registro local editável). */
+  /**
+   * Quando true, o imóvel possui registro local editável. O botão "Editar" só
+   * aparece se, além disso, o usuário for diretoria (owner), administrador ou
+   * o captador (corretor responsável pelo imóvel).
+   */
   canEdit?: boolean;
   onEditar?: () => void;
 }
@@ -139,7 +148,22 @@ export const ImovelDetalhesModal = ({
   canEdit = false,
   onEditar,
 }: ImovelDetalhesModalProps) => {
+  const { user, isOwner } = useAuth();
+
   if (!imovel) return null;
+
+  // Captador: corretor responsável pelo imóvel (comparação por e-mail)
+  const isCaptador = Boolean(
+    user?.email &&
+      imovel.corretor_email &&
+      user.email.toLowerCase() === imovel.corretor_email.toLowerCase()
+  );
+
+  // Edição permitida apenas para diretoria (owner), administrador ou captador,
+  // e somente quando o imóvel possui registro local editável (canEdit).
+  const podeEditar =
+    canEdit &&
+    (Boolean(isOwner) || ROLES_EDIT.includes(String(user?.systemRole || '')) || isCaptador);
 
   const fotos = (imovel.fotos || []) as FotoInput[];
   const capa = getFotoCapaUrl(fotos);
@@ -367,7 +391,7 @@ export const ImovelDetalhesModal = ({
           <DialogClose asChild>
             <Button variant="outline">Fechar</Button>
           </DialogClose>
-          {canEdit && (
+          {podeEditar && (
             <Button onClick={onEditar}>
               <Pencil className="h-4 w-4 mr-2" />
               Editar imóvel

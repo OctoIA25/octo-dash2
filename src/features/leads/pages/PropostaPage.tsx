@@ -112,6 +112,7 @@ import { DocumentPreviewDialog } from '@/features/leads/components/DocumentPrevi
 import { PdfPreviewDialog } from '@/features/leads/components/PdfPreviewDialog';
 import { ImoveisComboBox } from '@/components/ui/imovel-combobox';
 import { useImoveisData } from '@/features/imoveis/hooks/useImoveisData';
+import type { SystemRole } from '@/contexts/AuthContext';
 import type { Imovel } from '@/features/imoveis/services/kenloService';
 
 const PROPOSAL_STAGES = [
@@ -200,6 +201,8 @@ interface ProposalItem {
   cliente: string;
   telefone?: string | null;
   corretor: string;
+  agentUserId?: string | null;
+  createdBy?: string | null;
   agenteResponsavel: string;
   valor: number;
   imovelRef: string;
@@ -294,6 +297,8 @@ const STAGE_BY_ID = PROPOSAL_STAGES.reduce((acc, stage) => {
   acc[stage.id] = stage;
   return acc;
 }, {} as Record<ProposalStageId, ProposalStage>);
+
+const ROLES_SEE_ALL: SystemRole[] = ['owner', 'admin'];
 
 const STAGE_IDS = new Set<ProposalStageId>(PROPOSAL_STAGES.map((stage) => stage.id));
 
@@ -718,6 +723,7 @@ const leadToProposal = (lead: CRMLead): ProposalItem | null => {
     cliente: lead.name || 'Lead sem nome',
     telefone: lead.phone,
     corretor: lead.assigned_agent_name || 'Não atribuído',
+    agentUserId: lead.assigned_agent_id,
     agenteResponsavel: lead.assigned_agent_name || 'Não atribuído',
     valor: lead.final_sale_value || lead.property_value || 0,
     imovelRef: lead.property_code || 'Sem imóvel',
@@ -912,6 +918,8 @@ const savedProposalToUiState = (saved: SavedProposal): { proposal: ProposalItem;
     cliente: firstBuyerName || 'Proposta sem proponente',
     telefone: compradores.find((party) => party.celular)?.celular || null,
     corretor: saved.agent_name || 'Não atribuído',
+    agentUserId: saved.agent_user_id,
+    createdBy: saved.created_by,
     agenteResponsavel: saved.agent_name || '',
     valor,
     imovelRef: propertyReference,
@@ -1947,6 +1955,9 @@ export const PropostaPage = ({
   const isEmbedded = Boolean(embeddedProposalId);
   const { toast } = useToast();
   const { user, tenantId } = useAuth();
+
+  const canSeeAll = !!user && ROLES_SEE_ALL.includes(user.systemRole);
+  
   const { leads, isLoading, error, refetch } = useLeadsMetrics();
   const currentTenantId = tenantId && tenantId !== 'owner' ? tenantId : null;
   const [view, setView] = useState<ViewMode>('kanban');
@@ -2241,6 +2252,11 @@ export const PropostaPage = ({
     });
 
     return [...reconciledDrafts, ...crmProposals]
+      .filter(
+        (proposal) =>
+          canSeeAll ||
+          (!!user?.id && (proposal.agentUserId === user.id || proposal.createdBy === user.id)),
+      )
       .map((proposal) => {
         const override = stageOverrides[proposal.id];
         if (!override) return proposal;
@@ -2251,7 +2267,7 @@ export const PropostaPage = ({
         };
       })
       .sort((a, b) => new Date(b.atualizadaEm).getTime() - new Date(a.atualizadaEm).getTime());
-  }, [drafts, leads, leadById, stageOverrides]);
+  }, [drafts, leads, leadById, stageOverrides, canSeeAll, user?.id]);
 
   const agents = useMemo(() => {
     return Array.from(new Set(proposals.map((proposal) => proposal.corretor).filter(Boolean))).sort((a, b) =>

@@ -16,7 +16,7 @@ import {
   AlertTriangle,
   ArrowUpRight,
 } from 'lucide-react';
-import { useAuthContext } from '@/contexts/AuthContext';
+import { useAuthContext, type SystemRole } from '@/contexts/AuthContext';
 import { fetchSavedProposals, SavedProposal } from '@/features/leads/services/proposalsService';
 import { useLeadsMetrics } from '@/features/leads/hooks/useLeadsMetrics';
 import { crmLeadToSavedProposal } from '../utils/crmLeadToSavedProposal';
@@ -61,11 +61,16 @@ const getInitials = (name: string) => {
 const DAYS_RECENT = 7;
 const COMMISSION_RATE = 0.054;
 
+// Roles que enxergam todos os negócios do tenant; as demais veem apenas os próprios
+const ROLES_SEE_ALL: SystemRole[] = ['owner', 'admin'];
+
 export function VisaoGeralPage() {
   const { tenantId, user } = useAuthContext();
   const { getPhoto } = useTenantBrokerPhotos(tenantId);
   const { leads } = useLeadsMetrics();
   const [savedProposals, setSavedProposals] = useState<SavedProposal[]>([]);
+
+  const canSeeAll = !!user && ROLES_SEE_ALL.includes(user.systemRole);
 
   const proposals = useMemo<SavedProposal[]>(() => {
     const savedLeadIds = new Set(savedProposals.map((p) => p.lead_id).filter(Boolean) as string[]);
@@ -73,8 +78,13 @@ export function VisaoGeralPage() {
       .filter((lead) => !savedLeadIds.has(lead.id))
       .map(crmLeadToSavedProposal)
       .filter((p): p is SavedProposal => p !== null);
-    return [...savedProposals, ...leadStubs];
-  }, [savedProposals, leads]);
+    const all = [...savedProposals, ...leadStubs];
+    if (canSeeAll) return all;
+    if (!user?.id) return [];
+    return all.filter(
+      (proposal) => proposal.agent_user_id === user.id || proposal.created_by === user.id,
+    );
+  }, [savedProposals, leads, canSeeAll, user?.id]);
   const [openedProposalId, setOpenedProposalId] = useState<string | null>(null);
   const openedProposal = useMemo(
     () => proposals.find((p) => p.id === openedProposalId) || null,
@@ -199,9 +209,11 @@ export function VisaoGeralPage() {
 
         <div className="mx-1 h-6 w-px bg-slate-200 dark:bg-slate-800" />
 
-        <FilterChip icon={Handshake} active={onlyMine} onClick={() => setOnlyMine((v) => !v)}>
-          Minhas parcerias
-        </FilterChip>
+        {canSeeAll && (
+          <FilterChip icon={Handshake} active={onlyMine} onClick={() => setOnlyMine((v) => !v)}>
+            Minhas parcerias
+          </FilterChip>
+        )}
         <FilterChip icon={Building2} active onClick={() => undefined}>
           Somente desta imobiliária
         </FilterChip>

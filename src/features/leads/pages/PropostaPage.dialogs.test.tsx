@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import type { SavedProposal } from '@/features/leads/services/proposalsService';
@@ -39,7 +39,10 @@ const savedProposalFixture: SavedProposal = {
   complemento: '',
   cidade: 'São Paulo',
   uf: 'SP',
-  agent_user_id: null,
+  // O usuário autenticado nos testes é o corretor `user-1`. A página só exibe
+  // propostas do próprio corretor (ou de admin/owner), então o fixture precisa
+  // pertencer a ele para ser renderizado.
+  agent_user_id: 'user-1',
   agent_name: 'Corretor Teste',
   business_type: 'Venda',
   lead_type: 'Interessado',
@@ -180,10 +183,19 @@ describe('PropostaPage — abrir e fechar dialogs', () => {
     await screen.findByRole('dialog');
     await user.click(screen.getByRole('tab', { name: /assinatura eletrônica/i }));
 
+    // O upload usa pickFiles(), que cria um <input type="file"> efêmero no
+    // document.body apenas ao acionar o dropzone (removido após o change). Por
+    // isso é preciso clicar no dropzone antes de localizar o input.
+    await user.click(screen.getByRole('button', { name: /enviar documento em pdf/i }));
+
     const input = document.querySelector('input[type="file"][accept*="pdf"]') as HTMLInputElement;
     expect(input).not.toBeNull();
     const pdf = new File(['%PDF-1.4'], 'contrato.pdf', { type: 'application/pdf' });
-    await user.upload(input, pdf);
+    // O input do pickFiles fica fora da árvore visível (position fixed,
+    // aria-hidden), o que faz o user.upload falhar na checagem de
+    // pointer-events. Disparar o `change` direto reproduz a seleção real do
+    // arquivo, que é justamente o evento que o pickFiles escuta.
+    fireEvent.change(input, { target: { files: [pdf] } });
 
     await user.click(await screen.findByRole('button', { name: /visualizar pdf/i }));
     expect(await screen.findByTitle('contrato.pdf')).toBeInTheDocument();
