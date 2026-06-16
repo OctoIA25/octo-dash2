@@ -3,6 +3,7 @@ import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { StandardCardTitle } from '@/components/ui/StandardCardTitle';
 import { Target, TrendingUp } from 'lucide-react';
+import { computeFunnelStages } from '@/features/leads/utils/funnelStages';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -40,164 +41,11 @@ export const FunnelStagesBubbleChart = ({ leads, funnelType = 'comprador', subSe
   const chartRef = useRef<HTMLCanvasElement>(null);
   const chartInstance = useRef<ChartJS | null>(null);
 
-  // 🎨 ETAPAS DO FUNIL - Ajustadas conforme a subseção ativa
-  const getEtapasOrdem = () => {
-    // Pré-Atendimento: apenas 4 etapas (termina em Visita Agendada)
-    if (subSection === 'pre-atendimento') {
-      return [
-        'Novos Leads',
-        'Em Atendimento',
-        'Interação',
-        'Visita Agendada'
-      ];
-    }
-    
-    // Atendimento: 6 etapas (começa em Bolsão, termina em Proposta Assinada)
-    if (subSection === 'atendimento') {
-      return [
-        'Bolsão',
-        'Visita Realizada',
-        'Negociação',
-        'Proposta Criada',
-        'Proposta Enviada',
-        'Proposta Assinada'
-      ];
-    }
-    
-    // Geral: funil completo com 9 etapas
-    return [
-      'Novos Leads',
-      'Em Atendimento',
-      'Interação',
-      'Visita Agendada',
-      'Visita Realizada',
-      'Negociação',
-      'Proposta Criada',
-      'Proposta Enviada',
-      'Proposta Assinada'
-    ];
-  };
-
-  // Calcular dados das etapas
-  const chartData = useMemo(() => {
-    const etapasOrdem = getEtapasOrdem();
-    const safeLeads = leads || [];
-    const totalLeads = safeLeads.length;
-
-    // 🎯 CÁLCULO DAS ETAPAS - EXATAMENTE IGUAL AO ENHANCEDFUNNELCHART
-    const calcularEtapa = (etapa: string): number => {
-      switch (etapa) {
-        case 'Novos Leads':
-          return totalLeads;
-        case 'Em Atendimento':
-          return safeLeads.filter(l => l.etapa_atual === 'Em Atendimento').length;
-        case 'Interação':
-          return safeLeads.filter(l => l.etapa_atual === 'Interação').length;
-        case 'Visita Agendada':
-          return safeLeads.filter(l => 
-            l.etapa_atual === 'Visita Agendada' ||
-            l.etapa_atual === 'Visita agendada' ||
-            (l.Data_visita && l.Data_visita.trim() !== '' && l.etapa_atual !== 'Visita Realizada')
-          ).length;
-        case 'Bolsão':
-          // Leads no bolsão = leads sem imóvel definido ou aguardando atribuição
-          return safeLeads.filter(l => 
-            l.etapa_atual === 'Bolsão' ||
-            l.etapa_atual === 'Bolsao' ||
-            l.etapa_atual === 'Sem Imóvel' ||
-            l.etapa_atual === 'Aguardando Imóvel' ||
-            (!l.codigo_imovel || l.codigo_imovel.trim() === '')
-          ).length;
-        case 'Visita Realizada':
-          return safeLeads.filter(l => 
-            l.etapa_atual === 'Visita Realizada' ||
-            l.etapa_atual === 'Visita realizada' ||
-            l.Imovel_visitado === 'Sim'
-          ).length;
-        case 'Negociação':
-          return safeLeads.filter(l => 
-            l.etapa_atual === 'Negociação' ||
-            l.etapa_atual === 'Em Negociação' ||
-            l.etapa_atual === 'Negociacao'
-          ).length;
-        case 'Proposta Criada':
-          return safeLeads.filter(l => 
-            l.etapa_atual === 'Proposta Criada' ||
-            l.etapa_atual === 'Proposta criada'
-          ).length;
-        case 'Proposta Enviada':
-          return safeLeads.filter(l => 
-            l.etapa_atual === 'Proposta Enviada' ||
-            l.etapa_atual === 'Proposta enviada'
-          ).length;
-        case 'Proposta Assinada':
-          return safeLeads.filter(l => 
-            l.etapa_atual === 'Proposta Assinada' ||
-            l.etapa_atual === 'Proposta assinada' ||
-            l.etapa_atual === 'Fechamento' ||
-            l.etapa_atual === 'Fechado' ||
-            l.etapa_atual === 'Finalizado' ||
-            l.etapa_atual === 'Negócio Fechado' ||
-            (l.data_finalizacao && l.data_finalizacao.trim() !== '') ||
-            (l.valor_final_venda && l.valor_final_venda > 0)
-          ).length;
-        default:
-          return 0;
-      }
-    };
-
-    // Preparar dados para o gráfico
-    const labels = etapasOrdem.map(e => e.replace('\n', ' '));
-    const data = etapasOrdem.map(etapa => calcularEtapa(etapa));
-    const percentuais = data.map(valor => totalLeads > 0 ? ((valor / totalLeads) * 100).toFixed(1) : '0.0');
-
-    // Calcular métricas de conversão
-    const visitasRealizadas = calcularEtapa('Visita Realizada');
-    const propostasAssinadas = calcularEtapa('Proposta Assinada');
-    
-    // Para Cliente Proprietário (vendedor): calcular Não Exclusivo, Exclusivo e Feitura de Contrato
-    const naoExclusivo = safeLeads.filter(l => 
-      l.etapa_atual === 'Não Exclusivo' ||
-      l.etapa_atual === 'Nao Exclusivo'
-    ).length;
-    
-    const exclusivo = safeLeads.filter(l => 
-      l.etapa_atual === 'Exclusivo'
-    ).length;
-    
-    const feituraContrato = safeLeads.filter(l => 
-      l.etapa_atual === 'Feitura de Contrato' ||
-      l.etapa_atual === 'Feitura do Contrato'
-    ).length;
-    
-    // Taxa de conversão em visitas (total de leads que chegaram até visita realizada)
-    const taxaConversaoVisitas = totalLeads > 0 ? ((visitasRealizadas / totalLeads) * 100).toFixed(1) : '0.0';
-    
-    // Taxa de conversão em proposta assinada (total de leads que fecharam)
-    const taxaConversaoProposta = totalLeads > 0 ? ((propostasAssinadas / totalLeads) * 100).toFixed(1) : '0.0';
-    
-    // Taxa de conversão para Cliente Proprietário (somando Não Exclusivo, Exclusivo e Feitura de Contrato)
-    const totalProprietariosConvertidos = naoExclusivo + exclusivo + feituraContrato;
-    const taxaConversaoProprietarios = totalLeads > 0 ? ((totalProprietariosConvertidos / totalLeads) * 100).toFixed(1) : '0.0';
-
-    return {
-      labels,
-      etapasOriginais: etapasOrdem,
-      data,
-      percentuais,
-      totalLeads,
-      visitasRealizadas,
-      propostasAssinadas,
-      taxaConversaoVisitas,
-      taxaConversaoProposta,
-      // Métricas específicas para Cliente Proprietário
-      naoExclusivo,
-      exclusivo,
-      feituraContrato,
-      totalProprietariosConvertidos,
-      taxaConversaoProprietarios
-    };
-  }, [leads, funnelType, subSection]);
+  // Calcular dados das etapas (lógica compartilhada e testável em funnelStages.ts)
+  const chartData = useMemo(
+    () => computeFunnelStages(leads, subSection),
+    [leads, subSection]
+  );
 
   useEffect(() => {
     if (!chartRef.current || !chartData) return;
