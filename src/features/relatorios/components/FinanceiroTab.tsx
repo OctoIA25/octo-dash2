@@ -1,9 +1,15 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, type ReactNode } from 'react';
 import { DollarSign, TrendingUp, Users, Target, Percent, Info, type LucideIcon } from 'lucide-react';
+import { TermoFinanceiro } from '@/components/ui/termo-financeiro';
 import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { useLeadSourceCosts } from '../hooks/useLeadSourceCosts';
+import {
+  buildFinanceiroResumo,
+  origemKey,
+  type FinanceiroOrigemRow,
+} from '../utils/buildFinanceiroResumo';
 
 // ─────────────────────────────────────────────────────────────
 // Helpers
@@ -31,43 +37,7 @@ function toInputValue(v: number): string {
 
 const ROLES_EDIT = ['admin', 'team_leader', 'owner'];
 
-function isConvertido(l: ProcessedLead): boolean {
-  const etapa = (l.etapa_atual || '').toLowerCase();
-  return etapa.includes('assinada') || etapa.includes('fechamento') || etapa.includes('contrato');
-}
-
-function receitaDoLead(l: ProcessedLead): number {
-  return Number(l.valor_final_venda) || Number(l.valor_imovel) || 0;
-}
-
-const DEFAULT_ORIGEM_LABEL = 'Não informado';
-
-/** Rótulo de exibição: origem sem espaços nas bordas, ou o padrão se vazia. */
-function origemLabel(raw: string | undefined): string {
-  return (raw || '').trim() || DEFAULT_ORIGEM_LABEL;
-}
-
-/**
- * Chave de deduplicação: case-insensitive (e sem espaços nas bordas).
- * Assim "ZAP Imoveis" e "Zap Imoveis" são tratadas como a MESMA origem.
- */
-function origemKey(raw: string | undefined): string {
-  return origemLabel(raw).toLowerCase();
-}
-
 type Periodo = 'mensal' | 'anual';
-
-interface OrigemRow {
-  key: string; // chave normalizada (lowercase) — usada para o custo
-  origem: string; // rótulo canônico para exibição
-  leads: number;
-  convertidos: number;
-  receita: number;
-  investimento: number; // já normalizado para o período selecionado
-  cpl: number | null;
-  cac: number | null;
-  roi: number | null;
-}
 
 interface FinanceiroTabProps {
   leads: ProcessedLead[];
@@ -104,90 +74,11 @@ export function FinanceiroTab({ leads }: FinanceiroTabProps) {
     );
   }, [costsByKey]);
 
-  // Janela de tempo do período selecionado (mês atual ou ano atual)
-  const now = new Date();
-  const prefixo =
-    periodo === 'mensal'
-      ? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-      : `${now.getFullYear()}`;
-  const multiplicador = periodo === 'mensal' ? 1 : 12;
-
-  // Origens distintas em TODO o conjunto de leads, deduplicadas por chave
-  // normalizada. O rótulo exibido é a variante de capitalização mais
-  // frequente (ex: "ZAP Imoveis" prevalece sobre "zap imoveis").
-  const origensDistintas = useMemo(() => {
-    // key -> { variante de exibição -> contagem }
-    const variantesPorChave = new Map<string, Map<string, number>>();
-    leads.forEach((l) => {
-      const label = origemLabel(l.origem_lead);
-      const key = label.toLowerCase();
-      if (!variantesPorChave.has(key)) variantesPorChave.set(key, new Map());
-      const variantes = variantesPorChave.get(key)!;
-      variantes.set(label, (variantes.get(label) || 0) + 1);
-    });
-
-    return Array.from(variantesPorChave.entries())
-      .map(([key, variantes]) => {
-        let origem = '';
-        let melhor = -1;
-        variantes.forEach((count, variante) => {
-          // mais frequente vence; empate -> ordem alfabética (estável)
-          if (count > melhor || (count === melhor && variante.localeCompare(origem, 'pt-BR') < 0)) {
-            melhor = count;
-            origem = variante;
-          }
-        });
-        return { key, origem };
-      })
-      .sort((a, b) => a.origem.localeCompare(b.origem, 'pt-BR'));
-  }, [leads]);
-
-  // Leads dentro da janela do período
-  const leadsJanela = useMemo(
-    () => leads.filter((l) => (l.data_entrada || '').startsWith(prefixo)),
-    [leads, prefixo]
+  // Resumo financeiro por origem — cálculo puro compartilhado com a exportação.
+  const { rows, totais } = useMemo<{ rows: FinanceiroOrigemRow[]; totais: ReturnType<typeof buildFinanceiroResumo>['totais'] }>(
+    () => buildFinanceiroResumo({ leads, costsByKey, periodo }),
+    [leads, costsByKey, periodo]
   );
-
-  const rows: OrigemRow[] = useMemo(() => {
-    return origensDistintas
-      .map(({ key, origem }) => {
-        const doOrigem = leadsJanela.filter((l) => origemKey(l.origem_lead) === key);
-        const convertidosArr = doOrigem.filter(isConvertido);
-        const receita = convertidosArr.reduce((acc, l) => acc + receitaDoLead(l), 0);
-        const investimento = (costsByKey[key] || 0) * multiplicador;
-        const leadsCount = doOrigem.length;
-        const convertidos = convertidosArr.length;
-        return {
-          key,
-          origem,
-          leads: leadsCount,
-          convertidos,
-          receita,
-          investimento,
-          cpl: leadsCount > 0 ? investimento / leadsCount : null,
-          cac: convertidos > 0 ? investimento / convertidos : null,
-          roi: investimento > 0 ? (receita - investimento) / investimento : null,
-        };
-      })
-      .sort((a, b) => b.investimento - a.investimento || b.leads - a.leads);
-  }, [origensDistintas, leadsJanela, costsByKey, multiplicador]);
-
-  // KPIs agregados
-  const totais = useMemo(() => {
-    const investimento = rows.reduce((acc, r) => acc + r.investimento, 0);
-    const leadsTotal = rows.reduce((acc, r) => acc + r.leads, 0);
-    const convertidos = rows.reduce((acc, r) => acc + r.convertidos, 0);
-    const receita = rows.reduce((acc, r) => acc + r.receita, 0);
-    return {
-      investimento,
-      leadsTotal,
-      convertidos,
-      receita,
-      cplMedio: leadsTotal > 0 ? investimento / leadsTotal : null,
-      cacMedio: convertidos > 0 ? investimento / convertidos : null,
-      roi: investimento > 0 ? (receita - investimento) / investimento : null,
-    };
-  }, [rows]);
 
   const handleBlurSave = async (key: string, label: string) => {
     const raw = (draft[key] || '').replace(/\./g, '').replace(',', '.');
@@ -236,10 +127,10 @@ export function FinanceiroTab({ leads }: FinanceiroTabProps) {
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         <KpiCard icon={DollarSign} color="blue" label={`Investimento (${periodo})`} value={brl.format(totais.investimento)} />
-        <KpiCard icon={Users} color="indigo" label="Custo por Lead (CPL)" value={totais.cplMedio === null ? '—' : brlCents.format(totais.cplMedio)} />
-        <KpiCard icon={Target} color="emerald" label="Custo por Conversão (CAC)" value={totais.cacMedio === null ? '—' : brlCents.format(totais.cacMedio)} />
+        <KpiCard icon={Users} color="indigo" label={<>Custo por Lead (<TermoFinanceiro sigla="CPL" />)</>} value={totais.cplMedio === null ? '—' : brlCents.format(totais.cplMedio)} />
+        <KpiCard icon={Target} color="emerald" label={<>Custo por Conversão (<TermoFinanceiro sigla="CAC" />)</>} value={totais.cacMedio === null ? '—' : brlCents.format(totais.cacMedio)} />
         <KpiCard icon={TrendingUp} color="green" label="Receita de vendas" value={brl.format(totais.receita)} />
-        <KpiCard icon={Percent} color={totais.roi !== null && totais.roi < 0 ? 'red' : 'purple'} label="ROI" value={fmtRoi(totais.roi)} />
+        <KpiCard icon={Percent} color={totais.roi !== null && totais.roi < 0 ? 'red' : 'purple'} label={<TermoFinanceiro sigla="ROI" />} value={fmtRoi(totais.roi)} />
       </div>
 
       {/* Tabela de origens */}
@@ -266,10 +157,10 @@ export function FinanceiroTab({ leads }: FinanceiroTabProps) {
                   <th className="px-5 py-3 font-medium text-right">Investimento (R$/mês)</th>
                   <th className="px-5 py-3 font-medium text-right">Leads</th>
                   <th className="px-5 py-3 font-medium text-right">Convertidos</th>
-                  <th className="px-5 py-3 font-medium text-right">CPL</th>
-                  <th className="px-5 py-3 font-medium text-right">CAC</th>
+                  <th className="px-5 py-3 font-medium text-right"><TermoFinanceiro sigla="CPL" /></th>
+                  <th className="px-5 py-3 font-medium text-right"><TermoFinanceiro sigla="CAC" /></th>
                   <th className="px-5 py-3 font-medium text-right">Receita</th>
-                  <th className="px-5 py-3 font-medium text-right">ROI</th>
+                  <th className="px-5 py-3 font-medium text-right"><TermoFinanceiro sigla="ROI" /></th>
                 </tr>
               </thead>
               <tbody>
@@ -311,7 +202,7 @@ export function FinanceiroTab({ leads }: FinanceiroTabProps) {
           <span>
             O valor é sempre cadastrado por mês. Na visão <strong>Anual</strong>, o investimento é multiplicado por 12 e os
             indicadores (leads, conversões, receita) consideram {periodo === 'anual' ? 'o ano corrente' : 'o mês corrente'}.
-            CPL = investimento ÷ leads · CAC = investimento ÷ convertidos · ROI = (receita − investimento) ÷ investimento.
+            Passe o mouse sobre as siglas (CPL, CAC, ROI) para ver a definição e a fórmula de cada indicador.
           </span>
         </div>
       </div>
@@ -339,7 +230,7 @@ function KpiCard({
 }: {
   icon: LucideIcon;
   color: string;
-  label: string;
+  label: ReactNode;
   value: string;
 }) {
   const c = COLOR_MAP[color] || COLOR_MAP.blue;

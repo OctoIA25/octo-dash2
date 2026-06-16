@@ -43,7 +43,9 @@ import { ImoveisPortfolioChart } from '@/features/imoveis/components/ImoveisPort
 import { BairrosChart } from '@/features/imoveis/components/BairrosChart';
 import { ImoveisInterestTable } from '@/features/imoveis/components/ImoveisInterestTable';
 import { FunnelStagesBubbleChart } from '@/features/leads/components/FunnelStagesBubbleChart';
+import { FunilPorUnidadeChart } from '@/features/relatorios/components/FunilPorUnidadeChart';
 import { useLeadsMetrics } from '@/features/leads/hooks/useLeadsMetrics';
+import { useImovelTipoMap } from '@/features/leads/hooks/useImovelTipoMap';
 import { useAuth } from '@/hooks/useAuth';
 import { fetchTenantMembers, type TenantMember } from '@/features/corretores/services/tenantMembersService';
 import { LEAD_TYPE_INTERESSADO, LEAD_TYPE_PROPRIETARIO } from '@/features/leads/services/leadsService';
@@ -52,6 +54,7 @@ import { getRankingColor } from '@/utils/colors';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { CorretorMetricCard } from '@/components/metrics/individual';
 import { useRelatorios } from '../hooks/useRelatorios';
+import { useLeadSourceChannels } from '../hooks/useLeadSourceChannels';
 import { buildCorretorMetricasCompletas } from '../utils/buildCorretorMetricasCompletas';
 import { buscarValorTotal, formatarValorMonetario, buscarImoveisAtivos } from '../services/relatoriosService';
 import {
@@ -59,6 +62,9 @@ import {
   type CommercialSalesFinanceSummary,
 } from '@/features/metricas/services/commercialSalesService';
 import { FinanceiroTab } from '../components/FinanceiroTab';
+import { ExportReportDialog, buildReportModel, fromChartJs, type ReportSource } from '../export';
+import { useLeadSourceCosts } from '../hooks/useLeadSourceCosts';
+import { buildFinanceiroResumo, origemKey } from '../utils/buildFinanceiroResumo';
 
 // Registrar componentes do Chart.js
 ChartJS.register(
@@ -354,6 +360,10 @@ export const RelatoriosPage = () => {
     leadType: LEAD_TYPE_PROPRIETARIO
   });
 
+  // Mapa codigo_imovel -> tipo (imoveis_locais) para o Funil por Unidade.
+  // Uma única query por tenant; junção em memória, sem N+1.
+  const { tipoMap: imovelTipoMap, isLoading: isLoadingTipoMap } = useImovelTipoMap();
+
   const proprietariosLeads = useMemo(() => {
     return processedLeadsProprietario.filter(l => {
       const tipoNegocio = l.tipo_negocio?.toLowerCase() || '';
@@ -430,6 +440,7 @@ export const RelatoriosPage = () => {
     };
   }, [proprietariosLeadsParaExibir, proprietariosSubTab]);
 
+  const [isExportOpen, setIsExportOpen] = useState(false);
   const [isChartModalOpen, setIsChartModalOpen] = useState(false);
   const [activeChartModal, setActiveChartModal] = useState<
     | 'tempo_interacao_usuario'
@@ -1085,6 +1096,11 @@ export const RelatoriosPage = () => {
   // ═══ DADOS REAIS DOS GRÁFICOS (calculados a partir dos leads do Supabase) ═══
   const allLeads = useMemo(() => canonicalizeOrigemLeads([...processedLeadsInteressado, ...processedLeadsProprietario]), [processedLeadsInteressado, processedLeadsProprietario]);
 
+  // Canal efetivo de cada origem: escolha salva do tenant (Configurações >
+  // Canais de Lead) > sugestão automática do classificador.
+  const { getCanal } = useLeadSourceChannels();
+  const { costs: leadSourceCosts } = useLeadSourceCosts();
+
   const BLUE_STACKED_SHADES = [
     CHART_COLORS.primaryDark,
     CHART_COLORS.primary,
@@ -1130,8 +1146,35 @@ export const RelatoriosPage = () => {
     return { labels: dailyLabels, datasets };
   }, [allLeads, dailyLabels, origemLabels]);
 
-  // Usar leadsPorOrigemData também como "por canal" (mesmo dado, visão diferente)
-  const leadsPorCanalData = leadsPorOrigemData;
+  // 2b. Leads por Canal diário (origens agrupadas pelo canal efetivo)
+  const canalCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    allLeads.forEach(l => {
+      const canal = getCanal(l.origem_lead);
+      counts[canal] = (counts[canal] || 0) + 1;
+    });
+    return counts;
+  }, [allLeads, getCanal]);
+  const canalTop = useMemo(() => topN(canalCounts, 10), [canalCounts]);
+  const canalLabels = canalTop.labels.slice(0, 6);
+
+  const leadsPorCanalData = useMemo(() => {
+    const now = new Date();
+    const datasets = canalLabels.map((canal, idx) => {
+      const data = dailyLabels.map((_, dayIdx) => {
+        const date = subDays(now, 13 - dayIdx);
+        const dateStr = format(date, 'yyyy-MM-dd');
+        return allLeads.filter(l => getCanal(l.origem_lead) === canal && (l.data_entrada || '').startsWith(dateStr)).length;
+      });
+      return {
+        label: canal,
+        data,
+        backgroundColor: BLUE_STACKED_SHADES[Math.min(idx, BLUE_STACKED_SHADES.length - 1)],
+        borderRadius: 4,
+      };
+    });
+    return { labels: dailyLabels, datasets };
+  }, [allLeads, dailyLabels, canalLabels, getCanal]);
 
   // 3. Leads convertidos por Origem (leads que chegaram a Proposta Assinada)
   const convertidos = useMemo(() => allLeads.filter(l => {
@@ -1152,7 +1195,26 @@ export const RelatoriosPage = () => {
     }]
   };
 
-  const leadsConvertidosCanalData = leadsConvertidosOrigemData;
+  // 3b. Leads convertidos por Canal (origens agrupadas pelo canal efetivo)
+  const convertidosCanalCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    convertidos.forEach(l => {
+      const canal = getCanal(l.origem_lead);
+      counts[canal] = (counts[canal] || 0) + 1;
+    });
+    return counts;
+  }, [convertidos, getCanal]);
+  const convertidosCanalTop = useMemo(() => topN(convertidosCanalCounts, 10), [convertidosCanalCounts]);
+
+  const leadsConvertidosCanalData = {
+    labels: convertidosCanalTop.labels.length > 0 ? convertidosCanalTop.labels : canalTop.labels,
+    datasets: [{
+      label: 'Leads Convertidos',
+      data: convertidosCanalTop.values.length > 0 ? convertidosCanalTop.values : canalTop.labels.map(() => 0),
+      backgroundColor: CHART_COLORS.primary,
+      borderRadius: 6,
+    }]
+  };
 
   // 4. Leads por Corretor (dados reais)
   const corretorCounts = useMemo(() => countByField(allLeads, 'corretor_responsavel'), [allLeads]);
@@ -1419,141 +1481,136 @@ export const RelatoriosPage = () => {
   const handlePesquisar = () => {
   };
 
-  const handleExportar = async () => {
-    try {
-      const el = exportRef.current;
-      if (!el) {
-        console.error('Elemento de exportação não encontrado');
-        return;
-      }
+  // ── Exportação configurável de relatórios ───────────────────────────────────
+  // Monta o modelo a partir dos memos já calculados (sem cálculo novo) e o
+  // converte conforme a sub-área ativa. Consumido pelo ExportReportDialog.
+  // ── Exportação configurável de relatórios ───────────────────────────────────
+  // Resumo financeiro (cálculo mais pesado) memoizado à parte.
+  const financeiroResumoExport = useMemo(() => {
+    const costsByKey: Record<string, number> = {};
+    Object.entries(leadSourceCosts || {}).forEach(([origem, valor]) => {
+      costsByKey[origemKey(origem)] = Number(valor) || 0;
+    });
+    return buildFinanceiroResumo({ leads: allLeads, costsByKey, periodo: 'mensal' });
+  }, [leadSourceCosts, allLeads]);
 
-      const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
-        import('jspdf'),
-        import('html2canvas'),
-      ]);
+  // Monta o modelo a partir dos memos já calculados (sem cálculo novo). Os
+  // gráficos viram dados neutros via fromChartJs — sem captura de tela.
+  const reportSource = useMemo<ReportSource>(() => ({
+    subtitle: `Período: ${dataInicial} a ${dataFinal}`,
+    marketing: {
+      kpis: kpisCalculados,
+      charts: {
+        canal: fromChartJs(leadsPorCanalData, 'stackedBar'),
+        origem: fromChartJs(leadsPorOrigemData, 'stackedBar'),
+        origemTotal: fromChartJs(leadsTotalOrigemData, 'horizontalBar'),
+        convOrigem: fromChartJs(leadsConvertidosOrigemData, 'horizontalBar'),
+        convCanal: fromChartJs(leadsConvertidosCanalData, 'bar'),
+        motivos: fromChartJs(motivosArquivamentoData, 'doughnut'),
+      },
+    },
+    metricas: {
+      subArea: activeMetricasSubArea === 'ranking' ? 'ranking' : 'visao-geral',
+      kpis: {
+        vendasCriadas: vendasCriadas || 0,
+        vendasAssinadas: vendasAssinadas || 0,
+        imoveisAtivos: imoveisAtivos || 0,
+        totalLeadsMensal: totalLeadsMensal || 0,
+        valorTotalFormatado: formatarValorMonetario(valorTotal),
+      },
+      charts: {
+        leadsEquipe: fromChartJs(leadsPorEquipeData, 'bar'),
+        tempoEquipe: fromChartJs(tempoRespostaChartData, 'bar'),
+        convEquipe: fromChartJs(taxaConversaoChartData, 'bar'),
+        leadsUsuario: fromChartJs(leadsInteragidosUsuarioData, 'bar'),
+        tempoUsuario: fromChartJs(tempoInteracaoData, 'bar'),
+        atividadesUsuario: fromChartJs(atividadesAbertoData, 'stackedBar'),
+        convUsuario: fromChartJs(leadsConvertidosUsuarioData, 'bar'),
+      },
+      ranking: rankingMetricasIndividuais.map((r) => ({
+        ranking: r.ranking,
+        corretor: r.corretor,
+        valorComissao: r.valorComissao,
+        vendasFeitas: r.vendasFeitas,
+        gestaoAtiva: r.gestaoAtiva,
+      })),
+    },
+    metricasIndividuais: {
+      subArea: activeMetricasIndSubArea,
+      corretor: metricasIndCorretor || '—',
+      comissaoMetas: metricasIndComissaoMetasView,
+      leads: {
+        totalLeads: metricasIndLeadsView.totalLeads,
+        leadsRecebidos: metricasIndLeadsView.leadsRecebidos,
+        visitas: metricasIndLeadsView.visitas,
+        vendasRealizadas: metricasIndLeadsView.vendasRealizadas,
+      },
+      vendas: {
+        vendasTotal: metricasIndVendasView.vendasTotal,
+        vendasExclusivas: metricasIndVendasView.vendasExclusivas,
+        vendasNaoExclusivas: metricasIndVendasView.vendasNaoExclusivas,
+        vgvTotal: metricasIndVendasView.vgvTotal,
+        comissaoTotal: metricasIndVendasView.comissaoTotal,
+        ticketMedio: metricasIndVendasView.ticketMedio,
+        rows: metricasIndVendasView.rows.map((r) => ({
+          codigo_imovel: r.codigo_imovel,
+          exclusividade: r.exclusividade,
+          fonte: r.fonte,
+          valor_imovel: r.valor_imovel,
+          comissao: r.comissao,
+          data: r.data,
+        })),
+      },
+      charts: {
+        leadsBairro: fromChartJs(leadsPorBairroData, 'doughnut'),
+        leadsFonte: fromChartJs(leadsPorFonteData, 'doughnut'),
+        leadsImovel: fromChartJs(leadsPorImovelData, 'horizontalBar'),
+        vendasFonte: fromChartJs(vendasPorFonteData, 'bar'),
+      },
+    },
+    imoveis: {
+      financeiro: financeiroImoveis,
+      charts: {
+        vgv: fromChartJs(vgvChartData, 'bar', 'currency'),
+        vgc: fromChartJs(vgcChartData, 'bar', 'currency'),
+        bairros: fromChartJs(bairrosInteresseData, 'horizontalBar'),
+        faixa: fromChartJs(vendasFaixaChartData, 'bar'),
+        exclusivo: fromChartJs(distribuicaoExclusivoFichaChartData, 'stackedBar'),
+      },
+    },
+    financeiro: { resumo: financeiroResumoExport },
+  }), [
+    dataInicial, dataFinal, kpisCalculados,
+    leadsPorCanalData, leadsPorOrigemData, leadsTotalOrigemData, leadsConvertidosOrigemData, leadsConvertidosCanalData, motivosArquivamentoData,
+    activeMetricasSubArea, vendasCriadas, vendasAssinadas, imoveisAtivos, totalLeadsMensal, valorTotal,
+    leadsPorEquipeData, tempoRespostaChartData, taxaConversaoChartData, leadsInteragidosUsuarioData, tempoInteracaoData, atividadesAbertoData, leadsConvertidosUsuarioData,
+    rankingMetricasIndividuais, activeMetricasIndSubArea, metricasIndCorretor, metricasIndComissaoMetasView, metricasIndLeadsView, metricasIndVendasView,
+    leadsPorBairroData, leadsPorFonteData, leadsPorImovelData, vendasPorFonteData,
+    financeiroImoveis, vgvChartData, vgcChartData, bairrosInteresseData, vendasFaixaChartData, distribuicaoExclusivoFichaChartData,
+    financeiroResumoExport,
+  ]);
 
-      const pdf = new jsPDF({
-        orientation: 'p',
-        unit: 'mm',
-        format: 'a4',
-      });
-
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
-      const margin = 5;
-      const usableWidth = pdfWidth - (margin * 2);
-
-      // Função auxiliar para capturar um elemento
-      const captureElement = async (element: HTMLElement): Promise<HTMLCanvasElement> => {
-        return await html2canvas(element, {
-          scale: 1.5,
-          useCORS: false,
-          allowTaint: true,
-          backgroundColor: '#ffffff',
-          logging: false,
-        });
-      };
-
-      // Função para adicionar imagem ao PDF
-      const addImageToPdf = (canvas: HTMLCanvasElement, yPos: number, maxHeight?: number): number => {
-        const imgData = canvas.toDataURL('image/jpeg', 0.85);
-        const ratio = usableWidth / canvas.width;
-        let imgHeight = canvas.height * ratio;
-        
-        if (maxHeight && imgHeight > maxHeight) {
-          imgHeight = maxHeight;
-        }
-        
-        pdf.addImage(imgData, 'JPEG', margin, yPos, usableWidth, imgHeight);
-        return imgHeight;
-      };
-
-      // ========== PÁGINA ÚNICA: KPIs + 9 gráficos + Motivo de arquivamento ==========
-      
-      // Capturar KPIs
-      const kpisEl = el.querySelector('[data-export-layout="kpis"]') as HTMLElement;
-      if (kpisEl) {
-        const kpisCanvas = await captureElement(kpisEl);
-        addImageToPdf(kpisCanvas, margin, 18);
-      }
-
-      // Capturar os gráficos individualmente
-      const chartsContainer = el.querySelector('[data-export-layout="charts"]') as HTMLElement;
-      const chartCards = chartsContainer ? Array.from(chartsContainer.children) as HTMLElement[] : [];
-      
-      const currentY = 24; // Posição Y após KPIs
-      const chartHeight = 22; // Altura bem menor para caber tudo
-      const chartGap = 1; // Espaço mínimo entre gráficos
-      const chartWidth = (usableWidth / 3) - 2; // 3 colunas
-      
-      // Todos os 9 gráficos em 3 colunas x 3 linhas
-      for (let i = 0; i < Math.min(9, chartCards.length); i++) {
-        const chartCanvas = await captureElement(chartCards[i]);
-        const col = i % 3;
-        const row = Math.floor(i / 3);
-        const xPos = margin + (col * (usableWidth / 3 + 1));
-        const yPos = currentY + (row * (chartHeight + chartGap));
-        
-        const imgData = chartCanvas.toDataURL('image/jpeg', 0.95);
-        pdf.addImage(imgData, 'JPEG', xPos, yPos, chartWidth, chartHeight);
-      }
-      
-      // Motivo de arquivamento - abaixo dos gráficos
-      const motivosEl = el.querySelector('[data-export-item="motivos"]') as HTMLElement;
-      if (motivosEl) {
-        const motivosY = currentY + (3 * (chartHeight + chartGap)) + 2;
-        const motivosCanvas = await captureElement(motivosEl);
-        const imgData = motivosCanvas.toDataURL('image/jpeg', 0.95);
-        const ratio = usableWidth / motivosCanvas.width;
-        const motivosHeight = Math.min(motivosCanvas.height * ratio, pdfHeight - motivosY - margin);
-        pdf.addImage(imgData, 'JPEG', margin, motivosY, usableWidth, motivosHeight);
-      }
-
-      pdf.setProperties({
-        title: 'Relatórios atualizados',
-      });
-
-      
-      // Abrir nova janela ANTES de gerar o PDF (para evitar bloqueio de pop-ups)
-      const newWindow = window.open('', '_blank');
-      
-      if (newWindow) {
-        // Gerar PDF como data URI
-        const pdfDataUri = pdf.output('datauristring');
-        
-        // Escrever conteúdo HTML na nova janela
-        newWindow.document.write(`
-          <!DOCTYPE html>
-          <html>
-            <head>
-              <meta charset="UTF-8">
-              <title>Relatórios atualizados</title>
-              <style>
-                * { margin: 0; padding: 0; }
-                html, body { width: 100%; height: 100%; }
-                body { display: flex; align-items: center; justify-content: center; background: #f0f0f0; }
-                iframe { width: 100%; height: 100%; border: none; }
-              </style>
-            </head>
-            <body>
-              <iframe src="${pdfDataUri}" type="application/pdf"></iframe>
-            </body>
-          </html>
-        `);
-        newWindow.document.close();
-      } else {
-        console.error('Não foi possível abrir nova janela. Tentando download...');
-        // Fallback: baixar o arquivo
-        pdf.save('Relatórios atualizados.pdf');
-      }
-    } catch (err) {
-      console.error('Erro ao exportar PDF:', err);
-      alert('Erro ao exportar PDF. Verifique o console para mais detalhes.');
-    }
-  };
+  const reportModel = useMemo(
+    () => buildReportModel(activeSubArea, reportSource),
+    [activeSubArea, reportSource],
+  );
 
   return (
     <div ref={reportRef} className="min-h-screen p-6" style={{ backgroundColor: 'var(--bg-primary, #f5f5f5)' }}>
+
+      {/* Barra de ações do relatório */}
+      <div className="flex justify-end mb-6">
+        <button
+          type="button"
+          onClick={() => setIsExportOpen(true)}
+          className="h-10 px-5 btn-octo-primary rounded-lg font-medium text-sm flex items-center gap-2 transition-all"
+        >
+          <Download className="h-4 w-4" />
+          Exportar Relatório
+        </button>
+      </div>
+
+      <ExportReportDialog open={isExportOpen} onOpenChange={setIsExportOpen} model={reportModel} />
 
       {/* Área de Filtros */}
       {activeSubArea === 'metricas' && (
@@ -1646,13 +1703,6 @@ export const RelatoriosPage = () => {
               >
                 <Search className="h-4 w-4" />
                 Pesquisar
-              </button>
-              <button
-                onClick={handleExportar}
-                className="h-10 px-5 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 text-gray-700 dark:text-slate-300 rounded-lg font-medium text-sm flex items-center gap-2 transition-all border border-gray-300"
-              >
-                <Download className="h-4 w-4" />
-                Exportar
               </button>
             </div>
           </div>
@@ -2922,7 +2972,7 @@ export const RelatoriosPage = () => {
         <>
       <div className="mb-6 flex flex-col gap-3" />
 
-      {tipoCliente === 'interessado' && (
+      {tipoCliente === 'interessado' &&  (
         <div className="w-full space-y-4 mb-6">
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 w-full">
             <div className="w-full h-[750px] min-h-[750px] overflow-visible">
@@ -3068,7 +3118,7 @@ export const RelatoriosPage = () => {
 
           {/* Grid de Gráficos - Imóveis */}
           <div data-export-layout="charts" className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            
+
             {/* 1. VGV Mensal */}
             <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-5">
               <h3 className="text-sm font-semibold text-gray-800 mb-4">VGV - Valor Geral de Vendas (Mensal)</h3>
@@ -3108,6 +3158,17 @@ export const RelatoriosPage = () => {
                 <Bar data={distribuicaoExclusivoFichaChartData} options={stackedBarOptions} />
               </div>
             </div>
+          </div>
+
+          {/* Funil por Unidade (tipo de imóvel) — relatório secundário, abaixo dos gráficos */}
+          <div className="mt-10">
+            <ErrorBoundary fallbackTitle="Funil por Unidade">
+              <FunilPorUnidadeChart
+                leads={processedLeadsInteressado}
+                tipoMap={imovelTipoMap}
+                isLoading={isLoadingTipoMap}
+              />
+            </ErrorBoundary>
           </div>
 
           <div className="mt-10">
