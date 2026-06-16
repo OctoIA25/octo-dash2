@@ -27,6 +27,8 @@ import {
   Hand,
 } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
+import { useFeaturedGoal } from '@/features/metas/hooks/useGoals';
+import { formatGoalValue, formatPercent } from '@/features/metas/domain';
 import { useLeadsMetrics } from '@/features/leads/hooks/useLeadsMetrics';
 import type { ProcessedLead } from '@/data/realLeadsProcessor';
 import { numberToString } from '@amcharts/amcharts5/.internal/core/util/Type';
@@ -358,6 +360,26 @@ export function InicioNovaPage() {
 
   const [activeTab, setActiveTab] = useState<TabKey>('todos');
 
+  // Meta destacada na tela inicial (configurável na aba Metas).
+  const { view: featuredGoal } = useFeaturedGoal();
+  const metaMensal = useMemo(() => {
+    if (!featuredGoal) {
+      return {
+        value: '—',
+        pct: 0,
+        caption: 'Destaque uma meta na aba Metas',
+        barColor: 'bg-slate-300 dark:bg-slate-700',
+      };
+    }
+    const { goal, progress } = featuredGoal;
+    return {
+      value: formatGoalValue(progress.targetValue, goal.unit),
+      pct: progress.percent,
+      caption: `${formatPercent(progress.percent)} · ${goal.name}`,
+      barColor: progress.percent >= 100 ? 'bg-emerald-500' : 'bg-blue-500',
+    };
+  }, [featuredGoal]);
+
   const userName = useMemo(() => {
     if (!user?.email) return 'Gabriel';
     const prefix = user.email.split('@')[0].replace(/[._-]/g, ' ');
@@ -687,8 +709,9 @@ export function InicioNovaPage() {
                 iconBg="bg-transparent"
                 iconColor="text-slate-700 dark:text-slate-300"
                 label="Meta Mensal"
-                value="R$ 1.280.000"
-                progress={{ pct: 68, caption: '68% da meta', barColor: 'bg-emerald-500' }}
+                value={metaMensal.value}
+                progress={{ pct: metaMensal.pct, caption: metaMensal.caption, barColor: metaMensal.barColor }}
+                onClick={() => navigate('/metas')}
               />
             </div>
 

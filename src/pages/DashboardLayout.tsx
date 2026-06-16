@@ -38,6 +38,7 @@ const SIDEBAR_PERMISSION_ORDER: SidebarPermission[] = [
   'integracoes',
   'central-leads',
   'relatorios',
+  'metas',
   'excel'
 ];
 
@@ -56,6 +57,7 @@ const DEFAULT_ROUTE_BY_PERMISSION: Partial<Record<SidebarPermission, string>> = 
   integracoes: '/integracoes',
   'central-leads': '/central-leads',
   relatorios: '/relatorios',
+  metas: '/metas',
   'excel': '/excel'
 };
 
@@ -103,6 +105,7 @@ const EstudoMercadoMetricasPage = lazyWithRetry(() => import('@/features/estudo-
 const NotificacoesPage = lazyWithRetry(() => import('@/features/notificacoes/pages/NotificacoesPage').then(m => ({ default: m.NotificacoesPage })));
 const ExcelPage = lazyWithRetry(() => import('@/features/excel/pages/ExcelPage').then(m => ({ default: m.ExcelPage })));
 const JuridicoPage = lazyWithRetry(() => import('@/features/juridico/pages/JuridicoPage').then(m => ({ default: m.JuridicoPage })));
+const MetasPage = lazyWithRetry(() => import('@/features/metas/pages/MetasPage').then(m => ({ default: m.MetasPage })));
 
 // Loading Fallback para páginas individuais
 const PageLoader = () => (
@@ -458,6 +461,11 @@ const DashboardLayout = () => {
           <Route
             path="excel"
             element={canAccess('excel') ? <ExcelPage /> : <Navigate to={defaultAllowedRoute} replace />}
+          />
+
+          <Route
+            path="metas"
+            element={canAccess('metas') ? <MetasPage /> : <Navigate to={defaultAllowedRoute} replace />}
           />
 
           <Route path="*" element={<Navigate to={defaultAllowedRoute} replace />} />

@@ -32,6 +32,7 @@ export type SidebarPermission =
   | 'central-leads'   // Central de Leads
   | 'atividades'      // Atividades
   | 'relatorios'      // Relatórios
+  | 'metas'           // Metas comerciais
   | 'excel' // Excel
 
 // Mantendo compatibilidade com MenuPermission antiga
@@ -85,18 +86,18 @@ export interface PermissionsConfig {
 // Owner: Acesso total a tudo
 export const OWNER_SIDEBAR_PERMISSIONS: SidebarPermission[] = [
   'leads', 'notificacoes', 'metricas', 'juridico', 'estudo-mercado', 'recrutamento', 'gestao-equipe',
-  'imoveis', 'agentes-ia', 'octo-chat', 'chat', 'integracoes', 'central-leads', 'atividades', 'relatorios', 'excel'
+  'imoveis', 'agentes-ia', 'octo-chat', 'chat', 'integracoes', 'central-leads', 'atividades', 'relatorios', 'metas', 'excel'
 ];
 
 // Admin: Acesso total ao tenant
 export const ADMIN_SIDEBAR_PERMISSIONS: SidebarPermission[] = [
   'leads', 'notificacoes', 'metricas', 'juridico', 'estudo-mercado', 'recrutamento', 'gestao-equipe',
-  'imoveis', 'agentes-ia', 'octo-chat', 'chat', 'integracoes', 'central-leads', 'atividades', 'relatorios', 'excel'
+  'imoveis', 'agentes-ia', 'octo-chat', 'chat', 'integracoes', 'central-leads', 'atividades', 'relatorios', 'metas', 'excel'
 ];
 
 // Team Leader: Acesso intermediário
 export const TEAM_LEADER_SIDEBAR_PERMISSIONS: SidebarPermission[] = [
-  'leads', 'notificacoes', 'metricas', 'juridico', 'estudo-mercado', 'gestao-equipe', 'imoveis', 'octo-chat', 'chat', 'excel'
+  'leads', 'notificacoes', 'metricas', 'juridico', 'estudo-mercado', 'gestao-equipe', 'imoveis', 'octo-chat', 'chat', 'metas', 'excel'
 ];
 
 // Corretor: Acesso restrito (bloqueado por padrão em várias áreas)

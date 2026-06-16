@@ -29,6 +29,7 @@ import {
   Sheet,
   Scale,
   LayoutGrid,
+  Target,
 } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { SidebarPermission } from '@/types/permissions';
@@ -80,6 +81,7 @@ const GROUPS: SidebarGroup[] = [
       },
       { id: 'imoveis', label: 'Imóveis', icon: Building2, route: '/imoveis', permission: 'imoveis' },
       { id: 'mapa-imoveis', label: 'Mapa de Imóveis', icon: MapPin, route: '/mapa-imoveis', permission: 'imoveis' },
+      { id: 'metas', label: 'Metas', icon: Target, route: '/metas', permission: 'metas' },
     ],
   },
   {
