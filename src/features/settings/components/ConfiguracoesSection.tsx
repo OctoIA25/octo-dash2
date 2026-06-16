@@ -56,9 +56,12 @@ import {
   TrendingUp,
   RotateCcw,
   Inbox,
-  ShieldCheck
+  ShieldCheck,
+  Megaphone
 } from 'lucide-react';
 import { WatermarkSettingsCard } from '@/features/settings/components/WatermarkSettingsCard';
+import { LeadChannelsSettingsCard } from '@/features/settings/components/LeadChannelsSettingsCard';
+import { RecommendationEmailSettingsCard } from '@/features/recommendations/components/RecommendationEmailSettingsCard';
 
 const BOLSAO_TIME_OPTIONS = [5, 10, 15, 20, 30, 45, 60, 90, 120, 240, 360, 480, 720, 1440];
 
@@ -81,7 +84,7 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
   const { toast } = useToast();
   const { currentTheme, changeTheme, themes } = useTheme();
   
-  const [activeTab, setActiveTab] = useState<'perfil' | 'geral' | 'aparencia' | 'agentes-ia' | 'usuarios' | 'bolsao' | 'limite-leads' | 'marca-dagua'>('perfil');
+  const [activeTab, setActiveTab] = useState<'perfil' | 'geral' | 'aparencia' | 'agentes-ia' | 'usuarios' | 'bolsao' | 'limite-leads' | 'marca-dagua' | 'canais-lead' | 'recomendacoes'>('perfil');
   
   // Estados para os campos do perfil
   const [profileData, setProfileData] = useState({
@@ -352,6 +355,10 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
                     <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${activeTab === 'limite-leads' ? 'bg-emerald-100 dark:bg-emerald-900/60' : 'bg-slate-100 dark:bg-slate-800'}`}><Shield className={`w-3.5 h-3.5 ${activeTab === 'limite-leads' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`} /></div>
                     Limite de Leads
                   </button>
+                  <button type="button" onClick={() => setActiveTab('canais-lead')} className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all text-left ${activeTab === 'canais-lead' ? 'bg-orange-50 dark:bg-orange-950/50 text-orange-700 dark:text-orange-300' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'}`}>
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${activeTab === 'canais-lead' ? 'bg-orange-100 dark:bg-orange-900/60' : 'bg-slate-100 dark:bg-slate-800'}`}><Megaphone className={`w-3.5 h-3.5 ${activeTab === 'canais-lead' ? 'text-orange-600 dark:text-orange-400' : 'text-slate-400'}`} /></div>
+                    Canais de Lead
+                  </button>
                   <button type="button" onClick={() => setActiveTab('usuarios')} className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all text-left ${activeTab === 'usuarios' ? 'bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'}`}>
                     <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${activeTab === 'usuarios' ? 'bg-purple-100 dark:bg-purple-900/60' : 'bg-slate-100 dark:bg-slate-800'}`}><UserCog className={`w-3.5 h-3.5 ${activeTab === 'usuarios' ? 'text-purple-600 dark:text-purple-400' : 'text-slate-400'}`} /></div>
                     Usuários
@@ -359,6 +366,10 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
                   <button type="button" onClick={() => setActiveTab('marca-dagua')} className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all text-left ${activeTab === 'marca-dagua' ? 'bg-cyan-50 dark:bg-cyan-950/50 text-cyan-700 dark:text-cyan-300' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'}`}>
                     <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${activeTab === 'marca-dagua' ? 'bg-cyan-100 dark:bg-cyan-900/60' : 'bg-slate-100 dark:bg-slate-800'}`}><ShieldCheck className={`w-3.5 h-3.5 ${activeTab === 'marca-dagua' ? 'text-cyan-600 dark:text-cyan-400' : 'text-slate-400'}`} /></div>
                     Marca d'água
+                  </button>
+                  <button type="button" onClick={() => setActiveTab('recomendacoes')} className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all text-left ${activeTab === 'recomendacoes' ? 'bg-pink-50 dark:bg-pink-950/50 text-pink-700 dark:text-pink-300' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'}`}>
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${activeTab === 'recomendacoes' ? 'bg-pink-100 dark:bg-pink-900/60' : 'bg-slate-100 dark:bg-slate-800'}`}><Mail className={`w-3.5 h-3.5 ${activeTab === 'recomendacoes' ? 'text-pink-600 dark:text-pink-400' : 'text-slate-400'}`} /></div>
+                    Recomendações
                   </button>
                 </>
               )}
@@ -948,6 +959,22 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
             </div>
           )}
 
+          {/* ABA CANAIS DE LEAD */}
+          {activeTab === 'canais-lead' && user?.role === 'gestao' && (
+            <div>
+              <div className="-mx-6 -mt-6 mb-6 px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-orange-100 dark:bg-orange-900/40 flex items-center justify-center">
+                  <Megaphone className="w-[18px] h-[18px] text-orange-600 dark:text-orange-400" />
+                </div>
+                <div>
+                  <h2 className="text-[15px] font-semibold text-slate-900 dark:text-slate-100">Canais de Lead</h2>
+                  <p className="text-[12px] text-slate-500 dark:text-slate-400">Defina a qual canal cada origem de lead pertence nos relatórios</p>
+                </div>
+              </div>
+              <LeadChannelsSettingsCard leads={leads} />
+            </div>
+          )}
+
           {activeTab === 'marca-dagua' && (
             <div>
               <div className="-mx-6 -mt-6 mb-6 px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center gap-3">
@@ -960,6 +987,21 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
                 </div>
               </div>
               <WatermarkSettingsCard tenantId={user?.tenantId} />
+            </div>
+          )}
+
+          {activeTab === 'recomendacoes' && (
+            <div className="space-y-6">
+              <div className="-mx-6 -mt-6 mb-6 px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-pink-100 dark:bg-pink-900/40 flex items-center justify-center">
+                  <Mail className="w-[18px] h-[18px] text-pink-600 dark:text-pink-400" />
+                </div>
+                <div>
+                  <h2 className="text-[15px] font-semibold text-slate-900 dark:text-slate-100">Recomendações</h2>
+                  <p className="text-[12px] text-slate-500 dark:text-slate-400">E-mail de teste e identidade dos e-mails de recomendação</p>
+                </div>
+              </div>
+              <RecommendationEmailSettingsCard tenantId={user?.tenantId} />
             </div>
           )}
 

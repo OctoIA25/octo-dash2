@@ -5121,6 +5121,18 @@ app.get('/api/v1/lancamentos/:id', validateApiKey, async (req, res) => {
   }
 });
 
+// ============================================
+// RECOMENDAÇÕES DE IMÓVEIS — envio por e-mail + histórico
+// ============================================
+import { registerRecommendationRoutes, startRecommendationScheduler } from './recommendations/index.js';
+registerRecommendationRoutes(app, supabase);
+
+// Worker de agendamento (Fase 2). Flag-gated (RECOMMENDATION_SCHEDULER=1) para
+// rodar em apenas UM processo e evitar execuções duplicadas.
+if (process.env.RECOMMENDATION_SCHEDULER === '1') {
+  startRecommendationScheduler(supabase);
+}
+
 // 404 para rotas da API não encontradas
 app.use('/api/v1/*', (req, res) => {
   res.status(404).json({

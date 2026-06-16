@@ -4032,6 +4032,18 @@ registerScrapeRoute(app, supabase);
 import { registerWhatsappRoutes } from './whatsapp/index.js';
 registerWhatsappRoutes(app, supabase);
 
+// ============================================
+// RECOMENDAÇÕES DE IMÓVEIS — envio por e-mail + histórico
+// ============================================
+import { registerRecommendationRoutes, startRecommendationScheduler } from './recommendations/index.js';
+registerRecommendationRoutes(app, supabase);
+
+// Worker de agendamento (Fase 2). Flag-gated: em produção prefira UM único
+// processo com RECOMMENDATION_SCHEDULER=1 (evita execuções duplicadas em cluster).
+if (process.env.RECOMMENDATION_SCHEDULER === '1') {
+  startRecommendationScheduler(supabase);
+}
+
 // 404 Handler (DEVE ficar DEPOIS de todas as rotas)
 app.use('/api/v1/*', (req, res) => {
   res.status(404).json({

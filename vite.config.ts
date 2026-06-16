@@ -138,7 +138,10 @@ export default defineConfig(({ mode }) => ({
     environment: "jsdom",     // DOM simulado para testar componentes React
     setupFiles: "./src/test/setup.ts",
     css: false,               // ignora CSS nos testes (mais rápido)
-    exclude: ["node_modules", "dist", "server", "supabase"],
+    // Excluímos node_modules (em qualquer nível, incl. server/node_modules), dist e
+    // supabase. NÃO excluímos "server" inteiro: os testes de envio/ambiente vivem em
+    // server/recommendations (os arquivos de runtime não são *.test.*, logo não entram).
+    exclude: ["**/node_modules/**", "**/dist/**", "supabase/**"],
     // alias "@/" é herdado de resolve.alias acima
   },
 }));

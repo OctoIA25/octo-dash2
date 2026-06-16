@@ -40,9 +40,12 @@ import {
   ChevronDown,
   Flag,
   ClipboardList,
-  Archive
+  Archive,
+  Sparkles
 } from 'lucide-react';
 import { BolsaoLead } from '../services/bolsaoService';
+import { EnviarRecomendacoesModal } from '@/features/recommendations/components/EnviarRecomendacoesModal';
+import { bolsaoLeadToRecommendationInput } from '@/features/recommendations/adapters';
 import { Imovel, fetchImovelByCodigo } from '@/features/imoveis/services/kenloService';
 import { supabase } from '@/integrations/supabase/client';
 import { eventoToSupabase, supabaseToEvento } from '@/features/agenda/services/agendaSupabaseService';
@@ -99,6 +102,7 @@ export const LeadDetailsModal = ({
   
   const [imovel, setImovel] = useState<Imovel | null>(null);
   const [carregandoImovel, setCarregandoImovel] = useState(false);
+  const [recomendacoesOpen, setRecomendacoesOpen] = useState(false);
   
   // Estados para atividades
   const [criarAtividadeOpen, setCriarAtividadeOpen] = useState(false);
@@ -853,6 +857,17 @@ export const LeadDetailsModal = ({
               </Button>
             )}
 
+            {lead && (
+              <Button
+                onClick={() => setRecomendacoesOpen(true)}
+                variant="outline"
+                className="text-purple-600 border-purple-300 hover:bg-purple-50 hover:border-purple-400 dark:text-purple-400"
+              >
+                <Sparkles className="h-4 w-4 mr-2" />
+                Enviar Recomendações
+              </Button>
+            )}
+
             <Button
               onClick={onClose}
               variant="outline"
@@ -1098,6 +1113,15 @@ export const LeadDetailsModal = ({
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Modal de Envio de Recomendações */}
+      {lead && (
+        <EnviarRecomendacoesModal
+          lead={bolsaoLeadToRecommendationInput(lead)}
+          isOpen={recomendacoesOpen}
+          onClose={() => setRecomendacoesOpen(false)}
+        />
+      )}
     </Dialog>
   );
 };
