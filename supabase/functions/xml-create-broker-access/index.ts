@@ -54,6 +54,50 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // ── Autorização (fecha o furo cross-tenant) ──────────────────────────────
+    // Esta função usa service_role (ignora RLS). Sem checar o caller, qualquer um
+    // com a anon key pública podia criar brokers/usuários em QUALQUER tenant
+    // passando outro tenantId no body. Exigimos um JWT válido cujo dono seja o
+    // owner da plataforma OU admin/owner do tenant alvo. O frontend
+    // (supabase.functions.invoke) já envia o JWT da sessão automaticamente.
+    const authHeader = req.headers.get("Authorization") || req.headers.get("authorization");
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+    if (!token) {
+      return new Response(
+        JSON.stringify({ ok: false, error: "Token de autenticação ausente" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const { data: userData, error: userError } = await supabase.auth.getUser(token);
+    const caller = userData?.user;
+    if (userError || !caller) {
+      return new Response(
+        JSON.stringify({ ok: false, error: "Token de autenticação inválido" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const PLATFORM_OWNER_EMAIL = "octo.inteligenciaimobiliaria@gmail.com";
+    const isPlatformOwner = (caller.email || "").toLowerCase() === PLATFORM_OWNER_EMAIL;
+
+    if (!isPlatformOwner) {
+      const { data: membership } = await supabase
+        .from("tenant_memberships")
+        .select("role")
+        .eq("tenant_id", tenantId)
+        .eq("user_id", caller.id)
+        .in("role", ["admin", "owner"])
+        .maybeSingle();
+
+      if (!membership) {
+        return new Response(
+          JSON.stringify({ ok: false, error: "Sem permissão para gerenciar este tenant" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     // Verify tenant exists
     const { data: tenant, error: tenantError } = await supabase
       .from("tenants")
