@@ -101,8 +101,10 @@ export const TEAM_LEADER_SIDEBAR_PERMISSIONS: SidebarPermission[] = [
 ];
 
 // Corretor: Acesso restrito (bloqueado por padrão em várias áreas)
+// 'excel' removido: a aba expõe receita de TODOS os corretores (dado financeiro) e o
+// acesso é restrito a admin/team_leader/owner também no RLS de excel_imports.
 export const CORRETOR_SIDEBAR_PERMISSIONS: SidebarPermission[] = [
-  'leads', 'notificacoes', 'metricas', 'juridico', 'estudo-mercado', 'imoveis', 'octo-chat', 'chat', 'excel'
+  'leads', 'notificacoes', 'metricas', 'juridico', 'estudo-mercado', 'imoveis', 'octo-chat', 'chat'
 ];
 
 // Abas bloqueadas por padrão para corretores
