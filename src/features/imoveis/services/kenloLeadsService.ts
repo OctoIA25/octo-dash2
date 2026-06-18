@@ -389,6 +389,24 @@ export const saveKenloLeads = async (
     // 1. Se tem código do imóvel → buscar corretor responsável em imoveis_corretores
     // 2. Se não achou por imóvel, usar attendedBy do Kenlo → match com sistema
     // ========================================================================
+    // ⚡ Memoização (evita N+1): getCorretorByPropertyCode e findCorretorInSystem
+    // re-consultam o banco a cada lead, e muitos leads compartilham o mesmo imóvel/corretor.
+    // Cacheamos por input idêntico dentro deste save — funções intocadas, resultado idêntico.
+    const corretorPorCodigoCache = new Map<string, Awaited<ReturnType<typeof getCorretorByPropertyCode>>>();
+    const resolveCorretorPorCodigo = async (codigo: string) => {
+      if (corretorPorCodigoCache.has(codigo)) return corretorPorCodigoCache.get(codigo)!;
+      const encontrado = await getCorretorByPropertyCode(tenantId, codigo);
+      corretorPorCodigoCache.set(codigo, encontrado);
+      return encontrado;
+    };
+    const corretorPorNomeCache = new Map<string, Awaited<ReturnType<typeof findCorretorInSystem>>>();
+    const resolveCorretorPorNome = async (nome: string) => {
+      if (corretorPorNomeCache.has(nome)) return corretorPorNomeCache.get(nome)!;
+      const encontrado = await findCorretorInSystem(tenantId, { nome });
+      corretorPorNomeCache.set(nome, encontrado);
+      return encontrado;
+    };
+
     for (const leadData of leadsToInsert) {
       let corretorId: string | null = null;
       let corretorNome: string | null = null;
@@ -396,7 +414,7 @@ export const saveKenloLeads = async (
       
       // 1. PRIMEIRO: Buscar pelo código do imóvel (mais confiável - "Meus Imóveis")
       if (leadData.interest_reference) {
-        const corretorImovel = await getCorretorByPropertyCode(tenantId, leadData.interest_reference);
+        const corretorImovel = await resolveCorretorPorCodigo(leadData.interest_reference);
         if (corretorImovel) {
           // Se imoveis_corretores já tem o corretor_id, usar direto
           if (corretorImovel.id) {
@@ -405,7 +423,7 @@ export const saveKenloLeads = async (
             matchMethod = 'imovel_corretor_id';
           } else {
             // Senão, fazer match do nome com o sistema
-            const corretorMatch = await findCorretorInSystem(tenantId, { nome: corretorImovel.nome });
+            const corretorMatch = await resolveCorretorPorNome(corretorImovel.nome);
             if (corretorMatch) {
               corretorId = corretorMatch.id;
               corretorNome = corretorMatch.nome;
@@ -423,7 +441,7 @@ export const saveKenloLeads = async (
       
       // 2. FALLBACK: Se não achou por imóvel, usar attendedBy do Kenlo
       if (!corretorId && leadData.attended_by_name) {
-        const corretorMatch = await findCorretorInSystem(tenantId, { nome: leadData.attended_by_name });
+        const corretorMatch = await resolveCorretorPorNome(leadData.attended_by_name);
         if (corretorMatch) {
           corretorId = corretorMatch.id;
           corretorNome = corretorMatch.nome;

@@ -8,20 +8,10 @@ import { Imovel } from '../services/kenloService';
 import { useAuth } from "@/hooks/useAuth";
 import { getTenantImoveis, syncTenantImoveisFromXml, loadXmlDataFromSupabase, syncMeusImoveisAssignmentsFromXml } from '../services/imoveisXmlService';
 import { useMemo, useEffect, useRef } from 'react';
+import { computeImoveisMetrics, type ImoveisMetrics } from '../utils/imoveisMetrics';
 
-export interface ImoveisMetrics {
-  total: number;
-  casas: number;
-  apartamentos: number;
-  terrenos: number;
-  comerciais: number;
-  rurais: number;
-  venda: number;
-  locacao: number;
-  vendaLocacao: number;
-  valorTotalVenda: number;
-  valorTotalLocacao: number;
-}
+// Re-export para manter compatibilidade com quem importa o tipo deste módulo.
+export type { ImoveisMetrics };
 
 // Chave para controlar sync diário no localStorage
 const SYNC_ALL_BROKERS_KEY = 'last_sync_all_brokers_';
@@ -114,40 +104,8 @@ export const useImoveisData = () => {
     console.error('   📝 Stack:', error.stack);
   }
 
-  // Calcular métricas dos imóveis
-  const metrics: ImoveisMetrics = useMemo(() => {
-    if (!imoveis || imoveis.length === 0) {
-      return {
-        total: 0,
-        casas: 0,
-        apartamentos: 0,
-        terrenos: 0,
-        comerciais: 0,
-        rurais: 0,
-        venda: 0,
-        locacao: 0,
-        vendaLocacao: 0,
-        valorTotalVenda: 0,
-        valorTotalLocacao: 0
-      };
-    }
-
-    const metrics: ImoveisMetrics = {
-      total: imoveis.length,
-      casas: imoveis.filter(i => i.tipoSimplificado === 'casa').length,
-      apartamentos: imoveis.filter(i => i.tipoSimplificado === 'apartamento').length,
-      terrenos: imoveis.filter(i => i.tipoSimplificado === 'terreno').length,
-      comerciais: imoveis.filter(i => i.tipoSimplificado === 'comercial').length,
-      rurais: imoveis.filter(i => i.tipoSimplificado === 'rural').length,
-      venda: imoveis.filter(i => i.finalidade === 'venda' || i.finalidade === 'venda_locacao').length,
-      locacao: imoveis.filter(i => i.finalidade === 'locacao' || i.finalidade === 'venda_locacao').length,
-      vendaLocacao: imoveis.filter(i => i.finalidade === 'venda_locacao').length,
-      valorTotalVenda: imoveis.reduce((sum, i) => sum + i.valor_venda, 0),
-      valorTotalLocacao: imoveis.reduce((sum, i) => sum + i.valor_locacao, 0)
-    };
-
-    return metrics;
-  }, [imoveis]);
+  // Calcular métricas dos imóveis (passada única O(n) — ver utils/imoveisMetrics)
+  const metrics: ImoveisMetrics = useMemo(() => computeImoveisMetrics(imoveis), [imoveis]);
 
   // Filtrar imóveis por tipo
   const filterByTipo = (tipo: Imovel['tipoSimplificado']) => {

@@ -186,7 +186,41 @@ export const syncImoveisFromXml = async (
     );
     
     if (DEBUG_LOGS) console.log(`👤 ${imoveisComCorretor.length} imóveis com corretor no XML`);
-    
+
+    // ⚡ Batch (evita N+1): buscar TODAS as atribuições existentes de uma vez, em vez de
+    // 1 query por imóvel. Mesmo critério do getExistingAssignment (match exato por
+    // codigo_imovel em maiúsculas, escopado por tenant). Em lotes para não estourar a URL.
+    const codigosUnicos = Array.from(new Set(
+      imoveisComCorretor
+        .map((i: Imovel) => i.referencia?.toUpperCase())
+        .filter((c): c is string => !!c)
+    ));
+    const existingByCodigo = new Map<string, ImoveisCorretoresRow>();
+    for (let inicio = 0; inicio < codigosUnicos.length; inicio += 200) {
+      const lote = codigosUnicos.slice(inicio, inicio + 200);
+      const { data: linhas } = await supabase
+        .from('imoveis_corretores')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .in('codigo_imovel', lote);
+      for (const linha of (linhas || []) as ImoveisCorretoresRow[]) {
+        existingByCodigo.set(String(linha.codigo_imovel).toUpperCase(), linha);
+      }
+    }
+
+    // ⚡ Memoização: findCorretorInSystem re-busca todos os brokers/memberships do tenant a
+    // CADA chamada, e muitos imóveis compartilham o mesmo corretor. Cacheamos por input
+    // idêntico — a função fica intocada, então o resultado é byte-idêntico; só evitamos
+    // recalcular para o mesmo corretor.
+    const corretorCache = new Map<string, Awaited<ReturnType<typeof findCorretorInSystem>>>();
+    const resolveCorretor = async (cx: { nome?: string; email?: string; telefone?: string }) => {
+      const chave = `${cx.nome ?? ''}|${cx.email ?? ''}|${cx.telefone ?? ''}`;
+      if (corretorCache.has(chave)) return corretorCache.get(chave)!;
+      const encontrado = await findCorretorInSystem(tenantId, cx);
+      corretorCache.set(chave, encontrado);
+      return encontrado;
+    };
+
     const corretoresUnicos = new Set<string>();
     
     // 3. Processar cada imóvel
@@ -204,12 +238,12 @@ export const syncImoveisFromXml = async (
       const corretorKey = corretorXml.email || corretorXml.telefone || corretorXml.nome;
       if (corretorKey) corretoresUnicos.add(corretorKey);
       
-      // Verificar se já existe atribuição
-      const existingAssignment = await getExistingAssignment(tenantId, codigoImovel);
-      
+      // Verificar se já existe atribuição (do batch pré-carregado — ver existingByCodigo)
+      const existingAssignment = existingByCodigo.get(codigoImovel) ?? null;
+
       if (existingAssignment && existingAssignment.corretor_id) {
         // Já tem atribuição - verificar se é o mesmo corretor
-        const corretorSistema = await findCorretorInSystem(tenantId, corretorXml);
+        const corretorSistema = await resolveCorretor(corretorXml);
         
         if (corretorSistema && existingAssignment.corretor_id === corretorSistema.id) {
           // Mesmo corretor - tudo ok
@@ -233,8 +267,8 @@ export const syncImoveisFromXml = async (
         continue;
       }
       
-      // Buscar corretor no sistema
-      const corretorMatch = await findCorretorInSystem(tenantId, corretorXml);
+      // Buscar corretor no sistema (memoizado por corretor — ver resolveCorretor)
+      const corretorMatch = await resolveCorretor(corretorXml);
       
       if (!corretorMatch) {
         // Corretor não encontrado no sistema
@@ -396,12 +430,31 @@ export const syncImoveisForCorretor = async (
     if (DEBUG_LOGS) console.log(`📊 ${meusImoveis.length} imóveis encontrados para este corretor`);
     
     // 4. Atribuir cada imóvel
+    // ⚡ Batch (evita N+1): carrega as atribuições existentes de uma vez (em lotes de 200),
+    // em vez de 1 getExistingAssignment por imóvel. Mesmo critério (match exato por
+    // codigo_imovel em maiúsculas, escopado por tenant).
+    const codigosUnicos = Array.from(new Set(
+      meusImoveis.map((i: Imovel) => i.referencia?.toUpperCase()).filter((c): c is string => !!c)
+    ));
+    const existingByCodigo = new Map<string, ImoveisCorretoresRow>();
+    for (let inicio = 0; inicio < codigosUnicos.length; inicio += 200) {
+      const lote = codigosUnicos.slice(inicio, inicio + 200);
+      const { data: linhas } = await supabase
+        .from('imoveis_corretores')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .in('codigo_imovel', lote);
+      for (const linha of (linhas || []) as ImoveisCorretoresRow[]) {
+        existingByCodigo.set(String(linha.codigo_imovel).toUpperCase(), linha);
+      }
+    }
+
     for (const imovel of meusImoveis) {
       const codigoImovel = imovel.referencia?.toUpperCase();
       if (!codigoImovel) continue;
-      
-      // Verificar se já existe atribuição
-      const existingAssignment = await getExistingAssignment(tenantId, codigoImovel);
+
+      // Verificar se já existe atribuição (do batch pré-carregado)
+      const existingAssignment = existingByCodigo.get(codigoImovel) ?? null;
       
       if (existingAssignment && existingAssignment.corretor_id) {
         if (existingAssignment.corretor_id === corretorUserId) {
