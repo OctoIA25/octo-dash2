@@ -112,42 +112,41 @@ export const useRelatorios = () => {
       
       setLoading(true);
       try {
+        // Estas 9 consultas são independentes (dependem apenas de tenantId, nenhuma usa
+        // o resultado da outra). Buscamos em PARALELO: a latência passa a ser a da
+        // consulta mais lenta, não a soma das 9. Comportamento idêntico no caminho feliz
+        // (os mesmos setters recebem os mesmos valores); Promise.all preserva a ordem.
+        const [
+          vendasCriadasData,
+          vendasAssinadas,
+          metricasEquipesData,
+          kpis,
+          fonteData,
+          faixaData,
+          totalLeadsMensal,
+          valorTotal,
+          imoveisAtivos,
+        ] = await Promise.all([
+          buscarVendasCriadas(tenantId),
+          buscarVendasAssinadas(tenantId),
+          buscarMetricasPorEquipe(tenantId),
+          buscarKPIsGerais(tenantId),
+          buscarVendasPorFonte(tenantId),
+          buscarVendasPorFaixa(tenantId),
+          buscarTotalLeadsMensal(tenantId),
+          buscarValorTotal(tenantId),
+          buscarImoveisAtivos(tenantId),
+        ]);
 
-
-        const vendasCriadasData = await buscarVendasCriadas(tenantId);
         setVendasCriadas(vendasCriadasData);
-
-        const vendasAssinadas = await buscarVendasAssinadas(tenantId);
         setVendasAssinadas(vendasAssinadas);
-        
-        // Carregar métricas por equipe
-        const metricasEquipesData = await buscarMetricasPorEquipe(tenantId);
         setMetricasEquipes(metricasEquipesData);
-        
-        // Carregar KPIs gerais
-        const kpis = await buscarKPIsGerais(tenantId);
         setKpisGerais(kpis);
-        
-        // Carregar vendas por fonte
-        const fonteData = await buscarVendasPorFonte(tenantId);
         setVendasPorFonte(fonteData);
-        
-        // Carregar vendas por faixa
-        const faixaData = await buscarVendasPorFaixa(tenantId);
         setVendasPorFaixa(faixaData);
-        
-        // Carregar total de leads mensal
-        const totalLeadsMensal = await buscarTotalLeadsMensal(tenantId);
         setTotalLeadsMensal(totalLeadsMensal);
-        
-        // Carregar valor total
-        const valorTotal = await buscarValorTotal(tenantId);
         setValorTotal(valorTotal);
-
-        // Carregar imoveis ativos
-        const imoveisAtivos = await buscarImoveisAtivos(tenantId);
         setImoveisAtivos(Number(imoveisAtivos));
-        
       } catch (error) {
         console.error('Erro ao carregar dados gerais dos relatórios:', error);
       } finally {
