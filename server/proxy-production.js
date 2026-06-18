@@ -25,6 +25,10 @@ import { registerScrapeRoute } from './scrapers/index.js';
 import { createWatermarkRouter } from './watermark/routes.js';
 import { createWorker } from './watermark/worker.js';
 import { promises } from 'dns';
+import { assertSafeHttpUrl, parseHttpUrl } from './security/ssrfGuard.js';
+
+// Timeout do fetch de webhooks de saída (evita que um endpoint lento trave o loop de polling).
+const WEBHOOK_FETCH_TIMEOUT_MS = 10000;
 
 // =============================================================================
 // SUPABASE CLIENT - API INTEGRATION
@@ -332,6 +336,15 @@ async function dispatchWebhookEvent(tenantId, event, data) {
     if (!webhooks || webhooks.length === 0) return;
 
     await Promise.allSettled(webhooks.map(async (webhook) => {
+      // Proteção SSRF: nunca disparar para loopback/redes privadas/link-local
+      // (ex.: 169.254.169.254 = metadata de cloud). Valida no momento do disparo,
+      // resolvendo o host — uma URL pública pode ter mudado de DNS após o cadastro.
+      const safe = await assertSafeHttpUrl(webhook.url);
+      if (!safe.ok) {
+        console.error(`Webhook ${webhook.id} bloqueado por segurança (SSRF: ${safe.reason})`);
+        return;
+      }
+
       const payload = {
         event,
         timestamp: new Date().toISOString(),
@@ -353,7 +366,11 @@ async function dispatchWebhookEvent(tenantId, event, data) {
           'X-OctoDash-Event': event,
           'X-OctoDash-Signature': signature
         },
-        body
+        body,
+        // Não seguir redirects: impede bypass do guard via 3xx para host interno.
+        redirect: 'manual',
+        // Timeout: um endpoint lento/pendurado não pode travar o loop de polling.
+        signal: AbortSignal.timeout(WEBHOOK_FETCH_TIMEOUT_MS)
       });
 
       if (!response.ok) {
@@ -4904,6 +4921,20 @@ app.post('/api/v1/webhooks', validateApiKey, async (req, res) => {
         error: {
           code: 'VALIDATION_ERROR',
           message: 'URL do webhook deve usar http ou https'
+        }
+      });
+    }
+
+    // Proteção SSRF (cadastro): rejeita já na criação URLs com credenciais embutidas,
+    // localhost ou IP literal de rede interna/privada. A verificação completa com
+    // resolução DNS ocorre no momento do disparo (assertSafeHttpUrl em dispatchWebhookEvent).
+    const urlGuard = parseHttpUrl(url);
+    if (!urlGuard.ok) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'URL do webhook não permitida (rede interna/privada, localhost ou credenciais na URL).'
         }
       });
     }

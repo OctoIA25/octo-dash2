@@ -16,6 +16,7 @@ import { fetchHtml } from './cheerioCrawler.js';
 import { extractFromHtml } from './dataExtractor.js';
 import { enrichWithAI } from './aiEnricher.js';
 import { smartScraper } from './smartScraper.js';
+import { assertSafeHttpUrl } from '../security/ssrfGuard.js';
 
 // ═══ CACHE ═══
 const cache = new Map();
@@ -164,6 +165,15 @@ export function registerScrapeRoute(app, supabaseClient) {
     if (!url || typeof url !== 'string' || !url.startsWith('http')) {
       return res.status(400).json({ error: 'URL invalida. Envie { "url": "https://..." }' });
     }
+
+    // Proteção SSRF: a URL vem do cliente e é buscada server-side (fetch + Puppeteer).
+    // Bloqueia loopback/redes privadas/link-local (ex.: 169.254.169.254 = metadata de
+    // cloud), resolvendo o host. Sites de imóveis legítimos são públicos, não afetados.
+    const safe = await assertSafeHttpUrl(url);
+    if (!safe.ok) {
+      return res.status(400).json({ error: 'URL nao permitida (rede interna/privada ou destino invalido).' });
+    }
+
     // Verificar cache
     const cached = getFromCache(url);
     if (cached) {
