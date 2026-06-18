@@ -24,8 +24,8 @@ describe('consistência categorias <-> fontes de métrica', () => {
     });
   });
 
-  it('VGC permanece manual (sem fonte automática)', () => {
-    expect(getMetricSource('vgc')).toBeUndefined();
+  it('VGC possui fonte automática (commercial_sales)', () => {
+    expect(getMetricSource('vgc')).toBeDefined();
   });
 });
 
@@ -38,7 +38,7 @@ describe('factory: source e scope', () => {
 
   it('applyCategoryDefaults reverte source para manual em categoria sem auto-sync', () => {
     const draft = { ...createEmptyDraft('2026-06-15'), source: 'crm' as const, categoryId: 'vgv' };
-    const updated = applyCategoryDefaults(draft, 'vgc'); // vgc não suporta auto-sync
+    const updated = applyCategoryDefaults(draft, 'categoria-personalizada'); // sem fonte -> manual
     expect(updated.source).toBe('manual');
   });
 
@@ -67,6 +67,6 @@ describe('isAutoSyncGoal', () => {
   });
 
   it('falso para categoria sem fonte mesmo se crm', () => {
-    expect(isAutoSyncGoal({ ...base, categoryId: 'vgc' })).toBe(false);
+    expect(isAutoSyncGoal({ ...base, categoryId: 'categoria-sem-fonte' })).toBe(false);
   });
 });

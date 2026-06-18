@@ -46,8 +46,9 @@ export const GOAL_CATEGORIES: GoalCategoryDefinition[] = [
     defaultUnit: 'currency',
     icon: Coins,
     accent: 'amber',
-    // Comissão não é persistida no CRM hoje -> apenas manual.
-    supportsAutoSync: false,
+    // VGC real vem de `commercial_sales.valor_vgc` (sincronização da planilha
+    // comercial). Fonte registrada em services/metricSources.ts.
+    supportsAutoSync: true,
   },
   {
     id: 'captacao',
