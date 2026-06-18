@@ -1216,7 +1216,8 @@ app.get('/api/v1/leads/:id', validateApiKey, async (req, res) => {
     const { id } = req.params;
 
     // Tentar buscar por id numérico ou external_id
-    let query = supabase.from(LEADS_TABLE).select('*');
+    // Escopo por tenant da API Key (evita leitura cross-tenant).
+    let query = supabase.from(LEADS_TABLE).select('*').eq('tenant_id', req.tenantId);
     
     // Se for numérico, buscar por id; senão, buscar por external_id
     if (!isNaN(id)) {
@@ -1265,6 +1266,7 @@ app.get('/api/v1/leads/phone/:phone', validateApiKey, async (req, res) => {
     const { data, error } = await supabase
       .from(LEADS_TABLE)
       .select('*')
+      .eq('tenant_id', req.tenantId)
       .or(`client_phone.eq.${cleanPhone},client_phone.eq.${phone}`)
       .limit(1);
 
@@ -1868,7 +1870,8 @@ app.put('/api/v1/leads/:id', validateApiKey, async (req, res) => {
     leadData.updated_at = new Date().toISOString();
 
     // Buscar por id numérico ou external_id
-    let query = supabase.from(LEADS_TABLE).update(leadData);
+    // Escopo por tenant da API Key (evita escrita cross-tenant).
+    let query = supabase.from(LEADS_TABLE).update(leadData).eq('tenant_id', req.tenantId);
     if (!isNaN(id)) {
       query = query.eq('id', id);
     } else {
@@ -1915,7 +1918,8 @@ app.patch('/api/v1/leads/:id', validateApiKey, async (req, res) => {
     leadData.updated_at = new Date().toISOString();
 
     // Buscar por id numérico ou external_id
-    let query = supabase.from(LEADS_TABLE).update(leadData);
+    // Escopo por tenant da API Key (evita escrita cross-tenant).
+    let query = supabase.from(LEADS_TABLE).update(leadData).eq('tenant_id', req.tenantId);
     if (!isNaN(id)) {
       query = query.eq('id', id);
     } else {
@@ -2056,7 +2060,7 @@ app.patch('/api/v1/leads/:id/temperature', validateApiKey, async (req, res) => {
       });
     }
 
-    let selectQuery = supabase.from(LEADS_TABLE).select('temperatura');
+    let selectQuery = supabase.from(LEADS_TABLE).select('temperatura').eq('tenant_id', req.tenantId);
     if (!isNaN(id)) {
       selectQuery = selectQuery.eq('id', id);
     } else {
@@ -2066,10 +2070,10 @@ app.patch('/api/v1/leads/:id/temperature', validateApiKey, async (req, res) => {
 
     const previousTemp = currentLead?.temperatura || 'cold';
 
-    let updateQuery = supabase.from(LEADS_TABLE).update({ 
+    let updateQuery = supabase.from(LEADS_TABLE).update({
       temperatura: temperature,
       updated_at: new Date().toISOString()
-    });
+    }).eq('tenant_id', req.tenantId);
     if (!isNaN(id)) {
       updateQuery = updateQuery.eq('id', id);
     } else {
@@ -2107,10 +2111,10 @@ app.patch('/api/v1/leads/:id/agent', validateApiKey, async (req, res) => {
     const { id } = req.params;
     const { assigned_agent, assigned_agent_id } = req.body;
 
-    let updateQuery = supabase.from(LEADS_TABLE).update({ 
+    let updateQuery = supabase.from(LEADS_TABLE).update({
       attended_by_name: assigned_agent,
       updated_at: new Date().toISOString()
-    });
+    }).eq('tenant_id', req.tenantId);
     if (!isNaN(id)) {
       updateQuery = updateQuery.eq('id', id);
     } else {
@@ -2327,9 +2331,11 @@ app.post('/api/v1/leads/upsert', validateApiKey, async (req, res) => {
     const cleanPhone = phone.replace(/\D/g, '');
 
     // Verificar se existe (usando client_phone que é o nome correto da coluna)
+    // Escopo por tenant da API Key (evita match/atualização cross-tenant).
     const { data: existing } = await supabase
       .from(LEADS_TABLE)
       .select('id, external_id')
+      .eq('tenant_id', req.tenantId)
       .or(`client_phone.eq.${cleanPhone},client_phone.eq.${phone}`)
       .limit(1);
 
@@ -2345,6 +2351,7 @@ app.post('/api/v1/leads/upsert', validateApiKey, async (req, res) => {
           updated_at: new Date().toISOString()
         })
         .eq('id', existing[0].id)
+        .eq('tenant_id', req.tenantId)
         .select()
         .single();
 
@@ -2353,6 +2360,11 @@ app.post('/api/v1/leads/upsert', validateApiKey, async (req, res) => {
     } else {
       // Criar
       const mapped = mapLeadToDB({ phone, ...leadData });
+      // Escopo por tenant da API Key: garante que o lead criado pertence ao tenant
+      // (mesmo idioma do POST /leads), evitando linhas órfãs e duplicatas em upserts futuros.
+      if (req.tenantId && !mapped.tenant_id) {
+        mapped.tenant_id = req.tenantId;
+      }
       if (!mapped.lead_timestamp) {
         mapped.lead_timestamp = new Date().toISOString();
       }
