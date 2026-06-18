@@ -4206,25 +4206,29 @@ app.post('/api/v1/brokers/:id/assign', validateApiKey, async (req, res) => {
     
     // Buscar dados do corretor em raw_data
     const brokerNameToUse = broker_name || id;
-    
-    const { data, error } = await supabase
-      .from('kenlo_leads')
-      .update({ 
-        raw_data: supabase.raw(`raw_data || '{"attendedBy": [{"id": "${id}", "name": "${brokerNameToUse}"}]}'::jsonb`)
-      })
-      .in('id', lead_ids)
-      .eq('tenant_id', req.tenantId)
-      .select();
-    
+
+    // Atribuição = setar raw_data.attendedBy preservando as demais chaves do payload.
+    // Feito via RPC parametrizada (assign_broker_to_leads): 1 statement, atômico e sem
+    // interpolar SQL. O helper SQL cru do código antigo não existe no supabase-js v2
+    // (sempre lançava TypeError) e a interpolação abria injeção. A função mescla na
+    // raiz do JSONB substituindo só a chave attendedBy, escopada por tenant_id no
+    // WHERE. Retorna o nº de linhas atualizadas.
+    const { data: updatedCount, error } = await supabase.rpc('assign_broker_to_leads', {
+      p_tenant_id: req.tenantId,
+      p_lead_ids: lead_ids,
+      p_broker_id: String(id),
+      p_broker_name: brokerNameToUse,
+    });
     if (error) throw error;
-    
+
+    const leadsUpdated = updatedCount || 0;
     res.json({
       success: true,
-      message: `${data?.length || 0} leads atribuídos ao corretor ${brokerNameToUse}`,
+      message: `${leadsUpdated} leads atribuídos ao corretor ${brokerNameToUse}`,
       data: {
         broker_id: id,
         broker_name: brokerNameToUse,
-        leads_updated: data?.length || 0
+        leads_updated: leadsUpdated
       }
     });
   } catch (error) {
