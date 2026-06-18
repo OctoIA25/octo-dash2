@@ -31,6 +31,7 @@ import {
   Calendar,
   Building2,
   DollarSign,
+  Target,
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
@@ -53,6 +54,7 @@ import { ProcessedLead, canonicalizeOrigemLeads } from '@/data/realLeadsProcesso
 import { getRankingColor } from '@/utils/colors';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { CorretorMetricCard } from '@/components/metrics/individual';
+import { IndividualGoalsPanel } from '@/features/metas';
 import { useRelatorios } from '../hooks/useRelatorios';
 import { useLeadSourceChannels } from '../hooks/useLeadSourceChannels';
 import { buildCorretorMetricasCompletas } from '../utils/buildCorretorMetricasCompletas';
@@ -234,6 +236,7 @@ export const RelatoriosPage = () => {
     const fromQuery = searchParams.get('metricasIndSubArea');
     if (
       fromQuery === 'comissao-metas' ||
+      fromQuery === 'metas' ||
       fromQuery === 'leads' ||
       fromQuery === 'vendas'
     ) {
@@ -243,7 +246,7 @@ export const RelatoriosPage = () => {
   }, [searchParams]);
 
   const [activeMetricasIndSubArea, setActiveMetricasIndSubArea] = useState<
-    'comissao-metas' | 'leads' | 'vendas'
+    'comissao-metas' | 'metas' | 'leads' | 'vendas'
   >(initialMetricasIndSubArea);
 
   useEffect(() => {
@@ -2427,13 +2430,14 @@ export const RelatoriosPage = () => {
       {activeSubArea === 'metricas-individuais' && (
         <>
             <div>
-              <div className="mb-6 flex justify-center">
-                <div className="w-full max-w-5xl flex flex-wrap justify-center gap-4">
+              <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-4 mb-6">
+                <div className="flex flex-wrap gap-3">
                 {([
-                  { key: 'comissao-metas', label: 'Comissão e meta', count: 0, Icon: DollarSign },
-                  { key: 'leads', label: 'Leads', count: 0, Icon: Users },
-                  { key: 'vendas', label: 'Origens', count: 0, Icon: TrendingUp },
-                ] as const).map(({ key, label, count, Icon }) => {
+                  { key: 'comissao-metas', label: 'Comissão e meta', Icon: DollarSign },
+                  { key: 'metas', label: 'Meta', Icon: Target },
+                  { key: 'leads', label: 'Leads', Icon: Users },
+                  { key: 'vendas', label: 'Origens', Icon: TrendingUp },
+                ] as const).map(({ key, label, Icon }) => {
                   const isActive = activeMetricasIndSubArea === key;
                   return (
                     <button
@@ -2445,31 +2449,14 @@ export const RelatoriosPage = () => {
                         params.set('metricasIndSubArea', key);
                         window.history.replaceState(null, '', `?${params.toString()}`);
                       }}
-                      className={`h-14 px-6 rounded-2xl border transition-all flex items-center gap-4 shadow-sm ${
+                      className={`h-10 px-4 rounded-lg border transition-all flex items-center gap-2 font-medium text-sm ${
                         isActive
-                          ? 'bg-white dark:bg-slate-900 border-blue-600'
-                          : 'bg-white dark:bg-slate-900 border-gray-200 dark:border-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800/60'
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white dark:bg-slate-900 text-gray-700 dark:text-slate-300 border-gray-300 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800'
                       }`}
                     >
-                      <div
-                        className={`h-8 w-8 rounded-lg flex items-center justify-center ${
-                          isActive ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-400'
-                        }`}
-                      >
-                        <Icon className="h-5 w-5" />
-                      </div>
-                      <div className={`text-base font-semibold ${isActive ? 'text-blue-700' : 'text-gray-800'}`}>
-                        {label}
-                      </div>
-                      <div
-                        className={`ml-1 min-w-7 h-7 px-2 rounded-full text-sm font-semibold flex items-center justify-center ${
-                          isActive
-                            ? 'bg-blue-50 text-blue-700 border border-blue-100'
-                            : 'bg-gray-50 dark:bg-slate-950 text-gray-600 dark:text-slate-400 border border-gray-100 dark:border-slate-800'
-                        }`}
-                      >
-                        {count}
-                      </div>
+                      <Icon className="h-4 w-4" />
+                      {label}
                     </button>
                   );
                 })}
@@ -2648,7 +2635,10 @@ export const RelatoriosPage = () => {
                   </>
                   )}
 
-                  {activeMetricasIndSubArea !== 'comissao-metas' && activeMetricasIndSubArea !== 'leads' && activeMetricasIndSubArea !== 'vendas' && (
+              {/* Aba "Meta": Metas Individuais reais (feature Metas), somente-leitura */}
+              {activeMetricasIndSubArea === 'metas' && <IndividualGoalsPanel />}
+
+                  {activeMetricasIndSubArea !== 'comissao-metas' && activeMetricasIndSubArea !== 'metas' && activeMetricasIndSubArea !== 'leads' && activeMetricasIndSubArea !== 'vendas' && (
                     <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-6">
                       <h3 className="text-sm font-semibold text-gray-800">
                         {activeMetricasIndSubArea === 'leads' && 'Leads'}

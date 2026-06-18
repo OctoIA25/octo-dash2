@@ -135,3 +135,15 @@ export function filterGoals(views: GoalView[], filters: GoalFilters): GoalView[]
     return true;
   });
 }
+
+/**
+ * Metas individuais ativas — visão de acompanhamento (somente-leitura) exibida
+ * aos corretores. Usa o `status` PERSISTIDO (ativar/desativar), não o status de
+ * progresso derivado: uma meta atrasada/concluída ainda é "ativa" e deve aparecer;
+ * só metas desativadas (`status === 'inactive'`) ficam de fora.
+ */
+export function selectActiveIndividualGoals(views: GoalView[]): GoalView[] {
+  return views.filter(
+    ({ goal }) => goal.scope === 'individual' && goal.status === 'active',
+  );
+}

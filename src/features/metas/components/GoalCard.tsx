@@ -26,6 +26,8 @@ interface Props {
   onToggleFeatured: (view: GoalView) => void;
   onDelete: (view: GoalView) => void;
   onViewHistory: (view: GoalView) => void;
+  /** 'expanded' aumenta o cartão (destaque/leitura). Padrão: 'default'. */
+  variant?: 'default' | 'expanded';
 }
 
 function formatDate(value: string): string {
@@ -44,6 +46,7 @@ export function GoalCard({
   onToggleFeatured,
   onDelete,
   onViewHistory,
+  variant = 'default',
 }: Props) {
   const { goal, progress, status, category } = view;
   const accent = accentClasses(category.accent);
@@ -54,13 +57,26 @@ export function GoalCard({
   const isInactive = goal.status === 'inactive';
   const isAuto = goal.source === 'crm';
   const canFeature = goal.scope === 'team';
+  const isExpanded = variant === 'expanded';
 
   return (
-    <Card className={cn('overflow-hidden transition-opacity', isInactive && 'opacity-70')}>
-      <CardContent className="p-4">
+    <Card
+      className={cn(
+        'overflow-hidden transition-opacity',
+        isInactive && 'opacity-70',
+        isExpanded && 'ring-1 ring-blue-200 dark:ring-blue-900/50 shadow-md',
+      )}
+    >
+      <CardContent className={isExpanded ? 'p-6' : 'p-4'}>
         <div className="flex items-start gap-3">
-          <div className={cn('flex items-center justify-center w-10 h-10 rounded-lg shrink-0', accent.iconBg)}>
-            <Icon className={cn('w-5 h-5', accent.iconText)} />
+          <div
+            className={cn(
+              'flex items-center justify-center rounded-lg shrink-0',
+              isExpanded ? 'w-12 h-12' : 'w-10 h-10',
+              accent.iconBg,
+            )}
+          >
+            <Icon className={cn(isExpanded ? 'w-6 h-6' : 'w-5 h-5', accent.iconText)} />
           </div>
 
           <div className="flex-1 min-w-0">
@@ -68,7 +84,7 @@ export function GoalCard({
               {goal.isFeatured && (
                 <Star className="w-4 h-4 text-amber-500 fill-amber-500 shrink-0" aria-label="Meta destacada" />
               )}
-              <h3 className="font-semibold text-foreground truncate">{goal.name}</h3>
+              <h3 className={cn('font-semibold text-foreground truncate', isExpanded && 'text-lg')}>{goal.name}</h3>
               <span className={cn('px-2 py-0.5 rounded-full text-[11px] font-medium', statusMeta.badge)}>
                 {statusMeta.label}
               </span>
@@ -123,18 +139,20 @@ export function GoalCard({
         </div>
 
         {goal.description && (
-          <p className="text-sm text-muted-foreground mt-3 line-clamp-2">{goal.description}</p>
+          <p className={cn('text-sm text-muted-foreground mt-3', !isExpanded && 'line-clamp-2')}>
+            {goal.description}
+          </p>
         )}
 
         {/* Barra de progresso principal */}
         <div className="mt-4">
-          <div className="flex items-center justify-between text-sm mb-1.5">
+          <div className={cn('flex items-center justify-between mb-1.5', isExpanded ? 'text-base' : 'text-sm')}>
             <span className="text-muted-foreground">
               {formatGoalValue(progress.currentValue, goal.unit)} / {formatGoalValue(progress.targetValue, goal.unit)}
             </span>
             <span className="font-semibold tabular-nums">{formatPercent(progress.percent)}</span>
           </div>
-          <div className="h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+          <div className={cn('rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden', isExpanded ? 'h-3' : 'h-2')}>
             <div
               className={cn('h-full rounded-full transition-all', accent.bar)}
               style={{ width: `${Math.max(0, Math.min(100, progress.percent))}%` }}
