@@ -6,7 +6,6 @@ import {
   resolveTestRecipient,
   resolveRecipient,
   testSubjectPrefix,
-  DEFAULT_TEST_RECIPIENT,
 } from './recipientResolver.js';
 
 describe('isValidEmail', () => {
@@ -40,11 +39,13 @@ describe('environmentFromEnv', () => {
 });
 
 describe('resolveTestRecipient', () => {
-  it('precedência: configurado > env > fallback', () => {
+  it('precedência: configurado > env', () => {
     expect(resolveTestRecipient('cfg@x.com', { EMAIL_TEST_RECIPIENT: 'env@x.com' })).toBe('cfg@x.com');
     expect(resolveTestRecipient('', { EMAIL_TEST_RECIPIENT: 'env@x.com' })).toBe('env@x.com');
-    expect(resolveTestRecipient('', {})).toBe(DEFAULT_TEST_RECIPIENT);
-    expect(resolveTestRecipient('invalido', {})).toBe(DEFAULT_TEST_RECIPIENT);
+  });
+  it('fail-closed: sem nada configurado retorna null (não vaza para endereço embutido)', () => {
+    expect(resolveTestRecipient('', {})).toBeNull();
+    expect(resolveTestRecipient('invalido', {})).toBeNull();
   });
 });
 
@@ -104,9 +105,33 @@ describe('resolveRecipient — proteção entre ambientes', () => {
     expect(r.isTest).toBe(true);
   });
 
-  it('usa fallback embutido quando nada configurado fora de produção', () => {
+  it('fail-closed: nada configurado fora de produção NÃO envia (recipient null)', () => {
     const r = resolveRecipient({ environment: 'development', leadEmail: 'lead@x.com', processEnv: {} });
-    expect(r.recipient).toBe(DEFAULT_TEST_RECIPIENT);
+    expect(r.recipient).toBeNull();
+    expect(r.redirected).toBe(false);
+    expect(r.reason).toBe('missing_test_recipient');
+    expect(r.intendedEmail).toBe('lead@x.com'); // intenção preservada para diagnóstico
+  });
+
+  it('fail-closed: modo teste sem e-mail de teste configurado NÃO envia', () => {
+    const r = resolveRecipient({
+      environment: 'production',
+      leadEmail: 'lead@cliente.com',
+      isTest: true,
+      processEnv: {},
+    });
+    expect(r.recipient).toBeNull();
+    expect(r.reason).toBe('missing_test_recipient');
+  });
+
+  it('regressão: fora de produção AINDA redireciona quando EMAIL_TEST_RECIPIENT está setado', () => {
+    const r = resolveRecipient({
+      environment: 'development',
+      leadEmail: 'lead@cliente.com',
+      processEnv: { EMAIL_TEST_RECIPIENT: 'env-teste@x.com' },
+    });
+    expect(r.recipient).toBe('env-teste@x.com');
+    expect(r.redirected).toBe(true);
   });
 });
 

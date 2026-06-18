@@ -9,7 +9,6 @@
  * Módulo PURO (sem rede/IO) para ser exaustivamente testável.
  */
 
-const DEFAULT_TEST_RECIPIENT = 'victorpradobatista26@gmail.com';
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** Valida formato básico de e-mail. */
@@ -41,12 +40,13 @@ export function environmentFromEnv(processEnv = process.env) {
  * Determina o e-mail de teste a ser usado, em ordem de precedência:
  *   1. testEmail explícito (configuração do tenant / requisição)
  *   2. EMAIL_TEST_RECIPIENT (variável de ambiente)
- *   3. fallback embutido (DEFAULT_TEST_RECIPIENT)
+ * Sem nenhum dos dois, retorna null (fail-closed): NÃO há para onde redirecionar,
+ * então o envio é bloqueado em vez de vazar PII para um endereço embutido.
  */
 export function resolveTestRecipient(configuredTestEmail, processEnv = process.env) {
   if (isValidEmail(configuredTestEmail)) return configuredTestEmail.trim();
   if (isValidEmail(processEnv.EMAIL_TEST_RECIPIENT)) return processEnv.EMAIL_TEST_RECIPIENT.trim();
-  return DEFAULT_TEST_RECIPIENT;
+  return null;
 }
 
 /**
@@ -75,6 +75,17 @@ export function resolveRecipient({
 
   // Envio de teste explícito: SEMPRE vai para o e-mail de teste, em qualquer ambiente.
   if (isTest) {
+    if (!testRecipient) {
+      return {
+        recipient: null,
+        redirected: false,
+        environment: env,
+        isTest: true,
+        intendedEmail,
+        reason: 'missing_test_recipient',
+        error: 'Sem e-mail de teste configurado (testEmail ou EMAIL_TEST_RECIPIENT) — envio de teste bloqueado.',
+      };
+    }
     return {
       recipient: testRecipient,
       redirected: true,
@@ -109,6 +120,18 @@ export function resolveRecipient({
   }
 
   // Não-produção: redireciona TUDO para o e-mail de teste (proteção do cliente real).
+  // Sem e-mail de teste configurado, falha fechado (não envia) em vez de vazar PII.
+  if (!testRecipient) {
+    return {
+      recipient: null,
+      redirected: false,
+      environment: env,
+      isTest: false,
+      intendedEmail,
+      reason: 'missing_test_recipient',
+      error: 'Sem e-mail de teste configurado (testEmail ou EMAIL_TEST_RECIPIENT) fora de produção — envio bloqueado.',
+    };
+  }
   return {
     recipient: testRecipient,
     redirected: true,
@@ -128,5 +151,3 @@ export function testSubjectPrefix({ redirected, isTest, intendedEmail }) {
   const alvo = intendedEmail || 'lead sem e-mail';
   return isTest ? `[TESTE → ${alvo}] ` : `[REDIRECIONADO → ${alvo}] `;
 }
-
-export { DEFAULT_TEST_RECIPIENT };
