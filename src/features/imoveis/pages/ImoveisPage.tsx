@@ -4,7 +4,7 @@
  * Rota: /imoveis
  */
 
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, lazy, Suspense } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useRegisterNovoActions } from '@/contexts/NovoActionsContext';
 import { useImoveisData } from '../hooks/useImoveisData';
@@ -24,6 +24,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { OctoDashLoader } from '@/components/ui/OctoDashLoader';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
+
+const ImoveisMapPage = lazy(() => import('./ImoveisMapPage'));
 import { 
   Search, 
   RefreshCw, 
@@ -1501,6 +1503,12 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
           </div>
         )}
       </div>
+        </TabsContent>
+
+        <TabsContent value="mapa-imoveis">
+          <Suspense fallback={<div className="flex items-center justify-center h-64 text-text-secondary">Carregando mapa...</div>}>
+            <ImoveisMapPage />
+          </Suspense>
         </TabsContent>
       </Tabs>
 
