@@ -88,7 +88,6 @@ const BolsaoPage = lazyWithRetry(() => import('@/features/leads/pages/BolsaoPage
 const CentralLeadsPage = lazyWithRetry(() => import('@/features/leads/pages/CentralLeadsPage').then(m => ({ default: m.CentralLeadsPage })));
 const CorretoresPage = lazyWithRetry(() => import('@/features/corretores/pages/CorretoresPage').then(m => ({ default: m.CorretoresPage })));
 const ImoveisPage = lazyWithRetry(() => import('@/features/imoveis/pages/ImoveisPage').then(m => ({ default: m.ImoveisPage })));
-const ImoveisMapPage = lazyWithRetry(() => import('@/features/imoveis/pages/ImoveisMapPage'));
 const LancamentoViewPage = lazyWithRetry(() => import('@/features/imoveis/pages/LancamentoViewPage').then(m => ({ default: m.LancamentoViewPage })));
 const AgentesIaPage = lazyWithRetry(() => import('@/features/agentes-ia/pages/AgentesIaPage').then(m => ({ default: m.AgentesIaPage })));
 const OctoChatPage = lazyWithRetry(() => import('@/features/agentes-ia/pages/OctoChatPage').then(m => ({ default: m.OctoChatPage })));
@@ -103,7 +102,6 @@ const EstudoMercadoPage = lazyWithRetry(() => import('@/features/estudo-mercado/
 const EstudoMercadoAgentePage = lazyWithRetry(() => import('@/features/estudo-mercado/pages/EstudoMercadoAgentePage').then(m => ({ default: m.EstudoMercadoAgentePage })));
 const EstudoMercadoMetricasPage = lazyWithRetry(() => import('@/features/estudo-mercado/pages/EstudoMercadoMetricasPage').then(m => ({ default: m.EstudoMercadoMetricasPage })));
 const NotificacoesPage = lazyWithRetry(() => import('@/features/notificacoes/pages/NotificacoesPage').then(m => ({ default: m.NotificacoesPage })));
-const ExcelPage = lazyWithRetry(() => import('@/features/excel/pages/ExcelPage').then(m => ({ default: m.ExcelPage })));
 const JuridicoPage = lazyWithRetry(() => import('@/features/juridico/pages/JuridicoPage').then(m => ({ default: m.JuridicoPage })));
 const MetasPage = lazyWithRetry(() => import('@/features/metas/pages/MetasPage').then(m => ({ default: m.MetasPage })));
 
@@ -376,9 +374,7 @@ const DashboardLayout = () => {
 
           <Route
             path="mapa-imoveis"
-            element={
-              canAccess('imoveis') ? <ImoveisMapPage /> : <Navigate to={defaultAllowedRoute} replace />
-            }
+            element={<Navigate to={canAccess('imoveis') ? '/imoveis?tab=mapa-imoveis' : defaultAllowedRoute} replace />}
           />
 
           <Route
@@ -459,13 +455,13 @@ const DashboardLayout = () => {
           />
 
           <Route
-            path="excel"
-            element={canAccess('excel') ? <ExcelPage /> : <Navigate to={defaultAllowedRoute} replace />}
+            path="metas"
+            element={canAccess('metas') ? <MetasPage /> : <Navigate to={defaultAllowedRoute} replace />}
           />
 
           <Route
-            path="metas"
-            element={canAccess('metas') ? <MetasPage /> : <Navigate to={defaultAllowedRoute} replace />}
+            path="relatorios/importacao"
+            element={<Navigate to={canAccess('excel') ? '/relatorios?tab=excel' : defaultAllowedRoute} replace />}
           />
 
           <Route path="*" element={<Navigate to={defaultAllowedRoute} replace />} />
