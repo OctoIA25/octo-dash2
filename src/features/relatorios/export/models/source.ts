@@ -75,7 +75,7 @@ export interface MetricasSource {
 }
 
 export interface MetricasIndividuaisSource {
-  subArea: 'comissao-metas' | 'leads' | 'vendas';
+  subArea: 'comissao-metas' | 'metas' | 'leads' | 'vendas';
   corretor: string;
   comissaoMetas: {
     metaAnual: number;
