@@ -23,10 +23,10 @@ import {
   Inbox,
   FileText,
   Headphones,
+  Megaphone,
   Pencil,
   Settings,
   MapPin,
-  Sheet,
   Scale,
   LayoutGrid,
   Target,
@@ -80,7 +80,6 @@ const GROUPS: SidebarGroup[] = [
         ],
       },
       { id: 'imoveis', label: 'Imóveis', icon: Building2, route: '/imoveis', permission: 'imoveis' },
-      { id: 'mapa-imoveis', label: 'Mapa de Imóveis', icon: MapPin, route: '/mapa-imoveis', permission: 'imoveis' },
       { id: 'metas', label: 'Metas', icon: Target, route: '/metas', permission: 'metas' },
     ],
   },
@@ -89,7 +88,6 @@ const GROUPS: SidebarGroup[] = [
     items: [
       { id: 'gestao-equipe', label: 'Gestão de Equipe', icon: Users, route: '/gestao-equipe', permission: 'gestao-equipe' },
       { id: 'recrutamento', label: 'Recrutamento', icon: UserCheck, route: '/recrutamento', permission: 'recrutamento' },
-      { id: 'excel', label: 'Excel', icon: Sheet, route: '/excel', permission: 'excel' },
     ],
   },
   {
@@ -104,6 +102,7 @@ const GROUPS: SidebarGroup[] = [
         subItems: [
           { id: 'agente-marketing', label: 'Marketing', icon: Bot, route: '/agentes-ia/agente-marketing' },
           { id: 'agente-comportamental', label: 'Comportamental', icon: Headphones, route: '/agentes-ia/agente-comportamental' },
+          { id: 'disparador', label: 'Disparador', icon: Megaphone, route: '/agentes-ia/disparador' },
         ],
       },
       {

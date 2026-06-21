@@ -104,6 +104,7 @@ const EstudoMercadoMetricasPage = lazyWithRetry(() => import('@/features/estudo-
 const NotificacoesPage = lazyWithRetry(() => import('@/features/notificacoes/pages/NotificacoesPage').then(m => ({ default: m.NotificacoesPage })));
 const JuridicoPage = lazyWithRetry(() => import('@/features/juridico/pages/JuridicoPage').then(m => ({ default: m.JuridicoPage })));
 const MetasPage = lazyWithRetry(() => import('@/features/metas/pages/MetasPage').then(m => ({ default: m.MetasPage })));
+const KpiAdminPage = lazyWithRetry(() => import('@/features/kpis').then(m => ({ default: m.KpiAdminPage })));
 
 // Loading Fallback para páginas individuais
 const PageLoader = () => (
@@ -457,6 +458,11 @@ const DashboardLayout = () => {
           <Route
             path="metas"
             element={canAccess('metas') ? <MetasPage /> : <Navigate to={defaultAllowedRoute} replace />}
+          />
+
+          <Route
+            path="kpis-admin"
+            element={canAccess('metricas') ? <KpiAdminPage /> : <Navigate to={defaultAllowedRoute} replace />}
           />
 
           <Route

@@ -117,7 +117,7 @@ export const useRouteSync = ({
       const parts = path.split('/');
       if (parts[2] && onAgentesIaSubSectionChange) {
         const agent = parts[2] as AgentesIaSubSection;
-        const validAgents: AgentesIaSubSection[] = ['agente-marketing', 'agente-comportamental'];
+        const validAgents: AgentesIaSubSection[] = ['agente-marketing', 'agente-comportamental', 'disparador'];
         if (validAgents.includes(agent)) {
           onAgentesIaSubSectionChange(agent);
         }

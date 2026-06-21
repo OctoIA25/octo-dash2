@@ -52,7 +52,7 @@ export function NovoLayout({ leads, onRefresh, isRefreshing, children }: NovoLay
           >
             <NovoHeader />
 
-            <main className="flex-1 overflow-y-auto">
+            <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden">
               {children ? children : <Outlet context={context} />}
             </main>
           </div>

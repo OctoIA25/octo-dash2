@@ -18,6 +18,8 @@ import { Suspense } from "react";
 import { lazyWithRetry } from "@/lib/lazyWithRetry";
 import { RouteErrorBoundary } from "@/shared/components/RouteErrorBoundary";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { Toaster } from "@/components/ui/toaster";
+import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
@@ -138,6 +140,11 @@ const App = () => {
       <QueryClientProvider client={queryClient}>
         {showReactQueryDevtools && <ReactQueryDevtools />}
         <TooltipProvider>
+          {/* Renderizadores de toast: sem eles, todo toast()/useToast() do app
+              cai no vazio (nada aparece). Montados aqui, dentro do ThemeProvider,
+              para que o Sonner herde o tema. */}
+          <Toaster />
+          <SonnerToaster />
           <AuthProvider>
             <NotificationsProvider>
               <AppContent />

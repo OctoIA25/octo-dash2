@@ -40,6 +40,7 @@ import {
   ClipboardList,
   Headphones,
   Bot,
+  Megaphone,
   Inbox,
   Camera,
   Pencil,
@@ -64,7 +65,7 @@ export type MetricasSubSection = 'meus-leads' | 'bolsao' | 'cliente-interessado'
 export type ClienteInteressadoSubSection = 'geral' | 'pre-atendimento' | 'atendimento';
 export type ClienteProprietarioSubSection = 'cliente-proprietario' | 'estudo-mercado';
 export type CorretoresSubSection = 'meus-leads' | 'bolsao-imoveis' | 'estudo-mercado';
-export type AgentesIaSubSection = 'agente-marketing' | 'agente-comportamental';
+export type AgentesIaSubSection = 'agente-marketing' | 'agente-comportamental' | 'disparador';
 export type EstudoMercadoSubSection = 'avaliacao' | 'agente-ia' | 'metricas';
 
 interface FixedSidebarProps {
@@ -669,7 +670,8 @@ export const FixedSidebar = ({
     ],
     'agentes-ia': [
       { id: 'agente-marketing', label: 'Marketing', icon: Bot },
-      { id: 'agente-comportamental', label: 'Comportamental', icon: Headphones }
+      { id: 'agente-comportamental', label: 'Comportamental', icon: Headphones },
+      { id: 'disparador', label: 'Disparador', icon: Megaphone }
     ],
     'estudo-mercado': [
       { id: 'avaliacao', label: 'Avaliação', icon: TrendingUp },

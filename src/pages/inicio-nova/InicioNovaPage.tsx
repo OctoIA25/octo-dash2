@@ -9,6 +9,7 @@ import { OKRManager } from '@/components/OKRManager';
 import { PDIManager } from '@/components/PDIManager';
 import { TaskManager } from '@/components/TaskManager';
 import { AgendaCalendar } from '@/features/agenda/components/AgendaCalendar';
+import { KpisPage } from '@/features/kpis';
 import {
   Plus,
   Phone,
@@ -362,6 +363,7 @@ export function InicioNovaPage() {
 
   // Meta destacada na tela inicial (configurável na aba Metas).
   const { view: featuredGoal } = useFeaturedGoal();
+
   const metaMensal = useMemo(() => {
     if (!featuredGoal) {
       return {
@@ -638,7 +640,14 @@ export function InicioNovaPage() {
       </div>
     );
   }
-  // funil / kpis (default) → dashboard novo
+  if (activeInicioTab === 'kpis') {
+    return (
+      <div key="kpis" className={ANIM}>
+        <KpisPage />
+      </div>
+    );
+  }
+  // funil (default) → dashboard novo
   return (
     <div key={activeInicioTab} className={ANIM}>
     <div className="px-6 py-5">

@@ -35,6 +35,8 @@ import {
   Sparkles,
   MessageCircle,
   DollarSign,
+  FileText,
+  MapPin,
 } from 'lucide-react';
 
 interface Tab {
@@ -119,6 +121,7 @@ const TAB_CONFIGS: TabConfig[] = [
       { id: 'metricas-individuais', label: 'Métricas Individuais', icon: User, href: '/relatorios?tab=metricas-individuais', isQuery: true },
       { id: 'imoveis', label: 'Imóveis', icon: Building2, href: '/relatorios?tab=imoveis', isQuery: true },
       { id: 'financeiro', label: 'Financeiro', icon: DollarSign, href: '/relatorios?tab=financeiro', isQuery: true },
+      { id: 'excel', label: 'Excel', icon: FileText, href: '/relatorios?tab=excel', isQuery: true },
     ],
   },
   {
@@ -172,6 +175,7 @@ const TAB_CONFIGS: TabConfig[] = [
       { id: 'meus-imoveis', label: 'Meus Imóveis', icon: User, href: '/imoveis?tab=meus-imoveis', isQuery: true },
       { id: 'condominios', label: 'Condomínios', icon: Building2, href: '/imoveis?tab=condominios', isQuery: true },
       { id: 'lancamentos', label: 'Lançamentos', icon: Sparkles, href: '/imoveis?tab=lancamentos', isQuery: true },
+      { id: 'mapa-imoveis', label: 'Mapa de Imóveis', icon: MapPin, href: '/imoveis?tab=mapa-imoveis', isQuery: true },
     ],
   },
   {
