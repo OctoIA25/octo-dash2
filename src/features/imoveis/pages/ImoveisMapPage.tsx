@@ -22,7 +22,6 @@ import {
 } from '../services/geocodingService';
 import type { Imovel } from '../services/kenloService';
 import type { GeoCoords } from '../services/geocodingService';
-import { useHeaderSlot } from '@/contexts/HeaderSlotContext';
 import { ImoveisMapHeaderFilters } from '../components/ImoveisMapHeaderFilters';
 
 // Fix dos ícones default do Leaflet ao usar com bundlers
@@ -140,7 +139,6 @@ const DEFAULT_CENTER: [number, number] = [-23.55, -46.633];
 export default function ImoveisMapPage() {
   const { imoveis, isLoading } = useImoveisData();
   const { tenantId } = useAuth();
-  const { setSlot, clearSlot } = useHeaderSlot();
   const [searchParams] = useSearchParams();
 
   const search = searchParams.get('q') ?? '';
@@ -152,11 +150,6 @@ export default function ImoveisMapPage() {
   const [isGeocoding, setIsGeocoding] = useState(false);
   // Indica que o carregamento inicial do BD terminou — só aí o geocoding pode rodar
   const [dbLoaded, setDbLoaded] = useState(false);
-
-  useEffect(() => {
-    setSlot(<ImoveisMapHeaderFilters />);
-    return () => clearSlot();
-  }, [setSlot, clearSlot]);
 
   // Carrega coordenadas persistidas do banco — renderiza todos os pins de uma vez
   useEffect(() => {
@@ -300,6 +293,11 @@ export default function ImoveisMapPage() {
 
   return (
     <div className="w-full h-[calc(100vh-56px)] flex flex-col">
+      {/* Barra de filtros do mapa (no corpo, para não cobrir as abas do header) */}
+      <div className="shrink-0 flex items-center border-b border-slate-200 bg-white px-4 py-2 dark:border-slate-800 dark:bg-slate-900">
+        <ImoveisMapHeaderFilters />
+      </div>
+
       {/* Mapa */}
       <div className="flex-1 relative bg-slate-100 dark:bg-slate-950">
         {isLoading ? (
