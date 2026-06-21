@@ -141,7 +141,9 @@ export default defineConfig(({ mode }) => ({
     // Excluímos node_modules (em qualquer nível, incl. server/node_modules), dist e
     // supabase. NÃO excluímos "server" inteiro: os testes de envio/ambiente vivem em
     // server/recommendations (os arquivos de runtime não são *.test.*, logo não entram).
-    exclude: ["**/node_modules/**", "**/dist/**", "supabase/**"],
+    // "e2e/**" fica de fora: são testes do PLAYWRIGHT (rodam via `npm run e2e`), não
+    // do vitest — incluí-los aqui quebraria (import de @playwright/test não resolvido).
+    exclude: ["**/node_modules/**", "**/dist/**", "supabase/**", "e2e/**"],
     // alias "@/" é herdado de resolve.alias acima
   },
 }));

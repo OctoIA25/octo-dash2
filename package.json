@@ -16,6 +16,7 @@
     "test:run": "vitest run",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
+    "e2e": "playwright test",
     "preview": "vite preview",
     "start": "node server/proxy-production.js",
     "start:prod": "NODE_ENV=production node server/proxy-production.js",
