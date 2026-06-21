@@ -4056,6 +4056,18 @@ if (process.env.RECOMMENDATION_SCHEDULER === '1') {
   startRecommendationScheduler(supabase);
 }
 
+// ============================================
+// KPIs — indicadores do dashboard (cálculo no servidor, isolado por tenant)
+// ============================================
+import { registerKpisRoutes } from './kpis/index.js';
+registerKpisRoutes(app, supabase);
+
+// ============================================
+// AGENTE DISPARADOR — interpreta NL → ações (WhatsApp) com prévia + confirmação
+// ============================================
+import { registerAgentActionRoutes } from './agent-actions/routes.js';
+registerAgentActionRoutes(app, supabase);
+
 // 404 Handler (DEVE ficar DEPOIS de todas as rotas)
 app.use('/api/v1/*', (req, res) => {
   res.status(404).json({

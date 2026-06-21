@@ -5168,6 +5168,13 @@ if (process.env.RECOMMENDATION_SCHEDULER === '1') {
   startRecommendationScheduler(supabase);
 }
 
+// ============================================
+// KPIs — indicadores do dashboard (cálculo no servidor, isolado por tenant)
+// Registrar ANTES do 404 catch-all de /api/v1/*.
+// ============================================
+import { registerKpisRoutes } from './kpis/index.js';
+registerKpisRoutes(app, supabase);
+
 // 404 para rotas da API não encontradas
 app.use('/api/v1/*', (req, res) => {
   res.status(404).json({
