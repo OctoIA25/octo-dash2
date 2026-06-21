@@ -20,19 +20,55 @@ import {
   testSubjectPrefix,
 } from './recipientResolver.js';
 import {
-  createEmailTransport,
   createSmtpTransport,
-  fromAddressFromEnv,
+  createSimulatedTransport,
 } from './emailTransport.js';
 import { encryptSecret, decryptSecret, hasEncryptionKey } from './crypto.js';
 import { CHANNELS, resolveDelivery } from './channels.js';
 import { loadWhatsappContext, sendWhatsappTemplate } from './whatsappSender.js';
 import { runDueSchedules, computeNextRun } from './scheduler.js';
+import { runDueRecovery } from './recoveryWorker.js';
 
 const PLATFORM_OWNER_EMAIL = 'octo.inteligenciaimobiliaria@gmail.com';
 const HISTORY_TABLE = 'lead_recommendations';
 const CONFIG_TABLE = 'tenant_recommendation_config';
 const SECRETS_TABLE = 'tenant_email_secrets';
+
+// Remetente (From) usado quando o tenant não definiu um próprio. É uma constante
+// (NÃO vem do .env): a configuração de e-mail é 100% por tenant. Só aparece no
+// transporte simulado, que não dispara e-mail de verdade.
+const DEFAULT_FROM = 'Recomendações <nao-responda@octodash.local>';
+
+// Intervalo/janela padrão (em dias) quando o tenant ainda não configurou cadência.
+const DEFAULT_INTERVAL_DAYS = 7;
+const DEFAULT_INTEREST_WINDOW_DAYS = 7;
+
+/** Converte um valor em dias positivo; cai no fallback quando inválido. */
+function toPositiveDays(value, fallback) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+}
+
+/**
+ * Log estruturado (uma linha por evento) do fluxo de envio de recomendações.
+ * Serve para acompanhar, no terminal/observabilidade, SE as recomendações estão
+ * saindo para os clientes (redirecionado=false + status=sent), se foram para o
+ * inbox de teste (redirecionado=true) ou se falharam (status=failed + erro=...).
+ *
+ * Campos nulos/vazios são omitidos; valores com espaço saem entre aspas.
+ * Não loga conteúdo do e-mail — apenas metadados de roteamento e resultado.
+ */
+function logSend(event, fields, level = 'log') {
+  const line = Object.entries(fields)
+    .filter(([, v]) => v !== undefined && v !== null && v !== '')
+    .map(([k, v]) => {
+      const s = String(v);
+      return `${k}=${s.includes(' ') ? `"${s}"` : s}`;
+    })
+    .join(' ');
+  const fn = level === 'warn' ? console.warn : level === 'error' ? console.error : console.log;
+  fn(`📬 [recommendations:${event}] ${line}`);
+}
 
 /**
  * Resolve o transporte de e-mail PARA UM TENANT.
@@ -58,6 +94,7 @@ export function makeResolveTenantTransport(supabase, options = {}) {
           .select('smtp_pass_encrypted')
           .eq('tenant_id', tenantId)
           .maybeSingle();
+
         if (sec?.smtp_pass_encrypted) {
           try {
             pass = decryptSecret(sec.smtp_pass_encrypted, processEnv);
@@ -75,15 +112,16 @@ export function makeResolveTenantTransport(supabase, options = {}) {
           },
           logger,
         });
-        return { transport, from: cfg.smtp_from || fromAddressFromEnv(processEnv) };
+
+        return { transport, from: cfg.smtp_from || cfg.smtp_user || DEFAULT_FROM };
       }
     } catch (err) {
       logger.error?.('[recommendations] erro ao resolver SMTP do tenant:', err.message);
     }
 
-    // Fallback: SMTP global do ambiente, ou simulado.
-    const transport = await createEmailTransport({ processEnv, logger });
-    return { transport, from: fromAddressFromEnv(processEnv) };
+    // Sem SMTP do tenant → transporte SIMULADO (não envia de verdade). NÃO há
+    // fallback para SMTP do .env: o envio é configurado exclusivamente por tenant.
+    return { transport: createSimulatedTransport({ logger }), from: DEFAULT_FROM };
   };
 }
 
@@ -156,7 +194,7 @@ export async function findRecentDuplicate(supabase, { tenantId, key, windowMs })
     const sinceIso = new Date(Date.now() - windowMs).toISOString();
     const { data } = await supabase
       .from(HISTORY_TABLE)
-      .select('id, status, recipient, message_id')
+      .select('id, status, recipient, message_id, transport')
       .eq('tenant_id', tenantId)
       .eq('idempotency_key', key)
       .gte('created_at', sinceIso)
@@ -183,14 +221,37 @@ export async function findRecentDuplicate(supabase, { tenantId, key, windowMs })
  *          errorMessage, deduplicated }
  */
 export async function deliverRecommendation(supabase, params, deps) {
-  const { tenantId, channel, lead, delivery, content = {}, sanitizedProps, isTest = false, sentBy = {} } = params;
+  const {
+    tenantId,
+    channel,
+    lead,
+    delivery,
+    content = {},
+    sanitizedProps,
+    isTest = false,
+    sentBy = {},
+    // Overrides opcionais (retrocompatíveis). Usados pelo Agente Disparador, que
+    // não envia lista de imóveis: a idempotência é por evento (ex.: run) e os
+    // parâmetros do template são a mensagem do usuário. Recomendações continuam
+    // usando o comportamento padrão (refs dos imóveis + [nome, qtd]).
+    idempotencyRefs,
+    whatsappParams,
+  } = params;
   const { resolveTransport, sendWhatsapp, findDuplicate } = deps;
 
   // Idempotência: retry com mesma chave dentro da janela não duplica.
-  const refs = sanitizedProps.map((p) => p.referencia);
+  const refs = idempotencyRefs ?? sanitizedProps.map((p) => p.referencia);
   const idempotencyKey = computeIdempotencyKey({ tenantId, leadId: lead.id, channel, refs });
   const duplicate = await findDuplicate({ tenantId, key: idempotencyKey });
   if (duplicate) {
+    logSend('dedup', {
+      tenant: tenantId,
+      canal: channel,
+      destino: duplicate.recipient,
+      status: duplicate.status,
+      historyId: duplicate.id,
+      obs: 'ja-enviado-na-janela-de-idempotencia',
+    });
     return {
       outcome: 'deduplicated',
       ok: true,
@@ -200,6 +261,7 @@ export async function deliverRecommendation(supabase, params, deps) {
       recipient: duplicate.recipient,
       historyId: duplicate.id,
       messageId: duplicate.message_id ?? null,
+      transport: duplicate.transport ?? null,
     };
   }
 
@@ -208,6 +270,19 @@ export async function deliverRecommendation(supabase, params, deps) {
   let sendResult = { transport: channel, messageId: null };
   let status;
   let errorMessage = null;
+
+  // Intenção de envio (antes de tentar). Se aparecer este log sem o "resultado"
+  // correspondente, o envio travou no meio (ex.: SMTP sem resposta).
+  logSend('envio', {
+    tenant: tenantId,
+    canal: channel,
+    teste: isTest,
+    ambiente: delivery.environment,
+    destino: delivery.recipient,
+    redirecionado: Boolean(delivery.redirected),
+    cliente: delivery.intended ?? delivery.intendedEmail ?? undefined,
+    porUsuario: sentBy.email ?? undefined,
+  });
 
   try {
     if (delivery.simulate) {
@@ -225,7 +300,9 @@ export async function deliverRecommendation(supabase, params, deps) {
       sendResult = { transport: r.transport || transport.kind, messageId: r.messageId };
       status = isTest ? 'test' : r.simulated ? 'simulated' : 'sent';
     } else {
-      const params2 = [lead.name || 'tudo bem', String(sanitizedProps.length)];
+      // Por padrão (recomendações): [nome do lead, qtd de imóveis]. O Agente
+      // Disparador sobrescreve com whatsappParams (a mensagem do usuário).
+      const params2 = whatsappParams ?? [lead.name || 'tudo bem', String(sanitizedProps.length)];
       const r = await sendWhatsapp({ tenantId, to: delivery.recipient, params: params2 });
       sendResult = { transport: 'whatsapp', messageId: r.messageId };
       status = 'sent';
@@ -235,6 +312,23 @@ export async function deliverRecommendation(supabase, params, deps) {
     status = 'failed';
     errorMessage = sendErr?.message || 'erro desconhecido no envio';
   }
+
+  // Resultado do envio (sempre logado). É a contraparte do log "envio" acima.
+  logSend(
+    'resultado',
+    {
+      tenant: tenantId,
+      canal: channel,
+      destino: delivery.recipient,
+      status,
+      transporte: sendResult.transport,
+      redirecionado: Boolean(delivery.redirected),
+      cliente: delivery.intended ?? delivery.intendedEmail ?? undefined,
+      messageId: status === 'failed' ? undefined : sendResult.messageId ?? undefined,
+      erro: errorMessage ?? undefined,
+    },
+    status === 'failed' ? 'error' : 'log',
+  );
 
   let historyId = null;
   try {
@@ -284,6 +378,7 @@ export async function deliverRecommendation(supabase, params, deps) {
     intended: delivery.intended ?? delivery.intendedEmail ?? null,
     intendedEmail: channel === 'email' ? delivery.intendedEmail : null,
     messageId: sendResult.messageId || null,
+    transport: sendResult.transport,
     historyId,
     errorMessage,
   };
@@ -329,7 +424,7 @@ export function makeSendHandler(supabase, options = {}) {
   if (options.resolveTransport) {
     resolveTransport = options.resolveTransport;
   } else if (options.getTransport) {
-    const fromAddress = options.fromAddress || fromAddressFromEnv();
+    const fromAddress = options.fromAddress || DEFAULT_FROM;
     resolveTransport = async () => ({ transport: await options.getTransport(), from: fromAddress });
   } else {
     resolveTransport = makeResolveTenantTransport(supabase, options);
@@ -386,6 +481,18 @@ export function makeSendHandler(supabase, options = {}) {
         isTest,
       });
       if (!delivery.recipient) {
+        logSend(
+          'bloqueado',
+          {
+            tenant: tenantId,
+            canal: channel,
+            teste: isTest,
+            motivo: delivery.reason,
+            cliente: lead.email ?? undefined,
+            detalhe: delivery.error ?? undefined,
+          },
+          'warn',
+        );
         return res.status(422).json({ ok: false, error: delivery.reason, message: delivery.error });
       }
 
@@ -414,6 +521,7 @@ export function makeSendHandler(supabase, options = {}) {
           deduplicated: true,
           historyId: result.historyId,
           messageId: result.messageId,
+          transport: result.transport,
         });
       }
       if (result.status === 'failed') {
@@ -436,6 +544,7 @@ export function makeSendHandler(supabase, options = {}) {
         intended: result.intended,
         intendedEmail: result.intendedEmail,
         messageId: result.messageId,
+        transport: result.transport,
         historyId: result.historyId,
       });
     } catch (err) {
@@ -487,7 +596,7 @@ export function makeGetConfigHandler(supabase, options = {}) {
       const { data: cfg } = await supabase
         .from(CONFIG_TABLE)
         .select(
-          'test_email, company_name, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_from, whatsapp_template_name, whatsapp_template_language',
+          'test_email, company_name, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_from, whatsapp_template_name, whatsapp_template_language, recommendation_interval_days, interest_window_days, recovery_agent_enabled, recovery_message, recovery_properties',
         )
         .eq('tenant_id', tenantId)
         .maybeSingle();
@@ -515,6 +624,15 @@ export function makeGetConfigHandler(supabase, options = {}) {
             templateName: cfg?.whatsapp_template_name ?? '',
             templateLanguage: cfg?.whatsapp_template_language ?? 'pt_BR',
           },
+          // Cadência configurável por tenant ("prazo" das recomendações).
+          intervalDays: toPositiveDays(cfg?.recommendation_interval_days, DEFAULT_INTERVAL_DAYS),
+          interestWindowDays: toPositiveDays(cfg?.interest_window_days, DEFAULT_INTEREST_WINDOW_DAYS),
+          // Agente de Recuperação: liga/desliga, mensagem e lista fixa de imóveis.
+          recovery: {
+            enabled: Boolean(cfg?.recovery_agent_enabled),
+            message: cfg?.recovery_message ?? '',
+            properties: Array.isArray(cfg?.recovery_properties) ? cfg.recovery_properties : [],
+          },
           encryptionAvailable: hasEncryptionKey(processEnv),
         },
       });
@@ -530,10 +648,33 @@ export function makeSaveConfigHandler(supabase, options = {}) {
   const processEnv = options.processEnv || process.env;
   return async function saveConfigHandler(req, res) {
     try {
-      const { tenantId, testEmail, companyName, smtp = {}, whatsapp = {} } = req.body || {};
+      const {
+        tenantId,
+        testEmail,
+        companyName,
+        smtp = {},
+        whatsapp = {},
+        intervalDays,
+        interestWindowDays,
+        recovery,
+      } = req.body || {};
       if (!tenantId) return res.status(400).json({ ok: false, error: 'missing_tenant_id' });
       const allowed = await ensureTenantAccess(supabase, req, tenantId);
       if (!allowed) return res.status(403).json({ ok: false, error: 'forbidden_tenant' });
+
+      // Config do Agente de Recuperação (opcional no payload: só grava o que veio).
+      const recoveryFields = {};
+      if (recovery && typeof recovery === 'object') {
+        if (typeof recovery.enabled === 'boolean') {
+          recoveryFields.recovery_agent_enabled = recovery.enabled;
+        }
+        if (typeof recovery.message === 'string') {
+          recoveryFields.recovery_message = recovery.message.trim() || null;
+        }
+        if (recovery.properties !== undefined) {
+          recoveryFields.recovery_properties = sanitizeProperties(recovery.properties);
+        }
+      }
 
       const { error: cfgError } = await supabase.from(CONFIG_TABLE).upsert(
         {
@@ -547,6 +688,9 @@ export function makeSaveConfigHandler(supabase, options = {}) {
           smtp_from: smtp.from?.trim() || null,
           whatsapp_template_name: whatsapp.templateName?.trim() || null,
           whatsapp_template_language: whatsapp.templateLanguage?.trim() || 'pt_BR',
+          recommendation_interval_days: toPositiveDays(intervalDays, DEFAULT_INTERVAL_DAYS),
+          interest_window_days: toPositiveDays(interestWindowDays, DEFAULT_INTEREST_WINDOW_DAYS),
+          ...recoveryFields,
         },
         { onConflict: 'tenant_id' },
       );
@@ -604,7 +748,8 @@ export function makeCreateScheduleHandler(supabase, options = {}) {
         channels,
         content = {},
         properties,
-        interestWindowDays = 7,
+        interestWindowDays,
+        intervalDays,
       } = req.body || {};
       if (!tenantId) return res.status(400).json({ ok: false, error: 'missing_tenant_id' });
       const chs = Array.isArray(channels) ? channels.filter((c) => CHANNELS.includes(c)) : [];
@@ -615,8 +760,31 @@ export function makeCreateScheduleHandler(supabase, options = {}) {
       const allowed = await ensureTenantAccess(supabase, req, tenantId);
       if (!allowed) return res.status(403).json({ ok: false, error: 'forbidden_tenant' });
 
-      // Primeira execução agendada: daqui a 7 dias (o envio "agora" é o manual).
-      const nextRun = computeNextRun(Date.now(), 'weekly');
+      // Cadência ("prazo"): o request pode sobrescrever pontualmente, mas o padrão
+      // vem da config do tenant. Leitura best-effort — uma falha aqui usa os
+      // defaults e NÃO impede o agendamento.
+      let cadenceCfg = null;
+      try {
+        ({ data: cadenceCfg } = await supabase
+          .from(CONFIG_TABLE)
+          .select('recommendation_interval_days, interest_window_days')
+          .eq('tenant_id', tenantId)
+          .maybeSingle());
+      } catch (cfgErr) {
+        console.warn('[recommendations] cadência do tenant indisponível, usando padrões:', cfgErr?.message);
+      }
+      const resolvedInterval = toPositiveDays(
+        intervalDays,
+        toPositiveDays(cadenceCfg?.recommendation_interval_days, DEFAULT_INTERVAL_DAYS),
+      );
+      const resolvedWindow = toPositiveDays(
+        interestWindowDays,
+        toPositiveDays(cadenceCfg?.interest_window_days, DEFAULT_INTEREST_WINDOW_DAYS),
+      );
+
+      // Primeira execução: daqui a `resolvedInterval` dias (o envio "agora" é o
+      // manual). A cadência é gravada como snapshot, imune a mudanças futuras.
+      const nextRun = computeNextRun(Date.now(), resolvedInterval);
 
       const { data, error } = await supabase
         .from(SCHEDULES_TABLE)
@@ -634,8 +802,9 @@ export function makeCreateScheduleHandler(supabase, options = {}) {
           email_text: content.text || null,
           whatsapp_body: content.whatsappBody || null,
           properties: props,
-          frequency: 'weekly',
-          interest_window_days: Number(interestWindowDays) || 7,
+          frequency: 'weekly', // legado (CHECK aceita só 'weekly'); cadência real = interval_days
+          interval_days: resolvedInterval,
+          interest_window_days: resolvedWindow,
           active: true,
           next_run_at: nextRun,
           created_by_user_id: req.userId,
@@ -733,12 +902,34 @@ export async function startRecommendationScheduler(supabase, options = {}) {
   }
   const deps = makeSchedulerDeps(supabase, options);
   const task = cron.schedule(cronExpr, () => {
+    // Mesmo tick atende os dois consumidores da fila de envio: agendamentos
+    // vencidos e a fila do Agente de Recuperação. Reutilizam as MESMAS deps
+    // (deliver, resolveDelivery, sendWhatsapp, findDuplicate, ambiente).
     runDueSchedules(supabase, deps).catch((e) =>
       console.error('[scheduler] erro na execução:', e?.message),
     );
+    runDueRecovery(supabase, deps).catch((e) =>
+      console.error('[recovery] erro na execução:', e?.message),
+    );
   });
-  console.log(`⏰ [scheduler] recomendações agendadas ativo (cron: ${cronExpr})`);
+  console.log(`⏰ [scheduler] recomendações + recuperação ativos (cron: ${cronExpr})`);
   return task;
+}
+
+/** Disparo manual do worker de recuperação (somente owner) — útil p/ validação. */
+export function makeRunRecoveryHandler(supabase, options = {}) {
+  return async function runRecoveryHandler(req, res) {
+    try {
+      if (!isPlatformOwner(req.userEmail)) {
+        return res.status(403).json({ ok: false, error: 'forbidden' });
+      }
+      const summary = await runDueRecovery(supabase, makeSchedulerDeps(supabase, options));
+      return res.status(200).json({ ok: true, summary });
+    } catch (err) {
+      console.error('[recovery] erro ao rodar fila:', err);
+      return res.status(500).json({ ok: false, error: 'internal_error' });
+    }
+  };
 }
 
 /** Registra as rotas de recomendação no app Express. */
@@ -784,5 +975,11 @@ export function registerRecommendationRoutes(app, supabase, options = {}) {
     '/api/v1/recommendations/schedules/run',
     requireSupabaseAuth,
     makeRunSchedulesHandler(supabase, options),
+  );
+  // Agente de Recuperação: disparo manual da fila (owner only) p/ validação.
+  app.post(
+    '/api/v1/recommendations/recovery/run',
+    requireSupabaseAuth,
+    makeRunRecoveryHandler(supabase, options),
   );
 }

@@ -1,12 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { makeCreateScheduleHandler, makeListSchedulesHandler } from './index.js';
 
-function makeFake({ membership = { user_id: 'u1' }, list = [] } = {}) {
+function makeFake({ membership = { user_id: 'u1' }, list = [], config = null } = {}) {
   const inserts = [];
   const supabase = {
     from(table) {
       if (table === 'tenant_memberships') {
         return { select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: membership, error: null }) }) }) }) };
+      }
+      if (table === 'tenant_recommendation_config') {
+        // Defaults de cadência do tenant (intervalo + janela). Uma única `.eq()`.
+        return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: config, error: null }) }) }) };
       }
       if (table === 'recommendation_schedules') {
         // Nó chainable E thenable: select/eq/order/limit retornam o nó; await
@@ -64,6 +68,22 @@ describe('makeCreateScheduleHandler', () => {
       frequency: 'weekly',
     });
     expect(new Date(inserts[0].next_run_at).getTime()).toBeGreaterThan(Date.now());
+    // Sem config do tenant → cadência padrão de 7 dias (snapshot no agendamento).
+    expect(inserts[0]).toMatchObject({ interval_days: 7, interest_window_days: 7 });
+  });
+
+  it('usa a cadência configurada pelo tenant como snapshot (intervalo + janela)', async () => {
+    const { supabase, inserts } = makeFake({
+      config: { recommendation_interval_days: 14, interest_window_days: 30 },
+    });
+    const res = makeRes();
+    await makeCreateScheduleHandler(supabase)(req({ body: validBody }), res);
+
+    expect(res.statusCode).toBe(201);
+    expect(inserts[0]).toMatchObject({ interval_days: 14, interest_window_days: 30 });
+    const days = (new Date(inserts[0].next_run_at).getTime() - Date.now()) / (24 * 60 * 60 * 1000);
+    expect(days).toBeGreaterThan(13);
+    expect(days).toBeLessThan(15);
   });
 
   it('400 sem canais', async () => {

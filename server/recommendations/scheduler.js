@@ -12,10 +12,13 @@
 const SCHEDULES_TABLE = 'recommendation_schedules';
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** Próxima execução conforme a cadência. Por ora só 'weekly' (+7 dias). */
-export function computeNextRun(fromMs, frequency = 'weekly') {
-  const step = frequency === 'weekly' ? 7 * DAY_MS : 7 * DAY_MS;
-  return new Date(fromMs + step).toISOString();
+/**
+ * Próxima execução conforme o INTERVALO (em dias) configurado pelo tenant.
+ * Aceita número de dias; valores inválidos — ou o legado 'weekly' — caem em 7.
+ */
+export function computeNextRun(fromMs, intervalDays = 7) {
+  const days = Number(intervalDays) > 0 ? Math.floor(Number(intervalDays)) : 7;
+  return new Date(fromMs + days * DAY_MS).toISOString();
 }
 
 /** Verifica se ainda estamos dentro da janela de interesse do lead. */
@@ -61,6 +64,9 @@ export async function runDueSchedules(supabase, deps) {
   if (!schedules || schedules.length === 0) return summary;
 
   const environment = getEnvironment();
+  logger.log?.(
+    `📬 [scheduler] ${schedules.length} agendamento(s) vencido(s) — processando (ambiente=${environment})`,
+  );
 
   for (const schedule of schedules) {
     summary.processed += 1;
@@ -128,7 +134,7 @@ export async function runDueSchedules(supabase, deps) {
       .from(SCHEDULES_TABLE)
       .update({
         last_run_at: nowIso,
-        next_run_at: computeNextRun(nowMs, schedule.frequency || 'weekly'),
+        next_run_at: computeNextRun(nowMs, schedule.interval_days),
         run_count: (schedule.run_count || 0) + 1,
       })
       .eq('id', schedule.id);

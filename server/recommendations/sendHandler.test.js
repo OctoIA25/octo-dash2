@@ -147,6 +147,24 @@ describe('sendHandler — fluxo de envio', () => {
     const res = makeRes();
     await handlerWith(supabase, { env: 'production', transport: simTransport })(baseReq(), res);
     expect(res.body.status).toBe('simulated');
+    expect(res.body.transport).toBe('simulated');
+  });
+
+  it('modo teste via transporte simulado: status "test" mas transport "simulated" (nada saiu de verdade)', async () => {
+    const { supabase } = makeFakeSupabase();
+    const res = makeRes();
+    const req = baseReq({ isTest: true });
+    await handlerWith(supabase, { env: 'production', transport: simTransport })(req, res);
+    // O status de teste é sempre 'test'; quem revela que NÃO houve envio real é o transport.
+    expect(res.body.status).toBe('test');
+    expect(res.body.transport).toBe('simulated');
+  });
+
+  it('envio real expõe transport "smtp"', async () => {
+    const { supabase } = makeFakeSupabase();
+    const res = makeRes();
+    await handlerWith(supabase, { env: 'production' })(baseReq(), res);
+    expect(res.body.transport).toBe('smtp');
   });
 
   it('falha no envio: 502 e histórico com status "failed"', async () => {

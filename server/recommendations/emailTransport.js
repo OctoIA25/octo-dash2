@@ -51,10 +51,7 @@ export function createSimulatedTransport({ logger = console } = {}) {
 export async function createSmtpTransport({ smtp, logger = console }) {
   let nodemailer;
   try {
-    // Import dinâmico opcional: só exigido quando o SMTP está configurado. O nome
-    // via variável + @vite-ignore evita que o bundler tente resolvê-lo no build/test.
-    const pkg = 'nodemailer';
-    ({ default: nodemailer } = await import(/* @vite-ignore */ pkg));
+    ({ default: nodemailer } = await import('nodemailer'));
   } catch {
     throw new Error(
       'SMTP configurado, mas o pacote "nodemailer" não está instalado. Rode `npm i nodemailer` no servidor.',
@@ -66,6 +63,12 @@ export async function createSmtpTransport({ smtp, logger = console }) {
     port: smtp.port || 587,
     secure: Boolean(smtp.secure),
     auth: smtp.user ? { user: smtp.user, pass: smtp.pass } : undefined,
+    // Timeouts para FALHAR RÁPIDO quando o SMTP está mal configurado/inacessível.
+    // Sem eles, os defaults do nodemailer são altos (minutos) e a requisição de
+    // envio fica pendurada — o que aparece como "loading infinito" na tela.
+    connectionTimeout: 10_000, // 10s para abrir a conexão TCP
+    greetingTimeout: 10_000, // 10s para o greeting do servidor SMTP
+    socketTimeout: 20_000, // 20s sem atividade no socket
   });
 
   return {

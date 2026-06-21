@@ -13,15 +13,18 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
+import { ImoveisComboBox } from '@/components/ui/imovel-combobox';
 import { useToast } from '@/hooks/use-toast';
 import { useImoveisData } from '@/features/imoveis/hooks/useImoveisData';
-import { Loader2, Save, TestTube2, Mail, Eye, EyeOff, AlertTriangle } from 'lucide-react';
+import { Loader2, Save, TestTube2, Mail, Eye, EyeOff, AlertTriangle, Archive, X } from 'lucide-react';
 import {
   fetchRecommendationConfig,
   saveRecommendationConfig,
   type RecommendationConfig,
   DEFAULT_RECOMMENDATION_CONFIG,
 } from '../services/recommendationConfigService';
+import { buildPropertiesSnapshot } from '../propertiesSnapshot';
 import { composeRecommendationEmail } from '../email/composeEmail';
 import { getSampleImoveis } from '../email/sampleImoveis';
 import { sendRecommendation } from '../services/recommendationsApi';
@@ -81,6 +84,29 @@ export const RecommendationEmailSettingsCard = ({
   const setSmtp = (patch: Partial<RecommendationConfig['smtp']>) =>
     setConfig((c) => ({ ...c, smtp: { ...c.smtp, ...patch } }));
 
+  const setRecovery = (patch: Partial<RecommendationConfig['recovery']>) =>
+    setConfig((c) => ({ ...c, recovery: { ...c.recovery, ...patch } }));
+
+  // Adiciona um imóvel à lista fixa do agente (sem duplicar pela referência).
+  // Reutiliza buildPropertiesSnapshot para gravar no MESMO shape do engine.
+  const addRecoveryImovel = (referencia: string, imovel?: typeof imoveis[number]) => {
+    if (!imovel) return;
+    setConfig((c) => {
+      if (c.recovery.properties.some((p) => p.referencia === referencia)) return c;
+      const [snapshot] = buildPropertiesSnapshot([imovel]);
+      return { ...c, recovery: { ...c.recovery, properties: [...c.recovery.properties, snapshot] } };
+    });
+  };
+
+  const removeRecoveryImovel = (referencia: string) =>
+    setConfig((c) => ({
+      ...c,
+      recovery: {
+        ...c.recovery,
+        properties: c.recovery.properties.filter((p) => p.referencia !== referencia),
+      },
+    }));
+
   const handleSave = async () => {
     if (!tenantId || tenantId === 'owner') {
       toast({ title: 'Selecione uma imobiliária', variant: 'destructive' });
@@ -110,6 +136,13 @@ export const RecommendationEmailSettingsCard = ({
         whatsapp: {
           templateName: config.whatsapp.templateName,
           templateLanguage: config.whatsapp.templateLanguage,
+        },
+        intervalDays: config.intervalDays,
+        interestWindowDays: config.interestWindowDays,
+        recovery: {
+          enabled: config.recovery.enabled,
+          message: config.recovery.message,
+          properties: config.recovery.properties,
         },
       });
       if (!result.ok) {
@@ -171,12 +204,19 @@ export const RecommendationEmailSettingsCard = ({
         });
         return;
       }
+      // Sem SMTP do tenant, o servidor usa o transporte SIMULADO: NADA é enviado
+      // de verdade. Avisar de forma destacada em vez de uma falsa confirmação.
+      if (result.transport === 'simulated') {
+        toast({
+          title: 'Nada foi enviado (modo simulado)',
+          description: `Sem SMTP configurado, o e-mail não saiu de verdade. Preencha o servidor de envio (SMTP) acima e salve para enviar para ${result.recipient}.`,
+          variant: 'destructive',
+        });
+        return;
+      }
       toast({
         title: 'E-mail de teste enviado',
-        description:
-          result.status === 'simulated'
-            ? `Envio simulado para ${result.recipient}. Configure o SMTP para receber de verdade.`
-            : `Enviado para ${result.recipient}.`,
+        description: `Enviado para ${result.recipient}.`,
       });
     } catch (err) {
       toast({
@@ -350,6 +390,142 @@ export const RecommendationEmailSettingsCard = ({
                   setConfig((c) => ({ ...c, whatsapp: { ...c.whatsapp, templateLanguage: e.target.value } }))
                 }
                 placeholder="pt_BR"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Agente de Recuperação (disparado ao arquivar um lead do CRM) */}
+        <div className="border-t pt-4 space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start gap-2">
+              <Archive className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
+              <div>
+                <h4 className="text-sm font-semibold">Agente de Recuperação</h4>
+                <p className="text-[12px] text-muted-foreground">
+                  Quando um corretor arquiva um cliente, o agente envia automaticamente, por
+                  WhatsApp, a mensagem e a lista de imóveis abaixo — uma tentativa de recuperar
+                  o lead.
+                </p>
+              </div>
+            </div>
+            <Switch
+              checked={config.recovery.enabled}
+              onCheckedChange={(v) => setRecovery({ enabled: v })}
+              aria-label="Ativar Agente de Recuperação"
+            />
+          </div>
+
+          {config.recovery.enabled && (
+            <>
+              {!config.whatsapp.templateName && (
+                <div className="rounded-lg border border-orange-300 bg-orange-50 dark:bg-orange-950/20 p-2.5 text-[12px] text-orange-800 dark:text-orange-300 flex gap-2">
+                  <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                  <span>
+                    Configure o <strong>template de WhatsApp</strong> acima: o agente envia por
+                    WhatsApp e, sem template aprovado na Meta, nada será enviado.
+                  </span>
+                </div>
+              )}
+
+              <div>
+                <Label htmlFor="recovery-message">Mensagem ao cliente</Label>
+                <Textarea
+                  id="recovery-message"
+                  value={config.recovery.message}
+                  onChange={(e) => setRecovery({ message: e.target.value })}
+                  placeholder="Olá! Sentimos sua falta. Separamos algumas oportunidades que podem te interessar."
+                  rows={3}
+                />
+                <p className="text-[12px] text-muted-foreground mt-1">
+                  Este texto é enviado como parâmetro do template de WhatsApp aprovado na Meta.
+                </p>
+              </div>
+
+              <div>
+                <Label>Imóveis (oportunidades)</Label>
+                <p className="text-[12px] text-muted-foreground mb-2">
+                  Selecione os imóveis que o agente apresentará ao cliente arquivado.
+                </p>
+                <ImoveisComboBox
+                  imoveis={imoveis}
+                  value=""
+                  onChange={addRecoveryImovel}
+                  placeholder="Buscar imóvel por referência, título ou bairro…"
+                />
+
+                {config.recovery.properties.length > 0 ? (
+                  <ul className="mt-3 space-y-2">
+                    {config.recovery.properties.map((p) => (
+                      <li
+                        key={p.referencia}
+                        className="flex items-center justify-between gap-3 rounded-md border bg-muted/40 px-3 py-2 text-sm"
+                      >
+                        <div className="min-w-0">
+                          <span className="font-medium">{p.referencia}</span>
+                          <span className="text-muted-foreground"> — {p.titulo}</span>
+                          {p.localizacao && (
+                            <span className="text-[12px] text-muted-foreground block truncate">
+                              {p.localizacao}
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeRecoveryImovel(p.referencia)}
+                          className="text-muted-foreground hover:text-destructive flex-shrink-0"
+                          aria-label={`Remover ${p.referencia}`}
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-[12px] text-muted-foreground">
+                    Nenhum imóvel selecionado — o agente não envia sem ao menos um imóvel.
+                  </p>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Cadência ("prazo") dos reenvios agendados */}
+        <div className="border-t pt-4 space-y-4">
+          <div>
+            <h4 className="text-sm font-semibold">Cadência das recomendações</h4>
+            <p className="text-[12px] text-muted-foreground">
+              Define o "prazo" dos reenvios automáticos: de quantos em quantos dias
+              reenviar e por quanto tempo, após o interesse do lead, continuar enviando.
+              Aplica-se aos novos agendamentos.
+            </p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="cfg-interval-days">Intervalo de reenvio (dias)</Label>
+              <Input
+                id="cfg-interval-days"
+                type="number"
+                min={1}
+                value={config.intervalDays}
+                onChange={(e) =>
+                  setConfig((c) => ({ ...c, intervalDays: Number(e.target.value) || 0 }))
+                }
+                placeholder="7"
+              />
+            </div>
+            <div>
+              <Label htmlFor="cfg-window-days">Janela de interesse (dias)</Label>
+              <Input
+                id="cfg-window-days"
+                type="number"
+                min={1}
+                value={config.interestWindowDays}
+                onChange={(e) =>
+                  setConfig((c) => ({ ...c, interestWindowDays: Number(e.target.value) || 0 }))
+                }
+                placeholder="7"
               />
             </div>
           </div>

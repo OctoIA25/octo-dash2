@@ -57,6 +57,11 @@ export interface SendRecommendationResponse {
   intendedEmail?: string | null;
   /** true quando a requisição caiu na idempotência (envio já feito). */
   deduplicated?: boolean;
+  /**
+   * Transporte efetivamente usado: 'smtp' (enviado de verdade), 'whatsapp', ou
+   * 'simulated' (NADA saiu — sem SMTP configurado para o tenant).
+   */
+  transport?: 'smtp' | 'simulated' | 'whatsapp' | string;
   messageId?: string | null;
   historyId?: string | null;
   error?: string;
@@ -68,20 +73,45 @@ async function authHeader(): Promise<Record<string, string>> {
   return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
 }
 
+/** Limite de espera do envio. Acima disso, abortamos e devolvemos erro tratável
+ *  em vez de deixar o botão "Enviar" girando para sempre. */
+const SEND_TIMEOUT_MS = 30_000;
+
 export async function sendRecommendation(
   payload: SendRecommendationRequest,
 ): Promise<SendRecommendationResponse> {
-  const response = await fetch('/api/v1/recommendations/send', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
-    body: JSON.stringify(payload),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SEND_TIMEOUT_MS);
+  try {
+    const response = await fetch('/api/v1/recommendations/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
 
-  const json = (await response.json().catch(() => ({}))) as SendRecommendationResponse;
-  if (!response.ok) {
-    return { ok: false, error: json.error || `HTTP ${response.status}`, message: json.message };
+    const json = (await response.json().catch(() => ({}))) as SendRecommendationResponse;
+    if (!response.ok) {
+      return { ok: false, error: json.error || `HTTP ${response.status}`, message: json.message };
+    }
+    return json;
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      return {
+        ok: false,
+        error: 'timeout',
+        message:
+          'O servidor demorou demais para responder (possível SMTP travado ou inacessível). Verifique a configuração de envio e tente novamente.',
+      };
+    }
+    return {
+      ok: false,
+      error: 'network_error',
+      message: err instanceof Error ? err.message : 'Falha de rede ao enviar.',
+    };
+  } finally {
+    clearTimeout(timeout);
   }
-  return json;
 }
 
 export interface RecommendationHistoryItem {

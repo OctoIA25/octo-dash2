@@ -23,11 +23,36 @@ export interface WhatsappTemplateConfig {
   templateLanguage: string;
 }
 
+/** Imóvel (oportunidade) no snapshot do Agente de Recuperação. */
+export interface RecoveryProperty {
+  referencia: string;
+  titulo: string;
+  localizacao?: string;
+  preco?: number | null;
+  score?: number;
+}
+
+/** Configuração do Agente de Recuperação (disparado ao arquivar um lead). */
+export interface RecoveryAgentConfig {
+  /** Liga/desliga o agente para o tenant. */
+  enabled: boolean;
+  /** Mensagem configurável enviada ao cliente (parâmetro do template WhatsApp). */
+  message: string;
+  /** Lista FIXA de imóveis (oportunidades) usada pelo agente. */
+  properties: RecoveryProperty[];
+}
+
 export interface RecommendationConfig {
   testEmail: string;
   companyName: string;
   smtp: SmtpConfig;
   whatsapp: WhatsappTemplateConfig;
+  /** Intervalo (em dias) entre reenvios das recomendações agendadas. */
+  intervalDays: number;
+  /** Janela (em dias) após o interesse em que as recomendações continuam sendo enviadas. */
+  interestWindowDays: number;
+  /** Configuração do Agente de Recuperação. */
+  recovery: RecoveryAgentConfig;
   /** Servidor tem EMAIL_ENCRYPTION_KEY configurada (necessária p/ salvar senha). */
   encryptionAvailable: boolean;
 }
@@ -37,6 +62,9 @@ export const DEFAULT_RECOMMENDATION_CONFIG: RecommendationConfig = {
   companyName: '',
   smtp: { host: '', port: 587, secure: false, user: '', from: '', hasPassword: false },
   whatsapp: { templateName: '', templateLanguage: 'pt_BR' },
+  intervalDays: 7,
+  interestWindowDays: 7,
+  recovery: { enabled: false, message: '', properties: [] },
   encryptionAvailable: false,
 };
 
@@ -54,6 +82,12 @@ export interface RecommendationConfigInput {
     password?: string;
   };
   whatsapp?: WhatsappTemplateConfig;
+  /** Intervalo (em dias) entre reenvios. */
+  intervalDays?: number;
+  /** Janela de interesse (em dias). */
+  interestWindowDays?: number;
+  /** Config do Agente de Recuperação (parcial: só grava o que for enviado). */
+  recovery?: Partial<RecoveryAgentConfig>;
 }
 
 async function authHeader(): Promise<Record<string, string>> {
@@ -89,6 +123,13 @@ export async function fetchRecommendationConfig(
     whatsapp: {
       templateName: c.whatsapp?.templateName ?? '',
       templateLanguage: c.whatsapp?.templateLanguage ?? 'pt_BR',
+    },
+    intervalDays: Number(c.intervalDays) > 0 ? Number(c.intervalDays) : 7,
+    interestWindowDays: Number(c.interestWindowDays) > 0 ? Number(c.interestWindowDays) : 7,
+    recovery: {
+      enabled: Boolean(c.recovery?.enabled),
+      message: c.recovery?.message ?? '',
+      properties: Array.isArray(c.recovery?.properties) ? c.recovery.properties : [],
     },
     encryptionAvailable: Boolean(c.encryptionAvailable),
   };
