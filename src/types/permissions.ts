@@ -96,8 +96,11 @@ export const ADMIN_SIDEBAR_PERMISSIONS: SidebarPermission[] = [
 ];
 
 // Team Leader: Acesso intermediário
+// 'relatorios' incluído porque a Importação de Planilhas Excel passou a ser uma
+// aba dentro de /relatorios (guardada por canAccess('relatorios')); o team_leader
+// já tinha 'excel' e precisa de 'relatorios' para alcançar a aba.
 export const TEAM_LEADER_SIDEBAR_PERMISSIONS: SidebarPermission[] = [
-  'leads', 'notificacoes', 'metricas', 'juridico', 'estudo-mercado', 'gestao-equipe', 'imoveis', 'octo-chat', 'chat', 'metas', 'excel'
+  'leads', 'notificacoes', 'metricas', 'juridico', 'estudo-mercado', 'gestao-equipe', 'imoveis', 'octo-chat', 'chat', 'metas', 'excel', 'relatorios'
 ];
 
 // Corretor: Acesso restrito (bloqueado por padrão em várias áreas)

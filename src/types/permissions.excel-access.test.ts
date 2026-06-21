@@ -18,4 +18,12 @@ describe('permissão de sidebar: excel (dado financeiro)', () => {
     expect(ADMIN_SIDEBAR_PERMISSIONS).toContain('excel');
     expect(OWNER_SIDEBAR_PERMISSIONS).toContain('excel');
   });
+
+  // A importação virou uma aba dentro de /relatorios (guardada por 'relatorios').
+  // Quem acessa a importação precisa de 'relatorios' para alcançar a aba.
+  it('admin, team_leader e owner têm acesso a relatorios (onde vive a aba de importação)', () => {
+    expect(TEAM_LEADER_SIDEBAR_PERMISSIONS).toContain('relatorios');
+    expect(ADMIN_SIDEBAR_PERMISSIONS).toContain('relatorios');
+    expect(OWNER_SIDEBAR_PERMISSIONS).toContain('relatorios');
+  });
 });

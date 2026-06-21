@@ -1597,19 +1597,25 @@ export const RelatoriosPage = () => {
   ]);
 
   const reportModel = useMemo(
+    // A aba 'excel' e uma tela de IMPORTACAO, sem relatorio exportavel: buildReportModel
+    // devolve um modelo vazio para ela. As demais sub-areas tem builder proprio.
     () => buildReportModel(activeSubArea, reportSource),
     [activeSubArea, reportSource],
   );
+
+  if (activeSubArea === 'excel') {
+    return <GenericImportPage />;
+  }
 
   return (
     <div ref={reportRef} className="min-h-screen p-6" style={{ backgroundColor: 'var(--bg-primary, #f5f5f5)' }}>
 
       {/* Barra de ações do relatório */}
-      <div className="flex justify-end mb-6">
+      <div className="flex justify-end mb-4">
         <button
           type="button"
           onClick={() => setIsExportOpen(true)}
-          className="h-10 px-5 btn-octo-primary rounded-lg font-medium text-sm flex items-center gap-2 transition-all"
+          className="h-9 px-4 btn-octo-primary rounded-lg font-medium text-sm inline-flex items-center gap-2 shadow-sm transition-all hover:shadow-md"
         >
           <Download className="h-4 w-4" />
           Exportar Relatório
@@ -2958,11 +2964,6 @@ export const RelatoriosPage = () => {
               )}
             </div>
         </>
-      )}
-
-      {/* SEÇÃO IMPORTAÇÃO */}
-      {activeSubArea === 'excel' && (
-        <GenericImportPage />
       )}
 
       {/* SEÇÃO IMÓVEIS */}
