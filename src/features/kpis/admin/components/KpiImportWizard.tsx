@@ -18,6 +18,7 @@ import type { GenericTable, ColumnMetadata } from '@/features/relatorios/import/
 import { suggestMapping, buildImportPlan, buildPreview, type ImportMapping, type ImportPlan, type ImportPreview } from '@/features/kpis/admin/import/targetMapping';
 import { persistImport, type ResolvedPlan } from '@/features/kpis/admin/services/kpiImportService';
 import { WIZARD_STEPS, prevStep, type WizardStep } from '@/features/kpis/admin/import/wizardSteps';
+import { periodRangeLabel } from './importMessages';
 import type { DashboardKpi } from '@/features/kpis/domain/kpiTypes';
 
 interface Props {
@@ -35,6 +36,7 @@ const STEP_LABELS: Record<WizardStep, string> = {
   mapeamento: 'Mapear',
   importacao: 'Importar',
 };
+
 
 /** Trilha de passos: numerada, casando com o motivo da lista (a ordem é informação). */
 function StepRail({ current }: { current: WizardStep }) {
@@ -138,7 +140,14 @@ export function KpiImportWizard({ open, onOpenChange, existingKpis, onImported }
     try {
       // Persiste a interpretação do Preview junto (kpi_import_batches.preview).
       await persistImport({ plan, mapping: { target: mapping.target }, preview, tenantId, actor, fileName, sheetName: table.sheetName, dryRun: false, existingKpis });
-      toast.success('Importação concluída');
+      // Diz QUAIS meses foram importados — o dashboard abre no mês atual, então
+      // valores de meses passados só aparecem ao navegar até aquele mês.
+      const range = periodRangeLabel(plan.rows.map((r) => r.periodStart));
+      const tipo = mapping.target === 'value' ? 'Valores' : 'Metas';
+      toast.success(
+        range ? `${tipo} importados (${range}). Navegue até o mês no dashboard para vê-los.`
+              : 'Importação concluída.',
+      );
       onImported?.();        // revalida a lista de KPIs (sem F5)
       reset(); onOpenChange(false);
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Erro ao importar'); } finally { setBusy(false); }

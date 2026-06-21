@@ -333,15 +333,23 @@ function CommercialCard({ item }: { item: KpiCommercialComparison }) {
         // Comparação de dois meses: em vez de eixo Y de escala, o valor vai
         // direto sobre cada barra (mais legível para duas colunas) e o detalhe
         // completo no tooltip. O grid horizontal dá a referência visual.
+        // `background: transparent` explícito no BarChart: no Windows o SVG do
+        // Recharts às vezes ganha um fundo cinza default na área de plotagem;
+        // forçar transparente garante o card branco por baixo em toda plataforma.
         <ResponsiveContainer width="100%" height={240}>
-          <BarChart data={data} margin={{ top: 28, right: 8, left: 8, bottom: 0 }} barCategoryGap="24%">
+          <BarChart
+            data={data}
+            margin={{ top: 28, right: 8, left: 8, bottom: 0 }}
+            barCategoryGap="24%"
+            style={{ background: 'transparent' }}
+          >
             <defs>
               <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="#3b82f6" stopOpacity={1} />
                 <stop offset="100%" stopColor="#2563eb" stopOpacity={0.85} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" strokeOpacity={0.7} vertical={false} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" strokeOpacity={0.7} vertical={false} fill="none" />
             <XAxis
               dataKey="label"
               tick={{ fontSize: 11.5, fill: '#64748b', fontWeight: 500 }}
@@ -352,9 +360,16 @@ function CommercialCard({ item }: { item: KpiCommercialComparison }) {
             <Tooltip cursor={{ fill: 'rgba(37, 99, 235, 0.06)' }} content={<CommercialTooltip />} />
             <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={72} isAnimationActive={false}>
               {data.map((d) => (
-                // Ambas no azul da marca: mês anterior em azul claro, mês atual
-                // com o gradiente sólido em destaque.
-                <Cell key={d.kind} fill={d.kind === 'cur' ? `url(#${gradId})` : '#bfdbfe'} />
+                // Mês anterior em azul claro; mês atual com o gradiente.
+                // FALLBACK p/ Windows/Edge: o ATRIBUTO `fill` é uma cor SÓLIDA
+                // (#2563eb); o gradiente entra por `style.fill` (maior prioridade).
+                // Se o url(#gradiente) não resolver, a barra cai no azul sólido —
+                // nunca no cinza default do navegador.
+                <Cell
+                  key={d.kind}
+                  fill={d.kind === 'cur' ? '#2563eb' : '#bfdbfe'}
+                  style={d.kind === 'cur' ? { fill: `url(#${gradId})` } : undefined}
+                />
               ))}
               <LabelList dataKey="value" position="top" content={<BarValueLabel />} />
             </Bar>
