@@ -113,22 +113,12 @@ body {
   box-shadow: 0 0 12px rgba(255, 255, 255, 0.15);
 }
 
-/* Estilos para charts - Recharts */
-.recharts-wrapper {
-  background: rgba(0, 0, 0, 0.1) !important;
-  border-radius: 8px !important;
-}
-
-/* Efeito glow adicional para as barras */
-.recharts-bar rect {
-  filter: drop-shadow(0 0 8px currentColor) brightness(1.8) saturate(2.0) !important;
-  opacity: 1 !important;
-}
-
-/* Melhorar visibilidade dos textos dos eixos */
-.recharts-cartesian-axis-tick-value {
-  font-weight: 700 !important;
-  font-size: 13px !important;
-  fill: #FFFFFF !important;
-  text-shadow: 0 0 4px rgba(0, 0, 0, 0.8) !important;
-}
+/* Recharts: sem overrides globais.
+ *
+ * Antes havia três regras globais com !important aqui (fundo cinza no
+ * .recharts-wrapper, glow/saturação nas barras e fill branco nos ticks dos
+ * eixos). Foram criadas para um tema escuro "neon" que não existe mais e
+ * sabotavam TODOS os gráficos de tema claro do app — o texto dos eixos virava
+ * branco (invisível) e cada gráfico ganhava um retângulo cinza atrás das
+ * barras. Cada componente Recharts já define suas próprias cores; o estilo
+ * deve viver no componente, não num override global. Ver KpiComponents.tsx. */
