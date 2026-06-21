@@ -81,11 +81,19 @@ export const LADOS_IDENTIDADE: Record<string, string> = {
 /**
  * Valida se a URL é do formato correto do 16personalities
  * Aceita tanto /profiles/ quanto /resultados/ (inglês e português)
+ *
+ * Além do formato, valida que as 4 letras correspondem a um dos 16 tipos reais —
+ * sem isso, uma URL como ".../xxxx-a/m/abc123" passaria e salvaria um tipo inválido.
  */
 export function validarUrl16Personalities(url: string): boolean {
   // Aceitar tanto /profiles/ (inglês) quanto /resultados/ (português)
-  const regex = /^https:\/\/www\.16personalities\.com\/(br\/)?(profiles|resultados)\/([a-z]{4}-[at])\/(m|f)\/([a-z0-9]+)$/i;
-  return regex.test(url);
+  const regex = /^https:\/\/www\.16personalities\.com\/(br\/)?(profiles|resultados)\/([a-z]{4})-[at]\/(m|f)\/([a-z0-9]+)$/i;
+  const match = url.match(regex);
+  if (!match) return false;
+
+  // GRUPOS_16P é a fonte única dos 16 tipos válidos (chaves em UPPERCASE).
+  const tipoBase = match[3].toUpperCase();
+  return tipoBase in GRUPOS_16P;
 }
 
 /**
