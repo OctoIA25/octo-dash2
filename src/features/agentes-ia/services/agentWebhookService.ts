@@ -420,30 +420,23 @@ ${analises.mbti.interpretacao}
       throw new Error(`HTTP error! status: ${response.status}`);
     }
 
-    // Tentar ler a resposta
-    const contentType = response.headers.get('content-type');
+    // Lemos sempre como texto primeiro: cobre 204/corpo vazio sem depender de
+    // JSON.parse('') lançar, e permite tratar JSON ou texto puro de forma uniforme.
+    const rawBody = (await response.text()).trim();
+
+    // Sem corpo (ex.: HTTP 204): sucesso sem conteúdo. O chamador aplica o fallback.
+    if (!rawBody) {
+      return { success: true, response: '' };
+    }
+
     let data: any;
     let agentResponse = '';
 
     try {
-      if (contentType && contentType.includes('application/json')) {
-        data = await response.json();
-      } else {
-        const textData = await response.text();
-        
-        try {
-          data = JSON.parse(textData);
-        } catch {
-          agentResponse = textData;
-          return {
-            success: true,
-            response: agentResponse
-          };
-        }
-      }
-    } catch (error) {
-      console.error('Erro ao processar resposta:', error);
-      throw error;
+      data = JSON.parse(rawBody);
+    } catch {
+      // Não é JSON: o corpo já é a própria resposta em texto.
+      return { success: true, response: rawBody };
     }
 
     // Extrair a resposta do agente
@@ -480,7 +473,7 @@ ${analises.mbti.interpretacao}
 
     return {
       success: true,
-      response: agentResponse
+      response: typeof agentResponse === 'string' ? agentResponse.trim() : agentResponse
     };
   } catch (error) {
     console.error('❌ Erro ao enviar mensagem para Elaine:', error);

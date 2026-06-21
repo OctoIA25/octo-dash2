@@ -29,6 +29,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { getElaineWebhookUrl, sendMessageToElaine, DadosComportamentais } from '../services/agentWebhookService';
 import { AgentMessageRecord } from '../services/agentConversationService';
+import { MessageText } from './MessageText';
 
 interface Message {
   id: string;
@@ -583,8 +584,10 @@ export const ElaineChat = ({
         throw new Error(result.error || 'Falha ao enviar mensagem');
       }
 
-      // Resposta do Agente Comportamental
-      const responseText = result.response || '✨ Recebi sua solicitação! Estou analisando o perfil comportamental com base em DISC, Eneagrama e MBTI. Em breve você receberá uma análise completa e personalizada.';
+      // Resposta do Agente Comportamental.
+      // Quando o webhook responde sem conteúdo (ex.: HTTP 204), result.response vem
+      // vazio: usamos a mensagem de fallback para nunca deixar a conversa sem retorno.
+      const responseText = result.response?.trim() || '✨ Recebi sua solicitação! Estou analisando o perfil comportamental com base em DISC, Eneagrama e MBTI. Em breve você receberá uma análise completa e personalizada.';
       const agentResponse: Message = {
         id: `local-${Date.now()}-agent`,
         text: responseText,
@@ -592,10 +595,7 @@ export const ElaineChat = ({
         timestamp: new Date(),
       };
 
-      setTimeout(() => {
-        setMessages(prev => [...prev, agentResponse]);
-        setIsSending(false);
-      }, 1000);
+      setMessages(prev => [...prev, agentResponse]);
 
       if (conversationId && addMessage) {
         await addMessage(conversationId, {
@@ -621,13 +621,16 @@ export const ElaineChat = ({
 
     } catch (error) {
       console.error('❌ Erro ao enviar para webhook do Agente Comportamental:', error);
-      setIsSending(false);
-      
+
       toast({
         title: "Erro ao Enviar",
         description: error instanceof Error ? error.message : "Não foi possível conectar com o Agente Comportamental. Tente novamente.",
         variant: "destructive",
       });
+    } finally {
+      // Garante que o indicador de carregamento sempre encerre — inclusive quando
+      // o webhook responde vazio (204) ou a persistência da resposta falha.
+      setIsSending(false);
     }
   };
 
@@ -826,7 +829,13 @@ export const ElaineChat = ({
                     : 'bg-white text-gray-900 border border-blue-200/60 shadow-md shadow-blue-100/40'
               }`}
             >
-              <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{message.text}</p>
+              {message.sender === 'agent' ? (
+                <div className="break-words">
+                  <MessageText text={message.text} />
+                </div>
+              ) : (
+                <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{message.text}</p>
+              )}
               <p className={`text-[10px] mt-2 ${
                 message.sender === 'user' 
                   ? isDarkMode ? 'text-pink-100' : 'text-gray-600'
