@@ -8,6 +8,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { CaioKotlerChat } from '../components/CaioKotlerChat';
 import { ElaineChat } from '../components/ElaineChat';
+import { DisparadorChat } from '../components/DisparadorChat';
 import { ConversationsSidebar } from '../components/ConversationsSidebar';
 import { useAgentConversations } from '../hooks/useAgentConversations';
 import type { AgentSlug } from '../services/agentConversationService';
@@ -555,6 +556,12 @@ export const AgentesIaPage = () => {
         </div>
       </div>
     );
+  }
+
+  // Agente Disparador: componente autônomo (não usa o fluxo de webhook/testes
+  // dos demais agentes). Reusa a mesma rota /agentes-ia/:agent.
+  if (agent === 'disparador') {
+    return <DisparadorChat />;
   }
 
   if (isCorretor) {

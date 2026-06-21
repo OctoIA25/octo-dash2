@@ -1,0 +1,357 @@
+import { describe, it, expect, vi } from 'vitest';
+import { previewOperation, confirmOperation } from './service.js';
+
+const NOW = 1_750_000_000_000;
+const TENANT = 't1';
+
+/**
+ * Fake do Supabase para o service. Modela:
+ *  - agent_action_runs: insert, lookup por id+tenant, update (claim/finalize)
+ *  - agent_action_queue: upsert (captura os itens enfileirados)
+ * `runs` é um Map mutável (id → row) para simular o claim atômico.
+ */
+function makeFake({ runs = new Map() } = {}) {
+  const queueUpserts = [];
+
+  const from = (table) => {
+    if (table === 'agent_action_runs') {
+      // _op vira 'update' assim que update() é chamado e NÃO é sobrescrito por
+      // select() (a claim faz update().eq().eq().select().maybeSingle()).
+      const node = {
+        _op: null,
+        _id: null,
+        _tenant: null,
+        _eqStatus: null,
+        _patch: null,
+        insert(row) {
+          runs.set(row.id, { ...row });
+          return { error: null };
+        },
+        select() {
+          if (node._op !== 'update') node._op = 'select';
+          return node;
+        },
+        update(patch) {
+          node._op = 'update';
+          node._patch = patch;
+          return node;
+        },
+        eq(col, val) {
+          if (col === 'id') node._id = val;
+          if (col === 'tenant_id') node._tenant = val;
+          if (col === 'status') node._eqStatus = val;
+          return node;
+        },
+        async maybeSingle() {
+          const row = runs.get(node._id);
+          if (node._op === 'update') {
+            if (!row) return { data: null, error: null };
+            if (node._eqStatus && row.status !== node._eqStatus) return { data: null, error: null };
+            Object.assign(row, node._patch);
+            return { data: { id: row.id }, error: null };
+          }
+          // select: respeita o tenant-scope (.eq('tenant_id', ...))
+          if (!row) return { data: null, error: null };
+          if (node._tenant && row.tenant_id !== node._tenant) return { data: null, error: null };
+          return { data: row, error: null };
+        },
+        // update().eq().eq() sem select (finalize) — torna o node thenable
+        then(resolve) {
+          if (node._op === 'update' && node._id) {
+            const row = runs.get(node._id);
+            if (row) Object.assign(row, node._patch);
+          }
+          return resolve({ error: null });
+        },
+      };
+      return node;
+    }
+    if (table === 'agent_action_queue') {
+      return {
+        upsert(items) {
+          queueUpserts.push(...items);
+          return { error: null };
+        },
+      };
+    }
+    throw new Error(`tabela inesperada: ${table}`);
+  };
+
+  return { supabase: { from }, runs, queueUpserts };
+}
+
+/** interpret fake: devolve a operação pronta. */
+const fakeInterpret = (operation, ok = true) =>
+  vi.fn(async () => (ok ? { ok: true, operation } : { ok: false, error: 'unsupported_intent', clarification: '?' }));
+
+/** resolve fake: devolve rows fixas. */
+const fakeResolve = (rows) => vi.fn(async () => ({ ok: true, rows }));
+
+const adminUser = { id: 'u-admin', email: 'a@x.com', role: 'admin' };
+
+describe('previewOperation', () => {
+  it('cliente único: 1 encontrado, 1 elegível', async () => {
+    const { supabase, runs } = makeFake();
+    const r = await previewOperation(
+      supabase,
+      { command: 'mensagem para João Silva', tenantId: TENANT, user: adminUser },
+      {
+        nowMs: NOW,
+        interpret: fakeInterpret({
+          action: 'send_whatsapp',
+          segment: { type: 'explicit_list', names: ['João Silva'] },
+          params: { message: 'Oi!' },
+          needsMessage: false,
+        }),
+        resolve: fakeResolve([{ id: '1', name: 'João Silva', phone: '5511999990000' }]),
+      },
+    );
+    expect(r.ok).toBe(true);
+    expect(r.preview.foundCount).toBe(1);
+    expect(r.preview.eligibleCount).toBe(1);
+    expect(r.preview.noWhatsappCount).toBe(0);
+    expect(r.preview.sampleNames).toEqual(['João Silva']);
+    // persistiu o run pending
+    const run = runs.get(r.previewToken);
+    expect(run.status).toBe('pending');
+    expect(run.tenant_id).toBe(TENANT);
+  });
+
+  it('múltiplos clientes + 1 sem WhatsApp é contado e excluído', async () => {
+    const { supabase } = makeFake();
+    const r = await previewOperation(
+      supabase,
+      { command: 'arquivados', tenantId: TENANT, user: adminUser },
+      {
+        nowMs: NOW,
+        interpret: fakeInterpret({
+          action: 'send_whatsapp',
+          segment: { type: 'archived' },
+          params: { message: 'Oi' },
+          needsMessage: false,
+        }),
+        resolve: fakeResolve([
+          { id: '1', name: 'A', phone: '5511000000001' },
+          { id: '2', name: 'B', phone: '' }, // sem WhatsApp
+          { id: '3', name: 'C', phone: '5511000000003' },
+        ]),
+      },
+    );
+    expect(r.preview.foundCount).toBe(3);
+    expect(r.preview.eligibleCount).toBe(2);
+    expect(r.preview.noWhatsappCount).toBe(1);
+  });
+
+  it('dedup interno: mesmo lead repetido conta uma vez', async () => {
+    const { supabase } = makeFake();
+    const r = await previewOperation(
+      supabase,
+      { command: 'x', tenantId: TENANT, user: adminUser },
+      {
+        nowMs: NOW,
+        interpret: fakeInterpret({
+          action: 'send_whatsapp',
+          segment: { type: 'archived' },
+          params: { message: 'Oi' },
+          needsMessage: false,
+        }),
+        resolve: fakeResolve([
+          { id: '1', name: 'A', phone: '5511000000001' },
+          { id: '1', name: 'A', phone: '5511000000001' },
+        ]),
+      },
+    );
+    expect(r.preview.eligibleCount).toBe(1);
+  });
+
+  it('limite de envio: excedente é excluído', async () => {
+    const { supabase } = makeFake();
+    const rows = Array.from({ length: 5 }, (_, i) => ({ id: String(i), name: `L${i}`, phone: '5511000000000' }));
+    const r = await previewOperation(
+      supabase,
+      { command: 'x', tenantId: TENANT, user: adminUser },
+      {
+        nowMs: NOW,
+        maxRecipients: 3,
+        interpret: fakeInterpret({
+          action: 'send_whatsapp',
+          segment: { type: 'archived' },
+          params: { message: 'Oi' },
+          needsMessage: false,
+        }),
+        resolve: fakeResolve(rows),
+      },
+    );
+    expect(r.preview.eligibleCount).toBe(3);
+    expect(r.preview.excludedCount).toBe(2);
+  });
+
+  it('corretor SEM identidade de corretor é bloqueado', async () => {
+    const { supabase } = makeFake();
+    const r = await previewOperation(
+      supabase,
+      { command: 'arquivados', tenantId: TENANT, user: { id: 'u', role: 'corretor' } },
+      {
+        nowMs: NOW,
+        interpret: fakeInterpret({
+          action: 'send_whatsapp',
+          segment: { type: 'archived' },
+          params: { message: 'Oi' },
+          needsMessage: false,
+        }),
+        resolve: fakeResolve([]),
+      },
+    );
+    expect(r).toMatchObject({ ok: false, error: 'forbidden_no_broker_identity' });
+  });
+
+  it('corretor COM identidade força brokerScope no resolver', async () => {
+    const { supabase } = makeFake();
+    const resolve = fakeResolve([{ id: '1', name: 'A', phone: '5511000000001' }]);
+    await previewOperation(
+      supabase,
+      { command: 'arquivados', tenantId: TENANT, user: { id: 'u', role: 'corretor', brokerName: 'Corretor A' } },
+      {
+        nowMs: NOW,
+        interpret: fakeInterpret({
+          action: 'send_whatsapp',
+          segment: { type: 'archived' },
+          params: { message: 'Oi' },
+          needsMessage: false,
+        }),
+        resolve,
+      },
+    );
+    const ctx = resolve.mock.calls[0][2];
+    expect(ctx.brokerScope).toBe('Corretor A');
+    expect(ctx.tenantId).toBe(TENANT);
+  });
+
+  it('comando não interpretável retorna clarification', async () => {
+    const { supabase } = makeFake();
+    const r = await previewOperation(
+      supabase,
+      { command: 'asdf', tenantId: TENANT, user: adminUser },
+      { nowMs: NOW, interpret: fakeInterpret(null, false), resolve: fakeResolve([]) },
+    );
+    expect(r.ok).toBe(false);
+    expect(r.error).toBe('unsupported_intent');
+    expect(r.clarification).toBe('?');
+  });
+});
+
+describe('confirmOperation — confirmação obrigatória e idempotência', () => {
+  function seedPendingRun(over = {}) {
+    const id = 'run-123';
+    const runs = new Map([
+      [
+        id,
+        {
+          id,
+          tenant_id: TENANT,
+          action_type: 'send_whatsapp',
+          segment: { type: 'archived' },
+          status: 'pending',
+          eligible_count: 2,
+          excluded_count: 0,
+          requested_by_user_id: 'u-admin',
+          ...over,
+        },
+      ],
+    ]);
+    return { id, runs };
+  }
+
+  it('enfileira itens elegíveis e marca run running', async () => {
+    const { id, runs } = seedPendingRun();
+    const { supabase, queueUpserts } = makeFake({ runs });
+    const r = await confirmOperation(
+      supabase,
+      { previewToken: id, tenantId: TENANT, message: 'Olá!', user: adminUser },
+      {
+        nowMs: NOW,
+        resolve: fakeResolve([
+          { id: '1', name: 'A', phone: '5511000000001' },
+          { id: '2', name: 'B', phone: '5511000000002' },
+        ]),
+      },
+    );
+    expect(r).toMatchObject({ ok: true, enqueued: 2, runId: id });
+    expect(runs.get(id).status).toBe('running');
+    expect(queueUpserts).toHaveLength(2);
+    expect(queueUpserts[0].idempotency_key).toBe(`${TENANT}|${id}|1`);
+    expect(queueUpserts[0].payload.templateParams).toEqual(['Olá!']);
+  });
+
+  it('mensagem obrigatória para send_whatsapp', async () => {
+    const { id, runs } = seedPendingRun();
+    const { supabase } = makeFake({ runs });
+    const r = await confirmOperation(
+      supabase,
+      { previewToken: id, tenantId: TENANT, message: '   ', user: adminUser },
+      { nowMs: NOW, resolve: fakeResolve([]) },
+    );
+    expect(r).toMatchObject({ ok: false, error: 'message_required' });
+    expect(runs.get(id).status).toBe('pending'); // não consumiu o run
+  });
+
+  it('confirmar 2x não reenfileira (idempotência do run)', async () => {
+    const { id, runs } = seedPendingRun();
+    const { supabase, queueUpserts } = makeFake({ runs });
+    const args = [
+      supabase,
+      { previewToken: id, tenantId: TENANT, message: 'Olá!', user: adminUser },
+      { nowMs: NOW, resolve: fakeResolve([{ id: '1', name: 'A', phone: '5511000000001' }]) },
+    ];
+    const r1 = await confirmOperation(...args);
+    const r2 = await confirmOperation(...args);
+    expect(r1.ok).toBe(true);
+    expect(r2).toMatchObject({ ok: false, error: 'already_confirmed' });
+    expect(queueUpserts).toHaveLength(1); // só a 1ª enfileirou
+  });
+
+  it('token inexistente → run_not_found', async () => {
+    const { supabase } = makeFake();
+    const r = await confirmOperation(
+      supabase,
+      { previewToken: 'nope', tenantId: TENANT, message: 'oi', user: adminUser },
+      { nowMs: NOW, resolve: fakeResolve([]) },
+    );
+    expect(r).toMatchObject({ ok: false, error: 'run_not_found' });
+  });
+
+  it('run de outro tenant não é confirmável', async () => {
+    const { id, runs } = seedPendingRun();
+    const { supabase } = makeFake({ runs });
+    const r = await confirmOperation(
+      supabase,
+      { previewToken: id, tenantId: 'OUTRO', message: 'oi', user: adminUser },
+      { nowMs: NOW, resolve: fakeResolve([]) },
+    );
+    expect(r).toMatchObject({ ok: false, error: 'run_not_found' });
+  });
+
+  it('não-solicitante (não-owner) é bloqueado', async () => {
+    const { id, runs } = seedPendingRun();
+    const { supabase } = makeFake({ runs });
+    const r = await confirmOperation(
+      supabase,
+      { previewToken: id, tenantId: TENANT, message: 'oi', user: { id: 'outro', role: 'admin' } },
+      { nowMs: NOW, resolve: fakeResolve([]) },
+    );
+    expect(r).toMatchObject({ ok: false, error: 'forbidden_not_requester' });
+  });
+
+  it('zero elegíveis: fecha run done com enqueued 0', async () => {
+    const { id, runs } = seedPendingRun();
+    const { supabase, queueUpserts } = makeFake({ runs });
+    const r = await confirmOperation(
+      supabase,
+      { previewToken: id, tenantId: TENANT, message: 'oi', user: adminUser },
+      { nowMs: NOW, resolve: fakeResolve([{ id: '1', name: 'A', phone: '' }]) },
+    );
+    expect(r).toMatchObject({ ok: true, enqueued: 0 });
+    expect(runs.get(id).status).toBe('done');
+    expect(queueUpserts).toHaveLength(0);
+  });
+});

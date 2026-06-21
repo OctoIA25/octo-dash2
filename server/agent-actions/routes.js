@@ -1,0 +1,195 @@
+/**
+ * 🌐 Rotas HTTP do Agente Disparador.
+ *
+ * Endpoints (JWT Supabase, mesmo padrão do módulo whatsapp):
+ *   POST /api/v1/agent-actions/preview  — interpreta + resolve + prévia (NÃO envia)
+ *   POST /api/v1/agent-actions/confirm  — confirma o previewToken e enfileira
+ *   GET  /api/v1/agent-actions/runs/:id — relatório de um run (contagens + falhas)
+ *   POST /api/v1/agent-actions/run-queue — drena a fila (owner; ou cron interno)
+ *
+ * Esta camada só faz: autenticação, resolução de contexto (tenant, role, nome de
+ * corretor) e tradução request→service. A interpretação NL acontece via n8n
+ * (interpreter.js) — não há chave de IA no CRM. Toda a regra de negócio está em
+ * service.js / worker.js (testáveis sem HTTP).
+ */
+
+import { previewOperation, confirmOperation } from './service.js';
+import { runDueActions } from './actionWorker.js';
+import { makeSchedulerDeps } from '../recommendations/index.js';
+
+const PLATFORM_OWNER_EMAIL = 'octo.inteligenciaimobiliaria@gmail.com';
+
+function isPlatformOwner(email) {
+  return (email || '').toLowerCase() === PLATFORM_OWNER_EMAIL;
+}
+
+/** Middleware: valida JWT Supabase e injeta req.userId/req.userEmail. */
+function makeRequireSupabaseAuth(supabase) {
+  return async function requireSupabaseAuth(req, res, next) {
+    try {
+      const authHeader = req.headers.authorization || '';
+      if (!authHeader.startsWith('Bearer ')) return res.status(401).json({ error: 'missing_authorization' });
+      const { data, error } = await supabase.auth.getUser(authHeader.slice(7));
+      if (error || !data?.user) return res.status(401).json({ error: 'invalid_token' });
+      req.userId = data.user.id;
+      req.userEmail = data.user.email;
+      next();
+    } catch (err) {
+      console.error('[agent-actions] erro validando token:', err);
+      res.status(500).json({ error: 'auth_internal_error' });
+    }
+  };
+}
+
+/**
+ * Resolve o contexto do usuário no tenant: { ok, role, brokerName } ou erro.
+ * - role vem de tenant_memberships.
+ * - brokerName (nm_corretor) vem de "Corretores" por email — necessário para
+ *   escopar o corretor aos próprios leads (attended_by_name).
+ * - platform owner: role 'owner' sem necessidade de membership.
+ */
+async function resolveUserContext(supabase, req, tenantId) {
+  if (isPlatformOwner(req.userEmail)) return { ok: true, role: 'owner', brokerName: null };
+
+  const { data: membership, error: memErr } = await supabase
+    .from('tenant_memberships')
+    .select('role')
+    .eq('tenant_id', tenantId)
+    .eq('user_id', req.userId)
+    .maybeSingle();
+  if (memErr) return { ok: false, error: 'membership_lookup_failed' };
+  if (!membership) return { ok: false, error: 'not_a_member' };
+
+  let brokerName = null;
+  if (membership.role === 'corretor') {
+    const { data: corretor } = await supabase
+      .from('Corretores')
+      .select('nm_corretor')
+      .eq('tenant_id', tenantId)
+      .ilike('email', req.userEmail || '')
+      .maybeSingle();
+    brokerName = corretor?.nm_corretor || null;
+  }
+  return { ok: true, role: membership.role, brokerName };
+}
+
+/** Mapeia erros de domínio para HTTP status. */
+function statusFor(error) {
+  if (!error) return 500;
+  if (error.startsWith('forbidden') || error === 'not_a_member') return 403;
+  if (error === 'run_not_found') return 404;
+  if (error === 'n8n_error') return 502; // falha do fluxo externo (n8n indisponível)
+  if (
+    error === 'empty_command' ||
+    error === 'message_required' ||
+    error === 'missing_preview_token' ||
+    error === 'already_confirmed' ||
+    error.startsWith('unsupported') ||
+    error.startsWith('invalid')
+  ) {
+    return 400;
+  }
+  return 500;
+}
+
+export function registerAgentActionRoutes(app, supabase, options = {}) {
+  const requireSupabaseAuth = makeRequireSupabaseAuth(supabase);
+  // deps internas de envio reutilizadas pelo worker (mesma infra do scheduler).
+  const schedulerDeps = options.schedulerDeps || makeSchedulerDeps(supabase, options);
+
+  // -------------------------------------------------------------------------
+  // POST /preview — interpreta o comando e devolve a prévia. NÃO envia.
+  // body: { tenantId, command }
+  // -------------------------------------------------------------------------
+  app.post('/api/v1/agent-actions/preview', requireSupabaseAuth, async (req, res) => {
+    const { tenantId, command } = req.body || {};
+    if (!tenantId || !command) return res.status(400).json({ ok: false, error: 'missing_fields' });
+
+    const ctx = await resolveUserContext(supabase, req, tenantId);
+    if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
+
+    const result = await previewOperation(
+      supabase,
+      { command, tenantId, user: { id: req.userId, email: req.userEmail, role: ctx.role, brokerName: ctx.brokerName } },
+      // Interpretação via n8n: passamos contexto p/ o payload; a URL vem da env
+      // (DISPARADOR_WEBHOOK_URL) ou do default no interpreter.
+      { interpretOpts: { webhookUrl: options.disparadorWebhookUrl, usuario: req.userEmail } },
+    );
+    return res.status(result.ok ? 200 : statusFor(result.error)).json(result);
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /confirm — confirma e enfileira. body: { tenantId, previewToken, message }
+  // -------------------------------------------------------------------------
+  app.post('/api/v1/agent-actions/confirm', requireSupabaseAuth, async (req, res) => {
+    const { tenantId, previewToken, message } = req.body || {};
+    if (!tenantId || !previewToken) return res.status(400).json({ ok: false, error: 'missing_fields' });
+
+    const ctx = await resolveUserContext(supabase, req, tenantId);
+    if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
+
+    const result = await confirmOperation(supabase, {
+      previewToken,
+      tenantId,
+      message,
+      user: { id: req.userId, email: req.userEmail, role: ctx.role, brokerName: ctx.brokerName },
+    });
+
+    // Drena a fila imediatamente após confirmar (best-effort), para que o
+    // usuário veja o resultado sem depender do cron. Falha aqui não invalida o
+    // enfileiramento — o worker reprocessa no próximo tick.
+    if (result.ok && result.enqueued > 0) {
+      runDueActions(supabase, { deliver: schedulerDeps.deliver, schedulerDeps, getEnvironment: schedulerDeps.getEnvironment }).catch(
+        (err) => console.error('[agent-actions] drain pós-confirm falhou:', err?.message),
+      );
+    }
+
+    return res.status(result.ok ? 200 : statusFor(result.error)).json(result);
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /runs/:id — relatório do run (cabeçalho + falhas por destinatário).
+  // -------------------------------------------------------------------------
+  app.get('/api/v1/agent-actions/runs/:id', requireSupabaseAuth, async (req, res) => {
+    const { id } = req.params;
+    const tenantId = req.query.tenantId;
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'missing_tenant' });
+
+    const ctx = await resolveUserContext(supabase, req, tenantId);
+    if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
+
+    const { data: run, error } = await supabase
+      .from('agent_action_runs')
+      .select('*')
+      .eq('id', id)
+      .eq('tenant_id', tenantId)
+      .maybeSingle();
+    if (error) return res.status(500).json({ ok: false, error: 'lookup_failed' });
+    if (!run) return res.status(404).json({ ok: false, error: 'run_not_found' });
+
+    const { data: failures } = await supabase
+      .from('agent_action_queue')
+      .select('lead_name, lead_phone, status, error')
+      .eq('run_id', id)
+      .eq('tenant_id', tenantId)
+      .in('status', ['failed', 'skipped']);
+
+    return res.json({ ok: true, run, failures: failures || [] });
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /run-queue — drena a fila manualmente (platform owner). Útil p/ cron
+  // externo ou operação. Em produção, prefira o worker com flag dedicada.
+  // -------------------------------------------------------------------------
+  app.post('/api/v1/agent-actions/run-queue', requireSupabaseAuth, async (req, res) => {
+    if (!isPlatformOwner(req.userEmail)) return res.status(403).json({ ok: false, error: 'forbidden' });
+    const summary = await runDueActions(supabase, {
+      deliver: schedulerDeps.deliver,
+      schedulerDeps,
+      getEnvironment: schedulerDeps.getEnvironment,
+    });
+    return res.json({ ok: true, ...summary });
+  });
+}
+
+export const __test__ = { resolveUserContext, statusFor, isPlatformOwner };
