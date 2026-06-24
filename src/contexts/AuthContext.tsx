@@ -17,8 +17,7 @@ import {
   TEAM_LEADER_SIDEBAR_PERMISSIONS,
   TeamColor
 } from '@/types/permissions';
-
-const OWNER_EMAIL = 'octo.inteligenciaimobiliaria@gmail.com';
+import { isOwnerEmail } from '@/lib/ownerEmails';
 
  const OWNER_IMPERSONATION_KEY = 'owner-impersonation';
 
@@ -129,7 +128,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
 
       // Verificar se é owner
-      if ((session.user.email || '').toLowerCase() === OWNER_EMAIL.toLowerCase()) {
+      if (isOwnerEmail(session.user.email)) {
 
         const rawImpersonation = localStorage.getItem(OWNER_IMPERSONATION_KEY);
         let tenantInfo: { tenantId: string; tenantCode: string; tenantName: string } = {
@@ -282,7 +281,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return false;
     }
 
-    if ((data.user.email || '').toLowerCase() === OWNER_EMAIL.toLowerCase()) {
+    if (isOwnerEmail(data.user.email)) {
       return true;
     }
 
@@ -347,7 +346,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // Derivar valores
   const isOwner = useMemo(() => {
     return authState.user?.systemRole === 'owner' ||
-      (authState.user?.email || '').toLowerCase() === OWNER_EMAIL.toLowerCase();
+      isOwnerEmail(authState.user?.email);
   }, [authState.user]);
 
   const isGestao = useMemo(() => {

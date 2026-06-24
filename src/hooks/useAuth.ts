@@ -18,13 +18,12 @@ import {
   CORRETOR_SIDEBAR_PERMISSIONS,
   TEAM_LEADER_SIDEBAR_PERMISSIONS
 } from '@/types/permissions';
+import { isOwnerEmail } from '@/lib/ownerEmails';
 
 export type UserRole = 'gestao' | 'corretor';
 
 // Tipos de role do sistema multi-tenant
 export type SystemRole = 'owner' | 'admin' | 'team_leader' | 'corretor';
-
-const OWNER_EMAIL = 'octo.inteligenciaimobiliaria@gmail.com';
 
 const OWNER_IMPERSONATION_KEY = 'owner-impersonation';
 
@@ -225,7 +224,7 @@ export const useAuth = () => {
         return;
       }
 
-      if ((session.user.email || '').toLowerCase() === OWNER_EMAIL.toLowerCase()) {
+      if (isOwnerEmail(session.user.email)) {
         // Owner SEMPRE tem acesso total, mesmo ao impersonar um tenant
         const raw = localStorage.getItem(OWNER_IMPERSONATION_KEY);
         let tenantInfo = { tenantId: 'owner', tenantCode: 'OWNER', tenantName: 'Owner' };
@@ -471,7 +470,7 @@ export const useAuth = () => {
       return { ok: false as const, error: error?.message || 'Falha no login' };
     }
 
-    if ((data.user.email || '').toLowerCase() === OWNER_EMAIL.toLowerCase()) {
+    if (isOwnerEmail(data.user.email)) {
       return { ok: true as const };
     }
 

@@ -24,6 +24,7 @@ import { verificarTestesCompletos } from '@/features/corretores/services/testesC
 import { buscarCorretorPorEmail } from '@/features/corretores/services/buscarCorretorPorEmailService';
 import { Button } from '@/components/ui/button';
 import { useNotifications } from '@/contexts/NotificationsContext';
+import { isOwnerEmail } from '@/lib/ownerEmails';
 import { 
   Building2, 
   Home, 
@@ -169,11 +170,8 @@ export const FixedSidebar = ({
     carregarPermissaoAgentesCorretor();
   }, [user?.email, user?.name, user?.role]);
   
-  // Email do owner para verificação direta
-  const OWNER_EMAIL = 'octo.inteligenciaimobiliaria@gmail.com';
-  
   // Verificação direta se é owner pelo email (fallback para race conditions)
-  const isOwnerByEmail = user?.email?.toLowerCase() === OWNER_EMAIL.toLowerCase();
+  const isOwnerByEmail = isOwnerEmail(user?.email);
   
   // Verificação se tem owner-impersonation no localStorage (owner acessando imobiliária)
   const isOwnerImpersonating = (() => {

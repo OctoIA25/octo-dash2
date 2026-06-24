@@ -26,6 +26,7 @@ import {
 } from '../services/leadsService';
 import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { leadsEventEmitter } from '@/lib/leadsEventEmitter';
+import { isOwnerEmail } from '@/lib/ownerEmails';
 
 interface UseLeadsMetricsOptions {
   leadType?: LeadType | null;
@@ -48,8 +49,6 @@ interface UseLeadsMetricsReturn {
 /**
  * Hook principal para métricas de leads com suporte a role
  */
-// Email do owner para verificação direta
-const OWNER_EMAIL = 'octo.inteligenciaimobiliaria@gmail.com';
 
 export function useLeadsMetrics(options: UseLeadsMetricsOptions = {}): UseLeadsMetricsReturn {
   const { leadType = null, autoRefresh = false, refreshInterval = 60000 } = options;
@@ -63,7 +62,7 @@ export function useLeadsMetrics(options: UseLeadsMetricsOptions = {}): UseLeadsM
   } = useAuth();
 
   // Verificação direta se é owner pelo email (fallback para race conditions)
-  const isOwnerByEmail = user?.email?.toLowerCase() === OWNER_EMAIL.toLowerCase();
+  const isOwnerByEmail = isOwnerEmail(user?.email);
   
   // Verificação se tem owner-impersonation no localStorage (owner acessando imobiliária)
   const isOwnerImpersonating = (() => {

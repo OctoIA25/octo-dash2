@@ -7,8 +7,8 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from "@/hooks/useAuth";
 import { Loader2, Eye, EyeOff, Lock, Shield, Globe } from 'lucide-react';
+import { isOwnerEmail } from '@/lib/ownerEmails';
 
- const OWNER_EMAIL = 'octo.inteligenciaimobiliaria@gmail.com';
  const SELECTED_TENANT_KEY = 'owner-selected-tenant';
 
 export const MinimalLoginScreen = () => {
@@ -36,7 +36,7 @@ export const MinimalLoginScreen = () => {
     setError('');
     setIsLoading(true);
 
-    const isOwnerAttempt = mode === 'login' && email.trim().toLowerCase() === OWNER_EMAIL.toLowerCase();
+    const isOwnerAttempt = mode === 'login' && isOwnerEmail(email);
 
     if (!email.trim()) {
       setError('E-mail é obrigatório');
