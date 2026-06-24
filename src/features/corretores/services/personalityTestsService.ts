@@ -445,11 +445,14 @@ export async function buscarEstatisticasTestes(tenantId?: string): Promise<any> 
       }
     });
 
-    // Distribuição MBTI
+    // Distribuição MBTI — agrupar pela BASE de 4 letras (ex.: "INTJ"), igual a
+    // buscarEstatisticasMBTI. Antes usava mbti_tipo completo ("INTJ-A"/"INTJ-T"),
+    // gerando chaves divergentes entre os dois serviços de estatística — B4.
     data.forEach((c: any) => {
       if (c.mbti_tipo) {
-        stats.distribuicaoMBTI[c.mbti_tipo] = 
-          (stats.distribuicaoMBTI[c.mbti_tipo] || 0) + 1;
+        const tipoBase = String(c.mbti_tipo).substring(0, 4).toUpperCase();
+        stats.distribuicaoMBTI[tipoBase] =
+          (stats.distribuicaoMBTI[tipoBase] || 0) + 1;
       }
     });
 

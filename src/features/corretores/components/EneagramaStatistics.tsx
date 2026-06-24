@@ -179,7 +179,7 @@ export const EneagramaStatistics = ({
                     <div className="flex items-center justify-between mb-3">
                       <BarChart3 className="w-5 h-5" style={{ color: textSecondary }} />
                       <p style={{ color: textPrimary }} className="text-xl font-bold">
-                        {ENEAGRAMA_TIPOS[stats.tipoMaisComum].nome}
+                        {ENEAGRAMA_TIPOS[stats.tipoMaisComum]?.nome ?? '—'}
                       </p>
                     </div>
                     <p style={{ color: textSecondary }} className="text-xs font-medium leading-tight">
@@ -233,7 +233,7 @@ export const EneagramaStatistics = ({
                                   style={{ backgroundColor: blueColor }}
                                 />
                                 <span style={{ color: textPrimary }} className="font-semibold text-sm">
-                                  {tipoData.nome}
+                                  {tipoData?.nome ?? '—'}
                                 </span>
                               </div>
                               <div className="flex items-center gap-2">
@@ -387,7 +387,7 @@ export const EneagramaStatistics = ({
                                   }}
                                 >
                                   <p className="text-sm font-bold">
-                                    {ENEAGRAMA_TIPOS[corretor.tipo].nome}
+                                    {ENEAGRAMA_TIPOS[corretor.tipo]?.nome ?? '—'}
                                   </p>
                                 </div>
                               </div>

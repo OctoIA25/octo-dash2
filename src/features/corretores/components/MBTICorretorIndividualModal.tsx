@@ -11,6 +11,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { getSupabaseConfig, getAuthenticatedHeaders } from '@/utils/encryption';
 import { MBTI_TIPOS, MBTITipo } from '@/data/mbtiQuestions';
 import { DadosExtraidos16P } from '../services/16personalitiesExtractor';
+import { derivarDimensoesMBTI } from '@/utils/16personalitiesMapper';
 
 interface MBTICorretorIndividualModalProps {
   isOpen: boolean;
@@ -67,39 +68,21 @@ export const MBTICorretorIndividualModal = ({
       const tipoBase = tipoCompleto.substring(0, 4);
       const dadosTipo = MBTI_TIPOS[tipoBase];
       
-      // Função auxiliar para determinar o lado baseado no percentual
-      const getLadoELetra = (percentual: number, dimensao: string): { lado: string, letra: string } => {
-        if (dimensao === 'energia') {
-          return percentual >= 50 
-            ? { lado: 'Extroversão', letra: 'E' } 
-            : { lado: 'Introversão', letra: 'I' };
-        } else if (dimensao === 'mente') {
-          return percentual >= 50 
-            ? { lado: 'Intuição', letra: 'N' } 
-            : { lado: 'Observação', letra: 'S' };
-        } else if (dimensao === 'natureza') {
-          return percentual >= 50 
-            ? { lado: 'Pensamento', letra: 'T' } 
-            : { lado: 'Sentimento', letra: 'F' };
-        } else if (dimensao === 'abordagem') {
-          return percentual >= 50 
-            ? { lado: 'Julgamento', letra: 'J' } 
-            : { lado: 'Percepção', letra: 'P' };
-        } else { // identidade
-          return percentual >= 50 
-            ? { lado: 'Assertivo', letra: 'A' } 
-            : { lado: 'Turbulento', letra: 'T' };
-        }
-      };
-      
-      // No banco: mbti_percent_mind = dimensão Mind (I/E, 1ª letra),
-      // mbti_percent_energy = dimensão Energy (S/N, 2ª letra).
-      // No vocabulário PT deste código: "energia" = 1ª letra (I/E), "mente" = 2ª letra (S/N).
-      const energiaInfo = getLadoELetra(corretor.mbti_percent_mind || 50, 'energia');
-      const menteInfo = getLadoELetra(corretor.mbti_percent_energy || 50, 'mente');
-      const naturezaInfo = getLadoELetra(corretor.mbti_percent_nature || 50, 'natureza');
-      const abordagemInfo = getLadoELetra(corretor.mbti_percent_tactics || 50, 'abordagem');
-      const identidadeInfo = getLadoELetra(corretor.mbti_percent_identity || 50, 'identidade');
+      // Letra/lado vêm SEMPRE do código do tipo (ex.: "INTJ-A"); o percentual é
+      // só a magnitude da barra. Antes, derivar o lado por "percentual >= 50"
+      // invertia as dimensões (o estimador grava 55% na 1ª letra). Ver C1.
+      const dims = derivarDimensoesMBTI(corretor.mbti_tipo, {
+        mind: corretor.mbti_percent_mind,
+        energy: corretor.mbti_percent_energy,
+        nature: corretor.mbti_percent_nature,
+        tactics: corretor.mbti_percent_tactics,
+        identity: corretor.mbti_percent_identity,
+      });
+      const energiaInfo = dims.energia;
+      const menteInfo = dims.mente;
+      const naturezaInfo = dims.natureza;
+      const abordagemInfo = dims.abordagem;
+      const identidadeInfo = dims.identidade;
       
       // Montar preview com os dados salvos
       const dadosPreview: DadosExtraidos16P = {

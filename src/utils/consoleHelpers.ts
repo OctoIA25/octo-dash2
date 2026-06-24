@@ -42,8 +42,12 @@ const forcarSyncImoveisXml = async (tenantId?: string) => {
   }
 };
 
-// Exportar para o window (console do navegador)
-if (typeof window !== 'undefined') {
+// Exportar para o window (console do navegador) — SOMENTE em desenvolvimento.
+// Estas funções incluem operações destrutivas (resetar testes de qualquer
+// corretorId) sem checagem de papel; expô-las no bundle de produção é um risco
+// de segurança (A2). O `import.meta.env.DEV` permite ao bundler removê-las do
+// build de produção via tree-shaking.
+if (import.meta.env.DEV && typeof window !== 'undefined') {
   // Diagnóstico
   (window as any).diagnosticarTesteCompleto = diagnosticarTesteCompleto;
   (window as any).listarTodosCorretoresComTestes = listarTodosCorretoresComTestes;

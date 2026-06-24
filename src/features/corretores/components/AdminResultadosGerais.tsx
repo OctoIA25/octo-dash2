@@ -44,7 +44,8 @@ interface AdminResultadosGeraisProps {
 }
 
 export const AdminResultadosGerais = ({ isOpen = true, onClose }: AdminResultadosGeraisProps) => {
-  const { tenantId } = useAuth();
+  const { tenantId, isGestao, isOwner } = useAuth();
+  const podeVer = isGestao || isOwner; // defesa em profundidade (A2)
   const [loading, setLoading] = useState(true);
   const [discStats, setDiscStats] = useState<DISCStats | null>(null);
   const [eneagramaStats, setEneagramaStats] = useState<EneagramaStats | null>(null);
@@ -73,7 +74,9 @@ export const AdminResultadosGerais = ({ isOpen = true, onClose }: AdminResultado
     if (isOpen) {
       carregarEstatisticas();
     }
-  }, [isOpen]);
+    // tenantId nas deps: se chegar async após o mount, recarrega com o filtro
+    // de tenant correto em vez de ficar com dados buscados sem filtro (A5).
+  }, [isOpen, tenantId]);
 
   const carregarEstatisticas = async () => {
     setLoading(true);
@@ -94,6 +97,9 @@ export const AdminResultadosGerais = ({ isOpen = true, onClose }: AdminResultado
   };
 
   if (!isOpen) return null;
+
+  // Defesa em profundidade (A2): modal de gestão não abre para não-gestão.
+  if (!podeVer) return null;
 
   if (loading) {
     return (
@@ -117,12 +123,45 @@ export const AdminResultadosGerais = ({ isOpen = true, onClose }: AdminResultado
   }
 
   const totalCorretores = discStats?.totalCorretores || 0;
-  const comTodosTestes = Math.min(
-    discStats?.comTeste || 0,
-    eneagramaStats?.comTeste || 0,
-    mbtiStats?.comTeste || 0
-  );
+
+  // Conjuntos de ids por teste (para união e interseção reais).
+  const idsPorTeste = (stats: typeof discStats): Set<number> => {
+    const ids = new Set<number>();
+    if (stats?.corretoresPorTipo) {
+      (Object.values(stats.corretoresPorTipo).flat() as any[]).forEach((c) => {
+        if (c) ids.add(c.id);
+      });
+    }
+    return ids;
+  };
+  const idsDISC = idsPorTeste(discStats);
+  const idsEneagrama = idsPorTeste(eneagramaStats);
+  const idsMBTI = idsPorTeste(mbtiStats);
+
+  // comTodosTestes = interseção REAL (corretor presente nos 3). Antes usava
+  // Math.min dos totais, que superestima a interseção — M7.
+  const comTodosTestes = [...idsDISC].filter(
+    (id) => idsEneagrama.has(id) && idsMBTI.has(id)
+  ).length;
   const percentualCompleto = totalCorretores > 0 ? (comTodosTestes / totalCorretores) * 100 : 0;
+
+  // Lista consolidada de corretores = UNIÃO dos três testes (dedupe por id).
+  // Antes o grid usava só discStats.corretoresPorTipo, então quem fez apenas
+  // Eneagrama e/ou MBTI (sem DISC) ficava invisível na lista individual — A3.
+  const corretoresConsolidados = (() => {
+    const porId = new Map<number, { id: number; nome: string }>();
+    [discStats, eneagramaStats, mbtiStats].forEach((stats) => {
+      if (!stats?.corretoresPorTipo) return;
+      (Object.values(stats.corretoresPorTipo).flat() as any[]).forEach((c) => {
+        if (c && !porId.has(c.id)) porId.set(c.id, { id: c.id, nome: c.nome });
+      });
+    });
+    return Array.from(porId.values());
+  })();
+
+  const corretoresFiltrados = corretoresConsolidados.filter(
+    (c) => busca === '' || c.nome.toLowerCase().includes(busca.toLowerCase())
+  );
 
   return (
     <>
@@ -391,7 +430,7 @@ export const AdminResultadosGerais = ({ isOpen = true, onClose }: AdminResultado
                   return (
                     <div key={tipo}>
                       <div className="flex justify-between mb-1">
-                        <span style={{ color: textPrimary }} className="text-xs font-semibold">{tipoData.nome}</span>
+                        <span style={{ color: textPrimary }} className="text-xs font-semibold">{tipoData?.nome ?? `Tipo ${tipo}`}</span>
                         <span style={{ color: blueGradient[index] }} className="text-xs font-bold">{data.count}</span>
                       </div>
                       <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: `${blueGradient[index]}20` }}>
@@ -410,10 +449,10 @@ export const AdminResultadosGerais = ({ isOpen = true, onClose }: AdminResultado
                 <span className="text-lg leading-none">💡</span>
                 <div className="flex-1">
                   <p style={{ color: '#ffffff' }} className="text-xs font-semibold leading-relaxed">
-                    <strong>Mais Comum:</strong> Tipo {eneagramaStats.tipoMaisComum} - {ENEAGRAMA_TIPOS[eneagramaStats.tipoMaisComum].nome}
+                    <strong>Mais Comum:</strong> Tipo {eneagramaStats.tipoMaisComum} - {ENEAGRAMA_TIPOS[eneagramaStats.tipoMaisComum]?.nome ?? '—'}
                   </p>
                   <p className="text-xs mt-1" style={{ color: '#e0e7ff' }}>
-                    {ENEAGRAMA_TIPOS[eneagramaStats.tipoMaisComum].motivacaoCentral}
+                    {ENEAGRAMA_TIPOS[eneagramaStats.tipoMaisComum]?.motivacaoCentral ?? ''}
                   </p>
                 </div>
               </div>
@@ -586,11 +625,7 @@ export const AdminResultadosGerais = ({ isOpen = true, onClose }: AdminResultado
 
           {/* Grid de Corretores */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {discStats?.corretoresPorTipo && Object.values(discStats.corretoresPorTipo)
-              .flat()
-              .filter((corretor: any) => 
-                busca === '' || corretor.nome.toLowerCase().includes(busca.toLowerCase())
-              )
+            {corretoresFiltrados
               .map((corretor: any) => {
                 // Buscar dados do corretor nos 3 testes
                 const temDISC = discStats?.corretoresPorTipo && 
@@ -681,12 +716,7 @@ export const AdminResultadosGerais = ({ isOpen = true, onClose }: AdminResultado
           </div>
 
           {/* Mensagem se não houver resultados */}
-          {discStats?.corretoresPorTipo && 
-            Object.values(discStats.corretoresPorTipo)
-              .flat()
-              .filter((corretor: any) => 
-                busca === '' || corretor.nome.toLowerCase().includes(busca.toLowerCase())
-              ).length === 0 && (
+          {corretoresFiltrados.length === 0 && (
             <div className="text-center py-12">
               <Users className="w-12 h-12 mx-auto mb-3" style={{ color: textSecondary }} />
               <p style={{ color: textSecondary }} className="text-sm">

@@ -41,3 +41,6 @@ dist-ssr
 Thumbs.db
 ehthumbs.db
 Desktop.ini
+
+# Docs (specs/plans/evidence/relatórios) — não versionar
+docs/

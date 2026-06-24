@@ -1,109 +1,12 @@
 /**
- * 🔄 AUTO-COMMIT GITHUB ATIVO
- * Dados do Teste MBTI - 10 Perguntas com Escala Likert
- * Baseado no modelo 16personalities.com
+ * Metadados dos 16 tipos MBTI (descrições, grupos).
+ *
+ * NOTA (B2): não existe teste MBTI nativo neste app — o MBTI vem da importação
+ * do 16personalities (parse da URL). O catálogo de perguntas Likert
+ * (MBTI_QUESTIONS/MBTI_SCALE/MBTI_DIMENSOES/MBTI_GRUPOS) era código morto, nunca
+ * importado, e foi removido para não sugerir uma funcionalidade inexistente.
+ * Apenas MBTI_TIPOS é usado (exibição).
  */
-
-/**
- * Estrutura de uma pergunta MBTI
- */
-export interface MBTIQuestion {
-  numero: number;
-  dimensao: 'Mind' | 'Energy' | 'Nature' | 'Tactics' | 'Identity';
-  afirmacao: string;
-  invertida: boolean; // Se a pontuação deve ser invertida
-  dicotomia: string; // Ex: "E/I"
-}
-
-/**
- * 10 Perguntas do Teste MBTI
- * 2 perguntas por dimensão
- */
-export const MBTI_QUESTIONS: MBTIQuestion[] = [
-  {
-    numero: 1,
-    dimensao: 'Mind',
-    afirmacao: "Você se sente energizado e animado depois de passar tempo em eventos sociais com muitas pessoas.",
-    invertida: false,
-    dicotomia: "E/I"
-  },
-  {
-    numero: 2,
-    dimensao: 'Mind',
-    afirmacao: "Você geralmente prefere ambientes mais calmos e com poucas pessoas.",
-    invertida: true,
-    dicotomia: "I/E"
-  },
-  {
-    numero: 3,
-    dimensao: 'Energy',
-    afirmacao: "Você se interessa mais por ideias abstratas e discussões teóricas do que por fatos concretos e detalhes práticos.",
-    invertida: false,
-    dicotomia: "N/S"
-  },
-  {
-    numero: 4,
-    dimensao: 'Energy',
-    afirmacao: "Você se considera uma pessoa mais com os 'pés no chão' do que um sonhador.",
-    invertida: true,
-    dicotomia: "S/N"
-  },
-  {
-    numero: 5,
-    dimensao: 'Nature',
-    afirmacao: "Ao tomar decisões, você valoriza mais a lógica e a justiça do que os sentimentos e a empatia.",
-    invertida: false,
-    dicotomia: "T/F"
-  },
-  {
-    numero: 6,
-    dimensao: 'Nature',
-    afirmacao: "Você se sente mais confortável em expressar apoio emocional do que em oferecer uma análise crítica de um problema.",
-    invertida: true,
-    dicotomia: "F/T"
-  },
-  {
-    numero: 7,
-    dimensao: 'Tactics',
-    afirmacao: "Você prefere ter um plano bem definido e uma lista de tarefas do que agir de forma espontânea.",
-    invertida: false,
-    dicotomia: "J/P"
-  },
-  {
-    numero: 8,
-    dimensao: 'Tactics',
-    afirmacao: "Você gosta de manter suas opções em aberto e se adaptar conforme as coisas acontecem.",
-    invertida: true,
-    dicotomia: "P/J"
-  },
-  {
-    numero: 9,
-    dimensao: 'Identity',
-    afirmacao: "Você se sente confiante e seguro de si na maioria das situações.",
-    invertida: false,
-    dicotomia: "A/T"
-  },
-  {
-    numero: 10,
-    dimensao: 'Identity',
-    afirmacao: "Você se preocupa frequentemente com o que os outros pensam de você.",
-    invertida: true,
-    dicotomia: "T/A"
-  }
-];
-
-/**
- * Escala Likert de 7 pontos
- */
-export const MBTI_SCALE = [
-  { value: -3, label: "Discordo Totalmente", color: "#DC2626" },
-  { value: -2, label: "Discordo", color: "#F97316" },
-  { value: -1, label: "Discordo um Pouco", color: "#FBBF24" },
-  { value: 0, label: "Neutro", color: "#9CA3AF" },
-  { value: 1, label: "Concordo um Pouco", color: "#34D399" },
-  { value: 2, label: "Concordo", color: "#10B981" },
-  { value: 3, label: "Concordo Totalmente", color: "#059669" }
-];
 
 /**
  * Perfis dos 16 Tipos MBTI
@@ -330,81 +233,6 @@ export const MBTI_TIPOS: Record<string, MBTITipo> = {
     pontosFortes: 'Entusiasmo contagiante, sociabilidade natural, espontaneidade genuína, praticidade eficaz, otimismo inspirador. Capacidade de transformar qualquer ocasião em festa e fazer outros rirem.',
     pontosDeAtencao: 'Podem se concentrar tanto nos prazeres imediatos que ignoram deveres e responsabilidades. Dificuldade com análises complexas e planejamento de longo prazo. Padrão de vida pode exceder possibilidades. Não há insatisfação maior do que perceber que estão presos às circunstâncias.',
     carreira: 'Animadores, atores, vendedores, professores, organizadores de eventos, profissionais de hospitalidade, entertainers.'
-  }
-};
-
-/**
- * Grupos de tipos MBTI
- */
-export const MBTI_GRUPOS = {
-  'Analistas': {
-    nome: 'Analistas',
-    emoji: '🧠',
-    cor: '#8B5CF6',
-    descricao: 'Racionais e imparciais, priorizam lógica sobre emoções.',
-    tipos: ['INTJ', 'INTP', 'ENTJ', 'ENTP']
-  },
-  'Diplomatas': {
-    nome: 'Diplomatas',
-    emoji: '❤️',
-    cor: '#EC4899',
-    descricao: 'Empáticos e idealistas, buscam harmonia e crescimento.',
-    tipos: ['INFJ', 'INFP', 'ENFJ', 'ENFP']
-  },
-  'Sentinelas': {
-    nome: 'Sentinelas',
-    emoji: '🛡️',
-    cor: '#3B82F6',
-    descricao: 'Práticos e organizados, valorizam estabilidade e ordem.',
-    tipos: ['ISTJ', 'ISFJ', 'ESTJ', 'ESFJ']
-  },
-  'Exploradores': {
-    nome: 'Exploradores',
-    emoji: '🌍',
-    cor: '#10B981',
-    descricao: 'Espontâneos e práticos, vivem o momento intensamente.',
-    tipos: ['ISTP', 'ISFP', 'ESTP', 'ESFP']
-  }
-};
-
-/**
- * Descrições das dimensões MBTI
- */
-export const MBTI_DIMENSOES = {
-  Mind: {
-    nome: 'Mente',
-    dicotomia: 'Extroversão (E) vs Introversão (I)',
-    descricao: 'Como você interage com o mundo e onde encontra energia.',
-    poloA: { letra: 'E', nome: 'Extroversão', descricao: 'Energizado por interações sociais' },
-    poloB: { letra: 'I', nome: 'Introversão', descricao: 'Energizado por tempo sozinho' }
-  },
-  Energy: {
-    nome: 'Energia',
-    dicotomia: 'Intuição (N) vs Sensorial (S)',
-    descricao: 'Como você processa informações e o que valoriza.',
-    poloA: { letra: 'N', nome: 'Intuição', descricao: 'Foco em possibilidades e ideias abstratas' },
-    poloB: { letra: 'S', nome: 'Sensorial', descricao: 'Foco em fatos e detalhes concretos' }
-  },
-  Nature: {
-    nome: 'Natureza',
-    dicotomia: 'Pensamento (T) vs Sentimento (F)',
-    descricao: 'Como você toma decisões.',
-    poloA: { letra: 'T', nome: 'Pensamento', descricao: 'Decisões baseadas em lógica e razão' },
-    poloB: { letra: 'F', nome: 'Sentimento', descricao: 'Decisões baseadas em valores e empatia' }
-  },
-  Tactics: {
-    nome: 'Táticas',
-    dicotomia: 'Julgamento (J) vs Percepção (P)',
-    descricao: 'Como você aborda a vida e o trabalho.',
-    poloA: { letra: 'J', nome: 'Julgamento', descricao: 'Prefere estrutura e planejamento' },
-    poloB: { letra: 'P', nome: 'Percepção', descricao: 'Prefere flexibilidade e espontaneidade' }
-  },
-  Identity: {
-    nome: 'Identidade',
-    dicotomia: 'Assertivo (A) vs Turbulento (T)',
-    descricao: 'Como você lida com confiança e estresse.',
-    poloA: { letra: 'A', nome: 'Assertivo', descricao: 'Confiante e resistente ao estresse' },
-    poloB: { letra: 'T', nome: 'Turbulento', descricao: 'Autocrítico e busca constante melhoria' }
   }
 };
 

@@ -221,16 +221,17 @@ export async function buscarResultadoMBTICorretor(
       cor: metadata.cor,
       emoji: metadata.emoji,
       percentuais: {
-        Mind: corretor.mbti_percent_mind || 50,
-        Energy: corretor.mbti_percent_energy || 50,
-        Nature: corretor.mbti_percent_nature || 50,
-        Tactics: corretor.mbti_percent_tactics || 50,
-        Identity: corretor.mbti_percent_identity || 50
+        // ?? (não ||) para preservar um 0 legítimo em vez de fabricar 50 — M10.
+        Mind: corretor.mbti_percent_mind ?? 50,
+        Energy: corretor.mbti_percent_energy ?? 50,
+        Nature: corretor.mbti_percent_nature ?? 50,
+        Tactics: corretor.mbti_percent_tactics ?? 50,
+        Identity: corretor.mbti_percent_identity ?? 50
       },
       data_teste: corretor.mbti_data_teste || new Date().toISOString(),
       historico_testes: 1
     };
-    
+
     return perfil;
     
   } catch (error) {

@@ -253,10 +253,10 @@ export const MeusResultadosCorretor = ({
           {resultados.eneagrama ? (
             <div className="space-y-2">
               <div className={`text-sm font-semibold ${isDarkMode ? 'text-purple-300' : 'text-purple-700 dark:text-purple-300'}`}>
-                Tipo {resultados.eneagrama.tipo_eneagrama}
+                Tipo {resultados.eneagrama.tipo_principal}
               </div>
               <div className={`text-xs ${isDarkMode ? 'text-gray-400 dark:text-slate-500' : 'text-gray-600 dark:text-slate-400'}`}>
-                {ENEAGRAMA_TIPOS[resultados.eneagrama.tipo_eneagrama]?.nome}
+                {ENEAGRAMA_TIPOS[resultados.eneagrama.tipo_principal]?.nome}
               </div>
               <div className="pt-2">
                 <span className={`text-xs px-2 py-1 rounded-full ${

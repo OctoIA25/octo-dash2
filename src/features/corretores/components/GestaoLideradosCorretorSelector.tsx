@@ -9,6 +9,7 @@ import { Users, ChevronRight, Search } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { getSupabaseConfig, getAuthenticatedHeaders } from '@/utils/encryption';
+import { useAuth } from '@/hooks/useAuth';
 
 interface GestaoLideradosCorretorSelectorProps {
   isOpen: boolean;
@@ -31,6 +32,7 @@ export const GestaoLideradosCorretorSelector = ({
   onSelectCorretor,
   isDarkMode
 }: GestaoLideradosCorretorSelectorProps) => {
+  const { tenantId } = useAuth();
   const [corretores, setCorretores] = useState<CorretorInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [busca, setBusca] = useState('');
@@ -39,7 +41,7 @@ export const GestaoLideradosCorretorSelector = ({
     if (isOpen) {
       carregarCorretores();
     }
-  }, [isOpen]);
+  }, [isOpen, tenantId]);
 
   const carregarCorretores = async () => {
     setLoading(true);
@@ -47,9 +49,11 @@ export const GestaoLideradosCorretorSelector = ({
       const config = getSupabaseConfig();
       const headers = getAuthenticatedHeaders();
       
-      // Buscar todos os corretores com informações de testes
+      // Isola por tenant (A4): sem este filtro, o seletor listava corretores de
+      // TODOS os tenants, dependendo apenas da RLS para não vazar.
+      const tenantFilter = tenantId ? `&tenant_id=eq.${tenantId}` : '';
       const response = await fetch(
-        `${config.url}/rest/v1/Corretores?select=id,nm_corretor,disc_tipo_principal,eneagrama_tipo_principal,mbti_tipo&order=nm_corretor.asc`,
+        `${config.url}/rest/v1/Corretores?select=id,nm_corretor,disc_tipo_principal,eneagrama_tipo_principal,mbti_tipo${tenantFilter}&order=nm_corretor.asc`,
         {
           method: 'GET',
           headers: headers

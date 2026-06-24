@@ -481,16 +481,16 @@ export const MBTIStatistics = ({
                             <div className="flex items-center gap-2">
                               <span style={{ color: accentBlue }} className="font-bold text-xl">{stats.dimensoes.Extroversion_Introversion.E}</span>
                               <span style={{ color: textSecondary }} className="text-sm">
-                                ({((stats.dimensoes.Extroversion_Introversion.E / stats.comTeste) * 100).toFixed(1)}%)
+                                ({((stats.dimensoes.Extroversion_Introversion.E / (stats.comTeste || 1)) * 100).toFixed(1)}%)
                               </span>
                             </div>
                           </div>
                           <div className="h-4 rounded-full overflow-hidden" style={{ backgroundColor: `${accentBlue}20` }}>
                             <div 
                               className="h-full rounded-full transition-all duration-500 flex items-center justify-end pr-3"
-                              style={{ width: `${(stats.dimensoes.Extroversion_Introversion.E / stats.comTeste) * 100}%`, backgroundColor: accentBlue }}
+                              style={{ width: `${(stats.dimensoes.Extroversion_Introversion.E / (stats.comTeste || 1)) * 100}%`, backgroundColor: accentBlue }}
                             >
-                              <span className="text-xs font-bold text-white">{((stats.dimensoes.Extroversion_Introversion.E / stats.comTeste) * 100).toFixed(1)}%</span>
+                              <span className="text-xs font-bold text-white">{((stats.dimensoes.Extroversion_Introversion.E / (stats.comTeste || 1)) * 100).toFixed(1)}%</span>
                             </div>
                           </div>
                         </div>
@@ -500,16 +500,16 @@ export const MBTIStatistics = ({
                             <div className="flex items-center gap-2">
                               <span style={{ color: accentBlue }} className="font-bold text-xl">{stats.dimensoes.Extroversion_Introversion.I}</span>
                               <span style={{ color: textSecondary }} className="text-sm">
-                                ({((stats.dimensoes.Extroversion_Introversion.I / stats.comTeste) * 100).toFixed(1)}%)
+                                ({((stats.dimensoes.Extroversion_Introversion.I / (stats.comTeste || 1)) * 100).toFixed(1)}%)
                               </span>
                             </div>
                           </div>
                           <div className="h-4 rounded-full overflow-hidden" style={{ backgroundColor: '#94a3b820' }}>
                             <div 
                               className="h-full rounded-full transition-all duration-500 flex items-center justify-end pr-3"
-                              style={{ width: `${(stats.dimensoes.Extroversion_Introversion.I / stats.comTeste) * 100}%`, backgroundColor: '#94a3b8' }}
+                              style={{ width: `${(stats.dimensoes.Extroversion_Introversion.I / (stats.comTeste || 1)) * 100}%`, backgroundColor: '#94a3b8' }}
                             >
-                              <span className="text-xs font-bold text-white">{((stats.dimensoes.Extroversion_Introversion.I / stats.comTeste) * 100).toFixed(1)}%</span>
+                              <span className="text-xs font-bold text-white">{((stats.dimensoes.Extroversion_Introversion.I / (stats.comTeste || 1)) * 100).toFixed(1)}%</span>
                             </div>
                           </div>
                         </div>
@@ -529,16 +529,16 @@ export const MBTIStatistics = ({
                             <div className="flex items-center gap-2">
                               <span style={{ color: accentBlue }} className="font-bold text-xl">{stats.dimensoes.Sensing_Intuition.S}</span>
                               <span style={{ color: textSecondary }} className="text-sm">
-                                ({((stats.dimensoes.Sensing_Intuition.S / stats.comTeste) * 100).toFixed(1)}%)
+                                ({((stats.dimensoes.Sensing_Intuition.S / (stats.comTeste || 1)) * 100).toFixed(1)}%)
                               </span>
                             </div>
                           </div>
                           <div className="h-4 rounded-full overflow-hidden" style={{ backgroundColor: `${accentBlue}20` }}>
                             <div 
                               className="h-full rounded-full transition-all duration-500 flex items-center justify-end pr-3"
-                              style={{ width: `${(stats.dimensoes.Sensing_Intuition.S / stats.comTeste) * 100}%`, backgroundColor: accentBlue }}
+                              style={{ width: `${(stats.dimensoes.Sensing_Intuition.S / (stats.comTeste || 1)) * 100}%`, backgroundColor: accentBlue }}
                             >
-                              <span className="text-xs font-bold text-white">{((stats.dimensoes.Sensing_Intuition.S / stats.comTeste) * 100).toFixed(1)}%</span>
+                              <span className="text-xs font-bold text-white">{((stats.dimensoes.Sensing_Intuition.S / (stats.comTeste || 1)) * 100).toFixed(1)}%</span>
                             </div>
                           </div>
                         </div>
@@ -548,16 +548,16 @@ export const MBTIStatistics = ({
                             <div className="flex items-center gap-2">
                               <span style={{ color: accentBlue }} className="font-bold text-xl">{stats.dimensoes.Sensing_Intuition.N}</span>
                               <span style={{ color: textSecondary }} className="text-sm">
-                                ({((stats.dimensoes.Sensing_Intuition.N / stats.comTeste) * 100).toFixed(1)}%)
+                                ({((stats.dimensoes.Sensing_Intuition.N / (stats.comTeste || 1)) * 100).toFixed(1)}%)
                               </span>
                             </div>
                           </div>
                           <div className="h-4 rounded-full overflow-hidden" style={{ backgroundColor: '#94a3b820' }}>
                             <div 
                               className="h-full rounded-full transition-all duration-500 flex items-center justify-end pr-3"
-                              style={{ width: `${(stats.dimensoes.Sensing_Intuition.N / stats.comTeste) * 100}%`, backgroundColor: '#94a3b8' }}
+                              style={{ width: `${(stats.dimensoes.Sensing_Intuition.N / (stats.comTeste || 1)) * 100}%`, backgroundColor: '#94a3b8' }}
                             >
-                              <span className="text-xs font-bold text-white">{((stats.dimensoes.Sensing_Intuition.N / stats.comTeste) * 100).toFixed(1)}%</span>
+                              <span className="text-xs font-bold text-white">{((stats.dimensoes.Sensing_Intuition.N / (stats.comTeste || 1)) * 100).toFixed(1)}%</span>
                             </div>
                           </div>
                         </div>
@@ -577,16 +577,16 @@ export const MBTIStatistics = ({
                             <div className="flex items-center gap-2">
                               <span style={{ color: accentBlue }} className="font-bold text-xl">{stats.dimensoes.Thinking_Feeling.T}</span>
                               <span style={{ color: textSecondary }} className="text-sm">
-                                ({((stats.dimensoes.Thinking_Feeling.T / stats.comTeste) * 100).toFixed(1)}%)
+                                ({((stats.dimensoes.Thinking_Feeling.T / (stats.comTeste || 1)) * 100).toFixed(1)}%)
                               </span>
                             </div>
                           </div>
                           <div className="h-4 rounded-full overflow-hidden" style={{ backgroundColor: `${accentBlue}20` }}>
                             <div 
                               className="h-full rounded-full transition-all duration-500 flex items-center justify-end pr-3"
-                              style={{ width: `${(stats.dimensoes.Thinking_Feeling.T / stats.comTeste) * 100}%`, backgroundColor: accentBlue }}
+                              style={{ width: `${(stats.dimensoes.Thinking_Feeling.T / (stats.comTeste || 1)) * 100}%`, backgroundColor: accentBlue }}
                             >
-                              <span className="text-xs font-bold text-white">{((stats.dimensoes.Thinking_Feeling.T / stats.comTeste) * 100).toFixed(1)}%</span>
+                              <span className="text-xs font-bold text-white">{((stats.dimensoes.Thinking_Feeling.T / (stats.comTeste || 1)) * 100).toFixed(1)}%</span>
                             </div>
                           </div>
                         </div>
@@ -596,16 +596,16 @@ export const MBTIStatistics = ({
                             <div className="flex items-center gap-2">
                               <span style={{ color: accentBlue }} className="font-bold text-xl">{stats.dimensoes.Thinking_Feeling.F}</span>
                               <span style={{ color: textSecondary }} className="text-sm">
-                                ({((stats.dimensoes.Thinking_Feeling.F / stats.comTeste) * 100).toFixed(1)}%)
+                                ({((stats.dimensoes.Thinking_Feeling.F / (stats.comTeste || 1)) * 100).toFixed(1)}%)
                               </span>
                             </div>
                           </div>
                           <div className="h-4 rounded-full overflow-hidden" style={{ backgroundColor: '#94a3b820' }}>
                             <div 
                               className="h-full rounded-full transition-all duration-500 flex items-center justify-end pr-3"
-                              style={{ width: `${(stats.dimensoes.Thinking_Feeling.F / stats.comTeste) * 100}%`, backgroundColor: '#94a3b8' }}
+                              style={{ width: `${(stats.dimensoes.Thinking_Feeling.F / (stats.comTeste || 1)) * 100}%`, backgroundColor: '#94a3b8' }}
                             >
-                              <span className="text-xs font-bold text-white">{((stats.dimensoes.Thinking_Feeling.F / stats.comTeste) * 100).toFixed(1)}%</span>
+                              <span className="text-xs font-bold text-white">{((stats.dimensoes.Thinking_Feeling.F / (stats.comTeste || 1)) * 100).toFixed(1)}%</span>
                             </div>
                           </div>
                         </div>
@@ -625,16 +625,16 @@ export const MBTIStatistics = ({
                             <div className="flex items-center gap-2">
                               <span style={{ color: accentBlue }} className="font-bold text-xl">{stats.dimensoes.Judging_Perceiving.J}</span>
                               <span style={{ color: textSecondary }} className="text-sm">
-                                ({((stats.dimensoes.Judging_Perceiving.J / stats.comTeste) * 100).toFixed(1)}%)
+                                ({((stats.dimensoes.Judging_Perceiving.J / (stats.comTeste || 1)) * 100).toFixed(1)}%)
                               </span>
                             </div>
                           </div>
                           <div className="h-4 rounded-full overflow-hidden" style={{ backgroundColor: `${accentBlue}20` }}>
                             <div 
                               className="h-full rounded-full transition-all duration-500 flex items-center justify-end pr-3"
-                              style={{ width: `${(stats.dimensoes.Judging_Perceiving.J / stats.comTeste) * 100}%`, backgroundColor: accentBlue }}
+                              style={{ width: `${(stats.dimensoes.Judging_Perceiving.J / (stats.comTeste || 1)) * 100}%`, backgroundColor: accentBlue }}
                             >
-                              <span className="text-xs font-bold text-white">{((stats.dimensoes.Judging_Perceiving.J / stats.comTeste) * 100).toFixed(1)}%</span>
+                              <span className="text-xs font-bold text-white">{((stats.dimensoes.Judging_Perceiving.J / (stats.comTeste || 1)) * 100).toFixed(1)}%</span>
                             </div>
                           </div>
                         </div>
@@ -644,16 +644,16 @@ export const MBTIStatistics = ({
                             <div className="flex items-center gap-2">
                               <span style={{ color: accentBlue }} className="font-bold text-xl">{stats.dimensoes.Judging_Perceiving.P}</span>
                               <span style={{ color: textSecondary }} className="text-sm">
-                                ({((stats.dimensoes.Judging_Perceiving.P / stats.comTeste) * 100).toFixed(1)}%)
+                                ({((stats.dimensoes.Judging_Perceiving.P / (stats.comTeste || 1)) * 100).toFixed(1)}%)
                               </span>
                             </div>
                           </div>
                           <div className="h-4 rounded-full overflow-hidden" style={{ backgroundColor: '#94a3b820' }}>
                             <div 
                               className="h-full rounded-full transition-all duration-500 flex items-center justify-end pr-3"
-                              style={{ width: `${(stats.dimensoes.Judging_Perceiving.P / stats.comTeste) * 100}%`, backgroundColor: '#94a3b8' }}
+                              style={{ width: `${(stats.dimensoes.Judging_Perceiving.P / (stats.comTeste || 1)) * 100}%`, backgroundColor: '#94a3b8' }}
                             >
-                              <span className="text-xs font-bold text-white">{((stats.dimensoes.Judging_Perceiving.P / stats.comTeste) * 100).toFixed(1)}%</span>
+                              <span className="text-xs font-bold text-white">{((stats.dimensoes.Judging_Perceiving.P / (stats.comTeste || 1)) * 100).toFixed(1)}%</span>
                             </div>
                           </div>
                         </div>

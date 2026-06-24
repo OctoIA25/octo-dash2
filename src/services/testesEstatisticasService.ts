@@ -118,27 +118,19 @@ export async function buscarEstatisticasDISC(tenantId?: string): Promise<DISCSta
       C: comTeste.reduce((sum: number, c: any) => sum + (c.disc_percentual_c || 0), 0) / (comTeste.length || 1)
     };
     
+    // Divisor protegido: sem testes concluídos, percentual = 0 (não NaN) — N2.
+    const totalComTeste = comTeste.length;
+    const pctLetra = (count: number) => (totalComTeste > 0 ? (count / totalComTeste) * 100 : 0);
+
     const stats: DISCStats = {
       totalCorretores: data.length,
       comTeste: comTeste.length,
-      percentualCompleto: (comTeste.length / data.length) * 100,
+      percentualCompleto: data.length > 0 ? (comTeste.length / data.length) * 100 : 0,
       distribuicao: {
-        D: { 
-          count: distribuicao.D, 
-          percentual: (distribuicao.D / comTeste.length) * 100 
-        },
-        I: { 
-          count: distribuicao.I, 
-          percentual: (distribuicao.I / comTeste.length) * 100 
-        },
-        S: { 
-          count: distribuicao.S, 
-          percentual: (distribuicao.S / comTeste.length) * 100 
-        },
-        C: { 
-          count: distribuicao.C, 
-          percentual: (distribuicao.C / comTeste.length) * 100 
-        }
+        D: { count: distribuicao.D, percentual: pctLetra(distribuicao.D) },
+        I: { count: distribuicao.I, percentual: pctLetra(distribuicao.I) },
+        S: { count: distribuicao.S, percentual: pctLetra(distribuicao.S) },
+        C: { count: distribuicao.C, percentual: pctLetra(distribuicao.C) }
       },
       corretoresPorTipo,
       mediasPercentuais
@@ -220,14 +212,15 @@ export async function buscarEstatisticasEneagrama(tenantId?: string): Promise<En
     Object.entries(distribuicao).forEach(([tipo, count]) => {
       distribuicaoComPercentual[tipo] = {
         count: count,
-        percentual: ((count as number) / comTeste.length) * 100
+        // Guarda contra divisão por zero (N2): sem testes, percentual = 0.
+        percentual: comTeste.length > 0 ? ((count as number) / comTeste.length) * 100 : 0
       };
     });
     
     const stats: EneagramaStats = {
       totalCorretores: data.length,
       comTeste: comTeste.length,
-      percentualCompleto: (comTeste.length / data.length) * 100,
+      percentualCompleto: data.length > 0 ? (comTeste.length / data.length) * 100 : 0,
       distribuicao: distribuicaoComPercentual,
       corretoresPorTipo,
       tipoMaisComum,
@@ -336,14 +329,15 @@ export async function buscarEstatisticasMBTI(tenantId?: string): Promise<MBTISta
     Object.entries(distribuicao).forEach(([tipo, count]) => {
       distribuicaoComPercentual[tipo] = {
         count: count,
-        percentual: ((count as number) / comTeste.length) * 100
+        // Guarda contra divisão por zero (N2): sem testes, percentual = 0.
+        percentual: comTeste.length > 0 ? ((count as number) / comTeste.length) * 100 : 0
       };
     });
     
     const stats: MBTIStats = {
       totalCorretores: data.length,
       comTeste: comTeste.length,
-      percentualCompleto: (comTeste.length / data.length) * 100,
+      percentualCompleto: data.length > 0 ? (comTeste.length / data.length) * 100 : 0,
       distribuicao: distribuicaoComPercentual,
       corretoresPorTipo,
       dimensoes,

@@ -55,7 +55,9 @@ export interface ResultadoDISC {
  */
 export interface ResultadoEneagrama {
   tipo_principal: number; // 1-9
-  asa?: string; // Ex: "3w2"
+  // NOTA: o sistema não calcula nem persiste "asa"/wing (1w2 etc.). O campo foi
+  // removido por nunca ser preenchido/lido — ver B1. Reintroduzir só junto com
+  // o cálculo e a coluna de banco correspondentes.
   pontuacoes: { [tipo: number]: number };
   descricao: string;
 }
@@ -69,32 +71,30 @@ export async function verificarTestesCompletos(corretorNomeOuId: string): Promis
     
     const config = getSupabaseConfig();
     const headers = getAuthenticatedHeaders();
-    
-    // 🔍 BUSCAR NA TABELA CORRETORES (fonte única de verdade)
-    // Tentar buscar por nome primeiro (compatibilidade com sistema atual)
-    let response = await fetch(
-      `${config.url}/rest/v1/Corretores?nm_corretor=ilike.${encodeURIComponent(corretorNomeOuId)}&select=id,nm_corretor,disc_tipo_principal,eneagrama_tipo_principal,mbti_tipo,disc_data_teste,eneagrama_data_teste,mbti_data_teste&limit=1`,
-      {
-        method: 'GET',
-        headers: headers
-      }
-    );
-    
-    let data = await response.json();
-    
-    // Se não encontrar por nome, tentar por ID numérico
-    if (!response.ok || !data || data.length === 0) {
-      const idNumerico = parseInt(corretorNomeOuId);
-      if (!isNaN(idNumerico)) {
-        response = await fetch(
-          `${config.url}/rest/v1/Corretores?id=eq.${idNumerico}&select=id,nm_corretor,disc_tipo_principal,eneagrama_tipo_principal,mbti_tipo,disc_data_teste,eneagrama_data_teste,mbti_data_teste`,
-          {
-            method: 'GET',
-            headers: headers
-          }
-        );
-        data = await response.json();
-      }
+    const select = 'select=id,nm_corretor,disc_tipo_principal,eneagrama_tipo_principal,mbti_tipo,disc_data_teste,eneagrama_data_teste,mbti_data_teste';
+
+    // 🔍 BUSCAR NA TABELA CORRETORES (fonte única de verdade).
+    // Prioriza o ID (determinístico) e só cai para nome quando o identificador
+    // não for numérico — busca por nome com ilike+limit=1 pode casar a pessoa
+    // ERRADA em homônimos/acentuação (M8).
+    let response: Response;
+    let data: any[] = [];
+
+    const idNumerico = parseInt(corretorNomeOuId, 10);
+    const pareceId = !isNaN(idNumerico) && String(idNumerico) === corretorNomeOuId.trim();
+
+    if (pareceId) {
+      response = await fetch(
+        `${config.url}/rest/v1/Corretores?id=eq.${idNumerico}&${select}`,
+        { method: 'GET', headers }
+      );
+      data = await response.json();
+    } else {
+      response = await fetch(
+        `${config.url}/rest/v1/Corretores?nm_corretor=ilike.${encodeURIComponent(corretorNomeOuId)}&${select}&limit=1`,
+        { method: 'GET', headers }
+      );
+      data = await response.json();
     }
     
     if (!response.ok || !data || data.length === 0) {
@@ -134,31 +134,27 @@ export async function buscarTestesCorretor(corretorNomeOuId: string): Promise<Te
     
     const config = getSupabaseConfig();
     const headers = getAuthenticatedHeaders();
-    
-    // Buscar por nome primeiro
-    let response = await fetch(
-      `${config.url}/rest/v1/Corretores?nm_corretor=ilike.${encodeURIComponent(corretorNomeOuId)}&select=*&limit=1`,
-      {
-        method: 'GET',
-        headers: headers
-      }
-    );
-    
-    let data = await response.json();
-    
-    // Se não encontrar por nome, tentar por ID
-    if (!response.ok || !data || data.length === 0) {
-      const idNumerico = parseInt(corretorNomeOuId);
-      if (!isNaN(idNumerico)) {
-        response = await fetch(
-          `${config.url}/rest/v1/Corretores?id=eq.${idNumerico}&select=*`,
-          {
-            method: 'GET',
-            headers: headers
-          }
-        );
-        data = await response.json();
-      }
+
+    // Prioriza ID (determinístico); só usa nome quando não for numérico. Buscar
+    // por nome com ilike+limit=1 pode casar a pessoa errada (homônimos) — M8.
+    let response: Response;
+    let data: any[] = [];
+
+    const idNumerico = parseInt(corretorNomeOuId, 10);
+    const pareceId = !isNaN(idNumerico) && String(idNumerico) === corretorNomeOuId.trim();
+
+    if (pareceId) {
+      response = await fetch(
+        `${config.url}/rest/v1/Corretores?id=eq.${idNumerico}&select=*`,
+        { method: 'GET', headers }
+      );
+      data = await response.json();
+    } else {
+      response = await fetch(
+        `${config.url}/rest/v1/Corretores?nm_corretor=ilike.${encodeURIComponent(corretorNomeOuId)}&select=*&limit=1`,
+        { method: 'GET', headers }
+      );
+      data = await response.json();
     }
     
     if (!response.ok || !data || data.length === 0) {

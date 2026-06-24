@@ -138,7 +138,6 @@ const ELAINE_PROMPTS: Record<string, string> = {
 
 **Tipo Eneagrama:**
 - Tipo Principal: [Ex: Tipo 3 - O Realizador]
-- Asa: [Ex: 3w2 ou 3w4]
 - Nível de Desenvolvimento: [Saudável/Médio/Estressado]
 
 **Estruture a análise em:**
@@ -772,19 +771,21 @@ export const AgentesIaPage = () => {
     }
     
     // 🎯 ADMIN ONLY: DISC abre modal de estatísticas
-    if (tipo === 'disc' && !isCorretor) {
+    // (isGestao || isOwner) em vez de !isCorretor, para alinhar com as demais
+    // ações de gestão e com o gating real de admin — A7.
+    if (tipo === 'disc' && (isGestao || isOwner)) {
       setShowDISCSelector(true);
       return;
     }
-    
+
     // 🎯 ADMIN ONLY: ENEAGRAMA abre modal de estatísticas
-    if (tipo === 'eneagrama' && !isCorretor) {
+    if (tipo === 'eneagrama' && (isGestao || isOwner)) {
       setShowEneagramaSelector(true);
       return;
     }
-    
+
     // 🎯 ADMIN ONLY: MBTI abre modal de estatísticas
-    if (tipo === 'mbti' && !isCorretor) {
+    if (tipo === 'mbti' && (isGestao || isOwner)) {
       setShowMBTISelector(true);
       return;
     }

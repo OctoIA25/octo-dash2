@@ -316,7 +316,7 @@ export const TesteDISC = ({
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-blue-500 font-bold">2.</span>
-                    Ordene as palavras de 1 a 4 (1 = mais se identifica, 4 = menos se identifica)
+                    Avalie cada palavra de 1 a 4 (1 = pouco se identifica, 4 = muito se identifica)
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-blue-500 font-bold">3.</span>

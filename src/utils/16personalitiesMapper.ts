@@ -162,6 +162,65 @@ export function obterLadoPorLetra(dimensao: 'energia' | 'mente' | 'natureza' | '
 }
 
 /**
+ * Dimensão MBTI pronta para exibição: letra e lado vêm SEMPRE do código do
+ * tipo (fonte de verdade), e o percentual é apenas a magnitude da barra.
+ */
+export interface DimensaoMBTI {
+  letra: string;
+  lado: string;
+  percentual: number;
+}
+
+export interface DimensoesMBTI {
+  energia: DimensaoMBTI;   // I/E
+  mente: DimensaoMBTI;     // S/N
+  natureza: DimensaoMBTI;  // T/F
+  abordagem: DimensaoMBTI; // J/P
+  identidade: DimensaoMBTI; // A/T
+}
+
+// Rótulos exibidos na UI por letra (mantém a grafia já usada nos componentes).
+const LADO_EXIBICAO: Record<string, string> = {
+  E: 'Extroversão', I: 'Introversão',
+  N: 'Intuição', S: 'Observação',
+  T: 'Pensamento', F: 'Sentimento',
+  J: 'Julgamento', P: 'Percepção',
+  A: 'Assertivo',
+};
+
+/**
+ * Deriva as 5 dimensões a partir do código do tipo (ex.: "INTJ-A") — assim a
+ * letra/lado exibidos NUNCA contradizem o tipo do corretor. O percentual serve
+ * só como magnitude da barra; não é mais usado para decidir o lado (essa era a
+ * causa da inversão I/E·S/N·T/F·J/P ao reabrir o resultado salvo).
+ *
+ * Para a identidade, "T" significa Turbulento (não Pensamento), então o rótulo
+ * é tratado à parte.
+ */
+export function derivarDimensoesMBTI(
+  mbtiTipo: string,
+  percentuais: { mind?: number; energy?: number; nature?: number; tactics?: number; identity?: number }
+): DimensoesMBTI {
+  const tipoBase = (mbtiTipo || '').substring(0, 4).toUpperCase();
+  const identidadeLetra = mbtiTipo?.split('-')[1]?.toUpperCase() === 'T' ? 'T' : 'A';
+
+  const dim = (letra: string, percentual: number | undefined, ladoOverride?: string): DimensaoMBTI => ({
+    letra,
+    lado: ladoOverride || LADO_EXIBICAO[letra] || letra,
+    percentual: percentual ?? 50,
+  });
+
+  return {
+    // mbti_percent_mind guarda a magnitude de I/E; energy guarda S/N (ver 16personalitiesSaveService).
+    energia: dim(tipoBase[0], percentuais.mind, undefined),
+    mente: dim(tipoBase[1], percentuais.energy, undefined),
+    natureza: dim(tipoBase[2], percentuais.nature, undefined),
+    abordagem: dim(tipoBase[3], percentuais.tactics, undefined),
+    identidade: dim(identidadeLetra, percentuais.identity, identidadeLetra === 'T' ? 'Turbulento' : 'Assertivo'),
+  };
+}
+
+/**
  * Obtém descrição padrão do tipo
  */
 export function obterDescricaoTipo(tipoBase: string): string {

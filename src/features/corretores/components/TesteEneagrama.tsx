@@ -373,7 +373,12 @@ export const TesteEneagrama = ({
   // RESULTADO
   if (estado === 'resultado' && resultadoFinal) {
     const tipoPrincipal = ENEAGRAMA_TIPOS[resultadoFinal.tipoPrincipal];
-    
+
+    // Empate: mais de um tipo na pontuação máxima. Exibimos um aviso porque o
+    // "tipo principal" escolhido nesse caso é apenas o de menor número (M1).
+    const tiposEmpatados: number[] = Array.isArray(resultadoFinal.topTipos) ? resultadoFinal.topTipos : [];
+    const houveEmpate = tiposEmpatados.length > 1;
+
     // Obter top 3 tipos ordenados por pontuação
     const topTres = Object.entries(resultadoFinal.scores)
       .sort(([, a], [, b]) => Number(b) - Number(a))
@@ -410,6 +415,19 @@ export const TesteEneagrama = ({
               Resultado da avaliação de personalidade
             </p>
           </div>
+
+          {/* Aviso de empate (M1): quando há mais de um tipo na pontuação máxima,
+              o tipo principal mostrado é apenas uma escolha de desempate. */}
+          {houveEmpate && (
+            <div className="mb-6 p-4 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-900">
+              <p className="text-sm text-amber-800 dark:text-amber-200">
+                <strong>Empate detectado.</strong> Você ficou com a mesma pontuação nos tipos{' '}
+                {tiposEmpatados.map((t) => ENEAGRAMA_TIPOS[t]?.numero ?? t).join(', ')}. O tipo
+                destacado abaixo é apenas um dos empatados — considere refazer o teste com mais
+                atenção para um resultado mais preciso.
+              </p>
+            </div>
+          )}
 
           {/* Grid Principal - Tipo Principal + Métricas */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">

@@ -260,14 +260,14 @@ export const MeuResumoCompleto = () => {
                       <span className="text-sm">💪</span>
                       <div>
                         <p className="text-xs font-semibold" style={{ color: '#10b981' }}>Motivação</p>
-                        <p className="text-xs" style={{ color: textSecondary }}>{eneagramaTipo.motivacao}</p>
+                        <p className="text-xs" style={{ color: textSecondary }}>{eneagramaTipo.motivacaoCentral}</p>
                       </div>
                     </div>
                     <div className="flex items-start gap-2 p-2 rounded-lg" style={{ backgroundColor: '#ef444410' }}>
                       <span className="text-sm">⚠️</span>
                       <div>
                         <p className="text-xs font-semibold" style={{ color: '#ef4444' }}>Medo</p>
-                        <p className="text-xs" style={{ color: textSecondary }}>{eneagramaTipo.medo}</p>
+                        <p className="text-xs" style={{ color: textSecondary }}>{eneagramaTipo.medoBasico}</p>
                       </div>
                     </div>
                   </div>

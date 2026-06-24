@@ -10,6 +10,7 @@
  */
 
 import { getSupabaseConfig, getAuthenticatedHeaders } from '@/utils/encryption';
+import { ENEAGRAMA_TIPOS } from '@/data/eneagramaQuestions';
 
 // ============================================================================
 // INTERFACES
@@ -282,6 +283,14 @@ export async function salvarResultadoMBTIAdmin(
 ): Promise<boolean> {
   try {
 
+    // ⚠️ ATENÇÃO (M3): nesta tabela (admin_test_results), por como a página
+    // monta `resultado.percentuais`, mbti_percent_mind acaba guardando a
+    // magnitude de S/N (Mente) e mbti_percent_energy a de I/E (Energia) — o
+    // OPOSTO da tabela Corretores. Leitura e escrita do fluxo admin são casadas,
+    // então não há troca visível; mas NÃO reutilize estes valores no fluxo do
+    // corretor sem inverter mind↔energy. A letra/lado exibidos vêm do código do
+    // tipo (ver derivarDimensoesMBTI / C1), então a barra pode no máximo trocar
+    // a magnitude, nunca a letra.
     const updateData = {
       user_id: userId,
       user_email: userEmail,
@@ -387,27 +396,19 @@ Data do Teste: ${new Date(d.dataTeste).toLocaleDateString('pt-BR')}
   // Formatar Eneagrama
   if (resultados.eneagrama) {
     const e = resultados.eneagrama;
-    const tipoNomes: Record<number, string> = {
-      1: 'O Perfeccionista',
-      2: 'O Prestativo',
-      3: 'O Realizador',
-      4: 'O Individualista',
-      5: 'O Investigador',
-      6: 'O Leal',
-      7: 'O Entusiasta',
-      8: 'O Desafiador',
-      9: 'O Pacificador'
-    };
+    // Usar ENEAGRAMA_TIPOS como fonte única dos nomes (antes havia um mapa local
+    // divergente — ex.: "O Perfeccionista" vs "O Reformador" na UI) — B6.
+    const nomeTipo = (tipo: number): string => ENEAGRAMA_TIPOS[tipo]?.nome || 'Desconhecido';
 
     formatted.eneagrama = `
 ⭐ RESULTADO ENEAGRAMA DO GESTOR:
 
-TIPO PRINCIPAL: Tipo ${e.tipoPrincipal} - ${tipoNomes[e.tipoPrincipal] || 'Desconhecido'}
+TIPO PRINCIPAL: Tipo ${e.tipoPrincipal} - ${nomeTipo(e.tipoPrincipal)}
 
 PONTUAÇÃO POR TIPO:
 ${Object.entries(e.scores)
   .sort((a, b) => b[1] - a[1])
-  .map(([tipo, score]) => `- Tipo ${tipo} (${tipoNomes[parseInt(tipo)] || ''}): ${score} pontos`)
+  .map(([tipo, score]) => `- Tipo ${tipo} (${nomeTipo(parseInt(tipo))}): ${score} pontos`)
   .join('\n')}
 
 Data do Teste: ${new Date(e.dataTeste).toLocaleDateString('pt-BR')}

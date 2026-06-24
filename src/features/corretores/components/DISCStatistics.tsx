@@ -289,7 +289,7 @@ export const DISCStatistics = ({
                             <div className="text-center">
                               <p style={{ color: textPrimary }} className="font-bold text-sm">{tipo}</p>
                               <p style={{ color: accentBlue }} className="text-xs font-semibold">
-                                {data.percentual.toFixed(1)}%
+                                {(data.percentual || 0).toFixed(1)}%
                               </p>
                             </div>
                           </div>

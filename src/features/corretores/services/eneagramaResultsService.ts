@@ -33,14 +33,17 @@ export interface EneagramaCorretorProfile {
 /**
  * Buscar todos os corretores que fizeram o teste de ENEAGRAMA
  */
-export async function buscarCorretoresComEneagrama(): Promise<EneagramaCorretorProfile[]> {
+export async function buscarCorretoresComEneagrama(tenantId?: string): Promise<EneagramaCorretorProfile[]> {
   try {
-    
+
     const config = getSupabaseConfig();
     const headers = getAuthenticatedHeaders();
-    
+
+    // Isola por tenant (A4); Corretores tem tenant_id direto.
+    const tenantFilter = tenantId ? `&tenant_id=eq.${tenantId}` : '';
+
     // Estratégia 1: Buscar com filtro not.is.null
-    let url = `${config.url}/rest/v1/Corretores?select=id,nm_corretor,eneagrama_tipo_principal,eneagrama_score_tipo_1,eneagrama_score_tipo_2,eneagrama_score_tipo_3,eneagrama_score_tipo_4,eneagrama_score_tipo_5,eneagrama_score_tipo_6,eneagrama_score_tipo_7,eneagrama_score_tipo_8,eneagrama_score_tipo_9,eneagrama_data_teste&eneagrama_tipo_principal=not.is.null&order=eneagrama_data_teste.desc`;
+    let url = `${config.url}/rest/v1/Corretores?select=id,nm_corretor,eneagrama_tipo_principal,eneagrama_score_tipo_1,eneagrama_score_tipo_2,eneagrama_score_tipo_3,eneagrama_score_tipo_4,eneagrama_score_tipo_5,eneagrama_score_tipo_6,eneagrama_score_tipo_7,eneagrama_score_tipo_8,eneagrama_score_tipo_9,eneagrama_data_teste&eneagrama_tipo_principal=not.is.null${tenantFilter}&order=eneagrama_data_teste.desc`;
     
     
     let response = await fetch(url, {
@@ -56,8 +59,8 @@ export async function buscarCorretoresComEneagrama(): Promise<EneagramaCorretorP
     } else {
       console.warn('⚠️ Tentativa 1 falhou, tentando estratégia alternativa...');
       
-      // Estratégia 2: Buscar todos e filtrar no cliente
-      url = `${config.url}/rest/v1/Corretores?select=id,nm_corretor,eneagrama_tipo_principal,eneagrama_score_tipo_1,eneagrama_score_tipo_2,eneagrama_score_tipo_3,eneagrama_score_tipo_4,eneagrama_score_tipo_5,eneagrama_score_tipo_6,eneagrama_score_tipo_7,eneagrama_score_tipo_8,eneagrama_score_tipo_9,eneagrama_data_teste&order=id.desc&limit=1000`;
+      // Estratégia 2: Buscar todos e filtrar no cliente (mantém isolamento por tenant — A4)
+      url = `${config.url}/rest/v1/Corretores?select=id,nm_corretor,eneagrama_tipo_principal,eneagrama_score_tipo_1,eneagrama_score_tipo_2,eneagrama_score_tipo_3,eneagrama_score_tipo_4,eneagrama_score_tipo_5,eneagrama_score_tipo_6,eneagrama_score_tipo_7,eneagrama_score_tipo_8,eneagrama_score_tipo_9,eneagrama_data_teste${tenantFilter}&order=id.desc&limit=1000`;
       
       
       response = await fetch(url, {

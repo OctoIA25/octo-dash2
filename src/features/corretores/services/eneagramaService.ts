@@ -30,6 +30,7 @@ export interface EneagramaResult {
   };
   tipoPrincipal: number; // Tipo com maior pontuação (1-9)
   topTipos: number[]; // Tipos empatados com pontuação máxima
+  empate: boolean; // true quando há mais de um tipo na pontuação máxima
 }
 
 /**
@@ -167,22 +168,29 @@ export function calcularResultadoEneagrama(respostas: EneagramaResponse[]): Enea
   });
   
   
-  // Encontrar o tipo com maior pontuação
+  // Encontrar o tipo com maior pontuação. O desempate aqui é determinístico
+  // pela ordem 1→9 (vence o menor índice); por isso devolvemos também `empate`
+  // e `topTipos`, para o consumidor poder sinalizar/ tratar empates (M1).
   let tipoPrincipal = 1;
   let maxScore = -1;
-  
+
   for (const tipo in scores) {
     if (scores[tipo] > maxScore) {
       maxScore = scores[tipo];
       tipoPrincipal = parseInt(tipo);
     }
   }
-  
+
   // Encontrar todos os tipos com pontuação máxima (empates)
   const topTipos = Object.keys(scores)
     .filter(tipo => scores[parseInt(tipo)] === maxScore)
     .map(Number);
-  
+
+  // Sem nenhuma resposta válida (maxScore <= 0), o "tipo 1" não é um resultado
+  // real — é o efeito da ordem de iteração. Sinalizamos como empate total para
+  // que a UI não apresente um Eneagrama fabricado.
+  const empate = maxScore <= 0 || topTipos.length > 1;
+
   
   // Formatar scores no formato correto da interface
   const scoresFormatados = {
@@ -197,7 +205,7 @@ export function calcularResultadoEneagrama(respostas: EneagramaResponse[]): Enea
     9: scores[9]
   };
   
-  return { scores: scoresFormatados, tipoPrincipal, topTipos };
+  return { scores: scoresFormatados, tipoPrincipal, topTipos, empate };
 }
 
 /**
@@ -327,9 +335,10 @@ export async function buscarResultadoEneagrama(testId: string): Promise<Eneagram
         9: result.score_type_9
       },
       tipoPrincipal: result.primary_type,
-      topTipos: result.top_types
+      topTipos: result.top_types,
+      empate: Array.isArray(result.top_types) && result.top_types.length > 1
     };
-    
+
   } catch (error) {
     console.error('❌ Erro ao buscar resultado:', error);
     return null;

@@ -125,31 +125,29 @@ export async function salvarRespostasDISC(
 
 /**
  * Calcular resultado do teste DISC
- * Fórmula: Percentual = Soma dos Pontos / 100
- * Conversão: 1→4pts, 2→3pts, 3→2pts, 4→1pt
+ *
+ * A escala da UI vai de 1 = "Pouco" até 4 = "Muito": quanto maior a
+ * nota, mais a pessoa se identifica com a característica. Por isso os
+ * pontos são DIRETOS (nota = pontos) — a nota 4 contribui mais para o
+ * perfil do que a nota 1.
  */
 export function calcularResultadoDISC(respostas: DISCResponse[]): {
   resultado: DISCResult;
   dominantes: DominantProfile[];
 } {
-  
-  // Sistema de pontos (INVERSO)
-  const pontosPorNota: Record<number, number> = { 
-    1: 4, // Mais se identifica = 4 pontos
-    2: 3,
-    3: 2,
-    4: 1  // Menos se identifica = 1 ponto
-  };
-  
+
   // Contagem inicial
   const contagem = { D: 0, I: 0, S: 0, C: 0 };
 
-  // Somar pontos de cada perfil (ignora notas fora do mapa 1-4)
+  // Somar pontos de cada perfil. A nota (1-4) é o próprio peso; notas
+  // fora do intervalo são ignoradas (não somam nada).
+  const pontosDaNota = (nota: number): number => (nota >= 1 && nota <= 4 ? nota : 0);
+
   respostas.forEach((resposta) => {
-    contagem.D += pontosPorNota[resposta.D] || 0;
-    contagem.I += pontosPorNota[resposta.I] || 0;
-    contagem.S += pontosPorNota[resposta.S] || 0;
-    contagem.C += pontosPorNota[resposta.C] || 0;
+    contagem.D += pontosDaNota(resposta.D);
+    contagem.I += pontosDaNota(resposta.I);
+    contagem.S += pontosDaNota(resposta.S);
+    contagem.C += pontosDaNota(resposta.C);
   });
 
   // Divisor dinâmico: como a validação permite notas repetidas (ex.: o

@@ -54,13 +54,13 @@ export const getWebhookUrl = (): string => {
 };
 
 /**
- * Salva a URL do webhook nas configurações
- * Mantido por compatibilidade com código existente, mas não altera o comportamento
- * A URL usada será SEMPRE a DEFAULT_WEBHOOK_URL
+ * No-op mantido por compatibilidade de assinatura. A URL do webhook é fixa
+ * (DEFAULT_WEBHOOK_URL) e NÃO é configurável. Antes este método gravava em
+ * localStorage, dando a falsa impressão de que a configuração teria efeito — o
+ * valor nunca era lido. Não persistimos mais nada para não enganar — B5.
  */
-export const saveWebhookUrl = (url: string): void => {
-  // Mantém compatibilidade mas não afeta a URL real usada
-  localStorage.setItem('agent_webhook_url', url);
+export const saveWebhookUrl = (_url: string): void => {
+  /* intencionalmente vazio: a URL é imutável */
 };
 
 /**
@@ -393,11 +393,11 @@ DESAFIOS:
 ${analises.mbti.desafios}
 
 DIMENSÕES:
-- Mind (Mente): ${analises.mbti.percentuais.Mind.valor}% - ${analises.mbti.percentuais.Mind.categoria}
-- Energy (Energia): ${analises.mbti.percentuais.Energy.valor}% - ${analises.mbti.percentuais.Energy.categoria}
-- Nature (Natureza): ${analises.mbti.percentuais.Nature.valor}% - ${analises.mbti.percentuais.Nature.categoria}
-- Tactics (Táticas): ${analises.mbti.percentuais.Tactics.valor}% - ${analises.mbti.percentuais.Tactics.categoria}
-- Identity (Identidade): ${analises.mbti.percentuais.Identity.valor}% - ${analises.mbti.percentuais.Identity.categoria}
+- Mente (Introversão/Extroversão): ${analises.mbti.percentuais.Mind.valor}% - ${analises.mbti.percentuais.Mind.categoria}
+- Energia (Observador/Intuitivo): ${analises.mbti.percentuais.Energy.valor}% - ${analises.mbti.percentuais.Energy.categoria}
+- Natureza (Pensamento/Sentimento): ${analises.mbti.percentuais.Nature.valor}% - ${analises.mbti.percentuais.Nature.categoria}
+- Tática (Julgamento/Percepção): ${analises.mbti.percentuais.Tactics.valor}% - ${analises.mbti.percentuais.Tactics.categoria}
+- Identidade (Assertivo/Turbulento): ${analises.mbti.percentuais.Identity.valor}% - ${analises.mbti.percentuais.Identity.categoria}
 
 INTERPRETAÇÃO E IMPLICAÇÕES:
 ${analises.mbti.interpretacao}

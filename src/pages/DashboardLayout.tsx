@@ -403,9 +403,9 @@ const DashboardLayout = () => {
             element={<Importar16PersonalitiesPage />} 
           />
           
-          <Route 
-            path="admin-testes" 
-            element={<AdminTestesDashboard />} 
+          <Route
+            path="admin-testes"
+            element={canAccess('agentes-ia') ? <AdminTestesDashboard /> : <Navigate to={defaultAllowedRoute} replace />}
           />
           
           <Route 
@@ -452,7 +452,7 @@ const DashboardLayout = () => {
           
           <Route
             path="admin-testes-gerais"
-            element={<AdminTestesGeraisPage />}
+            element={canAccess('agentes-ia') ? <AdminTestesGeraisPage /> : <Navigate to={defaultAllowedRoute} replace />}
           />
 
           <Route

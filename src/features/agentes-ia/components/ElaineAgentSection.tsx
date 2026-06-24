@@ -34,7 +34,6 @@ const ELAINE_PROMPTS: Record<string, string> = {
 
 **Tipo Eneagrama:**
 - Tipo Principal: [Ex: Tipo 3 - O Realizador]
-- Asa: [Ex: 3w2 ou 3w4]
 - Nível de Desenvolvimento: [Saudável/Médio/Estressado]
 
 **Estruture a análise em:**
@@ -81,7 +80,7 @@ const ELAINE_PROMPTS: Record<string, string> = {
 
 **Dados Comportamentais Completos:**
 - **DISC:** [Ex: Alto I, Médio D, Baixo S, Baixo C]
-- **Eneagrama:** [Ex: Tipo 3w2 - O Realizador]
+- **Eneagrama:** [Ex: Tipo 3 - O Realizador]
 - **MBTI:** [Ex: ENFJ - O Protagonista]
 
 **Estruture o relatório completo em:**

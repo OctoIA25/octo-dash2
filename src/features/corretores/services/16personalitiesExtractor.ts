@@ -6,7 +6,7 @@
 import {
   validarUrl16Personalities,
   parseUrl16Personalities,
-  obterLadoPorLetra,
+  derivarDimensoesMBTI,
   obterDescricaoTipo
 } from '@/utils/16personalitiesMapper';
 
@@ -29,43 +29,8 @@ export interface DadosExtraidos16P {
 }
 
 /**
- * Extrai percentuais da página HTML (quando disponível)
- */
-function extrairPercentuaisDoHTML(html: string): number[] | null {
-  try {
-    // Procurar por padrões de percentuais no HTML
-    // O 16personalities usa spans com classes específicas
-    const percentualRegex = /data-value["\s]*[:=]["\s]*(\d+)/gi;
-    const matches = [...html.matchAll(percentualRegex)];
-    
-    if (matches.length >= 5) {
-      return matches.slice(0, 5).map(m => parseInt(m[1]));
-    }
-    
-    // Tentar padrão alternativo
-    const altRegex = /(\d+)%/g;
-    const altMatches = [...html.matchAll(altRegex)];
-    
-    if (altMatches.length >= 5) {
-      const percentuais = altMatches
-        .map(m => parseInt(m[1]))
-        .filter(p => p >= 0 && p <= 100);
-      
-      if (percentuais.length >= 5) {
-        return percentuais.slice(0, 5);
-      }
-    }
-    
-    return null;
-  } catch (error) {
-    console.error('Erro ao extrair percentuais do HTML:', error);
-    return null;
-  }
-}
-
-/**
- * Gera percentuais estimados baseados nas letras do tipo
- * Usado como fallback quando não conseguimos fazer scraping
+ * Gera percentuais estimados baseados nas letras do tipo.
+ * É a única fonte de percentuais hoje (o scraping foi descontinuado — ver M9).
  */
 function gerarPercentuaisEstimados(letras: {
   energia: string;
@@ -93,49 +58,6 @@ function gerarPercentuaisEstimados(letras: {
 }
 
 /**
- * Tenta fazer scraping da página via proxy CORS (com timeout rápido)
- * OTIMIZADO: Timeout de 2 segundos para não deixar o usuário esperando
- */
-async function tentarScrapingComProxy(url: string): Promise<number[] | null> {
-  try {
-    
-    // Tentar com CORS proxy - apenas o mais rápido
-    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-    
-    // Promise com timeout de 2 segundos
-    const fetchWithTimeout = Promise.race([
-      fetch(proxyUrl, {
-        headers: {
-          'Accept': 'text/html',
-        }
-      }),
-      new Promise<Response>((_, reject) => 
-        setTimeout(() => reject(new Error('Timeout')), 2000)
-      )
-    ]);
-    
-    try {
-      const response = await fetchWithTimeout;
-      
-      if (response.ok) {
-        const html = await response.text();
-        const percentuais = extrairPercentuaisDoHTML(html);
-        
-        if (percentuais && percentuais.length === 5) {
-          return percentuais;
-        }
-      }
-    } catch (fetchError) {
-    }
-    
-    return null;
-  } catch (error) {
-    console.error('❌ Erro ao tentar scraping:', error);
-    return null;
-  }
-}
-
-/**
  * Função principal de extração de dados
  */
 export async function extrairDados16Personalities(url: string): Promise<DadosExtraidos16P> {
@@ -147,15 +69,26 @@ export async function extrairDados16Personalities(url: string): Promise<DadosExt
   
   // Parse básico da URL (sempre funciona)
   const dadosBasicos = parseUrl16Personalities(url);
-  
-  // Tentar extrair percentuais da página
-  let percentuais = await tentarScrapingComProxy(url);
-  
-  // Se não conseguiu, usar percentuais estimados
-  if (!percentuais) {
-    percentuais = gerarPercentuaisEstimados(dadosBasicos.letras);
-  }
-  
+
+  // Percentuais: usamos os ESTIMADOS (derivados das letras do tipo). O scraping
+  // via proxy CORS público era removido por ser não-confiável (M9): pegava os 5
+  // primeiros "%"/"data-value" do HTML sem garantir que fossem as dimensões nem
+  // a ordem, gravando valores errados de forma silenciosa. Como não há como
+  // mapear com segurança os % raspados às dimensões, preferimos o estimado
+  // previsível — a letra/lado já vêm do código do tipo (ver derivarDimensoesMBTI).
+  const percentuais = gerarPercentuaisEstimados(dadosBasicos.letras);
+
+  // Letra/lado vêm de derivarDimensoesMBTI — a MESMA fonte usada ao reabrir o
+  // resultado salvo —, para que o texto do preview e o da releitura coincidam
+  // (antes o preview usava obterLadoPorLetra com vocabulário diferente) — N6.
+  const dims = derivarDimensoesMBTI(dadosBasicos.tipoCodigo, {
+    mind: percentuais[0],
+    energy: percentuais[1],
+    nature: percentuais[2],
+    tactics: percentuais[3],
+    identity: percentuais[4],
+  });
+
   // Montar objeto de resposta completo
   const dadosCompletos: DadosExtraidos16P = {
     url: dadosBasicos.url,
@@ -167,34 +100,14 @@ export async function extrairDados16Personalities(url: string): Promise<DadosExt
     tipoDescricao: obterDescricaoTipo(dadosBasicos.tipoBase),
     genero: dadosBasicos.genero,
     percentuais: {
-      energia: {
-        percentual: percentuais[0],
-        lado: obterLadoPorLetra('energia', dadosBasicos.letras.energia),
-        letra: dadosBasicos.letras.energia
-      },
-      mente: {
-        percentual: percentuais[1],
-        lado: obterLadoPorLetra('mente', dadosBasicos.letras.mente),
-        letra: dadosBasicos.letras.mente
-      },
-      natureza: {
-        percentual: percentuais[2],
-        lado: obterLadoPorLetra('natureza', dadosBasicos.letras.natureza),
-        letra: dadosBasicos.letras.natureza
-      },
-      abordagem: {
-        percentual: percentuais[3],
-        lado: obterLadoPorLetra('abordagem', dadosBasicos.letras.abordagem),
-        letra: dadosBasicos.letras.abordagem
-      },
-      identidade: {
-        percentual: percentuais[4],
-        lado: obterLadoPorLetra('identidade', dadosBasicos.letras.identidade),
-        letra: dadosBasicos.letras.identidade
-      }
+      energia: dims.energia,
+      mente: dims.mente,
+      natureza: dims.natureza,
+      abordagem: dims.abordagem,
+      identidade: dims.identidade,
     }
   };
-  
+
   return dadosCompletos;
 }
 

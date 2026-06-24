@@ -38,7 +38,8 @@ interface CorretorTeste {
 }
 
 export const AdminTestesDashboard = () => {
-  const { tenantId } = useAuth();
+  const { tenantId, isGestao, isOwner } = useAuth();
+  const podeVer = isGestao || isOwner; // defesa em profundidade (A1) — só gestão/owner
   const [loading, setLoading] = useState(true);
   const [estatisticas, setEstatisticas] = useState<any>(null);
   const [corretorSelecionado, setCorretorSelecionado] = useState<CorretorTeste | null>(null);
@@ -47,7 +48,9 @@ export const AdminTestesDashboard = () => {
 
   useEffect(() => {
     carregarDados();
-  }, []);
+    // tenantId nas deps: carregarDados usa tenantId; sem isto, se ele chegar
+    // async após o mount, os dados ficam buscados sem filtro de tenant (A5).
+  }, [tenantId]);
 
   const carregarDados = async () => {
     try {
@@ -94,6 +97,16 @@ export const AdminTestesDashboard = () => {
   const corretoresFiltrados = corretores.filter(c => 
     c.nm_corretor.toLowerCase().includes(busca.toLowerCase())
   );
+
+  // Defesa em profundidade (A1): além do guard de rota, o próprio componente
+  // não renderiza dados de gestão para quem não é gestão/owner.
+  if (!podeVer) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <p className="text-gray-600 dark:text-slate-400">Acesso restrito à gestão.</p>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

@@ -181,10 +181,14 @@ export async function buscarCorretoresComDISC(tenantId?: string): Promise<DISCCo
     const config = getSupabaseConfig();
     const headers = getAuthenticatedHeaders();
     
-    // Buscar todos os testes mais recentes agrupados por corretor
-    // Note: disc_test_results não tem tenant_id direto; o isolamento é garantido pela RLS via Corretores
+    // Buscar todos os testes mais recentes agrupados por corretor.
+    // disc_test_results não tem coluna tenant_id; o isolamento por tenant é
+    // feito via inner join com Corretores (A4). Sem o filtro, dependia só da RLS.
+    const tenantFilter = tenantId
+      ? `&Corretores.tenant_id=eq.${tenantId}`
+      : '';
     const response = await fetch(
-      `${config.url}/rest/v1/disc_test_results?order=data_teste.desc`,
+      `${config.url}/rest/v1/disc_test_results?select=*,Corretores!inner(tenant_id)${tenantFilter}&order=data_teste.desc`,
       {
         method: 'GET',
         headers: headers
@@ -254,15 +258,20 @@ export async function buscarCorretoresComDISC(tenantId?: string): Promise<DISCCo
  * Buscar corretores por tipo DISC principal
  */
 export async function buscarCorretoresPorTipoDISC(
-  tipoDISC: 'D' | 'I' | 'S' | 'C'
+  tipoDISC: 'D' | 'I' | 'S' | 'C',
+  tenantId?: string
 ): Promise<DISCCorretorProfile[]> {
   try {
-    
+
     const config = getSupabaseConfig();
     const headers = getAuthenticatedHeaders();
-    
+
+    // Isolamento por tenant via inner join com Corretores (A4).
+    const tenantFilter = tenantId
+      ? `&Corretores.tenant_id=eq.${tenantId}`
+      : '';
     const response = await fetch(
-      `${config.url}/rest/v1/disc_test_results?tipo_principal=eq.${tipoDISC}&order=data_teste.desc`,
+      `${config.url}/rest/v1/disc_test_results?select=*,Corretores!inner(tenant_id)&tipo_principal=eq.${tipoDISC}${tenantFilter}&order=data_teste.desc`,
       {
         method: 'GET',
         headers: headers

@@ -17,12 +17,16 @@ import { salvarResultado16Personalities, verificarImportacaoExistente } from '..
 import { buscarResultadosAdmin, salvarResultadoMBTIAdmin } from '../services/adminTestsService';
 import { DadosExtraidos16P } from '../services/16personalitiesExtractor';
 import { MBTI_TIPOS, MBTITipo } from '@/data/mbtiQuestions';
+import { derivarDimensoesMBTI } from '@/utils/16personalitiesMapper';
 import { toast } from 'sonner';
 
 export default function Importar16PersonalitiesPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const isAdminContext = user?.role === 'gestao';
+  // O fluxo "admin" grava em admin_test_results (resultado do próprio gestor).
+  // Usar systemRole (não o legado role==='gestao', que também engloba
+  // team_leader) para que só admin/owner sigam esse caminho — A4.
+  const isAdminContext = user?.systemRole === 'admin' || user?.systemRole === 'owner';
   
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
@@ -69,24 +73,21 @@ export default function Importar16PersonalitiesPage() {
           const tipoBase = tipoCompleto.substring(0, 4);
           const dadosTipo = MBTI_TIPOS[tipoBase as keyof typeof MBTI_TIPOS];
 
-          const getLadoELetra = (percentual: number, dimensao: string): { lado: string, letra: string } => {
-            if (dimensao === 'energia') {
-              return percentual >= 50 ? { lado: 'Extroversão', letra: 'E' } : { lado: 'Introversão', letra: 'I' };
-            } else if (dimensao === 'mente') {
-              return percentual >= 50 ? { lado: 'Intuição', letra: 'N' } : { lado: 'Observação', letra: 'S' };
-            } else if (dimensao === 'natureza') {
-              return percentual >= 50 ? { lado: 'Pensamento', letra: 'T' } : { lado: 'Sentimento', letra: 'F' };
-            } else if (dimensao === 'abordagem') {
-              return percentual >= 50 ? { lado: 'Julgamento', letra: 'J' } : { lado: 'Percepção', letra: 'P' };
-            }
-            return percentual >= 50 ? { lado: 'Assertivo', letra: 'A' } : { lado: 'Turbulento', letra: 'T' };
-          };
-
-          const energiaInfo = getLadoELetra(resultadosAdmin.mbti.percentuais.Energy || 50, 'energia');
-          const menteInfo = getLadoELetra(resultadosAdmin.mbti.percentuais.Mind || 50, 'mente');
-          const naturezaInfo = getLadoELetra(resultadosAdmin.mbti.percentuais.Nature || 50, 'natureza');
-          const abordagemInfo = getLadoELetra(resultadosAdmin.mbti.percentuais.Tactics || 50, 'abordagem');
-          const identidadeInfo = getLadoELetra(resultadosAdmin.mbti.percentuais.Identity || 50, 'identidade');
+          // Letra/lado vêm do código do tipo; o percentual é só magnitude. Em
+          // admin_test_results, percentuais.Energy guarda a magnitude de I/E e
+          // percentuais.Mind a de S/N (ver M3). Ver C1.
+          const dims = derivarDimensoesMBTI(tipoCompleto, {
+            mind: resultadosAdmin.mbti.percentuais.Energy,
+            energy: resultadosAdmin.mbti.percentuais.Mind,
+            nature: resultadosAdmin.mbti.percentuais.Nature,
+            tactics: resultadosAdmin.mbti.percentuais.Tactics,
+            identity: resultadosAdmin.mbti.percentuais.Identity,
+          });
+          const energiaInfo = dims.energia;
+          const menteInfo = dims.mente;
+          const naturezaInfo = dims.natureza;
+          const abordagemInfo = dims.abordagem;
+          const identidadeInfo = dims.identidade;
 
           const dadosPreview: DadosExtraidos16P = {
             url: '',
@@ -168,42 +169,23 @@ export default function Importar16PersonalitiesPage() {
         const tipoCompleto = corretor.mbti_tipo;
         const tipoBase = tipoCompleto.substring(0, 4);
         
-        // Função auxiliar para determinar o lado baseado no percentual
-        const getLadoELetra = (percentual: number, dimensao: string): { lado: string, letra: string } => {
-          if (dimensao === 'energia') {
-            return percentual >= 50 
-              ? { lado: 'Extroversão', letra: 'E' } 
-              : { lado: 'Introversão', letra: 'I' };
-          } else if (dimensao === 'mente') {
-            return percentual >= 50 
-              ? { lado: 'Intuição', letra: 'N' } 
-              : { lado: 'Observação', letra: 'S' };
-          } else if (dimensao === 'natureza') {
-            return percentual >= 50 
-              ? { lado: 'Pensamento', letra: 'T' } 
-              : { lado: 'Sentimento', letra: 'F' };
-          } else if (dimensao === 'abordagem') {
-            return percentual >= 50 
-              ? { lado: 'Julgamento', letra: 'J' } 
-              : { lado: 'Percepção', letra: 'P' };
-          } else { // identidade
-            return percentual >= 50 
-              ? { lado: 'Assertivo', letra: 'A' } 
-              : { lado: 'Turbulento', letra: 'T' };
-          }
-        };
-        
         // Obter informações do tipo do MBTI_TIPOS
         const dadosTipo = MBTI_TIPOS[tipoBase];
-        
-        // No banco: mbti_percent_mind = dimensão Mind (I/E, 1ª letra),
-        // mbti_percent_energy = dimensão Energy (S/N, 2ª letra).
-        // No vocabulário PT deste código: "energia" = 1ª letra (I/E), "mente" = 2ª letra (S/N).
-        const energiaInfo = getLadoELetra(corretor.mbti_percent_mind || 50, 'energia');
-        const menteInfo = getLadoELetra(corretor.mbti_percent_energy || 50, 'mente');
-        const naturezaInfo = getLadoELetra(corretor.mbti_percent_nature || 50, 'natureza');
-        const abordagemInfo = getLadoELetra(corretor.mbti_percent_tactics || 50, 'abordagem');
-        const identidadeInfo = getLadoELetra(corretor.mbti_percent_identity || 50, 'identidade');
+
+        // Letra/lado vêm SEMPRE do código do tipo; o percentual é só magnitude.
+        // (Antes derivava o lado por "percentual >= 50", invertendo as dimensões — ver C1.)
+        const dims = derivarDimensoesMBTI(corretor.mbti_tipo, {
+          mind: corretor.mbti_percent_mind,
+          energy: corretor.mbti_percent_energy,
+          nature: corretor.mbti_percent_nature,
+          tactics: corretor.mbti_percent_tactics,
+          identity: corretor.mbti_percent_identity,
+        });
+        const energiaInfo = dims.energia;
+        const menteInfo = dims.mente;
+        const naturezaInfo = dims.natureza;
+        const abordagemInfo = dims.abordagem;
+        const identidadeInfo = dims.identidade;
 
         // Montar preview com os dados salvos
         const dadosPreview: DadosExtraidos16P = {
@@ -277,7 +259,11 @@ export default function Importar16PersonalitiesPage() {
       
       const dados = await extrairDados16Personalities(url);
       setPreview(dados);
-      
+      // Esta é uma importação NOVA (extraída agora), ainda não salva. Sem isto,
+      // um resíduo antigo poderia manter jaTemImportacao=true e o botão pularia
+      // o salvamento ("Voltar para Elaine" em vez de "Concluir Análise") — A1.
+      setJaTemImportacao(false);
+
       toast.success('✅ Dados extraídos com sucesso!', { duration: 2000 });
     } catch (err) {
       const mensagem = err instanceof Error ? err.message : 'Erro ao extrair dados. Tente novamente.';
@@ -353,11 +339,13 @@ export default function Importar16PersonalitiesPage() {
                   'Content-Type': 'application/json',
                   'Prefer': 'return=minimal'
                 },
+                // Marca apenas o MBTI. NÃO gravamos todos_completos aqui: a
+                // completude dos 3 testes é sempre re-derivada da tabela
+                // Corretores (verificarTestesCompletos). Gravar o flag às cegas
+                // criava dado inconsistente — B3.
                 body: JSON.stringify({
                   mbti_completo: true,
-                  mbti_data_finalizacao: new Date().toISOString(),
-                  todos_completos: true, // Se chegou aqui, é porque DISC e Eneagrama já estão completos
-                  data_finalizacao_todos: new Date().toISOString()
+                  mbti_data_finalizacao: new Date().toISOString()
                 })
               }
             );
