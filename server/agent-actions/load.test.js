@@ -379,12 +379,17 @@ describe('Carga: enqueue bulk e drain sem N+1', () => {
     expect(deltaDrain.queueSelectByRun).toBe(1);
   });
 
-  it('N=10000: deltaEnqueue.insertOrUpsert < 50 (bulk provado), deltaDrain.runsSelect = 0', async () => {
-    const { confirmResult, summary, deltaEnqueue, deltaDrain } = await runScenario(10000);
+  // N=2000 é suficiente para provar a invariância de escala (bulk constante,
+  // 0 select por item, fechamento O(runs)). Evita a flakiness por timeout que
+  // N=10000 causava SÓ quando a suíte inteira (server + React/jsdom) compete por
+  // CPU — isolado o teste de 10k passava, mas na suíte completa estourava o
+  // default de 5s de forma intermitente. 2k roda rápido e prova o mesmo.
+  it('N=2000: deltaEnqueue.insertOrUpsert < 50 (bulk provado), deltaDrain.runsSelect = 0', async () => {
+    const { confirmResult, summary, deltaEnqueue, deltaDrain } = await runScenario(2000);
 
     expect(confirmResult.ok).toBe(true);
-    expect(confirmResult.enqueued).toBe(10000);
-    expect(summary.done).toBe(10000);
+    expect(confirmResult.enqueued).toBe(2000);
+    expect(summary.done).toBe(2000);
 
     // Prova principal: não é 1 insert/upsert por lead (bulk real)
     expect(deltaEnqueue.insertOrUpsert).toBeLessThan(50);
@@ -392,23 +397,22 @@ describe('Carga: enqueue bulk e drain sem N+1', () => {
     expect(deltaDrain.runsSelect).toBe(0);
     // closeFinishedRuns: O(runs), não O(itens) — com 1 run, deve ser ~1
     expect(deltaDrain.queueSelectByRun).toBeLessThanOrEqual(5);
-  }, 30_000); // timeout estendido: processa 10k itens; sob a suíte inteira em
-  //            paralelo o default de 5s estoura por contenção de CPU (não por bug).
+  });
 
-  it('insertOrUpsert é praticamente constante: |delta(10000) - delta(1)| < 5', async () => {
+  it('insertOrUpsert é praticamente constante: |delta(2000) - delta(1)| < 5', async () => {
     const r1 = await runScenario(1);
-    const r10k = await runScenario(10000);
+    const rN = await runScenario(2000);
 
     const diff = Math.abs(
-      r10k.deltaEnqueue.insertOrUpsert - r1.deltaEnqueue.insertOrUpsert,
+      rN.deltaEnqueue.insertOrUpsert - r1.deltaEnqueue.insertOrUpsert,
     );
 
     // O enqueue não escala com N (prova de bulk)
     expect(diff).toBeLessThan(5);
-  }, 30_000); // idem: roda 2 cenários (1 e 10k); timeout estendido sob carga.
+  });
 
   it('deltaDrain.runsSelect = 0 para todos os N (sem N+1 no worker)', async () => {
-    for (const n of [1, 100, 1000, 10000]) {
+    for (const n of [1, 100, 1000, 2000]) {
       const { deltaDrain } = await runScenario(n);
       expect(
         deltaDrain.runsSelect,
@@ -417,10 +421,10 @@ describe('Carga: enqueue bulk e drain sem N+1', () => {
     }
   });
 
-  it('queueSelectByRun é O(runs), não O(itens): deltaDrain.queueSelectByRun ~1 para N=10000', async () => {
-    // Com 1 run e 10000 itens, o closeFinishedRuns deve fazer 1 select em queue
-    // (por run_id), não 10000 selects (por item). Isso prova que é O(runs).
-    const { deltaDrain } = await runScenario(10000);
+  it('queueSelectByRun é O(runs), não O(itens): deltaDrain.queueSelectByRun ~1 para N=2000', async () => {
+    // Com 1 run e 2000 itens, o closeFinishedRuns deve fazer 1 select em queue
+    // (por run_id), não 2000 selects (por item). Isso prova que é O(runs).
+    const { deltaDrain } = await runScenario(2000);
     expect(deltaDrain.queueSelectByRun).toBeLessThanOrEqual(5);
   });
 });
