@@ -24,10 +24,12 @@ const EXPECTED = [
   { method: 'POST', path: '/api/v1/communication/dispatch/confirm' },
   { method: 'GET', path: '/api/v1/communication/dispatch/runs/:id' },
   { method: 'POST', path: '/api/v1/communication/dispatch/run-queue' },
+  { method: 'GET', path: '/api/v1/communication/dispatch/runs' },
+  { method: 'GET', path: '/api/v1/communication/dispatch/runs/:id/progress' },
 ];
 
 describe('registerCommunicationRoutes', () => {
-  it('registra os 4 endpoints sob /api/v1/communication/dispatch', () => {
+  it('registra os 6 endpoints sob /api/v1/communication/dispatch', () => {
     const { app, routes } = makeFakeApp();
     registerCommunicationRoutes(app, supabase, options);
 
@@ -36,8 +38,8 @@ describe('registerCommunicationRoutes', () => {
       expect(found, `rota ${exp.method} ${exp.path} não registrada`).toBeTruthy();
       expect(typeof found.handler).toBe('function');
     }
-    // Exatamente 4 rotas (nem a mais, nem a menos).
-    expect(routes).toHaveLength(4);
+    // Exatamente 6 rotas (nem a mais, nem a menos).
+    expect(routes).toHaveLength(6);
   });
 
   it('alias e caminho legado coexistem com os MESMOS sufixos de rota', () => {
@@ -51,12 +53,16 @@ describe('registerCommunicationRoutes', () => {
     expect(paths).toContain('POST /api/v1/agent-actions/confirm');
     expect(paths).toContain('GET /api/v1/agent-actions/runs/:id');
     expect(paths).toContain('POST /api/v1/agent-actions/run-queue');
+    expect(paths).toContain('GET /api/v1/agent-actions/runs');
+    expect(paths).toContain('GET /api/v1/agent-actions/runs/:id/progress');
     // Alias novo:
     expect(paths).toContain('POST /api/v1/communication/dispatch/preview');
     expect(paths).toContain('POST /api/v1/communication/dispatch/confirm');
     expect(paths).toContain('GET /api/v1/communication/dispatch/runs/:id');
     expect(paths).toContain('POST /api/v1/communication/dispatch/run-queue');
-    // 4 + 4, sem duplicação acidental.
-    expect(routes).toHaveLength(8);
+    expect(paths).toContain('GET /api/v1/communication/dispatch/runs');
+    expect(paths).toContain('GET /api/v1/communication/dispatch/runs/:id/progress');
+    // 6 + 6, sem duplicação acidental.
+    expect(routes).toHaveLength(12);
   });
 });
