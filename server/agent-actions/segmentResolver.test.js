@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveSegment, resolveSegmentForSource, LEADS_SOURCE } from './segmentResolver.js';
+import { resolveSegment, resolveSegmentForSource, resolveSegmentDual, LEADS_SOURCE } from './segmentResolver.js';
 
 const NOW = 1_750_000_000_000; // timestamp fixo (determinístico).
 const TENANT = 'tenant-1';
@@ -176,5 +176,146 @@ describe('resolveSegment back-compat — kenlo continua igual', () => {
     expect(findAll(calls, 'eq')).not.toContainEqual(
       expect.arrayContaining(['eq', 'lead_type', expect.anything()]),
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fake por tabela: rowsByTable = { kenlo_leads: [...], leads: [...] }
+// errorTables = Set de tabelas que devem retornar erro de query.
+// ---------------------------------------------------------------------------
+function makeSupabaseByTable(rowsByTable = {}, errorTables = new Set()) {
+  const calls = [];
+  const makeNode = (table) => {
+    const node = {
+      select: () => node,
+      eq: () => node,
+      not: () => node,
+      is: () => node,
+      lte: () => node,
+      gte: () => node,
+      ilike: () => node,
+      or: () => node,
+      limit: () => node,
+      then: (resolve) => {
+        if (errorTables.has(table)) {
+          return resolve({ data: null, error: { message: `boom ${table}` } });
+        }
+        return resolve({ data: rowsByTable[table] || [], error: null });
+      },
+    };
+    return node;
+  };
+  const supabase = { from: (t) => (calls.push(['from', t]), makeNode(t)) };
+  return { supabase, calls };
+}
+
+describe('resolveSegmentDual', () => {
+  const seg = { type: 'archived' };
+  const ctxBase = { tenantId: TENANT, nowMs: NOW };
+
+  it('kenlo_only: rows da primária kenlo, sem diagnostic', async () => {
+    const { supabase, calls } = makeSupabaseByTable({
+      kenlo_leads: [{ id: 'K1', client_name: 'A', client_phone: '11999990000', archived_at: 'x' }],
+    });
+    const r = await resolveSegmentDual(supabase, seg, { ...ctxBase, mode: 'kenlo_only' });
+    expect(r.ok).toBe(true);
+    expect(r.primarySource).toBe('kenlo');
+    expect(r.diagnostic).toBeUndefined();
+    expect(r.rows).toHaveLength(1);
+    // somente 1 query (kenlo_leads); secundária não deve ser consultada
+    expect(calls.filter((c) => c[0] === 'from').map((c) => c[1])).toEqual(['kenlo_leads']);
+  });
+
+  it('shadow_leads: rows da PRIMÁRIA (kenlo) + diagnostic com contagens', async () => {
+    const { supabase } = makeSupabaseByTable({
+      kenlo_leads: [{ id: 'K1', client_name: 'A', client_phone: '11999990000', archived_at: 'x' }],
+      leads: [{ id: 'C1', name: 'A', phone: '11999990000', archived_at: 'x', source_lead_id: 'K1' }],
+    });
+    const r = await resolveSegmentDual(supabase, seg, { ...ctxBase, mode: 'shadow_leads' });
+    expect(r.ok).toBe(true);
+    expect(r.primarySource).toBe('kenlo');
+    expect(r.rows).toHaveLength(1); // rows da primária
+    expect(r.diagnostic).toBeDefined();
+    expect(r.diagnostic.primaryCount).toBe(1);
+    expect(r.diagnostic.secondaryCount).toBe(1);
+    expect(r.diagnostic.inBoth).toBe(1); // casou por sourceLeadId
+  });
+
+  it('leads_primary: primária é leads; diagnostic presente', async () => {
+    const { supabase } = makeSupabaseByTable({
+      leads: [{ id: 'C1', name: 'A', phone: '11999990000', archived_at: 'x', source_lead_id: null }],
+      kenlo_leads: [{ id: 'K1', client_name: 'A', client_phone: '11999990000', archived_at: 'x' }],
+    });
+    const r = await resolveSegmentDual(supabase, seg, { ...ctxBase, mode: 'leads_primary' });
+    expect(r.ok).toBe(true);
+    expect(r.primarySource).toBe('crm');
+    expect(r.diagnostic).toBeDefined();
+    expect(r.diagnostic.inBoth).toBe(1); // casou por telefone
+  });
+
+  it('leads_only: rows da primária leads, sem diagnostic', async () => {
+    const { supabase, calls } = makeSupabaseByTable({
+      leads: [{ id: 'C1', name: 'B', phone: '11888880000', archived_at: 'x', source_lead_id: null }],
+    });
+    const r = await resolveSegmentDual(supabase, seg, { ...ctxBase, mode: 'leads_only' });
+    expect(r.ok).toBe(true);
+    expect(r.primarySource).toBe('crm');
+    expect(r.diagnostic).toBeUndefined();
+    expect(r.rows).toHaveLength(1);
+    expect(calls.filter((c) => c[0] === 'from').map((c) => c[1])).toEqual(['leads']);
+  });
+
+  it('secundária com erro NÃO derruba a primária', async () => {
+    const { supabase } = makeSupabaseByTable(
+      { kenlo_leads: [{ id: 'K1', client_name: 'A', client_phone: '11999990000', archived_at: 'x' }] },
+      new Set(['leads']), // leads erra
+    );
+    const r = await resolveSegmentDual(supabase, seg, { ...ctxBase, mode: 'shadow_leads' });
+    expect(r.ok).toBe(true);
+    expect(r.rows).toHaveLength(1);
+    expect(r.diagnostic.secondaryError).toBeTruthy();
+  });
+
+  it('modo ausente cai em kenlo_only (default seguro)', async () => {
+    const { supabase } = makeSupabaseByTable({ kenlo_leads: [] });
+    const r = await resolveSegmentDual(supabase, seg, { ...ctxBase });
+    expect(r.ok).toBe(true);
+    expect(r.primarySource).toBe('kenlo');
+    expect(r.diagnostic).toBeUndefined();
+  });
+
+  it('modo inválido cai em kenlo_only (default seguro)', async () => {
+    const { supabase } = makeSupabaseByTable({ kenlo_leads: [] });
+    const r = await resolveSegmentDual(supabase, seg, { ...ctxBase, mode: 'invalid_mode' });
+    expect(r.ok).toBe(true);
+    expect(r.primarySource).toBe('kenlo');
+    expect(r.diagnostic).toBeUndefined();
+  });
+
+  it('primária com erro propaga e para (sem secundária)', async () => {
+    const { supabase } = makeSupabaseByTable({}, new Set(['kenlo_leads']));
+    const r = await resolveSegmentDual(supabase, seg, { ...ctxBase, mode: 'shadow_leads' });
+    expect(r.ok).toBe(false);
+    expect(r.error).toBe('query_failed');
+    expect(r.primarySource).toBe('kenlo');
+  });
+
+  it('guard de truncamento: skipa secundária se primária atingiu maxRows', async () => {
+    // Cria 3 rows para kenlo_leads e define maxRows=3 — simula truncamento
+    const kenloRows = [
+      { id: 'K1', client_name: 'A', client_phone: '11111110001', archived_at: 'x' },
+      { id: 'K2', client_name: 'B', client_phone: '11111110002', archived_at: 'x' },
+      { id: 'K3', client_name: 'C', client_phone: '11111110003', archived_at: 'x' },
+    ];
+    const { supabase, calls } = makeSupabaseByTable({
+      kenlo_leads: kenloRows,
+      leads: [{ id: 'C1', name: 'A', phone: '11111110001', archived_at: 'x', source_lead_id: 'K1' }],
+    });
+    const r = await resolveSegmentDual(supabase, seg, { ...ctxBase, mode: 'shadow_leads', maxRows: 3 });
+    expect(r.ok).toBe(true);
+    expect(r.rows).toHaveLength(3);
+    expect(r.diagnostic).toEqual({ truncated: true });
+    // somente kenlo_leads foi consultada
+    expect(calls.filter((c) => c[0] === 'from').map((c) => c[1])).toEqual(['kenlo_leads']);
   });
 });

@@ -16,7 +16,8 @@
  */
 
 export { KENLO_SOURCE, LEADS_SOURCE } from './segmentSources.js';
-import { KENLO_SOURCE } from './segmentSources.js';
+import { KENLO_SOURCE, LEADS_SOURCE } from './segmentSources.js';
+import { diffPublics } from './segmentDiff.js';
 
 // Mesma sanitização do api-server: remove caracteres que quebram o filtro
 // PostgREST (.or/.ilike) e poderiam ser usados para injeção de filtro.
@@ -140,6 +141,85 @@ export async function resolveSegmentForSource(supabase, segment, ctx, source) {
  */
 export async function resolveSegment(supabase, segment, ctx) {
   return resolveSegmentForSource(supabase, segment, ctx, KENLO_SOURCE);
+}
+
+// Modos válidos e seu mapeamento para fontes primária/secundária.
+const MODE_MAP = {
+  kenlo_only:   { primary: KENLO_SOURCE, secondary: null },
+  shadow_leads: { primary: KENLO_SOURCE, secondary: LEADS_SOURCE },
+  leads_primary:{ primary: LEADS_SOURCE, secondary: KENLO_SOURCE },
+  leads_only:   { primary: LEADS_SOURCE, secondary: null },
+};
+
+/**
+ * Orquestra um dual-run com fonte primária + diagnóstico shadow da secundária (resiliente).
+ *
+ * Propósito: permitir a migração gradual entre fontes de leads (kenlo_leads → CRM/leads)
+ * com visibilidade total das divergências, sem arriscar a execução principal. A fonte
+ * secundária é puramente diagnóstica — qualquer falha nela não impede o retorno dos
+ * dados da primária.
+ *
+ * Modos:
+ *  - 'kenlo_only'    → primária kenlo, sem secundária (default seguro para produção atual)
+ *  - 'shadow_leads'  → primária kenlo, secundária leads (shadow mode)
+ *  - 'leads_primary' → primária leads, secundária kenlo (para testes de virada)
+ *  - 'leads_only'    → primária leads, sem secundária
+ *  - modo inválido/ausente → trata como 'kenlo_only' (default seguro)
+ *
+ * Guard de truncamento: se a primária retornou exatamente `maxRows` linhas, o diff
+ * com a secundária seria enganoso (o conjunto está incompleto). Nesses casos, a
+ * secundária não é executada e `diagnostic` retorna `{ truncated: true }`.
+ *
+ * @param supabase  client Supabase (service_role)
+ * @param segment   { type, ...params } vindo do interpretador
+ * @param ctx       { tenantId, brokerScope?, nowMs?, maxRows?, mode? }
+ * @returns {{ ok: true, rows, primarySource, diagnostic? } | { ok: false, error, detail?, primarySource }}
+ */
+export async function resolveSegmentDual(supabase, segment, ctx) {
+  const { mode, maxRows = 5000 } = ctx || {};
+
+  // Modos inválidos ou ausentes recaem em kenlo_only (default seguro).
+  const { primary: primarySource, secondary: secondarySource } =
+    MODE_MAP[mode] ?? MODE_MAP.kenlo_only;
+
+  // 1. Resolver a primária — falha da primária é fatal (propaga imediatamente).
+  const primary = await resolveSegmentForSource(supabase, segment, ctx, primarySource);
+  if (!primary.ok) {
+    return { ok: false, error: primary.error, detail: primary.detail, primarySource: primarySource.key };
+  }
+
+  // 2. Sem secundária: retorno direto, sem `diagnostic`.
+  if (secondarySource === null) {
+    return { ok: true, rows: primary.rows, primarySource: primarySource.key };
+  }
+
+  // 3. Guard de truncamento: diff seria enganoso sobre um conjunto incompleto.
+  if (primary.rows.length >= maxRows) {
+    return {
+      ok: true,
+      rows: primary.rows,
+      primarySource: primarySource.key,
+      diagnostic: { truncated: true },
+    };
+  }
+
+  // 4. Secundária resiliente: erros de query (ok:false) e exceções inesperadas (catch)
+  //    viram diagnostic.secondaryError — a primária segue sem interrupção.
+  let diagnostic;
+  try {
+    const secondary = await resolveSegmentForSource(supabase, segment, ctx, secondarySource);
+    if (!secondary.ok) {
+      // resolveSegmentForSource retorna { ok:false } para erros de query — não lança.
+      diagnostic = { secondaryError: secondary.detail || secondary.error };
+    } else {
+      diagnostic = diffPublics(primary.rows, secondary.rows);
+    }
+  } catch (e) {
+    // Exceção inesperada (bug, timeout, rede) — não derruba a primária.
+    diagnostic = { secondaryError: e.message };
+  }
+
+  return { ok: true, rows: primary.rows, primarySource: primarySource.key, diagnostic };
 }
 
 export const __test__ = {
