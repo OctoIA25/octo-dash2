@@ -19,7 +19,7 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`inline-flex items-center h-6 px-2 rounded-md text-[11px] font-semibold ${m.cls}`}>{m.label}</span>;
 }
 
-const STATUS_FILTERS = ['', 'done', 'failed', 'running'] as const;
+const STATUS_FILTERS = ['', 'done', 'failed', 'running', 'pending'] as const;
 
 export function HistoricoDisparos() {
   const { tenantId } = useAuthContext();
@@ -28,20 +28,26 @@ export function HistoricoDisparos() {
   const [error, setError] = useState(false);
   const [status, setStatus] = useState<string>('');
   const [q, setQ] = useState('');
+  const [debouncedQ, setDebouncedQ] = useState('');
 
   const tenantReady = Boolean(tenantId && tenantId !== 'owner');
+
+  useEffect(() => {
+    const h = setTimeout(() => setDebouncedQ(q.trim()), 300);
+    return () => clearTimeout(h);
+  }, [q]);
 
   useEffect(() => {
     if (!tenantReady) return;
     let active = true;
     setLoading(true);
     setError(false);
-    listRuns(tenantId as string, { status: status || undefined, q: q.trim() || undefined })
+    listRuns(tenantId as string, { status: status || undefined, q: debouncedQ || undefined })
       .then((res) => { if (active) { setRuns(res.ok ? res.runs : []); if (!res.ok) setError(true); } })
       .catch(() => { if (active) setError(true); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [tenantId, tenantReady, status, q]);
+  }, [tenantId, tenantReady, status, debouncedQ]);
 
   const fmtDate = useMemo(
     () => (iso: string) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }),
@@ -60,6 +66,7 @@ export function HistoricoDisparos() {
             <button
               key={s || 'all'}
               type="button"
+              aria-pressed={status === s}
               onClick={() => setStatus(s)}
               className={`h-8 px-3 rounded-lg text-[12.5px] font-semibold transition-colors ${
                 status === s ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900' : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
@@ -71,6 +78,7 @@ export function HistoricoDisparos() {
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
+            aria-label="Buscar disparos pelo comando"
             placeholder="Buscar pelo comando…"
             className="h-8 px-3 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[12.5px] text-slate-700 dark:text-slate-200 flex-1 min-w-[160px]"
           />
@@ -91,7 +99,7 @@ export function HistoricoDisparos() {
             {runs.map((run) => (
               <li key={run.id} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-3">
                 <div className="flex items-center justify-between gap-3">
-                  <p className="text-[13px] font-medium text-slate-800 dark:text-slate-100 truncate">
+                  <p className="text-[13px] font-medium text-slate-800 dark:text-slate-100 truncate" title={run.command_text ?? undefined}>
                     {run.command_text || '(sem comando)'}
                   </p>
                   <StatusBadge status={run.status} />

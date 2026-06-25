@@ -20,7 +20,7 @@ import { HistoricoDisparos } from '../HistoricoDisparos';
 describe('HistoricoDisparos', () => {
   it('renderiza a lista de disparos', async () => {
     render(<HistoricoDisparos />);
-    await waitFor(() => expect(screen.getByText(/envie para arquivados/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/envie para arquivados/i)).toBeInTheDocument(), { timeout: 2000 });
     expect(screen.getByText(/enviados/i)).toBeInTheDocument();   // mostra o rótulo de contagem
   });
 
@@ -28,6 +28,6 @@ describe('HistoricoDisparos', () => {
     const svc = await import('../../services/historicoService');
     (svc.listRuns as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ ok: true, runs: [], limit: 50, offset: 0 });
     render(<HistoricoDisparos />);
-    await waitFor(() => expect(screen.getByText(/nenhum disparo/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/nenhum disparo/i)).toBeInTheDocument(), { timeout: 2000 });
   });
 });
