@@ -17,6 +17,8 @@ export const SEGMENT_TYPES = [
 
 /**
  * Valida e normaliza um segmento, mantendo só os campos relevantes ao tipo.
+ * Segmentos com params ausentes ou inválidos (days NaN/negativo, broker/interest
+ * vazios, lista de nomes vazia) são rejeitados com error: 'invalid_segment'.
  * @returns {{ ok: true, segment } | { ok: false, error: 'invalid_segment' }}
  */
 export function validateSegment(segment) {
@@ -25,13 +27,19 @@ export function validateSegment(segment) {
   }
   const clean = { type: segment.type };
   if (segment.type === 'explicit_list') {
-    clean.names = Array.isArray(segment.names) ? segment.names.map(String).filter(Boolean) : [];
+    clean.names = Array.isArray(segment.names)
+      ? segment.names.filter((n) => n != null && n !== '').map(String)
+      : [];
+    if (clean.names.length === 0) return { ok: false, error: 'invalid_segment' };
   } else if (segment.type === 'archived_period' || segment.type === 'no_contact') {
     clean.days = Number(segment.days);
+    if (!Number.isFinite(clean.days) || clean.days < 0) return { ok: false, error: 'invalid_segment' };
   } else if (segment.type === 'by_broker') {
-    clean.broker = String(segment.broker || '');
+    clean.broker = String(segment.broker || '').trim();
+    if (!clean.broker) return { ok: false, error: 'invalid_segment' };
   } else if (segment.type === 'interest') {
-    clean.interest = String(segment.interest || '');
+    clean.interest = String(segment.interest || '').trim();
+    if (!clean.interest) return { ok: false, error: 'invalid_segment' };
   }
   return { ok: true, segment: clean };
 }
