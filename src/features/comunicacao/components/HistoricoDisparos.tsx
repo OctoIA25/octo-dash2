@@ -6,6 +6,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { listRuns, type RunSummary } from '../services/historicoService';
+import { getRunReport, type RunReport } from '../services/disparadorService';
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
   done: { label: 'Concluído', cls: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' },
@@ -19,6 +20,15 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`inline-flex items-center h-6 px-2 rounded-md text-[11px] font-semibold ${m.cls}`}>{m.label}</span>;
 }
 
+function Stat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-lg bg-slate-50 dark:bg-slate-800/50 px-2 py-1.5">
+      <p className="text-[10px] uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="text-[15px] font-bold text-slate-900 dark:text-slate-100 tabular-nums">{value}</p>
+    </div>
+  );
+}
+
 const STATUS_FILTERS = ['', 'done', 'failed', 'running', 'pending'] as const;
 
 export function HistoricoDisparos() {
@@ -29,6 +39,9 @@ export function HistoricoDisparos() {
   const [status, setStatus] = useState<string>('');
   const [q, setQ] = useState('');
   const [debouncedQ, setDebouncedQ] = useState('');
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [report, setReport] = useState<RunReport['run'] | null>(null);
+  const [failures, setFailures] = useState<NonNullable<RunReport['failures']>>([]);
 
   const tenantReady = Boolean(tenantId && tenantId !== 'owner');
 
@@ -53,6 +66,15 @@ export function HistoricoDisparos() {
     () => (iso: string) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }),
     [],
   );
+
+  async function openDetail(run: RunSummary) {
+    setOpenId(run.id);
+    setReport(null);
+    setFailures([]);
+    const rep = await getRunReport(tenantId as string, run.id);
+    setReport(rep.run || null);
+    setFailures(rep.failures || []);
+  }
 
   if (!tenantReady) {
     return <div className="px-6 py-10 text-center text-[13px] text-slate-400">Selecione uma imobiliária para ver o histórico.</div>;
@@ -97,7 +119,14 @@ export function HistoricoDisparos() {
         ) : (
           <ul className="space-y-2">
             {runs.map((run) => (
-              <li key={run.id} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-3">
+              <li
+                key={run.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => openDetail(run)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(run); } }}
+                className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-3 cursor-pointer hover:border-slate-300 dark:hover:border-slate-700 transition-colors"
+              >
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-[13px] font-medium text-slate-800 dark:text-slate-100 truncate" title={run.command_text ?? undefined}>
                     {run.command_text || '(sem comando)'}
@@ -116,6 +145,39 @@ export function HistoricoDisparos() {
               </li>
             ))}
           </ul>
+        )}
+
+        {openId && (
+          <aside className="mt-4 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-[13.5px] font-semibold text-slate-900 dark:text-slate-100">Detalhe do disparo</h3>
+              <button type="button" onClick={() => setOpenId(null)} className="text-[12px] text-slate-400 hover:text-slate-600">Fechar</button>
+            </div>
+            {!report ? (
+              <p className="text-[12px] text-slate-400">Carregando…</p>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                  <Stat label="Encontrados" value={report.found_count} />
+                  <Stat label="Elegíveis" value={report.eligible_count} />
+                  <Stat label="Enviados" value={report.sent_count} />
+                  <Stat label="Falhas" value={report.failed_count} />
+                </div>
+                {failures.length > 0 ? (
+                  <ul className="space-y-1">
+                    {failures.map((f, i) => (
+                      <li key={i} className="flex items-center justify-between text-[12px] border-t border-slate-100 dark:border-slate-800 pt-1">
+                        <span className="text-slate-700 dark:text-slate-300 truncate">{f.lead_name || f.lead_phone || '—'}</span>
+                        <span className="text-rose-500 dark:text-rose-400 truncate ml-2">{f.error || f.status}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-[12px] text-slate-400">Sem falhas neste disparo.</p>
+                )}
+              </>
+            )}
+          </aside>
         )}
       </div>
     </div>
