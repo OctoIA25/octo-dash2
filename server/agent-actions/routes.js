@@ -94,6 +94,28 @@ async function resolvePublicSourceMode(supabase, tenantId) {
   }
 }
 
+/**
+ * Deriva o progresso de um run. Para 'running', usa contagens da fila;
+ * pending engloba pending+processing. Para terminais, usa os contadores
+ * persistidos do run (sem reconsultar a fila). Puro/testável.
+ */
+function computeProgress(run, queueCounts) {
+  const total = run.found_count || 0;
+  if (run.status === 'running' && queueCounts) {
+    const done = queueCounts.done || 0;
+    const failed = queueCounts.failed || 0;
+    const pending = (queueCounts.pending || 0) + (queueCounts.processing || 0);
+    return { status: 'running', done, failed, pending, total };
+  }
+  return {
+    status: run.status,
+    done: run.sent_count || 0,
+    failed: run.failed_count || 0,
+    pending: 0,
+    total,
+  };
+}
+
 /** Aplica os filtros de listagem de runs a um query-builder (puro/testável).
  *  Retorna o builder + os valores de paginação efetivamente aplicados (clampados). */
 function applyRunsFilters(query, { status, q, from, to, limit, offset } = {}) {
@@ -246,6 +268,46 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
     return res.json({ ok: true, run, failures: failures || [] });
   });
 
+  // GET /runs/:id/progress — progresso ao vivo. Só conta a fila se 'running'
+  // (count agregado por status, head:true — O(1) em linhas). Concluídos derivam
+  // dos contadores do run.
+  app.get(`${basePath}/runs/:id/progress`, requireSupabaseAuth, async (req, res) => {
+    const { id } = req.params;
+    const tenantId = req.query.tenantId;
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'missing_tenant' });
+
+    const ctx = await resolveUserContext(supabase, req, tenantId);
+    if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
+
+    const { data: run, error } = await supabase
+      .from('agent_action_runs')
+      .select('status, sent_count, failed_count, found_count')
+      .eq('id', id)
+      .eq('tenant_id', tenantId)
+      .maybeSingle();
+    if (error) return res.status(500).json({ ok: false, error: 'lookup_failed' });
+    if (!run) return res.status(404).json({ ok: false, error: 'run_not_found' });
+
+    let queueCounts = null;
+    if (run.status === 'running') {
+      const countByStatus = async (st) => {
+        const { count } = await supabase
+          .from('agent_action_queue')
+          .select('id', { count: 'exact', head: true })
+          .eq('run_id', id)
+          .eq('tenant_id', tenantId)
+          .eq('status', st);
+        return count || 0;
+      };
+      const [done, failed, pending, processing] = await Promise.all([
+        countByStatus('done'), countByStatus('failed'), countByStatus('pending'), countByStatus('processing'),
+      ]);
+      queueCounts = { done, failed, pending, processing };
+    }
+
+    return res.json({ ok: true, ...computeProgress(run, queueCounts) });
+  });
+
   // -------------------------------------------------------------------------
   // POST /run-queue — drena a fila manualmente (platform owner). Útil p/ cron
   // externo ou operação. Em produção, prefira o worker com flag dedicada.
@@ -275,4 +337,4 @@ export function registerAgentActionRoutes(app, supabase, options = {}) {
   registerDispatchRoutes(app, '/api/v1/agent-actions', supabase, options, makeDispatchDeps(supabase, options));
 }
 
-export const __test__ = { resolveUserContext, statusFor, isPlatformOwner, resolvePublicSourceMode, applyRunsFilters, registerDispatchRoutes, makeDispatchDeps };
+export const __test__ = { resolveUserContext, statusFor, isPlatformOwner, resolvePublicSourceMode, applyRunsFilters, computeProgress, registerDispatchRoutes, makeDispatchDeps };

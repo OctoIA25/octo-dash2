@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { __test__ } from './routes.js';
 
-const { resolveUserContext, statusFor, isPlatformOwner, resolvePublicSourceMode, applyRunsFilters } = __test__;
+const { resolveUserContext, statusFor, isPlatformOwner, resolvePublicSourceMode, applyRunsFilters, computeProgress } = __test__;
 
 function recordingBuilder() {
   const calls = [];
@@ -147,6 +147,24 @@ describe('routes.resolvePublicSourceMode', () => {
     if (original === undefined) delete process.env.AGENT_PUBLIC_SOURCE_DEFAULT;
     else process.env.AGENT_PUBLIC_SOURCE_DEFAULT = original;
     expect(result).toBe('leads_only');
+  });
+});
+
+describe('computeProgress', () => {
+  it('running: usa as contagens da fila (pending engloba pending+processing)', () => {
+    const run = { status: 'running', found_count: 100 };
+    const p = computeProgress(run, { done: 30, failed: 2, pending: 60, processing: 8 });
+    expect(p).toEqual({ status: 'running', done: 30, failed: 2, pending: 68, total: 100 });
+  });
+  it('done: deriva do run, sem contar a fila', () => {
+    const run = { status: 'done', sent_count: 95, failed_count: 5, found_count: 100 };
+    const p = computeProgress(run, null);
+    expect(p).toEqual({ status: 'done', done: 95, failed: 5, pending: 0, total: 100 });
+  });
+  it('failed: deriva do run', () => {
+    const run = { status: 'failed', sent_count: 0, failed_count: 10, found_count: 10 };
+    const p = computeProgress(run, null);
+    expect(p).toEqual({ status: 'failed', done: 0, failed: 10, pending: 0, total: 10 });
   });
 });
 
