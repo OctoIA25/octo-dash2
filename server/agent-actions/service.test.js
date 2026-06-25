@@ -8,8 +8,92 @@ const TENANT = 't1';
  * Fake do Supabase para o service. Modela:
  *  - agent_action_runs: insert, lookup por id+tenant, update (claim/finalize)
  *  - agent_action_queue: upsert (captura os itens enfileirados)
+ *  - audiences: select por id+tenant_id → maybeSingle
  * `runs` é um Map mutável (id → row) para simular o claim atômico.
  */
+function makeFakeSupabaseForAudience(segment) {
+  const runs = new Map();
+  const queueUpserts = [];
+
+  const from = (table) => {
+    if (table === 'audiences') {
+      const node = {
+        _id: null,
+        _tenant: null,
+        select() { return node; },
+        eq(col, val) {
+          if (col === 'id') node._id = val;
+          if (col === 'tenant_id') node._tenant = val;
+          return node;
+        },
+        async maybeSingle() {
+          return { data: { segment }, error: null };
+        },
+      };
+      return node;
+    }
+    if (table === 'agent_action_runs') {
+      const node = {
+        _op: null,
+        _id: null,
+        _tenant: null,
+        _eqStatus: null,
+        _patch: null,
+        insert(row) {
+          runs.set(row.id, { ...row });
+          return { error: null };
+        },
+        select() {
+          if (node._op !== 'update') node._op = 'select';
+          return node;
+        },
+        update(patch) {
+          node._op = 'update';
+          node._patch = patch;
+          return node;
+        },
+        eq(col, val) {
+          if (col === 'id') node._id = val;
+          if (col === 'tenant_id') node._tenant = val;
+          if (col === 'status') node._eqStatus = val;
+          return node;
+        },
+        async maybeSingle() {
+          const row = runs.get(node._id);
+          if (node._op === 'update') {
+            if (!row) return { data: null, error: null };
+            if (node._eqStatus && row.status !== node._eqStatus) return { data: null, error: null };
+            Object.assign(row, node._patch);
+            return { data: { id: row.id }, error: null };
+          }
+          if (!row) return { data: null, error: null };
+          if (node._tenant && row.tenant_id !== node._tenant) return { data: null, error: null };
+          return { data: row, error: null };
+        },
+        then(resolve) {
+          if (node._op === 'update' && node._id) {
+            const row = runs.get(node._id);
+            if (row) Object.assign(row, node._patch);
+          }
+          return resolve({ error: null });
+        },
+      };
+      return node;
+    }
+    if (table === 'agent_action_queue') {
+      return {
+        upsert(items) {
+          queueUpserts.push(...items);
+          return { error: null };
+        },
+      };
+    }
+    throw new Error(`tabela inesperada: ${table}`);
+  };
+
+  return { from };
+}
+
 function makeFake({ runs = new Map() } = {}) {
   const queueUpserts = [];
 
@@ -237,6 +321,21 @@ describe('previewOperation', () => {
     expect(r.ok).toBe(false);
     expect(r.error).toBe('unsupported_intent');
     expect(r.clarification).toBe('?');
+  });
+
+  it('preview por audienceId carrega o segment do público e NÃO chama interpret', async () => {
+    const interpret = vi.fn();
+    const supabase = makeFakeSupabaseForAudience({ type: 'archived' });
+    // fake resolve no shape do resolveSegmentDual: { ok, rows, primarySource }
+    const resolve = async () => ({ ok: true, rows: [{ id: '1', name: 'A', phone: '5511999990000', source: 'kenlo' }], primarySource: 'kenlo' });
+    const r = await previewOperation(
+      supabase,
+      { audienceId: 'a1', tenantId: 't1', user: { id: 'u', email: 'a@x.com', role: 'admin' } },
+      { interpret, resolve, nowMs: NOW },
+    );
+    expect(interpret).not.toHaveBeenCalled();
+    expect(r.ok).toBe(true);
+    expect(r.preview.foundCount).toBe(1);
   });
 });
 

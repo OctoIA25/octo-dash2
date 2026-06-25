@@ -176,8 +176,8 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
   // body: { tenantId, command }
   // -------------------------------------------------------------------------
   app.post(`${basePath}/preview`, requireSupabaseAuth, async (req, res) => {
-    const { tenantId, command } = req.body || {};
-    if (!tenantId || !command) return res.status(400).json({ ok: false, error: 'missing_fields' });
+    const { tenantId, command, audienceId } = req.body || {};
+    if (!tenantId || (!command && !audienceId)) return res.status(400).json({ ok: false, error: 'missing_fields' });
 
     const ctx = await resolveUserContext(supabase, req, tenantId);
     if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
@@ -187,7 +187,7 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
 
     const result = await previewOperation(
       supabase,
-      { command, tenantId, mode, user: { id: req.userId, email: req.userEmail, role: ctx.role, brokerName: ctx.brokerName } },
+      { command, audienceId, tenantId, mode, user: { id: req.userId, email: req.userEmail, role: ctx.role, brokerName: ctx.brokerName } },
       // Interpretação via n8n: passamos contexto p/ o payload; a URL vem da env
       // (DISPARADOR_WEBHOOK_URL) ou do default no interpreter.
       { interpretOpts: { webhookUrl: options.disparadorWebhookUrl, usuario: req.userEmail } },

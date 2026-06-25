@@ -41,7 +41,7 @@ const MASS_ROLES = new Set(['owner', 'admin', 'team_leader']);
  *              interpretOpts é repassado ao interpreter (webhookUrl/usuario do n8n).
  */
 export async function previewOperation(supabase, input, deps = {}) {
-  const { command, tenantId, mode, user = {} } = input;
+  const { command, audienceId, tenantId, mode, user = {} } = input;
   const {
     interpret = interpretCommand,
     resolve = resolveSegmentDual,
@@ -50,14 +50,23 @@ export async function previewOperation(supabase, input, deps = {}) {
   } = deps;
 
   if (!tenantId) return { ok: false, error: 'tenant_required' };
-  if (!command || !String(command).trim()) return { ok: false, error: 'empty_command' };
 
-  // 1) Interpreta a intenção (via n8n). Não executa nada.
-  const interpreted = await interpret(command, deps.interpretOpts || {});
-  if (!interpreted.ok) {
-    return { ok: false, error: interpreted.error, clarification: interpreted.clarification || null };
+  // 1) Deriva a `operation` — por audienceId (público salvo) ou por command (n8n).
+  let operation;
+  if (audienceId) {
+    const { data: aud, error: audErr } = await supabase
+      .from('audiences').select('segment').eq('id', audienceId).eq('tenant_id', tenantId).maybeSingle();
+    if (audErr) return { ok: false, error: 'audience_lookup_failed', detail: audErr.message };
+    if (!aud) return { ok: false, error: 'audience_not_found' };
+    operation = { action: 'send_whatsapp', segment: aud.segment, params: { message: '' }, needsMessage: true };
+  } else {
+    if (!command || !String(command).trim()) return { ok: false, error: 'empty_command' };
+    const interpreted = await interpret(command, deps.interpretOpts || {});
+    if (!interpreted.ok) {
+      return { ok: false, error: interpreted.error, clarification: interpreted.clarification || null };
+    }
+    operation = interpreted.operation;
   }
-  const { operation } = interpreted;
 
   const action = getAction(operation.action);
   if (!action) return { ok: false, error: `unsupported_action:${operation.action}` };
@@ -110,7 +119,7 @@ export async function previewOperation(supabase, input, deps = {}) {
     id: previewToken,
     tenant_id: tenantId,
     action_type: operation.action,
-    command_text: String(command),
+    command_text: command != null ? String(command) : null,
     segment: operation.segment,
     found_count: found.length,
     eligible_count: capped.length,
