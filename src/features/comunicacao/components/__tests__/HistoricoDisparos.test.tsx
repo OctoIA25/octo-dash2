@@ -76,4 +76,21 @@ describe('HistoricoDisparos', () => {
     await waitFor(() => expect(screen.getByText(/disparo grande/i)).toBeInTheDocument(), { timeout: 2000 });
     await waitFor(() => expect(screen.getByText(/3\.?200/)).toBeInTheDocument(), { timeout: 6000 });
   });
+
+  it('filtro de período: escolher data inicial passa from ao listRuns', async () => {
+    const svc = await import('../../services/historicoService');
+    render(<HistoricoDisparos />);
+    await waitFor(() => expect(screen.getByText(/envie para arquivados/i)).toBeInTheDocument(), { timeout: 2000 });
+
+    const fromInput = screen.getByLabelText(/data inicial/i);
+    const { fireEvent } = await import('@testing-library/react');
+    fireEvent.change(fromInput, { target: { value: '2026-06-01' } });
+
+    await waitFor(() => {
+      const calls = (svc.listRuns as ReturnType<typeof vi.fn>).mock.calls;
+      const last = calls[calls.length - 1];
+      expect(last[1].from).toBeTruthy();
+      expect(String(last[1].from)).toContain('2026-06-01');
+    }, { timeout: 2000 });
+  });
 });

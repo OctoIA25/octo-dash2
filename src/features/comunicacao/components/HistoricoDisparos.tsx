@@ -39,6 +39,8 @@ export function HistoricoDisparos() {
   const [status, setStatus] = useState<string>('');
   const [q, setQ] = useState('');
   const [debouncedQ, setDebouncedQ] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const [openId, setOpenId] = useState<string | null>(null);
   const [report, setReport] = useState<RunReport['run'] | null>(null);
   const [failures, setFailures] = useState<NonNullable<RunReport['failures']>>([]);
@@ -56,12 +58,17 @@ export function HistoricoDisparos() {
     let active = true;
     setLoading(true);
     setError(false);
-    listRuns(tenantId as string, { status: status || undefined, q: debouncedQ || undefined })
+    listRuns(tenantId as string, {
+      status: status || undefined,
+      q: debouncedQ || undefined,
+      from: from ? new Date(`${from}T00:00:00`).toISOString() : undefined,
+      to: to ? new Date(`${to}T23:59:59.999`).toISOString() : undefined,
+    })
       .then((res) => { if (active) { setRuns(res.ok ? res.runs : []); if (!res.ok) setError(true); } })
       .catch(() => { if (active) setError(true); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [tenantId, tenantReady, status, debouncedQ]);
+  }, [tenantId, tenantReady, status, debouncedQ, from, to]);
 
   useEffect(() => {
     if (!tenantReady) return;
@@ -132,6 +139,26 @@ export function HistoricoDisparos() {
               {s ? (STATUS_META[s]?.label ?? s) : 'Todos'}
             </button>
           ))}
+          <label className="flex items-center gap-1 text-[11.5px] text-slate-500 dark:text-slate-400">
+            De
+            <input
+              type="date"
+              aria-label="Data inicial"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+              className="h-8 px-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[12px] text-slate-700 dark:text-slate-200"
+            />
+          </label>
+          <label className="flex items-center gap-1 text-[11.5px] text-slate-500 dark:text-slate-400">
+            até
+            <input
+              type="date"
+              aria-label="Data final"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              className="h-8 px-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[12px] text-slate-700 dark:text-slate-200"
+            />
+          </label>
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
