@@ -300,7 +300,10 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
         return count || 0;
       };
       const [done, failed, pending, processing] = await Promise.all([
-        countByStatus('done'), countByStatus('failed'), countByStatus('pending'), countByStatus('processing'),
+        countByStatus('done'),
+        countByStatus('failed'),
+        countByStatus('pending'),
+        countByStatus('processing'),
       ]);
       queueCounts = { done, failed, pending, processing };
     }

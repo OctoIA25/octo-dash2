@@ -166,6 +166,10 @@ describe('computeProgress', () => {
     const p = computeProgress(run, null);
     expect(p).toEqual({ status: 'failed', done: 0, failed: 10, pending: 0, total: 10 });
   });
+  it('tolera campos ausentes (|| 0)', () => {
+    expect(computeProgress({ status: 'done' }, null)).toEqual({ status: 'done', done: 0, failed: 0, pending: 0, total: 0 });
+    expect(computeProgress({ status: 'running', found_count: 10 }, { done: 5 })).toEqual({ status: 'running', done: 5, failed: 0, pending: 0, total: 10 });
+  });
 });
 
 describe('routes.resolveUserContext — permissões', () => {
