@@ -14,6 +14,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Megaphone, Users, FileText, Rocket, History, Settings, type LucideIcon } from 'lucide-react';
 import { DisparadorChat } from '../components/DisparadorChat';
 import { HistoricoDisparos } from '../components/HistoricoDisparos';
+import { PublicosManager } from '../components/PublicosManager';
 
 interface CommSection {
   id: string;
@@ -26,7 +27,7 @@ interface CommSection {
 /** A ordem aqui é a ordem da sub-navegação. 'disparador' é o default. */
 const SECTIONS: CommSection[] = [
   { id: 'disparador', label: 'Disparador', icon: Rocket, available: true },
-  { id: 'publicos', label: 'Públicos', icon: Users, available: false },
+  { id: 'publicos', label: 'Públicos', icon: Users, available: true },
   { id: 'templates', label: 'Templates', icon: FileText, available: false },
   { id: 'campanhas', label: 'Campanhas', icon: Megaphone, available: false },
   { id: 'historico', label: 'Histórico', icon: History, available: true },
@@ -84,6 +85,7 @@ export function ComunicacaoPage() {
  */
 function SectionContent({ sectionId }: { sectionId: string }) {
   if (sectionId === 'disparador') return <DisparadorChat />;
+  if (sectionId === 'publicos') return <PublicosManager />;
   if (sectionId === 'historico') return <HistoricoDisparos />;
 
   const meta = SECTIONS.find((s) => s.id === sectionId) ?? SECTIONS[0];
