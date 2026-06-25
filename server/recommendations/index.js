@@ -28,6 +28,7 @@ import { CHANNELS, resolveDelivery } from './channels.js';
 import { loadWhatsappContext, sendWhatsappTemplate } from './whatsappSender.js';
 import { runDueSchedules, computeNextRun } from './scheduler.js';
 import { runDueRecovery } from './recoveryWorker.js';
+import { runDueActions } from '../agent-actions/actionWorker.js';
 
 const PLATFORM_OWNER_EMAIL = 'octo.inteligenciaimobiliaria@gmail.com';
 const HISTORY_TABLE = 'lead_recommendations';
@@ -912,7 +913,33 @@ export async function startRecommendationScheduler(supabase, options = {}) {
       console.error('[recovery] erro na execução:', e?.message),
     );
   });
+
+  // Loop contínuo do outbox de ações (agent_action_queue).
+  // Drena a fila a cada OUTBOX_LOOP_MS ms (default 5s), com guarda de
+  // reentrância: se o tick anterior ainda está rodando, o novo é ignorado.
+  // O cron horário acima funciona como rede de segurança; o loop aqui garante
+  // baixa latência de entrega das ações do Agente Disparador.
+  const outboxLoopMs = Number(processEnv.OUTBOX_LOOP_MS) || 5_000;
+  let outboxTickRunning = false;
+  setInterval(() => {
+    if (outboxTickRunning) return; // tick anterior ainda em andamento: pula
+    outboxTickRunning = true;
+    // `deps` (makeSchedulerDeps) É o bundle que deliverRecommendation precisa:
+    // passamos deliver/getEnvironment achatados E o bundle inteiro como
+    // schedulerDeps (mesma forma do drain pós-confirm em agent-actions/routes.js).
+    // Passar `deps` cru deixaria deps.schedulerDeps=undefined e quebraria o envio.
+    runDueActions(supabase, {
+      deliver: deps.deliver,
+      schedulerDeps: deps,
+      getEnvironment: deps.getEnvironment,
+    }).catch((e) =>
+      console.error('[agent-actions] erro no loop do outbox:', e?.message),
+    ).finally(() => {
+      outboxTickRunning = false;
+    });
+  }, outboxLoopMs);
   console.log(`⏰ [scheduler] recomendações + recuperação ativos (cron: ${cronExpr})`);
+  console.log(`⚙️  [agent-actions] outbox loop ativo (intervalo: ${outboxLoopMs}ms)`);
   return task;
 }
 

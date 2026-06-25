@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { runDueActions } from './actionWorker.js';
+import { createTenantRateLimiter } from '../communication/rateLimiter.js';
 
 const NOW = 1_750_000_000_000;
 
@@ -9,6 +10,9 @@ const NOW = 1_750_000_000_000;
  *
  * `queue` é mutável: o claim altera status in-place, então uma 2ª chamada de
  * runDueActions NÃO re-pega o mesmo item (prova de idempotência do worker).
+ *
+ * `.or()` filtra next_attempt_at: itens com valor futuro são ignorados no select,
+ * tornando os testes de backoff verídicos (o mesmo item não é reclamado de novo).
  */
 function makeFake({ queue = [] } = {}) {
   const runUpdates = [];
@@ -16,6 +20,10 @@ function makeFake({ queue = [] } = {}) {
   const queueNode = () => {
     let mode = null;
     let runFilter = null;
+    // O or-filter passado pelo claim: "next_attempt_at.is.null,next_attempt_at.lte.<iso>"
+    // Extraímos o threshold do lte para filtrar no maybeSingle.
+    let orThresholdIso = null;
+
     const node = {
       _eqStatus: null,
       select() {
@@ -33,16 +41,30 @@ function makeFake({ queue = [] } = {}) {
         if (col === 'run_id') runFilter = val;
         return node;
       },
+      // Implementa o filtro de next_attempt_at do claim.
+      // Formato recebido: "next_attempt_at.is.null,next_attempt_at.lte.<isoString>"
+      or(expr) {
+        const m = /next_attempt_at\.lte\.(.+)$/.exec(expr);
+        if (m) orThresholdIso = m[1];
+        return node;
+      },
       order: () => node,
       limit: () => node,
       async maybeSingle() {
-        if (mode === 'select') {
-          // próximo pendente
-          const found = queue.find((q) => q.status === 'pending');
+        // SELECT puro (sem patch): busca próximo pendente elegível.
+        if (mode === 'select' && !node._patch) {
+          const found = queue.find((q) => {
+            if (q.status !== 'pending') return false;
+            if (!orThresholdIso) return true; // sem filtro or: aceita tudo
+            const nat = q.next_attempt_at;
+            if (!nat) return true; // IS NULL → elegível
+            return nat <= orThresholdIso; // lte threshold → elegível
+          });
           return { data: found ? { ...found } : null, error: null };
         }
-        if (mode === 'update') {
-          // claim: pending → processing (só vence se ainda pending)
+        // UPDATE + SELECT (chain com .update().eq().select().maybeSingle()):
+        // aplica o patch e retorna o item atualizado (claim atômico simulado).
+        if (node._patch && node._id) {
           const target = queue.find((q) => q.id === node._id);
           if (!target) return { data: null, error: null };
           if (node._eqStatus === 'pending' && target.status !== 'pending') {
@@ -56,7 +78,7 @@ function makeFake({ queue = [] } = {}) {
       // leitura por run (closeFinishedRuns): retorna status de todos do run
       then(resolve) {
         if (mode === 'update' && node._id) {
-          // finalize: aplica patch ao item por id (sem maybeSingle)
+          // finalize / releaseToPending: aplica patch ao item por id (sem maybeSingle)
           const target = queue.find((q) => q.id === node._id);
           if (target) Object.assign(target, node._patch);
           return resolve({ data: null, error: null });
@@ -106,6 +128,7 @@ const baseItem = (over) => ({
   payload: { templateParams: ['oi'] },
   status: 'pending',
   attempts: 0,
+  max_attempts: 5,
   created_at: '2025-01-01T00:00:00Z',
   ...over,
 });
@@ -158,10 +181,15 @@ describe('actionWorker.runDueActions', () => {
   });
 
   it('falha de envio → failed; run fechado como failed quando nada foi enviado', async () => {
-    const { supabase, runUpdates } = makeFake({ queue: [baseItem()] });
+    const { supabase, queue, runUpdates } = makeFake({
+      // attempts=4, max_attempts=5: após o claim attempts=5 → dead-letter
+      queue: [baseItem({ attempts: 4, max_attempts: 5 })],
+    });
     const deliver = vi.fn(async () => ({ ok: false, errorMessage: 'meta down' }));
     const summary = await runDueActions(supabase, { nowMs: NOW, deliver, schedulerDeps: {}, getEnvironment: () => 'production' });
     expect(summary.failed).toBe(1);
+    // item ficou failed (dead-letter na última tentativa)
+    expect(queue[0].status).toBe('failed');
     const close = runUpdates.find((u) => u.id === 'run-1');
     expect(close.patch.status).toBe('failed');
   });
@@ -187,5 +215,106 @@ describe('actionWorker.runDueActions', () => {
       getEnvironment: () => 'production',
     });
     expect(summary.processed).toBe(2);
+  });
+
+  // ─── Novos testes: backoff + max_attempts ───────────────────────────────────
+
+  it('falha transitória agenda retry: status volta a pending, next_attempt_at futuro, attempts incrementado', async () => {
+    const { supabase, queue } = makeFake({
+      queue: [baseItem({ id: 'i1', attempts: 0, max_attempts: 5 })],
+    });
+    // deliver retorna failed (ainda há tentativas restantes → retry com backoff)
+    const deliver = vi.fn(async () => ({ ok: false, status: 'failed', error: 'timeout' }));
+
+    const summary = await runDueActions(supabase, {
+      nowMs: NOW,
+      deliver,
+      schedulerDeps: {},
+      getEnvironment: () => 'production',
+      backoffBaseMs: 60_000,
+      backoffMaxMs: 3_600_000,
+    });
+
+    expect(summary.retried).toBe(1);
+    expect(summary.failed).toBe(0);
+    // item voltou a pending
+    expect(queue[0].status).toBe('pending');
+    // attempts foi incrementado pelo claim (0→1) e mantido no retry
+    expect(queue[0].attempts).toBe(1);
+    // next_attempt_at = NOW + base * 2^(1-1) = NOW + 60_000 * 1 = NOW + 60_000
+    const expectedNextAt = new Date(NOW + 60_000).toISOString();
+    expect(queue[0].next_attempt_at).toBe(expectedNextAt);
+  });
+
+  it('ao atingir max_attempts vira failed (dead-letter)', async () => {
+    // attempts inicial = max_attempts - 1 = 4; após o claim = 5 = max_attempts → dead-letter
+    const { supabase, queue } = makeFake({
+      queue: [baseItem({ id: 'i1', attempts: 4, max_attempts: 5 })],
+    });
+    const deliver = vi.fn(async () => ({ ok: false, status: 'failed', error: 'api error' }));
+
+    const summary = await runDueActions(supabase, {
+      nowMs: NOW,
+      deliver,
+      schedulerDeps: {},
+      getEnvironment: () => 'production',
+    });
+
+    expect(summary.failed).toBe(1);
+    expect(summary.retried).toBe(0);
+    expect(queue[0].status).toBe('failed');
+  });
+
+  it('rate-limit: não excede o burst no mesmo tick', async () => {
+    // 3 itens do mesmo tenant, burst=2 → no máximo 2 deliveries por tick
+    const { supabase, queue } = makeFake({
+      queue: [
+        baseItem({ id: 'a', tenant_id: 't1' }),
+        baseItem({ id: 'b', tenant_id: 't1' }),
+        baseItem({ id: 'c', tenant_id: 't1' }),
+      ],
+    });
+    const deliver = vi.fn(async () => ({ ok: true }));
+
+    // Relógio fixo (sem avanço): nenhum refill ocorre durante o tick
+    const rateLimiter = createTenantRateLimiter({ ratePerSec: 1, burst: 2, now: () => NOW });
+
+    const summary = await runDueActions(supabase, {
+      nowMs: NOW,
+      deliver,
+      schedulerDeps: {},
+      getEnvironment: () => 'production',
+      rateLimiter,
+    });
+
+    // Com burst=2, no máximo 2 deliveries devem ocorrer
+    expect(deliver.mock.calls.length).toBeLessThanOrEqual(2);
+    expect(summary.throttled).toBeGreaterThanOrEqual(1);
+    // Itens throttled voltam a pending (não failed, não done)
+    const throttledItems = queue.filter((q) => q.status === 'pending');
+    expect(throttledItems.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('sucesso continua finalizando done (regressão: caminho feliz não mudou)', async () => {
+    const { supabase, queue, runUpdates } = makeFake({
+      queue: [baseItem({ id: 'i1', attempts: 0, max_attempts: 5 })],
+    });
+    const deliver = vi.fn(async () => ({ ok: true, messageId: 'msg-ok' }));
+
+    const summary = await runDueActions(supabase, {
+      nowMs: NOW,
+      deliver,
+      schedulerDeps: {},
+      getEnvironment: () => 'production',
+    });
+
+    expect(summary.done).toBe(1);
+    expect(summary.failed).toBe(0);
+    expect(summary.retried).toBe(0);
+    expect(summary.throttled).toBe(0);
+    expect(queue[0].status).toBe('done');
+    const close = runUpdates.find((u) => u.id === 'run-1');
+    expect(close.patch.status).toBe('done');
+    expect(close.patch.sent_count).toBe(1);
   });
 });
