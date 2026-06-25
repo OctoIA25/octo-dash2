@@ -26,6 +26,7 @@ export type SidebarPermission =
   | 'gestao-equipe'   // Gestão de Equipe
   | 'imoveis'         // Imóveis
   | 'agentes-ia'      // Agentes de IA
+  | 'comunicacao'     // Comunicação (Disparador, Públicos, Templates...)
   | 'octo-chat'       // Octo Chat
   | 'chat'            // Chat (WhatsApp Oficial)
   | 'integracoes'     // Integrações
@@ -86,13 +87,13 @@ export interface PermissionsConfig {
 // Owner: Acesso total a tudo
 export const OWNER_SIDEBAR_PERMISSIONS: SidebarPermission[] = [
   'leads', 'notificacoes', 'metricas', 'juridico', 'estudo-mercado', 'recrutamento', 'gestao-equipe',
-  'imoveis', 'agentes-ia', 'octo-chat', 'chat', 'integracoes', 'central-leads', 'atividades', 'relatorios', 'metas', 'excel'
+  'imoveis', 'agentes-ia', 'comunicacao', 'octo-chat', 'chat', 'integracoes', 'central-leads', 'atividades', 'relatorios', 'metas', 'excel'
 ];
 
 // Admin: Acesso total ao tenant
 export const ADMIN_SIDEBAR_PERMISSIONS: SidebarPermission[] = [
   'leads', 'notificacoes', 'metricas', 'juridico', 'estudo-mercado', 'recrutamento', 'gestao-equipe',
-  'imoveis', 'agentes-ia', 'octo-chat', 'chat', 'integracoes', 'central-leads', 'atividades', 'relatorios', 'metas', 'excel'
+  'imoveis', 'agentes-ia', 'comunicacao', 'octo-chat', 'chat', 'integracoes', 'central-leads', 'atividades', 'relatorios', 'metas', 'excel'
 ];
 
 // Team Leader: Acesso intermediário
@@ -113,6 +114,7 @@ export const CORRETOR_SIDEBAR_PERMISSIONS: SidebarPermission[] = [
 // Abas bloqueadas por padrão para corretores
 export const CORRETOR_BLOCKED_SECTIONS: SidebarPermission[] = [
   'agentes-ia',      // ❌ Agentes de IA
+  'comunicacao',     // ❌ Comunicação (envio em massa — só owner/admin)
   'integracoes',     // ❌ Integrações
   'central-leads',   // ❌ Central de Leads
   'relatorios',      // ❌ Relatórios
