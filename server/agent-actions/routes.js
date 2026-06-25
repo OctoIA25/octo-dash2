@@ -173,7 +173,7 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
 
   // -------------------------------------------------------------------------
   // POST /preview — interpreta o comando e devolve a prévia. NÃO envia.
-  // body: { tenantId, command }
+  // body: { tenantId, command? | audienceId? }
   // -------------------------------------------------------------------------
   app.post(`${basePath}/preview`, requireSupabaseAuth, async (req, res) => {
     const { tenantId, command, audienceId } = req.body || {};

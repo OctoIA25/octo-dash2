@@ -21,6 +21,7 @@ import crypto from 'crypto';
 import { interpretCommand } from './interpreter.js';
 import { resolveSegment, resolveSegmentDual } from './segmentResolver.js';
 import { getAction } from './actionRegistry.js';
+import { validateSegment } from './segmentSchema.js';
 
 const RUNS_TABLE = 'agent_action_runs';
 const QUEUE_TABLE = 'agent_action_queue';
@@ -58,7 +59,9 @@ export async function previewOperation(supabase, input, deps = {}) {
       .from('audiences').select('segment').eq('id', audienceId).eq('tenant_id', tenantId).maybeSingle();
     if (audErr) return { ok: false, error: 'audience_lookup_failed', detail: audErr.message };
     if (!aud) return { ok: false, error: 'audience_not_found' };
-    operation = { action: 'send_whatsapp', segment: aud.segment, params: { message: '' }, needsMessage: true };
+    const segCheck = validateSegment(aud.segment);
+    if (!segCheck.ok) return { ok: false, error: 'invalid_segment' };
+    operation = { action: 'send_whatsapp', segment: segCheck.segment, params: { message: '' }, needsMessage: true };
   } else {
     if (!command || !String(command).trim()) return { ok: false, error: 'empty_command' };
     const interpreted = await interpret(command, deps.interpretOpts || {});

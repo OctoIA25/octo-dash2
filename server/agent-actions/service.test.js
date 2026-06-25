@@ -337,6 +337,17 @@ describe('previewOperation', () => {
     expect(r.ok).toBe(true);
     expect(r.preview.foundCount).toBe(1);
   });
+
+  it('preview por audienceId com segment inválido no banco → invalid_segment', async () => {
+    const supabase = makeFakeSupabaseForAudience({ type: 'nope' });
+    const r = await previewOperation(
+      supabase,
+      { audienceId: 'a1', tenantId: 't1', user: { id: 'u', role: 'admin' } },
+      { interpret: () => {}, resolve: async () => ({ ok: true, rows: [] }), nowMs: NOW },
+    );
+    expect(r.ok).toBe(false);
+    expect(r.error).toBe('invalid_segment');
+  });
 });
 
 /** resolve fake dual-aware: devolve rows + primarySource + diagnostic opcional. */
