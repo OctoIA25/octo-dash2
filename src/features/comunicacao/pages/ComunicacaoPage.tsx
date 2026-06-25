@@ -13,6 +13,7 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { Megaphone, Users, FileText, Rocket, History, Settings, type LucideIcon } from 'lucide-react';
 import { DisparadorChat } from '../components/DisparadorChat';
+import { HistoricoDisparos } from '../components/HistoricoDisparos';
 
 interface CommSection {
   id: string;
@@ -28,7 +29,7 @@ const SECTIONS: CommSection[] = [
   { id: 'publicos', label: 'Públicos', icon: Users, available: false },
   { id: 'templates', label: 'Templates', icon: FileText, available: false },
   { id: 'campanhas', label: 'Campanhas', icon: Megaphone, available: false },
-  { id: 'historico', label: 'Histórico', icon: History, available: false },
+  { id: 'historico', label: 'Histórico', icon: History, available: true },
   { id: 'configuracoes', label: 'Configurações', icon: Settings, available: false },
 ];
 
@@ -83,6 +84,7 @@ export function ComunicacaoPage() {
  */
 function SectionContent({ sectionId }: { sectionId: string }) {
   if (sectionId === 'disparador') return <DisparadorChat />;
+  if (sectionId === 'historico') return <HistoricoDisparos />;
 
   const meta = SECTIONS.find((s) => s.id === sectionId) ?? SECTIONS[0];
   return (

@@ -46,4 +46,18 @@ describe('HistoricoDisparos', () => {
     await waitFor(() => expect(screen.getByText(/João/)).toBeInTheDocument(), { timeout: 2000 });
     expect(screen.getByText(/timeout/i)).toBeInTheDocument();
   });
+
+  it('run em andamento exibe barra de progresso via getRunProgress', async () => {
+    const svc = await import('../../services/historicoService');
+    (svc.listRuns as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      runs: [{ id: 'r2', command_text: 'disparo grande', status: 'running', found_count: 10000, eligible_count: 10000, sent_count: 0, failed_count: 0, deduplicated_count: 0, requested_by_email: 'a@x.com', created_at: '2026-06-25T10:00:00Z', completed_at: null }],
+      limit: 50, offset: 0,
+    });
+    (svc.getRunProgress as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true, status: 'running', done: 3200, failed: 0, pending: 6800, total: 10000 });
+
+    render(<HistoricoDisparos />);
+    await waitFor(() => expect(screen.getByText(/disparo grande/i)).toBeInTheDocument(), { timeout: 2000 });
+    await waitFor(() => expect(screen.getByText(/3\.?200/)).toBeInTheDocument(), { timeout: 6000 });
+  });
 });

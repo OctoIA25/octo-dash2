@@ -5,7 +5,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useAuthContext } from '@/contexts/AuthContext';
-import { listRuns, type RunSummary } from '../services/historicoService';
+import { listRuns, getRunProgress, type RunSummary, type RunProgress } from '../services/historicoService';
 import { getRunReport, type RunReport } from '../services/disparadorService';
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
@@ -44,6 +44,7 @@ export function HistoricoDisparos() {
   const [failures, setFailures] = useState<NonNullable<RunReport['failures']>>([]);
 
   const tenantReady = Boolean(tenantId && tenantId !== 'owner');
+  const [progress, setProgress] = useState<Record<string, RunProgress>>({});
 
   useEffect(() => {
     const h = setTimeout(() => setDebouncedQ(q.trim()), 300);
@@ -61,6 +62,37 @@ export function HistoricoDisparos() {
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [tenantId, tenantReady, status, debouncedQ]);
+
+  useEffect(() => {
+    if (!tenantReady) return;
+    const runningIds = runs.filter((r) => r.status === 'running').map((r) => r.id);
+    if (runningIds.length === 0) return;
+
+    let active = true;
+    let inFlight = false;
+    const tick = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const results = await Promise.all(
+          runningIds.map((id) =>
+            getRunProgress(tenantId as string, id).then((p) => [id, p] as const).catch(() => null),
+          ),
+        );
+        if (!active) return;
+        setProgress((prev) => {
+          const next = { ...prev };
+          for (const r of results) if (r) next[r[0]] = r[1];
+          return next;
+        });
+      } finally {
+        inFlight = false;
+      }
+    };
+    tick();
+    const handle = setInterval(tick, 4000);
+    return () => { active = false; clearInterval(handle); };
+  }, [tenantId, tenantReady, runs]);
 
   const fmtDate = useMemo(
     () => (iso: string) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }),
@@ -142,6 +174,22 @@ export function HistoricoDisparos() {
                     )}
                   </span>
                 </div>
+                {run.status === 'running' && (() => {
+                  const p = progress[run.id];
+                  const total = p?.total || run.found_count || 0;
+                  const done = p?.done ?? 0;
+                  const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+                  return (
+                    <div className="mt-2">
+                      <div className="h-1.5 w-full rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                        <div className="h-full bg-amber-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                      </div>
+                      <p className="mt-1 text-[11px] text-slate-400 tabular-nums">
+                        {done.toLocaleString('pt-BR')} / {total.toLocaleString('pt-BR')} enviados
+                      </p>
+                    </div>
+                  );
+                })()}
               </li>
             ))}
           </ul>
