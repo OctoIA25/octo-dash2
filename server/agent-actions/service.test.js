@@ -240,6 +240,173 @@ describe('previewOperation', () => {
   });
 });
 
+/** resolve fake dual-aware: devolve rows + primarySource + diagnostic opcional. */
+const fakeResolveDual = (rows, { primarySource = 'kenlo', diagnostic } = {}) =>
+  vi.fn(async () => ({ ok: true, rows, primarySource, diagnostic }));
+
+describe('previewOperation — dual-source / sourceComparison', () => {
+  it('preview em shadow grava public_source_diagnostic e primary_source no run', async () => {
+    const { supabase, runs } = makeFake();
+    const diagnostic = { primaryCount: 1, secondaryCount: 1, inBoth: 1, onlyInPrimary: 0, onlyInSecondary: 0 };
+    const r = await previewOperation(
+      supabase,
+      { command: 'arquivados', tenantId: TENANT, user: adminUser },
+      {
+        nowMs: NOW,
+        interpret: fakeInterpret({
+          action: 'send_whatsapp',
+          segment: { type: 'archived' },
+          params: { message: 'Oi' },
+          needsMessage: false,
+        }),
+        resolve: fakeResolveDual([{ id: '1', name: 'A', phone: '5511999990000' }], {
+          primarySource: 'kenlo',
+          diagnostic,
+        }),
+      },
+    );
+    expect(r.ok).toBe(true);
+    const inserted = runs.get(r.previewToken);
+    expect(inserted.primary_source).toBe('kenlo');
+    expect(inserted.public_source_diagnostic).toEqual(diagnostic);
+    expect(r.sourceComparison).toMatchObject({ inBoth: 1, divergent: false });
+  });
+
+  it('preview kenlo_only (sem diagnostic) NÃO inclui sourceComparison nem grava diagnostic', async () => {
+    const { supabase, runs } = makeFake();
+    const r = await previewOperation(
+      supabase,
+      { command: 'arquivados', tenantId: TENANT, user: adminUser },
+      {
+        nowMs: NOW,
+        interpret: fakeInterpret({
+          action: 'send_whatsapp',
+          segment: { type: 'archived' },
+          params: { message: 'Oi' },
+          needsMessage: false,
+        }),
+        resolve: fakeResolveDual([{ id: '1', name: 'A', phone: '5511999990000' }], {
+          primarySource: 'kenlo',
+          diagnostic: undefined,
+        }),
+      },
+    );
+    expect(r.ok).toBe(true);
+    const inserted = runs.get(r.previewToken);
+    expect(inserted.public_source_diagnostic).toBeNull();
+    expect(inserted.primary_source).toBe('kenlo');
+    expect(r.sourceComparison).toBeUndefined();
+  });
+
+  it('preview com diagnostic truncated inclui sourceComparison: { truncated: true }', async () => {
+    const { supabase } = makeFake();
+    const r = await previewOperation(
+      supabase,
+      { command: 'arquivados', tenantId: TENANT, user: adminUser },
+      {
+        nowMs: NOW,
+        interpret: fakeInterpret({
+          action: 'send_whatsapp',
+          segment: { type: 'archived' },
+          params: { message: 'Oi' },
+          needsMessage: false,
+        }),
+        resolve: fakeResolveDual([{ id: '1', name: 'A', phone: '5511999990000' }], {
+          primarySource: 'kenlo',
+          diagnostic: { truncated: true },
+        }),
+      },
+    );
+    expect(r.ok).toBe(true);
+    expect(r.sourceComparison).toEqual({ truncated: true });
+  });
+
+  it('fakeResolve antigo (sem primarySource) mantém back-compat: grava null, sem sourceComparison', async () => {
+    const { supabase, runs } = makeFake();
+    const r = await previewOperation(
+      supabase,
+      { command: 'arquivados', tenantId: TENANT, user: adminUser },
+      {
+        nowMs: NOW,
+        interpret: fakeInterpret({
+          action: 'send_whatsapp',
+          segment: { type: 'archived' },
+          params: { message: 'Oi' },
+          needsMessage: false,
+        }),
+        resolve: fakeResolve([{ id: '1', name: 'A', phone: '5511999990000' }]),
+      },
+    );
+    expect(r.ok).toBe(true);
+    const inserted = runs.get(r.previewToken);
+    expect(inserted.primary_source).toBeNull();
+    expect(inserted.public_source_diagnostic).toBeNull();
+    expect(r.sourceComparison).toBeUndefined();
+  });
+});
+
+describe('confirmOperation — deriva modo primary-only do run.primary_source', () => {
+  function seedPendingRunWithSource(primarySource) {
+    const id = 'run-psrc';
+    const runs = new Map([
+      [
+        id,
+        {
+          id,
+          tenant_id: TENANT,
+          action_type: 'send_whatsapp',
+          segment: { type: 'archived' },
+          status: 'pending',
+          eligible_count: 1,
+          excluded_count: 0,
+          requested_by_user_id: 'u-admin',
+          primary_source: primarySource,
+        },
+      ],
+    ]);
+    return { id, runs };
+  }
+
+  it('primary_source crm → confirm chama resolve com mode=leads_only', async () => {
+    const { id, runs } = seedPendingRunWithSource('crm');
+    const { supabase } = makeFake({ runs });
+    const spyResolve = vi.fn(async () => ({ ok: true, rows: [], primarySource: 'crm' }));
+    await confirmOperation(
+      supabase,
+      { previewToken: id, tenantId: TENANT, message: 'Oi', user: adminUser },
+      { nowMs: NOW, resolve: spyResolve },
+    );
+    const ctx = spyResolve.mock.calls[0][2];
+    expect(ctx.mode).toBe('leads_only');
+  });
+
+  it('primary_source kenlo → confirm chama resolve com mode=kenlo_only', async () => {
+    const { id, runs } = seedPendingRunWithSource('kenlo');
+    const { supabase } = makeFake({ runs });
+    const spyResolve = vi.fn(async () => ({ ok: true, rows: [], primarySource: 'kenlo' }));
+    await confirmOperation(
+      supabase,
+      { previewToken: id, tenantId: TENANT, message: 'Oi', user: adminUser },
+      { nowMs: NOW, resolve: spyResolve },
+    );
+    const ctx = spyResolve.mock.calls[0][2];
+    expect(ctx.mode).toBe('kenlo_only');
+  });
+
+  it('primary_source null (legado) → confirm chama resolve com mode=kenlo_only', async () => {
+    const { id, runs } = seedPendingRunWithSource(null);
+    const { supabase } = makeFake({ runs });
+    const spyResolve = vi.fn(async () => ({ ok: true, rows: [], primarySource: 'kenlo' }));
+    await confirmOperation(
+      supabase,
+      { previewToken: id, tenantId: TENANT, message: 'Oi', user: adminUser },
+      { nowMs: NOW, resolve: spyResolve },
+    );
+    const ctx = spyResolve.mock.calls[0][2];
+    expect(ctx.mode).toBe('kenlo_only');
+  });
+});
+
 describe('confirmOperation — confirmação obrigatória e idempotência', () => {
   function seedPendingRun(over = {}) {
     const id = 'run-123';

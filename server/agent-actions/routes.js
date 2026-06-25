@@ -73,6 +73,26 @@ async function resolveUserContext(supabase, req, tenantId) {
   return { ok: true, role: membership.role, brokerName };
 }
 
+/**
+ * Lê o modo de fonte pública configurado para o tenant.
+ * Retorna o valor da tabela `agent_public_source_config` ou o fallback seguro (kenlo_only).
+ * Resiliente: qualquer erro de query ou exceção retorna o fallback — nunca derruba a rota.
+ */
+async function resolvePublicSourceMode(supabase, tenantId) {
+  const fallback = process.env.AGENT_PUBLIC_SOURCE_DEFAULT || 'kenlo_only';
+  try {
+    const { data, error } = await supabase
+      .from('agent_public_source_config')
+      .select('mode')
+      .eq('tenant_id', tenantId)
+      .maybeSingle();
+    if (error || !data) return fallback;
+    return data.mode || fallback;
+  } catch {
+    return fallback; // resiliente: qualquer falha → default seguro (kenlo_only)
+  }
+}
+
 /** Mapeia erros de domínio para HTTP status. */
 function statusFor(error) {
   if (!error) return 500;
@@ -108,9 +128,12 @@ export function registerAgentActionRoutes(app, supabase, options = {}) {
     const ctx = await resolveUserContext(supabase, req, tenantId);
     if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
 
+    // Lê o modo de fonte pública configurado para o tenant (resiliente: fallback = kenlo_only).
+    const mode = await resolvePublicSourceMode(supabase, tenantId);
+
     const result = await previewOperation(
       supabase,
-      { command, tenantId, user: { id: req.userId, email: req.userEmail, role: ctx.role, brokerName: ctx.brokerName } },
+      { command, tenantId, mode, user: { id: req.userId, email: req.userEmail, role: ctx.role, brokerName: ctx.brokerName } },
       // Interpretação via n8n: passamos contexto p/ o payload; a URL vem da env
       // (DISPARADOR_WEBHOOK_URL) ou do default no interpreter.
       { interpretOpts: { webhookUrl: options.disparadorWebhookUrl, usuario: req.userEmail } },
@@ -192,4 +215,4 @@ export function registerAgentActionRoutes(app, supabase, options = {}) {
   });
 }
 
-export const __test__ = { resolveUserContext, statusFor, isPlatformOwner };
+export const __test__ = { resolveUserContext, statusFor, isPlatformOwner, resolvePublicSourceMode };

@@ -19,7 +19,7 @@
 
 import crypto from 'crypto';
 import { interpretCommand } from './interpreter.js';
-import { resolveSegment } from './segmentResolver.js';
+import { resolveSegment, resolveSegmentDual } from './segmentResolver.js';
 import { getAction } from './actionRegistry.js';
 
 const RUNS_TABLE = 'agent_action_runs';
@@ -41,10 +41,10 @@ const MASS_ROLES = new Set(['owner', 'admin', 'team_leader']);
  *              interpretOpts é repassado ao interpreter (webhookUrl/usuario do n8n).
  */
 export async function previewOperation(supabase, input, deps = {}) {
-  const { command, tenantId, user = {} } = input;
+  const { command, tenantId, mode, user = {} } = input;
   const {
     interpret = interpretCommand,
-    resolve = resolveSegment,
+    resolve = resolveSegmentDual,
     nowMs = Date.now(),
     maxRecipients = DEFAULT_MAX_RECIPIENTS,
   } = deps;
@@ -72,7 +72,9 @@ export async function previewOperation(supabase, input, deps = {}) {
   }
 
   // 3) Resolve o segmento (reusa a camada de leads, sempre tenant-scoped).
-  const resolved = await resolve(supabase, operation.segment, { tenantId, brokerScope, nowMs });
+  //    `mode` vem do input (injetado pela rota via config de tenant). Se ausente,
+  //    resolveSegmentDual cai em kenlo_only por default — comportamento idêntico ao atual.
+  const resolved = await resolve(supabase, operation.segment, { tenantId, brokerScope, nowMs, mode });
   if (!resolved.ok) return { ok: false, error: resolved.error, detail: resolved.detail };
 
   const found = resolved.rows;
@@ -119,11 +121,33 @@ export async function previewOperation(supabase, input, deps = {}) {
     requested_by_email: user.email || null,
     requested_by_role: user.role || null,
     created_at: nowIso,
+    // Campos de diagnóstico dual-source (defensivos: undefined → null para fakes antigos).
+    primary_source: resolved.primarySource ?? null,
+    public_source_diagnostic: resolved.diagnostic ?? null,
   });
   if (insErr) return { ok: false, error: 'persist_failed', detail: insErr.message };
 
   // Guarda os elegíveis no payload do run não — para evitar duplicar dados
   // sensíveis e divergência, a confirmação RE-RESOLVE o segmento. Ver confirm.
+
+  // Monta sourceComparison apenas quando há diagnostic (shadow/dual mode).
+  // Se diagnostic for { truncated: true }, repassa truncado. Nenhum telefone exposto.
+  let sourceComparison;
+  const diag = resolved.diagnostic;
+  if (diag !== undefined && diag !== null) {
+    if (diag.truncated) {
+      sourceComparison = { truncated: true };
+    } else {
+      sourceComparison = {
+        primaryCount: diag.primaryCount,
+        secondaryCount: diag.secondaryCount,
+        inBoth: diag.inBoth,
+        onlyInPrimary: diag.onlyInPrimary,
+        onlyInSecondary: diag.onlyInSecondary,
+        divergent: (diag.onlyInPrimary > 0 || diag.onlyInSecondary > 0),
+      };
+    }
+  }
 
   return {
     ok: true,
@@ -140,6 +164,9 @@ export async function previewOperation(supabase, input, deps = {}) {
       // amostra de nomes para a UI ("João Silva, Maria..."), sem expor telefones.
       sampleNames: capped.slice(0, 10).map((l) => l.name).filter(Boolean),
     },
+    // Presente apenas quando o modo é dual-source (shadow/leads_primary).
+    // Ausente em kenlo_only / leads_only (sem diagnóstico).
+    ...(sourceComparison !== undefined ? { sourceComparison } : {}),
   };
 }
 
@@ -154,7 +181,7 @@ export async function previewOperation(supabase, input, deps = {}) {
  */
 export async function confirmOperation(supabase, input, deps = {}) {
   const { previewToken, tenantId, message, user = {} } = input;
-  const { resolve = resolveSegment, nowMs = Date.now() } = deps;
+  const { resolve = resolveSegmentDual, nowMs = Date.now() } = deps;
 
   if (!previewToken) return { ok: false, error: 'missing_preview_token' };
   if (!tenantId) return { ok: false, error: 'tenant_required' };
@@ -200,7 +227,11 @@ export async function confirmOperation(supabase, input, deps = {}) {
   const brokerScope = isMass ? null : user.brokerName || null;
   if (!isMass && !brokerScope) return { ok: false, error: 'forbidden_no_broker_identity' };
 
-  const resolved = await resolve(supabase, run.segment, { tenantId, brokerScope, nowMs });
+  // Deriva o modo "primary-only" a partir da fonte gravada no run (sem re-rodar shadow/diff).
+  // null/legado → kenlo_only (default seguro); 'crm' → leads_only.
+  const confirmMode = run.primary_source === 'crm' ? 'leads_only' : 'kenlo_only';
+
+  const resolved = await resolve(supabase, run.segment, { tenantId, brokerScope, nowMs, mode: confirmMode });
   if (!resolved.ok) return { ok: false, error: resolved.error, detail: resolved.detail };
 
   // 4) Monta os itens elegíveis (dedup + elegibilidade), até o limite gravado.

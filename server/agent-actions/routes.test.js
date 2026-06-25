@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { __test__ } from './routes.js';
 
-const { resolveUserContext, statusFor, isPlatformOwner } = __test__;
+const { resolveUserContext, statusFor, isPlatformOwner, resolvePublicSourceMode } = __test__;
 
 describe('routes.statusFor — mapeamento de erro → HTTP', () => {
   it('permissão → 403', () => {
@@ -49,6 +49,59 @@ function fakeSupabase(tables) {
     },
   };
 }
+
+/** Fake supabase para resolvePublicSourceMode: permite customizar por tabela e comportamento. */
+function fakeSupabaseForMode({ data = null, error = null, throws = false } = {}) {
+  return {
+    from() {
+      const node = {
+        select: () => node,
+        eq: () => node,
+        maybeSingle: async () => {
+          if (throws) throw new Error('network_timeout');
+          return { data, error };
+        },
+      };
+      return node;
+    },
+  };
+}
+
+describe('routes.resolvePublicSourceMode', () => {
+  it('retorna o mode da tabela quando a linha existe', async () => {
+    const supabase = fakeSupabaseForMode({ data: { mode: 'shadow_leads' } });
+    const result = await resolvePublicSourceMode(supabase, 't1');
+    expect(result).toBe('shadow_leads');
+  });
+
+  it('retorna kenlo_only quando não existe linha (data null, sem error)', async () => {
+    const supabase = fakeSupabaseForMode({ data: null, error: null });
+    const result = await resolvePublicSourceMode(supabase, 't1');
+    expect(result).toBe('kenlo_only');
+  });
+
+  it('retorna kenlo_only quando a query retorna error', async () => {
+    const supabase = fakeSupabaseForMode({ data: null, error: { message: 'table not found' } });
+    const result = await resolvePublicSourceMode(supabase, 't1');
+    expect(result).toBe('kenlo_only');
+  });
+
+  it('retorna kenlo_only quando a query lança exceção (rede, timeout)', async () => {
+    const supabase = fakeSupabaseForMode({ throws: true });
+    const result = await resolvePublicSourceMode(supabase, 't1');
+    expect(result).toBe('kenlo_only');
+  });
+
+  it('respeita AGENT_PUBLIC_SOURCE_DEFAULT como fallback quando não há linha', async () => {
+    const original = process.env.AGENT_PUBLIC_SOURCE_DEFAULT;
+    process.env.AGENT_PUBLIC_SOURCE_DEFAULT = 'leads_only';
+    const supabase = fakeSupabaseForMode({ data: null });
+    const result = await resolvePublicSourceMode(supabase, 't1');
+    if (original === undefined) delete process.env.AGENT_PUBLIC_SOURCE_DEFAULT;
+    else process.env.AGENT_PUBLIC_SOURCE_DEFAULT = original;
+    expect(result).toBe('leads_only');
+  });
+});
 
 describe('routes.resolveUserContext — permissões', () => {
   it('platform owner: role owner sem membership', async () => {
