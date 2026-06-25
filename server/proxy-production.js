@@ -26,6 +26,7 @@ import { createWatermarkRouter } from './watermark/routes.js';
 import { createWorker } from './watermark/worker.js';
 import { promises } from 'dns';
 import { assertSafeHttpUrl, parseHttpUrl } from './security/ssrfGuard.js';
+import { normalizePhone, phonesMatch } from './utils/phone.js';
 
 // Timeout do fetch de webhooks de saída (evita que um endpoint lento trave o loop de polling).
 const WEBHOOK_FETCH_TIMEOUT_MS = 10000;
@@ -771,44 +772,6 @@ const normalizeTemperature = (value) => {
 // ============================================
 const tenantRoletaState = new Map();
 
-/**
- * Normaliza telefone para formato padrão do sistema
- * Sempre retorna com código do país +55
- * @param {string} phone - Telefone em qualquer formato
- * @param {boolean} withCountryCode - Se true, retorna com 55 no início (default: true)
- * @returns {string|null} Telefone normalizado ou null
- */
-const normalizePhone = (phone, withCountryCode = true) => {
-  if (!phone) return null;
-  let clean = String(phone).replace(/\D/g, '');
-  
-  // Remover código do país se presente para normalizar
-  if (clean.length > 11 && clean.startsWith('55')) {
-    clean = clean.substring(2);
-  }
-  
-  // Se tiver 10 dígitos (DDD + 8), adicionar 9 após DDD (celular)
-  if (clean.length === 10) {
-    clean = clean.substring(0, 2) + '9' + clean.substring(2);
-  }
-  
-  // Adicionar código do país +55 se solicitado
-  if (withCountryCode && clean.length === 11) {
-    clean = '55' + clean;
-  }
-  
-  return clean;
-};
-
-/**
- * Compara dois telefones normalizados (ignora código do país)
- */
-const phonesMatch = (phone1, phone2) => {
-  if (!phone1 || !phone2) return false;
-  const p1 = normalizePhone(phone1, false);
-  const p2 = normalizePhone(phone2, false);
-  return p1 && p2 && p1 === p2;
-};
 
 /**
  * Busca todos os corretores da aba "Acessos e Permissões" (tenant_brokers + tenant_memberships)
@@ -839,7 +802,7 @@ const getAllBrokersFromACL = async (tenantId) => {
           auth_user_id: broker.auth_user_id,
           name: broker.name,
           email: broker.email,
-          phone: normalizePhone(broker.phone),
+          phone: normalizePhone(broker.phone, { withCountryCode: true }),
           photo_url: broker.photo_url,
           status: broker.status
         });
@@ -879,7 +842,7 @@ const getAllBrokersFromACL = async (tenantId) => {
             auth_user_id: profile.id,
             name: profile.full_name || profile.email?.split('@')[0] || 'Usuário',
             email: profile.email,
-            phone: normalizePhone(profile.phone),
+            phone: normalizePhone(profile.phone, { withCountryCode: true }),
             photo_url: profile.avatar_url,
             status: 'active',
             role: memberRole
@@ -1079,7 +1042,7 @@ const resolveBrokerForLead = async (propertyCode, tenantId, rawData = null) => {
         broker = { 
           name: attendedBroker.name, 
           id: attendedBroker.id?.toString() || null,
-          phone: normalizePhone(attendedBroker.phone || attendedBroker.cel),
+          phone: normalizePhone(attendedBroker.phone || attendedBroker.cel, { withCountryCode: true }),
           email: attendedBroker.email
         };
         method = 'kenlo_attended_by';
@@ -1125,7 +1088,7 @@ const resolveBrokerForLead = async (propertyCode, tenantId, rawData = null) => {
       if (!broker && cached.agent_name) {
         broker = { 
           name: cached.agent_name, 
-          phone: normalizePhone(cached.agent_phone),
+          phone: normalizePhone(cached.agent_phone, { withCountryCode: true }),
           email: cached.agent_email
         };
         method = 'xml_property_cache';
@@ -1167,7 +1130,7 @@ const resolveBrokerForLead = async (propertyCode, tenantId, rawData = null) => {
         broker = { 
           name: manual.corretor_nome, 
           id: manual.corretor_id, 
-          phone: normalizePhone(manual.corretor_telefone),
+          phone: normalizePhone(manual.corretor_telefone, { withCountryCode: true }),
           email: manual.corretor_email
         };
         method = 'meus_imoveis';
@@ -1213,7 +1176,7 @@ const getNextBrokerFromRoleta = async (tenantId) => {
         id: p.broker_id,
         name: p.broker_name,
         email: p.broker_email,
-        phone: normalizePhone(p.broker_phone)
+        phone: normalizePhone(p.broker_phone, { withCountryCode: true })
       }));
       console.log(`🎰 Roleta: ${brokerList.length} corretor(es) configurados na roleta`);
     }
@@ -1245,7 +1208,7 @@ const getNextBrokerFromRoleta = async (tenantId) => {
           .map(b => ({
             id: b.corretor_id,
             name: b.corretor_nome,
-            phone: normalizePhone(b.corretor_telefone),
+            phone: normalizePhone(b.corretor_telefone, { withCountryCode: true }),
             email: b.corretor_email
           }));
       }
@@ -3429,7 +3392,7 @@ const getNextBrokerFromTeamQueue = async (tenantId, originalCorretorUserId, orig
           id: m.user_id,
           name: p.full_name || p.email?.split('@')[0] || 'Corretor',
           email: p.email || '',
-          phone: normalizePhone(p.phone),
+          phone: normalizePhone(p.phone, { withCountryCode: true }),
           team,
           leader_user_id
         };
@@ -4472,7 +4435,7 @@ const resolveBrokerForAssignment = async (tenantId, input) => {
   if (id) {
     query = query.or(`id.eq.${id},auth_user_id.eq.${id}`);
   } else if (phone) {
-    const clean = normalizePhone(phone, false);
+    const clean = normalizePhone(phone);
     query = query.or(`phone.eq.${clean},phone.eq.${phone}`);
   } else if (name) {
     query = query.ilike('name', name);
