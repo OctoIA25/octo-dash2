@@ -113,6 +113,54 @@ export async function countImoveisAtivos(supabase, { tenantId }) {
   return count || 0;
 }
 
+/**
+ * Conta imóveis captados no período por exclusividade (imoveis_locais.created_at).
+ * Dois counts agregados (head: true) → zero linhas trafegadas, agregação no banco.
+ * Em erro, retorna zeros (KPI auxiliar não derruba o painel).
+ */
+export async function countCaptacao(supabase, { tenantId, period }) {
+  const base = () => supabase
+    .from('imoveis_locais')
+    .select('id', { count: 'exact', head: true })
+    .eq('tenant_id', tenantId)
+    .gte('created_at', dayStartUtc(period.startDate))
+    .lte('created_at', dayEndUtc(period.endDate));
+
+  const [exc, sem] = await Promise.all([
+    base().eq('exclusivo', true),
+    base().eq('exclusivo', false),
+  ]);
+
+  if (exc.error || sem.error) {
+    console.error('[kpis] falha ao contar captação:', (exc.error || sem.error).message);
+    return { exclusiva: 0, semExclusividade: 0 };
+  }
+  return { exclusiva: exc.count || 0, semExclusividade: sem.count || 0 };
+}
+
+/**
+ * Conta corretores ATIVOS do tenant.
+ *
+ * Nesta base, `tenant_memberships` NÃO tem coluna `status`: a tabela só guarda
+ * (id, tenant_id, user_id, role, team_id, leader_user_id, permissions,
+ * created_at). "Ativo" = possuir uma membership com role comercial — não há um
+ * estado de ativação a filtrar. Agregação no banco; em erro, 0.
+ */
+export async function countCorretoresAtivos(supabase, { tenantId }) {
+  const { count, error } = await supabase
+    .from('tenant_memberships')
+    .select('user_id', { count: 'exact', head: true })
+    .eq('tenant_id', tenantId)
+    .in('role', ['corretor', 'admin', 'team_leader']);
+  if (error) {
+    // .message do Supabase vem vazio em erros de schema (ex.: coluna inexistente,
+    // código 42703); logar code/details/hint expõe a causa raiz.
+    console.error('[kpis] falha ao contar corretores:', error.message, error.code, error.details, error.hint);
+    return 0;
+  }
+  return count || 0;
+}
+
 const clampPercent = (n) => Math.max(0, Math.min(100, n));
 
 function formatGoalValue(value, unit) {

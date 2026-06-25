@@ -4,9 +4,11 @@ exports[`buildOverview — regressão do modo legado (sem config) > snapshot dos
 {
   "cards": [
     {
+      "category": "geral",
       "displayOrder": 0,
       "displayValue": "4",
       "id": "totalLeads",
+      "isFeatured": false,
       "key": "totalLeads",
       "label": "Total de Leads",
       "metricKey": "totalLeads",
@@ -21,9 +23,11 @@ exports[`buildOverview — regressão do modo legado (sem config) > snapshot dos
       "unit": "count",
     },
     {
+      "category": "geral",
       "displayOrder": 1,
       "displayValue": "1",
       "id": "vendas",
+      "isFeatured": false,
       "key": "vendas",
       "label": "Vendas",
       "metricKey": "vendas",
@@ -38,9 +42,11 @@ exports[`buildOverview — regressão do modo legado (sem config) > snapshot dos
       "unit": "count",
     },
     {
+      "category": "geral",
       "displayOrder": 2,
       "displayValue": "R$ 650.000",
       "id": "valorVendas",
+      "isFeatured": false,
       "key": "valorVendas",
       "label": "Valor em Vendas",
       "metricKey": "valorVendas",
@@ -55,9 +61,11 @@ exports[`buildOverview — regressão do modo legado (sem config) > snapshot dos
       "unit": "count",
     },
     {
+      "category": "geral",
       "displayOrder": 3,
       "displayValue": "7",
       "id": "imoveisAtivos",
+      "isFeatured": false,
       "key": "imoveisAtivos",
       "label": "Imóveis Ativos",
       "metricKey": "imoveisAtivos",
@@ -69,9 +77,11 @@ exports[`buildOverview — regressão do modo legado (sem config) > snapshot dos
       "unit": "count",
     },
     {
+      "category": "geral",
       "displayOrder": 4,
       "displayValue": "32min",
       "id": "tempoMedioResposta",
+      "isFeatured": false,
       "key": "tempoMedioResposta",
       "label": "Tempo Médio de Resposta",
       "metricKey": "tempoMedioResposta",
@@ -86,9 +96,11 @@ exports[`buildOverview — regressão do modo legado (sem config) > snapshot dos
       "unit": "count",
     },
     {
+      "category": "geral",
       "displayOrder": 5,
       "displayValue": "75.0%",
       "id": "taxaAtendimento",
+      "isFeatured": false,
       "key": "taxaAtendimento",
       "label": "Taxa de Atendimento",
       "metricKey": "taxaAtendimento",

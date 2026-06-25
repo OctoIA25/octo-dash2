@@ -21,6 +21,8 @@ import {
   previousMonthPeriod,
 } from './kpisPeriod.js';
 import {
+  countCaptacao,
+  countCorretoresAtivos,
   countImoveisAtivos,
   fetchCommercialTotals,
   fetchGoals,
@@ -128,6 +130,8 @@ export function makeKpisHandler(supabase) {
         currentLeads,
         previousLeads,
         imoveisAtivos,
+        captacao,
+        tamanhoEquipe,
         goals,
         commercialCurrent,
         commercialPrevious,
@@ -138,6 +142,8 @@ export function makeKpisHandler(supabase) {
         fetchLeads(supabase, { tenantId, period }),
         fetchLeads(supabase, { tenantId, period: prevPeriod }),
         countImoveisAtivos(supabase, { tenantId }),
+        countCaptacao(supabase, { tenantId, period }),
+        countCorretoresAtivos(supabase, { tenantId }),
         fetchGoals(supabase, { tenantId }),
         fetchCommercialTotals(supabase, { tenantId, period }),
         fetchCommercialTotals(supabase, { tenantId, period: prevPeriod }),
@@ -146,11 +152,22 @@ export function makeKpisHandler(supabase) {
         fetchKpiValues(supabase, periodScope),
       ]);
 
+      const counts = {
+        imoveisAtivos,
+        captacaoExclusiva: captacao.exclusiva,
+        captacaoSemExclusividade: captacao.semExclusividade,
+        tamanhoEquipe,
+        vgv: commercialCurrent.vgv,
+        vgc: commercialCurrent.vgc,
+        vgvPrev: commercialPrevious.vgv,
+        vgcPrev: commercialPrevious.vgc,
+      };
+
       const overview = buildOverview({
         period,
         currentLeads,
         previousLeads,
-        imoveisAtivos,
+        counts,
         goals,
         commercialCurrent,
         commercialPrevious,

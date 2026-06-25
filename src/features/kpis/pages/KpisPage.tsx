@@ -14,13 +14,15 @@ import type { KpiPeriod } from '../types';
 import { computeCanManageKpis } from '../admin/hooks/useKpiAdmin';
 import { useAuthContext } from '@/contexts/AuthContext';
 import {
-  KpiCards,
   KpiCommercialCharts,
   KpiFunnelCard,
   KpiGoalsCard,
   KpiPriceRangesCard,
   KpiSourcesCard,
 } from '../components/KpiComponents';
+import { groupCardsByCategory } from '../groupCardsByCategory';
+import { CATEGORY_ORDER, CATEGORY_META } from '../components/kpiCategoryConfig';
+import { KpiCategorySection } from '../components/KpiCategorySection';
 
 /** Próximo mês a partir de um período (sem ultrapassar o mês atual). */
 function nextMonthPeriod(period: KpiPeriod): KpiPeriod {
@@ -41,7 +43,7 @@ export function KpisPage() {
   const navigate = useNavigate();
   const canManageKpis = computeCanManageKpis({ isGestao, isOwner });
 
-  const cards = data?.cards ?? [];
+  const cards = useMemo(() => data?.cards ?? [], [data?.cards]);
   const funnel = data?.funnel;
   const sources = data?.sources ?? [];
   const priceRanges = data?.priceRanges ?? [];
@@ -49,6 +51,17 @@ export function KpisPage() {
   const goals = data?.goals ?? [];
 
   const atCurrentMonth = useMemo(() => isCurrentMonth(period), [period]);
+  const grouped = useMemo(() => groupCardsByCategory(cards, CATEGORY_ORDER), [cards]);
+
+  const comercialExtra = <KpiCommercialCharts commercial={commercial} />;
+  const operacaoExtra = (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <KpiSourcesCard sources={sources} />
+      <KpiPriceRangesCard ranges={priceRanges} />
+    </div>
+  );
+  const equipeExtra = <KpiGoalsCard goals={goals} />;
+  const funilExtra = funnel ? <KpiFunnelCard funnel={funnel} /> : null;
 
   if (!tenantReady) {
     return (
@@ -118,37 +131,52 @@ export function KpisPage() {
           </div>
         )}
 
-        {/* Cards principais */}
-        <div className="mb-4">
-          <KpiCards cards={cards} isLoading={isLoading} />
-        </div>
+        {/* Índice de categorias (navegação rápida) */}
+        <nav className="flex items-center gap-2 overflow-x-auto pb-1 mb-5 -mx-1 px-1">
+          {CATEGORY_ORDER.filter((id) => (grouped[id]?.length ?? 0) > 0).map((id) => {
+            const meta = CATEGORY_META[id];
+            const Icon = meta.icon;
+            return (
+              <a
+                key={id}
+                href={`#kpi-cat-${id}`}
+                className="inline-flex items-center gap-1.5 shrink-0 h-8 px-3 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[12.5px] font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+              >
+                <Icon className={`w-3.5 h-3.5 ${meta.color.headerIcon}`} strokeWidth={2.25} /> {meta.title}
+              </a>
+            );
+          })}
+        </nav>
 
-        {/* VGV / VGC — comparação mês a mês */}
-        <div className="mb-4">
-          <KpiCommercialCharts commercial={commercial} />
-        </div>
-
-        {/* Funil + Metas */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
-          <div className="lg:col-span-2">
-            {funnel ? (
-              <KpiFunnelCard funnel={funnel} />
-            ) : (
-              <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 text-center text-[12px] text-slate-400">
-                {isLoading ? 'Carregando funil...' : 'Sem dados de funil.'}
-              </div>
-            )}
-          </div>
-          <KpiGoalsCard goals={goals} />
-        </div>
-
-        {/* Fontes + Faixas */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <KpiSourcesCard sources={sources} />
-          <KpiPriceRangesCard ranges={priceRanges} />
-        </div>
-
-        <div className="h-4" />
+        {isLoading && cards.length === 0 ? (
+          <div className="py-16 text-center text-[13px] text-slate-400">Carregando indicadores…</div>
+        ) : (
+          <>
+            <KpiCategorySection
+              category="comercial" {...CATEGORY_META.comercial}
+              cards={grouped.comercial ?? []}
+              extra={<div className="space-y-4">{funilExtra}{comercialExtra}</div>}
+            />
+            <KpiCategorySection
+              category="marketing" {...CATEGORY_META.marketing}
+              cards={grouped.marketing ?? []}
+            />
+            <KpiCategorySection
+              category="operacao" {...CATEGORY_META.operacao}
+              cards={grouped.operacao ?? []}
+              extra={operacaoExtra}
+            />
+            <KpiCategorySection
+              category="equipe" {...CATEGORY_META.equipe}
+              cards={grouped.equipe ?? []}
+              extra={equipeExtra}
+            />
+            <KpiCategorySection
+              category="geral" {...CATEGORY_META.geral}
+              cards={grouped.geral ?? []}
+            />
+          </>
+        )}
       </div>
     </div>
   );

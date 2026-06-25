@@ -162,8 +162,20 @@ function formatMinutes(min) {
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
-/** Calcula os 6 valores nativos de KPI e os indexa por metricKey. */
-function nativeCardValues(current, previous, imoveisAtivos) {
+/** Conta leads que chegaram a 'Visita' ou além (Visita, Proposta, Fechamento). */
+function countVisitaOuAlem(leads) {
+  const ALEM = new Set(['Visita', 'Proposta', 'Fechamento']);
+  let n = 0;
+  for (const lead of leads) {
+    if (ALEM.has(classifyStage(leadStage(lead)))) n += 1;
+  }
+  return n;
+}
+
+/** Calcula os valores nativos de KPI e os indexa por metricKey. */
+// `export` para permitir teste direto (antes era interna).
+export function nativeCardValues(current, previous, counts) {
+  const c = counts || {};
   const totalLeads = current.length, totalLeadsPrev = previous.length;
   const vendas = countVendas(current), vendasPrev = countVendas(previous);
   const respMin = avgResponseMinutes(current), respMinPrev = avgResponseMinutes(previous);
@@ -171,13 +183,35 @@ function nativeCardValues(current, previous, imoveisAtivos) {
   const taxaAtend = totalLeads > 0 ? round1((atendidos / totalLeads) * 100) : 0;
   const atendidosPrev = previous.filter((l) => !!l.first_response_at).length;
   const taxaAtendPrev = totalLeadsPrev > 0 ? round1((atendidosPrev / totalLeadsPrev) * 100) : 0;
+
+  const ticket = vendas.qtd > 0 ? vendas.valor / vendas.qtd : 0;
+  const ticketPrev = vendasPrev.qtd > 0 ? vendasPrev.valor / vendasPrev.qtd : 0;
+  const visitas = countVisitaOuAlem(current);
+  const convVisita = totalLeads > 0 ? round1((visitas / totalLeads) * 100) : 0;
+  const visitasPrev = countVisitaOuAlem(previous);
+  const convVisitaPrev = totalLeadsPrev > 0 ? round1((visitasPrev / totalLeadsPrev) * 100) : 0;
+  const equipe = Number(c.tamanhoEquipe) || 0;
+  const vendasPorCorretor = equipe > 0 ? round1(vendas.qtd / equipe) : 0;
+
   return {
     totalLeads:        { rawValue: totalLeads, displayValue: totalLeads.toLocaleString('pt-BR'), trend: computeTrend(totalLeads, totalLeadsPrev) },
     vendas:            { rawValue: vendas.qtd, displayValue: vendas.qtd.toLocaleString('pt-BR'), trend: computeTrend(vendas.qtd, vendasPrev.qtd) },
     valorVendas:       { rawValue: vendas.valor, displayValue: BRL(vendas.valor), trend: computeTrend(vendas.valor, vendasPrev.valor) },
-    imoveisAtivos:     { rawValue: imoveisAtivos, displayValue: Number(imoveisAtivos || 0).toLocaleString('pt-BR'), trend: null },
+    imoveisAtivos:     { rawValue: c.imoveisAtivos || 0, displayValue: Number(c.imoveisAtivos || 0).toLocaleString('pt-BR'), trend: null },
     tempoMedioResposta:{ rawValue: respMin, displayValue: formatMinutes(respMin), trend: computeTrend(respMin, respMinPrev, true) },
     taxaAtendimento:   { rawValue: taxaAtend, displayValue: `${taxaAtend.toFixed(1)}%`, trend: computeTrend(taxaAtend, taxaAtendPrev) },
+    // --- novos ---
+    vgv:               { rawValue: Number(c.vgv) || 0, displayValue: BRL(c.vgv), trend: computeTrend(Number(c.vgv) || 0, Number(c.vgvPrev) || 0) },
+    vgc:               { rawValue: Number(c.vgc) || 0, displayValue: BRL(c.vgc), trend: computeTrend(Number(c.vgc) || 0, Number(c.vgcPrev) || 0) },
+    ticketMedio:       { rawValue: ticket, displayValue: BRL(ticket), trend: computeTrend(ticket, ticketPrev) },
+    conversaoVisita:   { rawValue: convVisita, displayValue: `${convVisita.toFixed(1)}%`, trend: computeTrend(convVisita, convVisitaPrev) },
+    captacaoExclusiva: { rawValue: c.captacaoExclusiva || 0, displayValue: Number(c.captacaoExclusiva || 0).toLocaleString('pt-BR'), trend: null },
+    captacaoSemExclusividade: { rawValue: c.captacaoSemExclusividade || 0, displayValue: Number(c.captacaoSemExclusividade || 0).toLocaleString('pt-BR'), trend: null },
+    tamanhoEquipe:     { rawValue: equipe, displayValue: equipe.toLocaleString('pt-BR'), trend: null },
+    // trend: null — não buscamos o tamanho da equipe do mês anterior, então não
+    // há baseline confiável para vendas/corretor (computeTrend(x,0) seria sempre
+    // null e enganoso). Consistente com as demais métricas só-contagem acima.
+    vendasPorCorretor: { rawValue: vendasPorCorretor, displayValue: vendasPorCorretor.toLocaleString('pt-BR', { maximumFractionDigits: 1 }), trend: null },
   };
 }
 
@@ -204,22 +238,19 @@ function formatByUnit(value, unit) {
  * kpi_values; aplica metas e visibilidade. Sem `config`, preserva o
  * comportamento legado 100% idêntico ao original.
  */
-export function buildCards(current, previous, imoveisAtivos, config) {
-  const native = nativeCardValues(current, previous, imoveisAtivos);
+export function buildCards(current, previous, counts, config) {
+  const native = nativeCardValues(current, previous, counts);
 
-  // Modo legado (sem config ou lista de KPIs vazia): preserva 100% o comportamento atual.
-  // Inclui `id`/`metricKey`/`target`/`progressPercent` para uniformidade de shape,
-  // mantendo `key` para não quebrar consumidores legados.
   if (!config || !Array.isArray(config.kpis) || config.kpis.length === 0) {
     return Object.keys(LEGACY_LABELS).map((key, i) => ({
       key, id: key, metricKey: key, source: 'crm', unit: 'count',
       label: LEGACY_LABELS[key], displayOrder: i,
+      category: 'geral', isFeatured: false,
       ...native[key],
       target: null, progressPercent: null,
     }));
   }
 
-  // Modo configurável.
   const targetByKpi = new Map((config.targets || []).map((t) => [t.kpiId, t.targetValue]));
   const valueByKpi = new Map((config.values || []).map((v) => [v.kpiId, v.value]));
 
@@ -232,8 +263,6 @@ export function buildCards(current, previous, imoveisAtivos, config) {
       if (k.source === 'crm' && native[k.metricKey]) {
         ({ rawValue, displayValue, trend } = native[k.metricKey]);
       } else {
-        // KPI 'crm' com metricKey que não resolve = configuração inválida. Não
-        // quebramos (mostra 0), mas logamos para a má-configuração não ficar muda.
         if (k.source === 'crm') {
           console.warn(`[kpis] KPI '${k.name}' (id=${k.id}) é 'crm' mas metricKey '${k.metricKey}' não existe no catálogo nativo; exibindo 0.`);
         }
@@ -243,7 +272,8 @@ export function buildCards(current, previous, imoveisAtivos, config) {
       }
       return {
         id: k.id, metricKey: k.metricKey, source: k.source, unit: k.unit, label: k.name,
-        displayOrder: k.displayOrder, rawValue, displayValue,
+        displayOrder: k.displayOrder, category: k.categoryId || 'geral', isFeatured: !!k.isFeatured,
+        rawValue, displayValue,
         target, progressPercent: clampPercent(target, rawValue), trend,
       };
     });
@@ -289,7 +319,7 @@ export function buildCommercialComparison({ current, previous, currentLabel, pre
  * @param {object} input.period            { startDate, endDate, label }
  * @param {Array}  input.currentLeads      leads do período
  * @param {Array}  input.previousLeads     leads do período anterior (comparação)
- * @param {number} input.imoveisAtivos     contagem agregada no banco
+ * @param {object} input.counts            contagens agregadas: { imoveisAtivos, captacaoExclusiva, captacaoSemExclusividade, tamanhoEquipe, vgv, vgc, vgvPrev, vgcPrev }
  * @param {Array}  input.goals             metas já formatadas (id,name,realizadoDisplay,metaDisplay,percent)
  * @param {object} input.commercialCurrent   { vgv, vgc } do mês atual
  * @param {object} input.commercialPrevious  { vgv, vgc } do mês anterior
@@ -299,16 +329,16 @@ export function buildOverview({
   period,
   currentLeads,
   previousLeads,
-  imoveisAtivos,
+  counts,            // { imoveisAtivos, captacaoExclusiva, captacaoSemExclusividade, tamanhoEquipe, vgv, vgc, vgvPrev, vgcPrev }
   goals,
   commercialCurrent,
   commercialPrevious,
   previousLabel,
-  config, // opcional — quando presente, ativa modo configurável nos cards
+  config,
 }) {
   return {
     period,
-    cards: buildCards(currentLeads, previousLeads, imoveisAtivos, config),
+    cards: buildCards(currentLeads, previousLeads, counts, config),
     funnel: buildFunnel(currentLeads),
     sources: buildSources(currentLeads),
     priceRanges: buildPriceRanges(currentLeads),

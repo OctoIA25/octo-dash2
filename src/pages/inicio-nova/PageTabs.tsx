@@ -3,10 +3,12 @@
  * Substituem as "internal tabs" do antigo MainLayoutOptimized.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { ChevronDown, MoreHorizontal } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { fetchTenantBolsaoConfig } from '@/features/leads/services/tenantBolsaoConfigService';
+import { useOverflowTabs } from './useOverflowTabs';
 import {
   BarChart3,
   Headphones,
@@ -222,6 +224,16 @@ const TAB_CONFIGS: TabConfig[] = [
   },
 ];
 
+/** Classes do botão de aba, compartilhadas entre área visível e medidor. */
+function tabButtonClass(active: boolean): string {
+  return [
+    'h-8 px-2.5 rounded-lg text-[12.5px] font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40',
+    active
+      ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
+      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100',
+  ].join(' ');
+}
+
 export function PageTabs() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -260,50 +272,144 @@ export function PageTabs() {
     return { activeConfig: cfg, activeTabId: activeId };
   }, [location.pathname, location.search, teamQueueEnabled]);
 
+  const tabs = activeConfig?.tabs ?? EMPTY_TABS;
+  const { visibleTabs, overflowTabs, containerRef, registerTab } = useOverflowTabs(
+    tabs,
+    activeTabId,
+  );
+
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onClick = (event: MouseEvent) => {
+      if (moreRef.current && !moreRef.current.contains(event.target as Node)) {
+        setMoreOpen(false);
+      }
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMoreOpen(false);
+    };
+    document.addEventListener('mousedown', onClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [moreOpen]);
+
+  // Fecha o "Mais" ao trocar de rota.
+  useEffect(() => {
+    setMoreOpen(false);
+  }, [location.pathname, location.search]);
+
   if (!activeConfig) return null;
 
+  const goTo = (href: string) => {
+    setMoreOpen(false);
+    navigate(href);
+  };
+
   return (
-    <div
-      key={activeConfig.basePath}
-      className="flex items-center gap-2 flex-1 min-w-0 overflow-x-auto"
-    >
+    <div key={activeConfig.basePath} className="flex items-center gap-2 flex-1 min-w-0">
       {activeConfig.label && (
-        <span
-          className="text-[13px] font-semibold text-slate-900 dark:text-slate-100 whitespace-nowrap animate-in fade-in-0 slide-in-from-left-2 duration-200 ease-out"
-          style={{ animationFillMode: 'both' }}
-        >
+        <span className="text-[13px] font-semibold text-slate-900 dark:text-slate-100 whitespace-nowrap shrink-0">
           {activeConfig.label}
         </span>
       )}
-      {activeConfig.label && activeConfig.tabs.length > 0 && (
-        <span
-          className="w-px h-4 bg-slate-200 dark:bg-slate-700 shrink-0 animate-in fade-in-0 duration-150 ease-out"
-          style={{ animationDelay: '60ms', animationFillMode: 'both' }}
-        />
+      {activeConfig.label && tabs.length > 0 && (
+        <span className="w-px h-4 bg-slate-200 dark:bg-slate-700 shrink-0" />
       )}
-      {activeConfig.tabs.map((tab, idx) => {
-        const Icon = tab.icon;
-        const active = tab.id === activeTabId;
-        const delay = activeConfig.label ? 80 + idx * 45 : idx * 45;
-        return (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => navigate(tab.href)}
-            style={{ animationDelay: `${delay}ms`, animationFillMode: 'both' }}
-            className={[
-              'h-8 px-3 rounded-lg text-[12.5px] font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap focus:outline-none',
-              'animate-in fade-in-0 slide-in-from-top-1 duration-200 ease-out',
-              active
-                ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100',
-            ].join(' ')}
-          >
-            <Icon className={`w-[14px] h-[14px] ${active ? 'text-slate-900 dark:text-slate-100' : 'text-slate-400'}`} strokeWidth={active ? 2.2 : 2} />
-            {tab.label}
-          </button>
-        );
-      })}
+
+      {/* Trilho visível: abas que cabem + botão "Mais". */}
+      <div ref={containerRef} className="flex items-center gap-1.5 flex-1 min-w-0">
+        {visibleTabs.map((tab) => {
+          const Icon = tab.icon;
+          const active = tab.id === activeTabId;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => navigate(tab.href)}
+              className={tabButtonClass(active)}
+            >
+              <Icon
+                className={`w-[14px] h-[14px] ${active ? 'text-slate-900 dark:text-slate-100' : 'text-slate-400'}`}
+                strokeWidth={active ? 2.2 : 2}
+              />
+              {tab.label}
+            </button>
+          );
+        })}
+
+        {overflowTabs.length > 0 && (
+          <div ref={moreRef} className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => setMoreOpen((prev) => !prev)}
+              aria-haspopup="menu"
+              aria-expanded={moreOpen}
+              className={tabButtonClass(overflowTabs.some((t) => t.id === activeTabId))}
+            >
+              <MoreHorizontal className="w-[14px] h-[14px] text-slate-400" strokeWidth={2} />
+              Mais
+              <ChevronDown
+                className={`w-3 h-3 transition-transform ${moreOpen ? 'rotate-180' : ''}`}
+                strokeWidth={2}
+              />
+            </button>
+
+            {moreOpen && (
+              <div
+                role="menu"
+                className="absolute left-0 top-[calc(100%+6px)] min-w-[220px] max-h-[70vh] overflow-y-auto rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl py-1.5 z-50"
+              >
+                {overflowTabs.map((tab) => {
+                  const Icon = tab.icon;
+                  const active = tab.id === activeTabId;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      role="menuitem"
+                      onClick={() => goTo(tab.href)}
+                      className={[
+                        'w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors text-left',
+                        active
+                          ? 'bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-medium'
+                          : 'text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800',
+                      ].join(' ')}
+                    >
+                      <Icon
+                        className={`w-4 h-4 ${active ? 'text-slate-900 dark:text-slate-100' : 'text-slate-400'}`}
+                        strokeWidth={2}
+                      />
+                      <span>{tab.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Medidor invisível: renderiza TODAS as abas fora da tela para capturar
+          a largura individual de cada uma. Não afeta o layout. */}
+      <div aria-hidden className="absolute -left-[9999px] top-0 flex items-center gap-1.5 pointer-events-none">
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          return (
+            <span key={tab.id} ref={registerTab(tab.id)} className={tabButtonClass(false)}>
+              <Icon className="w-[14px] h-[14px]" strokeWidth={2} />
+              {tab.label}
+            </span>
+          );
+        })}
+      </div>
     </div>
   );
 }
+
+/** Referência estável para evitar recriar o array vazio a cada render. */
+const EMPTY_TABS: Tab[] = [];

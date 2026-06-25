@@ -13,7 +13,8 @@ const PERIOD = { startDate: '2026-06-01', endDate: '2026-06-30', label: 'Junho/2
 describe('buildOverview — regressão do modo legado (sem config)', () => {
   it('snapshot dos números nativos + asserts explícitos', () => {
     const overview = buildOverview({
-      period: PERIOD, currentLeads: FIXED_LEADS, previousLeads: [], imoveisAtivos: 7,
+      period: PERIOD, currentLeads: FIXED_LEADS, previousLeads: [],
+      counts: { imoveisAtivos: 7, captacaoExclusiva: 0, captacaoSemExclusividade: 0, tamanhoEquipe: 0, vgv: 1000, vgc: 30, vgvPrev: 800, vgcPrev: 24 },
       goals: [], commercialCurrent: { vgv: 1000, vgc: 30 }, commercialPrevious: { vgv: 800, vgc: 24 },
       previousLabel: 'Maio/2026',
       // SEM config → caminho legado, que deve permanecer idêntico ao de hoje.

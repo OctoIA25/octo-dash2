@@ -8,7 +8,7 @@
  * Visual alinhado à InicioNovaPage: slate + accent azul, Lucide, rounded-xl.
  */
 
-import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { TrendingUp, TrendingDown } from 'lucide-react';
 import {
   Bar,
   BarChart,
@@ -41,14 +41,10 @@ function formatByUnit(value: number, unit: KpiSummaryCard['unit']): string {
 }
 
 // ============================ TREND BADGE ============================
+// Sem comparação → não renderiza nada (em vez de repetir "sem comparação" em
+// metade dos cards, o que virava ruído). O silêncio comunica a ausência.
 function TrendBadge({ trend }: { trend: KpiTrend | null }) {
-  if (!trend || trend.percent === null) {
-    return (
-      <span className="inline-flex items-center gap-1 text-[11.5px] text-slate-400">
-        <Minus className="w-3 h-3" strokeWidth={2} /> sem comparação
-      </span>
-    );
-  }
+  if (!trend || trend.percent === null) return null;
   const up = trend.percent >= 0;
   const Icon = up ? TrendingUp : TrendingDown;
   const color = trend.positive ? 'text-emerald-600' : 'text-rose-600';
@@ -61,53 +57,79 @@ function TrendBadge({ trend }: { trend: KpiTrend | null }) {
   );
 }
 
-// ============================ SUMMARY CARDS ============================
-export function KpiCards({ cards, isLoading }: { cards: KpiSummaryCard[]; isLoading: boolean }) {
-  const items = isLoading && cards.length === 0 ? skeletonCards() : cards;
+// ============================ ORIGIN BADGE ============================
+/** Selo discreto da origem do dado (nada para 'crm', que é calculado). */
+function OriginBadge({ source }: { source: KpiSummaryCard['source'] }) {
+  if (source === 'crm') return null;
+  const label = source === 'planilha' ? 'planilha' : 'manual';
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-      {items.map((card) => (
-        <div
-          key={card.id}
-          className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4"
-        >
-          <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-            {card.label}
-          </p>
-          <p className="text-[26px] font-bold text-slate-900 dark:text-slate-100 leading-none mb-2 tracking-tight">
-            {isLoading ? '—' : card.displayValue}
-          </p>
-          {!isLoading && <TrendBadge trend={card.trend} />}
-          {!isLoading && card.target != null && (
-            <div className="mt-2">
-              <p className="text-[11px] text-slate-400">Meta: {formatByUnit(card.target, card.unit)}</p>
-              <div className="mt-1 h-1.5 w-full rounded-full bg-slate-100 dark:bg-slate-800">
-                <div className="h-1.5 rounded-full bg-emerald-500" style={{ width: `${card.progressPercent ?? 0}%` }} />
-              </div>
-              <p className="mt-0.5 text-[10px] text-slate-400">{card.progressPercent ?? 0}%</p>
-            </div>
-          )}
+    <span className="inline-flex items-center text-[10px] font-medium text-slate-400 dark:text-slate-500">
+      • {label}
+    </span>
+  );
+}
+
+// ============================ HERO CARD ============================
+/**
+ * Card grande em destaque no topo da seção da categoria. Domina a seção: número
+ * 32px na cor-assinatura da categoria e uma borda esquerda discreta na mesma
+ * cor — é o que cria a hierarquia hero↔compacto e dá identidade à seção.
+ *
+ * `valueColor`/`borderColor` (classes Tailwind) vêm da categoria; quando
+ * ausentes (uso fora de uma seção colorida), o card cai no slate neutro.
+ */
+export function KpiHeroCard({
+  card,
+  valueColor,
+  borderColor,
+}: {
+  card: KpiSummaryCard;
+  valueColor?: string;
+  borderColor?: string;
+}) {
+  const value = valueColor ?? 'text-slate-900 dark:text-slate-100';
+  const border = borderColor ?? 'border-l-slate-200 dark:border-l-slate-800';
+  return (
+    <div className={`bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 border-l-[3px] ${border} p-4`}>
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider truncate">
+          {card.label}
+        </p>
+        <OriginBadge source={card.source} />
+      </div>
+      <p className={`text-[32px] font-bold leading-none mb-2 tracking-tight tabular-nums ${value}`}>
+        {card.displayValue}
+      </p>
+      <TrendBadge trend={card.trend} />
+      {card.target != null && (
+        <div className="mt-2">
+          <p className="text-[11px] text-slate-400">Meta: {formatByUnit(card.target, card.unit)}</p>
+          <div className="mt-1 h-1.5 w-full rounded-full bg-slate-100 dark:bg-slate-800">
+            <div className="h-1.5 rounded-full bg-emerald-500" style={{ width: `${Math.min(100, card.progressPercent ?? 0)}%` }} />
+          </div>
         </div>
-      ))}
+      )}
     </div>
   );
 }
 
-function skeletonCards(): KpiSummaryCard[] {
-  // Placeholders de carregamento — shape novo do contrato (id em vez de key).
-  return Array.from({ length: 6 }, (_, i) => ({
-    id: `skeleton-${i}`,
-    metricKey: null,
-    source: 'crm' as const,
-    unit: 'count' as const,
-    label: ' ',
-    displayOrder: i,
-    rawValue: 0,
-    displayValue: '—',
-    target: null,
-    progressPercent: null,
-    trend: null,
-  }));
+// ============================ COMPACT CARD ============================
+/** Card denso para a grade de KPIs secundários. */
+export function KpiCompactCard({ card }: { card: KpiSummaryCard }) {
+  return (
+    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-3">
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 truncate">{card.label}</p>
+        <OriginBadge source={card.source} />
+      </div>
+      <p className="text-[18px] font-bold text-slate-900 dark:text-slate-100 leading-none tabular-nums">
+        {card.displayValue}
+      </p>
+      {card.trend && card.trend.percent !== null && (
+        <div className="mt-1.5"><TrendBadge trend={card.trend} /></div>
+      )}
+    </div>
+  );
 }
 
 // ============================ FUNNEL ============================

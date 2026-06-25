@@ -8,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { createEmptyKpiDraft, kpiToDraft } from '@/features/kpis/domain/kpiFactory';
 import { validateKpiDraft } from '@/features/kpis/domain/kpiModel';
-import { NATIVE_METRIC_KEYS } from '@/features/kpis/domain/kpiTypes';
+import { NATIVE_METRIC_KEYS, METRIC_KEY_LABELS } from '@/features/kpis/domain/kpiTypes';
 import type { DashboardKpi, DashboardKpiDraft, KpiSource, KpiUnit } from '@/features/kpis/domain/kpiTypes';
 
 interface Props { open: boolean; onOpenChange: (o: boolean) => void; kpi: DashboardKpi | null; isSubmitting: boolean; onSubmit: (d: DashboardKpiDraft) => Promise<void>; }
@@ -62,7 +62,7 @@ export function KpiFormDialog({ open, onOpenChange, kpi, isSubmitting, onSubmit 
               <Label>Métrica do CRM</Label>
               <Select value={draft.metricKey ?? ''} onValueChange={(v) => update({ metricKey: v })}>
                 <SelectTrigger><SelectValue placeholder="Selecione a métrica" /></SelectTrigger>
-                <SelectContent>{NATIVE_METRIC_KEYS.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
+                <SelectContent>{NATIVE_METRIC_KEYS.map((m) => <SelectItem key={m} value={m}>{METRIC_KEY_LABELS[m]}</SelectItem>)}</SelectContent>
               </Select>
             </div>
           )}

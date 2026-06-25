@@ -9,13 +9,14 @@ const OWNER_EMAIL = 'octo.inteligenciaimobiliaria@gmail.com';
  * `tenants` = ids existentes (para o caminho do owner).
  * `leads`/`goals`/`imoveis_locais` retornam vazio por padrão.
  */
-function makeSupabase({ memberships = [], tenants = [], leads = [] } = {}) {
+function makeSupabase({ memberships = [], tenants = [], leads = [], dashboardKpis = [], imoveisExclusivos = 0, imoveisSemExcl = 0, corretores = 0 } = {}) {
   function tableQuery(table) {
     let rangeServed = false;
     const node = {
       _filters: {},
       select() { return node; },
       eq(col, val) { node._filters[col] = val; return node; },
+      in(col, vals) { node._filters[col] = vals; return node; },
       is() { return node; },
       gte() { return node; },
       lte() { return node; },
@@ -34,14 +35,28 @@ function makeSupabase({ memberships = [], tenants = [], leads = [] } = {}) {
         return Promise.resolve({ data: null, error: null });
       },
       then(resolve) {
-        // Para queries "await query" sem maybeSingle (tenant_memberships, goals, count)
         if (table === 'tenant_memberships') {
+          // Resolução de tenant (sem count): lista de tenant_ids do usuário.
+          // Contagem de corretores (com count): head:true → devolve count.
+          // Discrimina pelo filtro de role (a contagem filtra .in('role', [...]);
+          // a resolução de tenant filtra por user_id) — não há coluna `status`.
+          if (node._filters.role) {
+            return resolve({ data: [], error: null, count: corretores });
+          }
           const rows = memberships
             .filter((m) => m.user_id === node._filters.user_id)
             .map((m) => ({ tenant_id: m.tenant_id }));
           return resolve({ data: rows, error: null });
         }
+        if (table === 'dashboard_kpis') return resolve({ data: dashboardKpis, error: null });
+        if (table === 'imoveis_locais') {
+          // countCaptacao: filtra exclusivo true/false; countImoveisAtivos: sem esse filtro.
+          if (node._filters.exclusivo === true) return resolve({ count: imoveisExclusivos, error: null });
+          if (node._filters.exclusivo === false) return resolve({ count: imoveisSemExcl, error: null });
+          return resolve({ count: imoveisExclusivos + imoveisSemExcl, error: null });
+        }
         if (table === 'goals') return resolve({ data: [], error: null });
+        if (table === 'kpi_targets' || table === 'kpi_values') return resolve({ data: [], error: null });
         return resolve({ data: [], error: null, count: 0 });
       },
     };
@@ -151,5 +166,29 @@ describe('makeKpisHandler', () => {
     await makeKpisHandler(supabase)(req, res);
     expect(res.statusCode).toBe(403);
     expect(res.body).toEqual({ ok: false, error: 'no_tenant_access' });
+  });
+});
+
+describe('makeKpisHandler — counts de captação/equipe chegam ao card', () => {
+  it('KPI crm captacaoExclusiva reflete o count de imoveis_locais (exclusivo=true)', async () => {
+    const supabase = makeSupabase({
+      memberships: [{ user_id: 'u1', tenant_id: 't1' }],
+      imoveisExclusivos: 7, imoveisSemExcl: 12, corretores: 9,
+      dashboardKpis: [{
+        id: 'k1', name: 'Captação Exclusiva', category_id: 'operacao',
+        source: 'crm', metric_key: 'captacaoExclusiva', unit: 'count',
+        status: 'active', is_visible: true, is_featured: true, display_order: 0,
+      }],
+    });
+    const handler = makeKpisHandler(supabase);
+    const req = { userId: 'u1', userEmail: 'corretor@x.com', query: { month: '2026-06-01' } };
+    let payload;
+    const res = { status: () => res, json: (b) => { payload = b; return res; } };
+    await handler(req, res);
+
+    const card = payload.overview.cards.find((c) => c.metricKey === 'captacaoExclusiva');
+    expect(card).toBeTruthy();
+    expect(card.rawValue).toBe(7);
+    expect(card.category).toBe('operacao');
   });
 });

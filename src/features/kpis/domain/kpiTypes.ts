@@ -16,8 +16,28 @@ export type KpiStatus = 'active' | 'inactive';
 /** Métricas nativas que o servidor sabe calcular (catálogo fechado p/ crm). */
 export const NATIVE_METRIC_KEYS = [
   'totalLeads', 'vendas', 'valorVendas', 'imoveisAtivos', 'tempoMedioResposta', 'taxaAtendimento',
+  'vgv', 'vgc', 'ticketMedio', 'conversaoVisita',
+  'captacaoExclusiva', 'captacaoSemExclusividade', 'tamanhoEquipe', 'vendasPorCorretor',
 ] as const;
 export type NativeMetricKey = (typeof NATIVE_METRIC_KEYS)[number];
+
+/** Rótulos legíveis das métricas nativas (para o select do admin). */
+export const METRIC_KEY_LABELS: Record<NativeMetricKey, string> = {
+  totalLeads: 'Total de Leads',
+  vendas: 'Vendas',
+  valorVendas: 'Valor em Vendas',
+  imoveisAtivos: 'Imóveis Ativos',
+  tempoMedioResposta: 'Tempo Médio de Resposta',
+  taxaAtendimento: 'Taxa de Atendimento',
+  vgv: 'VGV Gerado no Mês',
+  vgc: 'VGC Gerado no Mês',
+  ticketMedio: 'Ticket Médio por Venda',
+  conversaoVisita: 'Conversão de Leads para Visitas',
+  captacaoExclusiva: 'Captação Exclusiva',
+  captacaoSemExclusividade: 'Captação Sem Exclusividade',
+  tamanhoEquipe: 'Tamanho da Equipe',
+  vendasPorCorretor: 'Vendas por Corretor',
+};
 
 export interface DashboardKpi {
   id: string;

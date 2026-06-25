@@ -10,7 +10,11 @@ import {
   buildCards,
   buildCommercialComparison,
   buildOverview,
+  nativeCardValues,
 } from './kpisCompute.js';
+
+// Objeto counts vazio — reutilizado nos testes legados de buildCards/buildOverview.
+const COUNTS0 = { imoveisAtivos: 0, captacaoExclusiva: 0, captacaoSemExclusividade: 0, tamanhoEquipe: 0, vgv: 0, vgc: 0, vgvPrev: 0, vgcPrev: 0 };
 
 describe('classifyStage — etapas mutuamente exclusivas', () => {
   it('classifica cada etapa na sua faixa canônica', () => {
@@ -169,7 +173,7 @@ describe('buildPriceRanges', () => {
 
 describe('buildCards', () => {
   it('taxa de atendimento sem leads não divide por zero', () => {
-    const cards = buildCards([], [], 0);
+    const cards = buildCards([], [], COUNTS0);
     const taxa = cards.find((c) => c.key === 'taxaAtendimento');
     expect(taxa.displayValue).toBe('0.0%');
   });
@@ -177,7 +181,7 @@ describe('buildCards', () => {
   it('tempo de resposta usa lowerIsBetter na variação', () => {
     const current = [{ created_at: '2026-06-01T10:00:00Z', first_response_at: '2026-06-01T10:10:00Z' }]; // 10min
     const previous = [{ created_at: '2026-05-01T10:00:00Z', first_response_at: '2026-05-01T10:30:00Z' }]; // 30min
-    const cards = buildCards(current, previous, 0);
+    const cards = buildCards(current, previous, COUNTS0);
     const tmr = cards.find((c) => c.key === 'tempoMedioResposta');
     // caiu de 30 para 10 → variação negativa, mas POSITIVA para o negócio
     expect(tmr.trend.positive).toBe(true);
@@ -239,7 +243,7 @@ describe('buildCards — modo configurável (com config)', () => {
 
   it('nativos por metric_key, com id e ordem', () => {
     const current = [{ status: 'novo', final_sale_value: 0 }, { status: 'novo', final_sale_value: 500000 }];
-    const cards = buildCards(current, [], 0, { kpis: NATIVE_CONFIG, targets: [], values: [] });
+    const cards = buildCards(current, [], COUNTS0, { kpis: NATIVE_CONFIG, targets: [], values: [] });
     const leads = cards.find((c) => c.metricKey === 'totalLeads');
     expect(leads.id).toBe('k1');
     expect(leads.rawValue).toBe(2);
@@ -253,7 +257,7 @@ describe('buildCards — modo configurável (com config)', () => {
       targets: [{ kpiId: 'm1', targetValue: 80 }],
       values: [{ kpiId: 'm1', value: 60 }],
     };
-    const cards = buildCards([], [], 0, config);
+    const cards = buildCards([], [], COUNTS0, config);
     const nps = cards.find((c) => c.id === 'm1');
     expect(nps.rawValue).toBe(60);
     expect(nps.target).toBe(80);
@@ -262,7 +266,7 @@ describe('buildCards — modo configurável (com config)', () => {
 
   it('oculta inativo/invisível', () => {
     const config = { kpis: [{ id: 'h', name: 'X', source: 'manual', metricKey: null, unit: 'count', status: 'inactive', isVisible: true, displayOrder: 0 }], targets: [], values: [] };
-    expect(buildCards([], [], 0, config).length).toBe(0);
+    expect(buildCards([], [], COUNTS0, config).length).toBe(0);
   });
 
   it('crm com metricKey inválido: não quebra (mostra 0) e avisa', () => {
@@ -271,7 +275,7 @@ describe('buildCards — modo configurável (com config)', () => {
       kpis: [{ id: 'x', name: 'KPI Bugado', source: 'crm', metricKey: 'inexistente', unit: 'count', status: 'active', isVisible: true, displayOrder: 0 }],
       targets: [], values: [],
     };
-    const cards = buildCards([{ status: 'novo', final_sale_value: 0 }], [], 0, config);
+    const cards = buildCards([{ status: 'novo', final_sale_value: 0 }], [], COUNTS0, config);
     expect(cards[0].rawValue).toBe(0);
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
@@ -284,7 +288,7 @@ describe('buildOverview — shape completo', () => {
       period: { startDate: '2026-06-01', endDate: '2026-06-30', label: 'Junho/2026' },
       currentLeads: [{ status: 'Proposta Assinada', final_sale_value: 500000, source: 'Zap' }],
       previousLeads: [],
-      imoveisAtivos: 12,
+      counts: { ...COUNTS0, imoveisAtivos: 12 },
       goals: [{ id: 'g1', name: 'VGV', realizadoDisplay: 'R$ 1', metaDisplay: 'R$ 2', percent: 50 }],
       commercialCurrent: { vgv: 1800000, vgc: 95000 },
       commercialPrevious: { vgv: 1200000, vgc: 60000 },
@@ -304,11 +308,74 @@ describe('buildOverview — shape completo', () => {
       period: { startDate: '2026-06-01', endDate: '2026-06-30', label: 'Junho/2026' },
       currentLeads: [],
       previousLeads: [],
-      imoveisAtivos: 0,
+      counts: COUNTS0,
       goals: [],
     });
     const vgv = overview.commercial.find((c) => c.key === 'vgv');
     expect(vgv.currentValue).toBe(0);
     expect(vgv.previousValue).toBe(0);
+  });
+});
+
+// Helper local: um lead com status/fonte/valor configuráveis.
+const lead = (over = {}) => ({
+  status: 'Novos Leads', source: 'Site', final_sale_value: 0,
+  created_at: '2026-06-01T10:00:00Z', first_response_at: null, ...over,
+});
+
+describe('nativeCardValues — novos metricKeys', () => {
+  it('ticketMedio = valorVendas / vendas', () => {
+    const native = nativeCardValues([lead({ final_sale_value: 100000 }), lead({ final_sale_value: 300000 })], [], COUNTS0);
+    expect(native.ticketMedio.rawValue).toBe(200000);
+  });
+
+  it('ticketMedio = 0 quando não há vendas (sem divisão por zero)', () => {
+    const native = nativeCardValues([lead()], [], COUNTS0);
+    expect(native.ticketMedio.rawValue).toBe(0);
+  });
+
+  it('conversaoVisita = % de leads em Visita ou além', () => {
+    const current = [lead({ status: 'Novos Leads' }), lead({ status: 'Visita Agendada' }), lead({ status: 'Proposta' }), lead({ status: 'Assinado' })];
+    const native = nativeCardValues(current, [], COUNTS0);
+    expect(native.conversaoVisita.rawValue).toBe(75); // 3 de 4 (Visita, Proposta, Fechamento)
+  });
+
+  it('vendasPorCorretor = vendas / tamanhoEquipe', () => {
+    const current = [lead({ final_sale_value: 1 }), lead({ final_sale_value: 1 }), lead({ final_sale_value: 1 })];
+    const native = nativeCardValues(current, [], { ...COUNTS0, tamanhoEquipe: 2 });
+    expect(native.vendasPorCorretor.rawValue).toBe(1.5);
+  });
+
+  it('vendasPorCorretor = 0 quando equipe vazia', () => {
+    const native = nativeCardValues([lead({ final_sale_value: 1 })], [], COUNTS0);
+    expect(native.vendasPorCorretor.rawValue).toBe(0);
+  });
+
+  it('captação, equipe, vgv e vgc vêm de counts', () => {
+    const native = nativeCardValues([], [], { imoveisAtivos: 50, captacaoExclusiva: 7, captacaoSemExclusividade: 12, tamanhoEquipe: 9, vgv: 1000, vgc: 100, vgvPrev: 0, vgcPrev: 0 });
+    expect(native.captacaoExclusiva.rawValue).toBe(7);
+    expect(native.captacaoSemExclusividade.rawValue).toBe(12);
+    expect(native.tamanhoEquipe.rawValue).toBe(9);
+    expect(native.vgv.rawValue).toBe(1000);
+    expect(native.vgc.rawValue).toBe(100);
+  });
+});
+
+describe('buildCards — category e isFeatured', () => {
+  it('propaga category/isFeatured do config para o card', () => {
+    const config = {
+      kpis: [{ id: 'k1', name: 'Total de Leads', categoryId: 'marketing', source: 'crm', metricKey: 'totalLeads', unit: 'count', status: 'active', isVisible: true, isFeatured: true, displayOrder: 0 }],
+      targets: [], values: [],
+    };
+    const cards = buildCards([lead()], [], COUNTS0, config);
+    expect(cards[0].category).toBe('marketing');
+    expect(cards[0].isFeatured).toBe(true);
+  });
+
+  it('modo legado: category=geral, isFeatured=false, 6 cards', () => {
+    const cards = buildCards([lead()], [], COUNTS0); // sem config → legado
+    expect(cards.every((c) => c.category === 'geral')).toBe(true);
+    expect(cards.every((c) => c.isFeatured === false)).toBe(true);
+    expect(cards.length).toBe(6);
   });
 });

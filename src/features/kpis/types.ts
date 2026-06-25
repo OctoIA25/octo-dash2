@@ -37,6 +37,10 @@ export interface KpiSummaryCard {
   label: string;
   /** Ordem de exibição no dashboard (display_order). */
   displayOrder: number;
+  /** Categoria para agrupamento na Home (ex.: 'comercial'). Default 'geral'. */
+  category: string;
+  /** Destaque (hero) no topo da seção da categoria. */
+  isFeatured: boolean;
   /** Valor numérico bruto (realizado). */
   rawValue: number;
   /** Valor já formatado para a tela. */
