@@ -12,6 +12,7 @@
 
 import { useParams, useNavigate } from 'react-router-dom';
 import { Megaphone, Users, FileText, Rocket, History, Settings, type LucideIcon } from 'lucide-react';
+import { DisparadorChat } from '../components/DisparadorChat';
 
 interface CommSection {
   id: string;
@@ -30,8 +31,6 @@ const SECTIONS: CommSection[] = [
   { id: 'historico', label: 'Histórico', icon: History, available: false },
   { id: 'configuracoes', label: 'Configurações', icon: Settings, available: false },
 ];
-
-const DEFAULT_SECTION = 'disparador';
 
 export function ComunicacaoPage() {
   const { section } = useParams<{ section?: string }>();
@@ -79,19 +78,19 @@ export function ComunicacaoPage() {
 }
 
 /**
- * Renderiza o conteúdo da seção. Por enquanto todas as seções (inclusive o
- * Disparador) mostram um placeholder; o Disparador real é plugado na Task 9.
+ * Renderiza o conteúdo da seção. O Disparador é o componente real; as demais
+ * seções mostram um placeholder "Em breve".
  */
 function SectionContent({ sectionId }: { sectionId: string }) {
+  if (sectionId === 'disparador') return <DisparadorChat />;
+
   const meta = SECTIONS.find((s) => s.id === sectionId) ?? SECTIONS[0];
   return (
     <div className="h-full flex flex-col items-center justify-center text-center gap-2 px-6 py-16">
       <meta.icon className="w-8 h-8 text-slate-300 dark:text-slate-600" strokeWidth={1.75} />
       <p className="text-[15px] font-semibold text-slate-700 dark:text-slate-200">{meta.label}</p>
       <p className="text-[12.5px] text-slate-400 dark:text-slate-500 max-w-sm">
-        {sectionId === DEFAULT_SECTION
-          ? 'O Disparador será conectado aqui em breve.'
-          : 'Em breve nesta área de Comunicação.'}
+        Em breve nesta área de Comunicação.
       </p>
     </div>
   );
