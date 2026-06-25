@@ -20,20 +20,12 @@
  * testes (sem rede).
  */
 
+import { SEGMENT_TYPES, validateSegment } from './segmentSchema.js';
+
 // URL do fluxo n8n do Disparador. Distinta dos webhooks de chat (Elaine/Caio),
 // pois este retorna PLANO estruturado, não texto livre. Override por env.
 const DEFAULT_DISPARADOR_WEBHOOK_URL =
   process.env.DISPARADOR_WEBHOOK_URL || 'https://webhook.octoia.org/webhook/disparador';
-
-// Tipos de segmento que o resolver entende — manter em sincronia com segmentResolver.js.
-const SEGMENT_TYPES = [
-  'explicit_list',   // nomes específicos fornecidos pelo usuário
-  'archived',        // todos os arquivados
-  'archived_period', // arquivados há mais de N dias
-  'by_broker',       // de um corretor específico
-  'no_contact',      // sem atendimento há N dias
-  'interest',        // interessados em um tipo de imóvel
-];
 
 /**
  * CONTRATO esperado do fluxo n8n (documentação para quem montar o fluxo lá).
@@ -156,22 +148,11 @@ export function normalizePlan(parsed) {
     return { ok: false, error: `unsupported_action:${action}` };
   }
 
-  const segment = parsed?.segment;
-  if (!segment || !segment.type || !SEGMENT_TYPES.includes(segment.type)) {
+  const segValidation = validateSegment(parsed?.segment);
+  if (!segValidation.ok) {
     return { ok: false, error: 'invalid_segment', clarification: parsed?.clarification || null };
   }
-
-  // Normaliza o segmento mantendo apenas os campos relevantes ao tipo.
-  const cleanSegment = { type: segment.type };
-  if (segment.type === 'explicit_list') {
-    cleanSegment.names = Array.isArray(segment.names) ? segment.names.map(String).filter(Boolean) : [];
-  } else if (segment.type === 'archived_period' || segment.type === 'no_contact') {
-    cleanSegment.days = Number(segment.days);
-  } else if (segment.type === 'by_broker') {
-    cleanSegment.broker = String(segment.broker || '');
-  } else if (segment.type === 'interest') {
-    cleanSegment.interest = String(segment.interest || '');
-  }
+  const cleanSegment = segValidation.segment;
 
   // Mensagem: contrato n8n usa top-level `message`; aceitamos também
   // `params.message` por robustez.
