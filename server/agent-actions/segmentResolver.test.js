@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveSegment } from './segmentResolver.js';
+import { resolveSegment, resolveSegmentForSource, LEADS_SOURCE } from './segmentResolver.js';
 
 const NOW = 1_750_000_000_000; // timestamp fixo (determinístico).
 const TENANT = 'tenant-1';
@@ -65,7 +65,7 @@ describe('segmentResolver — reutiliza a camada de leads (kenlo_leads)', () => 
       { tenantId: TENANT, nowMs: NOW },
     );
     expect(r.ok).toBe(true);
-    expect(r.rows[0]).toMatchObject({ name: 'João Silva', phone: '5511999990000', source: 'crm' });
+    expect(r.rows[0]).toMatchObject({ name: 'João Silva', phone: '5511999990000', source: 'kenlo' });
     const or = find(calls, 'or');
     expect(or[1]).toContain('client_name.ilike.%João Silva%');
     expect(or[1]).toContain('client_name.ilike.%Maria%');
@@ -144,5 +144,37 @@ describe('segmentResolver — reutiliza a camada de leads (kenlo_leads)', () => 
     const r = await resolveSegment(supabase, { type: 'banana' }, { tenantId: TENANT, nowMs: NOW });
     expect(r.ok).toBe(false);
     expect(r.error).toContain('unsupported_segment');
+  });
+});
+
+describe('resolveSegmentForSource — fonte LEADS (CRM)', () => {
+  it('archived consulta a tabela leads e aplica lead_type=1', async () => {
+    const { supabase, calls } = makeSupabase([
+      { id: '1', name: 'Ana', phone: '11999990000', assigned_agent_name: 'Bia', archived_at: '2026-01-01', updated_at: '2026-01-02', source_lead_id: 'ext-1' },
+    ]);
+    const r = await resolveSegmentForSource(supabase, { type: 'archived' }, { tenantId: TENANT, nowMs: NOW }, LEADS_SOURCE);
+    expect(r.ok).toBe(true);
+    expect(find(calls, 'from')).toEqual(['from', 'leads']);          // não kenlo_leads
+    expect(findAll(calls, 'eq')).toContainEqual(['eq', 'lead_type', 1]);
+    expect(r.rows[0]).toMatchObject({ name: 'Ana', source: 'crm', sourceLeadId: 'ext-1' });
+  });
+
+  it('explicit_list NÃO aplica lead_type (lista explícita ignora o filtro de tipo)', async () => {
+    const { supabase, calls } = makeSupabase([]);
+    await resolveSegmentForSource(supabase, { type: 'explicit_list', names: ['Ana'] }, { tenantId: TENANT, nowMs: NOW }, LEADS_SOURCE);
+    expect(findAll(calls, 'eq')).not.toContainEqual(['eq', 'lead_type', 1]);
+    // usa a coluna 'name' (não client_name)
+    expect(find(calls, 'or')[1]).toContain('name.ilike');
+  });
+});
+
+describe('resolveSegment back-compat — kenlo continua igual', () => {
+  it('archived ainda usa kenlo_leads e NÃO adiciona lead_type', async () => {
+    const { supabase, calls } = makeSupabase([]);
+    await resolveSegment(supabase, { type: 'archived' }, { tenantId: TENANT, nowMs: NOW });
+    expect(find(calls, 'from')).toEqual(['from', 'kenlo_leads']);
+    expect(findAll(calls, 'eq')).not.toContainEqual(
+      expect.arrayContaining(['eq', 'lead_type', expect.anything()]),
+    );
   });
 });
