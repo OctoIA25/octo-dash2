@@ -102,7 +102,16 @@ const GROUPS: SidebarGroup[] = [
         subItems: [
           { id: 'agente-marketing', label: 'Marketing', icon: Bot, route: '/agentes-ia/agente-marketing' },
           { id: 'agente-comportamental', label: 'Comportamental', icon: Headphones, route: '/agentes-ia/agente-comportamental' },
-          { id: 'disparador', label: 'Disparador', icon: Megaphone, route: '/agentes-ia/disparador' },
+        ],
+      },
+      {
+        id: 'comunicacao',
+        label: 'Comunicação',
+        icon: Megaphone,
+        route: '/comunicacao/disparador',
+        permission: 'comunicacao',
+        subItems: [
+          { id: 'disparador', label: 'Disparador', icon: Megaphone, route: '/comunicacao/disparador' },
         ],
       },
       {

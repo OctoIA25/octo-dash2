@@ -33,6 +33,7 @@ const SIDEBAR_PERMISSION_ORDER: SidebarPermission[] = [
   'gestao-equipe',
   'imoveis',
   'agentes-ia',
+  'comunicacao',
   'octo-chat',
   'chat',
   'integracoes',
@@ -52,6 +53,7 @@ const DEFAULT_ROUTE_BY_PERMISSION: Partial<Record<SidebarPermission, string>> = 
   'gestao-equipe': '/gestao-equipe',
   imoveis: '/imoveis',
   'agentes-ia': '/agentes-ia/agente-marketing',
+  comunicacao: '/comunicacao/disparador',
   'octo-chat': '/octo-chat',
   chat: '/chat',
   integracoes: '/integracoes',
@@ -90,6 +92,7 @@ const CorretoresPage = lazyWithRetry(() => import('@/features/corretores/pages/C
 const ImoveisPage = lazyWithRetry(() => import('@/features/imoveis/pages/ImoveisPage').then(m => ({ default: m.ImoveisPage })));
 const LancamentoViewPage = lazyWithRetry(() => import('@/features/imoveis/pages/LancamentoViewPage').then(m => ({ default: m.LancamentoViewPage })));
 const AgentesIaPage = lazyWithRetry(() => import('@/features/agentes-ia/pages/AgentesIaPage').then(m => ({ default: m.AgentesIaPage })));
+const ComunicacaoPage = lazyWithRetry(() => import('@/features/comunicacao').then(m => ({ default: m.ComunicacaoPage })));
 const OctoChatPage = lazyWithRetry(() => import('@/features/agentes-ia/pages/OctoChatPage').then(m => ({ default: m.OctoChatPage })));
 const ChatPage = lazyWithRetry(() => import('@/features/chat/pages/ChatPage').then(m => ({ default: m.ChatPage })));
 const ConfiguracoesPage = lazyWithRetry(() => import('@/features/settings/pages/ConfiguracoesPage').then(m => ({ default: m.ConfiguracoesPage })));
@@ -378,11 +381,23 @@ const DashboardLayout = () => {
             element={<Navigate to={canAccess('imoveis') ? '/imoveis?tab=mapa-imoveis' : defaultAllowedRoute} replace />}
           />
 
+          {/* Redirect do caminho legado do Disparador → módulo Comunicação.
+              DEVE vir ANTES de agentes-ia/:agent? (rota mais específica primeiro). */}
+          <Route
+            path="agentes-ia/disparador"
+            element={<Navigate to="/comunicacao/disparador" replace />}
+          />
+
           <Route
             path="agentes-ia/:agent?"
-            element={canAccess('agentes-ia') ? <AgentesIaPage /> : <Navigate to={defaultAllowedRoute} replace />} 
+            element={canAccess('agentes-ia') ? <AgentesIaPage /> : <Navigate to={defaultAllowedRoute} replace />}
           />
-          
+
+          <Route
+            path="comunicacao/:section?"
+            element={canAccess('comunicacao') ? <ComunicacaoPage /> : <Navigate to={defaultAllowedRoute} replace />}
+          />
+
           <Route
             path="octo-chat"
             element={canAccess('octo-chat') ? <OctoChatPage /> : <Navigate to={defaultAllowedRoute} replace />}
