@@ -47,6 +47,22 @@ describe('HistoricoDisparos', () => {
     expect(screen.getByText(/timeout/i)).toBeInTheDocument();
   });
 
+  it('resposta ok:false do getRunProgress não zera a barra (mantém progresso anterior)', async () => {
+    const svc = await import('../../services/historicoService');
+    (svc.listRuns as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      runs: [{ id: 'r3', command_text: 'disparo ok-false', status: 'running', found_count: 500, eligible_count: 500, sent_count: 0, failed_count: 0, deduplicated_count: 0, requested_by_email: 'a@x.com', created_at: '2026-06-25T11:00:00Z', completed_at: null }],
+      limit: 50, offset: 0,
+    });
+    // Retorna erro — o estado anterior (0 done, total fallback = found_count) não deve ser substituído por um objeto inválido
+    (svc.getRunProgress as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: false, error: 'timeout' });
+
+    render(<HistoricoDisparos />);
+    await waitFor(() => expect(screen.getByText(/disparo ok-false/i)).toBeInTheDocument(), { timeout: 2000 });
+    // A barra ainda exibe "0 / 500" (fallback do found_count), não quebra nem some
+    await waitFor(() => expect(screen.getByText(/0\s*\/\s*500/)).toBeInTheDocument(), { timeout: 6000 });
+  });
+
   it('run em andamento exibe barra de progresso via getRunProgress', async () => {
     const svc = await import('../../services/historicoService');
     (svc.listRuns as ReturnType<typeof vi.fn>).mockResolvedValueOnce({

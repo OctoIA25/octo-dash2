@@ -82,7 +82,7 @@ export function HistoricoDisparos() {
         if (!active) return;
         setProgress((prev) => {
           const next = { ...prev };
-          for (const r of results) if (r) next[r[0]] = r[1];
+          for (const r of results) if (r && r[1]?.ok) next[r[0]] = r[1];
           return next;
         });
       } finally {
@@ -92,6 +92,9 @@ export function HistoricoDisparos() {
     tick();
     const handle = setInterval(tick, 4000);
     return () => { active = false; clearInterval(handle); };
+  // `progress` é intencionalmente OMITIDO das deps: o tick chama setProgress, e
+  // incluí-lo recriaria o intervalo a cada atualização (loop). `runs` recria o
+  // intervalo só quando a lista muda (filtro/refetch) — o que é desejável.
   }, [tenantId, tenantReady, runs]);
 
   const fmtDate = useMemo(
