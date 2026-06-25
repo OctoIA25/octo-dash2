@@ -392,7 +392,8 @@ describe('Carga: enqueue bulk e drain sem N+1', () => {
     expect(deltaDrain.runsSelect).toBe(0);
     // closeFinishedRuns: O(runs), não O(itens) — com 1 run, deve ser ~1
     expect(deltaDrain.queueSelectByRun).toBeLessThanOrEqual(5);
-  });
+  }, 30_000); // timeout estendido: processa 10k itens; sob a suíte inteira em
+  //            paralelo o default de 5s estoura por contenção de CPU (não por bug).
 
   it('insertOrUpsert é praticamente constante: |delta(10000) - delta(1)| < 5', async () => {
     const r1 = await runScenario(1);
@@ -404,7 +405,7 @@ describe('Carga: enqueue bulk e drain sem N+1', () => {
 
     // O enqueue não escala com N (prova de bulk)
     expect(diff).toBeLessThan(5);
-  });
+  }, 30_000); // idem: roda 2 cenários (1 e 10k); timeout estendido sob carga.
 
   it('deltaDrain.runsSelect = 0 para todos os N (sem N+1 no worker)', async () => {
     for (const n of [1, 100, 1000, 10000]) {
