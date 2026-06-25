@@ -112,16 +112,26 @@ function statusFor(error) {
   return 500;
 }
 
-export function registerAgentActionRoutes(app, supabase, options = {}) {
-  const requireSupabaseAuth = makeRequireSupabaseAuth(supabase);
-  // deps internas de envio reutilizadas pelo worker (mesma infra do scheduler).
-  const schedulerDeps = options.schedulerDeps || makeSchedulerDeps(supabase, options);
+/**
+ * Registra os 4 endpoints do Disparador sob `basePath`, reusando os MESMOS
+ * handlers. Permite expor o mesmo conjunto em mais de um prefixo (ex.: o caminho
+ * legado /api/v1/agent-actions e o alias /api/v1/communication/dispatch) sem
+ * duplicar nenhuma lógica de handler.
+ *
+ * @param app     instância Express
+ * @param basePath prefixo das rotas (sem barra final), ex.: '/api/v1/agent-actions'
+ * @param supabase client (service_role)
+ * @param options  { disparadorWebhookUrl?, schedulerDeps?, ... }
+ * @param deps     { requireSupabaseAuth, schedulerDeps } já resolvidos
+ */
+export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
+  const { requireSupabaseAuth, schedulerDeps } = deps;
 
   // -------------------------------------------------------------------------
   // POST /preview — interpreta o comando e devolve a prévia. NÃO envia.
   // body: { tenantId, command }
   // -------------------------------------------------------------------------
-  app.post('/api/v1/agent-actions/preview', requireSupabaseAuth, async (req, res) => {
+  app.post(`${basePath}/preview`, requireSupabaseAuth, async (req, res) => {
     const { tenantId, command } = req.body || {};
     if (!tenantId || !command) return res.status(400).json({ ok: false, error: 'missing_fields' });
 
@@ -144,7 +154,7 @@ export function registerAgentActionRoutes(app, supabase, options = {}) {
   // -------------------------------------------------------------------------
   // POST /confirm — confirma e enfileira. body: { tenantId, previewToken, message }
   // -------------------------------------------------------------------------
-  app.post('/api/v1/agent-actions/confirm', requireSupabaseAuth, async (req, res) => {
+  app.post(`${basePath}/confirm`, requireSupabaseAuth, async (req, res) => {
     const { tenantId, previewToken, message } = req.body || {};
     if (!tenantId || !previewToken) return res.status(400).json({ ok: false, error: 'missing_fields' });
 
@@ -173,7 +183,7 @@ export function registerAgentActionRoutes(app, supabase, options = {}) {
   // -------------------------------------------------------------------------
   // GET /runs/:id — relatório do run (cabeçalho + falhas por destinatário).
   // -------------------------------------------------------------------------
-  app.get('/api/v1/agent-actions/runs/:id', requireSupabaseAuth, async (req, res) => {
+  app.get(`${basePath}/runs/:id`, requireSupabaseAuth, async (req, res) => {
     const { id } = req.params;
     const tenantId = req.query.tenantId;
     if (!tenantId) return res.status(400).json({ ok: false, error: 'missing_tenant' });
@@ -204,7 +214,7 @@ export function registerAgentActionRoutes(app, supabase, options = {}) {
   // POST /run-queue — drena a fila manualmente (platform owner). Útil p/ cron
   // externo ou operação. Em produção, prefira o worker com flag dedicada.
   // -------------------------------------------------------------------------
-  app.post('/api/v1/agent-actions/run-queue', requireSupabaseAuth, async (req, res) => {
+  app.post(`${basePath}/run-queue`, requireSupabaseAuth, async (req, res) => {
     if (!isPlatformOwner(req.userEmail)) return res.status(403).json({ ok: false, error: 'forbidden' });
     const summary = await runDueActions(supabase, {
       deliver: schedulerDeps.deliver,
@@ -215,4 +225,18 @@ export function registerAgentActionRoutes(app, supabase, options = {}) {
   });
 }
 
-export const __test__ = { resolveUserContext, statusFor, isPlatformOwner, resolvePublicSourceMode };
+/** Resolve as deps compartilhadas (auth + envio) usadas pelos handlers. */
+export function makeDispatchDeps(supabase, options = {}) {
+  return {
+    requireSupabaseAuth: makeRequireSupabaseAuth(supabase),
+    // deps internas de envio reutilizadas pelo worker (mesma infra do scheduler).
+    schedulerDeps: options.schedulerDeps || makeSchedulerDeps(supabase, options),
+  };
+}
+
+/** Caminho LEGADO do Disparador: /api/v1/agent-actions/*. Mantido intacto. */
+export function registerAgentActionRoutes(app, supabase, options = {}) {
+  registerDispatchRoutes(app, '/api/v1/agent-actions', supabase, options, makeDispatchDeps(supabase, options));
+}
+
+export const __test__ = { resolveUserContext, statusFor, isPlatformOwner, resolvePublicSourceMode, registerDispatchRoutes, makeDispatchDeps };

@@ -4068,6 +4068,10 @@ registerKpisRoutes(app, supabase);
 import { registerAgentActionRoutes } from './agent-actions/routes.js';
 registerAgentActionRoutes(app, supabase);
 
+// Módulo Comunicação: alias /api/v1/communication/dispatch/* dos mesmos handlers.
+import { registerCommunicationRoutes } from './communication/index.js';
+registerCommunicationRoutes(app, supabase);
+
 // 404 Handler (DEVE ficar DEPOIS de todas as rotas)
 app.use('/api/v1/*', (req, res) => {
   res.status(404).json({
