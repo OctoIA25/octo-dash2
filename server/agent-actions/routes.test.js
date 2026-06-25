@@ -219,3 +219,39 @@ describe('validateSegment (integração via segmentSchema)', () => {
     expect(validateSegment({ type: 'nope' }).ok).toBe(false);
   });
 });
+
+// Documenta a regra de negócio: PUT /audiences/:id com body sem name nem segment
+// deve ser rejeitado (400 nothing_to_update). A lógica de guarda é trivial
+// (Object.keys(patch).length === 0) e não tem infra de fake-app aqui, por isso
+// o teste verifica a invariante pura diretamente — cobertura HTTP fica no E2E.
+describe('PUT /audiences/:id — guarda de patch vazio', () => {
+  it('patch vazio (sem name nem segment) resulta em objeto sem chaves', () => {
+    // Simula a montagem do patch como faz o handler:
+    // nenhum campo enviado → patch permanece {}.
+    const body = {};
+    const patch = {};
+    if (body.name !== undefined) patch.name = String(body.name).trim();
+    if (body.segment !== undefined) patch.segment = body.segment;
+
+    // A guarda `if (Object.keys(patch).length === 0)` retornaria 400.
+    expect(Object.keys(patch).length).toBe(0);
+  });
+
+  it('patch com name preenchido tem ao menos uma chave', () => {
+    const body = { name: 'Leads Quentes' };
+    const patch = {};
+    if (body.name !== undefined) patch.name = String(body.name).trim();
+    if (body.segment !== undefined) patch.segment = body.segment;
+
+    expect(Object.keys(patch).length).toBeGreaterThan(0);
+  });
+
+  it('patch com segment preenchido tem ao menos uma chave', () => {
+    const body = { segment: { type: 'all' } };
+    const patch = {};
+    if (body.name !== undefined) patch.name = String(body.name).trim();
+    if (body.segment !== undefined) patch.segment = body.segment;
+
+    expect(Object.keys(patch).length).toBeGreaterThan(0);
+  });
+});

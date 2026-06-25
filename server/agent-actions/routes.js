@@ -348,7 +348,7 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false });
     
-      if (error) return res.status(500).json({ ok: false, error: 'lookup_failed' });
+    if (error) return res.status(500).json({ ok: false, error: 'lookup_failed' });
     return res.json({ ok: true, audiences: data || [] });
   });
 
@@ -401,6 +401,11 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
       if (!v.ok) return res.status(400).json({ ok: false, error: 'invalid_segment' });
       patch.segment = v.segment;
     }
+
+    if (Object.keys(patch).length === 0) {
+      return res.status(400).json({ ok: false, error: 'nothing_to_update' });
+    }
+
     const { data, error } = await supabase
       .from(AUDIENCES_TABLE)
       .update(patch)
