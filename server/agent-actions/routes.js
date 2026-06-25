@@ -6,6 +6,7 @@
  *   POST /api/v1/agent-actions/confirm  — confirma o previewToken e enfileira
  *   GET  /api/v1/agent-actions/runs/:id — relatório de um run (contagens + falhas)
  *   POST /api/v1/agent-actions/run-queue — drena a fila (owner; ou cron interno)
+ *   GET  /api/v1/agent-actions/runs — lista os disparos do tenant (filtros + paginação)
  *
  * Esta camada só faz: autenticação, resolução de contexto (tenant, role, nome de
  * corretor) e tradução request→service. A interpretação NL acontece via n8n
@@ -93,17 +94,18 @@ async function resolvePublicSourceMode(supabase, tenantId) {
   }
 }
 
-/** Aplica os filtros de listagem de runs a um query-builder (puro/testável). */
+/** Aplica os filtros de listagem de runs a um query-builder (puro/testável).
+ *  Retorna o builder + os valores de paginação efetivamente aplicados (clampados). */
 function applyRunsFilters(query, { status, q, from, to, limit, offset } = {}) {
-  const lim = Math.min(Math.max(Number(limit) || 50, 1), 200);
-  const off = Math.max(Number(offset) || 0, 0);
+  const lim = Math.min(Math.max(limit != null && limit !== '' ? Number(limit) : 50, 1), 200);
+  const off = Math.max(offset != null && offset !== '' ? Number(offset) : 0, 0);
   let qb = query;
   if (status) qb = qb.eq('status', status);
   if (q) qb = qb.ilike('command_text', `%${q}%`);
   if (from) qb = qb.gte('created_at', from);
   if (to) qb = qb.lte('created_at', to);
   qb = qb.order('created_at', { ascending: false }).range(off, off + lim - 1);
-  return qb;
+  return { query: qb, limit: lim, offset: off };
 }
 
 /** Mapeia erros de domínio para HTTP status. */
@@ -208,12 +210,10 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
       .eq('tenant_id', tenantId);
 
     const { status, q, from, to, limit, offset } = req.query;
-    const { data, error } = await applyRunsFilters(base, { status, q, from, to, limit, offset });
+    const built = applyRunsFilters(base, { status, q, from, to, limit, offset });
+    const { data, error } = await built.query;
     if (error) return res.status(500).json({ ok: false, error: 'lookup_failed' });
-
-    const lim = Math.min(Math.max(Number(limit) || 50, 1), 200);
-    const off = Math.max(Number(offset) || 0, 0);
-    return res.json({ ok: true, runs: data || [], limit: lim, offset: off });
+    return res.json({ ok: true, runs: data || [], limit: built.limit, offset: built.offset });
   });
 
   // -------------------------------------------------------------------------

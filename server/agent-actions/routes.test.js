@@ -36,6 +36,18 @@ describe('applyRunsFilters', () => {
     expect(calls).toContainEqual(['order', 'created_at', { ascending: false }]);
     expect(calls).toContainEqual(['range', 0, 49]);
   });
+
+  it('clampa limit e offset nos limites', () => {
+    const a = recordingBuilder();
+    const r1 = applyRunsFilters(a.b, { limit: 0, offset: -5 });   // limit→1, offset→0
+    expect(a.calls).toContainEqual(['range', 0, 0]);
+    expect(r1.limit).toBe(1); expect(r1.offset).toBe(0);
+
+    const c = recordingBuilder();
+    const r2 = applyRunsFilters(c.b, { limit: 999, offset: 10 }); // limit→200
+    expect(c.calls).toContainEqual(['range', 10, 209]);
+    expect(r2.limit).toBe(200); expect(r2.offset).toBe(10);
+  });
 });
 
 describe('routes.statusFor — mapeamento de erro → HTTP', () => {
