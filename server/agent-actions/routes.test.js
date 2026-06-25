@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { __test__ } from './routes.js';
 
-const { resolveUserContext, statusFor, isPlatformOwner, resolvePublicSourceMode, applyRunsFilters, computeProgress } = __test__;
+const { resolveUserContext, statusFor, isPlatformOwner, resolvePublicSourceMode, applyRunsFilters, computeProgress, canManageAudiences } = __test__;
 
 function recordingBuilder() {
   const calls = [];
@@ -198,5 +198,24 @@ describe('routes.resolveUserContext — permissões', () => {
     });
     const ctx = await resolveUserContext(supabase, { userEmail: 'm@y.com', userId: 'u' }, 't1');
     expect(ctx).toEqual({ ok: true, role: 'corretor', brokerName: 'Maria Corretora' });
+  });
+});
+
+describe('canManageAudiences', () => {
+  it('permite gestores', () => {
+    for (const r of ['admin', 'team_leader', 'owner']) expect(canManageAudiences(r)).toBe(true);
+  });
+  it('nega corretor e desconhecido', () => {
+    expect(canManageAudiences('corretor')).toBe(false);
+    expect(canManageAudiences(undefined)).toBe(false);
+  });
+});
+
+// Cobertura de integração mínima: confirma que validateSegment rejeita
+// segmento inválido com ok===false (o caminho HTTP completo é coberto no E2E).
+describe('validateSegment (integração via segmentSchema)', () => {
+  it('rejeita tipo inválido', async () => {
+    const { validateSegment } = await import('./segmentSchema.js');
+    expect(validateSegment({ type: 'nope' }).ok).toBe(false);
   });
 });

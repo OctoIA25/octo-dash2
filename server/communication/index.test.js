@@ -11,7 +11,7 @@ function makeFakeApp() {
   const record = (method) => (path, ...handlers) => {
     routes.push({ method, path, handler: handlers[handlers.length - 1] });
   };
-  return { app: { post: record('POST'), get: record('GET') }, routes };
+  return { app: { post: record('POST'), get: record('GET'), put: record('PUT'), delete: record('DELETE') }, routes };
 }
 
 // supabase/options não são exercitados aqui (não chamamos os handlers); makeDispatchDeps
@@ -26,10 +26,15 @@ const EXPECTED = [
   { method: 'POST', path: '/api/v1/communication/dispatch/run-queue' },
   { method: 'GET', path: '/api/v1/communication/dispatch/runs' },
   { method: 'GET', path: '/api/v1/communication/dispatch/runs/:id/progress' },
+  { method: 'GET', path: '/api/v1/communication/dispatch/audiences' },
+  { method: 'POST', path: '/api/v1/communication/dispatch/audiences' },
+  { method: 'PUT', path: '/api/v1/communication/dispatch/audiences/:id' },
+  { method: 'DELETE', path: '/api/v1/communication/dispatch/audiences/:id' },
+  { method: 'GET', path: '/api/v1/communication/dispatch/audiences/:id/count' },
 ];
 
 describe('registerCommunicationRoutes', () => {
-  it('registra os 6 endpoints sob /api/v1/communication/dispatch', () => {
+  it('registra os 11 endpoints sob /api/v1/communication/dispatch', () => {
     const { app, routes } = makeFakeApp();
     registerCommunicationRoutes(app, supabase, options);
 
@@ -38,8 +43,8 @@ describe('registerCommunicationRoutes', () => {
       expect(found, `rota ${exp.method} ${exp.path} não registrada`).toBeTruthy();
       expect(typeof found.handler).toBe('function');
     }
-    // Exatamente 6 rotas (nem a mais, nem a menos).
-    expect(routes).toHaveLength(6);
+    // Exatamente 11 rotas (nem a mais, nem a menos).
+    expect(routes).toHaveLength(11);
   });
 
   it('alias e caminho legado coexistem com os MESMOS sufixos de rota', () => {
@@ -55,6 +60,11 @@ describe('registerCommunicationRoutes', () => {
     expect(paths).toContain('POST /api/v1/agent-actions/run-queue');
     expect(paths).toContain('GET /api/v1/agent-actions/runs');
     expect(paths).toContain('GET /api/v1/agent-actions/runs/:id/progress');
+    expect(paths).toContain('GET /api/v1/agent-actions/audiences');
+    expect(paths).toContain('POST /api/v1/agent-actions/audiences');
+    expect(paths).toContain('PUT /api/v1/agent-actions/audiences/:id');
+    expect(paths).toContain('DELETE /api/v1/agent-actions/audiences/:id');
+    expect(paths).toContain('GET /api/v1/agent-actions/audiences/:id/count');
     // Alias novo:
     expect(paths).toContain('POST /api/v1/communication/dispatch/preview');
     expect(paths).toContain('POST /api/v1/communication/dispatch/confirm');
@@ -62,7 +72,12 @@ describe('registerCommunicationRoutes', () => {
     expect(paths).toContain('POST /api/v1/communication/dispatch/run-queue');
     expect(paths).toContain('GET /api/v1/communication/dispatch/runs');
     expect(paths).toContain('GET /api/v1/communication/dispatch/runs/:id/progress');
-    // 6 + 6, sem duplicação acidental.
-    expect(routes).toHaveLength(12);
+    expect(paths).toContain('GET /api/v1/communication/dispatch/audiences');
+    expect(paths).toContain('POST /api/v1/communication/dispatch/audiences');
+    expect(paths).toContain('PUT /api/v1/communication/dispatch/audiences/:id');
+    expect(paths).toContain('DELETE /api/v1/communication/dispatch/audiences/:id');
+    expect(paths).toContain('GET /api/v1/communication/dispatch/audiences/:id/count');
+    // 11 + 11, sem duplicação acidental.
+    expect(routes).toHaveLength(22);
   });
 });

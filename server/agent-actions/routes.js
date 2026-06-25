@@ -17,6 +17,8 @@
 import { previewOperation, confirmOperation } from './service.js';
 import { runDueActions } from './actionWorker.js';
 import { makeSchedulerDeps } from '../recommendations/index.js';
+import { resolveSegmentDual } from './segmentResolver.js';
+import { validateSegment } from './segmentSchema.js';
 
 const PLATFORM_OWNER_EMAIL = 'octo.inteligenciaimobiliaria@gmail.com';
 
@@ -128,6 +130,11 @@ function applyRunsFilters(query, { status, q, from, to, limit, offset } = {}) {
   if (to) qb = qb.lte('created_at', to);
   qb = qb.order('created_at', { ascending: false }).range(off, off + lim - 1);
   return { query: qb, limit: lim, offset: off };
+}
+
+/** Quem pode criar/editar/excluir públicos (gestor). */
+function canManageAudiences(role) {
+  return role === 'admin' || role === 'team_leader' || role === 'owner';
 }
 
 /** Mapeia erros de domínio para HTTP status. */
@@ -324,6 +331,129 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
     });
     return res.json({ ok: true, ...summary });
   });
+
+  // -- Públicos (audiences) --------------------------------------------------
+  const AUDIENCES_TABLE = 'audiences';
+
+  app.get(`${basePath}/audiences`, requireSupabaseAuth, async (req, res) => {
+    const tenantId = req.query.tenantId;
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'missing_tenant' });
+
+    const ctx = await resolveUserContext(supabase, req, tenantId);
+    if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
+    
+    const { data, error } = await supabase
+      .from(AUDIENCES_TABLE)
+      .select('id, name, segment, created_by_email, created_at, updated_at')
+      .eq('tenant_id', tenantId)
+      .order('created_at', { ascending: false });
+    
+      if (error) return res.status(500).json({ ok: false, error: 'lookup_failed' });
+    return res.json({ ok: true, audiences: data || [] });
+  });
+
+  app.post(`${basePath}/audiences`, requireSupabaseAuth, async (req, res) => {
+    const { tenantId, name, segment } = req.body || {};
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'missing_tenant' });
+    
+    const ctx = await resolveUserContext(supabase, req, tenantId);
+    if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
+    
+    if (!canManageAudiences(ctx.role)) return res.status(403).json({ ok: false, error: 'forbidden' });
+    
+    if (!name || !String(name).trim()) return res.status(400).json({ ok: false, error: 'invalid_name' });
+    
+    const v = validateSegment(segment);
+    if (!v.ok) return res.status(400).json({ ok: false, error: 'invalid_segment' });
+    
+    const { data, error } = await supabase
+      .from(AUDIENCES_TABLE)
+      .insert({ tenant_id: tenantId, name: String(name).trim(), segment: v.segment, created_by_email: req.userEmail || null })
+      .select('id, name, segment, created_by_email, created_at, updated_at')
+      .maybeSingle();
+    
+    if (error) {
+      if (error.code === '23505') return res.status(409).json({ ok: false, error: 'audience_name_taken' });
+      return res.status(500).json({ ok: false, error: 'persist_failed' });
+    }
+    
+    return res.json({ ok: true, audience: data });
+  });
+
+  app.put(`${basePath}/audiences/:id`, requireSupabaseAuth, async (req, res) => {
+    const { id } = req.params;
+    const { tenantId, name, segment } = req.body || {};
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'missing_tenant' });
+    
+    const ctx = await resolveUserContext(supabase, req, tenantId);
+    if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
+    
+    if (!canManageAudiences(ctx.role)) return res.status(403).json({ ok: false, error: 'forbidden' });
+    
+    const patch = {};
+    if (name !== undefined) {
+      if (!String(name).trim()) return res.status(400).json({ ok: false, error: 'invalid_name' });
+      patch.name = String(name).trim();
+    }
+    
+    if (segment !== undefined) {
+      const v = validateSegment(segment);
+      if (!v.ok) return res.status(400).json({ ok: false, error: 'invalid_segment' });
+      patch.segment = v.segment;
+    }
+    const { data, error } = await supabase
+      .from(AUDIENCES_TABLE)
+      .update(patch)
+      .eq('id', id)
+      .eq('tenant_id', tenantId)
+      .select('id, name, segment, created_by_email, created_at, updated_at')
+      .maybeSingle();
+    
+    if (error) {
+      if (error.code === '23505') return res.status(409).json({ ok: false, error: 'audience_name_taken' });
+      return res.status(500).json({ ok: false, error: 'persist_failed' });
+    }
+    
+    if (!data) return res.status(404).json({ ok: false, error: 'audience_not_found' });
+    
+    return res.json({ ok: true, audience: data });
+  });
+
+  app.delete(`${basePath}/audiences/:id`, requireSupabaseAuth, async (req, res) => {
+    const { id } = req.params;
+    
+    const tenantId = req.query.tenantId;
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'missing_tenant' });
+    
+    const ctx = await resolveUserContext(supabase, req, tenantId);
+    if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
+    
+    if (!canManageAudiences(ctx.role)) return res.status(403).json({ ok: false, error: 'forbidden' });
+    
+    const { error } = await supabase.from(AUDIENCES_TABLE).delete().eq('id', id).eq('tenant_id', tenantId);
+    if (error) return res.status(500).json({ ok: false, error: 'delete_failed' });
+    
+    return res.json({ ok: true });
+  });
+
+  app.get(`${basePath}/audiences/:id/count`, requireSupabaseAuth, async (req, res) => {
+    const { id } = req.params;
+    
+    const tenantId = req.query.tenantId;
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'missing_tenant' });
+    
+    const ctx = await resolveUserContext(supabase, req, tenantId);
+    if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
+    
+    const { data: aud, error } = await supabase
+      .from(AUDIENCES_TABLE).select('segment').eq('id', id).eq('tenant_id', tenantId).maybeSingle();
+    if (error) return res.status(500).json({ ok: false, error: 'lookup_failed' });
+    if (!aud) return res.status(404).json({ ok: false, error: 'audience_not_found' });
+    
+    const resolved = await resolveSegmentDual(supabase, aud.segment, { tenantId, nowMs: Date.now() });
+    // Público é auxiliar: erro do resolver → count 0, não derruba a tela.
+    return res.json({ ok: true, count: resolved.ok ? resolved.rows.length : 0 });
+  });
 }
 
 /** Resolve as deps compartilhadas (auth + envio) usadas pelos handlers. */
@@ -340,4 +470,4 @@ export function registerAgentActionRoutes(app, supabase, options = {}) {
   registerDispatchRoutes(app, '/api/v1/agent-actions', supabase, options, makeDispatchDeps(supabase, options));
 }
 
-export const __test__ = { resolveUserContext, statusFor, isPlatformOwner, resolvePublicSourceMode, applyRunsFilters, computeProgress, registerDispatchRoutes, makeDispatchDeps };
+export const __test__ = { resolveUserContext, statusFor, isPlatformOwner, resolvePublicSourceMode, applyRunsFilters, computeProgress, canManageAudiences, registerDispatchRoutes, makeDispatchDeps };
