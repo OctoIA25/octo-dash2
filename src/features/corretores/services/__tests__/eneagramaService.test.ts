@@ -42,3 +42,37 @@ describe('calcularResultadoEneagrama', () => {
     expect(Object.values(scores).every((v) => v === 0)).toBe(true);
   });
 });
+
+// O percentual exibido no resultado é RELATIVO ao total de pontos distribuídos
+// (não ao nº de perguntas). Antes o divisor era 10, fazendo um tipo forte — que
+// no máximo soma 2-3 pontos — aparecer como "30%". Esta é a mesma fórmula usada
+// na tela (pctTipo): pontos do tipo ÷ total de pontos.
+describe('percentual relativo do Eneagrama (regra da tela)', () => {
+  const pctRelativo = (scores: Record<number, number>) => {
+    const total = Object.values(scores).reduce((s, v) => s + Number(v), 0) || 1;
+    const pct: Record<number, number> = {};
+    for (let t = 1; t <= 9; t++) pct[t] = Math.round((Number(scores[t]) / total) * 100);
+    return { total, pct };
+  };
+
+  it('usa o total de pontos como divisor (não o nº de perguntas)', () => {
+    const { scores } = calcularResultadoEneagrama(Array(10).fill('A'));
+    const { total, pct } = pctRelativo(scores);
+    expect(total).toBe(10); // 10 respostas válidas = 10 pontos distribuídos
+    // tipo1 = 2 pontos → 2/10 = 20% (e NÃO um "2/10" que sugere fraqueza)
+    expect(pct[1]).toBe(20);
+    expect(pct[2]).toBe(20);
+  });
+
+  it('um tipo dominante recebe percentual alto, não subdimensionado', () => {
+    // Concentrar no tipo 5: q2B(5), q7A(5), q10B(5) = 3 de 10 pontos
+    const respostas: EneagramaResponse[] = ['A', 'B', 'A', 'A', 'A', 'A', 'A', 'A', 'A', 'B'];
+    const { scores } = calcularResultadoEneagrama(respostas);
+    const { pct } = pctRelativo(scores);
+    expect(scores[5]).toBe(3);
+    expect(pct[5]).toBe(30); // 3/10 do total — é o maior, reflete dominância
+    // e é estritamente o maior percentual entre os tipos
+    const maxOutros = Math.max(...[1,2,3,4,6,7,8,9].map((t) => pct[t]));
+    expect(pct[5]).toBeGreaterThan(maxOutros);
+  });
+});

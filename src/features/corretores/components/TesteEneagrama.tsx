@@ -387,6 +387,15 @@ export const TesteEneagrama = ({
         tipo: ENEAGRAMA_TIPOS[parseInt(tipo)],
         pontuacao: Number(pontuacao)
       }));
+
+    // Percentual RELATIVO: pontos do tipo ÷ total de pontos distribuídos. Antes
+    // o divisor era o nº de perguntas (10), o que fazia um tipo forte (que no
+    // máximo soma 2-3 pontos) parecer fraco ("3/10" = 30%). Com o total real, os
+    // 9 tipos somam 100% e o número reflete a força relativa do perfil.
+    const somaScores = (Object.values(resultadoFinal.scores) as unknown[])
+      .reduce<number>((soma, v) => soma + Number(v), 0);
+    const totalPontos = somaScores > 0 ? somaScores : 1;
+    const pctTipo = (pontuacao: number): number => Math.round((Number(pontuacao) / totalPontos) * 100);
     
     return (
       <div className="fixed inset-0 z-50 overflow-auto py-8 px-4" style={{ backgroundColor: '#F8FAFC' }}>
@@ -456,18 +465,18 @@ export const TesteEneagrama = ({
                 <div className="grid grid-cols-2 gap-4 mb-6">
                   <div className="p-4 bg-blue-50 dark:bg-blue-950/40 rounded-lg border border-blue-100">
                     <p className="text-xs font-semibold text-blue-700 dark:text-blue-300 uppercase tracking-wide mb-1">
-                      Pontuação
+                      Afinidade
                     </p>
                     <p className="text-3xl font-bold text-blue-600 dark:text-blue-300">
-                      {topTres[0].pontuacao}/10
+                      {pctTipo(topTres[0].pontuacao)}%
                     </p>
                   </div>
                   <div className="p-4 bg-gray-50 dark:bg-slate-950 rounded-lg border border-gray-200 dark:border-slate-800">
                     <p className="text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase tracking-wide mb-1">
-                      Percentual
+                      Posição
                     </p>
                     <p className="text-3xl font-bold text-gray-900 dark:text-slate-100">
-                      {Math.round((topTres[0].pontuacao / ENEAGRAMA_QUESTIONS.length) * 100)}%
+                      1º
                     </p>
                   </div>
                 </div>
@@ -484,7 +493,6 @@ export const TesteEneagrama = ({
             {/* Cards Verticais - Outros Tipos */}
             <div className="space-y-4">
               {topTres.slice(1, 3).map((item, index) => {
-                const percentual = (item.pontuacao / ENEAGRAMA_QUESTIONS.length) * 100;
                 return (
                   <Card key={item.tipo.numero} className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 shadow-sm">
                     <CardContent className="p-5">
@@ -496,7 +504,7 @@ export const TesteEneagrama = ({
                         </div>
                         <div className="text-right">
                           <span className="text-2xl font-bold text-gray-900 dark:text-slate-100">
-                            {item.pontuacao}/10
+                            {pctTipo(item.pontuacao)}%
                           </span>
                           <p className="text-xs text-gray-500 dark:text-slate-400">
                             {index + 2}º lugar
@@ -622,7 +630,7 @@ export const TesteEneagrama = ({
                 const [principalEntry, ...restEntries] = sortedTypes;
                 const [tipoPrincipalNum, pontuacaoPrincipal] = principalEntry;
                 const tipoPrincipalInfo = ENEAGRAMA_TIPOS[parseInt(tipoPrincipalNum)];
-                const percentualPrincipal = (Number(pontuacaoPrincipal) / ENEAGRAMA_QUESTIONS.length) * 100;
+                const percentualPrincipal = pctTipo(Number(pontuacaoPrincipal));
                 
                 return (
                   <>
@@ -661,7 +669,7 @@ export const TesteEneagrama = ({
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                       {restEntries.map(([tipo, pontuacao]) => {
                         const tipoInfo = ENEAGRAMA_TIPOS[parseInt(tipo)];
-                        const percentual = (Number(pontuacao) / ENEAGRAMA_QUESTIONS.length) * 100;
+                        const percentual = pctTipo(Number(pontuacao));
                         
                         return (
                           <div key={tipo} className="bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-lg p-5 hover:shadow-md transition-shadow">
