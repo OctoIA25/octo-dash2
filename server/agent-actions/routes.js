@@ -93,6 +93,19 @@ async function resolvePublicSourceMode(supabase, tenantId) {
   }
 }
 
+/** Aplica os filtros de listagem de runs a um query-builder (puro/testável). */
+function applyRunsFilters(query, { status, q, from, to, limit, offset } = {}) {
+  const lim = Math.min(Math.max(Number(limit) || 50, 1), 200);
+  const off = Math.max(Number(offset) || 0, 0);
+  let qb = query;
+  if (status) qb = qb.eq('status', status);
+  if (q) qb = qb.ilike('command_text', `%${q}%`);
+  if (from) qb = qb.gte('created_at', from);
+  if (to) qb = qb.lte('created_at', to);
+  qb = qb.order('created_at', { ascending: false }).range(off, off + lim - 1);
+  return qb;
+}
+
 /** Mapeia erros de domínio para HTTP status. */
 function statusFor(error) {
   if (!error) return 500;
@@ -180,6 +193,29 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
     return res.status(result.ok ? 200 : statusFor(result.error)).json(result);
   });
 
+  // GET /runs — lista os disparos do tenant (gestor vê todos). Lista leve:
+  // não traz itens da fila. Filtros: status, q (command_text), from/to, paginação.
+  app.get(`${basePath}/runs`, requireSupabaseAuth, async (req, res) => {
+    const tenantId = req.query.tenantId;
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'missing_tenant' });
+
+    const ctx = await resolveUserContext(supabase, req, tenantId);
+    if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
+
+    const base = supabase
+      .from('agent_action_runs')
+      .select('id, command_text, status, found_count, eligible_count, sent_count, failed_count, deduplicated_count, requested_by_email, created_at, completed_at')
+      .eq('tenant_id', tenantId);
+
+    const { status, q, from, to, limit, offset } = req.query;
+    const { data, error } = await applyRunsFilters(base, { status, q, from, to, limit, offset });
+    if (error) return res.status(500).json({ ok: false, error: 'lookup_failed' });
+
+    const lim = Math.min(Math.max(Number(limit) || 50, 1), 200);
+    const off = Math.max(Number(offset) || 0, 0);
+    return res.json({ ok: true, runs: data || [], limit: lim, offset: off });
+  });
+
   // -------------------------------------------------------------------------
   // GET /runs/:id — relatório do run (cabeçalho + falhas por destinatário).
   // -------------------------------------------------------------------------
@@ -239,4 +275,4 @@ export function registerAgentActionRoutes(app, supabase, options = {}) {
   registerDispatchRoutes(app, '/api/v1/agent-actions', supabase, options, makeDispatchDeps(supabase, options));
 }
 
-export const __test__ = { resolveUserContext, statusFor, isPlatformOwner, resolvePublicSourceMode, registerDispatchRoutes, makeDispatchDeps };
+export const __test__ = { resolveUserContext, statusFor, isPlatformOwner, resolvePublicSourceMode, applyRunsFilters, registerDispatchRoutes, makeDispatchDeps };

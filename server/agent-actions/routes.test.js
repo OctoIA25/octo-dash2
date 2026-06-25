@@ -1,7 +1,42 @@
 import { describe, it, expect } from 'vitest';
 import { __test__ } from './routes.js';
 
-const { resolveUserContext, statusFor, isPlatformOwner, resolvePublicSourceMode } = __test__;
+const { resolveUserContext, statusFor, isPlatformOwner, resolvePublicSourceMode, applyRunsFilters } = __test__;
+
+function recordingBuilder() {
+  const calls = [];
+  const b = {
+    eq: (c, v) => (calls.push(['eq', c, v]), b),
+    ilike: (c, v) => (calls.push(['ilike', c, v]), b),
+    gte: (c, v) => (calls.push(['gte', c, v]), b),
+    lte: (c, v) => (calls.push(['lte', c, v]), b),
+    order: (c, o) => (calls.push(['order', c, o]), b),
+    range: (a, z) => (calls.push(['range', a, z]), b),
+  };
+  return { b, calls };
+}
+
+describe('applyRunsFilters', () => {
+  it('aplica status, busca, período, ordem e paginação', () => {
+    const { b, calls } = recordingBuilder();
+    applyRunsFilters(b, { status: 'done', q: 'arquivados', from: '2026-01-01', to: '2026-02-01', limit: 50, offset: 0 });
+    expect(calls).toContainEqual(['eq', 'status', 'done']);
+    expect(calls).toContainEqual(['ilike', 'command_text', '%arquivados%']);
+    expect(calls).toContainEqual(['gte', 'created_at', '2026-01-01']);
+    expect(calls).toContainEqual(['lte', 'created_at', '2026-02-01']);
+    expect(calls).toContainEqual(['order', 'created_at', { ascending: false }]);
+    expect(calls).toContainEqual(['range', 0, 49]);
+  });
+
+  it('omite filtros ausentes (só ordem + paginação default)', () => {
+    const { b, calls } = recordingBuilder();
+    applyRunsFilters(b, {});
+    expect(calls.find((c) => c[0] === 'eq')).toBeUndefined();
+    expect(calls.find((c) => c[0] === 'ilike')).toBeUndefined();
+    expect(calls).toContainEqual(['order', 'created_at', { ascending: false }]);
+    expect(calls).toContainEqual(['range', 0, 49]);
+  });
+});
 
 describe('routes.statusFor — mapeamento de erro → HTTP', () => {
   it('permissão → 403', () => {
