@@ -69,4 +69,9 @@ describe('fetchTemplateStatus', () => {
     const r = await fetchTemplateStatus({ wabaId: 'W', accessToken: 'T', name: 'p', fetchImpl });
     expect(r.status).toBe('pending');
   });
+  it('data só com template de outro name → pending (não pega o errado)', async () => {
+    const fetchImpl = async () => okJson({ data: [{ name: 'outro', status: 'APPROVED' }] });
+    const r = await fetchTemplateStatus({ wabaId: 'W', accessToken: 'T', name: 'meu', fetchImpl });
+    expect(r.status).toBe('pending');
+  });
 });
