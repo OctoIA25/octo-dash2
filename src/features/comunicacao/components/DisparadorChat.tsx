@@ -13,10 +13,11 @@
  * prévia. A separação prévia/confirmação é a proteção contra disparo acidental.
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTheme } from '@/hooks/useTheme';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
+import { listAudiences, type Audience } from '../services/audiencesService';
 import {
   previewDisparo,
   confirmDisparo,
@@ -45,6 +46,8 @@ export const DisparadorChat = () => {
   const isDark = currentTheme === 'preto' || currentTheme === 'cinza';
   const { tenantId } = useAuthContext();
 
+  const [audiences, setAudiences] = useState<Audience[]>([]);
+  const [audienceId, setAudienceId] = useState<string>('');
   const [command, setCommand] = useState('');
   const [phase, setPhase] = useState<Phase>('idle');
   const [preview, setPreview] = useState<DisparoPreview | null>(null);
@@ -54,6 +57,11 @@ export const DisparadorChat = () => {
   const [report, setReport] = useState<RunReport['run'] | null>(null);
 
   const tenantReady = Boolean(tenantId && tenantId !== 'owner');
+
+  useEffect(() => {
+    if (!tenantReady) return;
+    listAudiences(tenantId as string).then((r) => { if (r.ok) setAudiences(r.audiences); }).catch(() => {});
+  }, [tenantId, tenantReady]);
 
   const reset = () => {
     setPreview(null);
@@ -66,10 +74,12 @@ export const DisparadorChat = () => {
 
   const handlePreview = async () => {
     if (!tenantReady) return toast.error('Selecione uma imobiliária primeiro.');
-    if (!command.trim()) return;
+    if (!audienceId && !command.trim()) return;
     setPhase('previewing');
     try {
-      const res = await previewDisparo(tenantId as string, command.trim());
+      const res = audienceId
+        ? await previewDisparo(tenantId as string, undefined, audienceId)
+        : await previewDisparo(tenantId as string, command.trim());
       if (!res.ok || !res.preview || !res.previewToken) {
         toast.error(res.clarification || labelForError(res.error));
         setPhase('idle');
@@ -126,6 +136,22 @@ export const DisparadorChat = () => {
       </div>
 
       <div className="flex-1 overflow-y-auto p-6 space-y-4 max-w-2xl w-full mx-auto">
+        {/* Seletor de público salvo */}
+        {audiences.length > 0 && (
+          <div className={card}>
+            <label className={`block text-xs font-semibold mb-2 ${textMuted}`}>Disparar para um público salvo</label>
+            <select
+              aria-label="Público salvo"
+              value={audienceId}
+              onChange={(e) => setAudienceId(e.target.value)}
+              className={`w-full rounded-lg border px-3 py-2 text-sm ${isDark ? 'bg-neutral-900 border-neutral-700 text-gray-100' : 'bg-gray-50 border-gray-300 text-gray-900'}`}
+            >
+              <option value="">— escolher (ou digite o comando abaixo) —</option>
+              {audiences.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </div>
+        )}
+
         {/* Entrada do comando */}
         <div className={card}>
           <label className={`block text-xs font-semibold mb-2 ${textMuted}`}>Comando</label>
@@ -141,7 +167,7 @@ export const DisparadorChat = () => {
           />
           <button
             onClick={handlePreview}
-            disabled={!command.trim() || phase === 'previewing' || phase === 'sending'}
+            disabled={(!audienceId && !command.trim()) || phase === 'previewing' || phase === 'sending'}
             className="mt-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-semibold"
           >
             {phase === 'previewing' ? 'Interpretando…' : 'Gerar prévia'}

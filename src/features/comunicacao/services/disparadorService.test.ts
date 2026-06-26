@@ -54,4 +54,11 @@ describe('disparadorService', () => {
     expect(url).toContain('/api/v1/communication/dispatch/runs/run-1');
     expect(url).toContain('tenantId=t1');
   });
+
+  it('previewDisparo envia audienceId quando fornecido (sem command)', async () => {
+    const spy = vi.spyOn(global, 'fetch').mockResolvedValue({ json: async () => ({ ok: true, previewToken: 'tok', preview: { foundCount: 5 } }) } as Response);
+    await previewDisparo('t1', undefined, 'aud-1');
+    const body = JSON.parse((spy.mock.calls[0][1] as RequestInit).body as string);
+    expect(body).toEqual({ tenantId: 't1', audienceId: 'aud-1' });
+  });
 });

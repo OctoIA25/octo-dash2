@@ -71,11 +71,14 @@ async function authedFetch(path: string, init: RequestInit): Promise<Response> {
   });
 }
 
-/** Etapa 1: interpreta o comando e devolve a prévia (sem enviar). */
-export async function previewDisparo(tenantId: string, command: string): Promise<PreviewResponse> {
+/** Etapa 1: interpreta o comando (ou resolve um público salvo) e devolve a prévia (sem enviar). */
+export async function previewDisparo(tenantId: string, command?: string, audienceId?: string): Promise<PreviewResponse> {
+  const body: Record<string, unknown> = { tenantId };
+  if (audienceId) body.audienceId = audienceId;
+  else body.command = command;
   const res = await authedFetch('/api/v1/communication/dispatch/preview', {
     method: 'POST',
-    body: JSON.stringify({ tenantId, command }),
+    body: JSON.stringify(body),
   });
   return res.json();
 }
