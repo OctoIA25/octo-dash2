@@ -788,7 +788,11 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
         if (!tpl.ok) return res.status(400).json({ ok: false, error: tpl.error });
         const vc = validateMapping(vm, tpl.variables);
         if (!vc.ok) return res.status(400).json({ ok: false, error: 'incomplete_mapping', missing: vc.missing });
-        patch.recurrence = recurrence;
+        patch.recurrence = {
+          frequency: recurrence.frequency,
+          time: recurrence.time,
+          ...(recurrence.frequency === 'weekly' ? { day_of_week: recurrence.day_of_week } : {}),
+        };
         patch.scheduled_at = computeNextOccurrence(recurrence, Date.now());
         patch.schedule_status = 'scheduled';
         patch.schedule = { mode: 'recurring' };

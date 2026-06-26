@@ -804,16 +804,18 @@ describe('PUT /campaigns/:id — recurrence (C4a T4)', () => {
 
   it('recurrence daily válida → grava recurrence + schedule_status scheduled + scheduled_at (não-null)', async () => {
     const { handler, patches } = makePutHandler();
-    const recurrence = { frequency: 'daily', time: '09:00' };
+    // Inclui campo extra (foo) para provar que é descartado na normalização
+    const recurrence = { frequency: 'daily', time: '09:00', foo: 'bar' };
     const { req, res, captured } = runPutRecurrence({ recurrence });
     await handler(req, res);
     // Não deve retornar nenhum erro de validação
     expect(captured.body?.error).not.toBe('invalid_recurrence');
     expect(captured.body?.error).not.toBe('incomplete_mapping');
-    // O patch gravado deve conter os campos esperados
+    // O patch gravado deve conter apenas os campos conhecidos (sem foo)
     const patch = patches.find((p) => p.recurrence);
     expect(patch).toBeTruthy();
-    expect(patch.recurrence).toEqual(recurrence);
+    expect(patch.recurrence).toEqual({ frequency: 'daily', time: '09:00' });
+    expect(patch.recurrence.foo).toBeUndefined(); // campo extra descartado
     expect(patch.schedule_status).toBe('scheduled');
     expect(patch.scheduled_at).toBeTruthy(); // ISO string, não-null
     expect(patch.schedule).toEqual({ mode: 'recurring' });
