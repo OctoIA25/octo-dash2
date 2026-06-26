@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toMetaBody, submitTemplate, fetchTemplateStatus, extractBodyFromComponents, mapMetaTemplateToRow } from './metaTemplates.js';
+import { toMetaBody, submitTemplate, fetchTemplateStatus, extractBodyFromComponents, mapMetaTemplateToRow, listApprovedTemplates } from './metaTemplates.js';
 
 describe('toMetaBody', () => {
   it('sem variáveis: texto igual, lista vazia', () => {
@@ -113,5 +113,32 @@ describe('mapMetaTemplateToRow', () => {
     const row = mapMetaTemplateToRow({ name: 'x', language: 'en', category: 'AUTH', components: [{ type: 'BODY', text: 'hi' }] });
     expect(row.category).toBe('MARKETING');
     expect(row.provider_template_id).toBe(null);
+  });
+});
+
+describe('listApprovedTemplates', () => {
+  it('GET por waba e filtra só APPROVED', async () => {
+    let url; let init;
+    const fetchImpl = async (u, i) => { url = u; init = i; return okJson({ data: [
+      { name: 'a', status: 'APPROVED' }, { name: 'b', status: 'PENDING' }, { name: 'c', status: 'APPROVED' },
+    ] }); };
+    const r = await listApprovedTemplates({ wabaId: 'WABA1', accessToken: 'TOK', fetchImpl });
+    expect(r.ok).toBe(true);
+    expect(r.templates.map((t) => t.name)).toEqual(['a', 'c']);
+    expect(url).toContain('/WABA1/message_templates');
+    expect(url).toContain('limit=200');
+    expect(init.headers.Authorization).toBe('Bearer TOK');
+  });
+  it('erro da Meta → { ok:false }', async () => {
+    const fetchImpl = async () => errJson({ error: { message: 'bad token' } });
+    const r = await listApprovedTemplates({ wabaId: 'W', accessToken: 'T', fetchImpl });
+    expect(r.ok).toBe(false);
+    expect(r.error).toBe('meta_list_failed');
+    expect(r.detail).toContain('bad token');
+  });
+  it('exceção de rede → { ok:false } (não lança)', async () => {
+    const fetchImpl = async () => { throw new Error('net'); };
+    const r = await listApprovedTemplates({ wabaId: 'W', accessToken: 'T', fetchImpl });
+    expect(r.ok).toBe(false);
   });
 });
