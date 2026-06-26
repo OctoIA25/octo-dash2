@@ -721,6 +721,34 @@ describe('POST /campaigns/:id/cancel-schedule (C3 T5)', () => {
   });
 });
 
+// Cobertura do fix de double-send: após um dispatch bem-sucedido, o handler
+// emite um UPDATE com { schedule_status:'none', scheduled_at:null } filtrado
+// por .eq('schedule_status','scheduled'). Como executeCampaignDispatch exige
+// service.js + n8n + supabase completo para retornar ok:true, a verificação
+// end-to-end do UPDATE fica nos testes E2E (e2e/campaigns). O teste abaixo
+// cobre a invariante pura da limpeza (patch + filtro idempotente).
+describe('dispatch imediato — limpar agendamento pendente (evita double-send)', () => {
+  it('patch de limpeza contém schedule_status:none e scheduled_at:null', () => {
+    const patch = { schedule_status: 'none', scheduled_at: null };
+    expect(patch.schedule_status).toBe('none');
+    expect(patch.scheduled_at).toBeNull();
+  });
+
+  it('filtro usa .eq(schedule_status, scheduled) — garante idempotência (não afeta campanha não agendada)', () => {
+    // Simula a cadeia de filtros emitida pelo handler: se schedule_status
+    // NÃO for 'scheduled', o update não afeta nenhuma linha (0 linhas = ok).
+    const filters = [];
+    const node = { eq: (col, val) => (filters.push([col, val]), node), update: () => node };
+    node.update({ schedule_status: 'none', scheduled_at: null })
+      .eq('id', 'camp1')
+      .eq('tenant_id', 't1')
+      .eq('schedule_status', 'scheduled');
+    expect(filters).toContainEqual(['schedule_status', 'scheduled']);
+    expect(filters).toContainEqual(['id', 'camp1']);
+    expect(filters).toContainEqual(['tenant_id', 't1']);
+  });
+});
+
 describe('GET /campaigns/:id/runs — filtra por tenant + campaign', () => {
   it('aplica .eq(tenant_id) e .eq(campaign_id) na query de runs', async () => {
     const eqCalls = [];

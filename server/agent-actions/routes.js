@@ -19,7 +19,7 @@ import { runDueActions } from './actionWorker.js';
 import { makeSchedulerDeps } from '../recommendations/index.js';
 import { resolveSegmentDual } from './segmentResolver.js';
 import { validateSegment } from './segmentSchema.js';
-import { toMetaBody, submitTemplate, fetchTemplateStatus, listApprovedTemplates, mapMetaTemplateToRow } from '../communication/metaTemplates.js';
+import { toMetaBody, submitTemplate, fetchTemplateStatus, listApprovedTemplates, mapMetaTemplateToRow, deleteMessageTemplate } from '../communication/metaTemplates.js';
 import { validateMapping } from './resolveTemplateParams.js';
 import { assertTemplateUsable as assertTemplateUsableShared } from './templateGuards.js';
 import { executeCampaignDispatch } from './campaignDispatch.js';
@@ -590,11 +590,14 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
     if (!(ctx.role === 'admin' || ctx.role === 'owner')) return res.status(403).json({ ok: false, error: 'forbidden' });
     // Não exclui template já enviado/aprovado na Meta (ficaria órfão na WABA).
     const { data: cur, error: curErr } = await supabase
-      .from(TEMPLATES_TABLE).select('approval_status').eq('id', id).eq('tenant_id', tenantId).maybeSingle();
+      .from(TEMPLATES_TABLE).select('approval_status, name, provider_template_id').eq('id', id).eq('tenant_id', tenantId).maybeSingle();
     if (curErr) return res.status(500).json({ ok: false, error: 'lookup_failed' });
     if (!cur) return res.status(404).json({ ok: false, error: 'template_not_found' });
-    if (cur.approval_status === 'pending' || cur.approval_status === 'approved') {
-      return res.status(400).json({ ok: false, error: 'template_locked' });
+    if (cur.provider_template_id) {
+      const creds = await loadMetaCreds(supabase, tenantId);
+    if (!creds.ok) return res.status(400).json({ ok: false, error: creds.error });
+      const del = await deleteMessageTemplate({ wabaId: creds.wabaId, accessToken: creds.accessToken, name: cur.name, providerTemplateId: cur.provider_template_id });
+      if (!del.ok) return res.status(502).json({ ok: false, error: 'meta_delete_failed', detail: del.detail });
     }
     const { error } = await supabase.from(TEMPLATES_TABLE).delete().eq('id', id).eq('tenant_id', tenantId);
     if (error) return res.status(500).json({ ok: false, error: 'delete_failed' });
@@ -847,6 +850,12 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
       }
       return res.status(400).json(body);
     }
+    // Disparo imediato cancela qualquer agendamento pendente desta campanha,
+    // para o worker não reenviar no horário original (evita double-send).
+    await supabase.from(CAMPAIGNS_TABLE)
+      .update({ schedule_status: 'none', scheduled_at: null })
+      .eq('id', id).eq('tenant_id', tenantId).eq('schedule_status', 'scheduled')
+      .then(() => {}, (e) => console.error('[campaigns] limpar agendamento pós-dispatch falhou:', e?.message));
     return res.json({ ok: true, runId: result.runId, enqueued: result.enqueued });
   });
 
