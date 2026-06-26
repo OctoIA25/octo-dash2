@@ -16,7 +16,7 @@ import {
 } from '../services/campaignsService';
 
 import { isMappingComplete, renderWithExample, type VarMapping } from '../variableMapping';
-import { localTimeToUtc, utcTimeToLocal } from '../recurrence';
+import { localTimeToUtc, utcTimeToLocal, localDayTimeToUtc, utcDayTimeToLocal } from '../recurrence';
 import { VariableMapper } from './VariableMapper';
 import { WhatsAppPreview } from './WhatsAppPreview';
 
@@ -81,11 +81,18 @@ export function CampanhaWizard({ tenantId, editing, onClose, onSaved }: Campanha
   );
   const [scheduledAtLocal, setScheduledAtLocal] = useState<string>(editing?.scheduled_at ? toLocalInput(editing.scheduled_at) : '');
   // Recorrência: frequência, dia (semanal) e horário em LOCAL (BR) — convertido p/ UTC ao salvar.
-  const [recFrequency, setRecFrequency] = useState<'daily' | 'weekly'>(editing?.recurrence?.frequency ?? 'daily');
-  const [recDayOfWeek, setRecDayOfWeek] = useState<number>(editing?.recurrence?.day_of_week ?? 1);
-  const [recTimeLocal, setRecTimeLocal] = useState<string>(
-    editing?.recurrence ? utcTimeToLocal(editing.recurrence.time) : '09:00',
-  );
+  // Pré-população (editando): a recorrência persiste em UTC. Para weekly, dia+hora
+  // são convertidos juntos (utcDayTimeToLocal), pois o dia pode mudar ao cruzar a
+  // meia-noite. Para daily, só o horário é convertido (não há dia).
+  const editingRec = editing?.recurrence ?? null;
+  const editingRecLocal = editingRec
+    ? editingRec.frequency === 'weekly'
+      ? utcDayTimeToLocal(editingRec.day_of_week ?? 0, editingRec.time)
+      : { day_of_week: 1, time: utcTimeToLocal(editingRec.time) }
+    : null;
+  const [recFrequency, setRecFrequency] = useState<'daily' | 'weekly'>(editingRec?.frequency ?? 'daily');
+  const [recDayOfWeek, setRecDayOfWeek] = useState<number>(editingRecLocal?.day_of_week ?? 1);
+  const [recTimeLocal, setRecTimeLocal] = useState<string>(editingRecLocal?.time ?? '09:00');
 
   useEffect(() => {
     let alive = true;
@@ -233,11 +240,12 @@ export function CampanhaWizard({ tenantId, editing, onClose, onSaved }: Campanha
     if (!isMappingComplete(variables, variableMapping)) { toast.error('Mapeie todas as variáveis do template.'); return; }
     setSaving(true);
     try {
-      const recurrence = {
-        frequency: recFrequency,
-        ...(recFrequency === 'weekly' ? { day_of_week: recDayOfWeek } : {}),
-        time: localTimeToUtc(recTimeLocal),
-      };
+      // weekly: dia+hora são convertidos JUNTOS p/ UTC — se o horário cruzar a
+      // meia-noite (ex.: dom 23:00 local → seg 02:00 UTC), o day_of_week também
+      // avança, para o worker (que opera em UTC) disparar no dia certo.
+      const recurrence = recFrequency === 'weekly'
+        ? { frequency: recFrequency, ...localDayTimeToUtc(recDayOfWeek, recTimeLocal) }
+        : { frequency: recFrequency, time: localTimeToUtc(recTimeLocal) };
       const input = { ...buildInput(), recurrence };
       let campaignId = savedId;
       if (!campaignId && !editing) {

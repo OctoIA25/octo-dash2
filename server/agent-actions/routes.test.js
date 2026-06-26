@@ -621,20 +621,18 @@ describe('PUT /campaigns/:id — scheduledAt (C3 T5)', () => {
 });
 
 describe('POST /campaigns/:id/cancel-schedule (C3 T5)', () => {
-  function cancelHarness(updateError = null) {
+  // affected = linhas retornadas pelo .select('id'); [] simula "nada a cancelar".
+  function cancelHarness(updateError = null, affected = [{ id: 'camp1' }]) {
     const updates = [];
     const supabase = {
       from() {
         const node = {
           update(patch) { updates.push(patch); return node; },
           eq: () => node,
-          then: undefined, // não é thenable por si
+          or: () => node,
+          // .select('id') é o terminal: o handler faz `await ...select('id')`.
+          select: () => Promise.resolve({ data: affected, error: updateError }),
         };
-        // Simula a promise final do .eq().eq().eq() — supabase retorna { error }
-        // A cadeia .eq().eq().eq() retorna node; o await node retorna { error }
-        node[Symbol.iterator] = undefined;
-        // Hack: torna node "await-able" para o handler que faz `const { error } = await supabase...`
-        node.then = (resolve) => resolve({ error: updateError });
         return node;
       },
     };
@@ -681,6 +679,7 @@ describe('POST /campaigns/:id/cancel-schedule (C3 T5)', () => {
           update: () => node,
           select: () => node,
           eq: () => node,
+          or: () => node,
           ilike: () => node,
           maybeSingle: async () => {
             if (table === 'tenant_memberships') return { data: { role: 'corretor' }, error: null };
@@ -688,7 +687,6 @@ describe('POST /campaigns/:id/cancel-schedule (C3 T5)', () => {
             return { data: null, error: null };
           },
         };
-        node.then = (resolve) => resolve({ error: null });
         return node;
       },
     };
@@ -704,12 +702,14 @@ describe('POST /campaigns/:id/cancel-schedule (C3 T5)', () => {
     expect(captured.body).toEqual({ ok: false, error: 'forbidden' });
   });
 
-  it('idempotente: update não falha se campanha não estava scheduled (ok:true)', async () => {
-    // Mesmo que nenhuma linha seja afetada, a rota devolve ok:true (sem verificar rowcount).
-    const { handler } = cancelHarness();
+  it('campanha sem agendamento nem recorrência (nada afetado) → 404 not_scheduled', async () => {
+    // O .or() filtra apenas agendamento ativo OU recorrência; se a campanha não
+    // tem nenhum dos dois, nenhuma linha é afetada → 404 (evita ok:true falso).
+    const { handler } = cancelHarness(null, []);
     const { req, res, captured } = runCancel({});
     await handler(req, res);
-    expect(captured.body).toEqual({ ok: true });
+    expect(captured.status).toBe(404);
+    expect(captured.body).toEqual({ ok: false, error: 'not_scheduled' });
   });
 
   it('erro do banco → 500 persist_failed', async () => {
@@ -863,7 +863,8 @@ describe('POST /campaigns/:id/cancel-schedule — limpa recurrence (C4a T4)', ()
         const node = {
           update(patch) { updates.push(patch); return node; },
           eq: () => node,
-          then: (resolve) => resolve({ error: null }),
+          or: () => node,
+          select: () => Promise.resolve({ data: [{ id: 'camp1' }], error: null }),
         };
         return node;
       },

@@ -888,10 +888,19 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
     const ctx = await resolveUserContext(supabase, req, tenantId);
     if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
     if (!canManageCampaigns(ctx.role)) return res.status(403).json({ ok: false, error: 'forbidden' });
-    const { error } = await supabase.from(CAMPAIGNS_TABLE)
+    // Cancela campanhas com QUALQUER agendamento ativo, não só 'scheduled'.
+    // Uma campanha RECORRENTE pode estar momentaneamente em 'dispatched' (entre
+    // disparo e reagendamento) ou 'error'; sem isto o cancel não afetaria nada
+    // mas retornaria ok:true (cancelamento silencioso) e a recorrência seguiria.
+    // Condição: schedule_status ativo OU recurrence presente. Se nada for afetado
+    // (nem agendamento nem recorrência) → 404 not_scheduled (em vez de ok falso).
+    const { data: affected, error } = await supabase.from(CAMPAIGNS_TABLE)
       .update({ schedule_status: 'canceled', scheduled_at: null, schedule: { mode: 'now' }, recurrence: null })
-      .eq('id', id).eq('tenant_id', tenantId).eq('schedule_status', 'scheduled');
+      .eq('id', id).eq('tenant_id', tenantId)
+      .or('schedule_status.in.(scheduled,dispatched,error),recurrence.not.is.null')
+      .select('id');
     if (error) return res.status(500).json({ ok: false, error: 'persist_failed' });
+    if (!affected || affected.length === 0) return res.status(404).json({ ok: false, error: 'not_scheduled' });
     return res.json({ ok: true });
   });
 
