@@ -83,18 +83,18 @@ export function TemplatesManager() {
   }
 
   async function handleImport() {
-    if (importing) return;
+    if (importing || !tenantReady) return;
     setImporting(true);
     try {
       const r = await importFromMeta(tenantId as string);
-      if (r.ok) {
-        toast.success(`${r.imported} importados, ${r.updated} atualizados`);
-        reload();
-      } else if (r.error === 'whatsapp_not_configured') {
-        toast.error('WhatsApp não configurado para este tenant.');
-      } else {
-        toast.error('Não foi possível importar da Meta.');
+      if (!r.ok) {
+        toast.error(r.error === 'whatsapp_not_configured' ? 'WhatsApp não configurado para este tenant.' : 'Não foi possível importar da Meta.');
+        return;
       }
+      toast.success(`${r.imported} importados, ${r.updated} atualizados`);
+      reload();
+    } catch {
+      toast.error('Não foi possível importar da Meta.');
     } finally {
       setImporting(false);
     }

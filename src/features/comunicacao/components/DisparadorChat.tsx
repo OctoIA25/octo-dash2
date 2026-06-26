@@ -71,6 +71,12 @@ export const DisparadorChat = () => {
     listTemplates(tenantId as string).then((r) => { if (r.ok) setTemplates(r.templates.filter((t) => t.approval_status === 'approved')); }).catch(() => {});
   }, [tenantId, tenantReady]);
 
+  const handleTemplateSelect = (id: string) => {
+    const t = templates.find((x) => x.id === id);
+    if (t) { setMessage(t.body); setSelectedTemplateName(t.name); }
+    else { setSelectedTemplateName(''); }
+  };
+
   const reset = () => {
     setPreview(null);
     setPreviewToken(null);
@@ -207,7 +213,7 @@ export const DisparadorChat = () => {
                   id="tpl-select"
                   aria-label="Template aprovado"
                   defaultValue=""
-                  onChange={(e) => { const t = templates.find((x) => x.id === e.target.value); if (t) { setMessage(t.body); setSelectedTemplateName(t.name); } }}
+                  onChange={(e) => handleTemplateSelect(e.target.value)}
                   className={`w-full rounded-lg border px-3 py-2 text-sm ${isDark ? 'bg-neutral-900 border-neutral-700 text-gray-100' : 'bg-gray-50 border-gray-300 text-gray-900'}`}
                 >
                   <option value="">— escolher um template —</option>
