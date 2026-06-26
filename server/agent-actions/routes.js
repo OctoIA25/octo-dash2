@@ -780,8 +780,10 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
         if (isNaN(when.getTime()) || when.getTime() <= Date.now()) return res.status(400).json({ ok: false, error: 'invalid_schedule' });
         // valida template aprovado + mapping (não agenda o que falharia)
         const cur = await supabase.from(CAMPAIGNS_TABLE).select('template_id, variable_mapping').eq('id', id).eq('tenant_id', tenantId).maybeSingle();
-        const tplId = patch.template_id || cur.data?.template_id;
-        const vm = patch.variable_mapping || cur.data?.variable_mapping || {};
+        if (cur.error) return res.status(500).json({ ok: false, error: 'lookup_failed' });
+        if (!cur.data) return res.status(404).json({ ok: false, error: 'campaign_not_found' });
+        const tplId = patch.template_id || cur.data.template_id;
+        const vm = patch.variable_mapping || cur.data.variable_mapping || {};
         const tpl = await assertTemplateUsable(tenantId, tplId);
         if (!tpl.ok) return res.status(400).json({ ok: false, error: tpl.error });
         const vc = validateMapping(vm, tpl.variables);

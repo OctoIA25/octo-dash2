@@ -530,6 +530,70 @@ describe('PUT /campaigns/:id — scheduledAt (C3 T5)', () => {
     expect(captured.body?.error).not.toBe('incomplete_mapping');
   });
 
+  it('scheduledAt futuro + erro no lookup do cur → 500 lookup_failed (não 400 enganoso)', async () => {
+    // Simula falha transiente no lookup de template_id/variable_mapping da campanha.
+    // Sem o fix, cur.data seria undefined → tplId undefined → template_required (400 enganoso).
+    // Com o fix, cur.error → 500 lookup_failed.
+    const futureIso = new Date(Date.now() + 3_600_000).toISOString();
+    function fakeWithCurError() {
+      return {
+        from(table) {
+          const node = {
+            update: () => node,
+            select: () => node,
+            eq: () => node,
+            maybeSingle: async () => {
+              if (table === 'communication_campaigns') return { data: null, error: { message: 'db timeout' } };
+              return { data: null, error: null };
+            },
+          };
+          return node;
+        },
+      };
+    }
+    const supabase = fakeWithCurError();
+    const { app, find } = captureRoutes();
+    const deps = { requireSupabaseAuth: (_req, _res, next) => next(), schedulerDeps: {} };
+    registerDispatchRoutes(app, '/base', supabase, {}, deps);
+    const handler = find('PUT', '/base/campaigns/:id');
+    const { req, res, captured } = runPut({ scheduledAt: futureIso });
+    await handler(req, res);
+    expect(captured.status).toBe(500);
+    expect(captured.body).toEqual({ ok: false, error: 'lookup_failed' });
+  });
+
+  it('scheduledAt futuro + campanha de outro tenant (cur.data null) → 404 campaign_not_found', async () => {
+    // Prova que o lookup do cur é tenant-scoped: se a campanha não pertence ao
+    // tenant (eq('tenant_id', tenantId) exclui a linha), cur.data vem null → 404.
+    const futureIso = new Date(Date.now() + 3_600_000).toISOString();
+    function fakeWrongTenant() {
+      return {
+        from(table) {
+          const node = {
+            update: () => node,
+            select: () => node,
+            eq: () => node,
+            maybeSingle: async () => {
+              // communication_campaigns retorna null (campanha existe mas é de outro tenant)
+              if (table === 'communication_campaigns') return { data: null, error: null };
+              return { data: null, error: null };
+            },
+          };
+          return node;
+        },
+      };
+    }
+    const supabase = fakeWrongTenant();
+    const { app, find } = captureRoutes();
+    const deps = { requireSupabaseAuth: (_req, _res, next) => next(), schedulerDeps: {} };
+    registerDispatchRoutes(app, '/base', supabase, {}, deps);
+    const handler = find('PUT', '/base/campaigns/:id');
+    const { req, res, captured } = runPut({ scheduledAt: futureIso });
+    await handler(req, res);
+    expect(captured.status).toBe(404);
+    expect(captured.body).toEqual({ ok: false, error: 'campaign_not_found' });
+  });
+
   it('scheduledAt null → limpa agendamento (sem erro)', async () => {
     function fakeForClear() {
       return {
