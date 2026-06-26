@@ -4,6 +4,7 @@
  * criar/editar/excluir via formulário guiado por tipo de filtro (sem JSON).
  */
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { useAuthContext } from '@/contexts/AuthContext';
 import {
   listAudiences, createAudience, updateAudience, deleteAudience, getAudienceCount, type Audience,
@@ -52,10 +53,10 @@ export function PublicosManager() {
       const res = await listAudiences(tenantId as string);
       if (!res.ok) { setError(true); setAudiences([]); return; }
       setAudiences(res.audiences);
-      // contagens lazy por item
-      for (const a of res.audiences) {
-        getAudienceCount(tenantId as string, a.id).then((c) => { if (c.ok) setCounts((p) => ({ ...p, [a.id]: c.count })); }).catch(() => {});
-      }
+      // Contagens em paralelo (uma por público); falhas individuais são ignoradas.
+      await Promise.allSettled(res.audiences.map((a) =>
+        getAudienceCount(tenantId as string, a.id).then((c) => { if (c.ok) setCounts((p) => ({ ...p, [a.id]: c.count })); }),
+      ));
     } catch { setError(true); } finally { setLoading(false); }
   }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -65,18 +66,38 @@ export function PublicosManager() {
     setEditId(null); setName(''); setType('archived'); setFields({ days: '', broker: '', interest: '', names: '' }); setFormOpen(true);
   }
 
+  function openEdit(a: Audience) {
+    const seg = a.segment;
+    setEditId(a.id);
+    setName(a.name);
+    setType(seg.type);
+    setFields({
+      days: 'days' in seg ? String(seg.days) : '',
+      broker: 'broker' in seg ? seg.broker : '',
+      interest: 'interest' in seg ? seg.interest : '',
+      names: 'names' in seg ? seg.names.join(', ') : '',
+    });
+    setFormOpen(true);
+  }
+
   async function save() {
     const segment = buildSegment(type, fields);
     const body = { name: name.trim(), segment };
-    if (editId) await updateAudience(tenantId as string, editId, body);
-    else await createAudience(tenantId as string, body);
+    const res = editId
+      ? await updateAudience(tenantId as string, editId, body)
+      : await createAudience(tenantId as string, body);
+    if (!res.ok) {
+      toast.error(res.error === 'audience_name_taken' ? 'Já existe um público com esse nome.' : 'Não foi possível salvar o público.');
+      return;
+    }
     setFormOpen(false);
     reload();
   }
 
   async function remove(a: Audience) {
     if (!confirm(`Excluir o público "${a.name}"?`)) return;
-    await deleteAudience(tenantId as string, a.id);
+    const res = await deleteAudience(tenantId as string, a.id);
+    if (!res.ok) { toast.error('Não foi possível excluir o público.'); return; }
     reload();
   }
 
@@ -103,11 +124,12 @@ export function PublicosManager() {
             {audiences.map((a) => (
               <li key={a.id} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-3 flex items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-[13px] font-semibold text-slate-800 dark:text-slate-100 truncate">{a.name}</p>
-                  <p className="text-[11.5px] text-slate-400 truncate">{describeSegment(a.segment)}</p>
+                  <p className="text-[13px] font-semibold text-slate-800 dark:text-slate-100 truncate" title={a.name}>{a.name}</p>
+                  <p className="text-[11.5px] text-slate-400 truncate" title={describeSegment(a.segment)}>{describeSegment(a.segment)}</p>
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
                   <span className="text-[12px] text-slate-500 tabular-nums">{counts[a.id] != null ? `${counts[a.id]} contatos` : '—'}</span>
+                  <button type="button" onClick={() => openEdit(a)} aria-label={`Editar ${a.name}`} className="text-[12px] text-slate-500 hover:text-slate-700">Editar</button>
                   <button type="button" onClick={() => remove(a)} aria-label={`Excluir ${a.name}`} className="text-[12px] text-rose-500 hover:text-rose-600">Excluir</button>
                 </div>
               </li>
