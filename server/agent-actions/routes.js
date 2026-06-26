@@ -640,12 +640,16 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
     const creds = await loadMetaCreds(supabase, tenantId);
     if (!creds.ok) return res.status(400).json({ ok: false, error: creds.error });
     const list = await listApprovedTemplates({ wabaId: creds.wabaId, accessToken: creds.accessToken });
-    if (!list.ok) return res.status(502).json({ ok: false, error: 'meta_list_failed', detail: list.detail });
+    if (!list.ok) {
+      console.error('[import-from-meta] erro ao listar templates da Meta:', list.detail);
+      return res.status(502).json({ ok: false, error: 'meta_list_failed' });
+    }
     if (list.templates.length === 0) return res.json({ ok: true, imported: 0, updated: 0, total: 0 });
     // names já existentes (p/ contar novos vs atualizados)
-    const { data: existing } = await supabase.from(TEMPLATES_TABLE).select('name').eq('tenant_id', tenantId);
+    const { data: existing, error: existErr } = await supabase.from(TEMPLATES_TABLE).select('name').eq('tenant_id', tenantId);
+    if (existErr) console.error('[import-from-meta] erro ao ler names existentes:', existErr.message);
     const existingNames = (existing || []).map((r) => r.name);
-    const rows = list.templates.map((t) => ({ tenant_id: tenantId, approval_status: 'approved', created_by_email: req.userEmail || null, ...mapMetaTemplateToRow(t) }));
+    const rows = list.templates.map((t) => ({ ...mapMetaTemplateToRow(t), tenant_id: tenantId, approval_status: 'approved' }));
     const { error: upErr } = await supabase.from(TEMPLATES_TABLE).upsert(rows, { onConflict: 'tenant_id,name' });
     if (upErr) return res.status(500).json({ ok: false, error: 'persist_failed' });
     return res.json({ ok: true, ...summarizeImport(existingNames, list.templates) });

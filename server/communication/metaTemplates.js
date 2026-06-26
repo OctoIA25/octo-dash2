@@ -92,12 +92,18 @@ export function mapMetaTemplateToRow(metaTpl) {
 export async function listApprovedTemplates({ wabaId, accessToken, graphVersion = DEFAULT_GRAPH_VERSION, fetchImpl }) {
   const doFetch = fetchImpl || fetch;
   try {
-    const url = `https://graph.facebook.com/${graphVersion}/${wabaId}/message_templates?limit=200`;
-    const res = await doFetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok || json?.error) return { ok: false, error: 'meta_list_failed', detail: json?.error?.message || `http_${res.status}` };
-    const templates = (json.data || []).filter((t) => t.status === 'APPROVED');
-    return { ok: true, templates };
+    let url = `https://graph.facebook.com/${graphVersion}/${wabaId}/message_templates?limit=200`;
+    const approved = [];
+    let guard = 0; // trava de segurança contra loop infinito
+    while (url && guard < 50) {
+      guard += 1;
+      const res = await doFetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.error) return { ok: false, error: 'meta_list_failed', detail: json?.error?.message || `http_${res.status}` };
+      for (const t of json.data || []) { if (t.status === 'APPROVED') approved.push(t); }
+      url = json?.paging?.next || null;
+    }
+    return { ok: true, templates: approved };
   } catch (e) {
     return { ok: false, error: 'meta_list_failed', detail: String(e?.message || e || 'unknown') };
   }

@@ -141,4 +141,16 @@ describe('listApprovedTemplates', () => {
     const r = await listApprovedTemplates({ wabaId: 'W', accessToken: 'T', fetchImpl });
     expect(r.ok).toBe(false);
   });
+  it('segue paging.next acumulando as páginas', async () => {
+    let call = 0;
+    const fetchImpl = async () => {
+      call += 1;
+      if (call === 1) return okJson({ data: [{ name: 'a', status: 'APPROVED' }], paging: { next: 'https://graph.facebook.com/v21.0/W/message_templates?after=XYZ' } });
+      return okJson({ data: [{ name: 'b', status: 'APPROVED' }, { name: 'c', status: 'PENDING' }] });
+    };
+    const r = await listApprovedTemplates({ wabaId: 'W', accessToken: 'T', fetchImpl });
+    expect(r.ok).toBe(true);
+    expect(r.templates.map((t) => t.name)).toEqual(['a', 'b']);
+    expect(call).toBe(2);
+  });
 });
