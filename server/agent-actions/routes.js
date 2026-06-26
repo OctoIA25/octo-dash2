@@ -677,7 +677,7 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
 
   // -- Campanhas --------------------------------------------------------------
   const CAMPAIGNS_TABLE = 'communication_campaigns';
-  const CAMPAIGN_COLS = 'id, name, template_id, audience_id, max_recipients, send_window, throttle_per_min, avoid_resend, variable_mapping, internal_note, notify_on_complete, schedule, status, created_by_email, created_at, updated_at';
+  const CAMPAIGN_COLS = 'id, name, template_id, audience_id, max_recipients, send_window, throttle_per_min, avoid_resend, variable_mapping, internal_note, notify_on_complete, schedule, status, created_by_email, created_at, updated_at, scheduled_at, schedule_status, schedule_error';
 
   // Guard de template extraído para templateGuards.js (fonte única reusada pelo
   // worker de agendamento). Wrapper local: injeta o `supabase` do closure e
@@ -757,7 +757,7 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
 
   app.put(`${basePath}/campaigns/:id`, requireSupabaseAuth, async (req, res) => {
     const { id } = req.params;
-    const { tenantId, name, templateId, audienceId, maxRecipients, sendWindow, throttlePerMin, avoidResend, variableMapping, internalNote, notifyOnComplete } = req.body || {};
+    const { tenantId, name, templateId, audienceId, maxRecipients, sendWindow, throttlePerMin, avoidResend, variableMapping, internalNote, notifyOnComplete, scheduledAt } = req.body || {};
     if (!tenantId) return res.status(400).json({ ok: false, error: 'missing_tenant' });
     const ctx = await resolveUserContext(supabase, req, tenantId);
     if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
@@ -773,6 +773,22 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
     if (variableMapping !== undefined) patch.variable_mapping = toJsonbObject(variableMapping);
     if (internalNote !== undefined) patch.internal_note = internalNote ?? null;
     if (notifyOnComplete !== undefined) patch.notify_on_complete = Boolean(notifyOnComplete);
+    if (scheduledAt !== undefined) {
+      if (scheduledAt === null) { patch.scheduled_at = null; patch.schedule_status = 'none'; patch.schedule = { mode: 'now' }; }
+      else {
+        const when = new Date(scheduledAt);
+        if (isNaN(when.getTime()) || when.getTime() <= Date.now()) return res.status(400).json({ ok: false, error: 'invalid_schedule' });
+        // valida template aprovado + mapping (não agenda o que falharia)
+        const cur = await supabase.from(CAMPAIGNS_TABLE).select('template_id, variable_mapping').eq('id', id).eq('tenant_id', tenantId).maybeSingle();
+        const tplId = patch.template_id || cur.data?.template_id;
+        const vm = patch.variable_mapping || cur.data?.variable_mapping || {};
+        const tpl = await assertTemplateUsable(tenantId, tplId);
+        if (!tpl.ok) return res.status(400).json({ ok: false, error: tpl.error });
+        const vc = validateMapping(vm, tpl.variables);
+        if (!vc.ok) return res.status(400).json({ ok: false, error: 'incomplete_mapping', missing: vc.missing });
+        patch.scheduled_at = when.toISOString(); patch.schedule_status = 'scheduled'; patch.schedule = { mode: 'scheduled' };
+      }
+    }
     if (Object.keys(patch).length === 0) return res.status(400).json({ ok: false, error: 'nothing_to_update' });
     const { data, error } = await supabase.from(CAMPAIGNS_TABLE).update(patch).eq('id', id).eq('tenant_id', tenantId).select(CAMPAIGN_COLS).maybeSingle();
     if (error) {
@@ -830,6 +846,20 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
       return res.status(400).json(body);
     }
     return res.json({ ok: true, runId: result.runId, enqueued: result.enqueued });
+  });
+
+  app.post(`${basePath}/campaigns/:id/cancel-schedule`, requireSupabaseAuth, async (req, res) => {
+    const { id } = req.params;
+    const { tenantId } = req.body || {};
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'missing_tenant' });
+    const ctx = await resolveUserContext(supabase, req, tenantId);
+    if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
+    if (!canManageCampaigns(ctx.role)) return res.status(403).json({ ok: false, error: 'forbidden' });
+    const { error } = await supabase.from(CAMPAIGNS_TABLE)
+      .update({ schedule_status: 'canceled', scheduled_at: null, schedule: { mode: 'now' } })
+      .eq('id', id).eq('tenant_id', tenantId).eq('schedule_status', 'scheduled');
+    if (error) return res.status(500).json({ ok: false, error: 'persist_failed' });
+    return res.json({ ok: true });
   });
 
   app.get(`${basePath}/campaigns/:id/runs`, requireSupabaseAuth, async (req, res) => {

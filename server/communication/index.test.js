@@ -42,6 +42,7 @@ const EXPECTED = [
   { method: 'PUT', path: '/api/v1/communication/dispatch/campaigns/:id' },
   { method: 'DELETE', path: '/api/v1/communication/dispatch/campaigns/:id' },
   { method: 'POST', path: '/api/v1/communication/dispatch/campaigns/:id/dispatch' },
+  { method: 'POST', path: '/api/v1/communication/dispatch/campaigns/:id/cancel-schedule' },
   { method: 'GET', path: '/api/v1/communication/dispatch/campaigns/:id/runs' },
   { method: 'POST', path: '/api/v1/communication/dispatch/templates/import-from-meta' },
 ];
@@ -56,8 +57,8 @@ describe('registerCommunicationRoutes', () => {
       expect(found, `rota ${exp.method} ${exp.path} não registrada`).toBeTruthy();
       expect(typeof found.handler).toBe('function');
     }
-    // Exatamente 24 rotas (nem a mais, nem a menos).
-    expect(routes).toHaveLength(24);
+    // Exatamente 25 rotas (nem a mais, nem a menos).
+    expect(routes).toHaveLength(25);
   });
 
   it('alias e caminho legado coexistem com os MESMOS sufixos de rota', () => {
@@ -89,6 +90,7 @@ describe('registerCommunicationRoutes', () => {
     expect(paths).toContain('PUT /api/v1/agent-actions/campaigns/:id');
     expect(paths).toContain('DELETE /api/v1/agent-actions/campaigns/:id');
     expect(paths).toContain('POST /api/v1/agent-actions/campaigns/:id/dispatch');
+    expect(paths).toContain('POST /api/v1/agent-actions/campaigns/:id/cancel-schedule');
     expect(paths).toContain('GET /api/v1/agent-actions/campaigns/:id/runs');
     expect(paths).toContain('POST /api/v1/agent-actions/templates/import-from-meta');
     // Alias novo:
@@ -114,9 +116,10 @@ describe('registerCommunicationRoutes', () => {
     expect(paths).toContain('PUT /api/v1/communication/dispatch/campaigns/:id');
     expect(paths).toContain('DELETE /api/v1/communication/dispatch/campaigns/:id');
     expect(paths).toContain('POST /api/v1/communication/dispatch/campaigns/:id/dispatch');
+    expect(paths).toContain('POST /api/v1/communication/dispatch/campaigns/:id/cancel-schedule');
     expect(paths).toContain('GET /api/v1/communication/dispatch/campaigns/:id/runs');
     expect(paths).toContain('POST /api/v1/communication/dispatch/templates/import-from-meta');
-    // 24 + 24, sem duplicação acidental.
-    expect(routes).toHaveLength(48);
+    // 25 + 25, sem duplicação acidental.
+    expect(routes).toHaveLength(50);
   });
 });
