@@ -2,7 +2,7 @@
  * NovaSidebar - Sidebar com 3 níveis (paridade total com o CRM antigo)
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Home,
@@ -40,6 +40,12 @@ interface SubItem {
   label: string;
   icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
   route: string;
+  /**
+   * Permissão própria do sub-item. Quando definida, o sub-item só aparece se o
+   * usuário tiver acesso a ela (independente da permissão do item pai). Quando
+   * ausente, o sub-item herda a visibilidade do pai (comportamento padrão).
+   */
+  permission?: SidebarPermission;
 }
 
 interface SidebarItem {
@@ -102,16 +108,7 @@ const GROUPS: SidebarGroup[] = [
         subItems: [
           { id: 'agente-marketing', label: 'Marketing', icon: Bot, route: '/agentes-ia/agente-marketing' },
           { id: 'agente-comportamental', label: 'Comportamental', icon: Headphones, route: '/agentes-ia/agente-comportamental' },
-        ],
-      },
-      {
-        id: 'comunicacao',
-        label: 'Comunicação',
-        icon: Megaphone,
-        route: '/comunicacao/disparador',
-        permission: 'comunicacao',
-        subItems: [
-          { id: 'disparador', label: 'Disparador', icon: Megaphone, route: '/comunicacao/disparador' },
+          { id: 'comunicacao', label: 'Comunicação', icon: Megaphone, route: '/comunicacao/disparador', permission: 'comunicacao' },
         ],
       },
       {
@@ -201,24 +198,52 @@ export function NovaSidebar() {
     return userPerms;
   })();
 
-  const visibleItems = ALL_ITEMS.filter((i) => allowedPermissions.includes(i.permission));
+  const canAccess = useCallback(
+    (permission: SidebarPermission) => allowedPermissions.includes(permission),
+    [allowedPermissions],
+  );
+
+  /**
+   * Sub-items visíveis: um sub com `permission` própria só aparece se o usuário
+   * tiver acesso a ela (independente do pai); sem `permission`, herda o pai —
+   * só aparece se o usuário tiver a permissão do item pai. Espelha os guards de
+   * rota (canAccess) e evita expor links inalcançáveis.
+   */
+  const visibleSubItems = useCallback(
+    (item: SidebarItem): SubItem[] =>
+      (item.subItems ?? []).filter((sub) =>
+        sub.permission ? canAccess(sub.permission) : canAccess(item.permission),
+      ),
+    [canAccess],
+  );
+
+  /**
+   * Visibilidade do item pai: aparece se o usuário tem a permissão do próprio
+   * item OU a permissão de algum sub-item próprio (ex.: Comunicação aninhada sob
+   * Agentes de IA continua visível para quem só tem 'comunicacao').
+   */
+  const isItemVisible = useCallback(
+    (item: SidebarItem) => canAccess(item.permission) || visibleSubItems(item).length > 0,
+    [canAccess, visibleSubItems],
+  );
 
   const filteredGroups = useMemo(() => {
     if (!isSearching) return GROUPS;
     return GROUPS.map((group) => {
       const items = group.items
-        .filter((i) => allowedPermissions.includes(i.permission))
-        .map((item) => {
+        .filter(isItemVisible)
+        .map((item): SidebarItem | null => {
+          const subs = visibleSubItems(item);
           const itemMatches = normalize(item.label).includes(q);
-          const matchedSubs = item.subItems?.filter((s) => normalize(s.label).includes(q)) ?? [];
-          if (itemMatches) return item;
+          const matchedSubs = subs.filter((s) => normalize(s.label).includes(q));
+          if (itemMatches) return { ...item, subItems: subs };
           if (matchedSubs.length > 0) return { ...item, subItems: matchedSubs };
           return null;
         })
         .filter((x): x is SidebarItem => x !== null);
       return { ...group, items };
     }).filter((g) => g.items.length > 0);
-  }, [q, isSearching, allowedPermissions]);
+  }, [q, isSearching, isItemVisible, visibleSubItems]);
 
   const firstResult = useMemo(() => {
     if (!isSearching) return null;
@@ -329,7 +354,7 @@ export function NovaSidebar() {
         {filteredGroups.map((group, gIdx) => {
           const groupItems = isSearching
             ? group.items
-            : group.items.filter((i) => allowedPermissions.includes(i.permission));
+            : group.items.filter(isItemVisible);
           if (groupItems.length === 0) return null;
           return (
             <div key={gIdx}>
@@ -342,7 +367,11 @@ export function NovaSidebar() {
                 {groupItems.map((item) => {
             const Icon = item.icon;
             const active = itemActive(item);
-            const hasSubs = !!item.subItems && item.subItems.length > 0;
+            // No modo busca, os sub-items já vêm filtrados por permissão (via
+            // filteredGroups). Fora da busca, filtramos aqui pelos sub-items
+            // visíveis ao usuário.
+            const subs = isSearching ? (item.subItems ?? []) : visibleSubItems(item);
+            const hasSubs = subs.length > 0;
             const isExpanded = isSearching ? hasSubs : (expanded[item.id] ?? active);
 
             return (
@@ -373,7 +402,7 @@ export function NovaSidebar() {
                 {/* Submenu (2º nível) */}
                 {hasSubs && isExpanded && (
                   <ul className="mt-0.5 ml-4 pl-3 border-l border-slate-200 dark:border-slate-800 space-y-0.5">
-                    {item.subItems!.map((sub) => {
+                    {subs.map((sub) => {
                       const SubIcon = sub.icon;
                       const subActive = subItemActive(sub);
                       return (

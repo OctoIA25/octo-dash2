@@ -43,34 +43,57 @@ export function ComunicacaoPage() {
   const current = SECTIONS.find((s) => s.id === section) ?? SECTIONS[0];
 
   return (
-    <div className="flex flex-col h-full min-h-0" style={{ backgroundColor: 'var(--bg-primary)' }}>
-      {/* Sub-navegação das seções de Comunicação. */}
-      <nav className="flex items-center gap-1 overflow-x-auto border-b border-slate-200 dark:border-slate-800 px-4 py-2 shrink-0">
-        {SECTIONS.map((s) => {
-          const Icon = s.icon;
-          const active = s.id === current.id;
-          return (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => s.available && navigate(`/comunicacao/${s.id}`)}
-              disabled={!s.available}
-              aria-current={active ? 'page' : undefined}
-              title={s.available ? undefined : 'Em breve'}
-              className={[
-                'inline-flex items-center gap-1.5 shrink-0 h-8 px-3 rounded-lg text-[12.5px] font-semibold transition-colors',
-                active
-                  ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
-                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800',
-                s.available ? 'cursor-pointer' : 'opacity-40 cursor-not-allowed',
-              ].join(' ')}
-            >
-              <Icon className="w-3.5 h-3.5" strokeWidth={2} />
-              {s.label}
-              {!s.available && <span className="text-[10px] font-medium opacity-80">• em breve</span>}
-            </button>
-          );
-        })}
+    <div className="flex flex-col h-full min-h-0 bg-theme-primary">
+      {/* Header da página (padrão KPIs). */}
+      <header className="px-6 pt-5 pb-3 shrink-0">
+        <div className="max-w-[1400px] mx-auto">
+          <h1 className="text-[22px] font-bold text-slate-900 dark:text-slate-100 tracking-tight leading-tight">
+            Comunicação
+          </h1>
+          <p className="text-[12.5px] text-slate-500 dark:text-slate-400 mt-0.5">
+            Dispare, segmente e acompanhe seus envios para a base de leads.
+          </p>
+        </div>
+      </header>
+
+      {/* Sub-navegação das seções de Comunicação (abas underline). */}
+      <nav className="px-6 shrink-0 border-b border-slate-200 dark:border-slate-800">
+        <div className="max-w-[1400px] mx-auto flex items-center gap-1 overflow-x-auto">
+          {SECTIONS.map((s) => {
+            const Icon = s.icon;
+            const active = s.id === current.id;
+            return (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => s.available && navigate(`/comunicacao/${s.id}`)}
+                disabled={!s.available}
+                aria-current={active ? 'page' : undefined}
+                title={s.available ? undefined : 'Em breve'}
+                className={[
+                  'group relative inline-flex items-center gap-1.5 shrink-0 h-10 px-3 text-[12.5px] font-semibold transition-colors',
+                  active
+                    ? 'text-blue-600 dark:text-blue-400'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200',
+                  s.available ? 'cursor-pointer' : 'opacity-40 cursor-not-allowed',
+                ].join(' ')}
+              >
+                <Icon className="w-3.5 h-3.5" strokeWidth={2} />
+                {s.label}
+                {!s.available && <span className="text-[10px] font-medium opacity-70">em breve</span>}
+                {/* Barra indicadora deslizante (underline). */}
+                <span
+                  className={[
+                    'absolute left-2 right-2 -bottom-px h-[2px] rounded-full transition-all',
+                    active
+                      ? 'bg-blue-600 dark:bg-blue-400'
+                      : 'bg-transparent group-hover:bg-slate-200 dark:group-hover:bg-slate-700',
+                  ].join(' ')}
+                />
+              </button>
+            );
+          })}
+        </div>
       </nav>
 
       {/* Conteúdo da seção ativa. */}
@@ -94,12 +117,16 @@ function SectionContent({ sectionId }: { sectionId: string }) {
 
   const meta = SECTIONS.find((s) => s.id === sectionId) ?? SECTIONS[0];
   return (
-    <div className="h-full flex flex-col items-center justify-center text-center gap-2 px-6 py-16">
-      <meta.icon className="w-8 h-8 text-slate-300 dark:text-slate-600" strokeWidth={1.75} />
-      <p className="text-[15px] font-semibold text-slate-700 dark:text-slate-200">{meta.label}</p>
-      <p className="text-[12.5px] text-slate-400 dark:text-slate-500 max-w-sm">
-        Em breve nesta área de Comunicação.
-      </p>
+    <div className="h-full flex flex-col items-center justify-center text-center px-6 py-16">
+      <div className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-8 py-10 max-w-sm">
+        <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-slate-50 dark:bg-slate-800/60">
+          <meta.icon className="w-6 h-6 text-slate-400 dark:text-slate-500" strokeWidth={1.75} />
+        </div>
+        <p className="text-[15px] font-semibold text-slate-800 dark:text-slate-100">{meta.label}</p>
+        <p className="text-[12.5px] text-slate-500 dark:text-slate-400">
+          Configurações de Comunicação chegam em breve.
+        </p>
+      </div>
     </div>
   );
 }
