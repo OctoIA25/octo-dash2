@@ -630,9 +630,13 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
     const { data, error } = await supabase
       .from('communication_templates').select('approval_status').eq('id', templateId).eq('tenant_id', tenantId).maybeSingle();
     if (error) return { ok: false, error: 'lookup_failed' };
-    if (!data) return { ok: false, error: 'template_not_approved' };
+    if (!data) return { ok: false, error: 'template_not_found' };
     if (data.approval_status !== 'approved') return { ok: false, error: 'template_not_approved' };
     return { ok: true };
+  }
+  // Normaliza um valor jsonb p/ objeto (rejeita array, que typeof reporta como 'object').
+  function toJsonbObject(value) {
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
   }
   // Valida que o público existe e é do tenant.
   async function assertAudienceUsable(tenantId, audienceId) {
@@ -687,10 +691,10 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
     const { data, error } = await supabase.from(CAMPAIGNS_TABLE).insert({
       tenant_id: tenantId, name: String(name).trim(), template_id: templateId, audience_id: audienceId,
       max_recipients: maxRecipients ?? null,
-      send_window: sendWindow && typeof sendWindow === 'object' ? sendWindow : {},
+      send_window: toJsonbObject(sendWindow),
       throttle_per_min: throttlePerMin ?? null,
       avoid_resend: Boolean(avoidResend),
-      variable_mapping: variableMapping && typeof variableMapping === 'object' ? variableMapping : {},
+      variable_mapping: toJsonbObject(variableMapping),
       internal_note: internalNote ?? null,
       notify_on_complete: Boolean(notifyOnComplete),
       created_by_email: req.userEmail || null,
@@ -714,10 +718,10 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
     if (templateId !== undefined) { const t = await assertTemplateUsable(tenantId, templateId); if (!t.ok) return res.status(400).json({ ok: false, error: t.error }); patch.template_id = templateId; }
     if (audienceId !== undefined) { const a = await assertAudienceUsable(tenantId, audienceId); if (!a.ok) return res.status(400).json({ ok: false, error: a.error }); patch.audience_id = audienceId; }
     if (maxRecipients !== undefined) { if (maxRecipients != null && !(Number.isInteger(maxRecipients) && maxRecipients >= 1)) return res.status(400).json({ ok: false, error: 'invalid_max_recipients' }); patch.max_recipients = maxRecipients ?? null; }
-    if (sendWindow !== undefined) patch.send_window = sendWindow && typeof sendWindow === 'object' ? sendWindow : {};
+    if (sendWindow !== undefined) patch.send_window = toJsonbObject(sendWindow);
     if (throttlePerMin !== undefined) patch.throttle_per_min = throttlePerMin ?? null;
     if (avoidResend !== undefined) patch.avoid_resend = Boolean(avoidResend);
-    if (variableMapping !== undefined) patch.variable_mapping = variableMapping && typeof variableMapping === 'object' ? variableMapping : {};
+    if (variableMapping !== undefined) patch.variable_mapping = toJsonbObject(variableMapping);
     if (internalNote !== undefined) patch.internal_note = internalNote ?? null;
     if (notifyOnComplete !== undefined) patch.notify_on_complete = Boolean(notifyOnComplete);
     if (Object.keys(patch).length === 0) return res.status(400).json({ ok: false, error: 'nothing_to_update' });
@@ -737,6 +741,10 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
     const ctx = await resolveUserContext(supabase, req, tenantId);
     if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
     if (!(ctx.role === 'admin' || ctx.role === 'owner')) return res.status(403).json({ ok: false, error: 'forbidden' });
+    const { data: existing, error: lookErr } = await supabase
+      .from(CAMPAIGNS_TABLE).select('id').eq('id', id).eq('tenant_id', tenantId).maybeSingle();
+    if (lookErr) return res.status(500).json({ ok: false, error: 'lookup_failed' });
+    if (!existing) return res.status(404).json({ ok: false, error: 'campaign_not_found' });
     const { error } = await supabase.from(CAMPAIGNS_TABLE).delete().eq('id', id).eq('tenant_id', tenantId);
     if (error) return res.status(500).json({ ok: false, error: 'delete_failed' });
     return res.json({ ok: true });
