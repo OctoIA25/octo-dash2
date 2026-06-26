@@ -53,6 +53,24 @@ describe('CampanhasManager', () => {
     fireEvent.click(screen.getByRole('button', { name: /cancelar agendamento/i }));
     await waitFor(() => expect((svc.cancelSchedule as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('t1', 'camp2'));
   });
+  it('campanha recorrente mostra selo recorrente e botão cancelar recorrência; cancelar chama cancelSchedule', async () => {
+    (svc.listCampaigns as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      campaigns: [baseCampaign({
+        id: 'camp4', name: 'Recorrente Z', schedule_status: 'scheduled',
+        scheduled_at: '2030-01-07T12:00:00Z',
+        recurrence: { frequency: 'weekly', day_of_week: 1, time: '12:00' },
+      })],
+    });
+    (svc.cancelSchedule as ReturnType<typeof vi.fn>).mockClear();
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    render(<CampanhasManager />);
+    await waitFor(() => expect(screen.getByText('Recorrente Z')).toBeInTheDocument());
+    // describeRecurrence: weekly day_of_week=1 time='12:00' UTC → "Toda segunda às 09:00"
+    expect(screen.getByText(/Toda segunda/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /cancelar recorrência/i }));
+    await waitFor(() => expect((svc.cancelSchedule as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('t1', 'camp4'));
+  });
   it('campanha com falha de agendamento mostra o motivo', async () => {
     (svc.listCampaigns as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       ok: true,

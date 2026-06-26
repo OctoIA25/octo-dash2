@@ -120,6 +120,50 @@ describe('CampanhaWizard', () => {
     expect(input.scheduledAt).toBeTruthy();
     expect(svc.dispatchCampaign as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
   });
+  it('repetir (recorrência) na etapa 5 chama createCampaign com recurrence (time em UTC) e NÃO dispara', async () => {
+    const svc = await import('../../services/campaignsService');
+    (svc.createCampaign as ReturnType<typeof vi.fn>).mockClear();
+    (svc.dispatchCampaign as ReturnType<typeof vi.fn>).mockClear();
+    render(<CampanhaWizard {...props} />);
+    await waitFor(() => expect(screen.getByText('Promo')).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText(/nome da campanha/i), { target: { value: 'R' } });
+    fireEvent.change(screen.getByLabelText(/template/i), { target: { value: 'tpl1' } });
+    fireEvent.click(screen.getByRole('button', { name: /avançar/i }));
+    await waitFor(() => screen.getByLabelText(/público/i));
+    fireEvent.change(screen.getByLabelText(/público/i), { target: { value: 'aud1' } });
+    fireEvent.click(screen.getByRole('button', { name: /avançar/i }));
+    fireEvent.click(screen.getByRole('button', { name: /avançar/i }));
+    fireEvent.change(screen.getByLabelText('Variável 1'), { target: { value: 'name' } });
+    fireEvent.click(screen.getByRole('button', { name: /avançar/i })); // → etapa 5
+    // seleciona "Repetir", frequência diária (default) e horário 09:00
+    fireEvent.click(screen.getByRole('radio', { name: /repetir/i }));
+    fireEvent.change(screen.getByLabelText(/^horário$/i), { target: { value: '09:00' } });
+    fireEvent.click(screen.getByRole('button', { name: /ativar recorrência/i }));
+    await waitFor(() => expect((svc.createCampaign as ReturnType<typeof vi.fn>)).toHaveBeenCalled());
+    const input = (svc.createCampaign as ReturnType<typeof vi.fn>).mock.calls[0][1];
+    // 09:00 local (BR UTC-3) → 12:00 UTC
+    expect(input.recurrence).toEqual({ frequency: 'daily', time: '12:00' });
+    expect(svc.dispatchCampaign as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
+  });
+  it('repetir semanal revela o seletor de dia da semana', async () => {
+    render(<CampanhaWizard {...props} />);
+    await waitFor(() => expect(screen.getByText('Promo')).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText(/nome da campanha/i), { target: { value: 'R' } });
+    fireEvent.change(screen.getByLabelText(/template/i), { target: { value: 'tpl1' } });
+    fireEvent.click(screen.getByRole('button', { name: /avançar/i }));
+    await waitFor(() => screen.getByLabelText(/público/i));
+    fireEvent.change(screen.getByLabelText(/público/i), { target: { value: 'aud1' } });
+    fireEvent.click(screen.getByRole('button', { name: /avançar/i }));
+    fireEvent.click(screen.getByRole('button', { name: /avançar/i }));
+    fireEvent.change(screen.getByLabelText('Variável 1'), { target: { value: 'name' } });
+    fireEvent.click(screen.getByRole('button', { name: /avançar/i })); // → etapa 5
+    fireEvent.click(screen.getByRole('radio', { name: /repetir/i }));
+    // diária por padrão: sem seletor de dia
+    expect(screen.queryByLabelText(/dia da semana/i)).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(/frequência/i), { target: { value: 'weekly' } });
+    // semanal: revela o seletor de dia
+    expect(screen.getByLabelText(/dia da semana/i)).toBeInTheDocument();
+  });
   it('agendar com data no passado é bloqueado (não chama createCampaign)', async () => {
     const svc = await import('../../services/campaignsService');
     const sonner = await import('sonner');

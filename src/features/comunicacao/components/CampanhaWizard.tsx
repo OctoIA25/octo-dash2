@@ -16,6 +16,7 @@ import {
 } from '../services/campaignsService';
 
 import { isMappingComplete, renderWithExample, type VarMapping } from '../variableMapping';
+import { localTimeToUtc, utcTimeToLocal } from '../recurrence';
 import { VariableMapper } from './VariableMapper';
 import { WhatsAppPreview } from './WhatsAppPreview';
 
@@ -28,6 +29,8 @@ interface CampanhaWizardProps {
 
 const HOURS = Array.from({ length: 25 }, (_, h) => h); // 0..24 (24 = fim do dia)
 const DEFAULT_CAP = 500;
+// Dias da semana para a recorrência semanal (value = getUTCDay/getDay: 0=domingo..6=sábado).
+const DAYS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 
 /** Mapeia erros do backend para mensagens em pt-BR. */
 function errorMessage(error: string | undefined): string {
@@ -71,9 +74,18 @@ export function CampanhaWizard({ tenantId, editing, onClose, onSaved }: Campanha
   const [saving, setSaving] = useState(false);
   // Fix 2: guarda o id da campanha já criada para evitar recriação no retry
   const [savedId, setSavedId] = useState<string | null>(editing?.id ?? null);
-  // Etapa 5: enviar agora (atual) ou agendar para uma data/hora futura.
-  const [scheduleMode, setScheduleMode] = useState<'now' | 'scheduled'>(editing?.schedule_status === 'scheduled' ? 'scheduled' : 'now');
+  // Etapa 5: enviar agora (atual), agendar pontual, ou repetir (recorrência).
+  // editing.recurrence tem precedência sobre schedule_status para o pré-preenchimento do modo.
+  const [scheduleMode, setScheduleMode] = useState<'now' | 'scheduled' | 'recurring'>(
+    editing?.recurrence ? 'recurring' : editing?.schedule_status === 'scheduled' ? 'scheduled' : 'now',
+  );
   const [scheduledAtLocal, setScheduledAtLocal] = useState<string>(editing?.scheduled_at ? toLocalInput(editing.scheduled_at) : '');
+  // Recorrência: frequência, dia (semanal) e horário em LOCAL (BR) — convertido p/ UTC ao salvar.
+  const [recFrequency, setRecFrequency] = useState<'daily' | 'weekly'>(editing?.recurrence?.frequency ?? 'daily');
+  const [recDayOfWeek, setRecDayOfWeek] = useState<number>(editing?.recurrence?.day_of_week ?? 1);
+  const [recTimeLocal, setRecTimeLocal] = useState<string>(
+    editing?.recurrence ? utcTimeToLocal(editing.recurrence.time) : '09:00',
+  );
 
   useEffect(() => {
     let alive = true;
@@ -212,8 +224,42 @@ export function CampanhaWizard({ tenantId, editing, onClose, onSaved }: Campanha
     }
   }
 
-  /** Confirma a etapa 5: agenda ou dispara imediatamente conforme o modo escolhido. */
+  /** Ativa a recorrência — persiste recurrence (em UTC) e NÃO dispara.
+   * Mesmo padrão de retry/savedId do schedule(); o worker reagenda após cada disparo. */
+  async function activateRecurrence() {
+    if (saving) return;
+    if (!recTimeLocal) { toast.error('Informe o horário.'); return; }
+    if (recFrequency === 'weekly' && !Number.isInteger(recDayOfWeek)) { toast.error('Escolha o dia da semana.'); return; }
+    if (!isMappingComplete(variables, variableMapping)) { toast.error('Mapeie todas as variáveis do template.'); return; }
+    setSaving(true);
+    try {
+      const recurrence = {
+        frequency: recFrequency,
+        ...(recFrequency === 'weekly' ? { day_of_week: recDayOfWeek } : {}),
+        time: localTimeToUtc(recTimeLocal),
+      };
+      const input = { ...buildInput(), recurrence };
+      let campaignId = savedId;
+      if (!campaignId && !editing) {
+        const res = await createCampaign(tenantId, input);
+        if (!res.ok || !res.campaign) { toast.error(errorMessage(res.error)); return; }
+        campaignId = res.campaign.id;
+        setSavedId(campaignId);
+      } else {
+        const id = campaignId ?? editing!.id;
+        const res = await updateCampaign(tenantId, id, input);
+        if (!res.ok || !res.campaign) { toast.error(errorMessage(res.error)); return; }
+      }
+      toast.success('Campanha recorrente ativada.');
+      onSaved();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  /** Confirma a etapa 5: dispara, agenda ou ativa recorrência conforme o modo escolhido. */
   function confirmStep5() {
+    if (scheduleMode === 'recurring') { activateRecurrence(); return; }
     if (scheduleMode === 'scheduled') { schedule(); return; }
     dispatch();
   }
@@ -355,19 +401,56 @@ export function CampanhaWizard({ tenantId, editing, onClose, onSaved }: Campanha
                   className="h-8 px-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[12.5px] disabled:opacity-40"
                 />
               </label>
+              <label className="flex items-center gap-2 text-[12.5px] text-slate-600 dark:text-slate-300 mt-1">
+                <input type="radio" name="when" checked={scheduleMode === 'recurring'} onChange={() => setScheduleMode('recurring')} /> Repetir
+              </label>
+              {scheduleMode === 'recurring' && (
+                <div className="mt-2 ml-6 flex flex-wrap items-center gap-2">
+                  <select
+                    aria-label="Frequência"
+                    value={recFrequency}
+                    onChange={(e) => setRecFrequency(e.target.value as 'daily' | 'weekly')}
+                    className="h-8 px-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[12.5px]"
+                  >
+                    <option value="daily">Diariamente</option>
+                    <option value="weekly">Semanalmente</option>
+                  </select>
+                  {recFrequency === 'weekly' && (
+                    <select
+                      aria-label="Dia da semana"
+                      value={recDayOfWeek}
+                      onChange={(e) => setRecDayOfWeek(Number(e.target.value))}
+                      className="h-8 px-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[12.5px]"
+                    >
+                      {DAYS_PT.map((d, i) => <option key={i} value={i}>{d}</option>)}
+                    </select>
+                  )}
+                  <input
+                    aria-label="Horário"
+                    type="time"
+                    value={recTimeLocal}
+                    onChange={(e) => setRecTimeLocal(e.target.value)}
+                    className="h-8 px-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[12.5px]"
+                  />
+                </div>
+              )}
             </fieldset>
             {/* Fix 4: aviso de disparo imediato com contagem */}
             <p className="text-[12px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 rounded-lg px-3 py-2 mb-3">
-              {scheduleMode === 'scheduled' ? (
+              {scheduleMode === 'recurring' ? (
+                <>A campanha será enviada <strong>de forma recorrente</strong>{audienceCount != null ? ` para até ${audienceCount} lead(s)` : ''} a cada ocorrência, até você cancelar.</>
+              ) : scheduleMode === 'scheduled' ? (
                 <>A campanha será enviada <strong>no horário agendado</strong>{audienceCount != null ? ` para até ${audienceCount} lead(s)` : ''}.</>
               ) : (
                 <>Ao disparar, a campanha será enviada <strong>imediatamente</strong>{audienceCount != null ? ` para até ${audienceCount} lead(s)` : ''}. Esta ação não pode ser desfeita.</>
               )}
             </p>
             <button type="button" onClick={confirmStep5} disabled={saving} className="w-full h-9 rounded-lg bg-emerald-600 text-white text-[12.5px] font-semibold disabled:opacity-40">
-              {scheduleMode === 'scheduled'
-                ? (saving ? 'Agendando…' : 'Agendar')
-                : (saving ? 'Disparando…' : 'Disparar')}
+              {scheduleMode === 'recurring'
+                ? (saving ? 'Ativando…' : 'Ativar recorrência')
+                : scheduleMode === 'scheduled'
+                  ? (saving ? 'Agendando…' : 'Agendar')
+                  : (saving ? 'Disparando…' : 'Disparar')}
             </button>
           </div>
         )}

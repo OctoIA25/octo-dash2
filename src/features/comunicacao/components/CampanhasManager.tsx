@@ -10,6 +10,7 @@ import {
   listCampaigns, deleteCampaign, listCampaignRuns, cancelSchedule,
   type CampaignWithStats, type CampaignRun,
 } from '../services/campaignsService';
+import { describeRecurrence } from '../recurrence';
 import { CampanhaWizard } from './CampanhaWizard';
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
@@ -91,6 +92,18 @@ export function CampanhasManager() {
       reload();
     } catch {
       toast.error('Não foi possível cancelar o agendamento.');
+    }
+  }
+
+  async function cancelRecurrenceFor(camp: CampaignWithStats) {
+    if (!window.confirm(`Cancelar a recorrência da campanha "${camp.name}"?`)) return;
+    try {
+      const res = await cancelSchedule(tenantId as string, camp.id);
+      if (!res.ok) { toast.error('Não foi possível cancelar a recorrência.'); return; }
+      toast.success('Recorrência cancelada.');
+      reload();
+    } catch {
+      toast.error('Não foi possível cancelar a recorrência.');
     }
   }
 
@@ -205,7 +218,11 @@ export function CampanhasManager() {
                   <p className="text-[13px] font-semibold text-slate-800 dark:text-slate-100 truncate" title={camp.name}>
                     {camp.name}
                   </p>
-                  {camp.schedule_status === 'scheduled' ? (
+                  {camp.recurrence ? (
+                    <span className="inline-flex items-center h-6 px-2 rounded-md text-[11px] font-semibold bg-violet-50 text-violet-700 dark:bg-violet-950/30 dark:text-violet-300">
+                      🔁 {describeRecurrence(camp.recurrence)}
+                    </span>
+                  ) : camp.schedule_status === 'scheduled' ? (
                     <span className="inline-flex items-center h-6 px-2 rounded-md text-[11px] font-semibold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/30 dark:text-indigo-300">
                       🕒 Agendada {formatDate(camp.scheduled_at)}
                     </span>
@@ -213,6 +230,11 @@ export function CampanhasManager() {
                     <StatusBadge status={camp.status} />
                   )}
                 </div>
+                {camp.recurrence && (
+                  <p className="text-[11.5px] text-slate-400 mt-1">
+                    Próxima: {formatDate(camp.scheduled_at)}
+                  </p>
+                )}
                 {camp.schedule_status === 'error' && (
                   <p className="text-[11.5px] text-rose-600 dark:text-rose-400 mt-1">
                     {`⚠️ Falha no agendamento: ${camp.schedule_error || 'motivo não informado'}`}
@@ -239,7 +261,15 @@ export function CampanhasManager() {
                   >
                     Ver disparos
                   </button>
-                  {camp.schedule_status === 'scheduled' && (
+                  {camp.recurrence ? (
+                    <button
+                      type="button"
+                      onClick={() => cancelRecurrenceFor(camp)}
+                      className="text-amber-600 hover:text-amber-700 dark:text-amber-400"
+                    >
+                      Cancelar recorrência
+                    </button>
+                  ) : camp.schedule_status === 'scheduled' && (
                     <button
                       type="button"
                       onClick={() => cancelScheduleFor(camp)}
