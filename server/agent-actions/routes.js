@@ -433,8 +433,10 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
     const ctx = await resolveUserContext(supabase, req, tenantId);
     if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
     
-    if (!canManageAudiences(ctx.role)) return res.status(403).json({ ok: false, error: 'forbidden' });
-    
+    // DELETE é mais restrito que POST/PUT: apenas admin/owner, alinhado com a RLS
+    // que só permite DELETE a essas roles (team_leader pode criar/editar, não excluir).
+    if (!(ctx.role === 'admin' || ctx.role === 'owner')) return res.status(403).json({ ok: false, error: 'forbidden' });
+
     const { error } = await supabase.from(AUDIENCES_TABLE).delete().eq('id', id).eq('tenant_id', tenantId);
     if (error) return res.status(500).json({ ok: false, error: 'delete_failed' });
     

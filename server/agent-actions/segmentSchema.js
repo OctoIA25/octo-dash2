@@ -33,7 +33,7 @@ export function validateSegment(segment) {
     if (clean.names.length === 0) return { ok: false, error: 'invalid_segment' };
   } else if (segment.type === 'archived_period' || segment.type === 'no_contact') {
     clean.days = Number(segment.days);
-    if (!Number.isFinite(clean.days) || clean.days < 0) return { ok: false, error: 'invalid_segment' };
+    if (!Number.isFinite(clean.days) || clean.days < 1) return { ok: false, error: 'invalid_segment' };
   } else if (segment.type === 'by_broker') {
     clean.broker = String(segment.broker || '').trim();
     if (!clean.broker) return { ok: false, error: 'invalid_segment' };

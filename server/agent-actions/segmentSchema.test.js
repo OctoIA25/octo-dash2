@@ -32,6 +32,13 @@ describe('validateSegment', () => {
     expect(validateSegment({ type: 'archived_period', days: 'abc' }).ok).toBe(false);
     expect(validateSegment({ type: 'archived_period', days: -1 }).ok).toBe(false);
   });
+  it('rejeita archived_period com days 0', () => {
+    expect(validateSegment({ type: 'archived_period', days: 0 }).ok).toBe(false);
+    expect(validateSegment({ type: 'no_contact', days: 0 }).ok).toBe(false);
+  });
+  it('aceita days >= 1', () => {
+    expect(validateSegment({ type: 'archived_period', days: 1 }).ok).toBe(true);
+  });
   it('rejeita by_broker/interest vazios', () => {
     expect(validateSegment({ type: 'by_broker', broker: '   ' }).ok).toBe(false);
     expect(validateSegment({ type: 'interest', interest: '' }).ok).toBe(false);

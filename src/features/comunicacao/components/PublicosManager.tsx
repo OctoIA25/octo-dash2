@@ -81,6 +81,13 @@ export function PublicosManager() {
   }
 
   async function save() {
+    if ((type === 'archived_period' || type === 'no_contact') && (!fields.days || Number(fields.days) < 1)) {
+      toast.error('Informe um número de dias (mínimo 1).');
+      return;
+    }
+    if (type === 'by_broker' && !fields.broker.trim()) { toast.error('Informe o corretor.'); return; }
+    if (type === 'interest' && !fields.interest.trim()) { toast.error('Informe o interesse.'); return; }
+    if (type === 'explicit_list' && !fields.names.split(',').map((s) => s.trim()).filter(Boolean).length) { toast.error('Informe ao menos um nome.'); return; }
     const segment = buildSegment(type, fields);
     const body = { name: name.trim(), segment };
     const res = editId
@@ -150,7 +157,7 @@ export function PublicosManager() {
             </label>
             {(type === 'archived_period' || type === 'no_contact') && (
               <label className="block text-[12px] text-slate-600 dark:text-slate-300">Dias
-                <input aria-label="Dias" type="number" value={fields.days} onChange={(e) => setFields((f) => ({ ...f, days: e.target.value }))} className="mt-1 w-full h-8 px-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[12.5px]" />
+                <input aria-label="Dias" type="number" min={1} value={fields.days} onChange={(e) => setFields((f) => ({ ...f, days: e.target.value }))} className="mt-1 w-full h-8 px-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[12.5px]" />
               </label>
             )}
             {type === 'by_broker' && (
