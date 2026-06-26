@@ -1,0 +1,36 @@
+-- =============================================================================
+-- Cadastro da subscription do webhook octoia.org para o evento lead.created.
+--
+-- NAO e uma migracao automatica: e por-tenant. Por isso o arquivo tem extensao
+-- .example (nao roda no migrate). Execute manualmente no SQL Editor do Supabase.
+-- Ja preenchido para o tenant 65c69875-dc83-4062-90f6-6f6adc30df26.
+--
+-- O secret e gerado automaticamente (default da coluna) e e usado para assinar
+-- o header X-OctoDash-Signature (HMAC-SHA256). Guarde-o se for validar a
+-- assinatura no endpoint receptor.
+--
+-- Idempotente: a tabela webhook_subscriptions NAO tem unique em (tenant_id, url),
+-- entao usamos WHERE NOT EXISTS para nao criar duplicata ao reexecutar. Se a
+-- subscription ja existir, este script nao faz nada (rode o UPDATE comentado
+-- abaixo se precisar reativar/ajustar os eventos).
+-- =============================================================================
+
+INSERT INTO public.webhook_subscriptions (tenant_id, name, url, events, status)
+SELECT
+  '65c69875-dc83-4062-90f6-6f6adc30df26'::uuid,
+  'Octo IA - lead.created',
+  'https://webhook.octoia.org/webhook/bc0854a6-86b4-40a1-8eee-96713d743494',
+  ARRAY['lead.created'],
+  'active'
+WHERE NOT EXISTS (
+  SELECT 1 FROM public.webhook_subscriptions
+  WHERE tenant_id = '65c69875-dc83-4062-90f6-6f6adc30df26'::uuid
+    AND url = 'https://webhook.octoia.org/webhook/bc0854a6-86b4-40a1-8eee-96713d743494'
+)
+RETURNING id, tenant_id, url, secret;
+
+-- Se a subscription ja existia e voce precisa reativa-la / garantir o evento:
+-- UPDATE public.webhook_subscriptions
+--    SET events = ARRAY['lead.created'], status = 'active', updated_at = now()
+--  WHERE tenant_id = '65c69875-dc83-4062-90f6-6f6adc30df26'::uuid
+--    AND url = 'https://webhook.octoia.org/webhook/bc0854a6-86b4-40a1-8eee-96713d743494';

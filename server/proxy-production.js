@@ -1303,6 +1303,40 @@ const mapTemperatureToCRM = (temp) => {
   return tempMap[temp] || tempMap[String(temp).toLowerCase()] || 'Frio';
 };
 
+/**
+ * Insere um lead no CRM. Se já existir um lead com o mesmo (tenant_id, phone)
+ * — constraint unique_phone_per_tenant — em vez de falhar, "revive" o lead
+ * existente: atualiza com as novas informações e o traz para o topo da lista
+ * (created_at/updated_at = agora). Trata o caso de um lead antigo que voltou a
+ * ter interesse.
+ *
+ * @returns {{ data: object, revived: boolean }}
+ */
+const insertOrReviveLead = async (crmLeadData) => {
+  const { data, error } = await supabase
+    .from('leads')
+    .insert(crmLeadData)
+    .select()
+    .single();
+
+  if (!error) return { data, revived: false };
+  if (error.code !== '23505') throw error;
+
+  // Conflito de telefone: revive o lead existente desse tenant.
+  const now = new Date().toISOString();
+  const { tenant_id, phone, created_at, ...rest } = crmLeadData;
+  const { data: revived, error: reviveError } = await supabase
+    .from('leads')
+    .update({ ...rest, created_at: now, updated_at: now })
+    .eq('tenant_id', tenant_id)
+    .eq('phone', phone)
+    .select()
+    .single();
+
+  if (reviveError) throw reviveError;
+  return { data: revived, revived: true };
+};
+
 const safeStringEquals = (left, right) => {
   if (!left || !right) return false;
 
@@ -2246,17 +2280,15 @@ const createIncomingLead = async ({ tenantId, body, source = 'API' }) => {
     updated_at: now
   };
 
-  const { data: crmData, error: crmError } = await supabase
-    .from('leads')
-    .insert(crmLeadData)
-    .select()
-    .single();
-
-  if (crmError) {
+  let crmData;
+  try {
+    const result = await insertOrReviveLead(crmLeadData);
+    crmData = result.data;
+    const action = result.revived ? 'reativado (topo da lista)' : 'criado';
+    console.log(`✅ Lead ${action} no Kanban: ${crmData.id} → ${assignedBroker || 'Sem corretor'} (${kanbanStatus})`);
+  } catch (crmError) {
     console.error('❌ Erro ao inserir em leads (CRM):', crmError);
     throw crmError;
-  } else {
-    console.log(`✅ Lead criado no Kanban: ${crmData.id} → ${assignedBroker || 'Sem corretor'} (${kanbanStatus})`);
   }
 
   const mappedLead = {
@@ -2664,17 +2696,15 @@ app.post('/api/v1/leads', validateApiKey, async (req, res) => {
       updated_at: now
     };
 
-    const { data: crmData, error: crmError } = await supabase
-      .from('leads')
-      .insert(crmLeadData)
-      .select()
-      .single();
-
-    if (crmError) {
+    let crmData;
+    try {
+      const result = await insertOrReviveLead(crmLeadData);
+      crmData = result.data;
+      const action = result.revived ? 'reativado (topo da lista)' : 'criado';
+      console.log(`✅ Lead ${action} no Kanban: ${crmData.id} → ${assignedBroker || 'Sem corretor'} (${kanbanStatus})`);
+    } catch (crmError) {
       console.error('❌ Erro ao inserir em leads (CRM):', crmError);
       throw crmError;
-    } else {
-      console.log(`✅ Lead criado no Kanban: ${crmData.id} → ${assignedBroker || 'Sem corretor'} (${kanbanStatus})`);
     }
 
     // Mapear resposta
@@ -3629,17 +3659,15 @@ app.post('/api/v1/leads/roleta', validateApiKey, async (req, res) => {
       updated_at: now
     };
 
-    const { data: crmData, error: crmError } = await supabase
-      .from('leads')
-      .insert(crmLeadData)
-      .select()
-      .single();
-
-    if (crmError) {
+    let crmData;
+    try {
+      const result = await insertOrReviveLead(crmLeadData);
+      crmData = result.data;
+      const action = result.revived ? 'reativado (topo da lista)' : 'criado';
+      console.log(`✅ Lead roleta ${action} no Kanban: ${crmData.id} → ${assignedBroker} (${kanbanStatus})`);
+    } catch (crmError) {
       console.error('❌ Erro ao inserir em leads/Kanban (roleta):', crmError);
       throw crmError;
-    } else {
-      console.log(`✅ Lead roleta criado no Kanban: ${crmData.id} → ${assignedBroker} (${kanbanStatus})`);
     }
 
     // Mapear resposta
