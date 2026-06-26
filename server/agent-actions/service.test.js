@@ -775,3 +775,82 @@ describe('confirmOperation templateName', () => {
     expect(queueUpserts.every((i) => i.template_name === null)).toBe(true);
   });
 });
+
+describe('confirmOperation variableMapping', () => {
+  function seedPendingRun(over = {}) {
+    const id = 'run-varmap';
+    const runs = new Map([
+      [
+        id,
+        {
+          id,
+          tenant_id: TENANT,
+          action_type: 'send_whatsapp',
+          segment: { type: 'archived' },
+          status: 'pending',
+          eligible_count: 1,
+          excluded_count: 0,
+          requested_by_user_id: 'u-admin',
+          ...over,
+        },
+      ],
+    ]);
+    return { id, runs };
+  }
+
+  it('grava variable_mapping no run e resolve params por lead nos itens', async () => {
+    const { id, runs } = seedPendingRun();
+    const { supabase, queueUpserts } = makeFake({ runs });
+    const variableMapping = { 1: { type: 'lead_field', value: 'name' } };
+    const templateVariables = ['1'];
+
+    const r = await confirmOperation(
+      supabase,
+      {
+        previewToken: id,
+        tenantId: TENANT,
+        message: 'x',
+        templateName: 't',
+        variableMapping,
+        templateVariables,
+        user: adminUser,
+      },
+      {
+        nowMs: NOW,
+        resolve: fakeResolve([
+          { id: 'l1', name: 'João', phone: '551199999000', assignedAgent: 'Maria' },
+        ]),
+      },
+    );
+
+    expect(r.ok).toBe(true);
+    // (a) variable_mapping gravado no update do run (claim pending→running)
+    expect(runs.get(id).variable_mapping).toEqual(variableMapping);
+    // (b) item enfileirado tem templateParams resolvido pelo lead
+    expect(queueUpserts).toHaveLength(1);
+    expect(queueUpserts[0].payload.templateParams).toEqual(['João']);
+  });
+
+  it('ausente → variable_mapping {} e templateParams [message] (retrocompat)', async () => {
+    const { id, runs } = seedPendingRun();
+    const { supabase, queueUpserts } = makeFake({ runs });
+
+    const r = await confirmOperation(
+      supabase,
+      { previewToken: id, tenantId: TENANT, message: 'Olá!', user: adminUser },
+      {
+        nowMs: NOW,
+        resolve: fakeResolve([
+          { id: 'l1', name: 'João', phone: '551199999000' },
+        ]),
+      },
+    );
+
+    expect(r.ok).toBe(true);
+    // (a) variable_mapping é {} no run quando não passado
+    expect(runs.get(id).variable_mapping).toEqual({});
+    // (b) templateParams cai no fallback: [message]
+    expect(queueUpserts).toHaveLength(1);
+    expect(queueUpserts[0].payload.templateParams).toEqual(['Olá!']);
+  });
+});

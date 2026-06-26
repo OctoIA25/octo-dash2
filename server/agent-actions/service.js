@@ -193,7 +193,7 @@ export async function previewOperation(supabase, input, deps = {}) {
  * @param input { previewToken, tenantId, message, user: { id, email, role, brokerName? } }
  */
 export async function confirmOperation(supabase, input, deps = {}) {
-  const { previewToken, tenantId, message, templateName = null, user = {} } = input;
+  const { previewToken, tenantId, message, templateName = null, variableMapping = {}, templateVariables = [], user = {} } = input;
   const { resolve = resolveSegmentDual, nowMs = Date.now() } = deps;
 
   if (!previewToken) return { ok: false, error: 'missing_preview_token' };
@@ -227,7 +227,7 @@ export async function confirmOperation(supabase, input, deps = {}) {
   const nowIso = new Date(nowMs).toISOString();
   const { data: claimed, error: claimErr } = await supabase
     .from(RUNS_TABLE)
-    .update({ status: 'running', confirmed_at: nowIso, template_name: templateName })
+    .update({ status: 'running', confirmed_at: nowIso, template_name: templateName, variable_mapping: variableMapping })
     .eq('id', previewToken)
     .eq('status', 'pending')
     .select('id')
@@ -268,7 +268,7 @@ export async function confirmOperation(supabase, input, deps = {}) {
       lead_source: lead.source || 'crm',
       lead_name: lead.name || null,
       lead_phone: lead.phone || null,
-      payload: action.buildPayload({ message: effectiveMessage }, lead),
+      payload: action.buildPayload({ message: effectiveMessage, variableMapping, templateVariables }, lead),
       status: 'pending',
       template_name: templateName,
       idempotency_key: `${tenantId}|${previewToken}|${lead.id}`,
