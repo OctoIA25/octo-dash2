@@ -83,11 +83,11 @@ async function resolveUserContext(supabase, req, tenantId) {
 
 /**
  * Lê o modo de fonte pública configurado para o tenant.
- * Retorna o valor da tabela `agent_public_source_config` ou o fallback seguro (kenlo_only).
+ * Retorna o valor da tabela `agent_public_source_config` ou o fallback seguro (leads_only).
  * Resiliente: qualquer erro de query ou exceção retorna o fallback — nunca derruba a rota.
  */
 export async function resolvePublicSourceMode(supabase, tenantId) {
-  const fallback = process.env.AGENT_PUBLIC_SOURCE_DEFAULT || 'kenlo_only';
+  const fallback = process.env.AGENT_PUBLIC_SOURCE_DEFAULT || 'leads_only';
   try {
     const { data, error } = await supabase
       .from('agent_public_source_config')
@@ -97,7 +97,7 @@ export async function resolvePublicSourceMode(supabase, tenantId) {
     if (error || !data) return fallback;
     return data.mode || fallback;
   } catch {
-    return fallback; // resiliente: qualquer falha → default seguro (kenlo_only)
+    return fallback; // resiliente: qualquer falha → default seguro (leads_only = CRM)
   }
 }
 
@@ -216,7 +216,7 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
     const ctx = await resolveUserContext(supabase, req, tenantId);
     if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
 
-    // Lê o modo de fonte pública configurado para o tenant (resiliente: fallback = kenlo_only).
+    // Lê o modo de fonte pública configurado para o tenant (resiliente: fallback = leads_only).
     const mode = await resolvePublicSourceMode(supabase, tenantId);
 
     const result = await previewOperation(
@@ -508,7 +508,9 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
     if (error) return res.status(500).json({ ok: false, error: 'lookup_failed' });
     if (!aud) return res.status(404).json({ ok: false, error: 'audience_not_found' });
 
-    const resolved = await resolveSegmentDual(supabase, aud.segment, { tenantId, nowMs: Date.now() });
+    const mode = await resolvePublicSourceMode(supabase, tenantId);
+    const resolved = await resolveSegmentDual(supabase, aud.segment, { tenantId, mode, nowMs: Date.now() });
+    if (!resolved.ok) console.error('[audiences/count] resolver falhou:', resolved.error, resolved.detail);
     // Público é auxiliar: erro do resolver → count 0, não derruba a tela.
     return res.json({ ok: true, count: resolved.ok ? resolved.rows.length : 0 });
   });
