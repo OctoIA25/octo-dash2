@@ -728,10 +728,11 @@ describe('POST /campaigns/:id/cancel-schedule (C3 T5)', () => {
 // end-to-end do UPDATE fica nos testes E2E (e2e/campaigns). O teste abaixo
 // cobre a invariante pura da limpeza (patch + filtro idempotente).
 describe('dispatch imediato — limpar agendamento pendente (evita double-send)', () => {
-  it('patch de limpeza contém schedule_status:none e scheduled_at:null', () => {
-    const patch = { schedule_status: 'none', scheduled_at: null };
+  it('patch de limpeza contém schedule_status:none, scheduled_at:null e recurrence:null', () => {
+    const patch = { schedule_status: 'none', scheduled_at: null, recurrence: null };
     expect(patch.schedule_status).toBe('none');
     expect(patch.scheduled_at).toBeNull();
+    expect(patch.recurrence).toBeNull();
   });
 
   it('filtro usa .eq(schedule_status, scheduled) — garante idempotência (não afeta campanha não agendada)', () => {
@@ -739,7 +740,7 @@ describe('dispatch imediato — limpar agendamento pendente (evita double-send)'
     // NÃO for 'scheduled', o update não afeta nenhuma linha (0 linhas = ok).
     const filters = [];
     const node = { eq: (col, val) => (filters.push([col, val]), node), update: () => node };
-    node.update({ schedule_status: 'none', scheduled_at: null })
+    node.update({ schedule_status: 'none', scheduled_at: null, recurrence: null })
       .eq('id', 'camp1')
       .eq('tenant_id', 't1')
       .eq('schedule_status', 'scheduled');

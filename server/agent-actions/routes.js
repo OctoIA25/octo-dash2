@@ -875,7 +875,7 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
     // Disparo imediato cancela qualquer agendamento pendente desta campanha,
     // para o worker não reenviar no horário original (evita double-send).
     await supabase.from(CAMPAIGNS_TABLE)
-      .update({ schedule_status: 'none', scheduled_at: null })
+      .update({ schedule_status: 'none', scheduled_at: null, recurrence: null })
       .eq('id', id).eq('tenant_id', tenantId).eq('schedule_status', 'scheduled')
       .then(() => { }, (e) => console.error('[campaigns] limpar agendamento pós-dispatch falhou:', e?.message));
     return res.json({ ok: true, runId: result.runId, enqueued: result.enqueued });
