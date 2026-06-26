@@ -42,7 +42,7 @@ const MASS_ROLES = new Set(['owner', 'admin', 'team_leader']);
  *              interpretOpts é repassado ao interpreter (webhookUrl/usuario do n8n).
  */
 export async function previewOperation(supabase, input, deps = {}) {
-  const { command, audienceId, tenantId, mode, user = {} } = input;
+  const { command, audienceId, tenantId, mode, campaignId = null, user = {} } = input;
   const {
     interpret = interpretCommand,
     resolve = resolveSegmentDual,
@@ -133,6 +133,7 @@ export async function previewOperation(supabase, input, deps = {}) {
     requested_by_email: user.email || null,
     requested_by_role: user.role || null,
     created_at: nowIso,
+    campaign_id: campaignId,
     // Campos de diagnóstico dual-source (defensivos: undefined → null para fakes antigos).
     primary_source: resolved.primarySource ?? null,
     public_source_diagnostic: resolved.diagnostic ?? null,

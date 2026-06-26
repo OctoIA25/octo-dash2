@@ -517,6 +517,84 @@ describe('confirmOperation — deriva modo primary-only do run.primary_source', 
   });
 });
 
+describe('previewOperation campaignId', () => {
+  /**
+   * Fake supabase que combina audiences (maybeSingle fixa) + runs (captura o insert).
+   * Reutiliza o mesmo shape de makeFakeSupabaseForAudience + captura da row inserida.
+   */
+  function makeFakeForCampaignTest() {
+    let capturedRow = null;
+
+    const from = (table) => {
+      if (table === 'audiences') {
+        const node = {
+          select() { return node; },
+          eq() { return node; },
+          async maybeSingle() {
+            return { data: { segment: { type: 'archived' } }, error: null };
+          },
+        };
+        return node;
+      }
+      if (table === 'agent_action_runs') {
+        const node = {
+          insert(row) {
+            capturedRow = row;
+            return { error: null };
+          },
+        };
+        return node;
+      }
+      throw new Error(`tabela inesperada: ${table}`);
+    };
+
+    return { supabase: { from }, getCaptured: () => capturedRow };
+  }
+
+  const resolveWithLead = vi.fn(async () => ({
+    ok: true,
+    rows: [{ id: 'l1', name: 'João', phone: '5511999990000' }],
+    primarySource: 'kenlo',
+  }));
+
+  it('grava campaign_id quando campaignId é passado', async () => {
+    const { supabase, getCaptured } = makeFakeForCampaignTest();
+
+    const r = await previewOperation(
+      supabase,
+      {
+        tenantId: 't1',
+        audienceId: 'aud1',
+        mode: 'kenlo_only',
+        campaignId: 'camp1',
+        user: { id: 'u1', email: 'a@x.com', role: 'admin' },
+      },
+      { resolve: resolveWithLead, nowMs: NOW },
+    );
+
+    expect(r.ok).toBe(true);
+    expect(getCaptured().campaign_id).toBe('camp1');
+  });
+
+  it('campaign_id é null quando campaignId ausente (retrocompat)', async () => {
+    const { supabase, getCaptured } = makeFakeForCampaignTest();
+
+    const r = await previewOperation(
+      supabase,
+      {
+        tenantId: 't1',
+        audienceId: 'aud1',
+        mode: 'kenlo_only',
+        user: { id: 'u1', email: 'a@x.com', role: 'admin' },
+      },
+      { resolve: resolveWithLead, nowMs: NOW },
+    );
+
+    expect(r.ok).toBe(true);
+    expect(getCaptured().campaign_id).toBe(null);
+  });
+});
+
 describe('confirmOperation — confirmação obrigatória e idempotência', () => {
   function seedPendingRun(over = {}) {
     const id = 'run-123';
