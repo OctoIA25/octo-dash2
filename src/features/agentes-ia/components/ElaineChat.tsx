@@ -681,7 +681,10 @@ export const ElaineChat = ({
   ) || [];
 
   return (
-    <div className={`flex flex-col h-full ${isDarkMode ? 'bg-gradient-to-b from-neutral-900/20 to-neutral-900/40 border-neutral-800/40' : 'bg-gradient-to-b from-blue-50/80 via-blue-100/60 to-blue-50/80 border-blue-200/60'} overflow-hidden rounded-xl border shadow-2xl`}>
+    <div
+      className="flex flex-col h-full overflow-hidden rounded-xl border"
+      style={{ backgroundColor: 'hsl(var(--bg-primary))', borderColor: 'hsl(var(--border))' }}
+    >
 
       {isReadOnly && (
         <div className={`flex items-center gap-2 px-4 py-2 border-b text-xs font-semibold ${isDarkMode ? 'bg-amber-900/30 border-amber-700/40 text-amber-300' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
@@ -690,7 +693,10 @@ export const ElaineChat = ({
         </div>
       )}
       {loadingHistory && (
-        <div className={`flex items-center gap-2 px-4 py-2 border-b text-xs ${isDarkMode ? 'bg-neutral-800/40 border-neutral-700/40 text-gray-300' : 'bg-pink-50/60 border-pink-200 text-pink-700'}`}>
+        <div
+          className="flex items-center gap-2 px-4 py-2 border-b text-xs"
+          style={{ backgroundColor: 'hsl(var(--bg-secondary))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--text-secondary))' }}
+        >
           <Loader2 className="w-3.5 h-3.5 animate-spin" />
           <span>Carregando conversa...</span>
         </div>
@@ -698,7 +704,7 @@ export const ElaineChat = ({
 
       {/* ⭐ STATUS: Corretor Selecionado para Análise */}
       {(selectedCorretor || selectedCorretorEneagrama || selectedCorretorMBTI || selectedCorretorGestaoLiderados || adminResultadosAnexados) && (
-        <div className={`flex-shrink-0 px-4 py-3 border-b ${isDarkMode ? 'border-neutral-700/50 bg-neutral-800/30' : 'border-pink-200 bg-pink-50/50'}`}>
+        <div className="flex-shrink-0 px-4 py-3 border-b" style={{ backgroundColor: 'hsl(var(--bg-secondary))', borderColor: 'hsl(var(--border))' }}>
           <div className="flex items-center justify-between gap-3 flex-wrap">
             {/* Ícone + Texto "Analisando" */}
             <div className="flex items-center gap-2.5 flex-1 min-w-[200px]">
@@ -796,38 +802,36 @@ export const ElaineChat = ({
       )}
       
       {/* Área de Mensagens - Scroll fixo e automático */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-4" style={{ minHeight: 0, maxHeight: 'calc(100vh - 200px)' }}>
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 space-y-4">
         {messages.map((message) => (
           <div
             key={message.id}
             className={`flex gap-3 ${message.sender === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
           >
             {/* Avatar */}
-            <div className={`flex-shrink-0 ${
-              message.sender === 'user'
-                ? isDarkMode
-                  ? 'w-11 h-11 rounded-2xl bg-gradient-to-br from-pink-600 to-purple-600 flex items-center justify-center shadow-lg shadow-pink-500/30'
-                  : 'w-11 h-11 rounded-2xl bg-gradient-to-br from-gray-300 to-gray-400 flex items-center justify-center shadow-lg shadow-gray-400/30'
-                : 'w-11 h-11 rounded-2xl bg-gradient-to-br from-pink-500 to-purple-500 flex items-center justify-center shadow-lg shadow-pink-500/30'
-            }`}>
+            <div
+              className="flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center"
+              style={
+                message.sender === 'user'
+                  ? { backgroundColor: 'hsl(var(--bg-secondary))', border: '1px solid hsl(var(--border))' }
+                  : { backgroundColor: '#4f46e5' }
+              }
+            >
               {message.sender === 'user' ? (
-                <User className={`h-6 w-6 ${isDarkMode ? 'text-white' : 'text-gray-700'}`} />
+                <User className="h-5 w-5" style={{ color: 'hsl(var(--text-secondary))' }} />
               ) : (
-                <span className="text-2xl">👩‍💼</span>
+                <span className="text-xl">👩‍💼</span>
               )}
             </div>
 
             {/* Mensagem */}
             <div
-              className={`max-w-[75%] rounded-2xl px-4 py-3 shadow-lg ${
+              className="max-w-[75%] rounded-2xl px-4 py-3"
+              style={
                 message.sender === 'user'
-                  ? isDarkMode
-                    ? 'bg-gradient-to-br from-pink-600 to-purple-600 text-white'
-                    : 'bg-gradient-to-br from-gray-200 to-gray-300 text-gray-900 border border-gray-400/30 shadow-gray-400/30'
-                  : isDarkMode
-                    ? 'bg-gradient-to-br from-neutral-800/80 to-neutral-900/80 text-gray-100 border border-pink-500/20 shadow-pink-500/10'
-                    : 'bg-white text-gray-900 border border-blue-200/60 shadow-md shadow-blue-100/40'
-              }`}
+                  ? { backgroundColor: '#4f46e5', color: '#ffffff' }
+                  : { backgroundColor: 'hsl(var(--bg-secondary))', color: 'hsl(var(--text-primary))', border: '1px solid hsl(var(--border))' }
+              }
             >
               {message.sender === 'agent' ? (
                 <div className="break-words">
@@ -836,11 +840,10 @@ export const ElaineChat = ({
               ) : (
                 <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{message.text}</p>
               )}
-              <p className={`text-[10px] mt-2 ${
-                message.sender === 'user' 
-                  ? isDarkMode ? 'text-pink-100' : 'text-gray-600'
-                  : isDarkMode ? 'text-gray-400' : 'text-gray-600'
-              }`}>
+              <p
+                className="text-[10px] mt-2"
+                style={{ color: message.sender === 'user' ? 'rgba(255,255,255,0.7)' : 'hsl(var(--text-secondary))' }}
+              >
                 {message.timestamp.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
               </p>
             </div>
@@ -850,12 +853,15 @@ export const ElaineChat = ({
         {/* Indicador de digitação */}
         {isSending && (
           <div className="flex gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-pink-500 to-purple-500 flex items-center justify-center shadow-lg shadow-pink-500/30">
-              <span className="text-2xl">👩‍💼</span>
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: '#4f46e5' }}>
+              <span className="text-xl">👩‍💼</span>
             </div>
-            <div className={`bg-gradient-to-br ${isDarkMode ? 'from-neutral-800/80 to-neutral-900/80 border-pink-500/20' : 'bg-white border-blue-200/40 shadow-blue-200/30'} border rounded-2xl px-4 py-3 shadow-lg flex items-center gap-2`}>
-              <Loader2 className={`h-4 w-4 ${isDarkMode ? 'text-pink-400' : 'text-pink-600'} animate-spin`} />
-              <span className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>Comportamental está analisando...</span>
+            <div
+              className="rounded-2xl px-4 py-3 flex items-center gap-2"
+              style={{ backgroundColor: 'hsl(var(--bg-secondary))', border: '1px solid hsl(var(--border))' }}
+            >
+              <Loader2 className="h-4 w-4 animate-spin" style={{ color: '#6366f1' }} />
+              <span className="text-sm" style={{ color: 'hsl(var(--text-secondary))' }}>Comportamental está analisando...</span>
             </div>
           </div>
         )}
@@ -929,16 +935,23 @@ export const ElaineChat = ({
       )}
 
       {/* Input de Mensagem - SEMPRE VISÍVEL */}
-      <div className={`border-t ${isDarkMode ? 'border-neutral-800 bg-neutral-900' : 'border-blue-200/50 bg-blue-50/80'} p-3 flex-shrink-0 shadow-2xl sticky bottom-0 rounded-b-xl`}>
+      <div
+        className="border-t p-3 flex-shrink-0 sticky bottom-0 rounded-b-xl"
+        style={{ backgroundColor: 'hsl(var(--bg-primary))', borderColor: 'hsl(var(--border))' }}
+      >
         <div className="flex gap-2 items-end">
-          <div className={`flex-1 ${isDarkMode ? 'bg-neutral-800 border-2 border-neutral-700' : 'bg-white/90 border-2 border-blue-200/60'} rounded-xl p-3 focus-within:border-pink-500 focus-within:ring-2 focus-within:ring-pink-500/30 transition-all duration-200`}>
+          <div
+            className="flex-1 rounded-xl p-3 transition-colors focus-within:border-indigo-500"
+            style={{ backgroundColor: 'hsl(var(--bg-secondary))', border: '1px solid hsl(var(--border))' }}
+          >
             <Textarea
               ref={textareaRef}
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
               onKeyPress={handleKeyPress}
               placeholder={isReadOnly ? 'Modo leitura: você não pode enviar mensagens.' : 'Digite sua mensagem...'}
-              className={`bg-transparent border-none resize-none ${isDarkMode ? 'text-white placeholder:text-gray-400' : 'text-gray-800 placeholder:text-gray-500'} focus:outline-none focus:ring-0 min-h-[20px] max-h-[120px] text-sm w-full`}
+              className="bg-transparent border-none resize-none focus:outline-none focus:ring-0 min-h-[20px] max-h-[120px] text-sm w-full"
+              style={{ color: 'hsl(var(--text-primary))' }}
               rows={1}
               disabled={isSending || isReadOnly}
             />
@@ -946,7 +959,7 @@ export const ElaineChat = ({
           <Button
             onClick={handleSendMessage}
             disabled={!inputMessage.trim() || isSending || isReadOnly}
-            className="h-11 w-11 rounded-xl bg-gradient-to-br from-pink-600 via-purple-600 to-pink-600 hover:from-pink-700 hover:via-purple-700 hover:to-pink-700 shadow-xl shadow-pink-500/30 hover:shadow-2xl hover:shadow-pink-500/40 transition-all duration-200 flex items-center justify-center p-0 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="h-11 w-11 rounded-xl bg-indigo-600 hover:bg-indigo-700 transition-colors flex items-center justify-center p-0 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isSending ? (
               <Loader2 className="h-5 w-5 text-white animate-spin" />

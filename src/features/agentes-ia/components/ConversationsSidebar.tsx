@@ -14,7 +14,6 @@ import {
   Pencil,
   Archive,
   ChevronDown,
-  ChevronLeft,
   ChevronRight,
   Eye,
   User as UserIcon,
@@ -94,7 +93,7 @@ export const ConversationsSidebar = ({
     fetchUsers();
   }, [isManager, tenantId, agent]);
 
-  const accentColor = agent === 'caio' ? 'blue' : 'pink';
+  const accentColor = agent === 'caio' ? 'blue' : 'indigo';
 
   const colorClasses = useMemo(() => {
     if (agent === 'caio') {
@@ -107,11 +106,9 @@ export const ConversationsSidebar = ({
       };
     }
     return {
-      activeBg: isDarkMode ? 'bg-pink-600/30 border-pink-400/60' : 'bg-pink-100 border-pink-400',
-      activeText: isDarkMode ? 'text-pink-200' : 'text-pink-900',
-      newButton: isDarkMode
-        ? 'bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-700 hover:to-purple-700'
-        : 'bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-700 hover:to-purple-700',
+      activeBg: isDarkMode ? 'bg-indigo-600/30 border-indigo-400/60' : 'bg-indigo-100 border-indigo-400',
+      activeText: isDarkMode ? 'text-indigo-200' : 'text-indigo-900',
+      newButton: 'bg-indigo-600 hover:bg-indigo-700',
     };
   }, [agent, isDarkMode]);
 
@@ -167,37 +164,24 @@ export const ConversationsSidebar = ({
   }
 
   return (
-    <div
-      className={`flex flex-col h-full border-r ${
-        isDarkMode ? 'border-neutral-800/60 bg-neutral-900/40' : 'border-gray-200 bg-gray-50/80'
-      }`}
-    >
-      {/* Header */}
-      <div className={`p-3 border-b ${isDarkMode ? 'border-neutral-800/60' : 'border-gray-200'}`}>
-        <div className="flex items-center gap-2 mb-2">
-          <History className={`w-3.5 h-3.5 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`} />
-          <span className={`text-[11px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-            Histórico
-          </span>
-          {onToggleCollapsed && (
-            <button
-              onClick={onToggleCollapsed}
-              title="Minimizar histórico"
-              className={`ml-auto p-1 rounded transition-colors ${
-                isDarkMode ? 'hover:bg-neutral-800 text-gray-400' : 'hover:bg-gray-200 text-gray-500'
-              }`}
-            >
-              <ChevronLeft className="w-3.5 h-3.5" />
-            </button>
+    <div className="flex flex-col min-h-0 max-h-full" style={{ backgroundColor: 'hsl(var(--bg-primary))' }}>
+      {/* Header (pr-10 reserva espaço para o X de fechar do modal) */}
+      <div className="px-4 pt-4 pb-3 pr-10">
+        <div className="flex items-baseline gap-2 mb-3">
+          <h2 className="text-base font-bold tracking-tight" style={{ color: 'hsl(var(--text-primary))' }}>
+            Conversas
+          </h2>
+          {conversations.length > 0 && (
+            <span className="text-xs" style={{ color: 'hsl(var(--text-secondary))' }}>
+              {conversations.length}
+            </span>
           )}
         </div>
         <button
           onClick={onNew}
           disabled={!!viewingUserId}
-          className={`w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-white text-sm font-semibold shadow-md transition-all ${
-            viewingUserId
-              ? 'opacity-50 cursor-not-allowed bg-gray-500'
-              : `${colorClasses.newButton} hover:shadow-lg`
+          className={`w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-white text-sm font-semibold transition-colors ${
+            viewingUserId ? 'opacity-50 cursor-not-allowed bg-gray-500' : 'bg-indigo-600 hover:bg-indigo-700'
           }`}
         >
           <MessageSquarePlus className="w-4 h-4" />
@@ -208,13 +192,10 @@ export const ConversationsSidebar = ({
           <div className="mt-3">
             <button
               onClick={() => setShowUserPicker((v) => !v)}
-              className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium border ${
-                isDarkMode
-                  ? 'bg-neutral-800/60 border-neutral-700 text-gray-200 hover:bg-neutral-800'
-                  : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100'
-              } transition-colors`}
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.04]"
+              style={{ color: 'hsl(var(--text-primary))', border: '1px solid hsl(var(--border))' }}
             >
-              <Eye className={`w-3.5 h-3.5 ${viewingUserId ? `text-${accentColor}-500` : ''}`} />
+              <Eye className={`w-3.5 h-3.5 ${viewingUserId ? 'text-indigo-500' : ''}`} />
               <span className="flex-1 text-left truncate">
                 {selectedUser
                   ? `Vendo: ${selectedUser.user_name || selectedUser.user_email || 'usuário'}`
@@ -295,14 +276,14 @@ export const ConversationsSidebar = ({
       </div>
 
       {/* Lista de conversas */}
-      <div className="flex-1 overflow-y-auto px-2 py-3 space-y-1">
+      <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2 space-y-0.5">
         {loading ? (
-          <p className={`text-xs italic text-center py-4 ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+          <p className="text-xs text-center py-4" style={{ color: 'hsl(var(--text-secondary))' }}>
             Carregando...
           </p>
         ) : conversations.length === 0 ? (
-          <p className={`text-xs italic text-center py-4 ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-            {viewingUserId ? 'Este usuário ainda não tem conversas.' : 'Sem conversas. Comece uma nova!'}
+          <p className="text-xs text-center py-6" style={{ color: 'hsl(var(--text-secondary))' }}>
+            {viewingUserId ? 'Este usuário ainda não tem conversas.' : 'Sem conversas. Comece uma nova.'}
           </p>
         ) : (
           conversations.map((conv) => {
@@ -311,13 +292,8 @@ export const ConversationsSidebar = ({
             return (
               <div
                 key={conv.id}
-                className={`group rounded-lg border transition-all ${
-                  isActive
-                    ? colorClasses.activeBg
-                    : isDarkMode
-                      ? 'bg-neutral-800/30 border-transparent hover:bg-neutral-800/60'
-                      : 'bg-white border-transparent hover:bg-gray-100'
-                }`}
+                className="group rounded-lg transition-colors"
+                style={isActive ? { backgroundColor: 'hsl(var(--bg-secondary))' } : undefined}
               >
                 {isEditing ? (
                   <div className="p-2">
@@ -343,30 +319,22 @@ export const ConversationsSidebar = ({
                 ) : (
                   <button
                     onClick={() => onSelect(conv.id)}
-                    className="w-full text-left px-3 py-2"
+                    className={`w-full text-left px-3 py-2.5 rounded-lg transition-colors ${isActive ? '' : 'hover:bg-black/[0.03] dark:hover:bg-white/[0.04]'}`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
-                        <div
-                          className={`text-xs font-semibold truncate ${
-                            isActive
-                              ? colorClasses.activeText
-                              : isDarkMode
-                                ? 'text-gray-200'
-                                : 'text-gray-800'
-                          }`}
-                        >
+                        <div className="text-sm font-medium truncate" style={{ color: 'hsl(var(--text-primary))' }}>
                           {conv.title}
                         </div>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className={`text-[10px] ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className="text-[11px]" style={{ color: 'hsl(var(--text-secondary))' }}>
                             {formatRelativeDate(conv.last_message_at || conv.created_at)}
                           </span>
-                          <span className={`text-[10px] ${isDarkMode ? 'text-gray-600' : 'text-gray-400'}`}>
+                          <span className="text-[11px]" style={{ color: 'hsl(var(--text-secondary))' }}>
                             · {conv.message_count} msg
                           </span>
                           {viewingUserId && conv.user_name && (
-                            <span className={`text-[10px] truncate ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                            <span className="text-[11px] truncate" style={{ color: 'hsl(var(--text-secondary))' }}>
                               · {conv.user_name}
                             </span>
                           )}
