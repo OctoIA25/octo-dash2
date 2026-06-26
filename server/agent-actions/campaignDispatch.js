@@ -60,7 +60,7 @@ export function makeCampaignDispatchDeps(schedulerBundle) {
     previewOperation,
     confirmOperation,
     runDueActions,
-    schedulerDeps: { deliver: schedulerBundle.deliver, schedulerDeps: schedulerBundle, getEnvironment: schedulerBundle.getEnvironment },
+    schedulerDeps: schedulerBundle,
     executeCampaignDispatch,
   };
 }

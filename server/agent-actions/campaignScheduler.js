@@ -39,7 +39,7 @@ export async function runDueCampaigns(supabase, deps = {}) {
       } else {
         failed += 1;
         await supabase.from(CAMPAIGNS_TABLE)
-          .update({ schedule_status: 'error', schedule_error: result.error || 'dispatch_failed' })
+          .update({ schedule_status: 'error', schedule_error: result.detail ? `${result.error}: ${result.detail}` : (result.error || 'dispatch_failed') })
           .eq('id', camp.id);
       }
     } catch (e) {
