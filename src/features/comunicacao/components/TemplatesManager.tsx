@@ -262,7 +262,7 @@ export function TemplatesManager() {
                   {/* Chips: categoria + variáveis */}
                   <div className="mt-3 flex flex-wrap items-center gap-1.5">
                     <span className="inline-flex items-center h-5 px-2 rounded-md text-[10.5px] font-medium bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-                      {CATEGORY_LABEL[t.category]}
+                      {CATEGORY_LABEL[t.category] ?? t.category}
                     </span>
                     {(t.variables || []).map((v) => (
                       <span key={v} className="inline-flex items-center h-5 px-2 rounded-md text-[10.5px] font-medium bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 tabular-nums">
@@ -307,7 +307,7 @@ export function TemplatesManager() {
                       type="button"
                       onClick={() => remove(t)}
                       aria-label={`Excluir ${t.name}`}
-                      className="ml-auto inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:text-rose-400 dark:hover:bg-rose-950/40 transition-colors focus:outline-none focus:ring-2 focus:ring-rose-300 dark:focus:ring-rose-700 opacity-0 group-hover:opacity-100 focus:opacity-100"
+                      className="ml-auto inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:text-rose-400 dark:hover:bg-rose-950/40 transition-colors focus:outline-none focus:ring-2 focus:ring-rose-300 dark:focus:ring-rose-700 [@media(hover:hover)]:opacity-0 group-hover:opacity-100 focus:opacity-100"
                     >
                       <Trash2 className="h-3.5 w-3.5" aria-hidden />
                     </button>

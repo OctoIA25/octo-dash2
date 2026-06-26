@@ -367,7 +367,7 @@ export function CampanhasManager() {
                       Cancelar agendamento
                     </button>
                   )}
-                  <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                  <div className="ml-auto flex items-center gap-0.5 [@media(hover:hover)]:opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                     <button
                       type="button"
                       onClick={() => { setEditing(camp); setWizardOpen(true); }}

@@ -231,7 +231,7 @@ export function PublicosManager() {
                       </span>
                       <p className="text-[13.5px] font-semibold text-slate-900 dark:text-slate-100 truncate" title={a.name}>{a.name}</p>
                     </div>
-                    <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                    <div className="flex items-center gap-0.5 shrink-0 [@media(hover:hover)]:opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                       <button
                         type="button"
                         onClick={() => openEdit(a)}
