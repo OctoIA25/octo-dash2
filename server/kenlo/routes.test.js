@@ -35,18 +35,28 @@ function makeSupabase({ user, integrations = [] }) {
 describe('rotas Kenlo', () => {
   it('POST /sync/run exige owner (403 para não-owner)', async () => {
     const app = fakeApp();
-    registerKenloRoutes(app, makeSupabase({ user: { id: 'u', email: 'alguem@x.com' } }), { syncService: { syncAllTenants: vi.fn() } });
+    registerKenloRoutes(app, makeSupabase({ user: { id: 'u', email: 'alguem@x.com' } }), { runner: { trigger: vi.fn() } });
     const res = await run(app.routes['POST /api/v1/kenlo/sync/run'], { headers: { authorization: 'Bearer t' } });
     expect(res.statusCode).toBe(403);
   });
 
-  it('POST /sync/run roda syncAllTenants para owner', async () => {
+  it('POST /sync/run dispara em background e responde 202 para owner', async () => {
     const app = fakeApp();
-    const syncService = { syncAllTenants: vi.fn().mockResolvedValue([{ tenantId: 't1', new: 2 }]) };
-    registerKenloRoutes(app, makeSupabase({ user: { id: 'u', email: OWNER } }), { syncService });
+    const runner = { trigger: vi.fn().mockReturnValue({ started: true, alreadyRunning: false }) };
+    registerKenloRoutes(app, makeSupabase({ user: { id: 'u', email: OWNER } }), { runner });
     const res = await run(app.routes['POST /api/v1/kenlo/sync/run'], { headers: { authorization: 'Bearer t' } });
-    expect(res.statusCode).toBe(200);
-    expect(syncService.syncAllTenants).toHaveBeenCalledOnce();
+    expect(res.statusCode).toBe(202);
+    expect(res.body).toMatchObject({ ok: true, started: true });
+    expect(runner.trigger).toHaveBeenCalledOnce();
+  });
+
+  it('POST /sync/run responde 202 started:false quando já há sync em andamento', async () => {
+    const app = fakeApp();
+    const runner = { trigger: vi.fn().mockReturnValue({ started: false, alreadyRunning: true }) };
+    registerKenloRoutes(app, makeSupabase({ user: { id: 'u', email: OWNER } }), { runner });
+    const res = await run(app.routes['POST /api/v1/kenlo/sync/run'], { headers: { authorization: 'Bearer t' } });
+    expect(res.statusCode).toBe(202);
+    expect(res.body).toMatchObject({ ok: true, started: false });
   });
 
   it('GET /sync/status retorna integrações para owner', async () => {
@@ -59,7 +69,7 @@ describe('rotas Kenlo', () => {
 
   it('401 sem token', async () => {
     const app = fakeApp();
-    registerKenloRoutes(app, makeSupabase({ user: null }), { syncService: { syncAllTenants: vi.fn() } });
+    registerKenloRoutes(app, makeSupabase({ user: null }), { runner: { trigger: vi.fn() } });
     const res = await run(app.routes['POST /api/v1/kenlo/sync/run'], { headers: {} });
     expect(res.statusCode).toBe(401);
   });

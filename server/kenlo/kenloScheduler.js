@@ -10,6 +10,7 @@ import { createKenloLeadService } from './KenloLeadService.js';
 import { createBrokerAssigner } from './brokerAssigner.js';
 import { makeBrokerLookups } from './brokerLookups.js';
 import { createKenloSyncService } from './KenloSyncService.js';
+import { createSyncRunner } from './syncRunner.js';
 import puppeteerLoginDriver from './puppeteerLoginDriver.js';
 
 export function makeSyncService(supabase, options = {}) {
@@ -25,6 +26,11 @@ export function makeSyncService(supabase, options = {}) {
   return createKenloSyncService({ supabase, leadService, brokerAssigner, processEnv });
 }
 
+export function makeSyncRunner(supabase, options = {}) {
+  const syncService = options.syncService || makeSyncService(supabase, options);
+  return createSyncRunner(syncService);
+}
+
 export async function startKenloScheduler(supabase, options = {}) {
   const processEnv = options.processEnv || process.env;
   const cfg = loadKenloEnv(processEnv);
@@ -33,14 +39,6 @@ export async function startKenloScheduler(supabase, options = {}) {
     try { ({ default: cron } = await import(/* @vite-ignore */ 'node-cron')); }
     catch { console.warn('[kenlo] node-cron não instalado — agendamento desabilitado.'); return null; }
   }
-  const syncService = options.syncService || makeSyncService(supabase, options);
-  let running = false;
-  const task = cron.schedule(cfg.cron, () => {
-    if (running) return;
-    running = true;
-    Promise.resolve(syncService.syncAllTenants())
-      .catch((e) => console.error('[kenlo] erro no ciclo:', e?.message))
-      .finally(() => { running = false; });
-  });
-  return task;
+  const runner = options.runner || makeSyncRunner(supabase, options);
+  return cron.schedule(cfg.cron, () => { runner.trigger(); });
 }

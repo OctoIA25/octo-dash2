@@ -5170,12 +5170,15 @@ registerKpisRoutes(app, supabase);
 // KENLO — sincronização nativa de leads (substitui automação N8N)
 // Registrar ANTES do 404 catch-all de /api/v1/*.
 // ============================================
-import { registerKenloRoutes, startKenloScheduler } from './kenlo/index.js';
-registerKenloRoutes(app, supabase);
+import { registerKenloRoutes, startKenloScheduler, makeSyncRunner } from './kenlo/index.js';
+// Runner ÚNICO: rotas (disparo manual) e scheduler (cron) compartilham a mesma
+// guarda de reentrância, impossibilitando dois syncs em paralelo no processo.
+const kenloRunner = makeSyncRunner(supabase);
+registerKenloRoutes(app, supabase, { runner: kenloRunner });
 
 // Worker de sync. Flag-gated (KENLO_SYNC_SCHEDULER=1) para rodar em UM processo.
 if (process.env.KENLO_SYNC_SCHEDULER === '1') {
-  startKenloScheduler(supabase);
+  startKenloScheduler(supabase, { runner: kenloRunner });
 }
 
 // ============================================
