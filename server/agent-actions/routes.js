@@ -573,15 +573,17 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
     if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
     if (!canManageTemplates(ctx.role)) return res.status(403).json({ ok: false, error: 'forbidden' });
     const { data: tpl, error: tErr } = await supabase
-      .from(TEMPLATES_TABLE).select('name, language, category, body, example_values, approval_status').eq('id', id).eq('tenant_id', tenantId).maybeSingle();
+      .from(TEMPLATES_TABLE).select('name, language, category, body, example_values, approval_status, provider_template_id').eq('id', id).eq('tenant_id', tenantId).maybeSingle();
     if (tErr) return res.status(500).json({ ok: false, error: 'lookup_failed' });
     if (!tpl) return res.status(404).json({ ok: false, error: 'template_not_found' });
     if (tpl.approval_status === 'pending' || tpl.approval_status === 'approved') return res.status(400).json({ ok: false, error: 'already_submitted' });
+    if (tpl.provider_template_id) return res.status(400).json({ ok: false, error: 'already_submitted' });
     const creds = await loadMetaCreds(supabase, tenantId);
     if (!creds.ok) return res.status(400).json({ ok: false, error: creds.error });
     const sub = await submitTemplate({ wabaId: creds.wabaId, accessToken: creds.accessToken, name: tpl.name, language: tpl.language, category: tpl.category, body: tpl.body, exampleValues: tpl.example_values || [] });
     if (!sub.ok) {
-      await supabase.from(TEMPLATES_TABLE).update({ approval_status: 'error', rejected_reason: sub.detail || 'meta_error' }).eq('id', id).eq('tenant_id', tenantId);
+      const { error: upErr } = await supabase.from(TEMPLATES_TABLE).update({ approval_status: 'error', rejected_reason: sub.detail || 'meta_error' }).eq('id', id).eq('tenant_id', tenantId);
+      if (upErr) console.error('[templates] falha ao gravar status error:', upErr.message);
       return res.status(502).json({ ok: false, error: 'meta_submit_failed', detail: sub.detail });
     }
     const { data, error } = await supabase.from(TEMPLATES_TABLE)
@@ -597,6 +599,7 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
     if (!tenantId) return res.status(400).json({ ok: false, error: 'missing_tenant' });
     const ctx = await resolveUserContext(supabase, req, tenantId);
     if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
+    if (!canManageTemplates(ctx.role)) return res.status(403).json({ ok: false, error: 'forbidden' });
     const { data: tpl, error: tErr } = await supabase
       .from(TEMPLATES_TABLE).select('name').eq('id', id).eq('tenant_id', tenantId).maybeSingle();
     if (tErr) return res.status(500).json({ ok: false, error: 'lookup_failed' });
