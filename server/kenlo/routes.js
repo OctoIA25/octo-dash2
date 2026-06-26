@@ -3,7 +3,7 @@
  * padrão mínimo de recommendations (valida JWT Supabase, exige owner da
  * plataforma) sem acoplar ao módulo de recommendations.
  */
-import { makeSyncService } from './kenloScheduler.js';
+import { makeSyncRunner } from './kenloScheduler.js';
 
 const PLATFORM_OWNER_EMAIL = 'octo.inteligenciaimobiliaria@gmail.com';
 const isPlatformOwner = (email) => (email || '').toLowerCase() === PLATFORM_OWNER_EMAIL;
@@ -27,16 +27,16 @@ function makeRequireOwner(supabase) {
 
 export function registerKenloRoutes(app, supabase, options = {}) {
   const requireOwner = makeRequireOwner(supabase);
-  const syncService = options.syncService || makeSyncService(supabase, options);
+  const runner = options.runner || makeSyncRunner(supabase, options);
 
-  app.post('/api/v1/kenlo/sync/run', requireOwner, async (req, res) => {
-    try {
-      const summary = await syncService.syncAllTenants();
-      res.status(200).json({ ok: true, summary });
-    } catch (err) {
-      console.error('[kenlo] erro no run manual:', err?.message);
-      res.status(500).json({ ok: false, error: 'internal_error' });
-    }
+  // Dispara em background e responde na hora: o sync de um tenant zerado leva
+  // minutos (login Kenlo ~30s + histórico inteiro), o que estoura o timeout de
+  // qualquer proxy/cliente. Acompanhe o progresso via GET /sync/status.
+  app.post('/api/v1/kenlo/sync/run', requireOwner, (req, res) => {
+    const { started } = runner.trigger();
+    res.status(202).json({ ok: true, started, message: started
+      ? 'sync iniciado — acompanhe em GET /api/v1/kenlo/sync/status'
+      : 'sync já em andamento' });
   });
 
   app.get('/api/v1/kenlo/sync/status', requireOwner, async (req, res) => {
