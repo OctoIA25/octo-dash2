@@ -21,6 +21,7 @@ import { resolveSegmentDual } from './segmentResolver.js';
 import { validateSegment } from './segmentSchema.js';
 import { toMetaBody, submitTemplate, fetchTemplateStatus, listApprovedTemplates, mapMetaTemplateToRow } from '../communication/metaTemplates.js';
 import { validateMapping } from './resolveTemplateParams.js';
+import { executeCampaignDispatch } from './campaignDispatch.js';
 
 const PLATFORM_OWNER_EMAIL = 'octo.inteligenciaimobiliaria@gmail.com';
 
@@ -818,37 +819,26 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
       .from(CAMPAIGNS_TABLE).select('id, audience_id, template_id, max_recipients, variable_mapping').eq('id', id).eq('tenant_id', tenantId).maybeSingle();
     if (cErr) return res.status(500).json({ ok: false, error: 'lookup_failed' });
     if (!camp) return res.status(404).json({ ok: false, error: 'campaign_not_found' });
-    const tpl = await assertTemplateUsable(tenantId, camp.template_id);
-    if (!tpl.ok) return res.status(400).json({ ok: false, error: tpl.error });
-    // Toda variável do template precisa de um mapeamento utilizável. Template
-    // sem variáveis → ok (retrocompat). Falha aqui não enfileira nada.
-    const vcheck = validateMapping(camp.variable_mapping, tpl.variables);
-    if (!vcheck.ok) return res.status(400).json({ ok: false, error: 'incomplete_mapping', missing: vcheck.missing });
-    const creds = await loadMetaCreds(supabase, tenantId);
-    if (!creds.ok) return res.status(400).json({ ok: false, error: creds.error });
-    // MESMO caminho de /preview e /confirm (verificado em routes.js:200-233):
-    const user = { id: req.userId, email: req.userEmail, role: ctx.role, brokerName: ctx.brokerName };
-    const mode = await resolvePublicSourceMode(supabase, tenantId);
-    const prev = await previewOperation(
-      supabase,
-      { audienceId: camp.audience_id, tenantId, mode, campaignId: camp.id, user },
-      { maxRecipients: camp.max_recipients ?? undefined },
-    );
-    if (!prev.ok || !prev.previewToken) return res.status(400).json({ ok: false, error: prev.error || 'preview_failed' });
-    // templateName = nome do template aprovado da campanha. Flui até o envio
-    // (confirmOperation grava em agent_action_queue.template_name) para que ESTE
-    // disparo use o template ESCOLHIDO, não o fixo do tenant.
-    const conf = await confirmOperation(supabase, {
-      previewToken: prev.previewToken, tenantId, message: tpl.body, templateName: tpl.name,
-      variableMapping: camp.variable_mapping ?? {}, templateVariables: tpl.variables, user,
+    // Miolo do disparo extraído para campaignDispatch.js (fonte única reusada
+    // pelo worker de agendamento). Os guards de tenant/role/404 e o lookup da
+    // campanha permanecem aqui; só o dispatch em si é delegado.
+    const result = await executeCampaignDispatch(supabase, {
+      campaign: camp,
+      tenantId,
+      user: { id: req.userId, email: req.userEmail, role: ctx.role, brokerName: ctx.brokerName },
+      deps: { assertTemplateUsable, validateMapping, loadMetaCreds, resolvePublicSourceMode, previewOperation, confirmOperation, runDueActions, schedulerDeps },
     });
-    if (!conf.ok) return res.status(400).json({ ok: false, error: conf.error || 'confirm_failed' });
-    // Drena a fila imediatamente (best-effort), idêntico ao /confirm (routes.js:233).
-    if (conf.enqueued > 0) {
-      runDueActions(supabase, { deliver: schedulerDeps.deliver, schedulerDeps, getEnvironment: schedulerDeps.getEnvironment })
-        .catch((err) => console.error('[campaigns] drain pós-dispatch falhou:', err?.message));
+    if (!result.ok) {
+      // incomplete_mapping expõe quais variáveis faltam (paridade com o contrato
+      // anterior da rota); os demais erros de negócio também são 400.
+      const body = { ok: false, error: result.error };
+      if (result.error === 'incomplete_mapping') {
+        const tpl = await assertTemplateUsable(tenantId, camp.template_id);
+        if (tpl.ok) body.missing = validateMapping(camp.variable_mapping, tpl.variables).missing;
+      }
+      return res.status(400).json(body);
     }
-    return res.json({ ok: true, runId: conf.runId, enqueued: conf.enqueued });
+    return res.json({ ok: true, runId: result.runId, enqueued: result.enqueued });
   });
 
   app.get(`${basePath}/campaigns/:id/runs`, requireSupabaseAuth, async (req, res) => {
