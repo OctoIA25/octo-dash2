@@ -29,6 +29,8 @@ import { loadWhatsappContext, sendWhatsappTemplate } from './whatsappSender.js';
 import { runDueSchedules, computeNextRun } from './scheduler.js';
 import { runDueRecovery } from './recoveryWorker.js';
 import { runDueActions } from '../agent-actions/actionWorker.js';
+import { runDueCampaigns } from '../agent-actions/campaignScheduler.js';
+import { makeCampaignDispatchDeps } from '../agent-actions/campaignDispatch.js';
 
 const PLATFORM_OWNER_EMAIL = 'octo.inteligenciaimobiliaria@gmail.com';
 const HISTORY_TABLE = 'lead_recommendations';
@@ -941,8 +943,25 @@ export async function startRecommendationScheduler(supabase, options = {}) {
       outboxTickRunning = false;
     });
   }, outboxLoopMs);
+
+  // Loop contínuo de campanhas agendadas (communication_campaigns).
+  // setInterval SEPARADO (não acoplado ao outbox) para isolar falhas: uma
+  // exceção aqui não impede o drain do outbox e vice-versa. Mesma guarda de
+  // reentrância. As deps vêm de funções IMPORTÁVEIS (makeCampaignDispatchDeps),
+  // que reusam a MESMA implementação da rota HTTP de dispatch; `deps` é o bundle
+  // do scheduler (makeSchedulerDeps), do qual se extrai deliver/getEnvironment.
+  let campaignTickRunning = false;
+  setInterval(() => {
+    if (campaignTickRunning) return; // tick anterior ainda em andamento: pula
+    campaignTickRunning = true;
+    runDueCampaigns(supabase, makeCampaignDispatchDeps(deps))
+      .catch((e) => console.error('[campaigns] erro no loop de agendamento:', e?.message))
+      .finally(() => { campaignTickRunning = false; });
+  }, outboxLoopMs);
+
   console.log(`⏰ [scheduler] recomendações + recuperação ativos (cron: ${cronExpr})`);
   console.log(`⚙️  [agent-actions] outbox loop ativo (intervalo: ${outboxLoopMs}ms)`);
+  console.log(`📣 [campaigns] loop de agendamento ativo (intervalo: ${outboxLoopMs}ms)`);
   return task;
 }
 

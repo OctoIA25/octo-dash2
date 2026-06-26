@@ -21,6 +21,7 @@ import { resolveSegmentDual } from './segmentResolver.js';
 import { validateSegment } from './segmentSchema.js';
 import { toMetaBody, submitTemplate, fetchTemplateStatus, listApprovedTemplates, mapMetaTemplateToRow } from '../communication/metaTemplates.js';
 import { validateMapping } from './resolveTemplateParams.js';
+import { assertTemplateUsable as assertTemplateUsableShared } from './templateGuards.js';
 import { executeCampaignDispatch } from './campaignDispatch.js';
 
 const PLATFORM_OWNER_EMAIL = 'octo.inteligenciaimobiliaria@gmail.com';
@@ -84,7 +85,7 @@ async function resolveUserContext(supabase, req, tenantId) {
  * Retorna o valor da tabela `agent_public_source_config` ou o fallback seguro (kenlo_only).
  * Resiliente: qualquer erro de query ou exceção retorna o fallback — nunca derruba a rota.
  */
-async function resolvePublicSourceMode(supabase, tenantId) {
+export async function resolvePublicSourceMode(supabase, tenantId) {
   const fallback = process.env.AGENT_PUBLIC_SOURCE_DEFAULT || 'kenlo_only';
   try {
     const { data, error } = await supabase
@@ -152,7 +153,7 @@ function canManageCampaigns(role) {
 }
 
 /** Carrega as credenciais Meta (WABA + token) do tenant. */
-async function loadMetaCreds(supabase, tenantId) {
+export async function loadMetaCreds(supabase, tenantId) {
   const { data, error } = await supabase
     .from('whatsapp_config').select('business_account_id, access_token, is_active').eq('tenant_id', tenantId).maybeSingle();
   if (error || !data || !data.is_active || !data.business_account_id) return { ok: false, error: 'whatsapp_not_configured' };
@@ -678,20 +679,10 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
   const CAMPAIGNS_TABLE = 'communication_campaigns';
   const CAMPAIGN_COLS = 'id, name, template_id, audience_id, max_recipients, send_window, throttle_per_min, avoid_resend, variable_mapping, internal_note, notify_on_complete, schedule, status, created_by_email, created_at, updated_at';
 
-  // Valida que o template existe, é do tenant e está approved.
-  // Retorna {ok, body, name, variables}|{ok:false,error}. O `name` é o nome do
-  // template aprovado na Meta — usado no dispatch para enviar via ESSE template.
-  // `variables` é a lista de variáveis posicionais do template (p/ validação do
-  // mapeamento por lead); ausente → [].
-  async function assertTemplateUsable(tenantId, templateId) {
-    if (!templateId) return { ok: false, error: 'template_required' };
-    const { data, error } = await supabase
-      .from('communication_templates').select('approval_status, body, name, variables').eq('id', templateId).eq('tenant_id', tenantId).maybeSingle();
-    if (error) return { ok: false, error: 'lookup_failed' };
-    if (!data) return { ok: false, error: 'template_not_found' };
-    if (data.approval_status !== 'approved') return { ok: false, error: 'template_not_approved' };
-    return { ok: true, body: data.body, name: data.name, variables: data.variables || [] };
-  }
+  // Guard de template extraído para templateGuards.js (fonte única reusada pelo
+  // worker de agendamento). Wrapper local: injeta o `supabase` do closure e
+  // preserva a assinatura (tenantId, templateId) das chamadas existentes.
+  const assertTemplateUsable = (tenantId, templateId) => assertTemplateUsableShared(supabase, tenantId, templateId);
   // Normaliza um valor jsonb p/ objeto (rejeita array, que typeof reporta como 'object').
   function toJsonbObject(value) {
     return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
@@ -826,7 +817,7 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
       campaign: camp,
       tenantId,
       user: { id: req.userId, email: req.userEmail, role: ctx.role, brokerName: ctx.brokerName },
-      deps: { assertTemplateUsable, validateMapping, loadMetaCreds, resolvePublicSourceMode, previewOperation, confirmOperation, runDueActions, schedulerDeps },
+      deps: { assertTemplateUsable: assertTemplateUsableShared, validateMapping, loadMetaCreds, resolvePublicSourceMode, previewOperation, confirmOperation, runDueActions, schedulerDeps },
     });
     if (!result.ok) {
       // incomplete_mapping expõe quais variáveis faltam (paridade com o contrato

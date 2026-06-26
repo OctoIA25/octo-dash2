@@ -4,13 +4,19 @@
  * Reusa o motor preview→confirm (deliverRecommendation é a fonte de envio).
  * Não lança: toda falha vira { ok:false, error }.
  */
+import { validateMapping } from './resolveTemplateParams.js';
+import { assertTemplateUsable } from './templateGuards.js';
+import { resolvePublicSourceMode, loadMetaCreds } from './routes.js';
+import { previewOperation, confirmOperation } from './service.js';
+import { runDueActions } from './actionWorker.js';
+
 export async function executeCampaignDispatch(supabase, { campaign, tenantId, user, deps }) {
   const {
     assertTemplateUsable, validateMapping, loadMetaCreds, resolvePublicSourceMode,
     previewOperation, confirmOperation, runDueActions, schedulerDeps,
   } = deps;
   try {
-    const tpl = await assertTemplateUsable(tenantId, campaign.template_id);
+    const tpl = await assertTemplateUsable(supabase, tenantId, campaign.template_id);
     if (!tpl.ok) return { ok: false, error: tpl.error };
     const vcheck = validateMapping(campaign.variable_mapping, tpl.variables);
     if (!vcheck.ok) return { ok: false, error: 'incomplete_mapping' };
@@ -36,4 +42,25 @@ export async function executeCampaignDispatch(supabase, { campaign, tenantId, us
   } catch (e) {
     return { ok: false, error: 'dispatch_failed', detail: e?.message };
   }
+}
+
+/**
+ * Monta as deps que executeCampaignDispatch/runDueCampaigns precisam, a partir
+ * de funções importáveis (mesma implementação usada pela rota HTTP).
+ * `schedulerBundle` é o bundle do scheduler (makeSchedulerDeps): expõe
+ * deliver/getEnvironment e é repassado inteiro como `schedulerDeps` — mesma
+ * forma que runDueActions recebe no loop do outbox.
+ */
+export function makeCampaignDispatchDeps(schedulerBundle) {
+  return {
+    assertTemplateUsable,
+    validateMapping,
+    loadMetaCreds,
+    resolvePublicSourceMode,
+    previewOperation,
+    confirmOperation,
+    runDueActions,
+    schedulerDeps: { deliver: schedulerBundle.deliver, schedulerDeps: schedulerBundle, getEnvironment: schedulerBundle.getEnvironment },
+    executeCampaignDispatch,
+  };
 }
