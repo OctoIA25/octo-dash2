@@ -11,7 +11,6 @@ import {
   type CampaignWithStats, type CampaignRun,
 } from '../services/campaignsService';
 import { CampanhaWizard } from './CampanhaWizard';
-import type { Campaign } from '../services/campaignsService';
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
   draft:    { label: 'Rascunho', cls: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' },
@@ -33,6 +32,14 @@ function formatDate(iso: string | null): string {
   return new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
 }
 
+const RUN_STATUS_LABEL: Record<string, string> = {
+  pending:   'Pendente',
+  running:   'Enviando',
+  done:      'Concluído',
+  completed: 'Concluído',
+  failed:    'Falhou',
+};
+
 export function CampanhasManager() {
   const { tenantId } = useAuthContext();
   const tenantReady = Boolean(tenantId && tenantId !== 'owner');
@@ -41,9 +48,10 @@ export function CampanhasManager() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
-  const [editing, setEditing] = useState<Campaign | null>(null);
+  const [editing, setEditing] = useState<CampaignWithStats | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [runs, setRuns] = useState<CampaignRun[]>([]);
+  const [runsLoading, setRunsLoading] = useState(false);
 
   async function reload() {
     if (!tenantReady) return;
@@ -65,20 +73,27 @@ export function CampanhasManager() {
   async function openDetail(camp: CampaignWithStats) {
     setDetailId(camp.id);
     setRuns([]);
+    setRunsLoading(true);
     try {
       const res = await listCampaignRuns(tenantId as string, camp.id);
       if (res.ok) setRuns(res.runs);
-    } catch { /* silencioso — lista vazia */ }
+    } catch { /* silencioso — lista vazia */ } finally {
+      setRunsLoading(false);
+    }
   }
 
   async function remove(camp: CampaignWithStats) {
     if (!window.confirm(`Excluir a campanha "${camp.name}"?`)) return;
-    const res = await deleteCampaign(tenantId as string, camp.id);
-    if (!res.ok) {
-      toast.error(res.error === 'delete_failed' ? 'Não foi possível excluir (em uso?)' : 'Não foi possível excluir (em uso?)');
-      return;
+    try {
+      const res = await deleteCampaign(tenantId as string, camp.id);
+      if (!res.ok) {
+        toast.error(res.error === 'delete_failed' ? 'Não foi possível excluir (em uso?)' : 'Não foi possível excluir.');
+        return;
+      }
+      reload();
+    } catch {
+      toast.error('Não foi possível excluir.');
     }
-    reload();
   }
 
   if (!tenantReady) {
@@ -118,7 +133,9 @@ export function CampanhasManager() {
             </h2>
           </div>
 
-          {runs.length === 0 ? (
+          {runsLoading ? (
+            <div className="py-16 text-center text-[13px] text-slate-400">Carregando…</div>
+          ) : runs.length === 0 ? (
             <div className="py-16 text-center text-[13px] text-slate-400">Nenhum disparo encontrado.</div>
           ) : (
             <ul className="space-y-2">
@@ -128,8 +145,8 @@ export function CampanhasManager() {
                     <span className="text-[12px] font-semibold text-slate-800 dark:text-slate-100">
                       {formatDate(run.created_at)}
                     </span>
-                    <span className={`inline-flex items-center h-5 px-2 rounded text-[11px] font-semibold ${run.status === 'completed' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                      {run.status}
+                    <span className={`inline-flex items-center h-5 px-2 rounded text-[11px] font-semibold ${run.status === 'completed' || run.status === 'done' ? 'bg-emerald-50 text-emerald-700' : run.status === 'failed' ? 'bg-rose-50 text-rose-600' : 'bg-slate-100 text-slate-500'}`}>
+                      {RUN_STATUS_LABEL[run.status] ?? run.status}
                     </span>
                   </div>
                   <p className="text-[11.5px] text-slate-500 mt-1">
