@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { useAuthContext } from '@/contexts/AuthContext';
 import {
-  listCampaigns, deleteCampaign, listCampaignRuns,
+  listCampaigns, deleteCampaign, listCampaignRuns, cancelSchedule,
   type CampaignWithStats, type CampaignRun,
 } from '../services/campaignsService';
 import { CampanhaWizard } from './CampanhaWizard';
@@ -79,6 +79,17 @@ export function CampanhasManager() {
       if (res.ok) setRuns(res.runs);
     } catch { /* silencioso — lista vazia */ } finally {
       setRunsLoading(false);
+    }
+  }
+
+  async function cancelScheduleFor(camp: CampaignWithStats) {
+    try {
+      const res = await cancelSchedule(tenantId as string, camp.id);
+      if (!res.ok) { toast.error('Não foi possível cancelar o agendamento.'); return; }
+      toast.success('Agendamento cancelado.');
+      reload();
+    } catch {
+      toast.error('Não foi possível cancelar o agendamento.');
     }
   }
 
@@ -193,8 +204,19 @@ export function CampanhasManager() {
                   <p className="text-[13px] font-semibold text-slate-800 dark:text-slate-100 truncate" title={camp.name}>
                     {camp.name}
                   </p>
-                  <StatusBadge status={camp.status} />
+                  {camp.schedule_status === 'scheduled' ? (
+                    <span className="inline-flex items-center h-6 px-2 rounded-md text-[11px] font-semibold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/30 dark:text-indigo-300">
+                      🕒 Agendada {formatDate(camp.scheduled_at)}
+                    </span>
+                  ) : (
+                    <StatusBadge status={camp.status} />
+                  )}
                 </div>
+                {camp.schedule_status === 'error' && (
+                  <p className="text-[11.5px] text-rose-600 dark:text-rose-400 mt-1">
+                    ⚠️ Falha no agendamento: {camp.schedule_error}
+                  </p>
+                )}
                 <p className="text-[11.5px] text-slate-400 mt-1">
                   Último disparo: {formatDate(camp.last_dispatched_at)}
                 </p>
@@ -216,6 +238,15 @@ export function CampanhasManager() {
                   >
                     Ver disparos
                   </button>
+                  {camp.schedule_status === 'scheduled' && (
+                    <button
+                      type="button"
+                      onClick={() => cancelScheduleFor(camp)}
+                      className="text-amber-600 hover:text-amber-700 dark:text-amber-400"
+                    >
+                      Cancelar agendamento
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => remove(camp)}

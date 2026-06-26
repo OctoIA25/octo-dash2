@@ -96,4 +96,50 @@ describe('CampanhaWizard', () => {
     const input = (svc.createCampaign as ReturnType<typeof vi.fn>).mock.calls[0][1];
     expect(input.variableMapping).toEqual({ 1: { type: 'lead_field', value: 'name' } });
   });
+  it('agendar na etapa 5 chama createCampaign com scheduledAt e NÃO dispara', async () => {
+    const svc = await import('../../services/campaignsService');
+    (svc.createCampaign as ReturnType<typeof vi.fn>).mockClear();
+    (svc.dispatchCampaign as ReturnType<typeof vi.fn>).mockClear();
+    render(<CampanhaWizard {...props} />);
+    await waitFor(() => expect(screen.getByText('Promo')).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText(/nome da campanha/i), { target: { value: 'R' } });
+    fireEvent.change(screen.getByLabelText(/template/i), { target: { value: 'tpl1' } });
+    fireEvent.click(screen.getByRole('button', { name: /avançar/i }));
+    await waitFor(() => screen.getByLabelText(/público/i));
+    fireEvent.change(screen.getByLabelText(/público/i), { target: { value: 'aud1' } });
+    fireEvent.click(screen.getByRole('button', { name: /avançar/i }));
+    fireEvent.click(screen.getByRole('button', { name: /avançar/i }));
+    fireEvent.change(screen.getByLabelText('Variável 1'), { target: { value: 'name' } });
+    fireEvent.click(screen.getByRole('button', { name: /avançar/i })); // → etapa 5
+    // seleciona "Agendar" e informa data bem no futuro
+    fireEvent.click(screen.getByRole('radio', { name: /agendar/i }));
+    fireEvent.change(screen.getByLabelText(/data e hora do agendamento/i), { target: { value: '2035-01-01T10:00' } });
+    fireEvent.click(screen.getByRole('button', { name: /agendar/i }));
+    await waitFor(() => expect((svc.createCampaign as ReturnType<typeof vi.fn>)).toHaveBeenCalled());
+    const input = (svc.createCampaign as ReturnType<typeof vi.fn>).mock.calls[0][1];
+    expect(input.scheduledAt).toBeTruthy();
+    expect(svc.dispatchCampaign as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
+  });
+  it('agendar com data no passado é bloqueado (não chama createCampaign)', async () => {
+    const svc = await import('../../services/campaignsService');
+    const sonner = await import('sonner');
+    (svc.createCampaign as ReturnType<typeof vi.fn>).mockClear();
+    (sonner.toast.error as ReturnType<typeof vi.fn>).mockClear();
+    render(<CampanhaWizard {...props} />);
+    await waitFor(() => expect(screen.getByText('Promo')).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText(/nome da campanha/i), { target: { value: 'R' } });
+    fireEvent.change(screen.getByLabelText(/template/i), { target: { value: 'tpl1' } });
+    fireEvent.click(screen.getByRole('button', { name: /avançar/i }));
+    await waitFor(() => screen.getByLabelText(/público/i));
+    fireEvent.change(screen.getByLabelText(/público/i), { target: { value: 'aud1' } });
+    fireEvent.click(screen.getByRole('button', { name: /avançar/i }));
+    fireEvent.click(screen.getByRole('button', { name: /avançar/i }));
+    fireEvent.change(screen.getByLabelText('Variável 1'), { target: { value: 'name' } });
+    fireEvent.click(screen.getByRole('button', { name: /avançar/i })); // → etapa 5
+    fireEvent.click(screen.getByRole('radio', { name: /agendar/i }));
+    fireEvent.change(screen.getByLabelText(/data e hora do agendamento/i), { target: { value: '2000-01-01T10:00' } });
+    fireEvent.click(screen.getByRole('button', { name: /agendar/i }));
+    expect((sonner.toast.error as ReturnType<typeof vi.fn>)).toHaveBeenCalled();
+    expect(svc.createCampaign as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
+  });
 });
