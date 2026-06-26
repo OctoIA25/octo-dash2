@@ -431,6 +431,34 @@ describe('POST /confirm — Disparador valida variableMapping por templateName (
     await handler(req, res);
     expect(captured.body?.error).not.toBe('incomplete_mapping');
   });
+
+  it('erro no lookup do template → 500 template_lookup_failed', async () => {
+    const { handler } = confirmHarness({
+      communication_templates: { data: null, error: { message: 'db timeout' } },
+    });
+    const { req, res, captured } = runConfirm({ tenantId: 't1', previewToken: 'pt1', templateName: 'promo', variableMapping: {} });
+    await handler(req, res);
+    expect(captured.status).toBe(500);
+    expect(captured.body).toEqual({ ok: false, error: 'template_lookup_failed' });
+  });
+
+  it('templateName + mapping completo → não bloqueia em incomplete_mapping nem template_lookup_failed', async () => {
+    // Template existe e variável '1' está mapeada → validação passa.
+    // O handler segue ao confirmOperation; sem previewToken válido no cache do
+    // service, falha adiante — mas NÃO em incomplete_mapping nem template_lookup_failed.
+    const { handler } = confirmHarness({
+      communication_templates: { data: { variables: ['1'] } },
+    });
+    const { req, res, captured } = runConfirm({
+      tenantId: 't1',
+      previewToken: 'pt1',
+      templateName: 'promo',
+      variableMapping: { 1: { type: 'lead_field', value: 'name' } },
+    });
+    await handler(req, res);
+    expect(captured.body?.error).not.toBe('incomplete_mapping');
+    expect(captured.body?.error).not.toBe('template_lookup_failed');
+  });
 });
 
 describe('GET /campaigns/:id/runs — filtra por tenant + campaign', () => {

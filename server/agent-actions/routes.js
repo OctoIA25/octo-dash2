@@ -241,9 +241,11 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
     // sem variáveis → comportamento atual preservado (retrocompat).
     let templateVariables = [];
     if (templateName) {
-      const { data: tplRow } = await supabase
+      const { data: tplRow, error: tplErr } = await supabase
         .from('communication_templates').select('variables').eq('tenant_id', tenantId).eq('name', templateName).maybeSingle();
-      templateVariables = tplRow?.variables || [];
+      if (tplErr) return res.status(500).json({ ok: false, error: 'template_lookup_failed' });
+      if (!tplRow) return res.status(400).json({ ok: false, error: 'template_not_found' });
+      templateVariables = tplRow.variables || [];
       const vcheck = validateMapping(variableMapping || {}, templateVariables);
       if (!vcheck.ok) return res.status(400).json({ ok: false, error: 'incomplete_mapping', missing: vcheck.missing });
     }
@@ -838,7 +840,7 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
     // disparo use o template ESCOLHIDO, não o fixo do tenant.
     const conf = await confirmOperation(supabase, {
       previewToken: prev.previewToken, tenantId, message: tpl.body, templateName: tpl.name,
-      variableMapping: camp.variable_mapping, templateVariables: tpl.variables, user,
+      variableMapping: camp.variable_mapping ?? {}, templateVariables: tpl.variables, user,
     });
     if (!conf.ok) return res.status(400).json({ ok: false, error: conf.error || 'confirm_failed' });
     // Drena a fila imediatamente (best-effort), idêntico ao /confirm (routes.js:233).
