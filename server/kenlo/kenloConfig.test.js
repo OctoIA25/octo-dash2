@@ -25,4 +25,16 @@ describe('kenloConfig', () => {
     expect(over.retries).toBe(5);
     expect(over.liaWebhookUrl).toBe('https://x/y');
   });
+
+  it('loadKenloEnv expõe syncWindowDays e syncOverlapMin com defaults', () => {
+    const cfg = loadKenloEnv({});
+    expect(cfg.syncWindowDays).toBe(60);
+    expect(cfg.syncOverlapMin).toBe(5);
+  });
+
+  it('loadKenloEnv respeita overrides de janela/margem', () => {
+    const cfg = loadKenloEnv({ KENLO_SYNC_WINDOW_DAYS: '90', KENLO_SYNC_OVERLAP_MIN: '10' });
+    expect(cfg.syncWindowDays).toBe(90);
+    expect(cfg.syncOverlapMin).toBe(10);
+  });
 });
