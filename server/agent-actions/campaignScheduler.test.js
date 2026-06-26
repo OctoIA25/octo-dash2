@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { runDueCampaigns } from './campaignScheduler.js';
+import { computeNextOccurrence } from './recurrence.js';
 
 // Fake supabase: select das due + update do claim + update de erro.
 function makeSupabase({ dueRows, claimWins = true }) {
@@ -50,5 +51,35 @@ describe('runDueCampaigns', () => {
     const supabase = makeSupabase({ dueRows: [] });
     const r = await runDueCampaigns(supabase, deps());
     expect(r).toEqual({ processed: 0, dispatched: 0, failed: 0 });
+  });
+});
+
+describe('runDueCampaigns recorrência', () => {
+  it('campanha recorrente: após sucesso, reagenda (scheduled_at futuro, status scheduled)', async () => {
+    const okExec = vi.fn(async () => ({ ok: true, runId: 'r', enqueued: 1 }));
+    const nowMs = Date.parse('2026-07-08T12:00:00Z');
+    const recurrence = { frequency: 'daily', time: '09:00' };
+    const supabase = makeSupabase({ dueRows: [{ id: 'c1', tenant_id: 't1', recurrence }] });
+    const r = await runDueCampaigns(supabase, { executeCampaignDispatch: okExec, nowMs });
+    expect(r.dispatched).toBe(1);
+    // o claim gravou 'dispatched', e depois o reagendamento gravou 'scheduled' + scheduled_at = próxima
+    const resched = supabase.calls.updates.find((u) => u.schedule_status === 'scheduled' && u.scheduled_at);
+    expect(resched).toBeTruthy();
+    expect(resched.scheduled_at).toBe(computeNextOccurrence(recurrence, nowMs));
+  });
+  it('campanha pontual (sem recurrence): fica dispatched, NÃO reagenda', async () => {
+    const okExec = vi.fn(async () => ({ ok: true, runId: 'r', enqueued: 1 }));
+    const supabase = makeSupabase({ dueRows: [{ id: 'c1', tenant_id: 't1', recurrence: null }] });
+    await runDueCampaigns(supabase, { executeCampaignDispatch: okExec, nowMs: 1 });
+    // só o claim 'dispatched'; nenhum update com schedule_status 'scheduled' + scheduled_at
+    expect(supabase.calls.updates.some((u) => u.schedule_status === 'scheduled' && u.scheduled_at)).toBe(false);
+  });
+  it('recorrente que FALHA não reagenda (fica error)', async () => {
+    const failExec = vi.fn(async () => ({ ok: false, error: 'template_not_approved' }));
+    const supabase = makeSupabase({ dueRows: [{ id: 'c1', tenant_id: 't1', recurrence: { frequency: 'daily', time: '09:00' } }] });
+    const r = await runDueCampaigns(supabase, { executeCampaignDispatch: failExec, nowMs: 1 });
+    expect(r.failed).toBe(1);
+    expect(supabase.calls.updates.some((u) => u.schedule_status === 'error')).toBe(true);
+    expect(supabase.calls.updates.some((u) => u.schedule_status === 'scheduled' && u.scheduled_at)).toBe(false);
   });
 });

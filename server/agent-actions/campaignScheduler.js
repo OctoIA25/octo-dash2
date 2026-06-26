@@ -3,6 +3,8 @@
  * campanhas 'scheduled' vencidas, faz claim atômico (anti-duplicação) e dispara
  * via executeCampaignDispatch. Falha → schedule_status='error' + motivo. Nunca lança.
  */
+import { computeNextOccurrence } from './recurrence.js';
+
 const CAMPAIGNS_TABLE = 'communication_campaigns';
 const SYSTEM_USER = { id: null, email: 'system@scheduler', role: 'owner', brokerName: null };
 
@@ -13,7 +15,7 @@ export async function runDueCampaigns(supabase, deps = {}) {
 
   const { data: due, error } = await supabase
     .from(CAMPAIGNS_TABLE)
-    .select('id, tenant_id, audience_id, template_id, max_recipients, variable_mapping')
+    .select('id, tenant_id, audience_id, template_id, max_recipients, variable_mapping, recurrence')
     .eq('schedule_status', 'scheduled')
     .lte('scheduled_at', nowIso)
     .order('scheduled_at', { ascending: true })
@@ -36,6 +38,12 @@ export async function runDueCampaigns(supabase, deps = {}) {
       });
       if (result.ok) {
         dispatched += 1;
+        if (camp.recurrence) {
+          const next = computeNextOccurrence(camp.recurrence, nowMs);
+          await supabase.from(CAMPAIGNS_TABLE)
+            .update({ schedule_status: 'scheduled', scheduled_at: next })
+            .eq('id', camp.id);
+        }
       } else {
         failed += 1;
         await supabase.from(CAMPAIGNS_TABLE)
