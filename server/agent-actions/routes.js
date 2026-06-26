@@ -143,6 +143,11 @@ function canManageTemplates(role) {
   return role === 'admin' || role === 'team_leader' || role === 'owner';
 }
 
+/** Quem pode criar/editar/disparar campanhas (gestor). */
+function canManageCampaigns(role) {
+  return role === 'admin' || role === 'team_leader' || role === 'owner';
+}
+
 /** Carrega as credenciais Meta (WABA + token) do tenant. */
 async function loadMetaCreds(supabase, tenantId) {
   const { data, error } = await supabase
@@ -614,6 +619,128 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
     if (error) return res.status(500).json({ ok: false, error: 'persist_failed' });
     return res.json({ ok: true, template: data });
   });
+
+  // -- Campanhas --------------------------------------------------------------
+  const CAMPAIGNS_TABLE = 'communication_campaigns';
+  const CAMPAIGN_COLS = 'id, name, template_id, audience_id, max_recipients, send_window, throttle_per_min, avoid_resend, variable_mapping, internal_note, notify_on_complete, schedule, status, created_by_email, created_at, updated_at';
+
+  // Valida que o template existe, é do tenant e está approved. Retorna {ok}|{ok:false,error}.
+  async function assertTemplateUsable(tenantId, templateId) {
+    if (!templateId) return { ok: false, error: 'template_required' };
+    const { data, error } = await supabase
+      .from('communication_templates').select('approval_status').eq('id', templateId).eq('tenant_id', tenantId).maybeSingle();
+    if (error) return { ok: false, error: 'lookup_failed' };
+    if (!data) return { ok: false, error: 'template_not_approved' };
+    if (data.approval_status !== 'approved') return { ok: false, error: 'template_not_approved' };
+    return { ok: true };
+  }
+  // Valida que o público existe e é do tenant.
+  async function assertAudienceUsable(tenantId, audienceId) {
+    if (!audienceId) return { ok: false, error: 'audience_required' };
+    const { data, error } = await supabase
+      .from('audiences').select('id').eq('id', audienceId).eq('tenant_id', tenantId).maybeSingle();
+    if (error) return { ok: false, error: 'lookup_failed' };
+    if (!data) return { ok: false, error: 'audience_not_found' };
+    return { ok: true };
+  }
+
+  app.get(`${basePath}/campaigns`, requireSupabaseAuth, async (req, res) => {
+    const tenantId = req.query.tenantId;
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'missing_tenant' });
+    const ctx = await resolveUserContext(supabase, req, tenantId);
+    if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
+    const { data: campaigns, error } = await supabase
+      .from(CAMPAIGNS_TABLE).select(CAMPAIGN_COLS).eq('tenant_id', tenantId).order('created_at', { ascending: false });
+    if (error) return res.status(500).json({ ok: false, error: 'lookup_failed' });
+    // Agregação dos runs por campanha (sem N+1): 1 query, agrupa em memória.
+    const ids = (campaigns || []).map((c) => c.id);
+    const stats = {};
+    if (ids.length > 0) {
+      const { data: runs } = await supabase
+        .from('agent_action_runs').select('campaign_id, sent_count, failed_count, completed_at, created_at')
+        .eq('tenant_id', tenantId).in('campaign_id', ids);
+      for (const run of runs || []) {
+        const s = stats[run.campaign_id] || (stats[run.campaign_id] = { runs_count: 0, total_sent: 0, total_failed: 0, last_dispatched_at: null });
+        s.runs_count += 1;
+        s.total_sent += run.sent_count || 0;
+        s.total_failed += run.failed_count || 0;
+        const when = run.completed_at || run.created_at;
+        if (when && (!s.last_dispatched_at || when > s.last_dispatched_at)) s.last_dispatched_at = when;
+      }
+    }
+    const withStats = (campaigns || []).map((c) => ({ ...c, ...(stats[c.id] || { runs_count: 0, total_sent: 0, total_failed: 0, last_dispatched_at: null }) }));
+    return res.json({ ok: true, campaigns: withStats });
+  });
+
+  app.post(`${basePath}/campaigns`, requireSupabaseAuth, async (req, res) => {
+    const { tenantId, name, templateId, audienceId, maxRecipients, sendWindow, throttlePerMin, avoidResend, variableMapping, internalNote, notifyOnComplete } = req.body || {};
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'missing_tenant' });
+    const ctx = await resolveUserContext(supabase, req, tenantId);
+    if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
+    if (!canManageCampaigns(ctx.role)) return res.status(403).json({ ok: false, error: 'forbidden' });
+    if (!name || !String(name).trim()) return res.status(400).json({ ok: false, error: 'invalid_name' });
+    if (maxRecipients != null && !(Number.isInteger(maxRecipients) && maxRecipients >= 1)) return res.status(400).json({ ok: false, error: 'invalid_max_recipients' });
+    const t = await assertTemplateUsable(tenantId, templateId);
+    if (!t.ok) return res.status(400).json({ ok: false, error: t.error });
+    const a = await assertAudienceUsable(tenantId, audienceId);
+    if (!a.ok) return res.status(400).json({ ok: false, error: a.error });
+    const { data, error } = await supabase.from(CAMPAIGNS_TABLE).insert({
+      tenant_id: tenantId, name: String(name).trim(), template_id: templateId, audience_id: audienceId,
+      max_recipients: maxRecipients ?? null,
+      send_window: sendWindow && typeof sendWindow === 'object' ? sendWindow : {},
+      throttle_per_min: throttlePerMin ?? null,
+      avoid_resend: Boolean(avoidResend),
+      variable_mapping: variableMapping && typeof variableMapping === 'object' ? variableMapping : {},
+      internal_note: internalNote ?? null,
+      notify_on_complete: Boolean(notifyOnComplete),
+      created_by_email: req.userEmail || null,
+    }).select(CAMPAIGN_COLS).maybeSingle();
+    if (error) {
+      if (error.code === '23505') return res.status(409).json({ ok: false, error: 'campaign_name_taken' });
+      return res.status(500).json({ ok: false, error: 'persist_failed' });
+    }
+    return res.json({ ok: true, campaign: data });
+  });
+
+  app.put(`${basePath}/campaigns/:id`, requireSupabaseAuth, async (req, res) => {
+    const { id } = req.params;
+    const { tenantId, name, templateId, audienceId, maxRecipients, sendWindow, throttlePerMin, avoidResend, variableMapping, internalNote, notifyOnComplete } = req.body || {};
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'missing_tenant' });
+    const ctx = await resolveUserContext(supabase, req, tenantId);
+    if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
+    if (!canManageCampaigns(ctx.role)) return res.status(403).json({ ok: false, error: 'forbidden' });
+    const patch = {};
+    if (name !== undefined) { if (!String(name).trim()) return res.status(400).json({ ok: false, error: 'invalid_name' }); patch.name = String(name).trim(); }
+    if (templateId !== undefined) { const t = await assertTemplateUsable(tenantId, templateId); if (!t.ok) return res.status(400).json({ ok: false, error: t.error }); patch.template_id = templateId; }
+    if (audienceId !== undefined) { const a = await assertAudienceUsable(tenantId, audienceId); if (!a.ok) return res.status(400).json({ ok: false, error: a.error }); patch.audience_id = audienceId; }
+    if (maxRecipients !== undefined) { if (maxRecipients != null && !(Number.isInteger(maxRecipients) && maxRecipients >= 1)) return res.status(400).json({ ok: false, error: 'invalid_max_recipients' }); patch.max_recipients = maxRecipients ?? null; }
+    if (sendWindow !== undefined) patch.send_window = sendWindow && typeof sendWindow === 'object' ? sendWindow : {};
+    if (throttlePerMin !== undefined) patch.throttle_per_min = throttlePerMin ?? null;
+    if (avoidResend !== undefined) patch.avoid_resend = Boolean(avoidResend);
+    if (variableMapping !== undefined) patch.variable_mapping = variableMapping && typeof variableMapping === 'object' ? variableMapping : {};
+    if (internalNote !== undefined) patch.internal_note = internalNote ?? null;
+    if (notifyOnComplete !== undefined) patch.notify_on_complete = Boolean(notifyOnComplete);
+    if (Object.keys(patch).length === 0) return res.status(400).json({ ok: false, error: 'nothing_to_update' });
+    const { data, error } = await supabase.from(CAMPAIGNS_TABLE).update(patch).eq('id', id).eq('tenant_id', tenantId).select(CAMPAIGN_COLS).maybeSingle();
+    if (error) {
+      if (error.code === '23505') return res.status(409).json({ ok: false, error: 'campaign_name_taken' });
+      return res.status(500).json({ ok: false, error: 'persist_failed' });
+    }
+    if (!data) return res.status(404).json({ ok: false, error: 'campaign_not_found' });
+    return res.json({ ok: true, campaign: data });
+  });
+
+  app.delete(`${basePath}/campaigns/:id`, requireSupabaseAuth, async (req, res) => {
+    const { id } = req.params;
+    const tenantId = req.query.tenantId;
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'missing_tenant' });
+    const ctx = await resolveUserContext(supabase, req, tenantId);
+    if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
+    if (!(ctx.role === 'admin' || ctx.role === 'owner')) return res.status(403).json({ ok: false, error: 'forbidden' });
+    const { error } = await supabase.from(CAMPAIGNS_TABLE).delete().eq('id', id).eq('tenant_id', tenantId);
+    if (error) return res.status(500).json({ ok: false, error: 'delete_failed' });
+    return res.json({ ok: true });
+  });
 }
 
 /** Resolve as deps compartilhadas (auth + envio) usadas pelos handlers. */
@@ -630,4 +757,4 @@ export function registerAgentActionRoutes(app, supabase, options = {}) {
   registerDispatchRoutes(app, '/api/v1/agent-actions', supabase, options, makeDispatchDeps(supabase, options));
 }
 
-export const __test__ = { resolveUserContext, statusFor, isPlatformOwner, resolvePublicSourceMode, applyRunsFilters, computeProgress, canManageAudiences, canManageTemplates, loadMetaCreds, registerDispatchRoutes, makeDispatchDeps };
+export const __test__ = { resolveUserContext, statusFor, isPlatformOwner, resolvePublicSourceMode, applyRunsFilters, computeProgress, canManageAudiences, canManageTemplates, canManageCampaigns, loadMetaCreds, registerDispatchRoutes, makeDispatchDeps };

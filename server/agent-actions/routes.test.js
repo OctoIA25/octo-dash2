@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { __test__ } from './routes.js';
 
-const { resolveUserContext, statusFor, isPlatformOwner, resolvePublicSourceMode, applyRunsFilters, computeProgress, canManageAudiences, canManageTemplates, loadMetaCreds } = __test__;
+const { resolveUserContext, statusFor, isPlatformOwner, resolvePublicSourceMode, applyRunsFilters, computeProgress, canManageAudiences, canManageTemplates, loadMetaCreds, canManageCampaigns } = __test__;
 
 function recordingBuilder() {
   const calls = [];
@@ -271,5 +271,12 @@ describe('loadMetaCreds', () => {
   it('erro quando inativa/sem config', async () => {
     const supabase = { from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) }) };
     expect((await loadMetaCreds(supabase, 't1')).ok).toBe(false);
+  });
+});
+
+describe('canManageCampaigns', () => {
+  it('gestores sim, corretor não', () => {
+    for (const r of ['admin', 'team_leader', 'owner']) expect(canManageCampaigns(r)).toBe(true);
+    expect(canManageCampaigns('corretor')).toBe(false);
   });
 });
