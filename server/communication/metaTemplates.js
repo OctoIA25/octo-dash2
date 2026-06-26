@@ -58,6 +58,37 @@ export async function fetchTemplateStatus({ wabaId, accessToken, name, graphVers
   }
 }
 
+/**
+ * Extrai o corpo (component BODY) e as variáveis numeradas ({{N}}) de um array
+ * de components retornado pela Meta. Variáveis são posicionais (strings "1","2").
+ */
+export function extractBodyFromComponents(components) {
+  const list = Array.isArray(components) ? components : [];
+  const bodyComp = list.find((c) => String(c?.type || '').toUpperCase() === 'BODY');
+  const body = bodyComp?.text || '';
+  const variables = [];
+  const re = /\{\{\s*(\d+)\s*\}\}/g;
+  let m;
+  while ((m = re.exec(body)) !== null) {
+    if (!variables.includes(m[1])) variables.push(m[1]);
+  }
+  return { body, variables };
+}
+
+/** Normaliza um template da Meta para o shape de communication_templates. */
+export function mapMetaTemplateToRow(metaTpl) {
+  const { body, variables } = extractBodyFromComponents(metaTpl?.components);
+  const category = metaTpl?.category === 'UTILITY' ? 'UTILITY' : 'MARKETING';
+  return {
+    name: metaTpl?.name,
+    language: metaTpl?.language || 'pt_BR',
+    category,
+    body,
+    variables,
+    provider_template_id: metaTpl?.id || null,
+  };
+}
+
 export function toMetaBody(body) {
   const variables = [];
   const text = String(body || '').replace(/\{\{\s*(\w+)\s*\}\}/g, (_, name) => {

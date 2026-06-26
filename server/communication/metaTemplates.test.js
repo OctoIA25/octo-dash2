@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toMetaBody, submitTemplate, fetchTemplateStatus } from './metaTemplates.js';
+import { toMetaBody, submitTemplate, fetchTemplateStatus, extractBodyFromComponents, mapMetaTemplateToRow } from './metaTemplates.js';
 
 describe('toMetaBody', () => {
   it('sem variáveis: texto igual, lista vazia', () => {
@@ -85,5 +85,33 @@ describe('fetchTemplateStatus', () => {
     const r = await fetchTemplateStatus({ wabaId: 'W', accessToken: 'T', name: 'p', fetchImpl });
     expect(r.status).toBe('rejected');
     expect(r.reason).toBe('DISABLED');
+  });
+});
+
+describe('extractBodyFromComponents', () => {
+  it('extrai o body e as variáveis numeradas', () => {
+    const r = extractBodyFromComponents([{ type: 'HEADER', text: 'Oi' }, { type: 'BODY', text: 'Olá {{1}}, vaga em {{2}}' }]);
+    expect(r).toEqual({ body: 'Olá {{1}}, vaga em {{2}}', variables: ['1', '2'] });
+  });
+  it('tolera type minúsculo e sem variáveis', () => {
+    expect(extractBodyFromComponents([{ type: 'body', text: 'Oi tudo bem' }])).toEqual({ body: 'Oi tudo bem', variables: [] });
+  });
+  it('sem BODY → vazio', () => {
+    expect(extractBodyFromComponents([{ type: 'FOOTER', text: 'x' }])).toEqual({ body: '', variables: [] });
+  });
+  it('variável repetida aparece 1x', () => {
+    expect(extractBodyFromComponents([{ type: 'BODY', text: '{{1}} e {{1}}' }])).toEqual({ body: '{{1}} e {{1}}', variables: ['1'] });
+  });
+});
+
+describe('mapMetaTemplateToRow', () => {
+  it('normaliza um template da Meta', () => {
+    const row = mapMetaTemplateToRow({ id: 'tpl_9', name: 'promo', language: 'pt_BR', category: 'MARKETING', status: 'APPROVED', components: [{ type: 'BODY', text: 'Olá {{1}}' }] });
+    expect(row).toEqual({ name: 'promo', language: 'pt_BR', category: 'MARKETING', body: 'Olá {{1}}', variables: ['1'], provider_template_id: 'tpl_9' });
+  });
+  it('categoria desconhecida vira MARKETING; id ausente → null', () => {
+    const row = mapMetaTemplateToRow({ name: 'x', language: 'en', category: 'AUTH', components: [{ type: 'BODY', text: 'hi' }] });
+    expect(row.category).toBe('MARKETING');
+    expect(row.provider_template_id).toBe(null);
   });
 });
