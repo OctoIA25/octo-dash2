@@ -12,10 +12,25 @@
 const DEFAULT_GRAPH_VERSION = 'v21.0';
 
 /**
- * Carrega as credenciais Meta + template do tenant.
- * @returns {{ ok: true, config, template } | { ok: false, error }}
+ * Carrega as credenciais Meta + o template a usar no envio.
+ *
+ * A Meta só permite mensagens iniciadas pela empresa via TEMPLATE aprovado.
+ * Por padrão o template é o FIXO configurado por tenant em
+ * tenant_recommendation_config (recomendações automáticas e Agente de
+ * Recuperação). `templateNameOverride` permite que UM disparo escolha outro
+ * template aprovado (ex.: campanha do Disparador) sem alterar a config do tenant
+ * — o idioma ainda vem da config (ou do padrão pt_BR).
+ *
+ * @param {string|null} templateNameOverride nome de um template aprovado a usar
+ *        neste envio. Ausente (null) → comportamento idêntico ao atual (fixo).
+ * @returns {{ ok: true, config, template, graphVersion } | { ok: false, error }}
  */
-export async function loadWhatsappContext(supabase, tenantId, processEnv = process.env) {
+export async function loadWhatsappContext(
+  supabase,
+  tenantId,
+  processEnv = process.env,
+  templateNameOverride = null,
+) {
   const { data: config, error: cfgErr } = await supabase
     .from('whatsapp_config')
     .select('phone_number_id, access_token, is_active')
@@ -30,14 +45,23 @@ export async function loadWhatsappContext(supabase, tenantId, processEnv = proce
     .eq('tenant_id', tenantId)
     .maybeSingle();
 
-  if (!rec?.whatsapp_template_name) return { ok: false, error: 'whatsapp_template_missing' };
+  // Override por-disparo: usa o template escolhido. O idioma ainda vem da config
+  // do tenant (quando houver) ou do padrão — NÃO exige o template fixo.
+  // Sem override: comportamento atual (exige o template fixo do tenant).
+  let templateName;
+  if (templateNameOverride) {
+    templateName = templateNameOverride;
+  } else {
+    if (!rec?.whatsapp_template_name) return { ok: false, error: 'whatsapp_template_missing' };
+    templateName = rec.whatsapp_template_name;
+  }
 
   return {
     ok: true,
     config,
     template: {
-      name: rec.whatsapp_template_name,
-      language: rec.whatsapp_template_language || 'pt_BR',
+      name: templateName,
+      language: rec?.whatsapp_template_language || 'pt_BR',
     },
     graphVersion: processEnv.META_GRAPH_VERSION || DEFAULT_GRAPH_VERSION,
   };

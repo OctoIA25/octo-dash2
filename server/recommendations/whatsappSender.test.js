@@ -61,3 +61,46 @@ describe('loadWhatsappContext', () => {
     expect(ctx).toMatchObject({ ok: false, error: 'whatsapp_template_missing' });
   });
 });
+
+describe('loadWhatsappContext override', () => {
+  // Reusa a mesma forma de fake do bloco acima: from(table) → data por tabela.
+  // O fake substitui apenas o BANCO (config + nome/idioma do template do tenant);
+  // a regra real da Meta — só se envia por TEMPLATE aprovado — segue intacta:
+  // o que o override muda é QUAL template aprovado será disparado.
+  const makeSupabase = (cfg, rec) => ({
+    from(table) {
+      const data = table === 'whatsapp_config' ? cfg : rec;
+      return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data, error: null }) }) }) };
+    },
+  });
+
+  // whatsapp_config ativo + rec config com o template FIXO ('fixo' / 'pt_BR').
+  const fakeSupabase = makeSupabase(config, {
+    whatsapp_template_name: 'fixo',
+    whatsapp_template_language: 'pt_BR',
+  });
+  // whatsapp_config ativo, MAS sem rec config (template fixo ausente → data null).
+  const fakeSupabaseSemRec = makeSupabase(config, null);
+
+  it('usa o override quando presente', async () => {
+    const ctx = await loadWhatsappContext(fakeSupabase, 't1', process.env, 'escolhido');
+    expect(ctx.ok).toBe(true);
+    expect(ctx.template.name).toBe('escolhido');
+    // Idioma vem da rec config quando existe.
+    expect(ctx.template.language).toBe('pt_BR');
+  });
+
+  it('usa o fixo quando override ausente (retrocompat)', async () => {
+    const ctx = await loadWhatsappContext(fakeSupabase, 't1', process.env);
+    expect(ctx.ok).toBe(true);
+    expect(ctx.template.name).toBe('fixo');
+  });
+
+  it('override presente funciona mesmo sem rec config (template fixo ausente)', async () => {
+    const ctx = await loadWhatsappContext(fakeSupabaseSemRec, 't1', process.env, 'escolhido');
+    expect(ctx.ok).toBe(true);
+    expect(ctx.template.name).toBe('escolhido');
+    // Sem rec config, cai no idioma padrão.
+    expect(ctx.template.language).toBe('pt_BR');
+  });
+});

@@ -109,6 +109,9 @@ const sendWhatsappAction = {
         sentBy: deps.sentBy || {},
         // Sobrescreve os params do template com a mensagem do usuário.
         whatsappParams: params,
+        // Template escolhido para este disparo (gravado na fila pela campanha).
+        // Ausente (null) → o envio usa o template FIXO do tenant (retrocompat).
+        templateName: item.template_name || null,
         // Idempotência por RUN (não por imóveis): garante que reprocessar a fila
         // não reenvie, mas runs distintos (novo comando) reenviem por decisão.
         idempotencyRefs: [`run:${item.run_id}`],

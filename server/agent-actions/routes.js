@@ -659,15 +659,17 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
   const CAMPAIGNS_TABLE = 'communication_campaigns';
   const CAMPAIGN_COLS = 'id, name, template_id, audience_id, max_recipients, send_window, throttle_per_min, avoid_resend, variable_mapping, internal_note, notify_on_complete, schedule, status, created_by_email, created_at, updated_at';
 
-  // Valida que o template existe, é do tenant e está approved. Retorna {ok}|{ok:false,error}.
+  // Valida que o template existe, é do tenant e está approved.
+  // Retorna {ok, body, name}|{ok:false,error}. O `name` é o nome do template
+  // aprovado na Meta — usado no dispatch para enviar via ESSE template.
   async function assertTemplateUsable(tenantId, templateId) {
     if (!templateId) return { ok: false, error: 'template_required' };
     const { data, error } = await supabase
-      .from('communication_templates').select('approval_status, body').eq('id', templateId).eq('tenant_id', tenantId).maybeSingle();
+      .from('communication_templates').select('approval_status, body, name').eq('id', templateId).eq('tenant_id', tenantId).maybeSingle();
     if (error) return { ok: false, error: 'lookup_failed' };
     if (!data) return { ok: false, error: 'template_not_found' };
     if (data.approval_status !== 'approved') return { ok: false, error: 'template_not_approved' };
-    return { ok: true, body: data.body };
+    return { ok: true, body: data.body, name: data.name };
   }
   // Normaliza um valor jsonb p/ objeto (rejeita array, que typeof reporta como 'object').
   function toJsonbObject(value) {
@@ -809,7 +811,10 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
       { maxRecipients: camp.max_recipients ?? undefined },
     );
     if (!prev.ok || !prev.previewToken) return res.status(400).json({ ok: false, error: prev.error || 'preview_failed' });
-    const conf = await confirmOperation(supabase, { previewToken: prev.previewToken, tenantId, message: tpl.body, user });
+    // templateName = nome do template aprovado da campanha. Flui até o envio
+    // (confirmOperation grava em agent_action_queue.template_name) para que ESTE
+    // disparo use o template ESCOLHIDO, não o fixo do tenant.
+    const conf = await confirmOperation(supabase, { previewToken: prev.previewToken, tenantId, message: tpl.body, templateName: tpl.name, user });
     if (!conf.ok) return res.status(400).json({ ok: false, error: conf.error || 'confirm_failed' });
     // Drena a fila imediatamente (best-effort), idêntico ao /confirm (routes.js:233).
     if (conf.enqueued > 0) {

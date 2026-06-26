@@ -237,6 +237,9 @@ export async function deliverRecommendation(supabase, params, deps) {
     // usando o comportamento padrão (refs dos imóveis + [nome, qtd]).
     idempotencyRefs,
     whatsappParams,
+    // Template escolhido para ESTE disparo (campanha). Ausente → o envio usa o
+    // template FIXO do tenant (recomendações automáticas e Agente de Recuperação).
+    templateName,
   } = params;
   const { resolveTransport, sendWhatsapp, findDuplicate } = deps;
 
@@ -304,7 +307,7 @@ export async function deliverRecommendation(supabase, params, deps) {
       // Por padrão (recomendações): [nome do lead, qtd de imóveis]. O Agente
       // Disparador sobrescreve com whatsappParams (a mensagem do usuário).
       const params2 = whatsappParams ?? [lead.name || 'tudo bem', String(sanitizedProps.length)];
-      const r = await sendWhatsapp({ tenantId, to: delivery.recipient, params: params2 });
+      const r = await sendWhatsapp({ tenantId, to: delivery.recipient, params: params2, templateName });
       sendResult = { transport: 'whatsapp', messageId: r.messageId };
       status = 'sent';
     }
@@ -387,8 +390,8 @@ export async function deliverRecommendation(supabase, params, deps) {
 
 /** Constrói a função de envio WhatsApp padrão (contexto do tenant + Meta). */
 export function makeDefaultSendWhatsapp(supabase, options = {}) {
-  return async ({ tenantId, to, params }) => {
-    const ctx = await loadWhatsappContext(supabase, tenantId, options.processEnv || process.env);
+  return async ({ tenantId, to, params, templateName }) => {
+    const ctx = await loadWhatsappContext(supabase, tenantId, options.processEnv || process.env, templateName);
     if (!ctx.ok) {
       const err = new Error(ctx.error);
       err.code = ctx.error;
