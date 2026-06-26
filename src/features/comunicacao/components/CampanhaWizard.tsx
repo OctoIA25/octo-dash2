@@ -9,6 +9,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
+import { Check, X } from 'lucide-react';
 import { listTemplates, type Template } from '../services/templatesService';
 import { listAudiences, getAudienceCount, type Audience } from '../services/audiencesService';
 import {
@@ -42,9 +43,21 @@ function errorMessage(error: string | undefined): string {
   }
 }
 
-const inputCls = 'mt-1 w-full h-8 px-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[12.5px]';
-const labelCls = 'block text-[12px] text-slate-600 dark:text-slate-300';
+const inputCls = 'mt-1 w-full h-9 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-[12.5px] text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600';
+const labelCls = 'block text-[12px] font-medium text-slate-600 dark:text-slate-300';
 const hintCls = 'text-[11px] text-slate-400';
+
+/** Rótulos curtos dos 5 passos, exibidos na trilha do stepper. */
+const STEP_LABELS = ['Campanha', 'Público', 'Regras', 'Configurações', 'Revisar'];
+
+/** Linha de ajuda contextual por etapa (apenas apresentação). */
+const STEP_HELP: Record<number, string> = {
+  1: 'Dê um nome e escolha um template aprovado da Meta.',
+  2: 'Quem vai receber esta campanha.',
+  3: 'Limites de envio.',
+  4: 'Preencha as variáveis do template.',
+  5: 'Confira tudo antes de enviar.',
+};
 
 /** Converte um ISO UTC para o valor de um <input type="datetime-local">
  * (YYYY-MM-DDTHH:mm) no fuso LOCAL — para pré-preencher o agendamento ao editar. */
@@ -274,17 +287,30 @@ export function CampanhaWizard({ tenantId, editing, onClose, onSaved }: Campanha
 
   return (
     <div className="px-6 py-5 h-full overflow-y-auto">
-      <div className="max-w-2xl mx-auto">
-        <div className="flex items-center justify-between mb-1">
-          <h2 className="text-[15px] font-bold text-slate-900 dark:text-slate-100">{editing ? 'Editar campanha' : 'Nova campanha'}</h2>
-          <button type="button" onClick={onClose} className="h-8 px-3 rounded-lg text-[12.5px] text-slate-500">Cancelar</button>
+      <div className="max-w-[760px] mx-auto">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4 mb-5">
+          <h2 className="text-[18px] font-bold tracking-tight text-slate-900 dark:text-slate-100">{editing ? 'Editar campanha' : 'Nova campanha'}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="shrink-0 inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-slate-300 dark:border-slate-700 text-[12.5px] font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600"
+          >
+            <X className="h-3.5 w-3.5" aria-hidden />
+            Cancelar
+          </button>
         </div>
-        <p className="text-[11.5px] text-slate-400 mb-4">Etapa {step} de 5</p>
+
+        {/* Stepper — trilha dos 5 passos. Voltar clicando só em passos concluídos. */}
+        <Stepper step={step} onGoBack={(n) => setStep(n)} />
 
         {/* Etapa 1 — Campanha */}
         {step === 1 && (
-          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 space-y-3">
-            <h3 className="text-[13.5px] font-semibold text-slate-900 dark:text-slate-100">Campanha</h3>
+          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 space-y-4">
+            <div>
+              <h3 className="text-[14px] font-semibold text-slate-900 dark:text-slate-100">Campanha</h3>
+              <p className="mt-0.5 text-[12px] text-slate-400">{STEP_HELP[1]}</p>
+            </div>
             <label className={labelCls}>Nome da campanha
               <input aria-label="Nome da campanha" value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
             </label>
@@ -299,8 +325,11 @@ export function CampanhaWizard({ tenantId, editing, onClose, onSaved }: Campanha
 
         {/* Etapa 2 — Público */}
         {step === 2 && (
-          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 space-y-3">
-            <h3 className="text-[13.5px] font-semibold text-slate-900 dark:text-slate-100">Público</h3>
+          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 space-y-4">
+            <div>
+              <h3 className="text-[14px] font-semibold text-slate-900 dark:text-slate-100">Público</h3>
+              <p className="mt-0.5 text-[12px] text-slate-400">{STEP_HELP[2]}</p>
+            </div>
             <label className={labelCls}>Público
               <select aria-label="Público" value={audienceId} onChange={(e) => onPickAudience(e.target.value)} className={inputCls}>
                 <option value="">{audiences.length ? 'Selecione um público' : 'Nenhum público disponível'}</option>
@@ -308,57 +337,70 @@ export function CampanhaWizard({ tenantId, editing, onClose, onSaved }: Campanha
               </select>
             </label>
             {audienceId && (
-              <p className="text-[12px] text-slate-500 tabular-nums">{audienceCount != null ? `${audienceCount} leads` : '…'}</p>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-[18px] font-bold tabular-nums leading-none text-slate-900 dark:text-slate-100">{audienceCount != null ? audienceCount.toLocaleString('pt-BR') : '…'}</span>
+                <span className="text-[10.5px] font-semibold text-slate-400 uppercase tracking-wider">leads</span>
+              </div>
             )}
           </div>
         )}
 
         {/* Etapa 3 — Regras */}
         {step === 3 && (
-          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 space-y-3">
-            <h3 className="text-[13.5px] font-semibold text-slate-900 dark:text-slate-100">Regras</h3>
+          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 space-y-4">
+            <div>
+              <h3 className="text-[14px] font-semibold text-slate-900 dark:text-slate-100">Regras</h3>
+              <p className="mt-0.5 text-[12px] text-slate-400">{STEP_HELP[3]}</p>
+            </div>
             <label className={labelCls}>Limite de destinatários
               <input aria-label="Limite de destinatários" type="number" min={1} value={maxRecipients} onChange={(e) => setMaxRecipients(e.target.value)} className={inputCls} placeholder={`Opcional (padrão até ${DEFAULT_CAP})`} />
             </label>
-            <div className="grid grid-cols-2 gap-3">
-              {/* Fix 5: janela de horário desabilitada (em breve) */}
-              <label className={labelCls}>Hora de início
-                <select aria-label="Hora de início" value={windowStart} onChange={(e) => setWindowStart(e.target.value)} className={inputCls} disabled>
-                  <option value="">—</option>
-                  {HOURS.map((h) => <option key={h} value={h}>{String(h).padStart(2, '0')}h</option>)}
-                </select>
+
+            {/* Campos "em breve" — agrupados e atenuados para não confundir com o ativo */}
+            <div className="rounded-lg border border-dashed border-slate-200 dark:border-slate-800 p-3.5 opacity-70 space-y-3">
+              <p className="text-[10.5px] font-semibold text-slate-400 uppercase tracking-wider">Em breve</p>
+              <div className="grid grid-cols-2 gap-3">
+                {/* Fix 5: janela de horário desabilitada (em breve) */}
+                <label className={labelCls}>Hora de início
+                  <select aria-label="Hora de início" value={windowStart} onChange={(e) => setWindowStart(e.target.value)} className={inputCls} disabled>
+                    <option value="">—</option>
+                    {HOURS.map((h) => <option key={h} value={h}>{String(h).padStart(2, '0')}h</option>)}
+                  </select>
+                </label>
+                <label className={labelCls}>Hora de fim
+                  <select aria-label="Hora de fim" value={windowEnd} onChange={(e) => setWindowEnd(e.target.value)} className={inputCls} disabled>
+                    <option value="">—</option>
+                    {HOURS.map((h) => <option key={h} value={h}>{String(h).padStart(2, '0')}h</option>)}
+                  </select>
+                </label>
+              </div>
+              <p className={hintCls}>Janela de envio: aplicado em breve.</p>
+              {/* Fix 5: checkbox anti-reenvio desabilitado (em breve) */}
+              <label className="flex items-center gap-2 text-[12px] text-slate-600 dark:text-slate-300">
+                <input type="checkbox" checked={avoidResend} onChange={(e) => setAvoidResend(e.target.checked)} disabled />
+                Evitar reenvio a quem já recebeu
               </label>
-              <label className={labelCls}>Hora de fim
-                <select aria-label="Hora de fim" value={windowEnd} onChange={(e) => setWindowEnd(e.target.value)} className={inputCls} disabled>
-                  <option value="">—</option>
-                  {HOURS.map((h) => <option key={h} value={h}>{String(h).padStart(2, '0')}h</option>)}
-                </select>
+              {/* Fix 5: throttle desabilitado (em breve) */}
+              <label className={labelCls}>Envios por minuto
+                <input aria-label="Envios por minuto" type="number" min={1} value={throttle} onChange={(e) => setThrottle(e.target.value)} className={inputCls} disabled />
               </label>
             </div>
-            <p className={hintCls}>Janela de envio: aplicado em breve.</p>
-            {/* Fix 5: checkbox anti-reenvio desabilitado (em breve) */}
-            <label className="flex items-center gap-2 text-[12px] text-slate-600 dark:text-slate-300">
-              <input type="checkbox" checked={avoidResend} onChange={(e) => setAvoidResend(e.target.checked)} disabled />
-              Evitar reenvio a quem já recebeu <span className={hintCls}>(em breve)</span>
-            </label>
-            {/* Fix 5: throttle desabilitado (em breve) */}
-            <label className={labelCls}>Envios por minuto
-              <input aria-label="Envios por minuto" type="number" min={1} value={throttle} onChange={(e) => setThrottle(e.target.value)} className={inputCls} disabled />
-              <span className={hintCls}>Em breve.</span>
-            </label>
           </div>
         )}
 
         {/* Etapa 4 — Configurações */}
         {step === 4 && (
-          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 space-y-3">
-            <h3 className="text-[13.5px] font-semibold text-slate-900 dark:text-slate-100">Configurações</h3>
+          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 space-y-4">
             <div>
-              <p className="text-[12px] text-slate-600 dark:text-slate-300 mb-1">Variáveis do template</p>
+              <h3 className="text-[14px] font-semibold text-slate-900 dark:text-slate-100">Configurações</h3>
+              <p className="mt-0.5 text-[12px] text-slate-400">{STEP_HELP[4]}</p>
+            </div>
+            <div>
+              <p className="text-[12px] font-medium text-slate-600 dark:text-slate-300 mb-1.5">Variáveis do template</p>
               <VariableMapper variables={variables} mapping={variableMapping} onChange={setVariableMapping} />
             </div>
             <label className={labelCls}>Nota interna
-              <textarea aria-label="Nota interna" value={internalNote} onChange={(e) => setInternalNote(e.target.value)} rows={2} className="mt-1 w-full px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[12.5px]" />
+              <textarea aria-label="Nota interna" value={internalNote} onChange={(e) => setInternalNote(e.target.value)} rows={2} className="mt-1 w-full px-2.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-[12.5px] text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600" />
             </label>
             <label className="flex items-center gap-2 text-[12px] text-slate-600 dark:text-slate-300">
               <input type="checkbox" checked={notifyOnComplete} onChange={(e) => setNotifyOnComplete(e.target.checked)} />
@@ -369,82 +411,97 @@ export function CampanhaWizard({ tenantId, editing, onClose, onSaved }: Campanha
 
         {/* Etapa 5 — Revisar e enviar */}
         {step === 5 && (
-          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 space-y-4">
-            <h3 className="text-[13.5px] font-semibold text-slate-900 dark:text-slate-100">Revisar e enviar</h3>
+          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 space-y-5">
+            <div>
+              <h3 className="text-[14px] font-semibold text-slate-900 dark:text-slate-100">Revisar e enviar</h3>
+              <p className="mt-0.5 text-[12px] text-slate-400">{STEP_HELP[5]}</p>
+            </div>
             {selectedTemplate && <WhatsAppPreview body={renderWithExample(selectedTemplate.body, variables, variableMapping)} />}
-            <dl className="space-y-1 text-[12px]">
-              <div className="flex justify-between gap-3">
-                <dt className="text-slate-400">Público</dt>
-                <dd className="text-slate-700 dark:text-slate-200 text-right">{selectedAudience?.name ?? '—'}{audienceCount != null ? ` (${audienceCount} leads)` : ''}</dd>
+
+            {/* Resumo — grade de mini-linhas legível */}
+            <dl className="rounded-lg border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800 text-[12px]">
+              <div className="flex justify-between gap-3 px-3.5 py-2.5">
+                <dt className="text-[10.5px] font-semibold text-slate-400 uppercase tracking-wider">Público</dt>
+                <dd className="text-slate-700 dark:text-slate-200 text-right font-medium">{selectedAudience?.name ?? '—'}{audienceCount != null ? ` (${audienceCount} leads)` : ''}</dd>
               </div>
-              <div className="flex justify-between gap-3">
-                <dt className="text-slate-400">Template</dt>
-                <dd className="text-slate-700 dark:text-slate-200 text-right">{selectedTemplate?.name ?? '—'}</dd>
+              <div className="flex justify-between gap-3 px-3.5 py-2.5">
+                <dt className="text-[10.5px] font-semibold text-slate-400 uppercase tracking-wider">Template</dt>
+                <dd className="text-slate-700 dark:text-slate-200 text-right font-medium">{selectedTemplate?.name ?? '—'}</dd>
               </div>
-              <div className="flex justify-between gap-3">
-                <dt className="text-slate-400">Limite</dt>
-                <dd className="text-slate-700 dark:text-slate-200 text-right">{maxRecipients ? `${maxRecipients} destinatários` : `todos até ${DEFAULT_CAP}`}</dd>
+              <div className="flex justify-between gap-3 px-3.5 py-2.5">
+                <dt className="text-[10.5px] font-semibold text-slate-400 uppercase tracking-wider">Limite</dt>
+                <dd className="text-slate-700 dark:text-slate-200 text-right font-medium">{maxRecipients ? `${maxRecipients} destinatários` : `todos até ${DEFAULT_CAP}`}</dd>
               </div>
               {internalNote.trim() && (
-                <div className="flex justify-between gap-3">
-                  <dt className="text-slate-400">Nota</dt>
-                  <dd className="text-slate-700 dark:text-slate-200 text-right">{internalNote.trim()}</dd>
+                <div className="flex justify-between gap-3 px-3.5 py-2.5">
+                  <dt className="text-[10.5px] font-semibold text-slate-400 uppercase tracking-wider">Nota</dt>
+                  <dd className="text-slate-700 dark:text-slate-200 text-right font-medium">{internalNote.trim()}</dd>
                 </div>
               )}
             </dl>
-            {/* Quando enviar — agora (imediato) ou agendar para uma data futura */}
-            <fieldset className="mb-1">
-              <legend className="text-[12px] font-semibold text-slate-700 dark:text-slate-300 mb-1">Quando enviar</legend>
-              <label className="flex items-center gap-2 text-[12.5px] text-slate-600 dark:text-slate-300">
-                <input type="radio" name="when" checked={scheduleMode === 'now'} onChange={() => setScheduleMode('now')} /> Agora
-              </label>
-              <label className="flex items-center gap-2 text-[12.5px] text-slate-600 dark:text-slate-300 mt-1">
-                <input type="radio" name="when" checked={scheduleMode === 'scheduled'} onChange={() => setScheduleMode('scheduled')} /> Agendar para
-                <input
-                  aria-label="Data e hora do agendamento"
-                  type="datetime-local"
-                  disabled={scheduleMode !== 'scheduled'}
-                  value={scheduledAtLocal}
-                  onChange={(e) => setScheduledAtLocal(e.target.value)}
-                  className="h-8 px-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[12.5px] disabled:opacity-40"
-                />
-              </label>
-              <label className="flex items-center gap-2 text-[12.5px] text-slate-600 dark:text-slate-300 mt-1">
-                <input type="radio" name="when" checked={scheduleMode === 'recurring'} onChange={() => setScheduleMode('recurring')} /> Repetir
-              </label>
-              {scheduleMode === 'recurring' && (
-                <div className="mt-2 ml-6 flex flex-wrap items-center gap-2">
-                  <select
-                    aria-label="Frequência"
-                    value={recFrequency}
-                    onChange={(e) => setRecFrequency(e.target.value as 'daily' | 'weekly')}
-                    className="h-8 px-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[12.5px]"
-                  >
-                    <option value="daily">Diariamente</option>
-                    <option value="weekly">Semanalmente</option>
-                  </select>
-                  {recFrequency === 'weekly' && (
-                    <select
-                      aria-label="Dia da semana"
-                      value={recDayOfWeek}
-                      onChange={(e) => setRecDayOfWeek(Number(e.target.value))}
-                      className="h-8 px-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[12.5px]"
-                    >
-                      {DAYS_PT.map((d, i) => <option key={i} value={i}>{d}</option>)}
-                    </select>
-                  )}
+
+            {/* Quando enviar — agora (imediato), agendar pontual ou repetir (recorrência) */}
+            <fieldset>
+              <legend className="text-[12px] font-semibold text-slate-700 dark:text-slate-300 mb-2">Quando enviar</legend>
+              <div className="space-y-2">
+                {/* Agora */}
+                <label className={`flex items-center gap-2.5 rounded-lg border px-3.5 py-2.5 cursor-pointer transition-colors text-[12.5px] ${scheduleMode === 'now' ? 'border-slate-900 dark:border-slate-100 bg-slate-50 dark:bg-slate-800/60' : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'}`}>
+                  <input type="radio" name="when" checked={scheduleMode === 'now'} onChange={() => setScheduleMode('now')} className="accent-slate-900 dark:accent-slate-100" />
+                  <span className="font-medium text-slate-700 dark:text-slate-200">Agora</span>
+                </label>
+                {/* Agendar para */}
+                <label className={`flex flex-wrap items-center gap-2.5 rounded-lg border px-3.5 py-2.5 cursor-pointer transition-colors text-[12.5px] ${scheduleMode === 'scheduled' ? 'border-slate-900 dark:border-slate-100 bg-slate-50 dark:bg-slate-800/60' : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'}`}>
+                  <input type="radio" name="when" checked={scheduleMode === 'scheduled'} onChange={() => setScheduleMode('scheduled')} className="accent-slate-900 dark:accent-slate-100" />
+                  <span className="font-medium text-slate-700 dark:text-slate-200">Agendar para</span>
                   <input
-                    aria-label="Horário"
-                    type="time"
-                    value={recTimeLocal}
-                    onChange={(e) => setRecTimeLocal(e.target.value)}
-                    className="h-8 px-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[12.5px]"
+                    aria-label="Data e hora do agendamento"
+                    type="datetime-local"
+                    disabled={scheduleMode !== 'scheduled'}
+                    value={scheduledAtLocal}
+                    onChange={(e) => setScheduledAtLocal(e.target.value)}
+                    className="h-9 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-[12.5px] text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600 disabled:opacity-40"
                   />
-                </div>
-              )}
+                </label>
+                {/* Repetir (recorrência) */}
+                <label className={`flex items-center gap-2.5 rounded-lg border px-3.5 py-2.5 cursor-pointer transition-colors text-[12.5px] ${scheduleMode === 'recurring' ? 'border-slate-900 dark:border-slate-100 bg-slate-50 dark:bg-slate-800/60' : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'}`}>
+                  <input type="radio" name="when" checked={scheduleMode === 'recurring'} onChange={() => setScheduleMode('recurring')} className="accent-slate-900 dark:accent-slate-100" />
+                  <span className="font-medium text-slate-700 dark:text-slate-200">Repetir</span>
+                </label>
+                {scheduleMode === 'recurring' && (
+                  <div className="ml-1 flex flex-wrap items-center gap-2">
+                    <select
+                      aria-label="Frequência"
+                      value={recFrequency}
+                      onChange={(e) => setRecFrequency(e.target.value as 'daily' | 'weekly')}
+                      className="h-9 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-[12.5px] text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600"
+                    >
+                      <option value="daily">Diariamente</option>
+                      <option value="weekly">Semanalmente</option>
+                    </select>
+                    {recFrequency === 'weekly' && (
+                      <select
+                        aria-label="Dia da semana"
+                        value={recDayOfWeek}
+                        onChange={(e) => setRecDayOfWeek(Number(e.target.value))}
+                        className="h-9 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-[12.5px] text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600"
+                      >
+                        {DAYS_PT.map((d, i) => <option key={i} value={i}>{d}</option>)}
+                      </select>
+                    )}
+                    <input
+                      aria-label="Horário"
+                      type="time"
+                      value={recTimeLocal}
+                      onChange={(e) => setRecTimeLocal(e.target.value)}
+                      className="h-9 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-[12.5px] text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600"
+                    />
+                  </div>
+                )}
+              </div>
             </fieldset>
+
             {/* Fix 4: aviso de disparo imediato com contagem */}
-            <p className="text-[12px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 rounded-lg px-3 py-2 mb-3">
+            <p className="text-[12px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 rounded-lg px-3.5 py-2.5">
               {scheduleMode === 'recurring' ? (
                 <>A campanha será enviada <strong>de forma recorrente</strong>{audienceCount != null ? ` para até ${audienceCount} lead(s)` : ''} a cada ocorrência, até você cancelar.</>
               ) : scheduleMode === 'scheduled' ? (
@@ -453,7 +510,7 @@ export function CampanhaWizard({ tenantId, editing, onClose, onSaved }: Campanha
                 <>Ao disparar, a campanha será enviada <strong>imediatamente</strong>{audienceCount != null ? ` para até ${audienceCount} lead(s)` : ''}. Esta ação não pode ser desfeita.</>
               )}
             </p>
-            <button type="button" onClick={confirmStep5} disabled={saving} className="w-full h-9 rounded-lg bg-emerald-600 text-white text-[12.5px] font-semibold disabled:opacity-40">
+            <button type="button" onClick={confirmStep5} disabled={saving} className="w-full h-10 rounded-lg bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-[12.5px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-slate-400 dark:focus:ring-slate-500">
               {scheduleMode === 'recurring'
                 ? (saving ? 'Ativando…' : 'Ativar recorrência')
                 : scheduleMode === 'scheduled'
@@ -467,21 +524,77 @@ export function CampanhaWizard({ tenantId, editing, onClose, onSaved }: Campanha
         <div className="flex items-center justify-between mt-4">
           <div>
             {step > 1 && (
-              <button type="button" onClick={back} className="h-8 px-3 rounded-lg border border-slate-200 dark:border-slate-800 text-[12.5px] text-slate-600 dark:text-slate-300">Voltar</button>
+              <button type="button" onClick={back} className="h-9 px-3.5 rounded-lg border border-slate-300 dark:border-slate-700 text-[12.5px] font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600">Voltar</button>
             )}
           </div>
           <div className="flex items-center gap-2">
             {/* Fix 6: "Salvar rascunho" oculto na etapa 5 */}
             {step < 5 && (
-              <button type="button" onClick={saveDraft} disabled={saving} className="h-8 px-3 rounded-lg text-[12.5px] text-slate-500 disabled:opacity-40">Salvar rascunho</button>
+              <button type="button" onClick={saveDraft} disabled={saving} className="h-9 px-3.5 rounded-lg text-[12.5px] font-medium text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600">Salvar rascunho</button>
             )}
             {step < 5 && (
-              <button type="button" onClick={next} className="h-8 px-3 rounded-lg bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-[12.5px] font-semibold">Avançar</button>
+              <button type="button" onClick={next} className="h-9 px-4 rounded-lg bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-[12.5px] font-semibold hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-slate-400 dark:focus:ring-slate-500">Avançar</button>
             )}
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Stepper — trilha visual dos 5 passos (apenas apresentação).
+ * Estados: concluído (n < step), atual (n === step), futuro (n > step).
+ * Passos concluídos podem ser clicados para VOLTAR (n < step apenas); nunca
+ * pulam adiante, para não furar as validações de cada etapa.
+ */
+function Stepper({ step, onGoBack }: { step: number; onGoBack: (n: number) => void }) {
+  return (
+    <nav aria-label="Progresso da campanha" className="mb-5">
+      <ol className="flex items-center">
+        {STEP_LABELS.map((label, i) => {
+          const n = i + 1;
+          const done = n < step;
+          const current = n === step;
+          const isLast = i === STEP_LABELS.length - 1;
+          const circleCls = done
+            ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 border-slate-900 dark:border-slate-100'
+            : current
+              ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border-slate-900 dark:border-slate-100 ring-2 ring-slate-200 dark:ring-slate-700'
+              : 'bg-white dark:bg-slate-900 text-slate-400 border-slate-300 dark:border-slate-700';
+          return (
+            <li key={label} className={`flex items-center ${isLast ? '' : 'flex-1'}`}>
+              <div className="flex flex-col items-center gap-1.5">
+                {done ? (
+                  <button
+                    type="button"
+                    onClick={() => onGoBack(n)}
+                    className={`inline-flex h-7 w-7 items-center justify-center rounded-full border text-[11.5px] font-bold tabular-nums transition-colors hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-slate-400 dark:focus:ring-slate-500 ${circleCls}`}
+                  >
+                    <Check className="h-3.5 w-3.5" aria-hidden />
+                  </button>
+                ) : (
+                  <span
+                    aria-current={current ? 'step' : undefined}
+                    className={`inline-flex h-7 w-7 items-center justify-center rounded-full border text-[11.5px] font-bold tabular-nums ${circleCls}`}
+                  >
+                    {n}
+                  </span>
+                )}
+                <span
+                  className={`text-[10.5px] tracking-wide ${current ? 'font-semibold text-slate-700 dark:text-slate-200' : 'text-slate-400'} ${current ? '' : 'hidden sm:block'}`}
+                >
+                  {label}
+                </span>
+              </div>
+              {!isLast && (
+                <span className={`mx-1.5 sm:mx-2 h-px flex-1 -mt-5 ${done ? 'bg-slate-900 dark:bg-slate-100' : 'bg-slate-200 dark:bg-slate-800'}`} aria-hidden />
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
   );
 }
 
