@@ -17,7 +17,7 @@ const STATUS_META: Record<TemplateStatus, { label: string; cls: string }> = {
   pending: { label: 'Pendente', cls: 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300' },
   approved: { label: 'Aprovado', cls: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' },
   rejected: { label: 'Rejeitado', cls: 'bg-rose-50 text-rose-700 dark:bg-rose-950/30 dark:text-rose-300' },
-  error: { label: 'Erro', cls: 'bg-rose-50 text-rose-700 dark:bg-rose-950/30 dark:text-rose-300' },
+  error: { label: 'Erro', cls: 'bg-orange-50 text-orange-700 dark:bg-orange-950/30 dark:text-orange-300' },
 };
 
 function StatusBadge({ status }: { status: TemplateStatus }) {
@@ -37,6 +37,7 @@ export function TemplatesManager() {
   const [category, setCategory] = useState<'MARKETING' | 'UTILITY'>('MARKETING');
   const [body, setBody] = useState('');
   const [examples, setExamples] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
 
   const vars = extractVariables(body);
 
@@ -58,22 +59,26 @@ export function TemplatesManager() {
   function openEdit(t: Template) {
     setEditId(t.id); setName(t.name); setCategory(t.category); setBody(t.body);
     const ex: Record<string, string> = {};
-    extractVariables(t.body).forEach((v, i) => { ex[v] = t.example_values[i] ?? ''; });
+    (t.variables || []).forEach((v, i) => { ex[v] = t.example_values[i] ?? ''; });
     setExamples(ex); setFormOpen(true);
   }
 
   async function save() {
+    if (saving) return;
     if (!name.trim()) { toast.error('Informe um nome.'); return; }
     if (!body.trim()) { toast.error('Informe a mensagem.'); return; }
     const exampleValues = vars.map((v) => (examples[v] || '').trim());
     if (vars.length > 0 && exampleValues.some((e) => !e)) { toast.error('Preencha um exemplo para cada variável.'); return; }
-    const payload = { name: name.trim(), body, category, exampleValues };
-    const res = editId ? await updateTemplate(tenantId as string, editId, payload) : await createTemplate(tenantId as string, payload);
-    if (!res.ok) {
-      toast.error(res.error === 'template_name_taken' ? 'Já existe um template com esse nome.' : res.error === 'template_locked' ? 'Template já enviado não pode ser editado.' : 'Não foi possível salvar.');
-      return;
-    }
-    setFormOpen(false); reload();
+    const payload = { name: name.trim(), body: body.trim(), category, exampleValues };
+    setSaving(true);
+    try {
+      const res = editId ? await updateTemplate(tenantId as string, editId, payload) : await createTemplate(tenantId as string, payload);
+      if (!res.ok) {
+        toast.error(res.error === 'template_name_taken' ? 'Já existe um template com esse nome.' : res.error === 'template_locked' ? 'Template já enviado não pode ser editado.' : 'Não foi possível salvar.');
+        return;
+      }
+      setFormOpen(false); reload();
+    } finally { setSaving(false); }
   }
 
   async function onSubmit(t: Template) {
@@ -112,7 +117,7 @@ export function TemplatesManager() {
         ) : (
           <ul className="space-y-2">
             {templates.map((t) => {
-              const editable = t.approval_status === 'draft' || t.approval_status === 'rejected';
+              const editable = t.approval_status === 'draft' || t.approval_status === 'rejected' || t.approval_status === 'error';
               return (
                 <li key={t.id} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-3">
                   <div className="flex items-center justify-between gap-3">
@@ -123,10 +128,13 @@ export function TemplatesManager() {
                   {t.approval_status === 'rejected' && t.rejected_reason && (
                     <p className="text-[11px] text-rose-500 mt-1">Motivo: {t.rejected_reason}</p>
                   )}
+                  {t.approval_status === 'error' && (
+                    <p className="text-[11px] text-orange-500 mt-1">Falha ao enviar à Meta{t.rejected_reason ? `: ${t.rejected_reason}` : ''}. Tente reenviar.</p>
+                  )}
                   <div className="flex items-center gap-3 mt-2 text-[12px]">
                     {editable && <button type="button" onClick={() => openEdit(t)} className="text-slate-500 hover:text-slate-700">Editar</button>}
                     {editable && <button type="button" onClick={() => onSubmit(t)} className="text-indigo-600 hover:text-indigo-700 font-semibold">Enviar para aprovação</button>}
-                    {t.approval_status === 'pending' && <button type="button" onClick={() => onRefresh(t)} className="text-amber-600 hover:text-amber-700">Atualizar status</button>}
+                    {t.approval_status === 'pending' && <button type="button" onClick={() => onRefresh(t)} className="text-amber-600 hover:text-amber-700">Verificar aprovação</button>}
                     <button type="button" onClick={() => remove(t)} aria-label={`Excluir ${t.name}`} className="text-rose-500 hover:text-rose-600 ml-auto">Excluir</button>
                   </div>
                 </li>
@@ -156,7 +164,7 @@ export function TemplatesManager() {
               </label>
             ))}
             <div className="flex items-center gap-2">
-              <button type="button" onClick={save} className="h-8 px-3 rounded-lg bg-emerald-600 text-white text-[12.5px] font-semibold">Salvar</button>
+              <button type="button" onClick={save} disabled={saving} className="h-8 px-3 rounded-lg bg-emerald-600 text-white text-[12.5px] font-semibold disabled:opacity-60">{saving ? 'Salvando…' : 'Salvar'}</button>
               <button type="button" onClick={() => setFormOpen(false)} className="h-8 px-3 rounded-lg text-[12.5px] text-slate-500">Cancelar</button>
             </div>
           </div>
