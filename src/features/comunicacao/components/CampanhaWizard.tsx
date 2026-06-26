@@ -14,7 +14,7 @@ import { listAudiences, getAudienceCount, type Audience } from '../services/audi
 import {
   createCampaign, updateCampaign, dispatchCampaign, type Campaign, type CampaignInput,
 } from '../services/campaignsService';
-import { extractVariables } from '../templateVars';
+
 import { isMappingComplete, renderWithExample, type VarMapping } from '../variableMapping';
 import { VariableMapper } from './VariableMapper';
 import { WhatsAppPreview } from './WhatsAppPreview';
@@ -89,7 +89,7 @@ export function CampanhaWizard({ tenantId, editing, onClose, onSaved }: Campanha
 
   const selectedTemplate = useMemo(() => templates.find((t) => t.id === templateId) ?? null, [templates, templateId]);
   const selectedAudience = useMemo(() => audiences.find((a) => a.id === audienceId) ?? null, [audiences, audienceId]);
-  const variables = useMemo(() => (selectedTemplate ? extractVariables(selectedTemplate.body) : []), [selectedTemplate]);
+  const variables = useMemo(() => selectedTemplate?.variables || [], [selectedTemplate]);
 
   // Fix 1: onPickAudience agora só atualiza o estado — o effect acima cuida da contagem
   function onPickAudience(id: string) {

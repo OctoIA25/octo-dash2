@@ -30,7 +30,7 @@ export function VariableMapper({ variables, mapping, onChange }: Props) {
               value={sel}
               onChange={(e) => {
                 if (e.target.value === '__fixed__') setEntry(v, 'fixed', entry?.type === 'fixed' ? entry.value : '');
-                else if (e.target.value === '') onChange({ ...mapping, [v]: undefined as never });
+                else if (e.target.value === '') { const next = { ...mapping }; delete next[v]; onChange(next); }
                 else setEntry(v, 'lead_field', e.target.value);
               }}
               className="h-8 px-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[12.5px]"
