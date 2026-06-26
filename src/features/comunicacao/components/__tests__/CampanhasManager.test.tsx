@@ -30,7 +30,8 @@ describe('CampanhasManager', () => {
     (svc.listCampaigns as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ ok: true, campaigns: [baseCampaign()] });
     render(<CampanhasManager />);
     await waitFor(() => expect(screen.getByText('Reativação')).toBeInTheDocument());
-    expect(screen.getByText(/238/)).toBeInTheDocument();
+    // total_sent (238) aparece no resumo do header e no mini-stat "Enviados" do card.
+    expect(screen.getAllByText(/238/).length).toBeGreaterThan(0);
   });
   it('botão nova campanha abre o wizard', async () => {
     (svc.listCampaigns as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ ok: true, campaigns: [baseCampaign()] });
@@ -48,8 +49,8 @@ describe('CampanhasManager', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     render(<CampanhasManager />);
     await waitFor(() => expect(screen.getByText('Agendada X')).toBeInTheDocument());
-    // selo de agendamento (com o relógio) — distinto do nome da campanha
-    expect(screen.getByText(/🕒 Agendada/)).toBeInTheDocument();
+    // selo de agendamento (ícone de relógio + "Agendada {data}") — distinto do nome da campanha "Agendada X"
+    expect(screen.getByText(/Agendada\s+\d{2}\/\d{2}\/\d{4}/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /cancelar agendamento/i }));
     await waitFor(() => expect((svc.cancelSchedule as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('t1', 'camp2'));
   });
