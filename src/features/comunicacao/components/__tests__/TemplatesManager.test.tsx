@@ -10,6 +10,7 @@ vi.mock('../../services/templatesService', () => ({
   deleteTemplate: vi.fn(async () => ({ ok: true })),
   submitTemplate: vi.fn(async () => ({ ok: true, template: {} })),
   refreshStatus: vi.fn(async () => ({ ok: true, template: {} })),
+  importFromMeta: vi.fn(async () => ({ ok: true, imported: 2, updated: 1, total: 3 })),
 }));
 
 import { TemplatesManager } from '../TemplatesManager';
@@ -19,6 +20,13 @@ describe('TemplatesManager', () => {
     render(<TemplatesManager />);
     await waitFor(() => expect(screen.getByText('Promo')).toBeInTheDocument());
     expect(screen.getByText(/rascunho/i)).toBeInTheDocument();
+  });
+  it('botão Importar da Meta chama o serviço e mostra toast', async () => {
+    const svc = await import('../../services/templatesService');
+    render(<TemplatesManager />);
+    await waitFor(() => expect(screen.getByText('Promo')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /importar da meta/i }));
+    await waitFor(() => expect((svc.importFromMeta as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('t1'));
   });
   it('cria um template com valor de exemplo da variável', async () => {
     const svc = await import('../../services/templatesService');

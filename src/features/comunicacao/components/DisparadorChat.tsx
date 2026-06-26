@@ -51,6 +51,7 @@ export const DisparadorChat = () => {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [audienceId, setAudienceId] = useState<string>('');
   const [command, setCommand] = useState('');
+  const [selectedTemplateName, setSelectedTemplateName] = useState<string>('');
   const [phase, setPhase] = useState<Phase>('idle');
   const [preview, setPreview] = useState<DisparoPreview | null>(null);
   const [previewToken, setPreviewToken] = useState<string | null>(null);
@@ -76,6 +77,7 @@ export const DisparadorChat = () => {
     setMessage('');
     setNeedsMessage(false);
     setReport(null);
+    setSelectedTemplateName('');
     setPhase('idle');
   };
 
@@ -111,7 +113,7 @@ export const DisparadorChat = () => {
     }
     setPhase('sending');
     try {
-      const res = await confirmDisparo(tenantId as string, previewToken, message.trim());
+      const res = await confirmDisparo(tenantId as string, previewToken, message.trim(), selectedTemplateName || undefined);
       if (!res.ok || !res.runId) {
         toast.error(labelForError(res.error));
         setPhase('awaiting_confirm');
@@ -205,7 +207,7 @@ export const DisparadorChat = () => {
                   id="tpl-select"
                   aria-label="Template aprovado"
                   defaultValue=""
-                  onChange={(e) => { const t = templates.find((x) => x.id === e.target.value); if (t) setMessage(t.body); }}
+                  onChange={(e) => { const t = templates.find((x) => x.id === e.target.value); if (t) { setMessage(t.body); setSelectedTemplateName(t.name); } }}
                   className={`w-full rounded-lg border px-3 py-2 text-sm ${isDark ? 'bg-neutral-900 border-neutral-700 text-gray-100' : 'bg-gray-50 border-gray-300 text-gray-900'}`}
                 >
                   <option value="">— escolher um template —</option>

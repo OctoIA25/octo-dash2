@@ -61,4 +61,9 @@ describe('disparadorService', () => {
     const body = JSON.parse((spy.mock.calls[0][1] as RequestInit).body as string);
     expect(body).toEqual({ tenantId: 't1', audienceId: 'aud-1' });
   });
+  it('confirmDisparo envia templateName quando fornecido', async () => {
+    const spy = vi.spyOn(global, 'fetch').mockResolvedValue({ json: async () => ({ ok: true, runId: 'r' }) } as Response);
+    await confirmDisparo('t1', 'tok', 'Olá', 'promo');
+    expect(JSON.parse((spy.mock.calls[0][1] as RequestInit).body as string)).toEqual({ tenantId: 't1', previewToken: 'tok', message: 'Olá', templateName: 'promo' });
+  });
 });

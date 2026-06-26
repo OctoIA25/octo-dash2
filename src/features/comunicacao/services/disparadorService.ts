@@ -88,10 +88,11 @@ export async function confirmDisparo(
   tenantId: string,
   previewToken: string,
   message: string,
+  templateName?: string,
 ): Promise<ConfirmResponse> {
   const res = await authedFetch('/api/v1/communication/dispatch/confirm', {
     method: 'POST',
-    body: JSON.stringify({ tenantId, previewToken, message }),
+    body: JSON.stringify({ tenantId, previewToken, message, ...(templateName ? { templateName } : {}) }),
   });
   return res.json();
 }

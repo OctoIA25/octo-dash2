@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { useAuthContext } from '@/contexts/AuthContext';
 import {
-  listTemplates, createTemplate, updateTemplate, deleteTemplate, submitTemplate, refreshStatus,
+  listTemplates, createTemplate, updateTemplate, deleteTemplate, submitTemplate, refreshStatus, importFromMeta,
   type Template, type TemplateStatus,
 } from '../services/templatesService';
 import { extractVariables } from '../templateVars';
@@ -38,6 +38,7 @@ export function TemplatesManager() {
   const [body, setBody] = useState('');
   const [examples, setExamples] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   const vars = extractVariables(body);
 
@@ -81,6 +82,24 @@ export function TemplatesManager() {
     } finally { setSaving(false); }
   }
 
+  async function handleImport() {
+    if (importing) return;
+    setImporting(true);
+    try {
+      const r = await importFromMeta(tenantId as string);
+      if (r.ok) {
+        toast.success(`${r.imported} importados, ${r.updated} atualizados`);
+        reload();
+      } else if (r.error === 'whatsapp_not_configured') {
+        toast.error('WhatsApp não configurado para este tenant.');
+      } else {
+        toast.error('Não foi possível importar da Meta.');
+      }
+    } finally {
+      setImporting(false);
+    }
+  }
+
   async function onSubmit(t: Template) {
     const res = await submitTemplate(tenantId as string, t.id);
     if (!res.ok) { toast.error(res.error === 'whatsapp_not_configured' ? 'WhatsApp não configurado para este tenant.' : 'Falha ao enviar para a Meta.'); return; }
@@ -105,7 +124,10 @@ export function TemplatesManager() {
       <div className="max-w-3xl mx-auto">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-[15px] font-bold text-slate-900 dark:text-slate-100">Templates</h2>
-          <button type="button" onClick={openNew} className="h-8 px-3 rounded-lg bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-[12.5px] font-semibold">Novo template</button>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={handleImport} disabled={importing} className="h-8 px-3 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-[12.5px] font-semibold disabled:opacity-60">{importing ? 'Importando…' : 'Importar da Meta'}</button>
+            <button type="button" onClick={openNew} className="h-8 px-3 rounded-lg bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-[12.5px] font-semibold">Novo template</button>
+          </div>
         </div>
 
         {error && <div className="mb-4 rounded-xl border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 px-4 py-3 text-[12.5px] text-rose-700 dark:text-rose-300">Não foi possível carregar os templates.</div>}

@@ -49,3 +49,7 @@ export async function refreshStatus(tenantId: string, id: string): Promise<{ ok:
   const res = await fetch(`${BASE}/${encodeURIComponent(id)}/refresh-status`, { method: 'POST', headers: headers(await token()), body: JSON.stringify({ tenantId }) });
   return res.json();
 }
+export async function importFromMeta(tenantId: string): Promise<{ ok: boolean; imported?: number; updated?: number; total?: number; error?: string }> {
+  const res = await fetch(`${BASE}/import-from-meta`, { method: 'POST', headers: headers(await token()), body: JSON.stringify({ tenantId }) });
+  return res.json();
+}

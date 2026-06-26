@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('@/lib/supabaseClient', () => ({ supabase: { auth: { getSession: vi.fn(async () => ({ data: { session: { access_token: 'jwt' } } })) } } }));
-import { listTemplates, createTemplate, submitTemplate, refreshStatus, deleteTemplate } from './templatesService';
+import { listTemplates, createTemplate, submitTemplate, refreshStatus, deleteTemplate, importFromMeta } from './templatesService';
 
 describe('templatesService', () => {
   beforeEach(() => vi.restoreAllMocks());
@@ -32,5 +32,12 @@ describe('templatesService', () => {
     await deleteTemplate('t1', 'tpl1');
     expect(spy.mock.calls[0][0]).toContain('/templates/tpl1?tenantId=t1');
     expect((spy.mock.calls[0][1] as RequestInit).method).toBe('DELETE');
+  });
+  it('importFromMeta POST em /templates/import-from-meta', async () => {
+    const spy = vi.spyOn(global, 'fetch').mockResolvedValue({ json: async () => ({ ok: true, imported: 2, updated: 1, total: 3 }) } as Response);
+    await importFromMeta('t1');
+    expect(spy.mock.calls[0][0]).toContain('/templates/import-from-meta');
+    expect((spy.mock.calls[0][1] as RequestInit).method).toBe('POST');
+    expect(JSON.parse((spy.mock.calls[0][1] as RequestInit).body as string)).toEqual({ tenantId: 't1' });
   });
 });
