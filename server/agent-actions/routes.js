@@ -19,7 +19,7 @@ import { runDueActions } from './actionWorker.js';
 import { makeSchedulerDeps } from '../recommendations/index.js';
 import { resolveSegmentDual } from './segmentResolver.js';
 import { validateSegment } from './segmentSchema.js';
-import { toMetaBody } from '../communication/metaTemplates.js';
+import { toMetaBody, submitTemplate, fetchTemplateStatus } from '../communication/metaTemplates.js';
 
 const PLATFORM_OWNER_EMAIL = 'octo.inteligenciaimobiliaria@gmail.com';
 
@@ -141,6 +141,14 @@ function canManageAudiences(role) {
 /** Quem pode criar/editar/submeter templates (gestor). */
 function canManageTemplates(role) {
   return role === 'admin' || role === 'team_leader' || role === 'owner';
+}
+
+/** Carrega as credenciais Meta (WABA + token) do tenant. */
+async function loadMetaCreds(supabase, tenantId) {
+  const { data, error } = await supabase
+    .from('whatsapp_config').select('business_account_id, access_token, is_active').eq('tenant_id', tenantId).maybeSingle();
+  if (error || !data || !data.is_active || !data.business_account_id) return { ok: false, error: 'whatsapp_not_configured' };
+  return { ok: true, wabaId: data.business_account_id, accessToken: data.access_token };
 }
 
 /** Mapeia erros de domínio para HTTP status. */
@@ -556,6 +564,53 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
     if (error) return res.status(500).json({ ok: false, error: 'delete_failed' });
     return res.json({ ok: true });
   });
+
+  app.post(`${basePath}/templates/:id/submit`, requireSupabaseAuth, async (req, res) => {
+    const { id } = req.params;
+    const { tenantId } = req.body || {};
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'missing_tenant' });
+    const ctx = await resolveUserContext(supabase, req, tenantId);
+    if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
+    if (!canManageTemplates(ctx.role)) return res.status(403).json({ ok: false, error: 'forbidden' });
+    const { data: tpl, error: tErr } = await supabase
+      .from(TEMPLATES_TABLE).select('name, language, category, body, example_values, approval_status').eq('id', id).eq('tenant_id', tenantId).maybeSingle();
+    if (tErr) return res.status(500).json({ ok: false, error: 'lookup_failed' });
+    if (!tpl) return res.status(404).json({ ok: false, error: 'template_not_found' });
+    if (tpl.approval_status === 'pending' || tpl.approval_status === 'approved') return res.status(400).json({ ok: false, error: 'already_submitted' });
+    const creds = await loadMetaCreds(supabase, tenantId);
+    if (!creds.ok) return res.status(400).json({ ok: false, error: creds.error });
+    const sub = await submitTemplate({ wabaId: creds.wabaId, accessToken: creds.accessToken, name: tpl.name, language: tpl.language, category: tpl.category, body: tpl.body, exampleValues: tpl.example_values || [] });
+    if (!sub.ok) {
+      await supabase.from(TEMPLATES_TABLE).update({ approval_status: 'error', rejected_reason: sub.detail || 'meta_error' }).eq('id', id).eq('tenant_id', tenantId);
+      return res.status(502).json({ ok: false, error: 'meta_submit_failed', detail: sub.detail });
+    }
+    const { data, error } = await supabase.from(TEMPLATES_TABLE)
+      .update({ provider_template_id: sub.providerTemplateId, approval_status: 'pending', rejected_reason: null })
+      .eq('id', id).eq('tenant_id', tenantId).select(TEMPLATE_COLS).maybeSingle();
+    if (error) return res.status(500).json({ ok: false, error: 'persist_failed' });
+    return res.json({ ok: true, template: data });
+  });
+
+  app.post(`${basePath}/templates/:id/refresh-status`, requireSupabaseAuth, async (req, res) => {
+    const { id } = req.params;
+    const { tenantId } = req.body || {};
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'missing_tenant' });
+    const ctx = await resolveUserContext(supabase, req, tenantId);
+    if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
+    const { data: tpl, error: tErr } = await supabase
+      .from(TEMPLATES_TABLE).select('name').eq('id', id).eq('tenant_id', tenantId).maybeSingle();
+    if (tErr) return res.status(500).json({ ok: false, error: 'lookup_failed' });
+    if (!tpl) return res.status(404).json({ ok: false, error: 'template_not_found' });
+    const creds = await loadMetaCreds(supabase, tenantId);
+    if (!creds.ok) return res.status(400).json({ ok: false, error: creds.error });
+    const st = await fetchTemplateStatus({ wabaId: creds.wabaId, accessToken: creds.accessToken, name: tpl.name });
+    if (!st.ok) return res.status(502).json({ ok: false, error: 'meta_status_failed', detail: st.detail });
+    const { data, error } = await supabase.from(TEMPLATES_TABLE)
+      .update({ approval_status: st.status, rejected_reason: st.reason || null })
+      .eq('id', id).eq('tenant_id', tenantId).select(TEMPLATE_COLS).maybeSingle();
+    if (error) return res.status(500).json({ ok: false, error: 'persist_failed' });
+    return res.json({ ok: true, template: data });
+  });
 }
 
 /** Resolve as deps compartilhadas (auth + envio) usadas pelos handlers. */
@@ -572,4 +627,4 @@ export function registerAgentActionRoutes(app, supabase, options = {}) {
   registerDispatchRoutes(app, '/api/v1/agent-actions', supabase, options, makeDispatchDeps(supabase, options));
 }
 
-export const __test__ = { resolveUserContext, statusFor, isPlatformOwner, resolvePublicSourceMode, applyRunsFilters, computeProgress, canManageAudiences, canManageTemplates, registerDispatchRoutes, makeDispatchDeps };
+export const __test__ = { resolveUserContext, statusFor, isPlatformOwner, resolvePublicSourceMode, applyRunsFilters, computeProgress, canManageAudiences, canManageTemplates, loadMetaCreds, registerDispatchRoutes, makeDispatchDeps };

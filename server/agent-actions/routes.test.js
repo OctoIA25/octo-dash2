@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { __test__ } from './routes.js';
 
-const { resolveUserContext, statusFor, isPlatformOwner, resolvePublicSourceMode, applyRunsFilters, computeProgress, canManageAudiences, canManageTemplates } = __test__;
+const { resolveUserContext, statusFor, isPlatformOwner, resolvePublicSourceMode, applyRunsFilters, computeProgress, canManageAudiences, canManageTemplates, loadMetaCreds } = __test__;
 
 function recordingBuilder() {
   const calls = [];
@@ -260,5 +260,16 @@ describe('canManageTemplates', () => {
   it('gestores sim, corretor não', () => {
     for (const r of ['admin', 'team_leader', 'owner']) expect(canManageTemplates(r)).toBe(true);
     expect(canManageTemplates('corretor')).toBe(false);
+  });
+});
+
+describe('loadMetaCreds', () => {
+  it('ok quando config ativa com waba+token', async () => {
+    const supabase = { from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { business_account_id: 'W', access_token: 'T', is_active: true }, error: null }) }) }) }) };
+    expect(await loadMetaCreds(supabase, 't1')).toEqual({ ok: true, wabaId: 'W', accessToken: 'T' });
+  });
+  it('erro quando inativa/sem config', async () => {
+    const supabase = { from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) }) };
+    expect((await loadMetaCreds(supabase, 't1')).ok).toBe(false);
   });
 });
