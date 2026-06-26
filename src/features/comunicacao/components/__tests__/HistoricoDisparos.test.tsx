@@ -29,7 +29,8 @@ describe('HistoricoDisparos', () => {
   it('renderiza a lista de disparos', async () => {
     render(<HistoricoDisparos />);
     await waitFor(() => expect(screen.getByText(/envie para arquivados/i)).toBeInTheDocument(), { timeout: 2000 });
-    expect(screen.getByText(/enviados/i)).toBeInTheDocument();   // mostra o rótulo de contagem
+    // O rótulo de contagem "enviados" aparece tanto no resumo do header quanto na linha do disparo.
+    expect(screen.getAllByText(/enviados/i).length).toBeGreaterThan(0);   // mostra o rótulo de contagem
   });
 
   it('estado vazio quando não há disparos', async () => {
