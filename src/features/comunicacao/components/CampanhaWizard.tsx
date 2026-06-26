@@ -58,6 +58,8 @@ export function CampanhaWizard({ tenantId, editing, onClose, onSaved }: Campanha
   const [notifyOnComplete, setNotifyOnComplete] = useState(editing?.notify_on_complete ?? false);
   const [audienceCount, setAudienceCount] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
+  // Fix 2: guarda o id da campanha já criada para evitar recriação no retry
+  const [savedId, setSavedId] = useState<string | null>(editing?.id ?? null);
 
   useEffect(() => {
     let alive = true;
@@ -70,16 +72,25 @@ export function CampanhaWizard({ tenantId, editing, onClose, onSaved }: Campanha
     return () => { alive = false; };
   }, [tenantId]);
 
+  // Fix 1: busca contagem sempre que audienceId mudar — cobre mount em modo editing
+  // e qualquer troca de público. A flag `alive` também resolve o race (Fix 3).
+  useEffect(() => {
+    if (!audienceId) { setAudienceCount(null); return; }
+    let alive = true;
+    setAudienceCount(null);
+    getAudienceCount(tenantId, audienceId)
+      .then((res) => { if (alive && res.ok) setAudienceCount(res.count); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [audienceId, tenantId]);
+
   const selectedTemplate = useMemo(() => templates.find((t) => t.id === templateId) ?? null, [templates, templateId]);
   const selectedAudience = useMemo(() => audiences.find((a) => a.id === audienceId) ?? null, [audiences, audienceId]);
   const variables = useMemo(() => (selectedTemplate ? extractVariables(selectedTemplate.body) : []), [selectedTemplate]);
 
-  async function onPickAudience(id: string) {
+  // Fix 1: onPickAudience agora só atualiza o estado — o effect acima cuida da contagem
+  function onPickAudience(id: string) {
     setAudienceId(id);
-    setAudienceCount(null);
-    if (!id) return;
-    const res = await getAudienceCount(tenantId, id);
-    if (res.ok) setAudienceCount(res.count);
   }
 
   function next() {
@@ -96,56 +107,59 @@ export function CampanhaWizard({ tenantId, editing, onClose, onSaved }: Campanha
   }
   function back() { setStep((s) => Math.max(1, s - 1)); }
 
-  /** Monta o payload a partir do state (campos vazios viram undefined). */
+  /** Monta o payload a partir do state.
+   * Fix 5: sendWindow, throttlePerMin e avoidResend NÃO são enviados —
+   * são campos "em breve" desabilitados; o backend usa seus defaults. */
   function buildInput(): CampaignInput {
-    const sendWindow: Record<string, number> = {};
-    if (windowStart) sendWindow.start = Number(windowStart);
-    if (windowEnd) sendWindow.end = Number(windowEnd);
     return {
       name: name.trim(),
       templateId,
       audienceId,
       maxRecipients: maxRecipients ? Number(maxRecipients) : null,
-      sendWindow: Object.keys(sendWindow).length ? sendWindow : undefined,
-      throttlePerMin: throttle ? Number(throttle) : null,
-      avoidResend,
       internalNote: internalNote.trim() ? internalNote.trim() : null,
       notifyOnComplete,
     };
-  }
-
-  /** Salva a campanha (create ou update). Retorna o id ou null em erro (já notifica). */
-  async function persist(): Promise<string | null> {
-    const input = buildInput();
-    const res = editing
-      ? await updateCampaign(tenantId, editing.id, input)
-      : await createCampaign(tenantId, input);
-    if (!res.ok || !res.campaign) { toast.error(errorMessage(res.error)); return null; }
-    return res.campaign.id;
   }
 
   async function saveDraft() {
     if (saving) return;
     setSaving(true);
     try {
-      const id = await persist();
-      if (!id) return;
+      const input = buildInput();
+      const res = editing
+        ? await updateCampaign(tenantId, editing.id, input)
+        : await createCampaign(tenantId, input);
+      if (!res.ok || !res.campaign) { toast.error(errorMessage(res.error)); return; }
       toast.success('Rascunho salvo.');
       onSaved();
     } finally { setSaving(false); }
   }
 
+  // Fix 2: reutiliza savedId no retry — nunca recria campanha já existente
   async function dispatch() {
     if (saving) return;
     setSaving(true);
     try {
-      const id = await persist();
-      if (!id) return;
-      const run = await dispatchCampaign(tenantId, id);
-      if (!run.ok) { toast.error(errorMessage(run.error)); return; }
+      let campaignId = savedId;
+      if (!campaignId) {
+        const res = editing
+          ? await updateCampaign(tenantId, editing.id, buildInput())
+          : await createCampaign(tenantId, buildInput());
+        if (!res.ok || !res.campaign) { toast.error(errorMessage(res.error)); return; }
+        campaignId = res.campaign.id;
+        setSavedId(campaignId);
+      } else if (editing) {
+        // já existe (editing) — garante que as edições estão salvas antes de disparar
+        const upd = await updateCampaign(tenantId, campaignId, buildInput());
+        if (!upd.ok) { toast.error(errorMessage(upd.error)); return; }
+      }
+      const disp = await dispatchCampaign(tenantId, campaignId);
+      if (!disp.ok) { toast.error(errorMessage(disp.error)); return; }
       toast.success('Campanha disparada.');
       onSaved();
-    } finally { setSaving(false); }
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -197,26 +211,29 @@ export function CampanhaWizard({ tenantId, editing, onClose, onSaved }: Campanha
               <input aria-label="Limite de destinatários" type="number" min={1} value={maxRecipients} onChange={(e) => setMaxRecipients(e.target.value)} className={inputCls} placeholder={`Opcional (padrão até ${DEFAULT_CAP})`} />
             </label>
             <div className="grid grid-cols-2 gap-3">
+              {/* Fix 5: janela de horário desabilitada (em breve) */}
               <label className={labelCls}>Hora de início
-                <select aria-label="Hora de início" value={windowStart} onChange={(e) => setWindowStart(e.target.value)} className={inputCls}>
+                <select aria-label="Hora de início" value={windowStart} onChange={(e) => setWindowStart(e.target.value)} className={inputCls} disabled>
                   <option value="">—</option>
                   {HOURS.map((h) => <option key={h} value={h}>{String(h).padStart(2, '0')}h</option>)}
                 </select>
               </label>
               <label className={labelCls}>Hora de fim
-                <select aria-label="Hora de fim" value={windowEnd} onChange={(e) => setWindowEnd(e.target.value)} className={inputCls}>
+                <select aria-label="Hora de fim" value={windowEnd} onChange={(e) => setWindowEnd(e.target.value)} className={inputCls} disabled>
                   <option value="">—</option>
                   {HOURS.map((h) => <option key={h} value={h}>{String(h).padStart(2, '0')}h</option>)}
                 </select>
               </label>
             </div>
             <p className={hintCls}>Janela de envio: aplicado em breve.</p>
+            {/* Fix 5: checkbox anti-reenvio desabilitado (em breve) */}
             <label className="flex items-center gap-2 text-[12px] text-slate-600 dark:text-slate-300">
-              <input type="checkbox" checked={avoidResend} onChange={(e) => setAvoidResend(e.target.checked)} />
+              <input type="checkbox" checked={avoidResend} onChange={(e) => setAvoidResend(e.target.checked)} disabled />
               Evitar reenvio a quem já recebeu <span className={hintCls}>(em breve)</span>
             </label>
+            {/* Fix 5: throttle desabilitado (em breve) */}
             <label className={labelCls}>Envios por minuto
-              <input aria-label="Envios por minuto" type="number" min={1} value={throttle} onChange={(e) => setThrottle(e.target.value)} className={inputCls} />
+              <input aria-label="Envios por minuto" type="number" min={1} value={throttle} onChange={(e) => setThrottle(e.target.value)} className={inputCls} disabled />
               <span className={hintCls}>Em breve.</span>
             </label>
           </div>
@@ -273,6 +290,11 @@ export function CampanhaWizard({ tenantId, editing, onClose, onSaved }: Campanha
                 </div>
               )}
             </dl>
+            {/* Fix 4: aviso de disparo imediato com contagem */}
+            <p className="text-[12px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 rounded-lg px-3 py-2 mb-3">
+              Ao disparar, a campanha será enviada <strong>imediatamente</strong>
+              {audienceCount != null ? ` para até ${audienceCount} lead(s)` : ''}. Esta ação não pode ser desfeita.
+            </p>
             <button type="button" onClick={dispatch} disabled={saving} className="w-full h-9 rounded-lg bg-emerald-600 text-white text-[12.5px] font-semibold disabled:opacity-40">
               {saving ? 'Disparando…' : 'Disparar'}
             </button>
@@ -287,7 +309,10 @@ export function CampanhaWizard({ tenantId, editing, onClose, onSaved }: Campanha
             )}
           </div>
           <div className="flex items-center gap-2">
-            <button type="button" onClick={saveDraft} disabled={saving} className="h-8 px-3 rounded-lg text-[12.5px] text-slate-500 disabled:opacity-40">Salvar rascunho</button>
+            {/* Fix 6: "Salvar rascunho" oculto na etapa 5 */}
+            {step < 5 && (
+              <button type="button" onClick={saveDraft} disabled={saving} className="h-8 px-3 rounded-lg text-[12.5px] text-slate-500 disabled:opacity-40">Salvar rascunho</button>
+            )}
             {step < 5 && (
               <button type="button" onClick={next} className="h-8 px-3 rounded-lg bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-[12.5px] font-semibold">Avançar</button>
             )}
