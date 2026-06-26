@@ -42,7 +42,7 @@ export async function runDueCampaigns(supabase, deps = {}) {
           const next = computeNextOccurrence(camp.recurrence, nowMs);
           await supabase.from(CAMPAIGNS_TABLE)
             .update({ schedule_status: 'scheduled', scheduled_at: next })
-            .eq('id', camp.id);
+            .eq('id', camp.id).eq('schedule_status', 'dispatched');
         }
       } else {
         failed += 1;

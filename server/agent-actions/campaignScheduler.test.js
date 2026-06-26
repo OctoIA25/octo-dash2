@@ -3,8 +3,10 @@ import { runDueCampaigns } from './campaignScheduler.js';
 import { computeNextOccurrence } from './recurrence.js';
 
 // Fake supabase: select das due + update do claim + update de erro.
+// calls.updates: lista plana de patches (compatibilidade com testes existentes).
+// calls.updateEqs: lista de { patch, eqs: [[col, val], ...] } por chamada de update().
 function makeSupabase({ dueRows, claimWins = true }) {
-  const calls = { updates: [] };
+  const calls = { updates: [], updateEqs: [] };
   return {
     calls,
     from() {
@@ -15,7 +17,17 @@ function makeSupabase({ dueRows, claimWins = true }) {
         order() { return this; },
         limit: async () => ({ data: dueRows, error: null }),
         // claim/erro: update().eq().eq().select()
-        update(patch) { calls.updates.push(patch); return { eq() { return this; }, select: async () => ({ data: claimWins ? [{ id: 'x' }] : [], error: null }) }; },
+        update(patch) {
+          calls.updates.push(patch);
+          const entry = { patch, eqs: [] };
+          calls.updateEqs.push(entry);
+          const chain = {
+            eq(col, val) { entry.eqs.push([col, val]); return chain; },
+            select: async () => ({ data: claimWins ? [{ id: 'x' }] : [], error: null }),
+            then(resolve) { return Promise.resolve(undefined).then(resolve); },
+          };
+          return chain;
+        },
       };
     },
   };
@@ -81,5 +93,18 @@ describe('runDueCampaigns recorrência', () => {
     expect(r.failed).toBe(1);
     expect(supabase.calls.updates.some((u) => u.schedule_status === 'error')).toBe(true);
     expect(supabase.calls.updates.some((u) => u.schedule_status === 'scheduled' && u.scheduled_at)).toBe(false);
+  });
+  it('reagendamento de recorrente filtra por schedule_status dispatched (não ressuscita cancelada)', async () => {
+    const okExec = vi.fn(async () => ({ ok: true, runId: 'r', enqueued: 1 }));
+    const nowMs = Date.parse('2026-07-08T12:00:00Z');
+    const supabase = makeSupabase({ dueRows: [{ id: 'c1', tenant_id: 't1', recurrence: { frequency: 'daily', time: '09:00' } }] });
+    const r = await runDueCampaigns(supabase, { executeCampaignDispatch: okExec, nowMs });
+    expect(r.dispatched).toBe(1);
+    // encontra o update que volta a 'scheduled' (o reagendamento)
+    const reschedEntry = supabase.calls.updateEqs.find((e) => e.patch.schedule_status === 'scheduled' && e.patch.scheduled_at);
+    expect(reschedEntry).toBeTruthy();
+    // deve ter a condição .eq('schedule_status', 'dispatched') para não ressuscitar canceladas
+    const hasDispatchedGuard = reschedEntry.eqs.some(([col, val]) => col === 'schedule_status' && val === 'dispatched');
+    expect(hasDispatchedGuard).toBe(true);
   });
 });
