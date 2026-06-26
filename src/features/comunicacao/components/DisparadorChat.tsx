@@ -26,6 +26,8 @@ import {
   type DisparoPreview,
   type RunReport,
 } from '../services/disparadorService';
+import { isMappingComplete, type VarMapping } from '../variableMapping';
+import { VariableMapper } from './VariableMapper';
 
 type Phase = 'idle' | 'previewing' | 'awaiting_confirm' | 'sending' | 'done';
 
@@ -52,6 +54,8 @@ export const DisparadorChat = () => {
   const [audienceId, setAudienceId] = useState<string>('');
   const [command, setCommand] = useState('');
   const [selectedTemplateName, setSelectedTemplateName] = useState<string>('');
+  const [selectedTemplateVars, setSelectedTemplateVars] = useState<string[]>([]);
+  const [variableMapping, setVariableMapping] = useState<VarMapping>({});
   const [phase, setPhase] = useState<Phase>('idle');
   const [preview, setPreview] = useState<DisparoPreview | null>(null);
   const [previewToken, setPreviewToken] = useState<string | null>(null);
@@ -73,8 +77,10 @@ export const DisparadorChat = () => {
 
   const handleTemplateSelect = (id: string) => {
     const t = templates.find((x) => x.id === id);
-    if (t) { setMessage(t.body); setSelectedTemplateName(t.name); }
-    else { setSelectedTemplateName(''); }
+    // Troca de template invalida o mapa anterior — sempre reseta.
+    setVariableMapping({});
+    if (t) { setMessage(t.body); setSelectedTemplateName(t.name); setSelectedTemplateVars(t.variables || []); }
+    else { setSelectedTemplateName(''); setSelectedTemplateVars([]); }
   };
 
   const reset = () => {
@@ -84,6 +90,8 @@ export const DisparadorChat = () => {
     setNeedsMessage(false);
     setReport(null);
     setSelectedTemplateName('');
+    setSelectedTemplateVars([]);
+    setVariableMapping({});
     setPhase('idle');
   };
 
@@ -117,9 +125,18 @@ export const DisparadorChat = () => {
       setNeedsMessage(true);
       return toast.error('Informe a mensagem antes de confirmar.');
     }
+    if (selectedTemplateVars.length > 0 && !isMappingComplete(selectedTemplateVars, variableMapping)) {
+      return toast.error('Mapeie todas as variáveis do template.');
+    }
     setPhase('sending');
     try {
-      const res = await confirmDisparo(tenantId as string, previewToken, message.trim(), selectedTemplateName || undefined);
+      const res = await confirmDisparo(
+        tenantId as string,
+        previewToken,
+        message.trim(),
+        selectedTemplateName || undefined,
+        selectedTemplateVars.length > 0 ? variableMapping : undefined,
+      );
       if (!res.ok || !res.runId) {
         toast.error(labelForError(res.error));
         setPhase('awaiting_confirm');
@@ -219,6 +236,12 @@ export const DisparadorChat = () => {
                   <option value="">— escolher um template —</option>
                   {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
+                {selectedTemplateVars.length > 0 && (
+                  <div className="mt-2">
+                    <p className={`text-xs font-semibold mb-1 ${textMuted}`}>Variáveis do template</p>
+                    <VariableMapper variables={selectedTemplateVars} mapping={variableMapping} onChange={setVariableMapping} />
+                  </div>
+                )}
               </div>
             )}
             <label className={`block text-xs font-semibold mb-1 ${needsMessage ? 'text-amber-500' : textMuted}`} htmlFor="msg-textarea">

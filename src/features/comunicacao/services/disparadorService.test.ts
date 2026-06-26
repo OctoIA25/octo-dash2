@@ -66,4 +66,10 @@ describe('disparadorService', () => {
     await confirmDisparo('t1', 'tok', 'Olá', 'promo');
     expect(JSON.parse((spy.mock.calls[0][1] as RequestInit).body as string)).toEqual({ tenantId: 't1', previewToken: 'tok', message: 'Olá', templateName: 'promo' });
   });
+  it('confirmDisparo envia variableMapping quando fornecido', async () => {
+    const spy = vi.spyOn(global, 'fetch').mockResolvedValue({ json: async () => ({ ok: true, runId: 'r' }) } as Response);
+    const mapping = { 1: { type: 'lead_field' as const, value: 'name' } };
+    await confirmDisparo('t1', 'tok', 'Olá', 'promo', mapping);
+    expect(JSON.parse((spy.mock.calls[0][1] as RequestInit).body as string)).toEqual({ tenantId: 't1', previewToken: 'tok', message: 'Olá', templateName: 'promo', variableMapping: mapping });
+  });
 });

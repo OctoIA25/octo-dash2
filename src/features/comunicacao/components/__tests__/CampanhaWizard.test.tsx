@@ -3,7 +3,8 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 vi.mock('../../services/templatesService', () => ({
   listTemplates: vi.fn(async () => ({ ok: true, templates: [
-    { id: 'tpl1', name: 'Promo', approval_status: 'approved', body: 'Olá {{nome}}', variables: ['nome'], category: 'MARKETING', language: 'pt_BR', channel: 'whatsapp', example_values: ['x'], provider_template_id: 'p', rejected_reason: null, created_by_email: null, created_at: '', updated_at: '' },
+    { id: 'tpl1', name: 'Promo', approval_status: 'approved', body: 'Olá {{1}}', variables: ['1'], category: 'MARKETING', language: 'pt_BR', channel: 'whatsapp', example_values: ['x'], provider_template_id: 'p', rejected_reason: null, created_by_email: null, created_at: '', updated_at: '' },
+    { id: 'tpl2', name: 'SemVar', approval_status: 'approved', body: 'Olá, tudo bem?', variables: [], category: 'MARKETING', language: 'pt_BR', channel: 'whatsapp', example_values: [], provider_template_id: 'p2', rejected_reason: null, created_by_email: null, created_at: '', updated_at: '' },
   ] })),
 }));
 vi.mock('../../services/audiencesService', () => ({
@@ -29,7 +30,7 @@ describe('CampanhaWizard', () => {
     const svc = await import('sonner');
     expect((svc.toast.error as ReturnType<typeof vi.fn>)).toHaveBeenCalled();
   });
-  it('fluxo completo até a etapa 5 mostra o preview com o body do template', async () => {
+  it('fluxo completo até a etapa 5 mostra o preview com a variável mapeada (exemplo)', async () => {
     render(<CampanhaWizard {...props} />);
     await waitFor(() => expect(screen.getByText('Promo')).toBeInTheDocument());
     fireEvent.change(screen.getByLabelText(/nome da campanha/i), { target: { value: 'Reativação' } });
@@ -39,10 +40,43 @@ describe('CampanhaWizard', () => {
     fireEvent.change(screen.getByLabelText(/público/i), { target: { value: 'aud1' } });
     fireEvent.click(screen.getByRole('button', { name: /avançar/i })); // → etapa 3
     fireEvent.click(screen.getByRole('button', { name: /avançar/i })); // → etapa 4
+    // mapeia {{1}} → Nome do lead antes de avançar
+    fireEvent.change(screen.getByLabelText('Variável 1'), { target: { value: 'name' } });
     fireEvent.click(screen.getByRole('button', { name: /avançar/i })); // → etapa 5
-    await waitFor(() => expect(screen.getByTestId('whatsapp-preview-bubble')).toHaveTextContent('Olá {{nome}}'));
+    await waitFor(() => expect(screen.getByTestId('whatsapp-preview-bubble')).toHaveTextContent('Olá (Nome do lead)'));
   });
-  it('disparar na etapa 5 chama dispatchCampaign', async () => {
+  it('bloqueia ao avançar da etapa 4 sem mapear as variáveis do template', async () => {
+    const svc = await import('sonner');
+    (svc.toast.error as ReturnType<typeof vi.fn>).mockClear();
+    render(<CampanhaWizard {...props} />);
+    await waitFor(() => expect(screen.getByText('Promo')).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText(/nome da campanha/i), { target: { value: 'R' } });
+    fireEvent.change(screen.getByLabelText(/template/i), { target: { value: 'tpl1' } });
+    fireEvent.click(screen.getByRole('button', { name: /avançar/i }));
+    await waitFor(() => screen.getByLabelText(/público/i));
+    fireEvent.change(screen.getByLabelText(/público/i), { target: { value: 'aud1' } });
+    fireEvent.click(screen.getByRole('button', { name: /avançar/i })); // → etapa 3
+    fireEvent.click(screen.getByRole('button', { name: /avançar/i })); // → etapa 4
+    // tenta avançar sem mapear {{1}}
+    fireEvent.click(screen.getByRole('button', { name: /avançar/i }));
+    expect((svc.toast.error as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('Mapeie todas as variáveis do template.');
+    // continua na etapa 4 (o mapeador ainda está visível)
+    expect(screen.getByLabelText('Variável 1')).toBeInTheDocument();
+  });
+  it('template sem variáveis não bloqueia a etapa 4', async () => {
+    render(<CampanhaWizard {...props} />);
+    await waitFor(() => expect(screen.getByText('SemVar')).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText(/nome da campanha/i), { target: { value: 'R' } });
+    fireEvent.change(screen.getByLabelText(/template/i), { target: { value: 'tpl2' } });
+    fireEvent.click(screen.getByRole('button', { name: /avançar/i }));
+    await waitFor(() => screen.getByLabelText(/público/i));
+    fireEvent.change(screen.getByLabelText(/público/i), { target: { value: 'aud1' } });
+    fireEvent.click(screen.getByRole('button', { name: /avançar/i })); // → etapa 3
+    fireEvent.click(screen.getByRole('button', { name: /avançar/i })); // → etapa 4
+    fireEvent.click(screen.getByRole('button', { name: /avançar/i })); // → etapa 5 (não bloqueia)
+    await waitFor(() => expect(screen.getByTestId('whatsapp-preview-bubble')).toHaveTextContent('Olá, tudo bem?'));
+  });
+  it('disparar na etapa 5 chama dispatchCampaign (com variável mapeada)', async () => {
     const svc = await import('../../services/campaignsService');
     render(<CampanhaWizard {...props} />);
     await waitFor(() => expect(screen.getByText('Promo')).toBeInTheDocument());
@@ -53,9 +87,13 @@ describe('CampanhaWizard', () => {
     fireEvent.change(screen.getByLabelText(/público/i), { target: { value: 'aud1' } });
     fireEvent.click(screen.getByRole('button', { name: /avançar/i }));
     fireEvent.click(screen.getByRole('button', { name: /avançar/i }));
+    fireEvent.change(screen.getByLabelText('Variável 1'), { target: { value: 'name' } });
     fireEvent.click(screen.getByRole('button', { name: /avançar/i }));
     fireEvent.click(screen.getByRole('button', { name: /disparar/i }));
     await waitFor(() => expect((svc.createCampaign as ReturnType<typeof vi.fn>)).toHaveBeenCalled());
     await waitFor(() => expect((svc.dispatchCampaign as ReturnType<typeof vi.fn>)).toHaveBeenCalled());
+    // o variableMapping mapeado vai no input de criação
+    const input = (svc.createCampaign as ReturnType<typeof vi.fn>).mock.calls[0][1];
+    expect(input.variableMapping).toEqual({ 1: { type: 'lead_field', value: 'name' } });
   });
 });

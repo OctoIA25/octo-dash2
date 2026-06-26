@@ -14,6 +14,7 @@
  */
 
 import { supabase } from '@/lib/supabaseClient';
+import type { VarMapping } from '../variableMapping';
 
 export interface DisparoPreview {
   action: string;
@@ -89,10 +90,17 @@ export async function confirmDisparo(
   previewToken: string,
   message: string,
   templateName?: string,
+  variableMapping?: VarMapping,
 ): Promise<ConfirmResponse> {
   const res = await authedFetch('/api/v1/communication/dispatch/confirm', {
     method: 'POST',
-    body: JSON.stringify({ tenantId, previewToken, message, ...(templateName ? { templateName } : {}) }),
+    body: JSON.stringify({
+      tenantId,
+      previewToken,
+      message,
+      ...(templateName ? { templateName } : {}),
+      ...(variableMapping ? { variableMapping } : {}),
+    }),
   });
   return res.json();
 }

@@ -15,6 +15,8 @@ import {
   createCampaign, updateCampaign, dispatchCampaign, type Campaign, type CampaignInput,
 } from '../services/campaignsService';
 import { extractVariables } from '../templateVars';
+import { isMappingComplete, renderWithExample, type VarMapping } from '../variableMapping';
+import { VariableMapper } from './VariableMapper';
 import { WhatsAppPreview } from './WhatsAppPreview';
 
 interface CampanhaWizardProps {
@@ -54,6 +56,7 @@ export function CampanhaWizard({ tenantId, editing, onClose, onSaved }: Campanha
   const [windowEnd, setWindowEnd] = useState(editing?.send_window?.end != null ? String(editing.send_window.end) : '');
   const [avoidResend, setAvoidResend] = useState(editing?.avoid_resend ?? false);
   const [throttle, setThrottle] = useState(editing?.throttle_per_min != null ? String(editing.throttle_per_min) : '');
+  const [variableMapping, setVariableMapping] = useState<VarMapping>(editing?.variable_mapping ?? {});
   const [internalNote, setInternalNote] = useState(editing?.internal_note ?? '');
   const [notifyOnComplete, setNotifyOnComplete] = useState(editing?.notify_on_complete ?? false);
   const [audienceCount, setAudienceCount] = useState<number | null>(null);
@@ -103,6 +106,9 @@ export function CampanhaWizard({ tenantId, editing, onClose, onSaved }: Campanha
     if (step === 3) {
       if (maxRecipients && Number(maxRecipients) < 1) { toast.error('O limite deve ser de pelo menos 1.'); return; }
     }
+    if (step === 4) {
+      if (!isMappingComplete(variables, variableMapping)) { toast.error('Mapeie todas as variáveis do template.'); return; }
+    }
     setStep((s) => Math.min(5, s + 1));
   }
   function back() { setStep((s) => Math.max(1, s - 1)); }
@@ -116,6 +122,7 @@ export function CampanhaWizard({ tenantId, editing, onClose, onSaved }: Campanha
       templateId,
       audienceId,
       maxRecipients: maxRecipients ? Number(maxRecipients) : null,
+      variableMapping,
       internalNote: internalNote.trim() ? internalNote.trim() : null,
       notifyOnComplete,
     };
@@ -138,6 +145,7 @@ export function CampanhaWizard({ tenantId, editing, onClose, onSaved }: Campanha
   // Fix 2: reutiliza savedId no retry — nunca recria campanha já existente
   async function dispatch() {
     if (saving) return;
+    if (!isMappingComplete(variables, variableMapping)) { toast.error('Mapeie todas as variáveis do template.'); return; }
     setSaving(true);
     try {
       let campaignId = savedId;
@@ -245,15 +253,7 @@ export function CampanhaWizard({ tenantId, editing, onClose, onSaved }: Campanha
             <h3 className="text-[13.5px] font-semibold text-slate-900 dark:text-slate-100">Configurações</h3>
             <div>
               <p className="text-[12px] text-slate-600 dark:text-slate-300 mb-1">Variáveis do template</p>
-              {variables.length === 0 ? (
-                <p className={hintCls}>Este template não usa variáveis.</p>
-              ) : (
-                <ul className="space-y-1">
-                  {variables.map((v) => (
-                    <li key={v} className="text-[12px] text-slate-500">{`{{${v}}} → mapeada do cadastro do lead (em breve)`}</li>
-                  ))}
-                </ul>
-              )}
+              <VariableMapper variables={variables} mapping={variableMapping} onChange={setVariableMapping} />
             </div>
             <label className={labelCls}>Nota interna
               <textarea aria-label="Nota interna" value={internalNote} onChange={(e) => setInternalNote(e.target.value)} rows={2} className="mt-1 w-full px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[12.5px]" />
@@ -269,7 +269,7 @@ export function CampanhaWizard({ tenantId, editing, onClose, onSaved }: Campanha
         {step === 5 && (
           <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 space-y-4">
             <h3 className="text-[13.5px] font-semibold text-slate-900 dark:text-slate-100">Revisar e enviar</h3>
-            {selectedTemplate && <WhatsAppPreview body={selectedTemplate.body} />}
+            {selectedTemplate && <WhatsAppPreview body={renderWithExample(selectedTemplate.body, variables, variableMapping)} />}
             <dl className="space-y-1 text-[12px]">
               <div className="flex justify-between gap-3">
                 <dt className="text-slate-400">Público</dt>

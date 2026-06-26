@@ -13,7 +13,8 @@ vi.mock('../../services/templatesService', () => ({
 }));
 vi.mock('../../services/disparadorService', () => ({
   previewDisparo: vi.fn(async () => ({ ok: true, previewToken: 'tok', needsMessage: true, preview: { action: 'send_whatsapp', segment: {}, foundCount: 1, eligibleCount: 1, noWhatsappCount: 0, excludedCount: 0, message: '', sampleNames: [] } })),
-  confirmDisparo: vi.fn(), getRunReport: vi.fn(),
+  confirmDisparo: vi.fn(async () => ({ ok: true, enqueued: 1, runId: 'run-1' })),
+  getRunReport: vi.fn(async () => ({ ok: true, run: { id: 'run-1', status: 'completed', found_count: 1, eligible_count: 1, no_whatsapp_count: 0, excluded_count: 0, sent_count: 1, failed_count: 0 } })),
 }));
 
 import { DisparadorChat } from '../DisparadorChat';
@@ -28,4 +29,57 @@ it('o seletor de template mostra só os aprovados e preenche a mensagem', async 
   expect(select.innerHTML).not.toContain('Rascunho');
   fireEvent.change(select, { target: { value: 'ap' } });
   await waitFor(() => expect((screen.getByLabelText(/mensagem/i) as HTMLTextAreaElement).value).toContain('Olá {{nome}}'));
+});
+
+it('mostra o mapeador só quando o template tem variáveis e bloqueia confirmação se incompleto', async () => {
+  const svc = await import('sonner');
+  (svc.toast.error as ReturnType<typeof vi.fn>).mockClear();
+  const disp = await import('../../services/disparadorService');
+  render(<DisparadorChat />);
+  fireEvent.change(screen.getByPlaceholderText(/Mande uma mensagem/i), { target: { value: 'arquivados' } });
+  fireEvent.click(screen.getByRole('button', { name: /gerar prévia/i }));
+  await waitFor(() => expect(screen.getByLabelText(/template aprovado/i)).toBeInTheDocument());
+  // sem template escolhido → sem mapeador
+  expect(screen.queryByLabelText('Variável nome')).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText(/template aprovado/i), { target: { value: 'ap' } });
+  // template 'ap' tem variável {{nome}} → mapeador aparece
+  await waitFor(() => expect(screen.getByLabelText('Variável nome')).toBeInTheDocument());
+  // confirma sem mapear → bloqueia
+  fireEvent.click(screen.getByRole('button', { name: /confirmar e enviar/i }));
+  expect((svc.toast.error as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('Mapeie todas as variáveis do template.');
+  expect(disp.confirmDisparo as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
+});
+
+it('mapeada a variável, confirmDisparo recebe o variableMapping', async () => {
+  const disp = await import('../../services/disparadorService');
+  (disp.confirmDisparo as ReturnType<typeof vi.fn>).mockClear();
+  render(<DisparadorChat />);
+  fireEvent.change(screen.getByPlaceholderText(/Mande uma mensagem/i), { target: { value: 'arquivados' } });
+  fireEvent.click(screen.getByRole('button', { name: /gerar prévia/i }));
+  await waitFor(() => expect(screen.getByLabelText(/template aprovado/i)).toBeInTheDocument());
+  fireEvent.change(screen.getByLabelText(/template aprovado/i), { target: { value: 'ap' } });
+  await waitFor(() => expect(screen.getByLabelText('Variável nome')).toBeInTheDocument());
+  fireEvent.change(screen.getByLabelText('Variável nome'), { target: { value: 'name' } });
+  fireEvent.click(screen.getByRole('button', { name: /confirmar e enviar/i }));
+  await waitFor(() => expect(disp.confirmDisparo as ReturnType<typeof vi.fn>).toHaveBeenCalled());
+  const args = (disp.confirmDisparo as ReturnType<typeof vi.fn>).mock.calls[0];
+  // (tenantId, previewToken, message, templateName, variableMapping)
+  expect(args[4]).toEqual({ nome: { type: 'lead_field', value: 'name' } });
+});
+
+it('trocar de template reseta o mapa anterior', async () => {
+  render(<DisparadorChat />);
+  fireEvent.change(screen.getByPlaceholderText(/Mande uma mensagem/i), { target: { value: 'arquivados' } });
+  fireEvent.click(screen.getByRole('button', { name: /gerar prévia/i }));
+  await waitFor(() => expect(screen.getByLabelText(/template aprovado/i)).toBeInTheDocument());
+  fireEvent.change(screen.getByLabelText(/template aprovado/i), { target: { value: 'ap' } });
+  await waitFor(() => expect(screen.getByLabelText('Variável nome')).toBeInTheDocument());
+  fireEvent.change(screen.getByLabelText('Variável nome'), { target: { value: 'name' } });
+  expect((screen.getByLabelText('Variável nome') as HTMLSelectElement).value).toBe('name');
+  // volta para "nenhum template" → mapeador some; reescolhe 'ap' → mapa zerado
+  fireEvent.change(screen.getByLabelText(/template aprovado/i), { target: { value: '' } });
+  expect(screen.queryByLabelText('Variável nome')).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText(/template aprovado/i), { target: { value: 'ap' } });
+  await waitFor(() => expect(screen.getByLabelText('Variável nome')).toBeInTheDocument());
+  expect((screen.getByLabelText('Variável nome') as HTMLSelectElement).value).toBe('');
 });

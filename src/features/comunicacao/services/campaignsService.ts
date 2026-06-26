@@ -1,5 +1,6 @@
 /** Serviço de Campanhas (C1). Padrão authedFetch (JWT Supabase). */
 import { supabase } from '@/lib/supabaseClient';
+import type { VarMapping } from '../variableMapping';
 
 export interface Campaign {
   id: string;
@@ -10,7 +11,7 @@ export interface Campaign {
   send_window: Record<string, number>;
   throttle_per_min: number | null;
   avoid_resend: boolean;
-  variable_mapping: Record<string, string>;
+  variable_mapping: VarMapping;
   internal_note: string | null;
   notify_on_complete: boolean;
   schedule: { mode: string; [k: string]: unknown };
@@ -35,7 +36,7 @@ export interface CampaignInput {
   sendWindow?: Record<string, number>;
   throttlePerMin?: number | null;
   avoidResend?: boolean;
-  variableMapping?: Record<string, string>;
+  variableMapping?: VarMapping;
   internalNote?: string | null;
   notifyOnComplete?: boolean;
 }
