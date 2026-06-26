@@ -13,22 +13,28 @@ Roda no `proxy-production.js`, gated por `KENLO_SYNC_SCHEDULER=1` (apenas um pro
 - `KenloSyncService` — orquestra incremental + upsert idempotente + webhook Lia.
 - `kenloScheduler` / `routes` — cron + endpoints owner.
 
-## Smoke manual do login (puppeteerLoginDriver)
-O driver de login NÃO tem teste unitário (I/O de browser). Validar manualmente:
+## Fluxo de login (puppeteerLoginDriver) — VALIDADO no smoke
+Confirmado end-to-end (token RS256 len 1371 → leads API 200):
+1. `goto signin.valuegaia.com.br/?provider=imob`
+2. preenche `#email`/`#password`, clica `#enter-login` → redireciona p/ `imob.valuegaia.com.br/admin/default.aspx#/home`
+3. navega p/ `…#/leads` — **só aí** o painel chama `leads.ingaia.com.br`; intercepta-se o header `Authorization` (Bearer JWT).
+
+Detalhes que importam: o e-mail é `...@imobiliariajapi.com.br` (com `.br`); provider `imob`
+(env `KENLO_PROVIDER` se mudar). O token NÃO aparece em `#/home`, só em `#/leads`.
+
+O driver não tem teste unitário (I/O de browser). Re-validar manualmente:
 
 ```bash
+KENLO_CHROME_PATH='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' \
 KENLO_SMOKE_EMAIL=... KENLO_SMOKE_PW=... node -e "import('./server/kenlo/puppeteerLoginDriver.js').then(async ({default:d}) => { \
   const t = await d.login(process.env.KENLO_SMOKE_EMAIL, process.env.KENLO_SMOKE_PW); \
-  console.log('token capturado:', t ? t.slice(0,8)+'…' : 'FALHOU'); })"
+  console.log('token:', t ? t.slice(0,12)+'… len '+t.length : 'FALHOU'); })"
 ```
 
-Passar credenciais por env no shell (NÃO commitar). Ajustar seletores (`#email`,
-`#password`, submit) e o ponto de captura do token conforme o DOM real do
-`signin.valuegaia.com.br`. Validar que o token responde 200 em
-`GET https://leads.ingaia.com.br/leads/ingaia/?page=1&perPage=1&idMediaOrigin=8`.
+`KENLO_CHROME_PATH` aponta um Chrome do sistema quando o Chromium do puppeteer
+está indisponível (dev local). Em produção/container, omitir — usa o Chromium do puppeteer.
 
 ## Pendências (ponytail debt)
-- `puppeteerLoginDriver`: seletores/captura confirmados só no smoke.
 - `makeSyncService`: `brokerLookups` é no-op por padrão — wirar as queries reais
   (`imoveis_corretores` + memberships) para atribuir corretor. Até lá, lead salva sem corretor.
 
