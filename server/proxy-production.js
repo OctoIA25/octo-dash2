@@ -5139,6 +5139,18 @@ import { registerKpisRoutes } from './kpis/index.js';
 registerKpisRoutes(app, supabase);
 
 // ============================================
+// KENLO — sincronização nativa de leads (substitui automação N8N)
+// Registrar ANTES do 404 catch-all de /api/v1/*.
+// ============================================
+import { registerKenloRoutes, startKenloScheduler } from './kenlo/index.js';
+registerKenloRoutes(app, supabase);
+
+// Worker de sync. Flag-gated (KENLO_SYNC_SCHEDULER=1) para rodar em UM processo.
+if (process.env.KENLO_SYNC_SCHEDULER === '1') {
+  startKenloScheduler(supabase);
+}
+
+// ============================================
 // MÓDULO COMUNICAÇÃO — Agente Disparador + Campanhas + Templates
 // Espelha o api-server.js: registra os handlers de /api/v1/agent-actions/* e
 // o alias /api/v1/communication/dispatch/*. Sem isto, o módulo inteiro

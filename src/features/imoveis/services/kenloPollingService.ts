@@ -9,6 +9,11 @@
  * 3. Salva apenas os que NÃO existem ainda
  */
 
+/**
+ * @deprecated A sincronização de leads Kenlo migrou para o serviço nativo
+ * server-side (server/kenlo/). Este polling de browser está desativado
+ * (POLLING_DISABLED=true) e será removido. Não reativar.
+ */
 import { supabase } from '@/lib/supabaseClient';
 import { saveKenloLeads, fetchKenloIntegration, updateKenloSyncData } from './kenloLeadsService';
 
