@@ -45,6 +45,7 @@ describe('CampanhasManager', () => {
       campaigns: [baseCampaign({ id: 'camp2', name: 'Agendada X', schedule_status: 'scheduled', scheduled_at: '2035-01-01T10:00:00Z' })],
     });
     (svc.cancelSchedule as ReturnType<typeof vi.fn>).mockClear();
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
     render(<CampanhasManager />);
     await waitFor(() => expect(screen.getByText('Agendada X')).toBeInTheDocument());
     // selo de agendamento (com o relógio) — distinto do nome da campanha

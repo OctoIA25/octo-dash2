@@ -1,11 +1,11 @@
 /**
  * CampanhaWizard — wizard de 5 etapas para criar (ou editar) uma campanha e
- * dispará-la imediatamente (Comunicação › Campanhas › C1).
+ * dispará-la imediatamente ou agendá-la (Comunicação › Campanhas › C1).
  *
  * Etapas: 1) Campanha (nome + template aprovado) · 2) Público · 3) Regras ·
- * 4) Configurações (variáveis read-only + nota) · 5) Revisar e enviar (preview
- * WhatsApp + resumo + Disparar). Não há agendamento neste escopo: o disparo é
- * sempre imediato (createCampaign → dispatchCampaign).
+ * 4) Configurações (variáveis + nota) · 5) Revisar e enviar (preview WhatsApp
+ * + resumo + "Agora ou Agendar para data futura": disparo imediato via
+ * dispatchCampaign, ou agendamento via createCampaign/updateCampaign com scheduledAt).
  */
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
@@ -181,7 +181,8 @@ export function CampanhaWizard({ tenantId, editing, onClose, onSaved }: Campanha
     }
   }
 
-  /** Agenda a campanha para uma data/hora futura — persiste scheduledAt e NÃO dispara. */
+  /** Agenda a campanha para uma data/hora futura — persiste scheduledAt e NÃO dispara.
+   * Reutiliza savedId no retry para evitar criação duplicada (mesmo padrão do dispatch()). */
   async function schedule() {
     if (saving) return;
     if (!scheduledAtLocal || new Date(scheduledAtLocal).getTime() <= Date.now()) {
@@ -193,10 +194,17 @@ export function CampanhaWizard({ tenantId, editing, onClose, onSaved }: Campanha
     try {
       const scheduledAt = new Date(scheduledAtLocal).toISOString();
       const input = { ...buildInput(), scheduledAt };
-      const res = editing
-        ? await updateCampaign(tenantId, editing.id, input)
-        : await createCampaign(tenantId, input);
-      if (!res.ok || !res.campaign) { toast.error(errorMessage(res.error)); return; }
+      let campaignId = savedId;
+      if (!campaignId && !editing) {
+        const res = await createCampaign(tenantId, input);
+        if (!res.ok || !res.campaign) { toast.error(errorMessage(res.error)); return; }
+        campaignId = res.campaign.id;
+        setSavedId(campaignId);
+      } else {
+        const id = campaignId ?? editing!.id;
+        const res = await updateCampaign(tenantId, id, input);
+        if (!res.ok || !res.campaign) { toast.error(errorMessage(res.error)); return; }
+      }
       toast.success('Campanha agendada.');
       onSaved();
     } finally {

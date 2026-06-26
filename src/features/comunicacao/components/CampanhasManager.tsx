@@ -83,6 +83,7 @@ export function CampanhasManager() {
   }
 
   async function cancelScheduleFor(camp: CampaignWithStats) {
+    if (!window.confirm(`Cancelar o agendamento da campanha "${camp.name}"?`)) return;
     try {
       const res = await cancelSchedule(tenantId as string, camp.id);
       if (!res.ok) { toast.error('Não foi possível cancelar o agendamento.'); return; }
@@ -214,7 +215,7 @@ export function CampanhasManager() {
                 </div>
                 {camp.schedule_status === 'error' && (
                   <p className="text-[11.5px] text-rose-600 dark:text-rose-400 mt-1">
-                    ⚠️ Falha no agendamento: {camp.schedule_error}
+                    {`⚠️ Falha no agendamento: ${camp.schedule_error || 'motivo não informado'}`}
                   </p>
                 )}
                 <p className="text-[11.5px] text-slate-400 mt-1">
