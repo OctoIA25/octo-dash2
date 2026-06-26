@@ -16,6 +16,9 @@ export interface Campaign {
   notify_on_complete: boolean;
   schedule: { mode: string; [k: string]: unknown };
   status: 'draft' | 'active' | 'archived';
+  scheduled_at: string | null;
+  schedule_status: 'none' | 'scheduled' | 'dispatched' | 'error' | 'canceled';
+  schedule_error: string | null;
   created_by_email: string | null;
   created_at: string;
   updated_at: string;
@@ -39,6 +42,7 @@ export interface CampaignInput {
   variableMapping?: VarMapping;
   internalNote?: string | null;
   notifyOnComplete?: boolean;
+  scheduledAt?: string | null;
 }
 
 export interface CampaignRun {
@@ -82,5 +86,9 @@ export async function dispatchCampaign(tenantId: string, id: string): Promise<{ 
 }
 export async function listCampaignRuns(tenantId: string, id: string): Promise<{ ok: boolean; runs: CampaignRun[] }> {
   const res = await fetch(`${BASE}/${encodeURIComponent(id)}/runs?tenantId=${encodeURIComponent(tenantId)}`, { headers: headers(await token()) });
+  return res.json();
+}
+export async function cancelSchedule(tenantId: string, id: string): Promise<{ ok: boolean; error?: string }> {
+  const res = await fetch(`${BASE}/${encodeURIComponent(id)}/cancel-schedule`, { method: 'POST', headers: headers(await token()), body: JSON.stringify({ tenantId }) });
   return res.json();
 }

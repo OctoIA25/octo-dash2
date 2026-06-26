@@ -33,4 +33,17 @@ describe('campaignsService', () => {
     expect(spy.mock.calls[0][0]).toContain('/campaigns/camp1?tenantId=t1');
     expect((spy.mock.calls[0][1] as RequestInit).method).toBe('DELETE');
   });
+  it('cancelSchedule POST em /:id/cancel-schedule', async () => {
+    const spy = vi.spyOn(global, 'fetch').mockResolvedValue({ json: async () => ({ ok: true }) } as Response);
+    const { cancelSchedule } = await import('./campaignsService');
+    await cancelSchedule('t1', 'camp1');
+    expect(spy.mock.calls[0][0]).toContain('/campaigns/camp1/cancel-schedule');
+    expect((spy.mock.calls[0][1] as RequestInit).method).toBe('POST');
+  });
+  it('updateCampaign envia scheduledAt quando fornecido', async () => {
+    const spy = vi.spyOn(global, 'fetch').mockResolvedValue({ json: async () => ({ ok: true, campaign: {} }) } as Response);
+    const { updateCampaign } = await import('./campaignsService');
+    await updateCampaign('t1', 'camp1', { scheduledAt: '2026-07-10T17:30:00.000Z' });
+    expect(JSON.parse((spy.mock.calls[0][1] as RequestInit).body as string)).toMatchObject({ scheduledAt: '2026-07-10T17:30:00.000Z' });
+  });
 });
