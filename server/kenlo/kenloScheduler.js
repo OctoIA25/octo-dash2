@@ -8,6 +8,7 @@ import { createKenloAuthService } from './KenloAuthService.js';
 import { createKenloApiClient } from './KenloApiClient.js';
 import { createKenloLeadService } from './KenloLeadService.js';
 import { createBrokerAssigner } from './brokerAssigner.js';
+import { makeBrokerLookups } from './brokerLookups.js';
 import { createKenloSyncService } from './KenloSyncService.js';
 import puppeteerLoginDriver from './puppeteerLoginDriver.js';
 
@@ -18,13 +19,8 @@ export function makeSyncService(supabase, options = {}) {
   });
   const apiClient = createKenloApiClient({ authService, processEnv });
   const leadService = createKenloLeadService({ apiClient, processEnv });
-  // brokerLookups: ver Task 7. options.brokerLookups injeta as funções reais.
-  // ponytail: lookups no-op por padrão — corretor fica não-atribuído até wirar as
-  // queries reais (server/kenlo/README). Ainda salva o lead, só sem corretor.
-  const lookups = options.brokerLookups || {
-    getCorretorByPropertyCode: async () => null,
-    findCorretorInSystem: async () => null,
-  };
+  // Lookups reais (imoveis_corretores + tenant_brokers/memberships); override em testes.
+  const lookups = options.brokerLookups || makeBrokerLookups(supabase);
   const brokerAssigner = createBrokerAssigner(lookups);
   return createKenloSyncService({ supabase, leadService, brokerAssigner, processEnv });
 }

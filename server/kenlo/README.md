@@ -34,9 +34,5 @@ KENLO_SMOKE_EMAIL=... KENLO_SMOKE_PW=... node -e "import('./server/kenlo/puppete
 `KENLO_CHROME_PATH` aponta um Chrome do sistema quando o Chromium do puppeteer
 está indisponível (dev local). Em produção/container, omitir — usa o Chromium do puppeteer.
 
-## Pendências (ponytail debt)
-- `makeSyncService`: `brokerLookups` é no-op por padrão — wirar as queries reais
-  (`imoveis_corretores` + memberships) para atribuir corretor. Até lá, lead salva sem corretor.
-
 ## Operação
 Disparo manual (owner): `POST /api/v1/kenlo/sync/run`. Status: `GET /api/v1/kenlo/sync/status`.
