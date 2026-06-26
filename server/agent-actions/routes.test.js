@@ -749,6 +749,137 @@ describe('dispatch imediato — limpar agendamento pendente (evita double-send)'
   });
 });
 
+describe('PUT /campaigns/:id — recurrence (C4a T4)', () => {
+  /**
+   * Fake supabase que:
+   * - Captura o patch gravado pelo update (para asserção).
+   * - Devolve dados de campanha e template via maybeSingle por tabela.
+   * - O update() final devolve a campanha de volta (data com id).
+   */
+  function makeFakeForRecurrence({ campaignData, templateData } = {}) {
+    const patches = [];
+    const supabase = {
+      from(table) {
+        const node = {
+          update(patch) { patches.push(patch); return node; },
+          select: () => node,
+          eq: () => node,
+          maybeSingle: async () => {
+            if (table === 'communication_campaigns') {
+              // primeiro maybeSingle = lookup do cur (template_id, variable_mapping)
+              // segundo maybeSingle = resultado do update final (seleciona a campanha)
+              // Diferenciamos pelos dados fornecidos: campaignData para lookup, { id:'camp1' } para update
+              return { data: campaignData ?? { template_id: 'tpl1', variable_mapping: {} }, error: null };
+            }
+            if (table === 'communication_templates') {
+              return { data: templateData ?? { approval_status: 'approved', body: 'Oi', name: 'promo', variables: [] }, error: null };
+            }
+            return { data: null, error: null };
+          },
+        };
+        return node;
+      },
+    };
+    return { supabase, patches };
+  }
+
+  function makePutHandler({ campaignData, templateData } = {}) {
+    const { supabase, patches } = makeFakeForRecurrence({ campaignData, templateData });
+    const { app, find } = captureRoutes();
+    const deps = { requireSupabaseAuth: (_req, _res, next) => next(), schedulerDeps: {} };
+    registerDispatchRoutes(app, '/base', supabase, {}, deps);
+    const handler = find('PUT', '/base/campaigns/:id');
+    return { handler, patches };
+  }
+
+  function runPutRecurrence(body) {
+    const captured = { status: 200, body: null };
+    const res = {
+      status(code) { captured.status = code; return res; },
+      json(payload) { captured.body = payload; return res; },
+    };
+    const req = { params: { id: 'camp1' }, body: { tenantId: 't1', ...body }, userEmail: 'octo.inteligenciaimobiliaria@gmail.com' };
+    return { req, res, captured };
+  }
+
+  it('recurrence daily válida → grava recurrence + schedule_status scheduled + scheduled_at (não-null)', async () => {
+    const { handler, patches } = makePutHandler();
+    const recurrence = { frequency: 'daily', time: '09:00' };
+    const { req, res, captured } = runPutRecurrence({ recurrence });
+    await handler(req, res);
+    // Não deve retornar nenhum erro de validação
+    expect(captured.body?.error).not.toBe('invalid_recurrence');
+    expect(captured.body?.error).not.toBe('incomplete_mapping');
+    // O patch gravado deve conter os campos esperados
+    const patch = patches.find((p) => p.recurrence);
+    expect(patch).toBeTruthy();
+    expect(patch.recurrence).toEqual(recurrence);
+    expect(patch.schedule_status).toBe('scheduled');
+    expect(patch.scheduled_at).toBeTruthy(); // ISO string, não-null
+    expect(patch.schedule).toEqual({ mode: 'recurring' });
+  });
+
+  it('recurrence inválida (frequency monthly) → 400 invalid_recurrence', async () => {
+    const { handler } = makePutHandler();
+    const { req, res, captured } = runPutRecurrence({ recurrence: { frequency: 'monthly', time: '09:00' } });
+    await handler(req, res);
+    expect(captured.status).toBe(400);
+    expect(captured.body).toEqual({ ok: false, error: 'invalid_recurrence' });
+  });
+
+  it('recurrence=null → limpa recurrence + scheduled_at + schedule_status none', async () => {
+    const { handler, patches } = makePutHandler();
+    const { req, res, captured } = runPutRecurrence({ recurrence: null });
+    await handler(req, res);
+    expect(captured.body?.error).not.toBe('invalid_recurrence');
+    const patch = patches.find((p) => 'recurrence' in p && p.recurrence === null);
+    expect(patch).toBeTruthy();
+    expect(patch.scheduled_at).toBeNull();
+    expect(patch.schedule_status).toBe('none');
+    expect(patch.schedule).toEqual({ mode: 'now' });
+  });
+
+  it('recurrence presente + scheduledAt também enviado → ignora scheduledAt (recurrence tem precedência)', async () => {
+    const { handler, patches } = makePutHandler();
+    const recurrence = { frequency: 'daily', time: '15:00' };
+    const futureIso = new Date(Date.now() + 3_600_000).toISOString();
+    const { req, res, captured } = runPutRecurrence({ recurrence, scheduledAt: futureIso });
+    await handler(req, res);
+    // Não deve retornar invalid_schedule (que seria do bloco de scheduledAt)
+    expect(captured.body?.error).not.toBe('invalid_schedule');
+    // O patch deve ter mode:'recurring', não 'scheduled' (pontual)
+    const patch = patches.find((p) => p.recurrence);
+    expect(patch?.schedule?.mode).toBe('recurring');
+  });
+});
+
+describe('POST /campaigns/:id/cancel-schedule — limpa recurrence (C4a T4)', () => {
+  it('cancel-schedule inclui recurrence:null no patch do update', async () => {
+    const updates = [];
+    const supabase = {
+      from() {
+        const node = {
+          update(patch) { updates.push(patch); return node; },
+          eq: () => node,
+          then: (resolve) => resolve({ error: null }),
+        };
+        return node;
+      },
+    };
+    const { app, find } = captureRoutes();
+    const deps = { requireSupabaseAuth: (_req, _res, next) => next(), schedulerDeps: {} };
+    registerDispatchRoutes(app, '/base', supabase, {}, deps);
+    const handler = find('POST', '/base/campaigns/:id/cancel-schedule');
+    const captured = { status: 200, body: null };
+    const res = { status(c) { captured.status = c; return res; }, json(p) { captured.body = p; return res; } };
+    const req = { params: { id: 'camp1' }, body: { tenantId: 't1' }, userEmail: 'octo.inteligenciaimobiliaria@gmail.com' };
+    await handler(req, res);
+    expect(captured.body).toEqual({ ok: true });
+    expect(updates.length).toBeGreaterThan(0);
+    expect(updates[0].recurrence).toBeNull();
+  });
+});
+
 describe('GET /campaigns/:id/runs — filtra por tenant + campaign', () => {
   it('aplica .eq(tenant_id) e .eq(campaign_id) na query de runs', async () => {
     const eqCalls = [];

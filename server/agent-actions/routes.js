@@ -22,6 +22,7 @@ import { validateSegment } from './segmentSchema.js';
 import { toMetaBody, submitTemplate, fetchTemplateStatus, listApprovedTemplates, mapMetaTemplateToRow, deleteMessageTemplate } from '../communication/metaTemplates.js';
 import { validateMapping } from './resolveTemplateParams.js';
 import { assertTemplateUsable as assertTemplateUsableShared } from './templateGuards.js';
+import { validateRecurrence, computeNextOccurrence } from './recurrence.js';
 import { executeCampaignDispatch } from './campaignDispatch.js';
 
 const PLATFORM_OWNER_EMAIL = 'octo.inteligenciaimobiliaria@gmail.com';
@@ -391,13 +392,13 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
 
     const ctx = await resolveUserContext(supabase, req, tenantId);
     if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
-    
+
     const { data, error } = await supabase
       .from(AUDIENCES_TABLE)
       .select('id, name, segment, created_by_email, created_at, updated_at')
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false });
-    
+
     if (error) return res.status(500).json({ ok: false, error: 'lookup_failed' });
     return res.json({ ok: true, audiences: data || [] });
   });
@@ -405,28 +406,28 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
   app.post(`${basePath}/audiences`, requireSupabaseAuth, async (req, res) => {
     const { tenantId, name, segment } = req.body || {};
     if (!tenantId) return res.status(400).json({ ok: false, error: 'missing_tenant' });
-    
+
     const ctx = await resolveUserContext(supabase, req, tenantId);
     if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
-    
+
     if (!canManageAudiences(ctx.role)) return res.status(403).json({ ok: false, error: 'forbidden' });
-    
+
     if (!name || !String(name).trim()) return res.status(400).json({ ok: false, error: 'invalid_name' });
-    
+
     const v = validateSegment(segment);
     if (!v.ok) return res.status(400).json({ ok: false, error: 'invalid_segment' });
-    
+
     const { data, error } = await supabase
       .from(AUDIENCES_TABLE)
       .insert({ tenant_id: tenantId, name: String(name).trim(), segment: v.segment, created_by_email: req.userEmail || null })
       .select('id, name, segment, created_by_email, created_at, updated_at')
       .maybeSingle();
-    
+
     if (error) {
       if (error.code === '23505') return res.status(409).json({ ok: false, error: 'audience_name_taken' });
       return res.status(500).json({ ok: false, error: 'persist_failed' });
     }
-    
+
     return res.json({ ok: true, audience: data });
   });
 
@@ -434,18 +435,18 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
     const { id } = req.params;
     const { tenantId, name, segment } = req.body || {};
     if (!tenantId) return res.status(400).json({ ok: false, error: 'missing_tenant' });
-    
+
     const ctx = await resolveUserContext(supabase, req, tenantId);
     if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
-    
+
     if (!canManageAudiences(ctx.role)) return res.status(403).json({ ok: false, error: 'forbidden' });
-    
+
     const patch = {};
     if (name !== undefined) {
       if (!String(name).trim()) return res.status(400).json({ ok: false, error: 'invalid_name' });
       patch.name = String(name).trim();
     }
-    
+
     if (segment !== undefined) {
       const v = validateSegment(segment);
       if (!v.ok) return res.status(400).json({ ok: false, error: 'invalid_segment' });
@@ -463,33 +464,33 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
       .eq('tenant_id', tenantId)
       .select('id, name, segment, created_by_email, created_at, updated_at')
       .maybeSingle();
-    
+
     if (error) {
       if (error.code === '23505') return res.status(409).json({ ok: false, error: 'audience_name_taken' });
       return res.status(500).json({ ok: false, error: 'persist_failed' });
     }
-    
+
     if (!data) return res.status(404).json({ ok: false, error: 'audience_not_found' });
-    
+
     return res.json({ ok: true, audience: data });
   });
 
   app.delete(`${basePath}/audiences/:id`, requireSupabaseAuth, async (req, res) => {
     const { id } = req.params;
-    
+
     const tenantId = req.query.tenantId;
     if (!tenantId) return res.status(400).json({ ok: false, error: 'missing_tenant' });
-    
+
     const ctx = await resolveUserContext(supabase, req, tenantId);
     if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
-    
+
     // DELETE é mais restrito que POST/PUT: apenas admin/owner, alinhado com a RLS
     // que só permite DELETE a essas roles (team_leader pode criar/editar, não excluir).
     if (!(ctx.role === 'admin' || ctx.role === 'owner')) return res.status(403).json({ ok: false, error: 'forbidden' });
 
     const { error } = await supabase.from(AUDIENCES_TABLE).delete().eq('id', id).eq('tenant_id', tenantId);
     if (error) return res.status(500).json({ ok: false, error: 'delete_failed' });
-    
+
     return res.json({ ok: true });
   });
 
@@ -588,21 +589,17 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
     if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
     // Excluir é mais restrito (admin/owner), alinhado com a RLS.
     if (!(ctx.role === 'admin' || ctx.role === 'owner')) return res.status(403).json({ ok: false, error: 'forbidden' });
-    // Não exclui template já enviado/aprovado na Meta (ficaria órfão na WABA).
+    // Excluir remove apenas a linha local. O template permanece na WABA:
+    // não temos permissão whatsapp_business_management para deletá-lo na Meta.
     const { data: cur, error: curErr } = await supabase
-      .from(TEMPLATES_TABLE).select('approval_status, name, provider_template_id').eq('id', id).eq('tenant_id', tenantId).maybeSingle();
+      .from(TEMPLATES_TABLE).select('approval_status').eq('id', id).eq('tenant_id', tenantId).maybeSingle();
     if (curErr) return res.status(500).json({ ok: false, error: 'lookup_failed' });
     if (!cur) return res.status(404).json({ ok: false, error: 'template_not_found' });
-    if (cur.provider_template_id) {
-      const creds = await loadMetaCreds(supabase, tenantId);
-    if (!creds.ok) return res.status(400).json({ ok: false, error: creds.error });
-      const del = await deleteMessageTemplate({ wabaId: creds.wabaId, accessToken: creds.accessToken, name: cur.name, providerTemplateId: cur.provider_template_id });
-      if (!del.ok) return res.status(502).json({ ok: false, error: 'meta_delete_failed', detail: del.detail });
-    }
     const { error } = await supabase.from(TEMPLATES_TABLE).delete().eq('id', id).eq('tenant_id', tenantId);
     if (error) return res.status(500).json({ ok: false, error: 'delete_failed' });
     return res.json({ ok: true });
   });
+
 
   app.post(`${basePath}/templates/:id/submit`, requireSupabaseAuth, async (req, res) => {
     const { id } = req.params;
@@ -680,7 +677,7 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
 
   // -- Campanhas --------------------------------------------------------------
   const CAMPAIGNS_TABLE = 'communication_campaigns';
-  const CAMPAIGN_COLS = 'id, name, template_id, audience_id, max_recipients, send_window, throttle_per_min, avoid_resend, variable_mapping, internal_note, notify_on_complete, schedule, status, created_by_email, created_at, updated_at, scheduled_at, schedule_status, schedule_error';
+  const CAMPAIGN_COLS = 'id, name, template_id, audience_id, max_recipients, send_window, throttle_per_min, avoid_resend, variable_mapping, internal_note, notify_on_complete, schedule, status, created_by_email, created_at, updated_at, scheduled_at, schedule_status, schedule_error, recurrence';
 
   // Guard de template extraído para templateGuards.js (fonte única reusada pelo
   // worker de agendamento). Wrapper local: injeta o `supabase` do closure e
@@ -760,7 +757,7 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
 
   app.put(`${basePath}/campaigns/:id`, requireSupabaseAuth, async (req, res) => {
     const { id } = req.params;
-    const { tenantId, name, templateId, audienceId, maxRecipients, sendWindow, throttlePerMin, avoidResend, variableMapping, internalNote, notifyOnComplete, scheduledAt } = req.body || {};
+    const { tenantId, name, templateId, audienceId, maxRecipients, sendWindow, throttlePerMin, avoidResend, variableMapping, internalNote, notifyOnComplete, scheduledAt, recurrence } = req.body || {};
     if (!tenantId) return res.status(400).json({ ok: false, error: 'missing_tenant' });
     const ctx = await resolveUserContext(supabase, req, tenantId);
     if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
@@ -776,7 +773,28 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
     if (variableMapping !== undefined) patch.variable_mapping = toJsonbObject(variableMapping);
     if (internalNote !== undefined) patch.internal_note = internalNote ?? null;
     if (notifyOnComplete !== undefined) patch.notify_on_complete = Boolean(notifyOnComplete);
-    if (scheduledAt !== undefined) {
+    if (recurrence !== undefined) {
+      if (recurrence === null) {
+        patch.recurrence = null; patch.scheduled_at = null; patch.schedule_status = 'none'; patch.schedule = { mode: 'now' };
+      } else {
+        const rc = validateRecurrence(recurrence);
+        if (!rc.ok) return res.status(400).json({ ok: false, error: 'invalid_recurrence' });
+        const cur = await supabase.from(CAMPAIGNS_TABLE).select('template_id, variable_mapping').eq('id', id).eq('tenant_id', tenantId).maybeSingle();
+        if (cur.error) return res.status(500).json({ ok: false, error: 'lookup_failed' });
+        if (!cur.data) return res.status(404).json({ ok: false, error: 'campaign_not_found' });
+        const tplId = patch.template_id || cur.data.template_id;
+        const vm = patch.variable_mapping || cur.data.variable_mapping || {};
+        const tpl = await assertTemplateUsable(tenantId, tplId);
+        if (!tpl.ok) return res.status(400).json({ ok: false, error: tpl.error });
+        const vc = validateMapping(vm, tpl.variables);
+        if (!vc.ok) return res.status(400).json({ ok: false, error: 'incomplete_mapping', missing: vc.missing });
+        patch.recurrence = recurrence;
+        patch.scheduled_at = computeNextOccurrence(recurrence, Date.now());
+        patch.schedule_status = 'scheduled';
+        patch.schedule = { mode: 'recurring' };
+      }
+    }
+    if (scheduledAt !== undefined && recurrence === undefined) {
       if (scheduledAt === null) { patch.scheduled_at = null; patch.schedule_status = 'none'; patch.schedule = { mode: 'now' }; }
       else {
         const when = new Date(scheduledAt);
@@ -855,7 +873,7 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
     await supabase.from(CAMPAIGNS_TABLE)
       .update({ schedule_status: 'none', scheduled_at: null })
       .eq('id', id).eq('tenant_id', tenantId).eq('schedule_status', 'scheduled')
-      .then(() => {}, (e) => console.error('[campaigns] limpar agendamento pós-dispatch falhou:', e?.message));
+      .then(() => { }, (e) => console.error('[campaigns] limpar agendamento pós-dispatch falhou:', e?.message));
     return res.json({ ok: true, runId: result.runId, enqueued: result.enqueued });
   });
 
@@ -867,7 +885,7 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
     if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
     if (!canManageCampaigns(ctx.role)) return res.status(403).json({ ok: false, error: 'forbidden' });
     const { error } = await supabase.from(CAMPAIGNS_TABLE)
-      .update({ schedule_status: 'canceled', scheduled_at: null, schedule: { mode: 'now' } })
+      .update({ schedule_status: 'canceled', scheduled_at: null, schedule: { mode: 'now' }, recurrence: null })
       .eq('id', id).eq('tenant_id', tenantId).eq('schedule_status', 'scheduled');
     if (error) return res.status(500).json({ ok: false, error: 'persist_failed' });
     return res.json({ ok: true });
