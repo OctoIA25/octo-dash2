@@ -38,7 +38,7 @@ const EXPECTED = [
 ];
 
 describe('registerCommunicationRoutes', () => {
-  it('registra os 11 endpoints sob /api/v1/communication/dispatch', () => {
+  it('registra os 15 endpoints sob /api/v1/communication/dispatch', () => {
     const { app, routes } = makeFakeApp();
     registerCommunicationRoutes(app, supabase, options);
 

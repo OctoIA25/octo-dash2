@@ -544,6 +544,14 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
     if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
     // Excluir é mais restrito (admin/owner), alinhado com a RLS.
     if (!(ctx.role === 'admin' || ctx.role === 'owner')) return res.status(403).json({ ok: false, error: 'forbidden' });
+    // Não exclui template já enviado/aprovado na Meta (ficaria órfão na WABA).
+    const { data: cur, error: curErr } = await supabase
+      .from(TEMPLATES_TABLE).select('approval_status').eq('id', id).eq('tenant_id', tenantId).maybeSingle();
+    if (curErr) return res.status(500).json({ ok: false, error: 'lookup_failed' });
+    if (!cur) return res.status(404).json({ ok: false, error: 'template_not_found' });
+    if (cur.approval_status === 'pending' || cur.approval_status === 'approved') {
+      return res.status(400).json({ ok: false, error: 'template_locked' });
+    }
     const { error } = await supabase.from(TEMPLATES_TABLE).delete().eq('id', id).eq('tenant_id', tenantId);
     if (error) return res.status(500).json({ ok: false, error: 'delete_failed' });
     return res.json({ ok: true });
