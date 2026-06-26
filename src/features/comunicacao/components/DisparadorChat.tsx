@@ -18,6 +18,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { listAudiences, type Audience } from '../services/audiencesService';
+import { listTemplates, type Template } from '../services/templatesService';
 import {
   previewDisparo,
   confirmDisparo,
@@ -47,6 +48,7 @@ export const DisparadorChat = () => {
   const { tenantId } = useAuthContext();
 
   const [audiences, setAudiences] = useState<Audience[]>([]);
+  const [templates, setTemplates] = useState<Template[]>([]);
   const [audienceId, setAudienceId] = useState<string>('');
   const [command, setCommand] = useState('');
   const [phase, setPhase] = useState<Phase>('idle');
@@ -61,6 +63,11 @@ export const DisparadorChat = () => {
   useEffect(() => {
     if (!tenantReady) return;
     listAudiences(tenantId as string).then((r) => { if (r.ok) setAudiences(r.audiences); }).catch(() => {});
+  }, [tenantId, tenantReady]);
+
+  useEffect(() => {
+    if (!tenantReady) return;
+    listTemplates(tenantId as string).then((r) => { if (r.ok) setTemplates(r.templates.filter((t) => t.approval_status === 'approved')); }).catch(() => {});
   }, [tenantId, tenantReady]);
 
   const reset = () => {
@@ -191,10 +198,26 @@ export const DisparadorChat = () => {
               </p>
             )}
 
-            <label className={`block text-xs font-semibold mb-1 ${needsMessage ? 'text-amber-500' : textMuted}`}>
+            {templates.length > 0 && (
+              <div className="mb-2">
+                <label className={`block text-xs font-semibold mb-1 ${textMuted}`} htmlFor="tpl-select">Usar um template aprovado</label>
+                <select
+                  id="tpl-select"
+                  aria-label="Template aprovado"
+                  defaultValue=""
+                  onChange={(e) => { const t = templates.find((x) => x.id === e.target.value); if (t) setMessage(t.body); }}
+                  className={`w-full rounded-lg border px-3 py-2 text-sm ${isDark ? 'bg-neutral-900 border-neutral-700 text-gray-100' : 'bg-gray-50 border-gray-300 text-gray-900'}`}
+                >
+                  <option value="">— escolher um template —</option>
+                  {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              </div>
+            )}
+            <label className={`block text-xs font-semibold mb-1 ${needsMessage ? 'text-amber-500' : textMuted}`} htmlFor="msg-textarea">
               Mensagem {needsMessage && '(obrigatória)'}
             </label>
             <textarea
+              id="msg-textarea"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               rows={3}
