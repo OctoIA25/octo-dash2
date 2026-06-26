@@ -8,23 +8,18 @@
 // resolveCanal() aplica: escolha salva > sugestão automática.
 // ============================================================
 
-/** Canais padrão oferecidos no select de Configurações (o admin pode criar outros). */
+/** Canais oferecidos no select de Configurações. */
 export const DEFAULT_CANAIS = [
-  'Portais Imobiliários',
-  'Redes Sociais',
-  'Google / Mídia Paga',
-  'Site',
-  'WhatsApp',
-  'Indicação',
-  'IA (LIA)',
-  'Presencial',
+  'Internet',
+  'Rede Social',
+  'Showroom',
   'Telefone',
-  'E-mail',
-  'CRM / Importação',
-  'Outros',
+  'WhatsApp',
 ] as const;
 
-export const CANAL_OUTROS = 'Outros';
+// Fallback quando nenhuma regra casa: "Internet" (canal digital genérico),
+// já que estes são os únicos canais válidos.
+export const CANAL_OUTROS = 'Internet';
 
 /**
  * Chave normalizada da origem (trim + lowercase) — MESMA normalização
@@ -40,31 +35,24 @@ function semAcentos(s: string): string {
   return s.normalize('NFD').replace(/[\u0300-\u036f]/g, "");
 }
 
-// Ordem importa: regras mais específicas primeiro (ex: "Meta Ads" deve
-// cair em Redes Sociais antes da regra genérica de "ads").
+// Ordem importa: regras mais específicas primeiro. O que não casar com
+// nenhuma regra cai no fallback "Internet" (digital genérico).
 const REGRAS: Array<{ canal: string; test: (s: string) => boolean }> = [
   {
     canal: 'WhatsApp',
     test: (s) => s.includes('whats') || s.includes('wpp') || s === 'wa',
   },
   {
-    canal: 'Portais Imobiliários',
+    canal: 'Telefone',
     test: (s) =>
-      s.includes('zap') ||
-      s.includes('olx') ||
-      s.includes('viva') ||
-      s.includes('imovelweb') ||
-      s.includes('imovel web') ||
-      s.includes('chaves na mao') ||
-      s.includes('chavesnamao') ||
-      s.includes('mercado livre') ||
-      s.includes('mercadolivre') ||
-      s.includes('santa angela') ||
-      s.includes('Santa Angela') ||
-      s.includes('portal'),
+      s.includes('telefone') ||
+      s.includes('ligacao') ||
+      s.includes('fone') ||
+      s.includes('0800') ||
+      s.includes('call'),
   },
   {
-    canal: 'Redes Sociais',
+    canal: 'Rede Social',
     test: (s) =>
       s.includes('face') ||
       s.includes('insta') ||
@@ -75,38 +63,9 @@ const REGRAS: Array<{ canal: string; test: (s: string) => boolean }> = [
       s.includes('social'),
   },
   {
-    canal: 'Google / Mídia Paga',
+    canal: 'Showroom',
     test: (s) =>
-      s.includes('google') ||
-      s.includes('adwords') ||
-      /\bads\b/.test(s) ||
-      s.includes('trafego') ||
-      s.includes('midia paga') ||
-      s.includes('anuncio') ||
-      s.includes('campanha'),
-  },
-  {
-    canal: 'Site',
-    test: (s) =>
-      s.includes('site') ||
-      s.includes('organico') ||
-      s.includes('landing') ||
-      s.includes('www') ||
-      s.includes('seo') ||
-      s.includes('blog') ||
-      s.includes('formulario'),
-  },
-  {
-    canal: 'IA (LIA)',
-    test: (s) => /\b(ia|lia)\b/.test(s) || s.includes('inteligencia artificial'),
-  },
-  {
-    canal: 'Indicação',
-    test: (s) => s.includes('indica') || s.includes('referenc') || s.includes('recomenda'),
-  },
-  {
-    canal: 'Presencial',
-    test: (s) =>
+      s.includes('showroom') ||
       s.includes('placa') ||
       s.includes('fachada') ||
       s.includes('plantao') ||
@@ -115,23 +74,8 @@ const REGRAS: Array<{ canal: string; test: (s: string) => boolean }> = [
       s.includes('escritorio') ||
       s.includes('presencial'),
   },
-  {
-    canal: 'Telefone',
-    test: (s) => s.includes('telefone') || s.includes('ligacao') || s.includes('0800'),
-  },
-  {
-    canal: 'E-mail',
-    test: (s) => s.includes('email') || s.includes('e-mail') || s.includes('newsletter'),
-  },
-  {
-    canal: 'CRM / Importação',
-    test: (s) =>
-      s.includes('kenlo') ||
-      s.includes('importa') ||
-      s.includes('planilha') ||
-      s.includes('excel') ||
-      s.includes('migra'),
-  },
+  // Tudo mais (portais, site, orgânico, Google/mídia paga, e-mail, IA,
+  // indicação, importação) é digital -> Internet, via fallback.
 ];
 
 /** Sugestão automática de canal para uma origem (sempre retorna algo; fallback "Outros"). */
@@ -144,15 +88,21 @@ export function suggestCanal(origem: string | undefined): string {
   return CANAL_OUTROS;
 }
 
+const CANAIS_VALIDOS = new Set<string>(DEFAULT_CANAIS);
+
 /**
  * Canal efetivo de uma origem: escolha salva do tenant (se houver) > sugestão automática.
  * `overrides` é o mapa { chave normalizada da origem -> canal } vindo do banco.
+ *
+ * Overrides antigos com canais que não existem mais (ex: "Portais Imobiliários")
+ * são ignorados e caem na sugestão automática, até o admin re-salvar a escolha.
  */
 export function resolveCanal(
   origem: string | undefined,
   overrides: Record<string, string>
 ): string {
   const key = origemChannelKey(origem);
-  const manual = key ? overrides[key] : undefined;
-  return (manual || '').trim() || suggestCanal(origem);
+  const manual = (key ? overrides[key] : undefined)?.trim();
+  if (manual && CANAIS_VALIDOS.has(manual)) return manual;
+  return suggestCanal(origem);
 }
