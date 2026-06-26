@@ -19,22 +19,13 @@ import { TesteEneagrama } from '@/features/corretores/components/TesteEneagrama'
 import { verificarTestesCompletos } from '@/features/corretores/services/testesComportamentaisService';
 import { buscarIdCorretorPorNome } from '@/features/corretores/services/buscarCorretorIdService';
 import { buscarCorretorPorEmail, CorretorIdentidade } from '@/features/corretores/services/buscarCorretorPorEmailService';
-import { DISCStatistics } from '@/features/corretores/components/DISCStatistics';
-import { EneagramaStatistics } from '@/features/corretores/components/EneagramaStatistics';
-import { MBTIStatistics } from '@/features/corretores/components/MBTIStatistics';
-import { DISCCorretorProfile } from '@/features/corretores/services/discResultsService';
 import { normalizarPercentuaisDISC } from '@/features/corretores/services/personalityAnalysisService';
-import { DISC_PROFILES } from '@/data/discQuestions';
-import { EneagramaCorretorProfile } from '@/features/corretores/services/eneagramaResultsService';
-import { ENEAGRAMA_TIPOS } from '@/data/eneagramaQuestions';
-import { MBTICorretorProfile } from '@/features/corretores/services/mbtiResultsService';
-import { MeusResultadosCorretor } from '@/features/corretores/components/MeusResultadosCorretor';
-import { MeuResumoCompleto } from '@/components/MeuResumoCompleto';
-import { AdminResultadosGerais } from '@/features/corretores/components/AdminResultadosGerais';
+import { PerfilCompleto } from '@/features/personalidade/PerfilCompleto';
 import { EneagramaCorretorIndividualModal } from '@/features/corretores/components/EneagramaCorretorIndividualModal';
 import { MBTICorretorIndividualModal } from '@/features/corretores/components/MBTICorretorIndividualModal';
 import { GestaoLideradosCorretorSelector } from '@/features/corretores/components/GestaoLideradosCorretorSelector';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { MessageSquare } from 'lucide-react';
 import { buscarResultadoDISCCorretor, DISCResultData } from '@/features/corretores/services/discResultsService';
 import { buscarResultadoEneagramaCorretor } from '@/features/corretores/services/eneagramaResultsService';
 import { buscarResultadoMBTICorretor } from '@/features/corretores/services/mbtiResultsService';
@@ -277,23 +268,20 @@ export const AgentesIaPage = () => {
   const [corretorNomeResolvido, setCorretorNomeResolvido] = useState<string | null>(null);
   
   // Estados para seleção de corretor DISC (admin only)
-  const [showDISCSelector, setShowDISCSelector] = useState(false);
   const [selectedCorretor, setSelectedCorretor] = useState<{
     nome: string;
     tipoDISC: 'D' | 'I' | 'S' | 'C';
     percentuais: { D: number; I: number; S: number; C: number };
   } | null>(null);
-  
+
   // Estados para seleção de corretor ENEAGRAMA (admin only)
-  const [showEneagramaSelector, setShowEneagramaSelector] = useState(false);
   const [selectedCorretorEneagrama, setSelectedCorretorEneagrama] = useState<{
     nome: string;
     tipoEneagrama: number;
     scores: { [key: number]: number };
   } | null>(null);
-  
+
   // Estados para seleção de corretor MBTI (admin only)
-  const [showMBTISelector, setShowMBTISelector] = useState(false);
   const [selectedCorretorMBTI, setSelectedCorretorMBTI] = useState<{
     nome: string;
     tipoMBTI: string;
@@ -353,6 +341,8 @@ export const AgentesIaPage = () => {
       return next;
     });
   };
+  // Histórico agora é um drawer (abre por botão), em vez de 3ª coluna fixa.
+  const [historyOpen, setHistoryOpen] = useState(false);
   const conversationCtx = useAgentConversations({
     agent: agentSlug,
     userId: user?.id,
@@ -766,27 +756,14 @@ export const AgentesIaPage = () => {
       return;
     }
     
-    // 🎯 ADMIN ONLY: DISC abre modal de estatísticas
-    // (isGestao || isOwner) em vez de !isCorretor, para alinhar com as demais
-    // ações de gestão e com o gating real de admin — A7.
-    if (tipo === 'disc' && (isGestao || isOwner)) {
-      setShowDISCSelector(true);
+    // 🎯 ADMIN ONLY: DISC/Eneagrama/MBTI abrem a aba correspondente na nova
+    // página "Resultados da Equipe" (substitui os modais de Statistics aninhados).
+    if ((tipo === 'disc' || tipo === 'eneagrama' || tipo === 'mbti') && (isGestao || isOwner)) {
+      navigate(`/admin-testes-gerais?tab=${tipo}`);
       return;
     }
 
-    // 🎯 ADMIN ONLY: ENEAGRAMA abre modal de estatísticas
-    if (tipo === 'eneagrama' && (isGestao || isOwner)) {
-      setShowEneagramaSelector(true);
-      return;
-    }
-
-    // 🎯 ADMIN ONLY: MBTI abre modal de estatísticas
-    if (tipo === 'mbti' && (isGestao || isOwner)) {
-      setShowMBTISelector(true);
-      return;
-    }
-    
-    // 📊 ADMIN ONLY: Relatório Geral - Redirecionar para dashboard de resultados gerais
+    // 📊 ADMIN ONLY: Relatório Geral - abre a visão geral da equipe
     if (tipo === 'relatorio-geral' && isGestao) {
       navigate('/admin-testes-gerais');
       return;
@@ -824,116 +801,76 @@ export const AgentesIaPage = () => {
 
   // Função para renderizar a página da Agente Elaine
   const renderElaineAgent = () => (
-    <div className={`h-screen flex flex-col overflow-hidden ${isDarkMode ? '' : 'bg-gray-50'}`} style={{ backgroundColor: isDarkMode ? 'var(--bg-primary)' : undefined }}>
-      {/* Header da Elaine - Layout adaptável ao tema */}
-      <div className={`border-b ${isDarkMode ? 'border-neutral-800/40' : 'border-pink-200'} bg-gradient-to-br ${isDarkMode ? 'from-pink-600/10 via-purple-600/10 to-pink-600/5' : 'from-pink-50/30 via-purple-50/30 to-pink-50/30'} backdrop-blur-sm flex-shrink-0`}>
+    <div className="h-full flex flex-col overflow-hidden" style={{ backgroundColor: 'var(--bg-primary)' }}>
+      {/* Header da Elaine - limpo, base neutra */}
+      <div className="border-b flex-shrink-0" style={{ borderColor: 'hsl(var(--border))', backgroundColor: 'hsl(var(--bg-primary))' }}>
         <div className="w-full px-4 py-3">
-          <div className="flex items-center justify-between">
-
-            {/* ESQUERDA: Avatar da Elaine + Info */}
-            <div className="flex items-center gap-4 flex-shrink-0">
-              {/* Avatar da Elaine - Ícone Profissional */}
-              <div className="relative">
-                <div className={`w-16 h-16 rounded-2xl overflow-hidden ring-2 ${isDarkMode ? 'ring-pink-500/30' : 'ring-pink-500/40'} shadow-xl ${isDarkMode ? 'shadow-pink-500/30' : 'shadow-pink-500/20'} bg-gradient-to-br from-pink-500 to-purple-500 flex items-center justify-center`}>
-                  <span className="text-4xl">👩‍💼</span>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="relative shrink-0">
+                <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ backgroundColor: '#4f46e5' }}>
+                  <span className="text-2xl">👩‍💼</span>
                 </div>
-                {/* Badge de Status Online */}
-                <div className={`absolute -bottom-0.5 -right-0.5 px-1.5 py-0.5 bg-green-500 rounded-full shadow-lg border ${isDarkMode ? 'border-neutral-900' : 'border-2 border-white'} flex items-center gap-0.5`}>
-                  <div className="w-1 h-1 bg-white rounded-full animate-pulse"></div>
-                  <span className="text-white text-[9px] font-bold">Online</span>
-                </div>
+                <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-green-500 border-2" style={{ borderColor: 'hsl(var(--bg-primary))' }} />
               </div>
-
-              {/* Informações da Agente */}
-              <div>
-                <h1 className={`text-xl font-black mb-0.5 bg-gradient-to-r ${isDarkMode ? 'from-pink-400 via-purple-400 to-pink-400' : 'from-pink-600 via-purple-600 to-pink-600'} bg-clip-text text-transparent`}>
+              <div className="min-w-0">
+                <h1 className="text-lg font-bold tracking-tight leading-tight" style={{ color: 'hsl(var(--text-primary))' }}>
                   Agente Elaine
                 </h1>
-                <p className={`${isDarkMode ? 'text-gray-300' : 'text-gray-600'} text-[10px] font-medium mb-1.5`}>
-                  Agente de Inteligência Comportamental e Gestão de Pessoas
+                <p className="text-xs" style={{ color: 'hsl(var(--text-secondary))' }}>
+                  Inteligência comportamental e gestão de pessoas
                 </p>
-                <div className="flex flex-wrap gap-1">
-                  <span className={`px-1.5 py-0.5 ${isDarkMode ? 'bg-pink-600/20 border-pink-500/30 text-pink-300' : 'bg-pink-100 border-pink-300 text-pink-700'} border rounded-full text-[9px] font-semibold`}>
-                    🧩 Profiler
-                  </span>
-                  <span className={`px-1.5 py-0.5 ${isDarkMode ? 'bg-purple-600/20 border-purple-500/30 text-purple-300' : 'bg-purple-100 border-purple-300 text-purple-700'} border rounded-full text-[9px] font-semibold`}>
-                    👥 RH & Gestão
-                  </span>
-                  <span className={`px-1.5 py-0.5 ${isDarkMode ? 'bg-blue-600/20 border-blue-500/30 text-blue-300' : 'bg-blue-100 border-blue-300 text-blue-700'} border rounded-full text-[9px] font-semibold`}>
-                    📊 Análise Comportamental
-                  </span>
-                  <span className={`px-1.5 py-0.5 ${isDarkMode ? 'bg-cyan-600/20 border-cyan-500/30 text-cyan-300' : 'bg-cyan-100 border-cyan-300 text-cyan-700'} border rounded-full text-[9px] font-semibold`}>
-                    🎯 Desenvolvimento
-                  </span>
-                </div>
               </div>
             </div>
 
-            {/* DIREITA: Cards de Métricas */}
-            <div className="flex gap-2 flex-shrink-0">
-              <div className={`bg-gradient-to-br ${isDarkMode ? 'from-pink-600/10 to-pink-600/5' : 'from-pink-100 to-pink-50'} border ${isDarkMode ? 'border-pink-500/20' : 'border-pink-300'} rounded-lg px-2.5 py-1.5`}>
-                <div className={`${isDarkMode ? 'text-pink-300' : 'text-pink-600'} text-[9px] font-semibold`}>Especialidade</div>
-                <div className={`${isDarkMode ? 'text-white' : 'text-gray-900'} text-[11px] font-bold`}>RH & Gestão</div>
-              </div>
-              <div className={`bg-gradient-to-br ${isDarkMode ? 'from-purple-600/10 to-purple-600/5' : 'from-purple-100 to-purple-50'} border ${isDarkMode ? 'border-purple-500/20' : 'border-purple-300'} rounded-lg px-2.5 py-1.5`}>
-                <div className={`${isDarkMode ? 'text-purple-300' : 'text-purple-600'} text-[9px] font-semibold`}>Metodologia</div>
-                <div className={`${isDarkMode ? 'text-white' : 'text-gray-900'} text-[11px] font-bold`}>DISC+MBTI+Eneagrama</div>
-              </div>
-              <div className={`bg-gradient-to-br ${isDarkMode ? 'from-green-600/10 to-green-600/5' : 'from-green-100 to-green-50'} border ${isDarkMode ? 'border-green-500/20' : 'border-green-300'} rounded-lg px-2.5 py-1.5`}>
-                <div className={`${isDarkMode ? 'text-green-300' : 'text-green-600'} text-[9px] font-semibold`}>Status</div>
-                <div className={`${isDarkMode ? 'text-white' : 'text-gray-900'} text-[11px] font-bold`}>24/7 🟢</div>
-              </div>
-            </div>
-
+            <button
+              onClick={() => setHistoryOpen(true)}
+              className="shrink-0 inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.04]"
+              style={{ color: 'hsl(var(--text-secondary))', border: '1px solid hsl(var(--border))' }}
+            >
+              <MessageSquare className="w-4 h-4" />
+              <span className="hidden sm:inline">Histórico</span>
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Grid Layout: Info + Histórico + Chat - ESTÁTICO - SEM SCROLL NA PÁGINA */}
+      {/* Grid Layout: Info estreita + Chat largo (histórico vira drawer) */}
       <div
-        className={`flex-1 overflow-hidden grid grid-cols-1 gap-0 ${
-          historyCollapsed
-            ? 'lg:grid-cols-[1fr_48px_4fr]'
-            : 'lg:grid-cols-[1fr_1fr_3fr]'
-        }`}
-        style={{ minHeight: 0, maxHeight: 'calc(100vh - 120px)' }}
+        className="flex-1 min-h-0 overflow-hidden grid grid-cols-1 lg:grid-cols-[240px_1fr] gap-0"
       >
 
         {/* Sidebar de Informações - Compacta com Scroll Interno */}
-        <div className={`border-r ${isDarkMode ? 'border-neutral-800/40' : 'border-pink-200'} overflow-y-auto p-4 bg-gradient-to-b ${isDarkMode ? 'from-neutral-900/30 to-transparent' : 'from-pink-50/20 to-transparent'}`}>
-          <div className="space-y-4">
+        <div className="border-r overflow-y-auto p-5" style={{ borderColor: 'hsl(var(--border))', backgroundColor: 'hsl(var(--bg-primary))' }}>
+          <div className="space-y-5">
 
             {/* Sobre o Agente - Compacto */}
-            <div className={`bg-gradient-to-br ${isDarkMode ? 'from-neutral-800/50 to-neutral-900/50 border border-neutral-700/50 p-3' : 'from-gray-100/80 to-gray-50/80 border-2 border-gray-200/60 p-3.5'} rounded-xl shadow-md`}>
-              <h3 className={`${isDarkMode ? 'text-white' : 'text-gray-800'} font-bold text-sm mb-2 flex items-center gap-2`}>
+            <div className="rounded-xl p-3.5" style={{ backgroundColor: 'hsl(var(--bg-secondary))', border: '1px solid hsl(var(--border))' }}>
+              <h3 className="font-bold text-sm mb-2 flex items-center gap-2" style={{ color: 'hsl(var(--text-primary))' }}>
                 <span className="text-lg">👩‍💼</span>
-                <span className={`${isDarkMode ? 'bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent' : 'text-pink-600'}`}>
-                  Quem sou eu?
-                </span>
+                <span>Quem sou eu?</span>
               </h3>
-              <p className={`${isDarkMode ? 'text-white' : 'text-gray-600'} text-xs leading-relaxed`}>
-                <span className={`${isDarkMode ? 'text-pink-400 font-semibold' : 'text-pink-600 font-bold'}`}>Agente de Inteligência Comportamental</span>,
+              <p className="text-xs leading-relaxed" style={{ color: 'hsl(var(--text-secondary))' }}>
+                <span className="font-semibold" style={{ color: 'hsl(var(--text-primary))' }}>Agente de Inteligência Comportamental</span>,
                 especialista em decodificar perfis humanos (DISC, Eneagrama, MBTI) e criar estratégias personalizadas de liderança, comunicação e desenvolvimento.
               </p>
             </div>
 
             {/* CORRETOR: Meus Resultados | ADMIN: Especialidades */}
-            <div className={`bg-gradient-to-br ${isDarkMode ? 'from-neutral-800/50 to-neutral-900/50 border border-neutral-700/50 p-3' : 'from-gray-100/80 to-gray-50/80 border-2 border-gray-200/60 p-3.5'} rounded-xl shadow-md`}>
-              <h3 className={`${isDarkMode ? 'text-white' : 'text-gray-800'} font-bold text-sm mb-2 flex items-center gap-2`}>
+            <div className="rounded-xl p-3.5" style={{ backgroundColor: 'hsl(var(--bg-secondary))', border: '1px solid hsl(var(--border))' }}>
+              <h3 className="font-bold text-sm mb-2 flex items-center gap-2" style={{ color: 'hsl(var(--text-primary))' }}>
                 <span className="text-lg">{isCorretor ? '📊' : '🎯'}</span>
-                <span className={`${isDarkMode ? 'bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent' : 'text-purple-600'}`}>
-                  {isCorretor ? 'Meus Resultados' : 'Especialidades'}
-                </span>
+                <span>{isCorretor ? 'Meus Resultados' : 'Especialidades'}</span>
               </h3>
-              <p className={`${isDarkMode ? 'text-gray-400' : 'text-gray-600'} text-[10px] ${isDarkMode ? 'mb-2' : 'mb-2.5'} italic ${isDarkMode ? '' : 'font-medium'}`}>
+              <p className="text-[10px] mb-2.5 italic" style={{ color: 'hsl(var(--text-secondary))' }}>
                 {isCorretor ? '📈 Visualize seus testes' : '💡 Clique em uma especialidade para começar!'}
               </p>
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 {isCorretor ? (
                   <>
                     <button
                       onClick={() => handleElaineEspecialidadeClick('disc')}
-                      className={`w-full flex items-center gap-2 ${isDarkMode ? 'p-2' : 'p-2.5'} rounded-lg ${isDarkMode ? 'border' : 'border-2'} transition-all duration-200 cursor-pointer group ${getEspecialidadeColors('disc', selectedEspecialidade === 'disc', isDarkMode).bg} hover:shadow-sm`}
+                      className={`w-full flex items-center gap-2 p-3 rounded-lg ${isDarkMode ? 'border' : 'border-2'} transition-all duration-200 cursor-pointer group ${getEspecialidadeColors('disc', selectedEspecialidade === 'disc', isDarkMode).bg} hover:shadow-sm`}
                     >
                       <span className="text-sm flex-shrink-0 transition-transform group-hover:scale-110">🎯</span>
                       <span className={`text-xs leading-tight font-semibold transition-colors ${getEspecialidadeColors('disc', selectedEspecialidade === 'disc', isDarkMode).text}`}>
@@ -946,7 +883,7 @@ export const AgentesIaPage = () => {
 
                     <button
                       onClick={() => handleElaineEspecialidadeClick('eneagrama')}
-                      className={`w-full flex items-center gap-2 ${isDarkMode ? 'p-2' : 'p-2.5'} rounded-lg ${isDarkMode ? 'border' : 'border-2'} transition-all duration-200 cursor-pointer group ${getEspecialidadeColors('eneagrama', selectedEspecialidade === 'eneagrama', isDarkMode).bg} hover:shadow-sm`}
+                      className={`w-full flex items-center gap-2 p-3 rounded-lg ${isDarkMode ? 'border' : 'border-2'} transition-all duration-200 cursor-pointer group ${getEspecialidadeColors('eneagrama', selectedEspecialidade === 'eneagrama', isDarkMode).bg} hover:shadow-sm`}
                     >
                       <span className="text-sm flex-shrink-0 transition-transform group-hover:scale-110">⭐</span>
                       <span className={`text-xs leading-tight font-semibold transition-colors ${getEspecialidadeColors('eneagrama', selectedEspecialidade === 'eneagrama', isDarkMode).text}`}>
@@ -959,7 +896,7 @@ export const AgentesIaPage = () => {
 
                     <button
                       onClick={() => handleElaineEspecialidadeClick('mbti')}
-                      className={`w-full flex items-center gap-2 ${isDarkMode ? 'p-2' : 'p-2.5'} rounded-lg ${isDarkMode ? 'border' : 'border-2'} transition-all duration-200 cursor-pointer group ${getEspecialidadeColors('mbti', selectedEspecialidade === 'mbti', isDarkMode).bg} hover:shadow-sm`}
+                      className={`w-full flex items-center gap-2 p-3 rounded-lg ${isDarkMode ? 'border' : 'border-2'} transition-all duration-200 cursor-pointer group ${getEspecialidadeColors('mbti', selectedEspecialidade === 'mbti', isDarkMode).bg} hover:shadow-sm`}
                     >
                       <span className="text-sm flex-shrink-0 transition-transform group-hover:scale-110">🧠</span>
                       <span className={`text-xs leading-tight font-semibold transition-colors ${getEspecialidadeColors('mbti', selectedEspecialidade === 'mbti', isDarkMode).text}`}>
@@ -974,10 +911,10 @@ export const AgentesIaPage = () => {
                       onClick={() => {
                         setMostrarMeuResumo(true);
                       }}
-                      className={`w-full flex items-center gap-2 ${isDarkMode ? 'p-2.5' : 'p-3'} rounded-lg ${isDarkMode ? 'border-2' : 'border-2'} transition-all duration-200 cursor-pointer group ${isDarkMode ? 'bg-gradient-to-r from-pink-600/30 via-purple-600/30 to-blue-600/30 border-pink-500/50 hover:from-pink-600/40 hover:via-purple-600/40 hover:to-blue-600/40' : 'bg-gradient-to-r from-pink-100 via-purple-100 to-blue-100 border-pink-400 hover:from-pink-200 hover:via-purple-200 hover:to-blue-200'} shadow-lg hover:shadow-xl`}
+                      className="w-full flex items-center gap-2 p-3 rounded-lg transition-colors cursor-pointer group bg-indigo-600 hover:bg-indigo-700"
                     >
                       <span className="text-base flex-shrink-0 transition-transform group-hover:scale-110">✨</span>
-                      <span className={`text-xs leading-tight font-bold transition-colors ${isDarkMode ? 'text-white' : 'text-black'}`}>
+                      <span className="text-xs leading-tight font-bold text-white">
                         Meu Resumo
                       </span>
                     </button>
@@ -991,20 +928,17 @@ export const AgentesIaPage = () => {
 
                       <button
                         onClick={() => setShowAdminTestSelector(true)}
-                        className={`w-full flex items-center gap-2 p-2.5 rounded-lg border-2 transition-all duration-200 cursor-pointer group mb-2 ${
-                          isDarkMode
-                            ? 'bg-gradient-to-r from-cyan-600/20 to-blue-600/20 border-cyan-500/50 hover:from-cyan-600/30 hover:to-blue-600/30'
-                            : 'bg-gradient-to-r from-cyan-50 to-blue-50 border-cyan-400 hover:from-cyan-100 hover:to-blue-100'
-                        } shadow-sm hover:shadow-md`}
+                        className="w-full flex items-center gap-2 p-2.5 rounded-lg transition-colors cursor-pointer group mb-2 hover:opacity-90"
+                        style={{ backgroundColor: 'hsl(var(--bg-primary))', border: '1px solid hsl(var(--border))' }}
                       >
                         <span className="text-base flex-shrink-0 transition-transform group-hover:scale-110">📋</span>
-                        <span className={`text-xs leading-tight font-bold transition-colors ${isDarkMode ? 'text-cyan-300' : 'text-cyan-700'}`}>
+                        <span className="text-xs leading-tight font-bold" style={{ color: 'hsl(var(--text-primary))' }}>
                           Realizar Testes
                         </span>
                         <span className={`ml-auto text-[9px] font-bold ${
                           adminTestesStatus.disc && adminTestesStatus.eneagrama && adminTestesStatus.mbti
-                            ? (isDarkMode ? 'text-green-400' : 'text-green-600')
-                            : (isDarkMode ? 'text-yellow-400' : 'text-yellow-600')
+                            ? 'text-green-600 dark:text-green-400'
+                            : 'text-amber-600 dark:text-amber-400'
                         }`}>
                           {[adminTestesStatus.disc, adminTestesStatus.eneagrama, adminTestesStatus.mbti].filter(Boolean).length}/3
                         </span>
@@ -1013,22 +947,11 @@ export const AgentesIaPage = () => {
                       <button
                         onClick={handleAnexarResultadosAdmin}
                         disabled={!adminResultados}
-                        className={`w-full flex items-center gap-2 p-2.5 rounded-lg border-2 transition-all duration-200 cursor-pointer group mb-2 ${
-                          adminResultados
-                            ? isDarkMode
-                              ? 'bg-gradient-to-r from-purple-600/20 to-pink-600/20 border-purple-500/50 hover:from-purple-600/30 hover:to-pink-600/30'
-                              : 'bg-gradient-to-r from-purple-50 to-pink-50 border-purple-400 hover:from-purple-100 hover:to-pink-100'
-                            : isDarkMode
-                              ? 'bg-neutral-800/30 border-neutral-700/30 opacity-50 cursor-not-allowed'
-                              : 'bg-gray-100 border-gray-300 opacity-50 cursor-not-allowed'
-                        } shadow-sm hover:shadow-md`}
+                        className="w-full flex items-center gap-2 p-2.5 rounded-lg transition-colors cursor-pointer group mb-2 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                        style={{ backgroundColor: 'hsl(var(--bg-primary))', border: '1px solid hsl(var(--border))' }}
                       >
                         <span className="text-base flex-shrink-0 transition-transform group-hover:scale-110">📊</span>
-                        <span className={`text-xs leading-tight font-bold transition-colors ${
-                          adminResultados
-                            ? (isDarkMode ? 'text-purple-300' : 'text-purple-700')
-                            : (isDarkMode ? 'text-gray-500' : 'text-gray-400')
-                        }`}>
+                        <span className="text-xs leading-tight font-bold" style={{ color: 'hsl(var(--text-primary))' }}>
                           Meus Resultados
                         </span>
                       </button>
@@ -1083,30 +1006,40 @@ export const AgentesIaPage = () => {
           </div>
         </div>
 
-        {/* Sidebar de Histórico de Conversas */}
-        <div className="h-full overflow-hidden">
-          <ConversationsSidebar
-            agent="elaine"
-            isDarkMode={isDarkMode}
-            isManager={isManagerView}
-            tenantId={user?.tenantId}
-            conversations={conversationCtx.conversations}
-            activeConversationId={conversationCtx.activeConversationId}
-            onSelect={conversationCtx.selectConversation}
-            onNew={conversationCtx.startNewConversation}
-            onRename={conversationCtx.renameConversation}
-            onArchive={conversationCtx.archiveConversation}
-            onDelete={conversationCtx.deleteConversation}
-            viewingUserId={viewingUserId}
-            onViewingUserChange={setViewingUserId}
-            loading={conversationCtx.loadingConversations}
-            isCollapsed={historyCollapsed}
-            onToggleCollapsed={toggleHistoryCollapsed}
-          />
-        </div>
+        {/* Histórico de Conversas — modal central flutuante (estilo command palette) */}
+        <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
+          <DialogContent
+            className="max-w-xl w-[92vw] p-0 overflow-hidden gap-0 rounded-2xl border"
+            style={{ backgroundColor: 'hsl(var(--bg-primary))', borderColor: 'hsl(var(--border))' }}
+          >
+            <DialogHeader className="sr-only">
+              <DialogTitle>Histórico de conversas</DialogTitle>
+            </DialogHeader>
+            <div className="flex flex-col overflow-hidden" style={{ maxHeight: 'min(70vh, 560px)' }}>
+              <ConversationsSidebar
+                agent="elaine"
+                isDarkMode={isDarkMode}
+                isManager={isManagerView}
+                tenantId={user?.tenantId}
+                conversations={conversationCtx.conversations}
+                activeConversationId={conversationCtx.activeConversationId}
+                onSelect={(id) => { conversationCtx.selectConversation(id); setHistoryOpen(false); }}
+                onNew={() => { conversationCtx.startNewConversation(); setHistoryOpen(false); }}
+                onRename={conversationCtx.renameConversation}
+                onArchive={conversationCtx.archiveConversation}
+                onDelete={conversationCtx.deleteConversation}
+                viewingUserId={viewingUserId}
+                onViewingUserChange={setViewingUserId}
+                loading={conversationCtx.loadingConversations}
+                isCollapsed={false}
+                onToggleCollapsed={toggleHistoryCollapsed}
+              />
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* Área de Chat - ESTÁTICO */}
-        <div className="flex flex-col overflow-hidden p-4" style={{ maxHeight: 'calc(100vh - 120px)' }}>
+        <div className="flex flex-col overflow-hidden min-h-0 p-4">
           <ElaineChat
             onPromptSelect={(prompt) => console.log('Prompt selected:', prompt)}
             selectedCorretor={selectedCorretor}
@@ -1129,42 +1062,8 @@ export const AgentesIaPage = () => {
 
       </div>
 
-      {/* Modal Estatísticas DISC (Admin Only) */}
-      <DISCStatistics
-        isOpen={showDISCSelector}
-        onClose={() => setShowDISCSelector(false)}
-        onSelectCorretor={(id, nome) => {
-          // Quando admin clicar em um corretor específico, o modal individual será aberto
-          // NÃO fechar o modal de estatísticas aqui - deixar o modal individual abrir por cima
-          // O modal individual será renderizado dentro do DISCStatistics
-        }}
-        isDarkMode={isDarkMode}
-      />
-      
-      {/* Modal Estatísticas ENEAGRAMA (Admin Only) */}
-      <EneagramaStatistics
-        isOpen={showEneagramaSelector}
-        onClose={() => setShowEneagramaSelector(false)}
-        onSelectCorretor={(id, nome) => {
-          // Quando admin clicar em um corretor específico, o modal individual será aberto
-          // NÃO fechar o modal de estatísticas aqui - deixar o modal individual abrir por cima
-          // O modal individual será renderizado dentro do EneagramaStatistics
-        }}
-        isDarkMode={isDarkMode}
-      />
-      
-      {/* Modal Estatísticas MBTI (Admin Only) */}
-      <MBTIStatistics
-        isOpen={showMBTISelector}
-        onClose={() => setShowMBTISelector(false)}
-        onSelectCorretor={(id, nome) => {
-          // Quando admin clicar em um corretor específico, o modal individual será aberto
-          // NÃO fechar o modal de estatísticas aqui - deixar o modal individual abrir por cima
-          // O modal individual será renderizado dentro do MBTIStatistics
-        }}
-        isDarkMode={isDarkMode}
-      />
-      
+      {/* Estatísticas DISC/Eneagrama/MBTI migraram para /admin-testes-gerais (abas). */}
+
       {/* Modal Seletor de Corretor para Gestão de Liderados */}
       <GestaoLideradosCorretorSelector
         isOpen={showGestaoLideradosSelector}
@@ -1208,7 +1107,7 @@ export const AgentesIaPage = () => {
             
             {/* Conteúdo Scrollável */}
             <div className="overflow-y-auto max-h-[calc(85vh-80px)]">
-              <MeuResumoCompleto />
+              <PerfilCompleto />
             </div>
           </div>
         </div>
