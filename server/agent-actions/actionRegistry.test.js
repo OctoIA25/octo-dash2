@@ -110,3 +110,22 @@ describe('send_whatsapp.deliverItem (assinatura correta)', () => {
     expect(r).toEqual({ status: 'failed', error: 'meta down' });
   });
 });
+
+describe('buildPayload com variableMapping', () => {
+  const lead = { id: 'l1', name: 'João', phone: '551199', assignedAgent: 'Maria' };
+  it('usa o resolver quando há variableMapping + templateVariables', () => {
+    const action = getAction('send_whatsapp');
+    const p = action.buildPayload({ message: 'ignorado', variableMapping: { 1: { type: 'lead_field', value: 'name' }, 2: { type: 'fixed', value: 'jan' } }, templateVariables: ['1', '2'] }, lead);
+    expect(p.templateParams).toEqual(['João', 'jan']);
+  });
+  it('sem variableMapping → [message] (retrocompat)', () => {
+    const action = getAction('send_whatsapp');
+    const p = action.buildPayload({ message: 'Olá pessoal' }, lead);
+    expect(p.templateParams).toEqual(['Olá pessoal']);
+  });
+  it('templateVariables vazio → [message] (texto sem variável)', () => {
+    const action = getAction('send_whatsapp');
+    const p = action.buildPayload({ message: 'Oi', variableMapping: {}, templateVariables: [] }, lead);
+    expect(p.templateParams).toEqual(['Oi']);
+  });
+});

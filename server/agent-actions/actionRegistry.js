@@ -23,6 +23,7 @@
  */
 
 import { resolveDelivery } from '../recommendations/channels.js';
+import { resolveTemplateParams } from './resolveTemplateParams.js';
 
 /**
  * Ação: enviar WhatsApp.
@@ -66,11 +67,15 @@ const sendWhatsappAction = {
     return { eligible: true };
   },
 
-  /** Payload persistido por item: o parâmetro do template. */
+  /** Payload persistido por item: os parâmetros do template (por lead, se mapeado). */
   buildPayload(payload, lead) {
+    const vars = Array.isArray(payload?.templateVariables) ? payload.templateVariables : [];
+    const templateParams =
+      payload?.variableMapping && vars.length > 0
+        ? resolveTemplateParams(payload.variableMapping, vars, lead)
+        : [payload?.message || ''];
     return {
-      // O template recebe [mensagem]. Mantemos genérico para evoluir parâmetros.
-      templateParams: [payload?.message || ''],
+      templateParams,
       leadName: lead.name || '',
     };
   },
