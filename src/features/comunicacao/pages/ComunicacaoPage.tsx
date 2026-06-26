@@ -16,6 +16,7 @@ import { DisparadorChat } from '../components/DisparadorChat';
 import { HistoricoDisparos } from '../components/HistoricoDisparos';
 import { PublicosManager } from '../components/PublicosManager';
 import { TemplatesManager } from '../components/TemplatesManager';
+import { CampanhasManager } from '../components/CampanhasManager';
 
 interface CommSection {
   id: string;
@@ -30,7 +31,7 @@ const SECTIONS: CommSection[] = [
   { id: 'disparador', label: 'Disparador', icon: Rocket, available: true },
   { id: 'publicos', label: 'Públicos', icon: Users, available: true },
   { id: 'templates', label: 'Templates', icon: FileText, available: true },
-  { id: 'campanhas', label: 'Campanhas', icon: Megaphone, available: false },
+  { id: 'campanhas', label: 'Campanhas', icon: Megaphone, available: true },
   { id: 'historico', label: 'Histórico', icon: History, available: true },
   { id: 'configuracoes', label: 'Configurações', icon: Settings, available: false },
 ];
@@ -88,6 +89,7 @@ function SectionContent({ sectionId }: { sectionId: string }) {
   if (sectionId === 'disparador') return <DisparadorChat />;
   if (sectionId === 'publicos') return <PublicosManager />;
   if (sectionId === 'templates') return <TemplatesManager />;
+  if (sectionId === 'campanhas') return <CampanhasManager />;
   if (sectionId === 'historico') return <HistoricoDisparos />;
 
   const meta = SECTIONS.find((s) => s.id === sectionId) ?? SECTIONS[0];
