@@ -109,6 +109,22 @@ export async function listApprovedTemplates({ wabaId, accessToken, graphVersion 
   }
 }
 
+export async function deleteMessageTemplate({ wabaId, accessToken, providerTemplateId, graphVersion = DEFAULT_GRAPH_VERSION, fetchImpl }) {
+  const doFetch = fetchImpl || fetch;
+  try {
+    const params = new URLSearchParams({ name });
+    console.log(providerTemplateId, 'deleteMessageTemplate', wabaId, graphVersion);
+    if (providerTemplateId) params.set('hsm_id', providerTemplateId);
+    const url = `https://graph.facebook.com/${graphVersion}/${wabaId}/message_templates?${params}`;
+    const res = await doFetch(url, { method: 'DELETE', headers: { Authorization: `Bearer ${accessToken}` } });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json?.error) return { ok: false, error: 'meta_delete_failed', detail: json?.error?.message || `http_${res.status}` };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: 'meta_delete_failed', detail: String(e?.message || e || 'unknown') }
+  }
+}
+
 export function toMetaBody(body) {
   const variables = [];
   const text = String(body || '').replace(/\{\{\s*(\w+)\s*\}\}/g, (_, name) => {

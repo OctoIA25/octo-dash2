@@ -477,7 +477,6 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
 
   app.delete(`${basePath}/audiences/:id`, requireSupabaseAuth, async (req, res) => {
     const { id } = req.params;
-
     const tenantId = req.query.tenantId;
     if (!tenantId) return res.status(400).json({ ok: false, error: 'missing_tenant' });
 
@@ -489,6 +488,7 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
     if (!(ctx.role === 'admin' || ctx.role === 'owner')) return res.status(403).json({ ok: false, error: 'forbidden' });
 
     const { error } = await supabase.from(AUDIENCES_TABLE).delete().eq('id', id).eq('tenant_id', tenantId);
+    if (error.code === '23503') return res.status(409).json({ ok: false, error: 'audience_in_use' });
     if (error) return res.status(500).json({ ok: false, error: 'delete_failed' });
 
     return res.json({ ok: true });
