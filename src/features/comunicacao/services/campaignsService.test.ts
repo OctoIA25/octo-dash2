@@ -46,4 +46,10 @@ describe('campaignsService', () => {
     await updateCampaign('t1', 'camp1', { scheduledAt: '2026-07-10T17:30:00.000Z' });
     expect(JSON.parse((spy.mock.calls[0][1] as RequestInit).body as string)).toMatchObject({ scheduledAt: '2026-07-10T17:30:00.000Z' });
   });
+  it('updateCampaign envia recurrence quando fornecido', async () => {
+    const spy = vi.spyOn(global, 'fetch').mockResolvedValue({ json: async () => ({ ok: true, campaign: {} }) } as Response);
+    const { updateCampaign } = await import('./campaignsService');
+    await updateCampaign('t1', 'camp1', { recurrence: { frequency: 'daily', time: '12:00' } });
+    expect(JSON.parse((spy.mock.calls[0][1] as RequestInit).body as string)).toMatchObject({ recurrence: { frequency: 'daily', time: '12:00' } });
+  });
 });

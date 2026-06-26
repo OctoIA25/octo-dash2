@@ -19,6 +19,7 @@ export interface Campaign {
   scheduled_at: string | null;
   schedule_status: 'none' | 'scheduled' | 'dispatched' | 'error' | 'canceled';
   schedule_error: string | null;
+  recurrence: { frequency: 'daily' | 'weekly'; day_of_week?: number; time: string } | null;
   created_by_email: string | null;
   created_at: string;
   updated_at: string;
@@ -43,6 +44,7 @@ export interface CampaignInput {
   internalNote?: string | null;
   notifyOnComplete?: boolean;
   scheduledAt?: string | null;
+  recurrence?: { frequency: 'daily' | 'weekly'; day_of_week?: number; time: string } | null;
 }
 
 export interface CampaignRun {
