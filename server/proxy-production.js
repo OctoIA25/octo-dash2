@@ -5138,6 +5138,19 @@ if (process.env.RECOMMENDATION_SCHEDULER === '1') {
 import { registerKpisRoutes } from './kpis/index.js';
 registerKpisRoutes(app, supabase);
 
+// ============================================
+// MÓDULO COMUNICAÇÃO — Agente Disparador + Campanhas + Templates
+// Espelha o api-server.js: registra os handlers de /api/v1/agent-actions/* e
+// o alias /api/v1/communication/dispatch/*. Sem isto, o módulo inteiro
+// (Disparador, Campanhas, Templates) responde 404 em produção.
+// Registrar ANTES do 404 catch-all de /api/v1/*.
+// ============================================
+import { registerAgentActionRoutes } from './agent-actions/routes.js';
+registerAgentActionRoutes(app, supabase);
+
+import { registerCommunicationRoutes } from './communication/index.js';
+registerCommunicationRoutes(app, supabase);
+
 // 404 para rotas da API não encontradas
 app.use('/api/v1/*', (req, res) => {
   res.status(404).json({
