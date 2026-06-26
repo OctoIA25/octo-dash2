@@ -56,6 +56,15 @@ export function TemplatesManager() {
   }
   useEffect(() => { reload(); }, [tenantId, tenantReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (!tenantReady) return;
+    let alive = true;
+    importFromMeta(tenantId as string)
+      .then((r) => { if (alive && r.ok) reload(); })
+      .catch(() => {}); // auto-sync: falha silenciosa, lista local permanece
+    return () => { alive = false; };
+  }, [tenantId, tenantReady]); // eslint-disable-line react-hooks/exhaustive-deps
+
   function openNew() { setEditId(null); setName(''); setCategory('MARKETING'); setBody(''); setExamples({}); setFormOpen(true); }
   function openEdit(t: Template) {
     setEditId(t.id); setName(t.name); setCategory(t.category); setBody(t.body);

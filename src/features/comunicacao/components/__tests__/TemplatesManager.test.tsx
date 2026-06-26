@@ -1,5 +1,6 @@
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('@/contexts/AuthContext', () => ({ useAuthContext: () => ({ tenantId: 't1' }) }));
 vi.mock('../../services/templatesService', () => ({
   listTemplates: vi.fn(async () => ({ ok: true, templates: [
@@ -16,6 +17,7 @@ vi.mock('../../services/templatesService', () => ({
 import { TemplatesManager } from '../TemplatesManager';
 
 describe('TemplatesManager', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
   it('lista templates com nome e badge de status', async () => {
     render(<TemplatesManager />);
     await waitFor(() => expect(screen.getByText('Promo')).toBeInTheDocument());
@@ -27,6 +29,15 @@ describe('TemplatesManager', () => {
     await waitFor(() => expect(screen.getByText('Promo')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: /importar da meta/i }));
     await waitFor(() => expect((svc.importFromMeta as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('t1'));
+  });
+  it('importa da Meta automaticamente ao montar (auto-sync), sem toast', async () => {
+    const svc = await import('../../services/templatesService');
+    (svc.importFromMeta as ReturnType<typeof vi.fn>).mockClear();
+    render(<TemplatesManager />);
+    await waitFor(() => expect((svc.importFromMeta as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('t1'));
+    // auto-sync é silencioso: não chama toast.success
+    const sonner = await import('sonner');
+    expect((sonner.toast.success as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
   });
   it('cria um template com valor de exemplo da variável', async () => {
     const svc = await import('../../services/templatesService');
