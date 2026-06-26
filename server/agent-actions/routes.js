@@ -629,11 +629,11 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
   async function assertTemplateUsable(tenantId, templateId) {
     if (!templateId) return { ok: false, error: 'template_required' };
     const { data, error } = await supabase
-      .from('communication_templates').select('approval_status').eq('id', templateId).eq('tenant_id', tenantId).maybeSingle();
+      .from('communication_templates').select('approval_status, body').eq('id', templateId).eq('tenant_id', tenantId).maybeSingle();
     if (error) return { ok: false, error: 'lookup_failed' };
     if (!data) return { ok: false, error: 'template_not_found' };
     if (data.approval_status !== 'approved') return { ok: false, error: 'template_not_approved' };
-    return { ok: true };
+    return { ok: true, body: data.body };
   }
   // Normaliza um valor jsonb p/ objeto (rejeita array, que typeof reporta como 'object').
   function toJsonbObject(value) {
@@ -766,10 +766,6 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
     if (!tpl.ok) return res.status(400).json({ ok: false, error: tpl.error });
     const creds = await loadMetaCreds(supabase, tenantId);
     if (!creds.ok) return res.status(400).json({ ok: false, error: creds.error });
-    // Carrega o body do template (a mensagem do disparo).
-    const { data: tplRow, error: tErr } = await supabase
-      .from('communication_templates').select('body').eq('id', camp.template_id).eq('tenant_id', tenantId).maybeSingle();
-    if (tErr || !tplRow) return res.status(400).json({ ok: false, error: 'template_not_approved' });
     // MESMO caminho de /preview e /confirm (verificado em routes.js:200-233):
     const user = { id: req.userId, email: req.userEmail, role: ctx.role, brokerName: ctx.brokerName };
     const mode = await resolvePublicSourceMode(supabase, tenantId);
@@ -779,7 +775,7 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
       { maxRecipients: camp.max_recipients ?? undefined },
     );
     if (!prev.ok || !prev.previewToken) return res.status(400).json({ ok: false, error: prev.error || 'preview_failed' });
-    const conf = await confirmOperation(supabase, { previewToken: prev.previewToken, tenantId, message: tplRow.body, user });
+    const conf = await confirmOperation(supabase, { previewToken: prev.previewToken, tenantId, message: tpl.body, user });
     if (!conf.ok) return res.status(400).json({ ok: false, error: conf.error || 'confirm_failed' });
     // Drena a fila imediatamente (best-effort), idêntico ao /confirm (routes.js:233).
     if (conf.enqueued > 0) {
