@@ -121,10 +121,11 @@ function computeProgress(run, queueCounts) {
 
 /** Aplica os filtros de listagem de runs a um query-builder (puro/testável).
  *  Retorna o builder + os valores de paginação efetivamente aplicados (clampados). */
-function applyRunsFilters(query, { status, q, from, to, limit, offset } = {}) {
+function applyRunsFilters(query, { status, q, from, to, limit, offset, campaignId } = {}) {
   const lim = Math.min(Math.max(limit != null && limit !== '' ? Number(limit) : 50, 1), 200);
   const off = Math.max(offset != null && offset !== '' ? Number(offset) : 0, 0);
   let qb = query;
+  if (campaignId) qb = qb.eq('campaign_id', campaignId);
   if (status) qb = qb.eq('status', status);
   if (q) qb = qb.ilike('command_text', `%${q}%`);
   if (from) qb = qb.gte('created_at', from);
@@ -257,8 +258,8 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
       .select('id, command_text, status, found_count, eligible_count, sent_count, failed_count, deduplicated_count, requested_by_email, created_at, completed_at')
       .eq('tenant_id', tenantId);
 
-    const { status, q, from, to, limit, offset } = req.query;
-    const built = applyRunsFilters(base, { status, q, from, to, limit, offset });
+    const { status, q, from, to, limit, offset, campaignId } = req.query;
+    const built = applyRunsFilters(base, { status, q, from, to, limit, offset, campaignId });
     const { data, error } = await built.query;
     if (error) return res.status(500).json({ ok: false, error: 'lookup_failed' });
     return res.json({ ok: true, runs: data || [], limit: built.limit, offset: built.offset });
@@ -748,6 +749,58 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
     const { error } = await supabase.from(CAMPAIGNS_TABLE).delete().eq('id', id).eq('tenant_id', tenantId);
     if (error) return res.status(500).json({ ok: false, error: 'delete_failed' });
     return res.json({ ok: true });
+  });
+
+  app.post(`${basePath}/campaigns/:id/dispatch`, requireSupabaseAuth, async (req, res) => {
+    const { id } = req.params;
+    const { tenantId } = req.body || {};
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'missing_tenant' });
+    const ctx = await resolveUserContext(supabase, req, tenantId);
+    if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
+    if (!canManageCampaigns(ctx.role)) return res.status(403).json({ ok: false, error: 'forbidden' });
+    const { data: camp, error: cErr } = await supabase
+      .from(CAMPAIGNS_TABLE).select('id, audience_id, template_id, max_recipients').eq('id', id).eq('tenant_id', tenantId).maybeSingle();
+    if (cErr) return res.status(500).json({ ok: false, error: 'lookup_failed' });
+    if (!camp) return res.status(404).json({ ok: false, error: 'campaign_not_found' });
+    const tpl = await assertTemplateUsable(tenantId, camp.template_id);
+    if (!tpl.ok) return res.status(400).json({ ok: false, error: tpl.error });
+    const creds = await loadMetaCreds(supabase, tenantId);
+    if (!creds.ok) return res.status(400).json({ ok: false, error: creds.error });
+    // Carrega o body do template (a mensagem do disparo).
+    const { data: tplRow, error: tErr } = await supabase
+      .from('communication_templates').select('body').eq('id', camp.template_id).eq('tenant_id', tenantId).maybeSingle();
+    if (tErr || !tplRow) return res.status(400).json({ ok: false, error: 'template_not_approved' });
+    // MESMO caminho de /preview e /confirm (verificado em routes.js:200-233):
+    const user = { id: req.userId, email: req.userEmail, role: ctx.role, brokerName: ctx.brokerName };
+    const mode = await resolvePublicSourceMode(supabase, tenantId);
+    const prev = await previewOperation(
+      supabase,
+      { audienceId: camp.audience_id, tenantId, mode, campaignId: camp.id, user },
+      { maxRecipients: camp.max_recipients ?? undefined },
+    );
+    if (!prev.ok || !prev.previewToken) return res.status(400).json({ ok: false, error: prev.error || 'preview_failed' });
+    const conf = await confirmOperation(supabase, { previewToken: prev.previewToken, tenantId, message: tplRow.body, user });
+    if (!conf.ok) return res.status(400).json({ ok: false, error: conf.error || 'confirm_failed' });
+    // Drena a fila imediatamente (best-effort), idêntico ao /confirm (routes.js:233).
+    if (conf.enqueued > 0) {
+      runDueActions(supabase, { deliver: schedulerDeps.deliver, schedulerDeps, getEnvironment: schedulerDeps.getEnvironment })
+        .catch((err) => console.error('[campaigns] drain pós-dispatch falhou:', err?.message));
+    }
+    return res.json({ ok: true, runId: conf.runId, enqueued: conf.enqueued });
+  });
+
+  app.get(`${basePath}/campaigns/:id/runs`, requireSupabaseAuth, async (req, res) => {
+    const { id } = req.params;
+    const tenantId = req.query.tenantId;
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'missing_tenant' });
+    const ctx = await resolveUserContext(supabase, req, tenantId);
+    if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
+    const { data, error } = await supabase
+      .from('agent_action_runs')
+      .select('id, command_text, status, found_count, eligible_count, sent_count, failed_count, deduplicated_count, requested_by_email, created_at, completed_at')
+      .eq('tenant_id', tenantId).eq('campaign_id', id).order('created_at', { ascending: false });
+    if (error) return res.status(500).json({ ok: false, error: 'lookup_failed' });
+    return res.json({ ok: true, runs: data || [] });
   });
 }
 

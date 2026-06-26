@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { __test__ } from './routes.js';
 
-const { resolveUserContext, statusFor, isPlatformOwner, resolvePublicSourceMode, applyRunsFilters, computeProgress, canManageAudiences, canManageTemplates, loadMetaCreds, canManageCampaigns } = __test__;
+const { resolveUserContext, statusFor, isPlatformOwner, resolvePublicSourceMode, applyRunsFilters, computeProgress, canManageAudiences, canManageTemplates, loadMetaCreds, canManageCampaigns, registerDispatchRoutes, makeDispatchDeps } = __test__;
 
 function recordingBuilder() {
   const calls = [];
@@ -47,6 +47,18 @@ describe('applyRunsFilters', () => {
     const r2 = applyRunsFilters(c.b, { limit: 999, offset: 10 }); // limit→200
     expect(c.calls).toContainEqual(['range', 10, 209]);
     expect(r2.limit).toBe(200); expect(r2.offset).toBe(10);
+  });
+
+  it('filtra por campaign_id quando campaignId é passado', () => {
+    const { b, calls } = recordingBuilder();
+    applyRunsFilters(b, { campaignId: 'camp1' });
+    expect(calls).toContainEqual(['eq', 'campaign_id', 'camp1']);
+  });
+
+  it('não filtra por campaign_id quando campaignId ausente', () => {
+    const { b, calls } = recordingBuilder();
+    applyRunsFilters(b, {});
+    expect(calls.find((c) => c[0] === 'eq' && c[1] === 'campaign_id')).toBeUndefined();
   });
 });
 
@@ -278,5 +290,56 @@ describe('canManageCampaigns', () => {
   it('gestores sim, corretor não', () => {
     for (const r of ['admin', 'team_leader', 'owner']) expect(canManageCampaigns(r)).toBe(true);
     expect(canManageCampaigns('corretor')).toBe(false);
+  });
+});
+
+/** App fake que captura os handlers por método+caminho (sem executar nada). */
+function captureRoutes() {
+  const routes = [];
+  const record = (method) => (path, ...handlers) => {
+    routes.push({ method, path, handler: handlers[handlers.length - 1] });
+  };
+  const app = { post: record('POST'), get: record('GET'), put: record('PUT'), delete: record('DELETE') };
+  const find = (method, path) => routes.find((r) => r.method === method && r.path === path)?.handler;
+  return { app, routes, find };
+}
+
+/** Supabase fake que registra a cadeia de filtros aplicada na query de runs. */
+function fakeSupabaseRecordingRuns(eqCalls) {
+  const node = {
+    select: () => node,
+    eq: (col, val) => (eqCalls.push([col, val]), node),
+    order: () => Promise.resolve({ data: [], error: null }),
+  };
+  return {
+    from(table) {
+      // resolveUserContext: platform owner não consulta tenant_memberships,
+      // então só a query de agent_action_runs chega aqui.
+      eqCalls.table = table;
+      return node;
+    },
+  };
+}
+
+describe('GET /campaigns/:id/runs — filtra por tenant + campaign', () => {
+  it('aplica .eq(tenant_id) e .eq(campaign_id) na query de runs', async () => {
+    const eqCalls = [];
+    const supabase = fakeSupabaseRecordingRuns(eqCalls);
+    const { app, find } = captureRoutes();
+    const deps = { requireSupabaseAuth: (_req, _res, next) => next(), schedulerDeps: {} };
+    registerDispatchRoutes(app, '/base', supabase, {}, deps);
+
+    const handler = find('GET', '/base/campaigns/:id/runs');
+    expect(typeof handler).toBe('function');
+
+    let body = null;
+    const req = { params: { id: 'camp1' }, query: { tenantId: 't1' }, userEmail: 'octo.inteligenciaimobiliaria@gmail.com' };
+    const res = { status() { return res; }, json(payload) { body = payload; return res; } };
+    await handler(req, res);
+
+    expect(eqCalls.table).toBe('agent_action_runs');
+    expect(eqCalls).toContainEqual(['tenant_id', 't1']);
+    expect(eqCalls).toContainEqual(['campaign_id', 'camp1']);
+    expect(body).toEqual({ ok: true, runs: [] });
   });
 });

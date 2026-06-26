@@ -41,10 +41,12 @@ const EXPECTED = [
   { method: 'POST', path: '/api/v1/communication/dispatch/campaigns' },
   { method: 'PUT', path: '/api/v1/communication/dispatch/campaigns/:id' },
   { method: 'DELETE', path: '/api/v1/communication/dispatch/campaigns/:id' },
+  { method: 'POST', path: '/api/v1/communication/dispatch/campaigns/:id/dispatch' },
+  { method: 'GET', path: '/api/v1/communication/dispatch/campaigns/:id/runs' },
 ];
 
 describe('registerCommunicationRoutes', () => {
-  it('registra os 21 endpoints sob /api/v1/communication/dispatch', () => {
+  it('registra os 23 endpoints sob /api/v1/communication/dispatch', () => {
     const { app, routes } = makeFakeApp();
     registerCommunicationRoutes(app, supabase, options);
 
@@ -53,8 +55,8 @@ describe('registerCommunicationRoutes', () => {
       expect(found, `rota ${exp.method} ${exp.path} não registrada`).toBeTruthy();
       expect(typeof found.handler).toBe('function');
     }
-    // Exatamente 21 rotas (nem a mais, nem a menos).
-    expect(routes).toHaveLength(21);
+    // Exatamente 23 rotas (nem a mais, nem a menos).
+    expect(routes).toHaveLength(23);
   });
 
   it('alias e caminho legado coexistem com os MESMOS sufixos de rota', () => {
@@ -85,6 +87,8 @@ describe('registerCommunicationRoutes', () => {
     expect(paths).toContain('POST /api/v1/agent-actions/campaigns');
     expect(paths).toContain('PUT /api/v1/agent-actions/campaigns/:id');
     expect(paths).toContain('DELETE /api/v1/agent-actions/campaigns/:id');
+    expect(paths).toContain('POST /api/v1/agent-actions/campaigns/:id/dispatch');
+    expect(paths).toContain('GET /api/v1/agent-actions/campaigns/:id/runs');
     // Alias novo:
     expect(paths).toContain('POST /api/v1/communication/dispatch/preview');
     expect(paths).toContain('POST /api/v1/communication/dispatch/confirm');
@@ -107,7 +111,9 @@ describe('registerCommunicationRoutes', () => {
     expect(paths).toContain('POST /api/v1/communication/dispatch/campaigns');
     expect(paths).toContain('PUT /api/v1/communication/dispatch/campaigns/:id');
     expect(paths).toContain('DELETE /api/v1/communication/dispatch/campaigns/:id');
-    // 21 + 21, sem duplicação acidental.
-    expect(routes).toHaveLength(42);
+    expect(paths).toContain('POST /api/v1/communication/dispatch/campaigns/:id/dispatch');
+    expect(paths).toContain('GET /api/v1/communication/dispatch/campaigns/:id/runs');
+    // 23 + 23, sem duplicação acidental.
+    expect(routes).toHaveLength(46);
   });
 });
