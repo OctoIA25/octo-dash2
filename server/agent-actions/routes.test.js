@@ -328,6 +328,111 @@ describe('summarizeImport', () => {
   });
 });
 
+/**
+ * Supabase fake roteado por tabela para o handler de dispatch.
+ * Cada tabela devolve { data } via .select().eq()...maybeSingle().
+ * Owner (platform owner) não consulta tenant_memberships.
+ */
+function fakeSupabaseByTable(tables) {
+  return {
+    from(table) {
+      const cfg = tables[table] || {};
+      const node = {
+        select: () => node,
+        eq: () => node,
+        order: () => node,
+        maybeSingle: async () => ({ data: cfg.data ?? null, error: cfg.error ?? null }),
+      };
+      return node;
+    },
+  };
+}
+
+describe('POST /campaigns/:id/dispatch — validação de variableMapping (C2 T5)', () => {
+  function dispatchHarness(tables) {
+    const supabase = fakeSupabaseByTable(tables);
+    const { app, find } = captureRoutes();
+    const deps = { requireSupabaseAuth: (_req, _res, next) => next(), schedulerDeps: {} };
+    registerDispatchRoutes(app, '/base', supabase, {}, deps);
+    const handler = find('POST', '/base/campaigns/:id/dispatch');
+    return { handler };
+  }
+
+  function runReqRes() {
+    const captured = { status: 200, body: null };
+    const res = {
+      status(code) { captured.status = code; return res; },
+      json(payload) { captured.body = payload; return res; },
+    };
+    const req = { params: { id: 'camp1' }, body: { tenantId: 't1' }, userEmail: 'octo.inteligenciaimobiliaria@gmail.com' };
+    return { req, res, captured };
+  }
+
+  it('mapping incompleto → 400 incomplete_mapping com missing', async () => {
+    const { handler } = dispatchHarness({
+      communication_campaigns: { data: { id: 'camp1', audience_id: 'a1', template_id: 'tpl1', max_recipients: null, variable_mapping: {} } },
+      communication_templates: { data: { approval_status: 'approved', body: 'Oi {{1}}', name: 'promo', variables: ['1'] } },
+    });
+    const { req, res, captured } = runReqRes();
+    await handler(req, res);
+    expect(captured.status).toBe(400);
+    expect(captured.body).toEqual({ ok: false, error: 'incomplete_mapping', missing: ['1'] });
+  });
+
+  it('template sem variáveis → não retorna incomplete_mapping (retrocompat)', async () => {
+    // Sem creds Meta configuradas, o handler segue além da validação e falha
+    // depois em loadMetaCreds (whatsapp_not_configured). O que importa aqui é
+    // que NÃO bloqueou em incomplete_mapping.
+    const { handler } = dispatchHarness({
+      communication_campaigns: { data: { id: 'camp1', audience_id: 'a1', template_id: 'tpl1', max_recipients: null, variable_mapping: null } },
+      communication_templates: { data: { approval_status: 'approved', body: 'Oi', name: 'promo', variables: [] } },
+      whatsapp_config: { data: null },
+    });
+    const { req, res, captured } = runReqRes();
+    await handler(req, res);
+    expect(captured.body?.error).not.toBe('incomplete_mapping');
+  });
+});
+
+describe('POST /confirm — Disparador valida variableMapping por templateName (C2 T5)', () => {
+  function confirmHarness(tables) {
+    const supabase = fakeSupabaseByTable(tables);
+    const { app, find } = captureRoutes();
+    const deps = { requireSupabaseAuth: (_req, _res, next) => next(), schedulerDeps: {} };
+    registerDispatchRoutes(app, '/base', supabase, {}, deps);
+    return { handler: find('POST', '/base/confirm') };
+  }
+
+  function runConfirm(body) {
+    const captured = { status: 200, body: null };
+    const res = {
+      status(code) { captured.status = code; return res; },
+      json(payload) { captured.body = payload; return res; },
+    };
+    const req = { body, userEmail: 'octo.inteligenciaimobiliaria@gmail.com' };
+    return { req, res, captured };
+  }
+
+  it('templateName com variável + mapping vazio → 400 incomplete_mapping', async () => {
+    const { handler } = confirmHarness({
+      communication_templates: { data: { variables: ['1'] } },
+    });
+    const { req, res, captured } = runConfirm({ tenantId: 't1', previewToken: 'pt1', templateName: 'promo', variableMapping: {} });
+    await handler(req, res);
+    expect(captured.status).toBe(400);
+    expect(captured.body).toEqual({ ok: false, error: 'incomplete_mapping', missing: ['1'] });
+  });
+
+  it('sem templateName → não valida mapeamento (retrocompat: não bloqueia em incomplete_mapping)', async () => {
+    // Sem templateName o handler não consulta o template e segue ao
+    // confirmOperation; com previewToken inexistente, falha lá (não em mapping).
+    const { handler } = confirmHarness({});
+    const { req, res, captured } = runConfirm({ tenantId: 't1', previewToken: 'pt1' });
+    await handler(req, res);
+    expect(captured.body?.error).not.toBe('incomplete_mapping');
+  });
+});
+
 describe('GET /campaigns/:id/runs — filtra por tenant + campaign', () => {
   it('aplica .eq(tenant_id) e .eq(campaign_id) na query de runs', async () => {
     const eqCalls = [];

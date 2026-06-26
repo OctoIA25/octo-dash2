@@ -20,6 +20,7 @@ import { makeSchedulerDeps } from '../recommendations/index.js';
 import { resolveSegmentDual } from './segmentResolver.js';
 import { validateSegment } from './segmentSchema.js';
 import { toMetaBody, submitTemplate, fetchTemplateStatus, listApprovedTemplates, mapMetaTemplateToRow } from '../communication/metaTemplates.js';
+import { validateMapping } from './resolveTemplateParams.js';
 
 const PLATFORM_OWNER_EMAIL = 'octo.inteligenciaimobiliaria@gmail.com';
 
@@ -229,16 +230,31 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
   // POST /confirm — confirma e enfileira. body: { tenantId, previewToken, message }
   // -------------------------------------------------------------------------
   app.post(`${basePath}/confirm`, requireSupabaseAuth, async (req, res) => {
-    const { tenantId, previewToken, message } = req.body || {};
+    const { tenantId, previewToken, message, templateName, variableMapping } = req.body || {};
     if (!tenantId || !previewToken) return res.status(400).json({ ok: false, error: 'missing_fields' });
 
     const ctx = await resolveUserContext(supabase, req, tenantId);
     if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
 
+    // Quando o Disparador envia um templateName, carregamos as variáveis desse
+    // template (por tenant + name) e validamos o mapeamento. Sem templateName ou
+    // sem variáveis → comportamento atual preservado (retrocompat).
+    let templateVariables = [];
+    if (templateName) {
+      const { data: tplRow } = await supabase
+        .from('communication_templates').select('variables').eq('tenant_id', tenantId).eq('name', templateName).maybeSingle();
+      templateVariables = tplRow?.variables || [];
+      const vcheck = validateMapping(variableMapping || {}, templateVariables);
+      if (!vcheck.ok) return res.status(400).json({ ok: false, error: 'incomplete_mapping', missing: vcheck.missing });
+    }
+
     const result = await confirmOperation(supabase, {
       previewToken,
       tenantId,
       message,
+      templateName: templateName || null,
+      variableMapping: variableMapping || {},
+      templateVariables,
       user: { id: req.userId, email: req.userEmail, role: ctx.role, brokerName: ctx.brokerName },
     });
 
@@ -660,16 +676,18 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
   const CAMPAIGN_COLS = 'id, name, template_id, audience_id, max_recipients, send_window, throttle_per_min, avoid_resend, variable_mapping, internal_note, notify_on_complete, schedule, status, created_by_email, created_at, updated_at';
 
   // Valida que o template existe, é do tenant e está approved.
-  // Retorna {ok, body, name}|{ok:false,error}. O `name` é o nome do template
-  // aprovado na Meta — usado no dispatch para enviar via ESSE template.
+  // Retorna {ok, body, name, variables}|{ok:false,error}. O `name` é o nome do
+  // template aprovado na Meta — usado no dispatch para enviar via ESSE template.
+  // `variables` é a lista de variáveis posicionais do template (p/ validação do
+  // mapeamento por lead); ausente → [].
   async function assertTemplateUsable(tenantId, templateId) {
     if (!templateId) return { ok: false, error: 'template_required' };
     const { data, error } = await supabase
-      .from('communication_templates').select('approval_status, body, name').eq('id', templateId).eq('tenant_id', tenantId).maybeSingle();
+      .from('communication_templates').select('approval_status, body, name, variables').eq('id', templateId).eq('tenant_id', tenantId).maybeSingle();
     if (error) return { ok: false, error: 'lookup_failed' };
     if (!data) return { ok: false, error: 'template_not_found' };
     if (data.approval_status !== 'approved') return { ok: false, error: 'template_not_approved' };
-    return { ok: true, body: data.body, name: data.name };
+    return { ok: true, body: data.body, name: data.name, variables: data.variables || [] };
   }
   // Normaliza um valor jsonb p/ objeto (rejeita array, que typeof reporta como 'object').
   function toJsonbObject(value) {
@@ -795,11 +813,15 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
     if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
     if (!canManageCampaigns(ctx.role)) return res.status(403).json({ ok: false, error: 'forbidden' });
     const { data: camp, error: cErr } = await supabase
-      .from(CAMPAIGNS_TABLE).select('id, audience_id, template_id, max_recipients').eq('id', id).eq('tenant_id', tenantId).maybeSingle();
+      .from(CAMPAIGNS_TABLE).select('id, audience_id, template_id, max_recipients, variable_mapping').eq('id', id).eq('tenant_id', tenantId).maybeSingle();
     if (cErr) return res.status(500).json({ ok: false, error: 'lookup_failed' });
     if (!camp) return res.status(404).json({ ok: false, error: 'campaign_not_found' });
     const tpl = await assertTemplateUsable(tenantId, camp.template_id);
     if (!tpl.ok) return res.status(400).json({ ok: false, error: tpl.error });
+    // Toda variável do template precisa de um mapeamento utilizável. Template
+    // sem variáveis → ok (retrocompat). Falha aqui não enfileira nada.
+    const vcheck = validateMapping(camp.variable_mapping, tpl.variables);
+    if (!vcheck.ok) return res.status(400).json({ ok: false, error: 'incomplete_mapping', missing: vcheck.missing });
     const creds = await loadMetaCreds(supabase, tenantId);
     if (!creds.ok) return res.status(400).json({ ok: false, error: creds.error });
     // MESMO caminho de /preview e /confirm (verificado em routes.js:200-233):
@@ -814,7 +836,10 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
     // templateName = nome do template aprovado da campanha. Flui até o envio
     // (confirmOperation grava em agent_action_queue.template_name) para que ESTE
     // disparo use o template ESCOLHIDO, não o fixo do tenant.
-    const conf = await confirmOperation(supabase, { previewToken: prev.previewToken, tenantId, message: tpl.body, templateName: tpl.name, user });
+    const conf = await confirmOperation(supabase, {
+      previewToken: prev.previewToken, tenantId, message: tpl.body, templateName: tpl.name,
+      variableMapping: camp.variable_mapping, templateVariables: tpl.variables, user,
+    });
     if (!conf.ok) return res.status(400).json({ ok: false, error: conf.error || 'confirm_failed' });
     // Drena a fila imediatamente (best-effort), idêntico ao /confirm (routes.js:233).
     if (conf.enqueued > 0) {
