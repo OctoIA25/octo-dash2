@@ -172,6 +172,13 @@ export function NovaSidebar() {
   const isSearching = q.length > 0;
 
   const ALL_ITEMS: SidebarItem[] = GROUPS.flatMap((g) => g.items);
+  // Permissões de TODOS os itens — top-level E sub-items com permissão própria
+  // (ex.: Comunicação aninhada sob Agentes de IA). Sem incluir os sub-items aqui,
+  // canAccess('comunicacao') seria false até para o owner, escondendo o item.
+  const ALL_PERMISSIONS: SidebarPermission[] = ALL_ITEMS.flatMap((i) => [
+    i.permission,
+    ...(i.subItems ?? []).map((s) => s.permission).filter((p): p is SidebarPermission => Boolean(p)),
+  ]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -186,7 +193,7 @@ export function NovaSidebar() {
   }, []);
 
   const allowedPermissions: SidebarPermission[] = (() => {
-    if (isOwner) return ALL_ITEMS.map((i) => i.permission);
+    if (isOwner) return ALL_PERMISSIONS;
     const userPerms = user?.sidebarPermissions ?? [];
     const tenantPerms = user?.tenantAllowedFeatures;
     if (Array.isArray(tenantPerms)) {
