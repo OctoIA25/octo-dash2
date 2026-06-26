@@ -74,4 +74,16 @@ describe('fetchTemplateStatus', () => {
     const r = await fetchTemplateStatus({ wabaId: 'W', accessToken: 'T', name: 'meu', fetchImpl });
     expect(r.status).toBe('pending');
   });
+  it('status bloqueante da Meta (PAUSED) vira rejected com o motivo preservado', async () => {
+    const fetchImpl = async () => okJson({ data: [{ name: 'p', status: 'PAUSED' }] });
+    const r = await fetchTemplateStatus({ wabaId: 'W', accessToken: 'T', name: 'p', fetchImpl });
+    expect(r.status).toBe('rejected');
+    expect(r.reason).toBe('PAUSED');
+  });
+  it('DISABLED também vira rejected com motivo', async () => {
+    const fetchImpl = async () => okJson({ data: [{ name: 'p', status: 'DISABLED' }] });
+    const r = await fetchTemplateStatus({ wabaId: 'W', accessToken: 'T', name: 'p', fetchImpl });
+    expect(r.status).toBe('rejected');
+    expect(r.reason).toBe('DISABLED');
+  });
 });

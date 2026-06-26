@@ -5,7 +5,7 @@
  * (nunca lança). Reusa as credenciais de whatsapp_config (WABA + token).
  */
 
-const DEFAULT_GRAPH_VERSION = 'v21.0';
+const DEFAULT_GRAPH_VERSION = process.env.META_GRAPH_VERSION || 'v21.0';
 
 /**
  * Converte o corpo amigável ({{nome}}) para o formato numerado da Meta ({{1}}).
@@ -46,7 +46,13 @@ export async function fetchTemplateStatus({ wabaId, accessToken, name, graphVers
     if (!res.ok || json?.error) return { ok: false, error: 'meta_status_failed', detail: json?.error?.message || `http_${res.status}` };
     const row = (json.data || []).find((t) => t.name === name);
     if (!row) return { ok: true, status: 'pending', reason: null };
-    return { ok: true, status: String(row.status || 'pending').toLowerCase(), reason: row.rejected_reason || null };
+    const KNOWN = ['approved', 'pending', 'rejected'];
+    const raw = String(row.status || 'pending').toLowerCase();
+    const status = KNOWN.includes(raw) ? raw : 'rejected';
+    // Estados bloqueantes da Meta (paused/disabled/in_appeal/etc.) viram 'rejected'
+    // no nosso domínio, mas preservamos o estado real no motivo p/ o usuário entender.
+    const reason = row.rejected_reason || (!KNOWN.includes(raw) ? raw.toUpperCase() : null);
+    return { ok: true, status, reason: reason || null };
   } catch (e) {
     return { ok: false, error: 'meta_status_failed', detail: String(e?.message || e || 'unknown') };
   }
