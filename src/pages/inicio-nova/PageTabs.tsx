@@ -39,6 +39,9 @@ import {
   DollarSign,
   FileText,
   MapPin,
+  Rocket,
+  History,
+  Megaphone,
 } from 'lucide-react';
 
 interface Tab {
@@ -221,6 +224,18 @@ const TAB_CONFIGS: TabConfig[] = [
     label: 'Mapa de Imóveis',
     matchStrategy: 'pathSegment',
     tabs: [],
+  },
+  {
+    basePath: '/comunicacao',
+    label: 'Comunicação',
+    matchStrategy: 'pathSegment',
+    tabs: [
+      { id: 'disparador', label: 'Disparador', icon: Rocket, href: '/comunicacao/disparador' },
+      { id: 'publicos', label: 'Públicos', icon: Users, href: '/comunicacao/publicos' },
+      { id: 'templates', label: 'Templates', icon: FileText, href: '/comunicacao/templates' },
+      { id: 'campanhas', label: 'Campanhas', icon: Megaphone, href: '/comunicacao/campanhas' },
+      { id: 'historico', label: 'Histórico', icon: History, href: '/comunicacao/historico' },
+    ],
   },
 ];
 

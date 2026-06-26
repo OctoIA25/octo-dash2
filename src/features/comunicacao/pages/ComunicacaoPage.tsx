@@ -10,7 +10,7 @@
  * ainda não implementadas mostram um placeholder "Em breve", desabilitado.
  */
 
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { Megaphone, Users, FileText, Rocket, History, Settings, type LucideIcon } from 'lucide-react';
 import { DisparadorChat } from '../components/DisparadorChat';
 import { HistoricoDisparos } from '../components/HistoricoDisparos';
@@ -38,65 +38,11 @@ const SECTIONS: CommSection[] = [
 
 export function ComunicacaoPage() {
   const { section } = useParams<{ section?: string }>();
-  const navigate = useNavigate();
 
   const current = SECTIONS.find((s) => s.id === section) ?? SECTIONS[0];
 
   return (
     <div className="flex flex-col h-full min-h-0 bg-theme-primary">
-      {/* Header da página (padrão KPIs). */}
-      <header className="px-6 pt-5 pb-3 shrink-0">
-        <div className="max-w-[1400px] mx-auto">
-          <h1 className="text-[22px] font-bold text-slate-900 dark:text-slate-100 tracking-tight leading-tight">
-            Comunicação
-          </h1>
-          <p className="text-[12.5px] text-slate-500 dark:text-slate-400 mt-0.5">
-            Dispare, segmente e acompanhe seus envios para a base de leads.
-          </p>
-        </div>
-      </header>
-
-      {/* Sub-navegação das seções de Comunicação (abas underline). */}
-      <nav className="px-6 shrink-0 border-b border-slate-200 dark:border-slate-800">
-        <div className="max-w-[1400px] mx-auto flex items-center gap-1 overflow-x-auto">
-          {SECTIONS.map((s) => {
-            const Icon = s.icon;
-            const active = s.id === current.id;
-            return (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => s.available && navigate(`/comunicacao/${s.id}`)}
-                disabled={!s.available}
-                aria-current={active ? 'page' : undefined}
-                title={s.available ? undefined : 'Em breve'}
-                className={[
-                  'group relative inline-flex items-center gap-1.5 shrink-0 h-10 px-3 text-[12.5px] font-semibold transition-colors',
-                  active
-                    ? 'text-blue-600 dark:text-blue-400'
-                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200',
-                  s.available ? 'cursor-pointer' : 'opacity-40 cursor-not-allowed',
-                ].join(' ')}
-              >
-                <Icon className="w-3.5 h-3.5" strokeWidth={2} />
-                {s.label}
-                {!s.available && <span className="text-[10px] font-medium opacity-70">em breve</span>}
-                {/* Barra indicadora deslizante (underline). */}
-                <span
-                  className={[
-                    'absolute left-2 right-2 -bottom-px h-[2px] rounded-full transition-all',
-                    active
-                      ? 'bg-blue-600 dark:bg-blue-400'
-                      : 'bg-transparent group-hover:bg-slate-200 dark:group-hover:bg-slate-700',
-                  ].join(' ')}
-                />
-              </button>
-            );
-          })}
-        </div>
-      </nav>
-
-      {/* Conteúdo da seção ativa. */}
       <div className="flex-1 min-h-0">
         <SectionContent sectionId={current.id} />
       </div>
