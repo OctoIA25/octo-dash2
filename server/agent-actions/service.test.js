@@ -710,3 +710,68 @@ describe('confirmOperation — confirmação obrigatória e idempotência', () =
     expect(queueUpserts).toHaveLength(0);
   });
 });
+
+describe('confirmOperation templateName', () => {
+  function seedPendingRun(over = {}) {
+    const id = 'run-tpl';
+    const runs = new Map([
+      [
+        id,
+        {
+          id,
+          tenant_id: TENANT,
+          action_type: 'send_whatsapp',
+          segment: { type: 'archived' },
+          status: 'pending',
+          eligible_count: 2,
+          excluded_count: 0,
+          requested_by_user_id: 'u-admin',
+          ...over,
+        },
+      ],
+    ]);
+    return { id, runs };
+  }
+
+  it('grava template_name no run e nos itens quando passado', async () => {
+    const { id, runs } = seedPendingRun();
+    const { supabase, queueUpserts } = makeFake({ runs });
+    const r = await confirmOperation(
+      supabase,
+      { previewToken: id, tenantId: TENANT, message: 'Olá!', templateName: 'promo', user: adminUser },
+      {
+        nowMs: NOW,
+        resolve: fakeResolve([
+          { id: '1', name: 'A', phone: '5511000000001' },
+          { id: '2', name: 'B', phone: '5511000000002' },
+        ]),
+      },
+    );
+    expect(r.ok).toBe(true);
+    // (b) gravou no update do run (claim pending→running)
+    expect(runs.get(id).template_name).toBe('promo');
+    // (c) gravou em cada item enfileirado
+    expect(queueUpserts).toHaveLength(2);
+    expect(queueUpserts.every((i) => i.template_name === 'promo')).toBe(true);
+  });
+
+  it('template_name null quando ausente (retrocompat)', async () => {
+    const { id, runs } = seedPendingRun();
+    const { supabase, queueUpserts } = makeFake({ runs });
+    const r = await confirmOperation(
+      supabase,
+      { previewToken: id, tenantId: TENANT, message: 'Olá!', user: adminUser },
+      {
+        nowMs: NOW,
+        resolve: fakeResolve([
+          { id: '1', name: 'A', phone: '5511000000001' },
+          { id: '2', name: 'B', phone: '5511000000002' },
+        ]),
+      },
+    );
+    expect(r.ok).toBe(true);
+    expect(runs.get(id).template_name).toBe(null);
+    expect(queueUpserts).toHaveLength(2);
+    expect(queueUpserts.every((i) => i.template_name === null)).toBe(true);
+  });
+});
