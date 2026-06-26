@@ -19,7 +19,7 @@ import { runDueActions } from './actionWorker.js';
 import { makeSchedulerDeps } from '../recommendations/index.js';
 import { resolveSegmentDual } from './segmentResolver.js';
 import { validateSegment } from './segmentSchema.js';
-import { toMetaBody, submitTemplate, fetchTemplateStatus } from '../communication/metaTemplates.js';
+import { toMetaBody, submitTemplate, fetchTemplateStatus, listApprovedTemplates, mapMetaTemplateToRow } from '../communication/metaTemplates.js';
 
 const PLATFORM_OWNER_EMAIL = 'octo.inteligenciaimobiliaria@gmail.com';
 
@@ -174,6 +174,16 @@ function statusFor(error) {
     return 400;
   }
   return 500;
+}
+
+/** Resume o import: quantos names são novos vs já existiam. */
+function summarizeImport(existingNames, metaTemplates) {
+  const existing = new Set(existingNames);
+  let imported = 0; let updated = 0;
+  for (const t of metaTemplates) {
+    if (existing.has(t.name)) updated += 1; else imported += 1;
+  }
+  return { imported, updated, total: metaTemplates.length };
 }
 
 /**
@@ -621,6 +631,26 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
     return res.json({ ok: true, template: data });
   });
 
+  app.post(`${basePath}/templates/import-from-meta`, requireSupabaseAuth, async (req, res) => {
+    const { tenantId } = req.body || {};
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'missing_tenant' });
+    const ctx = await resolveUserContext(supabase, req, tenantId);
+    if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
+    if (!canManageTemplates(ctx.role)) return res.status(403).json({ ok: false, error: 'forbidden' });
+    const creds = await loadMetaCreds(supabase, tenantId);
+    if (!creds.ok) return res.status(400).json({ ok: false, error: creds.error });
+    const list = await listApprovedTemplates({ wabaId: creds.wabaId, accessToken: creds.accessToken });
+    if (!list.ok) return res.status(502).json({ ok: false, error: 'meta_list_failed', detail: list.detail });
+    if (list.templates.length === 0) return res.json({ ok: true, imported: 0, updated: 0, total: 0 });
+    // names já existentes (p/ contar novos vs atualizados)
+    const { data: existing } = await supabase.from(TEMPLATES_TABLE).select('name').eq('tenant_id', tenantId);
+    const existingNames = (existing || []).map((r) => r.name);
+    const rows = list.templates.map((t) => ({ tenant_id: tenantId, approval_status: 'approved', created_by_email: req.userEmail || null, ...mapMetaTemplateToRow(t) }));
+    const { error: upErr } = await supabase.from(TEMPLATES_TABLE).upsert(rows, { onConflict: 'tenant_id,name' });
+    if (upErr) return res.status(500).json({ ok: false, error: 'persist_failed' });
+    return res.json({ ok: true, ...summarizeImport(existingNames, list.templates) });
+  });
+
   // -- Campanhas --------------------------------------------------------------
   const CAMPAIGNS_TABLE = 'communication_campaigns';
   const CAMPAIGN_COLS = 'id, name, template_id, audience_id, max_recipients, send_window, throttle_per_min, avoid_resend, variable_mapping, internal_note, notify_on_complete, schedule, status, created_by_email, created_at, updated_at';
@@ -814,4 +844,4 @@ export function registerAgentActionRoutes(app, supabase, options = {}) {
   registerDispatchRoutes(app, '/api/v1/agent-actions', supabase, options, makeDispatchDeps(supabase, options));
 }
 
-export const __test__ = { resolveUserContext, statusFor, isPlatformOwner, resolvePublicSourceMode, applyRunsFilters, computeProgress, canManageAudiences, canManageTemplates, canManageCampaigns, loadMetaCreds, registerDispatchRoutes, makeDispatchDeps };
+export const __test__ = { resolveUserContext, statusFor, isPlatformOwner, resolvePublicSourceMode, applyRunsFilters, computeProgress, canManageAudiences, canManageTemplates, canManageCampaigns, loadMetaCreds, summarizeImport, registerDispatchRoutes, makeDispatchDeps };

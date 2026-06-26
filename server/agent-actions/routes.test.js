@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { __test__ } from './routes.js';
 
-const { resolveUserContext, statusFor, isPlatformOwner, resolvePublicSourceMode, applyRunsFilters, computeProgress, canManageAudiences, canManageTemplates, loadMetaCreds, canManageCampaigns, registerDispatchRoutes, makeDispatchDeps } = __test__;
+const { resolveUserContext, statusFor, isPlatformOwner, resolvePublicSourceMode, applyRunsFilters, computeProgress, canManageAudiences, canManageTemplates, loadMetaCreds, canManageCampaigns, registerDispatchRoutes, makeDispatchDeps, summarizeImport } = __test__;
 
 function recordingBuilder() {
   const calls = [];
@@ -320,6 +320,13 @@ function fakeSupabaseRecordingRuns(eqCalls) {
     },
   };
 }
+
+describe('summarizeImport', () => {
+  it('conta novos vs atualizados por name', () => {
+    const r = summarizeImport(['promo'], [{ name: 'promo' }, { name: 'nova' }]);
+    expect(r).toEqual({ imported: 1, updated: 1, total: 2 });
+  });
+});
 
 describe('GET /campaigns/:id/runs — filtra por tenant + campaign', () => {
   it('aplica .eq(tenant_id) e .eq(campaign_id) na query de runs', async () => {
