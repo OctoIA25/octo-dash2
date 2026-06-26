@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { __test__ } from './routes.js';
 
-const { resolveUserContext, statusFor, isPlatformOwner, resolvePublicSourceMode, applyRunsFilters, computeProgress, canManageAudiences } = __test__;
+const { resolveUserContext, statusFor, isPlatformOwner, resolvePublicSourceMode, applyRunsFilters, computeProgress, canManageAudiences, canManageTemplates } = __test__;
 
 function recordingBuilder() {
   const calls = [];
@@ -253,5 +253,12 @@ describe('PUT /audiences/:id — guarda de patch vazio', () => {
     if (body.segment !== undefined) patch.segment = body.segment;
 
     expect(Object.keys(patch).length).toBeGreaterThan(0);
+  });
+});
+
+describe('canManageTemplates', () => {
+  it('gestores sim, corretor não', () => {
+    for (const r of ['admin', 'team_leader', 'owner']) expect(canManageTemplates(r)).toBe(true);
+    expect(canManageTemplates('corretor')).toBe(false);
   });
 });

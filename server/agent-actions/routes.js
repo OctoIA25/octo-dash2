@@ -19,6 +19,7 @@ import { runDueActions } from './actionWorker.js';
 import { makeSchedulerDeps } from '../recommendations/index.js';
 import { resolveSegmentDual } from './segmentResolver.js';
 import { validateSegment } from './segmentSchema.js';
+import { toMetaBody } from '../communication/metaTemplates.js';
 
 const PLATFORM_OWNER_EMAIL = 'octo.inteligenciaimobiliaria@gmail.com';
 
@@ -134,6 +135,11 @@ function applyRunsFilters(query, { status, q, from, to, limit, offset } = {}) {
 
 /** Quem pode criar/editar/excluir públicos (gestor). */
 function canManageAudiences(role) {
+  return role === 'admin' || role === 'team_leader' || role === 'owner';
+}
+
+/** Quem pode criar/editar/submeter templates (gestor). */
+function canManageTemplates(role) {
   return role === 'admin' || role === 'team_leader' || role === 'owner';
 }
 
@@ -445,21 +451,102 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
 
   app.get(`${basePath}/audiences/:id/count`, requireSupabaseAuth, async (req, res) => {
     const { id } = req.params;
-    
+
     const tenantId = req.query.tenantId;
     if (!tenantId) return res.status(400).json({ ok: false, error: 'missing_tenant' });
-    
+
     const ctx = await resolveUserContext(supabase, req, tenantId);
     if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
-    
+
     const { data: aud, error } = await supabase
       .from(AUDIENCES_TABLE).select('segment').eq('id', id).eq('tenant_id', tenantId).maybeSingle();
     if (error) return res.status(500).json({ ok: false, error: 'lookup_failed' });
     if (!aud) return res.status(404).json({ ok: false, error: 'audience_not_found' });
-    
+
     const resolved = await resolveSegmentDual(supabase, aud.segment, { tenantId, nowMs: Date.now() });
     // Público é auxiliar: erro do resolver → count 0, não derruba a tela.
     return res.json({ ok: true, count: resolved.ok ? resolved.rows.length : 0 });
+  });
+
+  // -- Templates -------------------------------------------------------------
+  const TEMPLATES_TABLE = 'communication_templates';
+  const TEMPLATE_COLS = 'id, name, channel, category, language, body, variables, example_values, provider_template_id, approval_status, rejected_reason, created_by_email, created_at, updated_at';
+
+  app.get(`${basePath}/templates`, requireSupabaseAuth, async (req, res) => {
+    const tenantId = req.query.tenantId;
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'missing_tenant' });
+    const ctx = await resolveUserContext(supabase, req, tenantId);
+    if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
+    const { data, error } = await supabase
+      .from(TEMPLATES_TABLE).select(TEMPLATE_COLS).eq('tenant_id', tenantId).order('created_at', { ascending: false });
+    if (error) return res.status(500).json({ ok: false, error: 'lookup_failed' });
+    return res.json({ ok: true, templates: data || [] });
+  });
+
+  app.post(`${basePath}/templates`, requireSupabaseAuth, async (req, res) => {
+    const { tenantId, name, body, category, language, exampleValues } = req.body || {};
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'missing_tenant' });
+    const ctx = await resolveUserContext(supabase, req, tenantId);
+    if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
+    if (!canManageTemplates(ctx.role)) return res.status(403).json({ ok: false, error: 'forbidden' });
+    if (!name || !String(name).trim()) return res.status(400).json({ ok: false, error: 'invalid_name' });
+    if (!body || !String(body).trim()) return res.status(400).json({ ok: false, error: 'invalid_body' });
+    const { variables } = toMetaBody(body);
+    const { data, error } = await supabase.from(TEMPLATES_TABLE).insert({
+      tenant_id: tenantId, name: String(name).trim(), body: String(body),
+      category: category === 'UTILITY' ? 'UTILITY' : 'MARKETING',
+      language: language || 'pt_BR',
+      variables, example_values: Array.isArray(exampleValues) ? exampleValues : [],
+      created_by_email: req.userEmail || null,
+    }).select(TEMPLATE_COLS).maybeSingle();
+    if (error) {
+      if (error.code === '23505') return res.status(409).json({ ok: false, error: 'template_name_taken' });
+      return res.status(500).json({ ok: false, error: 'persist_failed' });
+    }
+    return res.json({ ok: true, template: data });
+  });
+
+  app.put(`${basePath}/templates/:id`, requireSupabaseAuth, async (req, res) => {
+    const { id } = req.params;
+    const { tenantId, name, body, category, exampleValues } = req.body || {};
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'missing_tenant' });
+    const ctx = await resolveUserContext(supabase, req, tenantId);
+    if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
+    if (!canManageTemplates(ctx.role)) return res.status(403).json({ ok: false, error: 'forbidden' });
+    // Não permite editar template já enviado/aprovado (imutável na Meta).
+    const { data: cur, error: curErr } = await supabase
+      .from(TEMPLATES_TABLE).select('approval_status').eq('id', id).eq('tenant_id', tenantId).maybeSingle();
+    if (curErr) return res.status(500).json({ ok: false, error: 'lookup_failed' });
+    if (!cur) return res.status(404).json({ ok: false, error: 'template_not_found' });
+    if (cur.approval_status === 'pending' || cur.approval_status === 'approved') {
+      return res.status(400).json({ ok: false, error: 'template_locked' });
+    }
+    const patch = {};
+    if (name !== undefined) { if (!String(name).trim()) return res.status(400).json({ ok: false, error: 'invalid_name' }); patch.name = String(name).trim(); }
+    if (body !== undefined) { if (!String(body).trim()) return res.status(400).json({ ok: false, error: 'invalid_body' }); patch.body = String(body); patch.variables = toMetaBody(body).variables; }
+    if (category !== undefined) patch.category = category === 'UTILITY' ? 'UTILITY' : 'MARKETING';
+    if (exampleValues !== undefined) patch.example_values = Array.isArray(exampleValues) ? exampleValues : [];
+    if (Object.keys(patch).length === 0) return res.status(400).json({ ok: false, error: 'nothing_to_update' });
+    const { data, error } = await supabase.from(TEMPLATES_TABLE).update(patch).eq('id', id).eq('tenant_id', tenantId).select(TEMPLATE_COLS).maybeSingle();
+    if (error) {
+      if (error.code === '23505') return res.status(409).json({ ok: false, error: 'template_name_taken' });
+      return res.status(500).json({ ok: false, error: 'persist_failed' });
+    }
+    if (!data) return res.status(404).json({ ok: false, error: 'template_not_found' });
+    return res.json({ ok: true, template: data });
+  });
+
+  app.delete(`${basePath}/templates/:id`, requireSupabaseAuth, async (req, res) => {
+    const { id } = req.params;
+    const tenantId = req.query.tenantId;
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'missing_tenant' });
+    const ctx = await resolveUserContext(supabase, req, tenantId);
+    if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
+    // Excluir é mais restrito (admin/owner), alinhado com a RLS.
+    if (!(ctx.role === 'admin' || ctx.role === 'owner')) return res.status(403).json({ ok: false, error: 'forbidden' });
+    const { error } = await supabase.from(TEMPLATES_TABLE).delete().eq('id', id).eq('tenant_id', tenantId);
+    if (error) return res.status(500).json({ ok: false, error: 'delete_failed' });
+    return res.json({ ok: true });
   });
 }
 
@@ -477,4 +564,4 @@ export function registerAgentActionRoutes(app, supabase, options = {}) {
   registerDispatchRoutes(app, '/api/v1/agent-actions', supabase, options, makeDispatchDeps(supabase, options));
 }
 
-export const __test__ = { resolveUserContext, statusFor, isPlatformOwner, resolvePublicSourceMode, applyRunsFilters, computeProgress, canManageAudiences, registerDispatchRoutes, makeDispatchDeps };
+export const __test__ = { resolveUserContext, statusFor, isPlatformOwner, resolvePublicSourceMode, applyRunsFilters, computeProgress, canManageAudiences, canManageTemplates, registerDispatchRoutes, makeDispatchDeps };
