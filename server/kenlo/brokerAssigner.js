@@ -1,12 +1,17 @@
 /**
  * Atribuição automática de corretor a leads. Porta a prioridade já validada no
  * frontend (kenloLeadsService.ts): código do imóvel (mais confiável) → attendedBy.
- * Lookups injetados; memoização por execução evita N+1.
+ * Lookups injetados; memoização evita N+1.
+ *
+ * Cache vive no escopo da INSTÂNCIA (não por chamada): no sync streaming, `assign`
+ * roda uma vez por página, então o cache precisa persistir entre páginas do mesmo
+ * tenant. Chame `reset()` ao trocar de tenant para não vazar lookups.
  */
 export function createBrokerAssigner({ getCorretorByPropertyCode, findCorretorInSystem }) {
+  const byCodeCache = new Map();
+  const byNameCache = new Map();
+
   async function assign(tenantId, rows) {
-    const byCodeCache = new Map();
-    const byNameCache = new Map();
     const resolveCode = async (codigo) => {
       if (byCodeCache.has(codigo)) return byCodeCache.get(codigo);
       const r = await getCorretorByPropertyCode(tenantId, codigo);
@@ -41,5 +46,11 @@ export function createBrokerAssigner({ getCorretorByPropertyCode, findCorretorIn
     }
     return rows;
   }
-  return { assign };
+
+  function reset() {
+    byCodeCache.clear();
+    byNameCache.clear();
+  }
+
+  return { assign, reset };
 }

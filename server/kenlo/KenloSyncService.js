@@ -50,6 +50,7 @@ export function createKenloSyncService({
     const tenantId = integration.tenant_id;
     const stats = { fetched: 0, new: 0, saved: 0, skippedTest: 0, errors: 0 };
     logger.info(`[kenlo] {"event":"kenlo.sync.start","runId":"${runId}","tenantId":"${tenantId}","mode":"${syncMode}"}`);
+    brokerAssigner.reset?.(); // cache de corretor é por tenant; limpa antes de começar
 
     for (const mediaOrigin of MEDIA_ORIGINS) {
       for (let page = 1; ; page++) {
