@@ -128,4 +128,29 @@ describe('KenloSyncService.syncAllTenants', () => {
     await svc.syncAllTenants();
     expect(updates.some((u) => u.last_sync_at)).toBe(true);
   });
+
+  it('reconciliação: tenant LIVE com last_full_sync_at vencido roda BACKFILL', async () => {
+    const calls = [];
+    const branchingSupabase = {
+      from: (table) => table === 'kenlo_integrations'
+        ? {
+            select: () => ({ eq: () => Promise.resolve({ data: [{
+              tenant_id: 't1',
+              last_sync_at: '2026-06-26T11:00:00Z',          // já LIVE
+              last_full_sync_at: '2026-06-26T09:00:00Z',     // 3h atrás (> TTL 1h)
+            }], error: null }) }),
+            update: () => ({ eq: () => Promise.resolve({ error: null }) }),
+          }
+        : { select: () => ({ eq: () => ({ in: () => Promise.resolve({ data: [], error: null }) }) }),
+            upsert: (b) => ({ select: () => Promise.resolve({ data: b, error: null }) }) },
+    };
+    const leadService = {
+      fetchPage: vi.fn(async (_i, { startDate }) => { calls.push(startDate); return { status: 200, leads: [], isLast: true }; }),
+      fetchDetails: vi.fn(),
+    };
+    const svc = createKenloSyncService({ supabase: branchingSupabase, leadService, brokerAssigner: { assign: async (_t, r) => r }, processEnv: { KENLO_FULL_SYNC_TTL_MS: '3600000' }, now: () => Date.parse('2026-06-26T12:00:00Z') });
+    await svc.syncAllTenants();
+    // startDate da reconciliação = janela histórica (60d), não o cursor de 5min
+    expect(calls[0]).toBe('2026-04-27');
+  });
 });

@@ -85,12 +85,16 @@ export function createKenloSyncService({
       .from('kenlo_integrations').select('*').eq('status', 'active');
     if (error) { logger.error(`[kenlo] listar tenants falhou: ${error.message}`); return []; }
     const results = await Promise.allSettled((data || []).map(async (integ) => {
-      const syncMode = integ.last_sync_at ? 'LIVE' : 'BACKFILL';
+      const ttl = cfg.fullSyncTtlMs;
+      const lastFull = integ.last_full_sync_at ? Date.parse(integ.last_full_sync_at) : 0;
+      const dueFull = !integ.last_full_sync_at || (now() - lastFull >= ttl);
+      // BACKFILL no 1º sync (sem cursor) OU na reconciliação periódica vencida.
+      const syncMode = (!integ.last_sync_at || dueFull) ? 'BACKFILL' : 'LIVE';
       const startDate = resolveStartDate({ syncMode, lastSyncAt: integ.last_sync_at, cfg, now });
       const stats = await syncTenant(integ, { syncMode, startDate });
-      await supabase.from('kenlo_integrations')
-        .update({ last_sync_at: new Date(now()).toISOString() })
-        .eq('tenant_id', integ.tenant_id);
+      const patch = { last_sync_at: new Date(now()).toISOString() };
+      if (syncMode === 'BACKFILL') patch.last_full_sync_at = patch.last_sync_at;
+      await supabase.from('kenlo_integrations').update(patch).eq('tenant_id', integ.tenant_id);
       return stats;
     }));
     return results.map((r, idx) => ({
