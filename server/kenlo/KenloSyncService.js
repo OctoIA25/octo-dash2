@@ -33,40 +33,48 @@ export function createKenloSyncService({
     } catch (e) { logger.warn(`[kenlo] webhook Lia falhou: ${e.message}`); }
   }
 
-  async function syncTenant(integration) {
+  async function upsertRows(rows, stats) {
+    for (let i = 0; i < rows.length; i += 500) {
+      const batch = rows.slice(i, i + 500);
+      const { data, error } = await supabase
+        .from('kenlo_leads')
+        .upsert(batch, { onConflict: 'tenant_id,external_id', ignoreDuplicates: false })
+        .select('external_id');
+      if (error) { stats.errors++; logger.warn(`[kenlo] upsert falhou: ${error.message}`); continue; }
+      stats.saved += data?.length || batch.length;
+    }
+  }
+
+  async function syncTenant(integration, opts = {}) {
+    const { syncMode = 'BACKFILL', startDate } = opts;
     const tenantId = integration.tenant_id;
     const stats = { fetched: 0, new: 0, saved: 0, skippedTest: 0, errors: 0 };
-    logger.info(`[kenlo] {"event":"kenlo.sync.start","runId":"${runId}","tenantId":"${tenantId}"}`);
+    logger.info(`[kenlo] {"event":"kenlo.sync.start","runId":"${runId}","tenantId":"${tenantId}","mode":"${syncMode}"}`);
 
     for (const mediaOrigin of MEDIA_ORIGINS) {
-      const { leads } = await leadService.fetchAllPages(integration, { mediaOrigin });
-      stats.fetched += leads.length;
+      for (let page = 1; ; page++) {
+        const { status, leads, isLast } = await leadService.fetchPage(integration, { mediaOrigin, page, startDate });
+        if (status !== 200) break;
+        stats.fetched += leads.length;
 
-      const nonTest = leads.filter((l) => { if (isTestLead(l)) { stats.skippedTest++; return false; } return true; });
-      const ids = nonTest.map(idOf).filter(Boolean);
-      const known = await existingIds(tenantId, ids);
-      const fresh = nonTest.filter((l) => idOf(l) && !known.has(idOf(l)));
-      if (!fresh.length) continue;
+        const nonTest = leads.filter((l) => { if (isTestLead(l)) { stats.skippedTest++; return false; } return true; });
+        const ids = nonTest.map(idOf).filter(Boolean);
+        const known = await existingIds(tenantId, ids);
+        const fresh = nonTest.filter((l) => idOf(l) && !known.has(idOf(l)));
 
-      const detailed = await leadService.fetchDetails(integration, fresh);
-      let rows = detailed.map((l) => normalizeLead(l, tenantId));
-      rows = await brokerAssigner.assign(tenantId, rows);
-
-      for (let i = 0; i < rows.length; i += 500) {
-        const batch = rows.slice(i, i + 500);
-        const { data, error } = await supabase
-          .from('kenlo_leads')
-          .upsert(batch, { onConflict: 'tenant_id,external_id', ignoreDuplicates: false })
-          .select('external_id');
-        if (error) { stats.errors++; logger.warn(`[kenlo] upsert falhou: ${error.message}`); continue; }
-        stats.saved += data?.length || batch.length;
+        if (fresh.length) {
+          const detailed = await leadService.fetchDetails(integration, fresh);
+          let rows = detailed.map((l) => normalizeLead(l, tenantId));
+          rows = await brokerAssigner.assign(tenantId, rows);
+          await upsertRows(rows, stats);
+          if (syncMode !== 'BACKFILL') { for (const row of rows) await fireLia(row); }
+          stats.new += rows.length;
+        }
+        if (isLast) break; // última página deste portal; libera e vai ao próximo
       }
-
-      for (const row of rows) await fireLia(row);
-      stats.new += rows.length;
     }
 
-    logger.info(`[kenlo] {"event":"kenlo.sync.done","runId":"${runId}","tenantId":"${tenantId}","new":${stats.new},"saved":${stats.saved}}`);
+    logger.info(`[kenlo] {"event":"kenlo.sync.done","runId":"${runId}","tenantId":"${tenantId}","mode":"${syncMode}","new":${stats.new},"saved":${stats.saved}}`);
     return stats;
   }
 
