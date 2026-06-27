@@ -16,6 +16,7 @@
 import express from 'express';
 import cors from 'cors';
 import crypto from 'crypto';
+import { createZapConfigResolver } from './zap/index.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
@@ -1370,15 +1371,52 @@ const getZapFeedConfig = () => ({
   resyncToken: process.env.ZAPIMOVEIS_RESYNC_TOKEN || ''
 });
 
+// Resolver multi-tenant da config ZAP (tenant_zap_config). Resolve o tenant PELO
+// secret apresentado, em vez de confiar no tenant_id da URL. Mantém fallback ao
+// .env (getZapFeedConfig) enquanto tenants legados não tiverem linha no banco.
+const zapConfigResolver = createZapConfigResolver({ supabase });
+
+// Mescla a config do tenant (banco) sobre os defaults do .env. Campos ausentes no
+// banco caem no .env — comportamento idêntico ao legado quando não há linha.
+const effectiveZapConfig = (tenantConfig) => {
+  const env = getZapFeedConfig();
+  if (!tenantConfig) return env;
+  return {
+    secret: tenantConfig.feedSecret ?? env.secret,
+    tenantId: tenantConfig.tenantId ?? env.tenantId,
+    provider: tenantConfig.provider ?? env.provider,
+    contactName: tenantConfig.contactName ?? env.contactName,
+    contactEmail: tenantConfig.contactEmail ?? env.contactEmail,
+    contactPhone: tenantConfig.contactPhone ?? env.contactPhone,
+    publicationType: tenantConfig.publicationType ?? env.publicationType,
+    detailBaseUrl: tenantConfig.detailBaseUrl ?? env.detailBaseUrl,
+    resyncUrl: tenantConfig.resyncUrl ?? env.resyncUrl,
+    resyncToken: tenantConfig.resyncToken ?? env.resyncToken,
+  };
+};
+
 const validateZapFeedAccess = async (req, res, next) => {
-  const config = getZapFeedConfig();
   const providedSecret = firstHeaderValue(req.headers['x-zapimoveis-feed-secret'])
+    || firstHeaderValue(req.headers['x-zapimoveis-webhook-secret'])
     || firstHeaderValue(req.headers['x-zapimoveis-secret'])
     || firstHeaderValue(req.headers['x-olx-feed-secret'])
+    || firstHeaderValue(req.headers['x-olx-webhook-secret'])
     || req.query.token
     || req.query.feed_token
     || req.query.secret;
 
+  // 1) Multi-tenant: o secret IDENTIFICA o tenant (isolamento — a URL não escolhe).
+  const tenantConfig = await zapConfigResolver.resolveBySecret(providedSecret).catch(() => null);
+  if (tenantConfig && tenantConfig.status === 'active') {
+    req.tenantId = tenantConfig.tenantId;
+    req.zapConfig = effectiveZapConfig(tenantConfig);
+    req.integrationAuth = 'zapimoveis_tenant_secret';
+    return next();
+  }
+
+  // 2) Fallback legado: secret global do .env (tenant vem da URL/ENV). Removível
+  // após o backfill de todos os tenants (ver System Design §5).
+  const config = getZapFeedConfig();
   if (config.secret && safeStringEquals(providedSecret, config.secret)) {
     const tenantId = req.query.tenant_id || req.query.tenantId || config.tenantId;
 
@@ -1393,6 +1431,7 @@ const validateZapFeedAccess = async (req, res, next) => {
     }
 
     req.tenantId = tenantId;
+    req.zapConfig = config;
     req.integrationAuth = 'zapimoveis_feed_secret';
     return next();
   }
@@ -1427,17 +1466,16 @@ const normalizeFeedText = (value, fallback = '') => {
   return text || fallback;
 };
 
-const getDefaultZapContactInfo = () => {
-  const config = getZapFeedConfig();
+const getDefaultZapContactInfo = (cfg = getZapFeedConfig()) => {
   return {
-    name: normalizeFeedText(config.contactName, 'OctoDash'),
-    email: normalizeFeedText(config.contactEmail, 'contato@octoia.com'),
-    phone: normalizeFeedText(config.contactPhone)
+    name: normalizeFeedText(cfg.contactName, 'OctoDash'),
+    email: normalizeFeedText(cfg.contactEmail, 'contato@octoia.com'),
+    phone: normalizeFeedText(cfg.contactPhone)
   };
 };
 
-const getListingContactInfo = (imovel) => {
-  const fallback = getDefaultZapContactInfo();
+const getListingContactInfo = (imovel, cfg = getZapFeedConfig()) => {
+  const fallback = getDefaultZapContactInfo(cfg);
   const contact = imovel.zap_contact || {};
 
   return {
@@ -1573,8 +1611,8 @@ const extractZapPhotoUrls = (photos) => {
     .slice(0, 30);
 };
 
-const getConfiguredDetailBaseUrl = () => {
-  const configuredBase = getZapFeedConfig().detailBaseUrl;
+const getConfiguredDetailBaseUrl = (cfg = getZapFeedConfig()) => {
+  const configuredBase = cfg.detailBaseUrl;
   if (configuredBase) return configuredBase.replace(/\/$/, '');
   return '';
 };
@@ -1644,7 +1682,7 @@ const buildFeaturesXml = (imovel) => {
   return `      <Features>\n${items}\n      </Features>`;
 };
 
-const buildZapListingXml = (imovel) => {
+const buildZapListingXml = (imovel, cfg = getZapFeedConfig()) => {
   const propertyType = mapZapPropertyType(imovel);
   const transactionType = mapZapTransactionType(imovel);
   const usageType = mapZapUsageType(propertyType);
@@ -1655,8 +1693,8 @@ const buildZapListingXml = (imovel) => {
   const lotArea = toFeedNumber(imovel.area_total);
   const livingArea = toFeedNumber(imovel.area_util || imovel.metragem_m2);
   const photos = extractZapPhotoUrls(imovel.fotos);
-  const baseUrl = getConfiguredDetailBaseUrl();
-  const contact = getListingContactInfo(imovel);
+  const baseUrl = getConfiguredDetailBaseUrl(cfg);
+  const contact = getListingContactInfo(imovel, cfg);
   const detailUrl = baseUrl && imovel.codigo_imovel
     ? `${baseUrl}/imovel/${encodeURIComponent(imovel.codigo_imovel)}`
     : null;
@@ -1687,7 +1725,7 @@ const buildZapListingXml = (imovel) => {
     <ListingID>${xmlEscape(imovel.codigo_imovel)}</ListingID>
     <Title>${xmlCdata(normalizeFeedText(imovel.titulo, `${imovel.tipo || 'Imóvel'} - ${imovel.bairro || imovel.cidade || ''}`))}</Title>
     <TransactionType>${transactionType}</TransactionType>
-    <PublicationType>${xmlEscape(getZapFeedConfig().publicationType)}</PublicationType>
+    <PublicationType>${xmlEscape(cfg.publicationType)}</PublicationType>
 ${detailUrl ? `    <DetailViewUrl>${xmlEscape(detailUrl)}</DetailViewUrl>\n` : ''}${mediaXml ? `${mediaXml}\n` : ''}    <Details>
       <UsageType>${usageType}</UsageType>
       <PropertyType>${propertyType}</PropertyType>
@@ -1711,10 +1749,9 @@ ${contact.phone ? `      <Telephone>${xmlEscape(contact.phone)}</Telephone>\n` :
   </Listing>`;
 };
 
-const buildZapVRSyncXml = ({ listings }) => {
-  const config = getZapFeedConfig();
+const buildZapVRSyncXml = ({ listings, config = getZapFeedConfig() }) => {
   const publishDate = new Date().toISOString().replace(/\.\d{3}Z$/, '');
-  const listingsXml = listings.map((imovel) => buildZapListingXml(imovel)).join('\n');
+  const listingsXml = listings.map((imovel) => buildZapListingXml(imovel, config)).join('\n');
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <ListingDataFeed xmlns="http://www.vivareal.com/schemas/1.0/VRSync"
@@ -1913,7 +1950,7 @@ const createZapVRSyncFeed = async (req, res) => {
   try {
     const includeAllStatuses = req.query.status === 'all' || req.query.include_pending === 'true';
     const listings = await getZapFeedListings(req.tenantId, { includeAllStatuses });
-    const xml = buildZapVRSyncXml({ listings, req });
+    const xml = buildZapVRSyncXml({ listings, config: req.zapConfig || getZapFeedConfig() });
     const requesterIp = firstHeaderValue(req.headers['x-forwarded-for']) || req.ip;
     const requesterAgent = firstHeaderValue(req.headers['user-agent']) || 'unknown';
 
@@ -1929,6 +1966,11 @@ const createZapVRSyncFeed = async (req, res) => {
     res.setHeader('Cache-Control', 'no-store, max-age=0');
     res.setHeader('X-Zap-Listings-Count', String(listings.length));
     res.status(200).send(xml);
+
+    // Observabilidade best-effort (só no fluxo multi-tenant, onde há linha p/ marcar).
+    if (req.integrationAuth === 'zapimoveis_tenant_secret') {
+      void zapConfigResolver.touch(req.tenantId, 'last_feed_at');
+    }
   } catch (error) {
     console.error('❌ Erro ao gerar feed VRSync Zap/OLX:', error);
     res.status(500).json({
@@ -2419,6 +2461,10 @@ app.post('/api/v1/integrations/zapimoveis/webhook', validateZapFeedAccess, async
       source: 'ZAP Imóveis'
     });
 
+    if (req.integrationAuth === 'zapimoveis_tenant_secret') {
+      void zapConfigResolver.touch(req.tenantId, 'last_lead_at');
+    }
+
     console.log('📥 Webhook ZAP recebido e salvo:', {
       tenant_id: req.tenantId,
       lead_id: result.response?.data?.id,
@@ -2480,8 +2526,7 @@ const buildPublicFeedUrl = (req, tenantId) => {
   return `${proto}://${baseFromHeader}/api/v1/integrations/zapimoveis/vrsync.xml?tenant_id=${encodeURIComponent(tenantId)}`;
 };
 
-const notifyZapResync = async ({ tenantId, propertyCodes = [], action = 'update', feedUrl }) => {
-  const config = getZapFeedConfig();
+const notifyZapResync = async ({ tenantId, propertyCodes = [], action = 'update', feedUrl, config = getZapFeedConfig() }) => {
   const payload = {
     tenant_id: tenantId,
     action,
@@ -2536,7 +2581,8 @@ app.post('/api/v1/integrations/zapimoveis/notify-update', validateZapFeedAccess,
       tenantId: req.tenantId,
       propertyCodes,
       action,
-      feedUrl
+      feedUrl,
+      config: req.zapConfig || getZapFeedConfig()
     });
 
     console.log('📤 Webhook ZAP notify-update:', {
@@ -5193,6 +5239,27 @@ registerAgentActionRoutes(app, supabase);
 
 import { registerCommunicationRoutes } from './communication/index.js';
 registerCommunicationRoutes(app, supabase);
+
+// ============================================
+// SANTA ÂNGELA — integração multi-tenant (config cifrada por tenant)
+// Registrar ANTES do 404 catch-all de /api/v1/*.
+// ============================================
+import { registerSantaAngelaRoutes, startSantaAngelaScheduler, makeSantaAngelaRunner } from './santaAngela/index.js';
+// Runner ÚNICO: rotas (disparo on-demand) e scheduler (cron) compartilham a mesma
+// guarda de reentrância — impossibilita dois ciclos de sync em paralelo no processo.
+const santaAngelaRunner = makeSantaAngelaRunner(supabase);
+registerSantaAngelaRoutes(app, supabase, { runner: santaAngelaRunner });
+
+// Polling automático (default 60s). Flag-gated para rodar em UM processo, igual
+// ao scheduler do Kenlo. O sync alimenta o time de IA em quase tempo real.
+if (process.env.SANTA_ANGELA_SYNC_SCHEDULER === '1') {
+  startSantaAngelaScheduler(supabase, { runner: santaAngelaRunner });
+}
+
+// Rotas owner/admin da config ZAP por tenant. Reusa o MESMO resolver do
+// validateZapFeedAccess para que um save invalide o cache do feed na hora.
+import { registerZapRoutes } from './zap/index.js';
+registerZapRoutes(app, supabase, { resolver: zapConfigResolver });
 
 // 404 para rotas da API não encontradas
 app.use('/api/v1/*', (req, res) => {

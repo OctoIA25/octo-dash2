@@ -83,8 +83,18 @@ import {
   saveKenloIntegration, 
   fetchKenloIntegration,
   fetchKenloLeads,
-  disconnectKenloIntegration 
+  disconnectKenloIntegration
 } from '@/features/imoveis/services/kenloLeadsService';
+import {
+  saveSantaAngelaConfig,
+  testSantaAngelaConfig,
+} from '@/features/settings/services/santaAngelaIntegrationService';
+import {
+  fetchZapConfig,
+  saveZapConfig,
+  rotateZapSecret,
+  testZapConfig,
+} from '@/features/settings/services/zapIntegrationService';
 import { ApiIntegrationTab } from '@/components/integrations/ApiIntegrationTab';
 import { WhatsAppIntegrationTab } from '@/features/chat/components/WhatsAppIntegrationTab';
 
@@ -126,6 +136,25 @@ export const IntegracoesPage: React.FC = () => {
   const [isConnecting, setIsConnecting] = useState(false);
   const [kenloStatus, setKenloStatus] = useState<'inativo' | 'ativo' | 'erro'>('inativo');
   const [kenloLeads, setKenloLeads] = useState(0);
+
+  // Estados Santa Ângela
+  const [saBaseUrl, setSaBaseUrl] = useState('');
+  const [saApiKey, setSaApiKey] = useState('');
+  const [saStatus, setSaStatus] = useState<'inativo' | 'ativo' | 'erro'>('inativo');
+  const [saTesting, setSaTesting] = useState(false);
+  const [saSaving, setSaSaving] = useState(false);
+
+  // Estados ZAP Imóveis (feed + webhook por tenant)
+  const [zapContactEmail, setZapContactEmail] = useState('');
+  const [zapContactName, setZapContactName] = useState('');
+  const [zapContactPhone, setZapContactPhone] = useState('');
+  const [zapResyncUrl, setZapResyncUrl] = useState('');
+  const [zapStatus, setZapStatus] = useState<'inativo' | 'ativo' | 'erro'>('inativo');
+  const [zapHasSecret, setZapHasSecret] = useState(false);
+  const [zapTesting, setZapTesting] = useState(false);
+  const [zapSaving, setZapSaving] = useState(false);
+  // Secret exibido UMA vez após salvar/rotacionar (nunca volta do servidor depois).
+  const [zapNewSecret, setZapNewSecret] = useState<string | null>(null);
 
   // Estados para imagens customizadas das origens
   const [sourceImages, setSourceImages] = useState<SourceImage>({
@@ -419,6 +448,79 @@ export const IntegracoesPage: React.FC = () => {
     } finally {
       setIsConnecting(false);
     }
+  };
+
+  // Handlers Santa Ângela
+  const handleSaSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!tenantId || !saBaseUrl || !saApiKey) return;
+    setSaSaving(true);
+    const r = await saveSantaAngelaConfig(tenantId, saBaseUrl, saApiKey, 'active');
+    setSaStatus(r.ok ? 'ativo' : 'erro');
+    setSaSaving(false);
+  };
+
+  const handleSaTest = async () => {
+    if (!tenantId) return;
+    setSaTesting(true);
+    const r = await testSantaAngelaConfig(tenantId);
+    setSaStatus(r.ok ? 'ativo' : 'erro');
+    setSaTesting(false);
+  };
+
+  // Carrega a config ZAP do tenant (metadados; segredos nunca voltam em claro).
+  useEffect(() => {
+    if (!tenantId) return;
+    fetchZapConfig(tenantId).then(({ config }) => {
+      if (!config) return;
+      setZapContactEmail(config.contactEmail || '');
+      setZapContactName(config.contactName || '');
+      setZapContactPhone(config.contactPhone || '');
+      setZapResyncUrl(config.resyncUrl || '');
+      setZapHasSecret(config.hasSecret);
+      setZapStatus(config.status === 'active' ? 'ativo' : 'inativo');
+    }).catch(() => { /* best-effort */ });
+  }, [tenantId]);
+
+  const handleZapSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!tenantId) return;
+    setZapSaving(true);
+    setZapNewSecret(null);
+    // Gera o secret automaticamente no primeiro save (quando ainda não existe).
+    const r = await saveZapConfig(tenantId, {
+      contactName: zapContactName,
+      contactEmail: zapContactEmail,
+      contactPhone: zapContactPhone,
+      resyncUrl: zapResyncUrl,
+      status: 'active',
+      generateSecret: !zapHasSecret,
+    });
+    if (r.ok) {
+      setZapStatus('ativo');
+      if (r.secret) { setZapNewSecret(r.secret); setZapHasSecret(true); }
+    } else {
+      setZapStatus('erro');
+    }
+    setZapSaving(false);
+  };
+
+  const handleZapRotate = async () => {
+    if (!tenantId) return;
+    setZapSaving(true);
+    setZapNewSecret(null);
+    const r = await rotateZapSecret(tenantId);
+    if (r.ok && r.secret) { setZapNewSecret(r.secret); setZapHasSecret(true); }
+    else setZapStatus('erro');
+    setZapSaving(false);
+  };
+
+  const handleZapTest = async () => {
+    if (!tenantId) return;
+    setZapTesting(true);
+    const r = await testZapConfig(tenantId);
+    setZapStatus(r.ok ? 'ativo' : 'erro');
+    setZapTesting(false);
   };
 
   // Status config
@@ -982,6 +1084,206 @@ export const IntegracoesPage: React.FC = () => {
                             <ArrowRight className="w-4 h-4" />
                           </>
                         )}
+                      </button>
+                    )}
+                  </div>
+                </form>
+              </div>
+
+              {/* Card Santa Ângela */}
+              <div className={`bg-white dark:bg-slate-900 rounded-xl border-2 p-3 w-full relative transition-all ${
+                saStatus === 'ativo'
+                  ? 'border-green-200 bg-gradient-to-br from-white to-green-50/30'
+                  : saStatus === 'erro'
+                  ? 'border-red-200'
+                  : 'border-gray-200 dark:border-slate-800'
+              }`}>
+                <div className={`absolute right-3 top-3 px-2 py-1 rounded-full text-[10px] font-semibold flex items-center gap-1 border ${
+                  saStatus === 'ativo' ? statusConfig.ativo.color
+                  : saStatus === 'erro' ? statusConfig.erro.color
+                  : statusConfig.inativo.color
+                }`}>
+                  {saStatus === 'ativo' ? (
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                  ) : (
+                    <XCircle className="w-3.5 h-3.5" />
+                  )}
+                  {saStatus === 'ativo' ? 'Conectado' : saStatus === 'erro' ? 'Erro' : 'Desconectado'}
+                </div>
+
+                <div className="flex flex-col items-center text-center pt-1">
+                  <div className={`w-12 h-12 rounded-lg ring-2 flex items-center justify-center transition-all ${
+                    saStatus === 'ativo'
+                      ? 'ring-green-200 bg-green-50'
+                      : 'ring-black/5 bg-gray-50 dark:bg-slate-950'
+                  }`}>
+                    <Building2 className="w-6 h-6 text-orange-600" />
+                  </div>
+                  <h3 className="font-semibold text-gray-900 dark:text-slate-100 text-sm mt-2">Santa Ângela</h3>
+                  <p className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">Integração de leads Santa Ângela</p>
+                </div>
+
+                <form onSubmit={handleSaSave} className="mt-4 space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">Base URL da API</label>
+                    <input
+                      type="url"
+                      value={saBaseUrl}
+                      onChange={(e) => setSaBaseUrl(e.target.value)}
+                      placeholder="https://..."
+                      className="w-full px-3 py-2 border border-gray-200 dark:border-slate-800 rounded-lg text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                      disabled={saSaving}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">API Key</label>
+                    <input
+                      type="password"
+                      value={saApiKey}
+                      onChange={(e) => setSaApiKey(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full px-3 py-2 border border-gray-200 dark:border-slate-800 rounded-lg text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                      disabled={saSaving}
+                    />
+                  </div>
+                  <div className="pt-1 space-y-2">
+                    <button
+                      type="submit"
+                      disabled={saSaving || !saBaseUrl || !saApiKey}
+                      className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      {saSaving ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Salvando...
+                        </>
+                      ) : (
+                        'Salvar'
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaTest}
+                      disabled={saTesting}
+                      className="w-full px-4 py-2 border border-gray-200 dark:border-slate-800 rounded-lg text-sm font-medium bg-white dark:bg-slate-900 hover:bg-gray-50 dark:hover:bg-slate-800/60 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-gray-900 dark:text-slate-100"
+                    >
+                      {saTesting ? 'Testando...' : 'Testar conexão'}
+                    </button>
+                    {saStatus === 'ativo' && (
+                      <p className="text-xs text-gray-500 dark:text-slate-400">
+                        Sincronização automática ativa — os leads são atualizados sozinhos.
+                      </p>
+                    )}
+                  </div>
+                </form>
+              </div>
+
+              {/* Card ZAP Imóveis */}
+              <div className={`bg-white dark:bg-slate-900 rounded-xl border-2 p-3 w-full relative transition-all ${
+                zapStatus === 'ativo'
+                  ? 'border-green-200 bg-gradient-to-br from-white to-green-50/30'
+                  : zapStatus === 'erro'
+                  ? 'border-red-200'
+                  : 'border-gray-200 dark:border-slate-800'
+              }`}>
+                <div className={`absolute right-3 top-3 px-2 py-1 rounded-full text-[10px] font-semibold flex items-center gap-1 border ${
+                  zapStatus === 'ativo' ? statusConfig.ativo.color
+                  : zapStatus === 'erro' ? statusConfig.erro.color
+                  : statusConfig.inativo.color
+                }`}>
+                  {zapStatus === 'ativo' ? (
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                  ) : (
+                    <XCircle className="w-3.5 h-3.5" />
+                  )}
+                  {zapStatus === 'ativo' ? 'Conectado' : zapStatus === 'erro' ? 'Erro' : 'Desconectado'}
+                </div>
+
+                <div className="flex flex-col items-center text-center pt-1">
+                  <div className={`w-12 h-12 rounded-lg ring-2 flex items-center justify-center transition-all ${
+                    zapStatus === 'ativo'
+                      ? 'ring-green-200 bg-green-50'
+                      : 'ring-black/5 bg-gray-50 dark:bg-slate-950'
+                  }`}>
+                    <Building2 className="w-6 h-6 text-blue-600" />
+                  </div>
+                  <h3 className="font-semibold text-gray-900 dark:text-slate-100 text-sm mt-2">ZAP Imóveis</h3>
+                  <p className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">Feed de imóveis + recebimento de leads</p>
+                </div>
+
+                <form onSubmit={handleZapSave} className="mt-4 space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">E-mail de contato (feed)</label>
+                    <input
+                      type="email"
+                      value={zapContactEmail}
+                      onChange={(e) => setZapContactEmail(e.target.value)}
+                      placeholder="contato@imobiliaria.com"
+                      className="w-full px-3 py-2 border border-gray-200 dark:border-slate-800 rounded-lg text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                      disabled={zapSaving}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">Nome de contato (feed)</label>
+                    <input
+                      type="text"
+                      value={zapContactName}
+                      onChange={(e) => setZapContactName(e.target.value)}
+                      placeholder="Imobiliária"
+                      className="w-full px-3 py-2 border border-gray-200 dark:border-slate-800 rounded-lg text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                      disabled={zapSaving}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">URL de resync (opcional)</label>
+                    <input
+                      type="url"
+                      value={zapResyncUrl}
+                      onChange={(e) => setZapResyncUrl(e.target.value)}
+                      placeholder="https://..."
+                      className="w-full px-3 py-2 border border-gray-200 dark:border-slate-800 rounded-lg text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                      disabled={zapSaving}
+                    />
+                  </div>
+
+                  {zapNewSecret && (
+                    <div className="p-2 rounded-lg bg-amber-50 border border-amber-200 text-[11px] text-amber-800 break-all">
+                      <strong>Secret do feed (copie agora — não será exibido novamente):</strong>
+                      <div className="mt-1 font-mono select-all">{zapNewSecret}</div>
+                    </div>
+                  )}
+
+                  <div className="pt-1 space-y-2">
+                    <button
+                      type="submit"
+                      disabled={zapSaving}
+                      className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      {zapSaving ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Salvando...
+                        </>
+                      ) : (
+                        'Salvar'
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleZapTest}
+                      disabled={zapTesting}
+                      className="w-full px-4 py-2 border border-gray-200 dark:border-slate-800 rounded-lg text-sm font-medium bg-white dark:bg-slate-900 hover:bg-gray-50 dark:hover:bg-slate-800/60 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-gray-900 dark:text-slate-100"
+                    >
+                      {zapTesting ? 'Testando...' : 'Testar conexão'}
+                    </button>
+                    {zapHasSecret && (
+                      <button
+                        type="button"
+                        onClick={handleZapRotate}
+                        disabled={zapSaving}
+                        className="w-full px-4 py-2 text-xs font-medium text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 transition-colors disabled:opacity-50"
+                      >
+                        Rotacionar secret do feed
                       </button>
                     )}
                   </div>

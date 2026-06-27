@@ -72,6 +72,7 @@ import {
   type TenantBolsaoConfig,
 } from '../services/tenantBolsaoConfigService';
 import { useRegisterNovoActions } from '@/contexts/NovoActionsContext';
+import { triggerSantaAngelaSyncOnView } from '@/features/settings/services/santaAngelaIntegrationService';
 import type { BolsaoLead } from '../services/bolsaoService';
 import {
   Dialog,
@@ -99,7 +100,6 @@ import {
   type CollisionDetection,
 } from '@dnd-kit/core';
 import { getEventCoordinates } from '@dnd-kit/utilities';
-import { startAutoSync, SyncConfig } from '@/features/imoveis/services/santaAngelaSyncService';
 
 const DEBUG_LOGS = import.meta.env?.VITE_DEBUG_LOGS === 'true';
 
@@ -590,22 +590,16 @@ interface MeusLeadsAtribuidosSectionProps {
 export const MeusLeadsAtribuidosSection = ({
   leadType = LEAD_TYPE_INTERESSADO,
 }: MeusLeadsAtribuidosSectionProps = {}) => {
-  const { user, isCorretor, isAdmin, isLoading: authLoading, tenantId } = useAuth();
+  const { user, isCorretor, isAdmin, isOwner, isLoading: authLoading, tenantId } = useAuth();
   const kanbanColumns = useMemo(() => getKanbanColumns(leadType), [leadType]);
 
-  // Iniciar sincronização automática do Santa Angela (apenas para tenant autorizado)
+  // Ao abrir a tela, o owner força um sync server-side (debounce interno evita
+  // disparos repetidos). A rota /sync/run é owner-only — para não-owners daria
+  // 403 inútil, então nem disparamos: o polling de 60s já garante o frescor
+  // (SLA real) para todos. Este trigger é só um "adiantar" sob demanda.
   useEffect(() => {
-    const SANTA_ANGELA_TENANT_ID = import.meta.env.VITE_SANTA_ANGELA_TENANT_ID;
-    
-    if (tenantId && tenantId === SANTA_ANGELA_TENANT_ID) {
-      const config: SyncConfig = {
-        tenantId: tenantId,
-        intervalMinutes: 5,
-        enabled: true,
-      };
-      startAutoSync(config);
-    }
-  }, [tenantId]);
+    if (isOwner) triggerSantaAngelaSyncOnView();
+  }, [isOwner]);
 
   // Modal de criar lead — permanece no Kanban; emite `leadsEventEmitter` no sucesso.
   const [createModalStage, setCreateModalStage] = useState<string | null>(null);

@@ -10,6 +10,7 @@ import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import { createWatermarkRouter } from './watermark/routes.js';
 import { createWorker } from './watermark/worker.js';
+import { createZapConfigResolver, registerZapRoutes } from './zap/index.js';
 
 const app = express();
 const PORT = process.env.API_PORT || 3001;
@@ -190,44 +191,52 @@ const getZapFeedConfig = () => ({
   resyncToken: process.env.ZAPIMOVEIS_RESYNC_TOKEN || ''
 });
 
-const validateZapWebhookAccess = async (req, res, next) => {
-  const config = getZapFeedConfig();
-  const providedSecret = firstHeaderValue(req.headers['x-zapimoveis-webhook-secret'])
-    || firstHeaderValue(req.headers['x-zapimoveis-secret'])
-    || firstHeaderValue(req.headers['x-olx-webhook-secret'])
-    || req.query.token
-    || req.query.secret;
-
-  if (config.secret && safeStringEquals(providedSecret, config.secret)) {
-    const tenantId = req.query.tenant_id || req.query.tenantId || config.tenantId;
-    if (!tenantId) {
-      return res.status(500).json({
-        success: false,
-        error: {
-          code: 'MISSING_TENANT_ID',
-          message: 'Configure ZAPIMOVEIS_TENANT_ID ou envie tenant_id na URL do webhook.'
-        }
-      });
-    }
-    req.tenantId = tenantId;
-    return next();
-  }
-
-  return validateApiKey(req, res, next);
-};
-
 // ============================================
 // MIDDLEWARE - ZAP/OLX Feed (VRSync)
 // ============================================
+// Resolver multi-tenant da config ZAP (tenant_zap_config). Resolve o tenant PELO
+// secret apresentado, com fallback ao .env enquanto tenants legados não tiverem
+// linha no banco. Espelha proxy-production.js.
+const zapConfigResolver = createZapConfigResolver({ supabase });
+
+const effectiveZapConfig = (tenantConfig) => {
+  const env = getZapFeedConfig();
+  if (!tenantConfig) return env;
+  return {
+    secret: tenantConfig.feedSecret ?? env.secret,
+    tenantId: tenantConfig.tenantId ?? env.tenantId,
+    provider: tenantConfig.provider ?? env.provider,
+    contactName: tenantConfig.contactName ?? env.contactName,
+    contactEmail: tenantConfig.contactEmail ?? env.contactEmail,
+    contactPhone: tenantConfig.contactPhone ?? env.contactPhone,
+    publicationType: tenantConfig.publicationType ?? env.publicationType,
+    detailBaseUrl: tenantConfig.detailBaseUrl ?? env.detailBaseUrl,
+    resyncUrl: tenantConfig.resyncUrl ?? env.resyncUrl,
+    resyncToken: tenantConfig.resyncToken ?? env.resyncToken,
+  };
+};
+
 const validateZapFeedAccess = async (req, res, next) => {
-  const config = getZapFeedConfig();
   const providedSecret = firstHeaderValue(req.headers['x-zapimoveis-feed-secret'])
+    || firstHeaderValue(req.headers['x-zapimoveis-webhook-secret'])
     || firstHeaderValue(req.headers['x-zapimoveis-secret'])
     || firstHeaderValue(req.headers['x-olx-feed-secret'])
+    || firstHeaderValue(req.headers['x-olx-webhook-secret'])
     || req.query.token
     || req.query.feed_token
     || req.query.secret;
 
+  // 1) Multi-tenant: o secret IDENTIFICA o tenant (a URL não escolhe).
+  const tenantConfig = await zapConfigResolver.resolveBySecret(providedSecret).catch(() => null);
+  if (tenantConfig && tenantConfig.status === 'active') {
+    req.tenantId = tenantConfig.tenantId;
+    req.zapConfig = effectiveZapConfig(tenantConfig);
+    req.integrationAuth = 'zapimoveis_tenant_secret';
+    return next();
+  }
+
+  // 2) Fallback legado: secret global do .env.
+  const config = getZapFeedConfig();
   if (config.secret && safeStringEquals(providedSecret, config.secret)) {
     const tenantId = req.query.tenant_id || req.query.tenantId || config.tenantId;
 
@@ -242,6 +251,7 @@ const validateZapFeedAccess = async (req, res, next) => {
     }
 
     req.tenantId = tenantId;
+    req.zapConfig = config;
     req.integrationAuth = 'zapimoveis_feed_secret';
     return next();
   }
@@ -279,17 +289,16 @@ const normalizeFeedText = (value, fallback = '') => {
   return text || fallback;
 };
 
-const getDefaultZapContactInfo = () => {
-  const config = getZapFeedConfig();
+const getDefaultZapContactInfo = (cfg = getZapFeedConfig()) => {
   return {
-    name: normalizeFeedText(config.contactName, 'OctoDash'),
-    email: normalizeFeedText(config.contactEmail, 'contato@octoia.com'),
-    phone: normalizeFeedText(config.contactPhone)
+    name: normalizeFeedText(cfg.contactName, 'OctoDash'),
+    email: normalizeFeedText(cfg.contactEmail, 'contato@octoia.com'),
+    phone: normalizeFeedText(cfg.contactPhone)
   };
 };
 
-const getListingContactInfo = (imovel) => {
-  const fallback = getDefaultZapContactInfo();
+const getListingContactInfo = (imovel, cfg = getZapFeedConfig()) => {
+  const fallback = getDefaultZapContactInfo(cfg);
   const contact = imovel.zap_contact || {};
   return {
     name: normalizeFeedText(contact.name, fallback.name),
@@ -406,8 +415,8 @@ const extractZapPhotoUrls = (photos) => {
     .slice(0, 30);
 };
 
-const getConfiguredDetailBaseUrl = () => {
-  const configuredBase = getZapFeedConfig().detailBaseUrl;
+const getConfiguredDetailBaseUrl = (cfg = getZapFeedConfig()) => {
+  const configuredBase = cfg.detailBaseUrl;
   if (configuredBase) return configuredBase.replace(/\/$/, '');
   return '';
 };
@@ -477,7 +486,7 @@ const buildFeaturesXml = (imovel) => {
   return `      <Features>\n${items}\n      </Features>`;
 };
 
-const buildZapListingXml = (imovel) => {
+const buildZapListingXml = (imovel, cfg = getZapFeedConfig()) => {
   const propertyType = mapZapPropertyType(imovel);
   const transactionType = mapZapTransactionType(imovel);
   const usageType = mapZapUsageType(propertyType);
@@ -488,8 +497,8 @@ const buildZapListingXml = (imovel) => {
   const lotArea = toFeedNumber(imovel.area_total);
   const livingArea = toFeedNumber(imovel.area_util || imovel.metragem_m2);
   const photos = extractZapPhotoUrls(imovel.fotos);
-  const baseUrl = getConfiguredDetailBaseUrl();
-  const contact = getListingContactInfo(imovel);
+  const baseUrl = getConfiguredDetailBaseUrl(cfg);
+  const contact = getListingContactInfo(imovel, cfg);
   const detailUrl = baseUrl && imovel.codigo_imovel
     ? `${baseUrl}/imovel/${encodeURIComponent(imovel.codigo_imovel)}`
     : null;
@@ -520,7 +529,7 @@ const buildZapListingXml = (imovel) => {
     <ListingID>${xmlEscape(imovel.codigo_imovel)}</ListingID>
     <Title>${xmlCdata(normalizeFeedText(imovel.titulo, `${imovel.tipo || 'Imóvel'} - ${imovel.bairro || imovel.cidade || ''}`))}</Title>
     <TransactionType>${transactionType}</TransactionType>
-    <PublicationType>${xmlEscape(getZapFeedConfig().publicationType)}</PublicationType>
+    <PublicationType>${xmlEscape(cfg.publicationType)}</PublicationType>
 ${detailUrl ? `    <DetailViewUrl>${xmlEscape(detailUrl)}</DetailViewUrl>\n` : ''}${mediaXml ? `${mediaXml}\n` : ''}    <Details>
       <UsageType>${usageType}</UsageType>
       <PropertyType>${propertyType}</PropertyType>
@@ -544,10 +553,9 @@ ${contact.phone ? `      <Telephone>${xmlEscape(contact.phone)}</Telephone>\n` :
   </Listing>`;
 };
 
-const buildZapVRSyncXml = ({ listings }) => {
-  const config = getZapFeedConfig();
+const buildZapVRSyncXml = ({ listings, config = getZapFeedConfig() }) => {
   const publishDate = new Date().toISOString().replace(/\.\d{3}Z$/, '');
-  const listingsXml = listings.map((imovel) => buildZapListingXml(imovel)).join('\n');
+  const listingsXml = listings.map((imovel) => buildZapListingXml(imovel, config)).join('\n');
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <ListingDataFeed xmlns="http://www.vivareal.com/schemas/1.0/VRSync"
@@ -744,7 +752,7 @@ const createZapVRSyncFeed = async (req, res) => {
   try {
     const includeAllStatuses = req.query.status === 'all' || req.query.include_pending === 'true';
     const listings = await getZapFeedListings(req.tenantId, { includeAllStatuses });
-    const xml = buildZapVRSyncXml({ listings, req });
+    const xml = buildZapVRSyncXml({ listings, config: req.zapConfig || getZapFeedConfig() });
     const requesterIp = firstHeaderValue(req.headers['x-forwarded-for']) || req.ip;
     const requesterAgent = firstHeaderValue(req.headers['user-agent']) || 'unknown';
 
@@ -760,6 +768,10 @@ const createZapVRSyncFeed = async (req, res) => {
     res.setHeader('Cache-Control', 'no-store, max-age=0');
     res.setHeader('X-Zap-Listings-Count', String(listings.length));
     res.status(200).send(xml);
+
+    if (req.integrationAuth === 'zapimoveis_tenant_secret') {
+      void zapConfigResolver.touch(req.tenantId, 'last_feed_at');
+    }
   } catch (error) {
     console.error('❌ Erro ao gerar feed VRSync Zap/OLX:', error);
     res.status(500).json({
@@ -776,8 +788,7 @@ const buildPublicFeedUrl = (req, tenantId) => {
   return `${proto}://${baseFromHeader}/api/v1/integrations/zapimoveis/vrsync.xml?tenant_id=${encodeURIComponent(tenantId)}`;
 };
 
-const notifyZapResync = async ({ tenantId, propertyCodes = [], action = 'update', feedUrl }) => {
-  const config = getZapFeedConfig();
+const notifyZapResync = async ({ tenantId, propertyCodes = [], action = 'update', feedUrl, config = getZapFeedConfig() }) => {
   const payload = {
     tenant_id: tenantId,
     action,
@@ -1585,7 +1596,8 @@ app.post('/api/v1/integrations/zapimoveis/notify-update', validateZapFeedAccess,
       tenantId: req.tenantId,
       propertyCodes,
       action,
-      feedUrl
+      feedUrl,
+      config: req.zapConfig || getZapFeedConfig()
     });
 
     console.log('📤 Webhook ZAP notify-update:', {
@@ -1622,7 +1634,7 @@ app.post('/api/v1/integrations/zapimoveis/notify-update', validateZapFeedAccess,
 
 // POST /api/v1/leads - Criar lead com atribuição automática
 // Pipeline: 1) attendedBy → 2) XML/cache → 3) Meus Imóveis → 4) Roleta
-app.post('/api/v1/integrations/zapimoveis/webhook', validateZapWebhookAccess, async (req, res) => {
+app.post('/api/v1/integrations/zapimoveis/webhook', validateZapFeedAccess, async (req, res) => {
   try {
     const normalized = normalizeZapLeadPayload(req.body);
     const tenantId = req.tenantId || normalized.tenant_id;
@@ -1707,6 +1719,10 @@ app.post('/api/v1/integrations/zapimoveis/webhook', validateZapWebhookAccess, as
       .single();
 
     if (error) throw error;
+
+    if (req.integrationAuth === 'zapimoveis_tenant_secret') {
+      void zapConfigResolver.touch(tenantId, 'last_lead_at');
+    }
 
     res.status(201).json({
       success: true,
@@ -4071,6 +4087,13 @@ registerAgentActionRoutes(app, supabase);
 // Módulo Comunicação: alias /api/v1/communication/dispatch/* dos mesmos handlers.
 import { registerCommunicationRoutes } from './communication/index.js';
 registerCommunicationRoutes(app, supabase);
+
+// Santa Ângela — integração multi-tenant. Registrar ANTES do 404 catch-all.
+import { registerSantaAngelaRoutes } from './santaAngela/index.js';
+registerSantaAngelaRoutes(app, supabase);
+
+// Rotas owner/admin da config ZAP por tenant — mesmo resolver do feed (save invalida cache).
+registerZapRoutes(app, supabase, { resolver: zapConfigResolver });
 
 // 404 Handler (DEVE ficar DEPOIS de todas as rotas)
 app.use('/api/v1/*', (req, res) => {
