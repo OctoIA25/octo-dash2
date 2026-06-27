@@ -3,17 +3,20 @@ import { createKenloSyncService } from './KenloSyncService.js';
 
 const integration = { tenant_id: 't1' };
 
-// Supabase fake: select existentes (.eq().in()) + upsert (.upsert().select()).
+// Supabase fake: select existentes (.eq().in()) + upsert (.upsert().select()) + update (sync_state).
 function fakeSupabase({ existing = [] } = {}) {
   const upserts = [];
+  const syncStates = [];
   return {
     upserts,
+    syncStates,
     from() {
       return {
         select() {
           return { eq() { return { in() { return Promise.resolve({ data: existing.map((id) => ({ external_id: id })), error: null }); } }; } };
         },
         upsert(rows) { upserts.push(rows); return { select() { return Promise.resolve({ data: rows, error: null }); } }; },
+        update(payload) { if (payload.sync_state) syncStates.push(JSON.parse(payload.sync_state)); return { eq() { return Promise.resolve({ error: null }); } }; },
       };
     },
   };
@@ -69,6 +72,7 @@ describe('KenloSyncService.syncTenant', () => {
       from: () => ({
         select: () => ({ eq: () => ({ in: () => Promise.resolve({ data: [], error: null }) }) }),
         upsert: (batch) => { upsertCalls.push(batch.length); return { select: () => Promise.resolve({ data: batch, error: null }) }; },
+        update: () => ({ eq: () => Promise.resolve({ error: null }) }),
       }),
     };
     const leadService = {
@@ -154,7 +158,10 @@ describe('KenloSyncService.syncAllTenants', () => {
     expect(calls[0]).toBe('2026-04-27');
   });
 
-  it('NÃO avança o cursor se uma página falhou (evita pular leads abaixo do floor)', async () => {
+  it('cursor é PISO: avança last_sync_at mesmo com falha transitória de página', async () => {
+    // Antes este teste travava o cursor em errors>0. Provou-se incorreto: um único
+    // hiccup de rede (status 0) em centenas de páginas paralisava o sync p/ sempre.
+    // Cursor é piso; a reconciliação BACKFILL periódica cobre gaps transitórios.
     const updates = [];
     const branchingSupabase = {
       from: (table) => table === 'kenlo_integrations'
@@ -165,13 +172,32 @@ describe('KenloSyncService.syncAllTenants', () => {
         : { select: () => ({ eq: () => ({ in: () => Promise.resolve({ data: [], error: null }) }) }),
             upsert: (b) => ({ select: () => Promise.resolve({ data: b, error: null }) }) },
     };
-    // 1º portal devolve erro de rede (status 0) → sync incompleto
     const leadService = {
-      fetchPage: vi.fn().mockResolvedValue({ status: 0, leads: [], isLast: true }),
+      fetchPage: vi.fn().mockResolvedValue({ status: 0, leads: [], isLast: true }), // erro transitório
       fetchDetails: vi.fn(),
     };
     const svc = createKenloSyncService({ supabase: branchingSupabase, leadService, brokerAssigner: { assign: async (_t, r) => r }, processEnv: { KENLO_FULL_SYNC_TTL_MS: '3600000' }, now: () => Date.parse('2026-06-26T12:00:00Z') });
     await svc.syncAllTenants();
-    expect(updates).toHaveLength(0); // cursor preservado: próximo ciclo re-tenta a janela
+    expect(updates.some((u) => u.last_sync_at)).toBe(true); // cursor avança apesar do erro
+  });
+
+  it('persiste sync_state: running no início, done/contadores no fim', async () => {
+    const states = [];
+    const branchingSupabase = {
+      from: (table) => table === 'kenlo_integrations'
+        ? {
+            select: () => ({ eq: () => Promise.resolve({ data: [{ tenant_id: 't1', last_sync_at: null }], error: null }) }),
+            update: (payload) => ({ eq: () => { if (payload.sync_state) states.push(JSON.parse(payload.sync_state)); return Promise.resolve({ error: null }); } }),
+          }
+        : { select: () => ({ eq: () => ({ in: () => Promise.resolve({ data: [], error: null }) }) }),
+            upsert: (b) => ({ select: () => Promise.resolve({ data: b, error: null }) }) },
+    };
+    const leadService = { fetchPage: vi.fn().mockResolvedValue({ status: 200, leads: [], isLast: true }), fetchDetails: vi.fn() };
+    const svc = createKenloSyncService({ supabase: branchingSupabase, leadService, brokerAssigner: { assign: async (_t, r) => r }, processEnv: {}, now: () => Date.parse('2026-06-26T12:00:00Z') });
+    await svc.syncAllTenants();
+    expect(states[0].status).toBe('running');          // primeiro estado: rodando
+    expect(states[states.length - 1].status).toBe('done'); // último: concluído
+    expect(states[states.length - 1]).toHaveProperty('saved');
+    expect(states[states.length - 1]).toHaveProperty('finished_at');
   });
 });

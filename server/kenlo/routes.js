@@ -8,6 +8,19 @@ import { makeSyncRunner } from './kenloScheduler.js';
 const PLATFORM_OWNER_EMAIL = 'octo.inteligenciaimobiliaria@gmail.com';
 const isPlatformOwner = (email) => (email || '').toLowerCase() === PLATFORM_OWNER_EMAIL;
 
+const STALLED_MS = 10 * 60 * 1000; // running há mais que isto sem terminar = travado (processo caiu)
+
+// Parse seguro do snapshot sync_state + deriva `stalled` (running preso).
+function parseSyncState(raw) {
+  if (!raw) return null;
+  let s;
+  try { s = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch { return null; }
+  if (s?.status === 'running' && s.started_at && Date.now() - Date.parse(s.started_at) > STALLED_MS) {
+    return { ...s, stalled: true };
+  }
+  return s;
+}
+
 function makeRequireOwner(supabase) {
   return async function requireOwner(req, res, next) {
     try {
@@ -43,10 +56,11 @@ export function registerKenloRoutes(app, supabase, options = {}) {
     try {
       const { data, error } = await supabase
         .from('kenlo_integrations')
-        .select('tenant_id,status,last_sync_at,leads_count')
+        .select('tenant_id,status,last_sync_at,leads_count,sync_state')
         .order('last_sync_at', { ascending: false });
       if (error) return res.status(500).json({ ok: false, error: error.message });
-      res.status(200).json({ ok: true, integrations: data || [] });
+      const integrations = (data || []).map((i) => ({ ...i, sync: parseSyncState(i.sync_state) }));
+      res.status(200).json({ ok: true, integrations });
     } catch (err) {
       res.status(500).json({ ok: false, error: 'internal_error' });
     }

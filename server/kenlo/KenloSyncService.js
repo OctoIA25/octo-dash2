@@ -16,6 +16,16 @@ export function createKenloSyncService({
 }) {
   const cfg = loadKenloEnv(processEnv);
 
+  // Observabilidade: snapshot do estado do sync por tenant (sobrescreve em sync_state).
+  // É o que o card de status e o GET /sync/status leem — mata o "esperar cego".
+  async function writeSyncState(tenantId, state) {
+    const { error } = await supabase
+      .from('kenlo_integrations')
+      .update({ sync_state: JSON.stringify(state) })
+      .eq('tenant_id', tenantId);
+    if (error) logger.warn(`[kenlo] writeSyncState falhou: ${error.message}`);
+  }
+
   async function existingIds(tenantId, ids) {
     if (!ids.length) return new Set();
     const { data, error } = await supabase
@@ -52,6 +62,7 @@ export function createKenloSyncService({
     const stats = { fetched: 0, new: 0, saved: 0, skippedTest: 0, errors: 0 };
     logger.info(`[kenlo] {"event":"kenlo.sync.start","runId":"${runId}","tenantId":"${tenantId}","mode":"${syncMode}"}`);
     brokerAssigner.reset?.(); // cache de corretor é por tenant; limpa antes de começar
+    await writeSyncState(tenantId, { status: 'running', mode: syncMode, started_at: new Date(now()).toISOString(), fetched: 0, new: 0, saved: 0, errors: 0 });
 
     for (const mediaOrigin of MEDIA_ORIGINS) {
       for (let page = 1; ; page++) {
@@ -91,15 +102,27 @@ export function createKenloSyncService({
       // BACKFILL no 1º sync (sem cursor) OU na reconciliação periódica vencida.
       const syncMode = (!integ.last_sync_at || dueFull) ? 'BACKFILL' : 'LIVE';
       const startDate = resolveStartDate({ syncMode, lastSyncAt: integ.last_sync_at, cfg, now });
-      const stats = await syncTenant(integ, { syncMode, startDate });
-      // Só avança o cursor se o sync completou sem falha: senão um fetch parcial
-      // moveria o floor e deixaria leads abaixo dele órfãos até a reconciliação.
-      if (stats.errors === 0) {
-        const patch = { last_sync_at: new Date(now()).toISOString() };
-        if (syncMode === 'BACKFILL') patch.last_full_sync_at = patch.last_sync_at;
+      try {
+        const stats = await syncTenant(integ, { syncMode, startDate });
+        // Cursor é PISO: avança sempre que o ciclo rodou. Falhas transitórias de fetch
+        // são cobertas pela reconciliação BACKFILL periódica + upsert idempotente — travar
+        // o cursor num hiccup paralisaria o sync para sempre (era o bug do last_sync travado).
+        const finishedAt = new Date(now()).toISOString();
+        const patch = { last_sync_at: finishedAt };
+        if (syncMode === 'BACKFILL') patch.last_full_sync_at = finishedAt;
+        patch.sync_state = JSON.stringify({
+          status: stats.errors > 0 ? 'error' : 'done', mode: syncMode, finished_at: finishedAt,
+          fetched: stats.fetched, new: stats.new, saved: stats.saved, errors: stats.errors,
+          error_message: stats.errors > 0 ? `${stats.errors} falha(s) durante o sync` : null,
+        });
         await supabase.from('kenlo_integrations').update(patch).eq('tenant_id', integ.tenant_id);
+        return stats;
+      } catch (e) {
+        // Exceção dura (ex: login falhou, credenciais ausentes): grava o erro no card
+        // em vez de deixar sync_state preso em 'running'. NÃO avança o cursor.
+        await writeSyncState(integ.tenant_id, { status: 'error', mode: syncMode, finished_at: new Date(now()).toISOString(), error_message: e?.message || 'erro desconhecido' });
+        throw e;
       }
-      return stats;
     }));
     return results.map((r, idx) => ({
       tenantId: data[idx]?.tenant_id,

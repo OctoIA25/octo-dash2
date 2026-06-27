@@ -59,9 +59,18 @@ describe('rotas Kenlo', () => {
     expect(res.body).toMatchObject({ ok: true, started: false });
   });
 
+  it('GET /sync/status parseia sync_state e devolve em `sync`', async () => {
+    const app = fakeApp();
+    const syncState = JSON.stringify({ status: 'done', mode: 'LIVE', saved: 42, errors: 0 });
+    registerKenloRoutes(app, makeSupabase({ user: { id: 'u', email: OWNER }, integrations: [{ tenant_id: 't1', status: 'active', leads_count: 5, sync_state: syncState }] }), { runner: {} });
+    const res = await run(app.routes['GET /api/v1/kenlo/sync/status'], { headers: { authorization: 'Bearer t' } });
+    expect(res.statusCode).toBe(200);
+    expect(res.body.integrations[0].sync).toMatchObject({ status: 'done', saved: 42 });
+  });
+
   it('GET /sync/status retorna integrações para owner', async () => {
     const app = fakeApp();
-    registerKenloRoutes(app, makeSupabase({ user: { id: 'u', email: OWNER }, integrations: [{ tenant_id: 't1', status: 'active', leads_count: 5 }] }), { syncService: {} });
+    registerKenloRoutes(app, makeSupabase({ user: { id: 'u', email: OWNER }, integrations: [{ tenant_id: 't1', status: 'active', leads_count: 5 }] }), { runner: {} });
     const res = await run(app.routes['GET /api/v1/kenlo/sync/status'], { headers: { authorization: 'Bearer t' } });
     expect(res.statusCode).toBe(200);
     expect(res.body.integrations[0].tenant_id).toBe('t1');
