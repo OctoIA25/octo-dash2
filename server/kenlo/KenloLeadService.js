@@ -15,10 +15,16 @@ const extractLeads = (body) => {
 export function createKenloLeadService({ apiClient, processEnv = process.env, pLimitImpl }) {
   const cfg = loadKenloEnv(processEnv);
 
-  async function fetchLeadsPage(integration, { mediaOrigin, page }) {
-    const url = `${BASE}?page=${page}&perPage=${cfg.perPage}&idMediaOrigin=${mediaOrigin}`;
+  async function fetchLeadsPage(integration, { mediaOrigin, page, startDate }) {
+    let url = `${BASE}?page=${page}&perPage=${cfg.perPage}&idMediaOrigin=${mediaOrigin}`;
+    if (startDate) url += `&startDate=${startDate}`;
     const { status, body } = await apiClient.getJson(integration, url);
     return { status, leads: extractLeads(body) };
+  }
+
+  async function fetchPage(integration, { mediaOrigin, page, startDate }) {
+    const { status, leads } = await fetchLeadsPage(integration, { mediaOrigin, page, startDate });
+    return { status, leads, isLast: leads.length < cfg.perPage };
   }
 
   async function fetchAllPages(integration, { mediaOrigin }) {
@@ -50,5 +56,5 @@ export function createKenloLeadService({ apiClient, processEnv = process.env, pL
     return Promise.all(tasks);
   }
 
-  return { fetchLeadsPage, fetchAllPages, fetchDetails };
+  return { fetchLeadsPage, fetchAllPages, fetchDetails, fetchPage };
 }
