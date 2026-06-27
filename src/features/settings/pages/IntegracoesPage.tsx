@@ -98,6 +98,7 @@ import {
 } from '@/features/settings/services/zapIntegrationService';
 import { ApiIntegrationTab } from '@/components/integrations/ApiIntegrationTab';
 import { WhatsAppIntegrationTab } from '@/features/chat/components/WhatsAppIntegrationTab';
+import { KenloSyncStatusCard } from '@/features/settings/components/KenloSyncStatusCard';
 
 type ActiveTab = 'integrations' | 'api' | 'xml' | 'whatsapp';
 
@@ -1028,6 +1029,12 @@ export const IntegracoesPage: React.FC = () => {
                     </div>
                   )}
                 </div>
+
+                {kenloStatus === 'ativo' && tenantId && (
+                  <div className="mt-4">
+                    <KenloSyncStatusCard tenantId={tenantId} />
+                  </div>
+                )}
 
                 <form onSubmit={handleKenloConnect} className="mt-4 space-y-3">
                   <div>
