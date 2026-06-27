@@ -18,6 +18,21 @@ const extractPortalCode = (raw) => {
   return null;
 };
 
+// Etapa do funil derivada do payload Kenlo. Mapeamento por EVIDÊNCIA (amostra real
+// de 3.513 leads): status=1 → 0% com corretor (lead novo); status=2/5 → ~80% com
+// corretor (já atendido). O Kenlo não expõe etapas avançadas (visita/proposta) neste
+// feed de leads — por isso só mapeamos 'new' (Novos Leads) e 'contacted' (Interação).
+// Slugs casam com KENLO_STAGE_TO_STATUS no front (leadsService.ts).
+const KENLO_STATUS_TO_STAGE = { 1: 'new', 2: 'contacted', 5: 'contacted' };
+
+function mapStage(raw) {
+  const known = KENLO_STATUS_TO_STAGE[raw?.status];
+  if (known) return known;
+  // status desconhecido: usa a presença de corretor como sinal de "foi atendido".
+  const temCorretor = raw?.attendedBy?.name || (Array.isArray(raw?.attendedBy) && raw.attendedBy[0]?.name);
+  return temCorretor ? 'contacted' : 'new';
+}
+
 export function normalizeLead(raw, tenantId) {
   const ddd = raw.client?.ddd || '';
   const phoneRaw = raw.client?.phone || '';
@@ -47,6 +62,7 @@ export function normalizeLead(raw, tenantId) {
       raw.attendedBy?.name ||
       (Array.isArray(raw.attendedBy) && raw.attendedBy[0]?.name) ||
       null,
+    stage: mapStage(raw),
     raw_data: raw,
   };
 }

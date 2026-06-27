@@ -35,6 +35,30 @@ describe('normalizeLead', () => {
     const row = normalizeLead({ ...baseRaw, interest: { referenceLead: 'RL-9' } }, 't');
     expect(row.interest_reference).toBe('RL-9');
   });
+
+  // Mapeamento de etapa do funil — derivado por evidência (3.513 leads reais):
+  // status=1 → 0% corretor (lead novo); status=2/5 → 80% corretor (atendido).
+  it('status=1 do Kenlo → stage "new" (Novos Leads)', () => {
+    const row = normalizeLead({ ...baseRaw, status: 1 }, 't');
+    expect(row.stage).toBe('new');
+  });
+
+  it('status=2 do Kenlo → stage "contacted" (Interação)', () => {
+    const row = normalizeLead({ ...baseRaw, status: 2 }, 't');
+    expect(row.stage).toBe('contacted');
+  });
+
+  it('status=5 do Kenlo → stage "contacted" (atendido, conservador)', () => {
+    const row = normalizeLead({ ...baseRaw, status: 5 }, 't');
+    expect(row.stage).toBe('contacted');
+  });
+
+  it('sem status conhecido mas COM corretor → "contacted"; sem corretor → "new"', () => {
+    const comCorretor = normalizeLead({ ...baseRaw, status: 99, attendedBy: { name: 'Ana' } }, 't');
+    expect(comCorretor.stage).toBe('contacted');
+    const semCorretor = normalizeLead({ ...baseRaw, status: 99, attendedBy: null }, 't');
+    expect(semCorretor.stage).toBe('new');
+  });
 });
 
 describe('isTestLead', () => {
