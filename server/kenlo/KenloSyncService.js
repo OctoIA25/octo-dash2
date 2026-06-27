@@ -4,6 +4,7 @@
  * o webhook da Lia para cada lead novo. Isola falha por tenant.
  */
 import { MEDIA_ORIGINS, loadKenloEnv } from './kenloConfig.js';
+import { resolveStartDate } from './dateWindow.js';
 import { normalizeLead, isTestLead } from './leadNormalizer.js';
 
 const noopLogger = { info() {}, warn() {}, error() {} };
@@ -11,7 +12,7 @@ const idOf = (l) => l._id || l.id;
 
 export function createKenloSyncService({
   supabase, leadService, brokerAssigner, processEnv = process.env,
-  fetchImpl = fetch, logger = noopLogger, runId = 'kenlo',
+  fetchImpl = fetch, logger = noopLogger, runId = 'kenlo', now = Date.now,
 }) {
   const cfg = loadKenloEnv(processEnv);
 
@@ -83,7 +84,15 @@ export function createKenloSyncService({
     const { data, error } = await supabase
       .from('kenlo_integrations').select('*').eq('status', 'active');
     if (error) { logger.error(`[kenlo] listar tenants falhou: ${error.message}`); return []; }
-    const results = await Promise.allSettled((data || []).map((i) => syncTenant(i)));
+    const results = await Promise.allSettled((data || []).map(async (integ) => {
+      const syncMode = integ.last_sync_at ? 'LIVE' : 'BACKFILL';
+      const startDate = resolveStartDate({ syncMode, lastSyncAt: integ.last_sync_at, cfg, now });
+      const stats = await syncTenant(integ, { syncMode, startDate });
+      await supabase.from('kenlo_integrations')
+        .update({ last_sync_at: new Date(now()).toISOString() })
+        .eq('tenant_id', integ.tenant_id);
+      return stats;
+    }));
     return results.map((r, idx) => ({
       tenantId: data[idx]?.tenant_id,
       ...(r.status === 'fulfilled' ? r.value : { error: r.reason?.message }),

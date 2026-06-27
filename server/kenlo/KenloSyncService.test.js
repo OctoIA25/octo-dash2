@@ -108,3 +108,24 @@ describe('KenloSyncService.syncTenant', () => {
     expect(r.new).toBe(0);
   });
 });
+
+describe('KenloSyncService.syncAllTenants', () => {
+  it('syncAllTenants grava last_sync_at após o sync (end-to-end, portais vazios)', async () => {
+    const updates = [];
+    const branchingSupabase = {
+      from: (table) => table === 'kenlo_integrations'
+        ? {
+            select: () => ({ eq: () => Promise.resolve({ data: [{ tenant_id: 't1', last_sync_at: null }], error: null }) }),
+            update: (payload) => ({ eq: () => { updates.push(payload); return Promise.resolve({ error: null }); } }),
+          }
+        : { // kenlo_leads
+            select: () => ({ eq: () => ({ in: () => Promise.resolve({ data: [], error: null }) }) }),
+            upsert: (b) => ({ select: () => Promise.resolve({ data: b, error: null }) }),
+          },
+    };
+    const leadService = { fetchPage: vi.fn().mockResolvedValue({ status: 200, leads: [], isLast: true }), fetchDetails: vi.fn() };
+    const svc = createKenloSyncService({ supabase: branchingSupabase, leadService, brokerAssigner: { assign: async (_t, r) => r }, processEnv: {}, now: () => Date.parse('2026-06-26T12:00:00Z') });
+    await svc.syncAllTenants();
+    expect(updates.some((u) => u.last_sync_at)).toBe(true);
+  });
+});
