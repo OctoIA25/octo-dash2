@@ -27,21 +27,6 @@ export function createKenloLeadService({ apiClient, processEnv = process.env, pL
     return { status, leads, isLast: leads.length < cfg.perPage };
   }
 
-  async function fetchAllPages(integration, { mediaOrigin }) {
-    const all = [];
-    let page = 1;
-    let status = 200;
-    for (;;) {
-      const r = await fetchLeadsPage(integration, { mediaOrigin, page });
-      status = r.status;
-      if (r.status !== 200) break;             // erro: devolve o acumulado
-      all.push(...r.leads);
-      if (r.leads.length < cfg.perPage) break; // última página
-      page++;
-    }
-    return { status, leads: all };
-  }
-
   async function fetchDetails(integration, leads) {
     const limit = pLimitImpl
       ? pLimitImpl(10)
@@ -56,5 +41,5 @@ export function createKenloLeadService({ apiClient, processEnv = process.env, pL
     return Promise.all(tasks);
   }
 
-  return { fetchLeadsPage, fetchAllPages, fetchDetails, fetchPage };
+  return { fetchLeadsPage, fetchDetails, fetchPage };
 }

@@ -56,7 +56,7 @@ export function createKenloSyncService({
     for (const mediaOrigin of MEDIA_ORIGINS) {
       for (let page = 1; ; page++) {
         const { status, leads, isLast } = await leadService.fetchPage(integration, { mediaOrigin, page, startDate });
-        if (status !== 200) break;
+        if (status !== 200) { stats.errors++; break; } // página falhou: sync incompleto deste portal
         stats.fetched += leads.length;
 
         const nonTest = leads.filter((l) => { if (isTestLead(l)) { stats.skippedTest++; return false; } return true; });
@@ -92,9 +92,13 @@ export function createKenloSyncService({
       const syncMode = (!integ.last_sync_at || dueFull) ? 'BACKFILL' : 'LIVE';
       const startDate = resolveStartDate({ syncMode, lastSyncAt: integ.last_sync_at, cfg, now });
       const stats = await syncTenant(integ, { syncMode, startDate });
-      const patch = { last_sync_at: new Date(now()).toISOString() };
-      if (syncMode === 'BACKFILL') patch.last_full_sync_at = patch.last_sync_at;
-      await supabase.from('kenlo_integrations').update(patch).eq('tenant_id', integ.tenant_id);
+      // Só avança o cursor se o sync completou sem falha: senão um fetch parcial
+      // moveria o floor e deixaria leads abaixo dele órfãos até a reconciliação.
+      if (stats.errors === 0) {
+        const patch = { last_sync_at: new Date(now()).toISOString() };
+        if (syncMode === 'BACKFILL') patch.last_full_sync_at = patch.last_sync_at;
+        await supabase.from('kenlo_integrations').update(patch).eq('tenant_id', integ.tenant_id);
+      }
       return stats;
     }));
     return results.map((r, idx) => ({

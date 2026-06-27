@@ -153,4 +153,25 @@ describe('KenloSyncService.syncAllTenants', () => {
     // startDate da reconciliação = janela histórica (60d), não o cursor de 5min
     expect(calls[0]).toBe('2026-04-27');
   });
+
+  it('NÃO avança o cursor se uma página falhou (evita pular leads abaixo do floor)', async () => {
+    const updates = [];
+    const branchingSupabase = {
+      from: (table) => table === 'kenlo_integrations'
+        ? {
+            select: () => ({ eq: () => Promise.resolve({ data: [{ tenant_id: 't1', last_sync_at: '2026-06-26T11:00:00Z', last_full_sync_at: '2026-06-26T11:30:00Z' }], error: null }) }),
+            update: (payload) => ({ eq: () => { updates.push(payload); return Promise.resolve({ error: null }); } }),
+          }
+        : { select: () => ({ eq: () => ({ in: () => Promise.resolve({ data: [], error: null }) }) }),
+            upsert: (b) => ({ select: () => Promise.resolve({ data: b, error: null }) }) },
+    };
+    // 1º portal devolve erro de rede (status 0) → sync incompleto
+    const leadService = {
+      fetchPage: vi.fn().mockResolvedValue({ status: 0, leads: [], isLast: true }),
+      fetchDetails: vi.fn(),
+    };
+    const svc = createKenloSyncService({ supabase: branchingSupabase, leadService, brokerAssigner: { assign: async (_t, r) => r }, processEnv: { KENLO_FULL_SYNC_TTL_MS: '3600000' }, now: () => Date.parse('2026-06-26T12:00:00Z') });
+    await svc.syncAllTenants();
+    expect(updates).toHaveLength(0); // cursor preservado: próximo ciclo re-tenta a janela
+  });
 });
