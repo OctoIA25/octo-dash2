@@ -34,6 +34,16 @@ const DEFAULT_MAX_RECIPIENTS = 500;
 const MASS_ROLES = new Set(['owner', 'admin', 'team_leader']);
 
 /**
+ * Identidade de um destinatário para dedup interno e idempotência.
+ * Inclui a FONTE (crm|kenlo) porque o público pode vir da união das duas
+ * tabelas: ids de fontes distintas não devem se anular entre si. Hoje ambas
+ * usam UUID (colisão improvável), mas chavear por fonte torna a garantia local.
+ */
+function recipientKey(lead) {
+  return `${lead.source || 'crm'}|${lead.id}`;
+}
+
+/**
  * Constrói a prévia da operação e persiste o run 'pending'.
  *
  * @param supabase client (service_role)
@@ -97,8 +107,9 @@ export async function previewOperation(supabase, input, deps = {}) {
   const eligible = [];
   let noWhatsapp = 0;
   for (const lead of found) {
-    if (seen.has(lead.id)) continue;
-    seen.add(lead.id);
+    const key = recipientKey(lead);
+    if (seen.has(key)) continue;
+    seen.add(key);
     const elig = action.checkEligibility(lead, operation.params);
     if (!elig.eligible) {
       if (elig.reason === 'no_whatsapp') noWhatsapp += 1;
@@ -240,9 +251,13 @@ export async function confirmOperation(supabase, input, deps = {}) {
   const brokerScope = isMass ? null : user.brokerName || null;
   if (!isMass && !brokerScope) return { ok: false, error: 'forbidden_no_broker_identity' };
 
-  // Deriva o modo "primary-only" a partir da fonte gravada no run (sem re-rodar shadow/diff).
-  // null/legado → kenlo_only (default seguro); 'crm' → leads_only.
-  const confirmMode = run.primary_source === 'crm' ? 'leads_only' : 'kenlo_only';
+  // Deriva o modo de re-resolução a partir da fonte gravada no run.
+  // 'union' → re-resolve as duas tabelas (envio = prévia). 'crm' → leads_only.
+  // null/legado/kenlo → kenlo_only (default seguro).
+  const confirmMode =
+    run.primary_source === 'union' ? 'union'
+    : run.primary_source === 'crm' ? 'leads_only'
+    : 'kenlo_only';
 
   const resolved = await resolve(supabase, run.segment, { tenantId, brokerScope, nowMs, mode: confirmMode });
   if (!resolved.ok) return { ok: false, error: resolved.error, detail: resolved.detail };
@@ -255,8 +270,9 @@ export async function confirmOperation(supabase, input, deps = {}) {
   const seen = new Set();
   const items = [];
   for (const lead of resolved.rows) {
-    if (seen.has(lead.id)) continue;
-    seen.add(lead.id);
+    const key = recipientKey(lead);
+    if (seen.has(key)) continue;
+    seen.add(key);
     const elig = action.checkEligibility(lead, { message: effectiveMessage });
     if (!elig.eligible) continue;
     if (items.length >= recipientCap) break;
@@ -271,7 +287,7 @@ export async function confirmOperation(supabase, input, deps = {}) {
       payload: action.buildPayload({ message: effectiveMessage, variableMapping, templateVariables }, lead),
       status: 'pending',
       template_name: templateName,
-      idempotency_key: `${tenantId}|${previewToken}|${lead.id}`,
+      idempotency_key: `${tenantId}|${previewToken}|${recipientKey(lead)}`,
     });
   }
 

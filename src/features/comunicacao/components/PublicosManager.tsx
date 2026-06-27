@@ -64,6 +64,8 @@ export function PublicosManager() {
   const tenantReady = Boolean(tenantId && tenantId !== 'owner');
   const [audiences, setAudiences] = useState<Audience[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
+  // Públicos que estouraram o teto por fonte e estão PARCIAIS — avisamos o gestor.
+  const [truncated, setTruncated] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
@@ -81,7 +83,12 @@ export function PublicosManager() {
       setAudiences(res.audiences);
       // Contagens em paralelo (uma por público); falhas individuais são ignoradas.
       await Promise.allSettled(res.audiences.map((a) =>
-        getAudienceCount(tenantId as string, a.id).then((c) => { if (c.ok) setCounts((p) => ({ ...p, [a.id]: c.count })); }),
+        getAudienceCount(tenantId as string, a.id).then((c) => {
+          if (c.ok) {
+            setCounts((p) => ({ ...p, [a.id]: c.count }));
+            setTruncated((p) => ({ ...p, [a.id]: Boolean(c.truncated) }));
+          }
+        }),
       ));
     } catch { setError(true); } finally { setLoading(false); }
   }
@@ -254,11 +261,21 @@ export function PublicosManager() {
                   {/* Contagem em destaque — dado mais importante */}
                   <div className="mt-4 flex items-baseline gap-1.5">
                     {count != null ? (
-                      <span className="text-[22px] font-bold tabular-nums leading-none text-slate-900 dark:text-slate-100">{count.toLocaleString('pt-BR')}</span>
+                      <span className="text-[22px] font-bold tabular-nums leading-none text-slate-900 dark:text-slate-100">
+                        {count.toLocaleString('pt-BR')}{truncated[a.id] ? '+' : ''}
+                      </span>
                     ) : (
                       <span className="inline-block h-[18px] w-10 animate-pulse rounded bg-slate-100 dark:bg-slate-800" aria-hidden />
                     )}
                     <span className="text-[10.5px] font-semibold text-slate-400 uppercase tracking-wider">contatos</span>
+                    {truncated[a.id] && (
+                      <span
+                        className="text-[10.5px] font-semibold text-amber-600 dark:text-amber-400"
+                        title="Público muito grande: atingiu o teto e está parcial. Refine o segmento para cobrir todos os contatos."
+                      >
+                        parcial
+                      </span>
+                    )}
                   </div>
 
                   <p className="mt-2 text-[11.5px] text-slate-400 dark:text-slate-500 truncate" title={description}>{description}</p>

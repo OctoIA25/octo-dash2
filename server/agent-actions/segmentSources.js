@@ -45,7 +45,11 @@ export const LEADS_SOURCE = {
     activity: 'updated_at',
     interest: 'property_type',
   },
-  leadTypeFilter: 1, // paridade: kenlo é sempre Interessado
+  // Contato elegível para campanha independe do tipo: o público deve incluir
+  // Interessados (1), Proprietários (2) e leads sem tipo (NULL). Filtrar por
+  // lead_type=1 cortava silenciosamente Proprietários e os NULL (que o resto do
+  // CRM trata como Interessado), deixando o público incompleto.
+  leadTypeFilter: null,
   mapRow: (r) => ({
     id: r.id,
     name: r.name || '',

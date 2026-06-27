@@ -13,7 +13,7 @@
  *   confirm()  → só após confirmação explícita do usuário, enfileira e dispara.
  */
 
-import { supabase } from '@/lib/supabaseClient';
+import { authedFetch } from './authedFetch';
 import type { VarMapping } from '../variableMapping';
 
 export interface DisparoPreview {
@@ -57,19 +57,6 @@ export interface RunReport {
     failed_count: number;
   };
   failures?: Array<{ lead_name: string | null; lead_phone: string | null; status: string; error: string | null }>;
-}
-
-async function authedFetch(path: string, init: RequestInit): Promise<Response> {
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  return fetch(path, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(init.headers || {}),
-    },
-  });
 }
 
 /** Etapa 1: interpreta o comando (ou resolve um público salvo) e devolve a prévia (sem enviar). */

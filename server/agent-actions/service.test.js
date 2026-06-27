@@ -515,6 +515,19 @@ describe('confirmOperation — deriva modo primary-only do run.primary_source', 
     const ctx = spyResolve.mock.calls[0][2];
     expect(ctx.mode).toBe('kenlo_only');
   });
+
+  it('primary_source union → confirm chama resolve com mode=union', async () => {
+    const { id, runs } = seedPendingRunWithSource('union');
+    const { supabase } = makeFake({ runs });
+    const spyResolve = vi.fn(async () => ({ ok: true, rows: [], primarySource: 'union' }));
+    await confirmOperation(
+      supabase,
+      { previewToken: id, tenantId: TENANT, message: 'Oi', user: adminUser },
+      { nowMs: NOW, resolve: spyResolve },
+    );
+    const ctx = spyResolve.mock.calls[0][2];
+    expect(ctx.mode).toBe('union');
+  });
 });
 
 describe('previewOperation campaignId', () => {
@@ -634,7 +647,7 @@ describe('confirmOperation — confirmação obrigatória e idempotência', () =
     expect(r).toMatchObject({ ok: true, enqueued: 2, runId: id });
     expect(runs.get(id).status).toBe('running');
     expect(queueUpserts).toHaveLength(2);
-    expect(queueUpserts[0].idempotency_key).toBe(`${TENANT}|${id}|1`);
+    expect(queueUpserts[0].idempotency_key).toBe(`${TENANT}|${id}|crm|1`);
     expect(queueUpserts[0].payload.templateParams).toEqual(['Olá!']);
   });
 
@@ -708,6 +721,35 @@ describe('confirmOperation — confirmação obrigatória e idempotência', () =
     expect(r).toMatchObject({ ok: true, enqueued: 0 });
     expect(runs.get(id).status).toBe('done');
     expect(queueUpserts).toHaveLength(0);
+  });
+
+  it('REGRESSÃO colisão de id entre fontes: crm|SAME-ID e kenlo|SAME-ID são destinatários distintos', async () => {
+    // Dois leads com o MESMO id mas fontes diferentes (cenário de união crm+kenlo).
+    // Sem recipientKey, o segundo seria silenciosamente descartado (dedup por id bare).
+    const { id, runs } = seedPendingRun({ primary_source: 'union' });
+    const { supabase, queueUpserts } = makeFake({ runs });
+    const r = await confirmOperation(
+      supabase,
+      { previewToken: id, tenantId: TENANT, message: 'Olá!', user: adminUser },
+      {
+        nowMs: NOW,
+        resolve: async () => ({
+          ok: true,
+          primarySource: 'union',
+          rows: [
+            { id: 'SAME-ID', name: 'CRM Pessoa',   phone: '5511999990001', source: 'crm' },
+            { id: 'SAME-ID', name: 'Kenlo Pessoa',  phone: '5511999990002', source: 'kenlo' },
+          ],
+        }),
+      },
+    );
+    expect(r.ok).toBe(true);
+    expect(r.enqueued).toBe(2); // ambos enfileirados — fontes distintas não se cancelam
+    expect(queueUpserts).toHaveLength(2);
+    const keys = queueUpserts.map((item) => item.idempotency_key);
+    expect(keys[0]).toMatch(/crm\|SAME-ID$/);
+    expect(keys[1]).toMatch(/kenlo\|SAME-ID$/);
+    expect(keys[0]).not.toBe(keys[1]); // chaves distintas
   });
 });
 

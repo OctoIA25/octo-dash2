@@ -133,22 +133,22 @@ describe('routes.resolvePublicSourceMode', () => {
     expect(result).toBe('shadow_leads');
   });
 
-  it('retorna leads_only quando não existe linha (data null, sem error) — CRM por padrão', async () => {
+  it('retorna union quando não existe linha (data null, sem error) — leads+kenlo por padrão', async () => {
     const supabase = fakeSupabaseForMode({ data: null, error: null });
     const result = await resolvePublicSourceMode(supabase, 't1');
-    expect(result).toBe('leads_only');
+    expect(result).toBe('union');
   });
 
-  it('retorna leads_only quando a query retorna error — fallback seguro é CRM', async () => {
+  it('retorna union quando a query retorna error — fallback padrão é leads+kenlo', async () => {
     const supabase = fakeSupabaseForMode({ data: null, error: { message: 'table not found' } });
     const result = await resolvePublicSourceMode(supabase, 't1');
-    expect(result).toBe('leads_only');
+    expect(result).toBe('union');
   });
 
-  it('retorna leads_only quando a query lança exceção (rede, timeout)', async () => {
+  it('retorna union quando a query lança exceção (rede, timeout)', async () => {
     const supabase = fakeSupabaseForMode({ throws: true });
     const result = await resolvePublicSourceMode(supabase, 't1');
-    expect(result).toBe('leads_only');
+    expect(result).toBe('union');
   });
 
   it('respeita AGENT_PUBLIC_SOURCE_DEFAULT como fallback quando não há linha', async () => {
@@ -260,6 +260,10 @@ describe('GET /audiences/:id/count — injeta mode resolvido (não usa default k
     expect(captured.status).toBe(200);
     expect(captured.body?.ok).toBe(true);
     expect(typeof captured.body?.count).toBe('number');
+    // O count sempre carrega `truncated` (boolean) para a UI avisar quando o
+    // público estourou o teto e ficou parcial. Sem truncamento → false.
+    expect(captured.body).toHaveProperty('truncated');
+    expect(typeof captured.body?.truncated).toBe('boolean');
   });
 });
 

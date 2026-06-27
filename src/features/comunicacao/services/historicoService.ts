@@ -1,9 +1,9 @@
 /**
  * Serviço do Histórico de disparos (frontend). Lê os runs do tenant e o
- * progresso ao vivo dos que estão em andamento. Reusa o padrão authedFetch do
- * disparadorService (JWT Supabase).
+ * progresso ao vivo dos que estão em andamento. Reusa o authedFetch central
+ * (JWT Supabase + refresh/retry em 401).
  */
-import { supabase } from '@/lib/supabaseClient';
+import { authedFetch } from './authedFetch';
 
 export interface RunSummary {
   id: string;
@@ -35,18 +35,6 @@ export interface HistoricoFiltros {
   to?: string;
   limit?: number;
   offset?: number;
-}
-
-async function authedFetch(path: string): Promise<Response> {
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  return fetch(path, {
-    method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  });
 }
 
 export async function listRuns(

@@ -139,6 +139,12 @@ describe('segmentResolver — reutiliza a camada de leads (kenlo_leads)', () => 
     expect(find(calls, 'limit')).toEqual(['limit', 100]);
   });
 
+  it('teto default é 50000 (públicos grandes não são truncados em 5000)', async () => {
+    const { supabase, calls } = makeSupabase();
+    await resolveSegment(supabase, { type: 'archived' }, { tenantId: TENANT, nowMs: NOW });
+    expect(find(calls, 'limit')).toEqual(['limit', 50000]);
+  });
+
   it('segmento desconhecido é rejeitado', async () => {
     const { supabase } = makeSupabase();
     const r = await resolveSegment(supabase, { type: 'banana' }, { tenantId: TENANT, nowMs: NOW });
@@ -148,18 +154,30 @@ describe('segmentResolver — reutiliza a camada de leads (kenlo_leads)', () => 
 });
 
 describe('resolveSegmentForSource — fonte LEADS (CRM)', () => {
-  it('archived consulta a tabela leads e aplica lead_type=1', async () => {
+  it('archived consulta a tabela leads e NÃO filtra por lead_type (público inclui Interessados + Proprietários + NULL)', async () => {
     const { supabase, calls } = makeSupabase([
       { id: '1', name: 'Ana', phone: '11999990000', assigned_agent_name: 'Bia', archived_at: '2026-01-01', updated_at: '2026-01-02', source_lead_id: 'ext-1' },
     ]);
     const r = await resolveSegmentForSource(supabase, { type: 'archived' }, { tenantId: TENANT, nowMs: NOW }, LEADS_SOURCE);
     expect(r.ok).toBe(true);
     expect(find(calls, 'from')).toEqual(['from', 'leads']);          // não kenlo_leads
-    expect(findAll(calls, 'eq')).toContainEqual(['eq', 'lead_type', 1]);
+    // Contato elegível p/ campanha independe do tipo: Proprietário (lead_type=2)
+    // e leads sem tipo (NULL) não podem ser silenciosamente cortados.
+    expect(findAll(calls, 'eq')).not.toContainEqual(['eq', 'lead_type', 1]);
     expect(r.rows[0]).toMatchObject({ name: 'Ana', source: 'crm', sourceLeadId: 'ext-1' });
   });
 
-  it('explicit_list NÃO aplica lead_type (lista explícita ignora o filtro de tipo)', async () => {
+  it('Proprietário (lead_type=2) entra no público de leads (não é cortado pelo filtro de tipo)', async () => {
+    const { supabase, calls } = makeSupabase([
+      { id: '9', name: 'Dono', phone: '11888880000', assigned_agent_name: 'Bia', archived_at: '2026-01-01', updated_at: '2026-01-02', source_lead_id: 'ext-9', lead_type: 2 },
+    ]);
+    const r = await resolveSegmentForSource(supabase, { type: 'archived' }, { tenantId: TENANT, nowMs: NOW }, LEADS_SOURCE);
+    expect(r.ok).toBe(true);
+    expect(findAll(calls, 'eq')).not.toContainEqual(['eq', 'lead_type', expect.anything()]);
+    expect(r.rows.map((x) => x.name)).toContain('Dono');
+  });
+
+  it('explicit_list também não aplica lead_type (lista explícita ignora o filtro de tipo)', async () => {
     const { supabase, calls } = makeSupabase([]);
     await resolveSegmentForSource(supabase, { type: 'explicit_list', names: ['Ana'] }, { tenantId: TENANT, nowMs: NOW }, LEADS_SOURCE);
     expect(findAll(calls, 'eq')).not.toContainEqual(['eq', 'lead_type', 1]);
@@ -187,15 +205,15 @@ function makeSupabaseByTable(rowsByTable = {}, errorTables = new Set()) {
   const calls = [];
   const makeNode = (table) => {
     const node = {
-      select: () => node,
-      eq: () => node,
-      not: () => node,
-      is: () => node,
-      lte: () => node,
-      gte: () => node,
-      ilike: () => node,
-      or: () => node,
-      limit: () => node,
+      select: (cols) => (calls.push(['select', cols]), node),
+      eq: (c, v) => (calls.push(['eq', c, v]), node),
+      not: (c, op, v) => (calls.push(['not', c, op, v]), node),
+      is: (c, v) => (calls.push(['is', c, v]), node),
+      lte: (c, v) => (calls.push(['lte', c, v]), node),
+      gte: (c, v) => (calls.push(['gte', c, v]), node),
+      ilike: (c, v) => (calls.push(['ilike', c, v]), node),
+      or: (expr) => (calls.push(['or', expr]), node),
+      limit: (n) => (calls.push(['limit', n]), node),
       then: (resolve) => {
         if (errorTables.has(table)) {
           return resolve({ data: null, error: { message: `boom ${table}` } });
@@ -317,5 +335,75 @@ describe('resolveSegmentDual', () => {
     expect(r.diagnostic).toEqual({ truncated: true });
     // somente kenlo_leads foi consultada
     expect(calls.filter((c) => c[0] === 'from').map((c) => c[1])).toEqual(['kenlo_leads']);
+  });
+});
+
+describe('resolveSegmentDual — modo union (leads + kenlo deduplicado)', () => {
+  const NOW_U = 1_750_000_000_000;
+  const T = 'tenant-1';
+
+  it('une as duas fontes e deduplica por telefone (CRM vence)', async () => {
+    const { supabase } = makeSupabaseByTable({
+      leads: [
+        { id: 'l1', name: 'CRM João', phone: '5511999990000', assigned_agent_name: null,
+          archived_at: '2020-01-01T00:00:00Z', updated_at: null, source_lead_id: 'k1', lead_type: 1 },
+      ],
+      kenlo_leads: [
+        // mesmo contato do l1 (telefone normaliza igual) → descartado
+        { id: 'k1', client_name: 'Kenlo João', client_phone: '1199990000',
+          attended_by_name: null, archived_at: '2020-01-01T00:00:00Z', updated_at: null },
+        // contato novo (telefone diferente) → entra
+        { id: 'k2', client_name: 'Kenlo Maria', client_phone: '11888880000',
+          attended_by_name: null, archived_at: '2020-01-01T00:00:00Z', updated_at: null },
+      ],
+    });
+    const r = await resolveSegmentDual(supabase, { type: 'archived' },
+      { tenantId: T, nowMs: NOW_U, mode: 'union' });
+    expect(r.ok).toBe(true);
+    expect(r.primarySource).toBe('union');
+    expect(r.rows).toHaveLength(2);
+    // l1 (CRM) presente; k1 ausente (deduplicado); k2 presente.
+    const ids = r.rows.map((x) => x.id);
+    expect(ids).toContain('l1');
+    expect(ids).not.toContain('k1');
+    expect(ids).toContain('k2');
+  });
+
+  it('falha de UMA fonte é fatal (ok:false)', async () => {
+    const { supabase } = makeSupabaseByTable(
+      { leads: [], kenlo_leads: [] },
+      new Set(['kenlo_leads']), // kenlo_leads erra
+    );
+    const r = await resolveSegmentDual(supabase, { type: 'archived' },
+      { tenantId: T, nowMs: NOW_U, mode: 'union' });
+    expect(r.ok).toBe(false);
+    expect(r.primarySource).toBe('union');
+  });
+
+  it('marca diagnostic.truncated quando uma fonte atinge maxRows', async () => {
+    // maxRows=2: kenlo retorna 2 linhas (>= maxRows) → união possivelmente incompleta.
+    const { supabase } = makeSupabaseByTable({
+      leads: [],
+      kenlo_leads: [
+        { id: 'k1', client_name: 'A', client_phone: '11999990001', attended_by_name: null, archived_at: '2020-01-01T00:00:00Z', updated_at: null },
+        { id: 'k2', client_name: 'B', client_phone: '11999990002', attended_by_name: null, archived_at: '2020-01-01T00:00:00Z', updated_at: null },
+      ],
+    });
+    const r = await resolveSegmentDual(supabase, { type: 'archived' },
+      { tenantId: T, nowMs: NOW_U, mode: 'union', maxRows: 2 });
+    expect(r.ok).toBe(true);
+    expect(r.primarySource).toBe('union');
+    expect(r.diagnostic).toEqual({ truncated: true });
+  });
+
+  it('brokerScope filtra AMBAS as tabelas (leads + kenlo_leads)', async () => {
+    const { supabase, calls } = makeSupabaseByTable({ leads: [], kenlo_leads: [] });
+    await resolveSegmentDual(supabase, { type: 'archived' },
+      { tenantId: T, nowMs: NOW_U, mode: 'union', brokerScope: 'Corretor X' });
+    const eqs = calls.filter((c) => c[0] === 'eq');
+    expect(eqs).toEqual(expect.arrayContaining([
+      ['eq', 'assigned_agent_name', 'Corretor X'],
+      ['eq', 'attended_by_name', 'Corretor X'],
+    ]));
   });
 });

@@ -18,12 +18,21 @@
 export { KENLO_SOURCE, LEADS_SOURCE } from './segmentSources.js';
 import { KENLO_SOURCE, LEADS_SOURCE } from './segmentSources.js';
 import { diffPublics } from './segmentDiff.js';
+import { mergeUnionByPhone } from './segmentUnion.js';
 
 // Mesma sanitização do api-server: remove caracteres que quebram o filtro
 // PostgREST (.or/.ilike) e poderiam ser usados para injeção de filtro.
 const sanitizeFilterValue = (value) => String(value ?? '').replace(/[,()*\\]/g, ' ').trim();
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Teto de materialização de um público (por fonte). Protege contra públicos
+// gigantes sem teto, mas alto o bastante para não truncar imobiliárias reais.
+// Se uma fonte bate o teto, `resolveSegmentDual` sinaliza diagnostic.truncated
+// — a UI avisa o gestor em vez de enviar para um público silenciosamente parcial.
+// ponytail: teto fixo. Se algum tenant passar de 50k por fonte, trocar por
+// paginação por range/keyset (a flag truncated já existe para detectar isso).
+const DEFAULT_MAX_ROWS = 50000;
 
 /** Aplica tenant-scope, escopo de corretor e seleção de colunas — comum a todos os segmentos. */
 function baseQuery(supabase, { tenantId, brokerScope }, source) {
@@ -41,7 +50,7 @@ function baseQuery(supabase, { tenantId, brokerScope }, source) {
  * @param source    descritor de fonte (KENLO_SOURCE | LEADS_SOURCE | outro)
  */
 export async function resolveSegmentForSource(supabase, segment, ctx, source) {
-  const { tenantId, brokerScope = null, nowMs = Date.now(), maxRows = 5000 } = ctx || {};
+  const { tenantId, brokerScope = null, nowMs = Date.now(), maxRows = DEFAULT_MAX_ROWS } = ctx || {};
   if (!tenantId) return { ok: false, error: 'tenant_required' };
   if (!segment || typeof segment !== 'object' || !segment.type) {
     return { ok: false, error: 'invalid_segment' };
@@ -176,7 +185,31 @@ const MODE_MAP = {
  * @returns {{ ok: true, rows, primarySource, diagnostic? } | { ok: false, error, detail?, primarySource }}
  */
 export async function resolveSegmentDual(supabase, segment, ctx) {
-  const { mode, maxRows = 5000 } = ctx || {};
+  const { mode, maxRows = DEFAULT_MAX_ROWS } = ctx || {};
+
+  // Modo união: resolve AS DUAS fontes e funde deduplicado por telefone.
+  // Diferente do shadow (secundária resiliente/diagnóstica): aqui as duas são
+  // fonte de verdade do envio — falha de qualquer uma é FATAL (não enviar para
+  // público parcial em silêncio).
+  if (mode === 'union') {
+    const leadsRes = await resolveSegmentForSource(supabase, segment, ctx, LEADS_SOURCE);
+    if (!leadsRes.ok) {
+      return { ok: false, error: leadsRes.error, detail: leadsRes.detail, primarySource: 'union' };
+    }
+    const kenloRes = await resolveSegmentForSource(supabase, segment, ctx, KENLO_SOURCE);
+    if (!kenloRes.ok) {
+      return { ok: false, error: kenloRes.error, detail: kenloRes.detail, primarySource: 'union' };
+    }
+    const rows = mergeUnionByPhone(leadsRes.rows, kenloRes.rows);
+    // Truncamento: se qualquer fonte bateu o teto, a união pode estar incompleta.
+    const truncated = leadsRes.rows.length >= maxRows || kenloRes.rows.length >= maxRows;
+    return {
+      ok: true,
+      rows,
+      primarySource: 'union',
+      ...(truncated ? { diagnostic: { truncated: true } } : {}),
+    };
+  }
 
   // Modos inválidos ou ausentes recaem em kenlo_only (default seguro).
   const { primary: primarySource, secondary: secondarySource } =

@@ -1,5 +1,5 @@
-/** Serviço de Campanhas (C1). Padrão authedFetch (JWT Supabase). */
-import { supabase } from '@/lib/supabaseClient';
+/** Serviço de Campanhas (C1). Reusa o authedFetch central (JWT + refresh/retry em 401). */
+import { authedFetch } from './authedFetch';
 import type { VarMapping } from '../variableMapping';
 
 export interface Campaign {
@@ -63,34 +63,31 @@ export interface CampaignRun {
 
 const BASE = '/api/v1/communication/dispatch/campaigns';
 
-async function token() { const { data } = await supabase.auth.getSession(); return data.session?.access_token; }
-function headers(t?: string) { return { 'Content-Type': 'application/json', ...(t ? { Authorization: `Bearer ${t}` } : {}) }; }
-
 export async function listCampaigns(tenantId: string): Promise<{ ok: boolean; campaigns: CampaignWithStats[] }> {
-  const res = await fetch(`${BASE}?tenantId=${encodeURIComponent(tenantId)}`, { headers: headers(await token()) });
+  const res = await authedFetch(`${BASE}?tenantId=${encodeURIComponent(tenantId)}`);
   return res.json();
 }
 export async function createCampaign(tenantId: string, input: CampaignInput): Promise<{ ok: boolean; campaign?: Campaign; error?: string }> {
-  const res = await fetch(BASE, { method: 'POST', headers: headers(await token()), body: JSON.stringify({ tenantId, ...input }) });
+  const res = await authedFetch(BASE, { method: 'POST', body: JSON.stringify({ tenantId, ...input }) });
   return res.json();
 }
 export async function updateCampaign(tenantId: string, id: string, patch: Partial<CampaignInput>): Promise<{ ok: boolean; campaign?: Campaign; error?: string }> {
-  const res = await fetch(`${BASE}/${encodeURIComponent(id)}`, { method: 'PUT', headers: headers(await token()), body: JSON.stringify({ tenantId, ...patch }) });
+  const res = await authedFetch(`${BASE}/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify({ tenantId, ...patch }) });
   return res.json();
 }
 export async function deleteCampaign(tenantId: string, id: string): Promise<{ ok: boolean; error?: string }> {
-  const res = await fetch(`${BASE}/${encodeURIComponent(id)}?tenantId=${encodeURIComponent(tenantId)}`, { method: 'DELETE', headers: headers(await token()) });
+  const res = await authedFetch(`${BASE}/${encodeURIComponent(id)}?tenantId=${encodeURIComponent(tenantId)}`, { method: 'DELETE' });
   return res.json();
 }
 export async function dispatchCampaign(tenantId: string, id: string): Promise<{ ok: boolean; runId?: string; enqueued?: number; error?: string }> {
-  const res = await fetch(`${BASE}/${encodeURIComponent(id)}/dispatch`, { method: 'POST', headers: headers(await token()), body: JSON.stringify({ tenantId }) });
+  const res = await authedFetch(`${BASE}/${encodeURIComponent(id)}/dispatch`, { method: 'POST', body: JSON.stringify({ tenantId }) });
   return res.json();
 }
 export async function listCampaignRuns(tenantId: string, id: string): Promise<{ ok: boolean; runs: CampaignRun[] }> {
-  const res = await fetch(`${BASE}/${encodeURIComponent(id)}/runs?tenantId=${encodeURIComponent(tenantId)}`, { headers: headers(await token()) });
+  const res = await authedFetch(`${BASE}/${encodeURIComponent(id)}/runs?tenantId=${encodeURIComponent(tenantId)}`);
   return res.json();
 }
 export async function cancelSchedule(tenantId: string, id: string): Promise<{ ok: boolean; error?: string }> {
-  const res = await fetch(`${BASE}/${encodeURIComponent(id)}/cancel-schedule`, { method: 'POST', headers: headers(await token()), body: JSON.stringify({ tenantId }) });
+  const res = await authedFetch(`${BASE}/${encodeURIComponent(id)}/cancel-schedule`, { method: 'POST', body: JSON.stringify({ tenantId }) });
   return res.json();
 }

@@ -83,11 +83,13 @@ async function resolveUserContext(supabase, req, tenantId) {
 
 /**
  * Lê o modo de fonte pública configurado para o tenant.
- * Retorna o valor da tabela `agent_public_source_config` ou o fallback seguro (leads_only).
+ * Retorna o valor da tabela `agent_public_source_config` ou o fallback padrão (union):
+ * sem configuração, o público resolve leads + kenlo_leads deduplicados por telefone.
+ * Override por tenant (tabela) ou global (env AGENT_PUBLIC_SOURCE_DEFAULT) continuam valendo.
  * Resiliente: qualquer erro de query ou exceção retorna o fallback — nunca derruba a rota.
  */
 export async function resolvePublicSourceMode(supabase, tenantId) {
-  const fallback = process.env.AGENT_PUBLIC_SOURCE_DEFAULT || 'leads_only';
+  const fallback = process.env.AGENT_PUBLIC_SOURCE_DEFAULT || 'union';
   try {
     const { data, error } = await supabase
       .from('agent_public_source_config')
@@ -97,7 +99,7 @@ export async function resolvePublicSourceMode(supabase, tenantId) {
     if (error || !data) return fallback;
     return data.mode || fallback;
   } catch {
-    return fallback; // resiliente: qualquer falha → default seguro (leads_only = CRM)
+    return fallback; // resiliente: qualquer falha → default (union = leads + kenlo)
   }
 }
 
@@ -488,8 +490,10 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
     if (!(ctx.role === 'admin' || ctx.role === 'owner')) return res.status(403).json({ ok: false, error: 'forbidden' });
 
     const { error } = await supabase.from(AUDIENCES_TABLE).delete().eq('id', id).eq('tenant_id', tenantId);
-    if (error.code === '23503') return res.status(409).json({ ok: false, error: 'audience_in_use' });
-    if (error) return res.status(500).json({ ok: false, error: 'delete_failed' });
+    if (error) {
+      if (error.code === '23503') return res.status(409).json({ ok: false, error: 'audience_in_use' });
+      return res.status(500).json({ ok: false, error: 'delete_failed' });
+    }
 
     return res.json({ ok: true });
   });
@@ -512,7 +516,13 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
     const resolved = await resolveSegmentDual(supabase, aud.segment, { tenantId, mode, nowMs: Date.now() });
     if (!resolved.ok) console.error('[audiences/count] resolver falhou:', resolved.error, resolved.detail);
     // Público é auxiliar: erro do resolver → count 0, não derruba a tela.
-    return res.json({ ok: true, count: resolved.ok ? resolved.rows.length : 0 });
+    // `truncated`: o público estourou o teto por fonte e está PARCIAL — a UI
+    // avisa o gestor para não enviar achando que cobre todo mundo.
+    return res.json({
+      ok: true,
+      count: resolved.ok ? resolved.rows.length : 0,
+      truncated: Boolean(resolved.ok && resolved.diagnostic?.truncated),
+    });
   });
 
   // -- Templates -------------------------------------------------------------
