@@ -204,7 +204,7 @@ async function fetchAllKenloLeadsForKanban(tenantId?: string): Promise<KanbanLea
       const from = page * PAGE_SIZE;
       let query = supabase
         .from('kenlo_leads')
-        .select('id,attended_by_name,is_exclusive,interest_type,interest_is_sale,interest_is_rent,stage,temperature,portal,lead_timestamp,archived_at,created_at,tenant_id')
+        .select('id,client_name,client_phone,client_email,message,interest_reference,attended_by_name,is_exclusive,interest_type,interest_is_sale,interest_is_rent,stage,temperature,portal,lead_timestamp,archived_at,archive_reason,updated_at,created_at,tenant_id')
         .is('archived_at', null)
         .order('created_at', { ascending: false })
         .range(from, from + PAGE_SIZE - 1);
@@ -433,7 +433,7 @@ export async function fetchLeadsDoCorretorPorNome(
       const from = page * PAGE_SIZE;
       let kenloQuery = supabase
         .from('kenlo_leads')
-        .select('id,attended_by_name,is_exclusive,interest_type,interest_is_sale,interest_is_rent,stage,temperature,portal,lead_timestamp,archived_at,created_at,tenant_id')
+        .select('id,client_name,client_phone,client_email,message,interest_reference,attended_by_name,is_exclusive,interest_type,interest_is_sale,interest_is_rent,stage,temperature,portal,lead_timestamp,archived_at,archive_reason,updated_at,created_at,tenant_id')
         .ilike('attended_by_name', nomeCorretor)
         .is('archived_at', null)
         .order('created_at', { ascending: false })
