@@ -4,18 +4,20 @@ import { createKenloSyncService } from './KenloSyncService.js';
 const integration = { tenant_id: 't1' };
 
 // Supabase fake: select existentes (.eq().in()) + upsert (.upsert().select()) + update (sync_state).
+// `existing` aceita string (só external_id) OU objeto (linha completa do banco, p/ testar merge).
 function fakeSupabase({ existing = [] } = {}) {
   const upserts = [];
   const syncStates = [];
+  const rows = existing.map((e) => (typeof e === 'string' ? { external_id: e } : e));
   return {
     upserts,
     syncStates,
     from() {
       return {
         select() {
-          return { eq() { return { in() { return Promise.resolve({ data: existing.map((id) => ({ external_id: id })), error: null }); } }; } };
+          return { eq() { return { in() { return Promise.resolve({ data: rows, error: null }); } }; } };
         },
-        upsert(rows) { upserts.push(rows); return { select() { return Promise.resolve({ data: rows, error: null }); } }; },
+        upsert(batch) { upserts.push(batch); return { select() { return Promise.resolve({ data: batch, error: null }); } }; },
         update(payload) { if (payload.sync_state) syncStates.push(JSON.parse(payload.sync_state)); return { eq() { return Promise.resolve({ error: null }); } }; },
       };
     },
@@ -31,24 +33,74 @@ const leadServiceStub = (leads) => ({
 const brokerStub = { assign: vi.fn().mockImplementation(async (_t, rows) => rows) };
 
 describe('KenloSyncService.syncTenant', () => {
-  it('salva apenas leads novos e dispara webhook Lia para cada um', async () => {
+  it('Lia dispara só para leads NOVOS; existente alterado é atualizado mas não aciona a Lia', async () => {
     const leads = [
       { _id: 'novo', timestamp: '2026-06-25T10:00:00Z', client: { name: 'A', phone: '11900000000' }, idMediaOrigin: 8, interest: { reference: 'R' } },
-      { _id: 'velho', timestamp: '2026-06-25T09:00:00Z', client: { name: 'B' }, idMediaOrigin: 8 },
+      { _id: 'velho', timestamp: '2026-06-25T09:00:00Z', client: { name: 'B Atualizado' }, idMediaOrigin: 8 },
     ];
-    const supabase = fakeSupabase({ existing: ['velho'] });
+    // 'velho' já existe com fingerprint defasado → o merge gera patch e ele é re-upsertado.
+    const supabase = fakeSupabase({ existing: [{ id: 'row-velho', external_id: 'velho', stage: 'qualified', attended_by_name: 'X', attended_by_id: 'u1', client_name: 'B', kenlo_fingerprint: 'defasado' }] });
     const fetchImpl = vi.fn().mockResolvedValue({ ok: true, status: 200 });
     const svc = createKenloSyncService({
       supabase, leadService: leadServiceStub(leads), brokerAssigner: brokerStub,
       processEnv: { KENLO_LIA_WEBHOOK_URL: 'https://webhook/lia' }, fetchImpl,
     });
-    // syncMode LIVE: a Lia dispara (em BACKFILL o guard a suprime).
     const r = await svc.syncTenant(integration, { syncMode: 'LIVE' });
-    expect(r.new).toBe(1);
+    expect(r.new).toBe(1);                                  // só 'novo' conta como novo
     const saved = supabase.upserts.flat().map((x) => x.external_id);
     expect(saved).toContain('novo');
-    expect(saved).not.toContain('velho');
+    expect(saved).toContain('velho');                       // existente alterado É atualizado agora
+    // Lia só para o novo (1 chamada), nunca para o existente.
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(fetchImpl).toHaveBeenCalledWith('https://webhook/lia', expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('lead existente ALTERADO no Kenlo é atualizado (stage do CRM preservado, campos Kenlo atualizados)', async () => {
+    const leads = [
+      { _id: 'joao', timestamp: '2026-06-25T10:00:00Z', client: { name: 'João', ddd: '11', phone: '988887777', email: 'j@x.com' }, idMediaOrigin: 8, status: 2, attendedBy: { name: 'Carlos' } },
+    ];
+    // CRM já tem o João: corretor moveu para 'qualified' e atribuiu corretor manual.
+    const supabase = fakeSupabase({ existing: [{ id: 'row-joao', external_id: 'joao', stage: 'qualified', attended_by_name: 'Ana Manual', attended_by_id: 'u-ana', client_name: 'João', client_email: '', kenlo_fingerprint: 'antigo' }] });
+    const svc = createKenloSyncService({ supabase, leadService: leadServiceStub(leads), brokerAssigner: brokerStub, processEnv: {}, fetchImpl: vi.fn() });
+    const r = await svc.syncTenant(integration, { syncMode: 'LIVE' });
+    expect(r.new).toBe(0);                                  // não é novo
+    const merged = supabase.upserts.flat().find((x) => x.external_id === 'joao');
+    expect(merged).toBeTruthy();                            // foi atualizado
+    expect(merged.client_email).toBe('j@x.com');            // campo Kenlo atualizado
+    // CRM vence por OMISSÃO: a row não inclui stage/attended_by, então o upsert não
+    // toca essas colunas — o valor do corretor no banco permanece intacto.
+    expect(merged).not.toHaveProperty('stage');
+    expect(merged).not.toHaveProperty('attended_by_name');
+  });
+
+  it('row de update NÃO carrega stage/attended_by intocados (evita race read-modify-write do kanban)', async () => {
+    // Só um campo Kenlo muda (email). A row enviada ao upsert deve conter apenas
+    // chaves de conflito + campos Kenlo + fingerprint — NUNCA stage nem attended_by_*
+    // lidos no SELECT, senão um upsert reverteria uma mudança simultânea do corretor.
+    const leads = [
+      { _id: 'joao', timestamp: '2026-06-25T10:00:00Z', client: { name: 'João', email: 'novo@x.com' }, idMediaOrigin: 8, status: 2 },
+    ];
+    const supabase = fakeSupabase({ existing: [{ id: 'row-joao', external_id: 'joao', stage: 'qualified', attended_by_name: 'Ana Manual', attended_by_id: 'u-ana', client_name: 'João', client_email: 'velho@x.com', kenlo_fingerprint: 'antigo' }] });
+    const svc = createKenloSyncService({ supabase, leadService: leadServiceStub(leads), brokerAssigner: brokerStub, processEnv: {}, fetchImpl: vi.fn() });
+    await svc.syncTenant(integration, { syncMode: 'LIVE' });
+    const row = supabase.upserts.flat().find((x) => x.external_id === 'joao');
+    expect(row.client_email).toBe('novo@x.com');     // campo Kenlo atualizado
+    expect(row).toHaveProperty('tenant_id');          // chave de conflito presente
+    expect(row).not.toHaveProperty('stage');          // stage fica de fora da row → upsert não o toca
+    expect(row).not.toHaveProperty('attended_by_name');
+    expect(row).not.toHaveProperty('attended_by_id');
+  });
+
+  it('lead existente SEM alteração no Kenlo (hash igual) NÃO gera UPDATE', async () => {
+    const raw = { _id: 'estavel', timestamp: '2026-06-25T10:00:00Z', client: { name: 'Z', ddd: '11', phone: '988887777' }, idMediaOrigin: 8, status: 1 };
+    // Pré-computa o fingerprint que o normalizeLead produzirá para este payload.
+    const { normalizeLead, kenloFingerprint } = await import('./leadNormalizer.js');
+    const fp = kenloFingerprint(normalizeLead(raw, 't1'));
+    const supabase = fakeSupabase({ existing: [{ id: 'row-z', external_id: 'estavel', stage: 'new', attended_by_name: null, attended_by_id: null, kenlo_fingerprint: fp }] });
+    const svc = createKenloSyncService({ supabase, leadService: leadServiceStub([raw]), brokerAssigner: brokerStub, processEnv: {}, fetchImpl: vi.fn() });
+    const r = await svc.syncTenant(integration, { syncMode: 'LIVE' });
+    expect(r.new).toBe(0);
+    expect(supabase.upserts.flat()).toHaveLength(0);        // nenhuma escrita: hash idêntico
   });
 
   it('BACKFILL NÃO dispara webhook Lia (não spammar a IA no histórico)', async () => {
@@ -102,7 +154,7 @@ describe('KenloSyncService.syncTenant', () => {
     expect(r.saved).toBe(0);
   });
 
-  it('idempotência: lead já existente não é reprocessado', async () => {
+  it('idempotência: lead já existente não conta como novo (r.new=0)', async () => {
     const leads = [{ _id: 'x', timestamp: '2026-06-25T10:00:00Z', client: {}, idMediaOrigin: 8 }];
     const svc = createKenloSyncService({
       supabase: fakeSupabase({ existing: ['x'] }), leadService: leadServiceStub(leads), brokerAssigner: brokerStub,

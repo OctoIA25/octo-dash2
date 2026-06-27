@@ -67,6 +67,53 @@ export function normalizeLead(raw, tenantId) {
   };
 }
 
+// Colunas que o Kenlo é DONO: a sincronização pode atualizá-las livremente em
+// leads existentes. `stage` e `attended_by_*` ficam de fora porque o CRM também
+// as escreve (kanban / atribuição manual) — têm regra de conflito própria no merge.
+const KENLO_OWNED_FIELDS = [
+  'client_name', 'client_phone', 'client_email', 'lead_timestamp', 'portal',
+  'message', 'interest_image', 'interest_reference', 'interest_type',
+  'interest_is_sale', 'interest_is_rent', 'raw_data',
+];
+
+// Hash do subconjunto que vem do Kenlo (inclui stage/attended_by_name porque são
+// sinais de mudança no Kenlo, mesmo que o merge decida não sobrescrevê-los).
+// raw_data fica de fora: é volumoso e seus campos relevantes já estão achatados
+// nas outras colunas, então hashear o achatado é suficiente e barato.
+export function kenloFingerprint(row) {
+  const subset = [...KENLO_OWNED_FIELDS.filter((f) => f !== 'raw_data'), 'stage', 'attended_by_name']
+    .map((f) => `${f}=${row[f] ?? ''}`)
+    .join('|');
+  return crypto.createHash('sha256').update(subset).digest('hex').slice(0, 16);
+}
+
+/**
+ * Calcula o patch para ATUALIZAR um lead já existente, mesclando o payload do
+ * Kenlo (`incoming`, já normalizado) com a linha atual do banco (`existing`).
+ * Retorna `null` quando nada relevante do Kenlo mudou (evita UPDATE/trigger inúteis).
+ *
+ * Regras (decididas com o produto):
+ *  - Campos KENLO_OWNED: sempre do Kenlo.
+ *  - stage: CRM vence — nunca sobrescreve lead existente (corretor manda no kanban).
+ *  - attended_by_*: preenche só se o CRM estiver vazio (não rouba atribuição manual).
+ *  - Colunas locais (archived_at, first_response_at, temperature, is_exclusive):
+ *    nunca entram no patch — preservadas por omissão.
+ */
+export function mergeLeadUpdate(incoming, existing) {
+  const fp = kenloFingerprint(incoming);
+  if (existing.kenlo_fingerprint === fp) return null; // nada mudou no Kenlo
+
+  const patch = { kenlo_fingerprint: fp };
+  for (const f of KENLO_OWNED_FIELDS) patch[f] = incoming[f];
+
+  // attended_by: preenche apenas quando o CRM ainda não tem corretor.
+  if (!existing.attended_by_name && !existing.attended_by_id && incoming.attended_by_name) {
+    patch.attended_by_name = incoming.attended_by_name;
+    if (incoming.attended_by_id != null) patch.attended_by_id = incoming.attended_by_id;
+  }
+  return patch;
+}
+
 export function isTestLead(raw) {
   const id = raw?._id || raw?.id || raw?.external_id;
   const name = raw?.client?.name || raw?.client_name;

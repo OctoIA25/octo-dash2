@@ -5,7 +5,11 @@
  */
 import { MEDIA_ORIGINS, loadKenloEnv } from './kenloConfig.js';
 import { resolveStartDate } from './dateWindow.js';
-import { normalizeLead, isTestLead } from './leadNormalizer.js';
+import { normalizeLead, isTestLead, kenloFingerprint, mergeLeadUpdate } from './leadNormalizer.js';
+
+// Colunas da linha existente necessárias para o merge column-scoped. Mantém o SELECT
+// enxuto (sem raw_data, que é volumoso) — só o que decide patch/conflito.
+const EXISTING_COLS = 'id,external_id,stage,attended_by_name,attended_by_id,kenlo_fingerprint';
 
 const noopLogger = { info() {}, warn() {}, error() {} };
 const idOf = (l) => l._id || l.id;
@@ -26,12 +30,14 @@ export function createKenloSyncService({
     if (error) logger.warn(`[kenlo] writeSyncState falhou: ${error.message}`);
   }
 
-  async function existingIds(tenantId, ids) {
-    if (!ids.length) return new Set();
+  // Mapa external_id → linha existente (colunas necessárias ao merge). Substitui o
+  // antigo Set de ids: agora precisamos da linha para mesclar, não só saber que existe.
+  async function existingRows(tenantId, ids) {
+    if (!ids.length) return new Map();
     const { data, error } = await supabase
-      .from('kenlo_leads').select('external_id').eq('tenant_id', tenantId).in('external_id', ids);
-    if (error) { logger.warn(`[kenlo] select existentes falhou: ${error.message}`); return new Set(); }
-    return new Set((data || []).map((r) => r.external_id).filter(Boolean));
+      .from('kenlo_leads').select(EXISTING_COLS).eq('tenant_id', tenantId).in('external_id', ids);
+    if (error) { logger.warn(`[kenlo] select existentes falhou: ${error.message}`); return new Map(); }
+    return new Map((data || []).filter((r) => r.external_id).map((r) => [r.external_id, r]));
   }
 
   async function fireLia(row) {
@@ -44,6 +50,12 @@ export function createKenloSyncService({
     } catch (e) { logger.warn(`[kenlo] webhook Lia falhou: ${e.message}`); }
   }
 
+  // IMPORTANTE: inserts e updates são chamadas SEPARADAS de upsertRows de propósito.
+  // O supabase-js monta o `columns` do UPSERT como a UNIÃO das chaves de todas as
+  // linhas do lote (postgrest-js: values.reduce(Object.keys)). Misturar a row "gorda"
+  // de insert com a "magra" de update faria as colunas locais (temperature, archived_at,
+  // first_response_at, is_exclusive...) entrarem na união e serem NULADAS nas rows de
+  // update que não as têm. Mantenha os dois lotes separados.
   async function upsertRows(rows, stats) {
     for (let i = 0; i < rows.length; i += 500) {
       const batch = rows.slice(i, i + 500);
@@ -59,7 +71,7 @@ export function createKenloSyncService({
   async function syncTenant(integration, opts = {}) {
     const { syncMode = 'BACKFILL', startDate } = opts;
     const tenantId = integration.tenant_id;
-    const stats = { fetched: 0, new: 0, saved: 0, skippedTest: 0, errors: 0 };
+    const stats = { fetched: 0, new: 0, updated: 0, saved: 0, skippedTest: 0, errors: 0 };
     logger.info(`[kenlo] {"event":"kenlo.sync.start","runId":"${runId}","tenantId":"${tenantId}","mode":"${syncMode}"}`);
     brokerAssigner.reset?.(); // cache de corretor é por tenant; limpa antes de começar
     await writeSyncState(tenantId, { status: 'running', mode: syncMode, started_at: new Date(now()).toISOString(), fetched: 0, new: 0, saved: 0, errors: 0 });
@@ -72,22 +84,44 @@ export function createKenloSyncService({
 
         const nonTest = leads.filter((l) => { if (isTestLead(l)) { stats.skippedTest++; return false; } return true; });
         const ids = nonTest.map(idOf).filter(Boolean);
-        const known = await existingIds(tenantId, ids);
-        const fresh = nonTest.filter((l) => idOf(l) && !known.has(idOf(l)));
+        const known = await existingRows(tenantId, ids);
+        const withId = nonTest.filter((l) => idOf(l));
 
-        if (fresh.length) {
-          const detailed = await leadService.fetchDetails(integration, fresh);
-          let rows = detailed.map((l) => normalizeLead(l, tenantId));
-          rows = await brokerAssigner.assign(tenantId, rows);
-          await upsertRows(rows, stats);
-          if (syncMode !== 'BACKFILL') { for (const row of rows) await fireLia(row); }
-          stats.new += rows.length;
+        if (withId.length) {
+          // Enriquece TODOS (novos e existentes): existentes podem ter mudado corretor/
+          // interesse/etapa no Kenlo, e o detalhe é a fonte desses campos.
+          const detailed = await leadService.fetchDetails(integration, withId);
+          let normalized = detailed.map((l) => normalizeLead(l, tenantId));
+          normalized = await brokerAssigner.assign(tenantId, normalized);
+
+          const inserts = [];   // leads novos: linha completa + fingerprint
+          const updates = [];   // leads existentes alterados: linha mesclada
+          const newOnes = [];   // p/ disparar a Lia só nos genuinamente novos
+          for (const row of normalized) {
+            const prev = known.get(row.external_id);
+            if (!prev) {
+              inserts.push({ ...row, kenlo_fingerprint: kenloFingerprint(row) });
+              newOnes.push(row);
+            } else {
+              const patch = mergeLeadUpdate(row, prev); // null = nada do Kenlo mudou
+              // Row de update = SÓ chaves de conflito + campos do patch. NÃO espalhar
+              // `prev`: incluir stage/attended_by lidos no SELECT faria o upsert reescrevê-los
+              // (são EXCLUDED.col) e poderia reverter uma edição simultânea do corretor
+              // feita entre o nosso SELECT e o UPSERT. Por omissão, o upsert não toca neles.
+              if (patch) updates.push({ tenant_id: tenantId, external_id: prev.external_id, ...patch });
+            }
+          }
+
+          if (inserts.length) await upsertRows(inserts, stats);
+          if (updates.length) { await upsertRows(updates, stats); stats.updated += updates.length; }
+          if (syncMode !== 'BACKFILL') { for (const row of newOnes) await fireLia(row); }
+          stats.new += newOnes.length;
         }
         if (isLast) break; // última página deste portal; libera e vai ao próximo
       }
     }
 
-    logger.info(`[kenlo] {"event":"kenlo.sync.done","runId":"${runId}","tenantId":"${tenantId}","mode":"${syncMode}","new":${stats.new},"saved":${stats.saved}}`);
+    logger.info(`[kenlo] {"event":"kenlo.sync.done","runId":"${runId}","tenantId":"${tenantId}","mode":"${syncMode}","new":${stats.new},"updated":${stats.updated},"saved":${stats.saved}}`);
     return stats;
   }
 
@@ -112,7 +146,7 @@ export function createKenloSyncService({
         if (syncMode === 'BACKFILL') patch.last_full_sync_at = finishedAt;
         patch.sync_state = JSON.stringify({
           status: stats.errors > 0 ? 'error' : 'done', mode: syncMode, finished_at: finishedAt,
-          fetched: stats.fetched, new: stats.new, saved: stats.saved, errors: stats.errors,
+          fetched: stats.fetched, new: stats.new, updated: stats.updated, saved: stats.saved, errors: stats.errors,
           error_message: stats.errors > 0 ? `${stats.errors} falha(s) durante o sync` : null,
         });
         await supabase.from('kenlo_integrations').update(patch).eq('tenant_id', integ.tenant_id);

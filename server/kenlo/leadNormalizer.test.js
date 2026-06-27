@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeLead, isTestLead, tokenFingerprint } from './leadNormalizer.js';
+import { normalizeLead, isTestLead, tokenFingerprint, kenloFingerprint, mergeLeadUpdate } from './leadNormalizer.js';
 
 const baseRaw = {
   _id: 'abc123',
@@ -69,6 +69,80 @@ describe('isTestLead', () => {
     expect(isTestLead({ client: { phone: '11999999999' } })).toBe(true);
     expect(isTestLead({ message: 'isso é um Lead de Teste' })).toBe(true);
     expect(isTestLead(baseRaw)).toBe(false);
+  });
+});
+
+describe('kenloFingerprint', () => {
+  it('muda quando um campo sincronizado do Kenlo muda', () => {
+    const a = normalizeLead({ ...baseRaw, status: 1 }, 't');
+    const b = normalizeLead({ ...baseRaw, status: 2 }, 't'); // stage muda new→contacted no payload
+    expect(kenloFingerprint(a)).not.toBe(kenloFingerprint(b));
+  });
+
+  it('é estável: mesmo payload → mesmo hash', () => {
+    const a = normalizeLead(baseRaw, 't');
+    const b = normalizeLead(baseRaw, 't');
+    expect(kenloFingerprint(a)).toBe(kenloFingerprint(b));
+  });
+
+  it('NÃO muda quando só um campo local do CRM difere (temperature/archived)', () => {
+    const row = normalizeLead(baseRaw, 't');
+    const comLocal = { ...row, temperature: 'hot', archived_at: '2026-01-01T00:00:00Z' };
+    expect(kenloFingerprint(comLocal)).toBe(kenloFingerprint(row));
+  });
+});
+
+describe('mergeLeadUpdate (merge column-scoped Kenlo→CRM)', () => {
+  const incoming = normalizeLead(
+    { ...baseRaw, client: { name: 'Maria Atualizada', ddd: '11', phone: '988887777' }, status: 2, attendedBy: { name: 'Carlos' } },
+    't',
+  );
+
+  it('atualiza campos do Kenlo (nome, telefone, message, interest, raw_data)', () => {
+    const existing = { id: 'row-1', stage: 'new', attended_by_name: null, attended_by_id: null,
+      client_name: 'Maria', temperature: null, archived_at: null, kenlo_fingerprint: 'antigo' };
+    const patch = mergeLeadUpdate(incoming, existing);
+    expect(patch.client_name).toBe('Maria Atualizada');
+    expect(patch.raw_data).toEqual(incoming.raw_data);
+  });
+
+  it('NÃO rebaixa stage: lead existente preserva o stage do CRM (corretor venceu)', () => {
+    const existing = { id: 'row-1', stage: 'qualified', attended_by_name: 'X', attended_by_id: 'u1',
+      temperature: null, archived_at: null, kenlo_fingerprint: 'antigo' };
+    const patch = mergeLeadUpdate(incoming, existing);
+    expect(patch).not.toHaveProperty('stage'); // nunca sobrescreve stage de lead existente
+  });
+
+  it('attended_by: preenche só se o CRM estiver vazio', () => {
+    const vazio = { id: 'r', stage: 'new', attended_by_name: null, attended_by_id: null, kenlo_fingerprint: 'x' };
+    const patchVazio = mergeLeadUpdate(incoming, vazio);
+    expect(patchVazio.attended_by_name).toBe('Carlos');
+
+    const ocupado = { id: 'r', stage: 'new', attended_by_name: 'João Manual', attended_by_id: 'u9', kenlo_fingerprint: 'x' };
+    const patchOcupado = mergeLeadUpdate(incoming, ocupado);
+    expect(patchOcupado).not.toHaveProperty('attended_by_name');
+    expect(patchOcupado).not.toHaveProperty('attended_by_id');
+  });
+
+  it('NUNCA inclui colunas 100% locais no patch (archived_at, first_response_at, temperature, is_exclusive)', () => {
+    const existing = { id: 'r', stage: 'new', attended_by_name: null, attended_by_id: null,
+      temperature: 'hot', archived_at: '2026-01-01', first_response_at: '2026-01-02', is_exclusive: true, kenlo_fingerprint: 'x' };
+    const patch = mergeLeadUpdate(incoming, existing);
+    for (const local of ['archived_at', 'archive_reason', 'first_response_at', 'temperature', 'is_exclusive']) {
+      expect(patch).not.toHaveProperty(local);
+    }
+  });
+
+  it('retorna null quando nada do Kenlo mudou (hash igual) → evita UPDATE desnecessário', () => {
+    const existing = { id: 'r', stage: incoming.stage, attended_by_name: incoming.attended_by_name,
+      attended_by_id: 'u1', client_name: incoming.client_name, kenlo_fingerprint: kenloFingerprint(incoming) };
+    expect(mergeLeadUpdate(incoming, existing)).toBeNull();
+  });
+
+  it('inclui o novo kenlo_fingerprint no patch quando há mudança', () => {
+    const existing = { id: 'r', stage: 'new', attended_by_name: null, attended_by_id: null, kenlo_fingerprint: 'antigo' };
+    const patch = mergeLeadUpdate(incoming, existing);
+    expect(patch.kenlo_fingerprint).toBe(kenloFingerprint(incoming));
   });
 });
 
