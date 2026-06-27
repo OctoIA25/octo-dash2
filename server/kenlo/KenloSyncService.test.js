@@ -48,6 +48,21 @@ describe('KenloSyncService.syncTenant', () => {
     expect(fetchImpl).toHaveBeenCalledWith('https://webhook/lia', expect.objectContaining({ method: 'POST' }));
   });
 
+  it('BACKFILL NÃO dispara webhook Lia (não spammar a IA no histórico)', async () => {
+    const leads = [
+      { _id: 'novo', timestamp: '2026-06-25T10:00:00Z', client: { name: 'A', phone: '11900000000' }, idMediaOrigin: 8, interest: { reference: 'R' } },
+    ];
+    const supabase = fakeSupabase({ existing: [] });
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    const svc = createKenloSyncService({
+      supabase, leadService: leadServiceStub(leads), brokerAssigner: brokerStub,
+      processEnv: { KENLO_LIA_WEBHOOK_URL: 'https://webhook/lia' }, fetchImpl,
+    });
+    const r = await svc.syncTenant(integration, { syncMode: 'BACKFILL', startDate: '2026-04-27' });
+    expect(r.saved).toBe(1);                 // grava o lead no banco
+    expect(fetchImpl).not.toHaveBeenCalled(); // mas NÃO aciona a Lia
+  });
+
   it('syncTenant faz upsert por página (streaming), não acumula tudo', async () => {
     const upsertCalls = [];
     const supabase = {
