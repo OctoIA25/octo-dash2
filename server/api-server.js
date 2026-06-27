@@ -6,7 +6,6 @@
 
 import express from 'express';
 import cors from 'cors';
-import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import { createWatermarkRouter } from './watermark/routes.js';
 import { createWorker } from './watermark/worker.js';
@@ -160,14 +159,6 @@ const validateApiKey = async (req, res, next) => {
   next();
 };
 
-const safeStringEquals = (left, right) => {
-  if (!left || !right) return false;
-  const leftBuffer = Buffer.from(String(left));
-  const rightBuffer = Buffer.from(String(right));
-  if (leftBuffer.length !== rightBuffer.length) return false;
-  return crypto.timingSafeEqual(leftBuffer, rightBuffer);
-};
-
 // Remove metacaracteres do PostgREST (vírgula, parênteses, asterisco, barra) que
 // poderiam alterar a estrutura de um filtro .or() ao interpolar input do usuário.
 const sanitizeFilterValue = (value) => String(value ?? '').replace(/[,()*\\]/g, ' ').trim();
@@ -226,33 +217,13 @@ const validateZapFeedAccess = async (req, res, next) => {
     || req.query.feed_token
     || req.query.secret;
 
-  // 1) Multi-tenant: o secret IDENTIFICA o tenant (a URL não escolhe).
+  // Multi-tenant: o secret IDENTIFICA o tenant (a URL não escolhe). Cada tenant tem
+  // a sua linha em tenant_zap_config (sem fallback global por .env).
   const tenantConfig = await zapConfigResolver.resolveBySecret(providedSecret).catch(() => null);
   if (tenantConfig && tenantConfig.status === 'active') {
     req.tenantId = tenantConfig.tenantId;
     req.zapConfig = effectiveZapConfig(tenantConfig);
     req.integrationAuth = 'zapimoveis_tenant_secret';
-    return next();
-  }
-
-  // 2) Fallback legado: secret global do .env.
-  const config = getZapFeedConfig();
-  if (config.secret && safeStringEquals(providedSecret, config.secret)) {
-    const tenantId = req.query.tenant_id || req.query.tenantId || config.tenantId;
-
-    if (!tenantId) {
-      return res.status(500).json({
-        success: false,
-        error: {
-          code: 'MISSING_TENANT_ID',
-          message: 'Configure ZAPIMOVEIS_TENANT_ID ou envie tenant_id na URL do feed.'
-        }
-      });
-    }
-
-    req.tenantId = tenantId;
-    req.zapConfig = config;
-    req.integrationAuth = 'zapimoveis_feed_secret';
     return next();
   }
 

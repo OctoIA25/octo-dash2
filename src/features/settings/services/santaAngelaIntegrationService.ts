@@ -12,6 +12,24 @@ async function authHeaders(): Promise<Record<string, string>> {
   };
 }
 
+export interface SantaAngelaConfigView {
+  tenantId: string;
+  baseUrl: string;
+  status: string;
+  hasApiKey: boolean;
+}
+
+/** Lê a config do tenant para reidratar o card no F5. Nunca devolve a api_key em claro. */
+export async function fetchSantaAngelaConfig(
+  tenantId: string,
+): Promise<{ ok: boolean; config: SantaAngelaConfigView | null; error?: string }> {
+  const res = await fetch('/api/v1/santa-angela/config/get', {
+    method: 'POST', headers: await authHeaders(), body: JSON.stringify({ tenantId }),
+  });
+  const json = await res.json().catch(() => ({}));
+  return { ok: !!json.ok, config: json.config ?? null, error: json.error };
+}
+
 export async function saveSantaAngelaConfig(
   tenantId: string, baseUrl: string, apiKey: string, status: 'active' | 'inactive' = 'active',
 ): Promise<{ ok: boolean; error?: string }> {

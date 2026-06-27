@@ -88,6 +88,7 @@ import {
 import {
   saveSantaAngelaConfig,
   testSantaAngelaConfig,
+  fetchSantaAngelaConfig,
 } from '@/features/settings/services/santaAngelaIntegrationService';
 import {
   fetchZapConfig,
@@ -140,6 +141,7 @@ export const IntegracoesPage: React.FC = () => {
   // Estados Santa Ângela
   const [saBaseUrl, setSaBaseUrl] = useState('');
   const [saApiKey, setSaApiKey] = useState('');
+  const [saHasApiKey, setSaHasApiKey] = useState(false);
   const [saStatus, setSaStatus] = useState<'inativo' | 'ativo' | 'erro'>('inativo');
   const [saTesting, setSaTesting] = useState(false);
   const [saSaving, setSaSaving] = useState(false);
@@ -453,10 +455,16 @@ export const IntegracoesPage: React.FC = () => {
   // Handlers Santa Ângela
   const handleSaSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!tenantId || !saBaseUrl || !saApiKey) return;
+    // baseUrl é obrigatória; api_key só no primeiro cadastro (depois fica salva cifrada).
+    if (!tenantId || !saBaseUrl || (!saApiKey && !saHasApiKey)) return;
     setSaSaving(true);
     const r = await saveSantaAngelaConfig(tenantId, saBaseUrl, saApiKey, 'active');
-    setSaStatus(r.ok ? 'ativo' : 'erro');
+    if (r.ok) {
+      setSaStatus('ativo');
+      if (saApiKey) setSaHasApiKey(true);
+    } else {
+      setSaStatus('erro');
+    }
     setSaSaving(false);
   };
 
@@ -467,6 +475,17 @@ export const IntegracoesPage: React.FC = () => {
     setSaStatus(r.ok ? 'ativo' : 'erro');
     setSaTesting(false);
   };
+
+  // Carrega a config Santa Ângela do tenant (reidrata o card no F5; api_key nunca volta).
+  useEffect(() => {
+    if (!tenantId) return;
+    fetchSantaAngelaConfig(tenantId).then(({ config }) => {
+      if (!config) return;
+      setSaBaseUrl(config.baseUrl || '');
+      setSaHasApiKey(config.hasApiKey);
+      setSaStatus(config.status === 'active' ? 'ativo' : 'inativo');
+    }).catch(() => { /* best-effort */ });
+  }, [tenantId]);
 
   // Carrega a config ZAP do tenant (metadados; segredos nunca voltam em claro).
   useEffect(() => {
@@ -1141,7 +1160,7 @@ export const IntegracoesPage: React.FC = () => {
                       type="password"
                       value={saApiKey}
                       onChange={(e) => setSaApiKey(e.target.value)}
-                      placeholder="••••••••"
+                      placeholder={saHasApiKey ? '•••••••• (já configurada)' : '••••••••'}
                       className="w-full px-3 py-2 border border-gray-200 dark:border-slate-800 rounded-lg text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
                       disabled={saSaving}
                     />
@@ -1149,7 +1168,7 @@ export const IntegracoesPage: React.FC = () => {
                   <div className="pt-1 space-y-2">
                     <button
                       type="submit"
-                      disabled={saSaving || !saBaseUrl || !saApiKey}
+                      disabled={saSaving || !saBaseUrl || (!saApiKey && !saHasApiKey)}
                       className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     >
                       {saSaving ? (

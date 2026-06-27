@@ -2,12 +2,28 @@ import { describe, it, expect } from 'vitest';
 import express from 'express';
 import { registerSantaAngelaRoutes } from './index.js';
 
-function makeApp({ ownerEmail = 'octo.inteligenciaimobiliaria@gmail.com', overrides = {} } = {}) {
+// email: quem é o usuário do JWT. memberships: [{tenant_id,user_id,role}] p/ o gate admin.
+function makeApp({ ownerEmail = 'octo.inteligenciaimobiliaria@gmail.com', userId = 'u1', memberships = [], overrides = {} } = {}) {
   const app = express();
   app.use(express.json());
   const supabase = {
-    auth: { getUser: async () => ({ data: { user: { email: ownerEmail } }, error: null }) },
-    from() { return this; }, select() { return this; }, order: async () => ({ data: [], error: null }),
+    auth: { getUser: async () => ({ data: { user: { id: userId, email: ownerEmail } }, error: null }) },
+    from(table) {
+      let filters = {};
+      const b = {
+        select() { return b; },
+        eq(col, val) { filters[col] = val; return b; },
+        order: async () => ({ data: [], error: null }),
+        maybeSingle: async () => {
+          if (table === 'tenant_memberships') {
+            const row = memberships.find((m) => m.tenant_id === filters.tenant_id && m.user_id === filters.user_id);
+            return { data: row ? { role: row.role } : null, error: null };
+          }
+          return { data: null, error: null };
+        },
+      };
+      return b;
+    },
   };
   registerSantaAngelaRoutes(app, supabase, overrides);
   return app;
@@ -25,10 +41,42 @@ async function call(app, method, path, { token = 'x', body } = {}) {
   return { status: res.status, json };
 }
 
-it('config/test não-owner => 403', async () => {
-  const app = makeApp({ ownerEmail: 'alguem@x.com' });
+it('não-owner sem membership => 403', async () => {
+  const app = makeApp({ ownerEmail: 'alguem@x.com', userId: 'u-x', memberships: [] });
   const r = await call(app, 'POST', '/api/v1/santa-angela/config/test', { body: { tenantId: 't1' } });
   expect(r.status).toBe(403);
+});
+
+it('admin do PRÓPRIO tenant => passa', async () => {
+  const app = makeApp({
+    ownerEmail: 'admin@imob.com', userId: 'u-a',
+    memberships: [{ tenant_id: 't1', user_id: 'u-a', role: 'admin' }],
+    overrides: { resolver: { saveConfig: async () => ({ ok: true }) } },
+  });
+  const r = await call(app, 'POST', '/api/v1/santa-angela/config',
+    { body: { tenantId: 't1', baseUrl: 'https://u', apiKey: 'k' } });
+  expect(r.status).toBe(200);
+});
+
+it('ISOLAMENTO: admin de OUTRO tenant => 403', async () => {
+  const app = makeApp({
+    ownerEmail: 'admin@imob.com', userId: 'u-a',
+    memberships: [{ tenant_id: 't2', user_id: 'u-a', role: 'admin' }], // admin de t2
+  });
+  const r = await call(app, 'POST', '/api/v1/santa-angela/config',
+    { body: { tenantId: 't1', baseUrl: 'https://u', apiKey: 'k' } }); // tenta t1
+  expect(r.status).toBe(403);
+});
+
+it('config/get devolve metadados sem a api_key', async () => {
+  const app = makeApp({
+    overrides: { resolver: { resolveConfig: async (t) => ({ tenantId: t, baseUrl: 'https://u', status: 'active', apiKey: 'segredo' }) } },
+  });
+  const r = await call(app, 'POST', '/api/v1/santa-angela/config/get', { body: { tenantId: 't1' } });
+  expect(r.status).toBe(200);
+  expect(r.json.config.baseUrl).toBe('https://u');
+  expect(r.json.config.hasApiKey).toBe(true);
+  expect(JSON.stringify(r.json)).not.toContain('segredo');
 });
 
 it('POST config salva via resolver', async () => {

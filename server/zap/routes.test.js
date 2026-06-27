@@ -29,13 +29,27 @@ function makeApp() {
   return { app, call };
 }
 
-// Supabase fake: auth.getUser controlável + resolver-bypass via options.resolver.
-function makeSupabase({ email = OWNER, authError = null, statusRows = [] } = {}) {
+// Supabase fake: auth.getUser controlável + lookup de tenant_memberships + status list.
+// memberships: array de { tenant_id, user_id, role } para o gate de admin-do-tenant.
+function makeSupabase({ email = OWNER, userId = 'u1', authError = null, statusRows = [], memberships = [] } = {}) {
   return {
-    auth: { getUser: async () => (authError ? { data: null, error: authError } : { data: { user: { email } }, error: null }) },
-    from() { return this; },
-    select() { return this; },
-    order() { return Promise.resolve({ data: statusRows, error: null }); },
+    auth: { getUser: async () => (authError ? { data: null, error: authError } : { data: { user: { id: userId, email } }, error: null }) },
+    from(table) {
+      let filters = {};
+      const b = {
+        select() { return b; },
+        eq(col, val) { filters[col] = val; return b; },
+        order() { return Promise.resolve({ data: statusRows, error: null }); },
+        maybeSingle() {
+          if (table === 'tenant_memberships') {
+            const row = memberships.find((m) => m.tenant_id === filters.tenant_id && m.user_id === filters.user_id) || null;
+            return Promise.resolve({ data: row ? { role: row.role } : null, error: null });
+          }
+          return Promise.resolve({ data: null, error: null });
+        },
+      };
+      return b;
+    },
   };
 }
 
@@ -60,10 +74,57 @@ describe('zap routes — auth', () => {
     expect(r.statusCode).toBe(401);
   });
 
-  it('403 se não for owner', async () => {
+  it('owner passa em qualquer tenant', async () => {
     const m = makeApp();
-    registerZapRoutes(m.app, makeSupabase({ email: 'qualquer@x.com' }), { resolver: fakeResolver() });
+    registerZapRoutes(m.app, makeSupabase({ email: OWNER }), { resolver: fakeResolver() });
     const r = await m.call('POST', '/api/v1/zap/config', { body: { tenantId: 'A' } });
+    expect(r.statusCode).toBe(200);
+  });
+
+  it('admin do PRÓPRIO tenant passa', async () => {
+    const m = makeApp();
+    registerZapRoutes(m.app, makeSupabase({
+      email: 'admin@imob.com', userId: 'u-admin',
+      memberships: [{ tenant_id: 'A', user_id: 'u-admin', role: 'admin' }],
+    }), { resolver: fakeResolver() });
+    const r = await m.call('POST', '/api/v1/zap/config', { body: { tenantId: 'A' } });
+    expect(r.statusCode).toBe(200);
+  });
+
+  it('ISOLAMENTO: admin de OUTRO tenant é barrado (403)', async () => {
+    const m = makeApp();
+    registerZapRoutes(m.app, makeSupabase({
+      email: 'admin@imob.com', userId: 'u-admin',
+      memberships: [{ tenant_id: 'B', user_id: 'u-admin', role: 'admin' }], // admin de B
+    }), { resolver: fakeResolver() });
+    const r = await m.call('POST', '/api/v1/zap/config', { body: { tenantId: 'A' } }); // tenta mexer em A
+    expect(r.statusCode).toBe(403);
+  });
+
+  it('corretor do próprio tenant é barrado (403)', async () => {
+    const m = makeApp();
+    registerZapRoutes(m.app, makeSupabase({
+      email: 'c@imob.com', userId: 'u-c',
+      memberships: [{ tenant_id: 'A', user_id: 'u-c', role: 'corretor' }],
+    }), { resolver: fakeResolver() });
+    const r = await m.call('POST', '/api/v1/zap/config', { body: { tenantId: 'A' } });
+    expect(r.statusCode).toBe(403);
+  });
+
+  it('não-membro é barrado (403)', async () => {
+    const m = makeApp();
+    registerZapRoutes(m.app, makeSupabase({ email: 'estranho@x.com', userId: 'u-x', memberships: [] }), { resolver: fakeResolver() });
+    const r = await m.call('POST', '/api/v1/zap/config', { body: { tenantId: 'A' } });
+    expect(r.statusCode).toBe(403);
+  });
+
+  it('GET /status continua owner-only (admin barrado)', async () => {
+    const m = makeApp();
+    registerZapRoutes(m.app, makeSupabase({
+      email: 'admin@imob.com', userId: 'u-admin',
+      memberships: [{ tenant_id: 'A', user_id: 'u-admin', role: 'admin' }],
+    }), { resolver: fakeResolver() });
+    const r = await m.call('GET', '/api/v1/zap/sync/status', {});
     expect(r.statusCode).toBe(403);
   });
 });
