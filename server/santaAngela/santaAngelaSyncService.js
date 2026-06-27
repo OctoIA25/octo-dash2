@@ -4,8 +4,11 @@
  * agora server-side (supabase service role). Atualiza last_sync_at/leads_count.
  *
  * IDEMPOTÊNCIA — rodar o mesmo lead N vezes não duplica nem corrompe:
- *   - chave natural = source_lead_id. Existe → UPDATE; não existe → INSERT;
- *     telefone já usado sob OUTRO source_id → pula (não viola unique_phone_per_tenant).
+ *   - chave natural = source_lead_id. Existe → UPDATE (origem vence: status e
+ *     corretor refletem a Santa Ângela), mas com dirty-check: só grava se algum
+ *     campo realmente mudou, então re-rodar com o mesmo payload é no-op.
+ *   - não existe → INSERT; telefone já usado sob OUTRO source_id → pula (não
+ *     viola unique_phone_per_tenant).
  *   Isso vale igualmente para o disparo automático (cron) e o manual (botão):
  *   ambos chamam o MESMO syncTenant, e o mesmo runner (guarda de reentrância)
  *   impede dois ciclos concorrentes no processo — ver syncRunner.js.
@@ -29,14 +32,19 @@ export function createSantaAngelaSyncService({
   const tenantTimeoutMs = Number(processEnv.SANTA_ANGELA_TENANT_TIMEOUT_MS) || DEFAULT_TENANT_TIMEOUT_MS;
   async function getExisting(tenantId) {
     const { data, error } = await supabase
-      .from('leads').select('phone, source_lead_id')
+      .from('leads').select('phone, source_lead_id, status, assigned_agent_name')
       .eq('tenant_id', tenantId).eq('source', 'Santa Angela');
-    if (error) { logger.warn(`[santa-angela] erro lendo existentes: ${error.message}`); return { phoneSet: new Set(), sourceIdSet: new Set() }; }
+    if (error) { logger.warn(`[santa-angela] erro lendo existentes: ${error.message}`); return { phoneSet: new Set(), sourceIdSet: new Set(), bySourceId: new Map() }; }
     const phoneSet = new Set((data || []).map((l) => l.phone).filter(Boolean));
     // filter(Boolean): um source_lead_id nulo no banco não pode virar match
     // contra uma saLead.id ausente (causaria falso "update" / .eq sem alvo).
     const sourceIdSet = new Set((data || []).map((l) => l.source_lead_id).filter(Boolean));
-    return { phoneSet, sourceIdSet };
+    // Estado atual por source_lead_id: alimenta o dirty-check do updateExisting,
+    // pra só gravar quando status/corretor da origem realmente mudaram.
+    const bySourceId = new Map((data || [])
+      .filter((l) => l.source_lead_id)
+      .map((l) => [l.source_lead_id, { status: l.status, assigned_agent_name: l.assigned_agent_name }]));
+    return { phoneSet, sourceIdSet, bySourceId };
   }
 
   async function insertNew(lead) {
@@ -50,17 +58,32 @@ export function createSantaAngelaSyncService({
     return false;
   }
 
-  async function updateExisting(lead, tenantId) {
-    // NÃO reescrever assigned_at: ele é a base do countdown do bolsão
-    // (expire_bolsao_leads usa COALESCE(assigned_at, ...)). Como o polling roda a
-    // cada 60s e leads recentes reaparecem na 1ª página, regravar assigned_at aqui
-    // reiniciaria o cronômetro eternamente — o lead nunca expiraria/redistribuiria.
-    // assigned_at é setado só no INSERT; re-atribuição fica a cargo do trigger
-    // tg_update_leads_assigned_at (quando assigned_agent_* muda).
+  // Origem vence: status e corretor refletem a Santa Ângela. Mas só gravamos
+  // quando ALGO mudou (dirty-check contra `current`), por dois motivos:
+  //   1) o polling de 60s faz leads recentes reaparecerem na 1ª página e caírem
+  //      aqui a cada ciclo — UPDATE incondicional seria escrita inútil em escala;
+  //   2) o trigger tg_update_leads_assigned_at reseta assigned_at sempre que
+  //      assigned_agent_name muda (IS DISTINCT FROM). Regravar o MESMO corretor
+  //      não dispara o trigger, mas o dirty-check garante que nem chegamos a
+  //      gravar — assigned_at só reinicia numa troca real de corretor (que é o
+  //      comportamento correto: nova atribuição reinicia o countdown do bolsão).
+  // Retorna 'updated' | 'unchanged' | 'error'.
+  async function updateExisting(lead, tenantId, current) {
+    const next = { status: lead.status, assigned_agent_name: lead.assigned_agent_name };
+    const changed = !current
+      || current.status !== next.status
+      || current.assigned_agent_name !== next.assigned_agent_name;
+    if (!changed) return 'unchanged';
+
     const { error } = await supabase.from('leads')
-      .update({ updated_at: new Date().toISOString(), custom_fields: lead.custom_fields })
+      .update({
+        status: next.status,
+        assigned_agent_name: next.assigned_agent_name,
+        custom_fields: lead.custom_fields,
+        updated_at: new Date().toISOString(),
+      })
       .eq('source_lead_id', lead.source_lead_id).eq('tenant_id', tenantId);
-    return !error;
+    return error ? 'error' : 'updated';
   }
 
   async function syncTenant(tenantId, runId = '-') {
@@ -91,11 +114,11 @@ export function createSantaAngelaSyncService({
       return finish();
     }
 
-    const { phoneSet, sourceIdSet } = await getExisting(tenantId);
+    const { phoneSet, sourceIdSet, bySourceId } = await getExisting(tenantId);
     for (const saLead of fetched.leads) {
       const mapped = mapSantaAngelaToLead(saLead, tenantId);
       if (saLead.id && sourceIdSet.has(saLead.id)) {
-        if (await updateExisting(mapped, tenantId)) result.updatedLeads++;
+        if (await updateExisting(mapped, tenantId, bySourceId.get(saLead.id)) === 'updated') result.updatedLeads++;
       } else if (mapped.phone && phoneSet.has(mapped.phone)) {
         // pula: telefone já existe sob outro source_id (evita violar unique_phone_per_tenant)
       } else if (await insertNew(mapped)) {

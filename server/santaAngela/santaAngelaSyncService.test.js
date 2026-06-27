@@ -88,18 +88,62 @@ it('syncTenant: lead sem id não casa com source_lead_id nulo existente (insere,
 });
 
 it('syncTenant: UPDATE de lead existente NÃO reescreve assigned_at (não reinicia o bolsão)', async () => {
-  // Regressão C1: assigned_at é a base do countdown do bolsão. O polling de 60s
-  // faz leads recentes reaparecerem e caírem no UPDATE; regravar assigned_at
-  // reiniciaria o cronômetro pra sempre. O UPDATE só pode mexer em updated_at/custom_fields.
-  const { supabase, state } = makeSupabase({ existing: [{ phone: '999', source_lead_id: 'x1' }] });
+  // Regressão C1: assigned_at é a base do countdown do bolsão. O UPDATE nunca
+  // grava assigned_at diretamente — quem reinicia o countdown é o trigger
+  // tg_update_leads_assigned_at, e SÓ quando o corretor muda de fato.
+  // Aqui o status muda (NOVO→atendimento) mas assigned_at não está no payload.
+  const { supabase, state } = makeSupabase({
+    existing: [{ phone: '999', source_lead_id: 'x1', status: 'Novos Leads', assigned_agent_name: null }],
+  });
   const svc = createSantaAngelaSyncService({ supabase,
-    apiClient: okClient([{ id: 'x1', nome: 'Existente', celular: '999' }]) });
+    apiClient: okClient([{ id: 'x1', nome: 'Existente', celular: '999', situacaocadastropessoa_titulo: 'EM ATENDIMENTO' }]) });
   const r = await svc.syncTenant('t1');
   expect(r.updatedLeads).toBe(1);
   const leadsUpdate = state.updated.find((u) => u.table === 'leads');
   expect(leadsUpdate).toBeTruthy();
   expect('assigned_at' in leadsUpdate.payload).toBe(false);
   expect('updated_at' in leadsUpdate.payload).toBe(true);
+});
+
+it('syncTenant: origem vence — status e corretor são atualizados no lead existente', async () => {
+  // Cenário do enunciado: João entra Novo/sem corretor; depois a origem manda
+  // EM ATENDIMENTO / Carlos. O UPDATE deve gravar status e assigned_agent_name.
+  const { supabase, state } = makeSupabase({
+    existing: [{ phone: 'X', source_lead_id: 'joao', status: 'Novos Leads', assigned_agent_name: null }],
+  });
+  const svc = createSantaAngelaSyncService({ supabase,
+    apiClient: okClient([{ id: 'joao', nome: 'João', celular: 'X',
+      situacaocadastropessoa_titulo: 'EM ATENDIMENTO', corretor_nome: 'Carlos' }]) });
+  const r = await svc.syncTenant('t1');
+  expect(r.updatedLeads).toBe(1);
+  const leadsUpdate = state.updated.find((u) => u.table === 'leads');
+  expect(leadsUpdate.payload.status).toBe('Interação'); // EM ATENDIMENTO → Interação
+  expect(leadsUpdate.payload.assigned_agent_name).toBe('Carlos');
+});
+
+it('syncTenant: dirty-check — nada mudou ⇒ nenhum UPDATE em leads (evita escrita inútil no polling)', async () => {
+  const { supabase, state } = makeSupabase({
+    existing: [{ phone: 'X', source_lead_id: 'joao', status: 'Interação', assigned_agent_name: 'Carlos' }],
+  });
+  const svc = createSantaAngelaSyncService({ supabase,
+    apiClient: okClient([{ id: 'joao', nome: 'João', celular: 'X',
+      situacaocadastropessoa_titulo: 'EM ATENDIMENTO', corretor_nome: 'Carlos' }]) });
+  const r = await svc.syncTenant('t1');
+  expect(r.updatedLeads).toBe(0); // unchanged, não conta como atualizado
+  expect(state.updated.find((u) => u.table === 'leads')).toBeUndefined(); // não escreveu na tabela leads
+});
+
+it('syncTenant: atualização parcial — só status muda, corretor permanece', async () => {
+  const { supabase, state } = makeSupabase({
+    existing: [{ phone: 'X', source_lead_id: 'joao', status: 'Novos Leads', assigned_agent_name: 'Carlos' }],
+  });
+  const svc = createSantaAngelaSyncService({ supabase,
+    apiClient: okClient([{ id: 'joao', nome: 'João', celular: 'X',
+      situacaocadastropessoa_titulo: 'EM ATENDIMENTO', corretor_nome: 'Carlos' }]) });
+  await svc.syncTenant('t1');
+  const leadsUpdate = state.updated.find((u) => u.table === 'leads');
+  expect(leadsUpdate.payload.status).toBe('Interação');
+  expect(leadsUpdate.payload.assigned_agent_name).toBe('Carlos'); // inalterado, mas re-gravado (origem vence)
 });
 
 it('syncTenant falha da API => success=false', async () => {
