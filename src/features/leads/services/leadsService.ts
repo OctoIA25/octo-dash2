@@ -99,6 +99,13 @@ export interface KanbanLead {
   participa_bolsao: boolean;
   /** Quando o corretor ATUAL recebeu este lead — base do cronômetro do bolsão */
   assigned_at: string;
+  /**
+   * EVENT TIME: quando o lead realmente surgiu/manifestou interesse no portal.
+   * Para exibição, ordenação e filtros por data DO LEAD — NÃO para SLA/bolsão
+   * (que usam created_at/assigned_at = processing time). Kenlo: lead_timestamp;
+   * CRM: created_at (lá já é a data real do lead).
+   */
+  event_at: string;
 }
 
 const LEADS_TABLE = 'leads';
@@ -149,12 +156,15 @@ const KENLO_TEMP_MAP: Record<string, string> = {
 /**
  * Converte um kenlo_lead para KanbanLead
  */
-function mapKenloToKanbanLead(kl: Record<string, unknown>): KanbanLead {
+export function mapKenloToKanbanLead(kl: Record<string, unknown>): KanbanLead {
   const stage = (kl.stage as string) || 'new';
   const status = KENLO_STAGE_TO_STATUS[stage] || 'Novos Leads';
   return {
     id: kl.id as string,
+    // created_at = processing time (import); o bolsão depende disto — NÃO trocar.
     created_at: (kl.created_at as string) || '',
+    // event_at = data REAL do lead (Kenlo: lead_timestamp). Para exibição/ordenação.
+    event_at: (kl.lead_timestamp as string) || (kl.created_at as string) || '',
     codigo: (kl.interest_reference as string) || null,
     corretor: (kl.attended_by_name as string) || null,
     lead: (kl.client_phone as string) || null,
@@ -206,7 +216,8 @@ async function fetchAllKenloLeadsForKanban(tenantId?: string): Promise<KanbanLea
         .from('kenlo_leads')
         .select('id,client_name,client_phone,client_email,message,interest_reference,attended_by_name,is_exclusive,interest_type,interest_is_sale,interest_is_rent,stage,temperature,portal,lead_timestamp,archived_at,archive_reason,updated_at,created_at,tenant_id')
         .is('archived_at', null)
-        .order('created_at', { ascending: false })
+        // event time: ordena pela data REAL do lead, não pela de import.
+        .order('lead_timestamp', { ascending: false })
         .range(from, from + PAGE_SIZE - 1);
 
       if (tenantId) query = query.eq('tenant_id', tenantId);
@@ -295,10 +306,12 @@ function mapKanbanSlugToStatus(slug: string): string {
 /**
  * Mapear CRMLead para formato do Kanban (compatibilidade com BolsaoLead)
  */
-function mapToKanbanLead(lead: CRMLead): KanbanLead {
+export function mapToKanbanLead(lead: CRMLead): KanbanLead {
   return {
     id: lead.id,
     created_at: lead.created_at,
+    // CRM: created_at já é a data real do lead → event_at = created_at (UI uniforme).
+    event_at: lead.created_at,
     codigo: lead.property_code,
     corretor: lead.assigned_agent_name,
     lead: lead.phone,
@@ -369,7 +382,8 @@ export async function fetchLeadsDoCorretorCRM(
           .select('*')
           .ilike('attended_by_name', corretorNome.trim())
           .is('archived_at', null)
-          .order('created_at', { ascending: false })
+          // event time: ordena pela data REAL do lead, não pela de import.
+          .order('lead_timestamp', { ascending: false })
           .range(from, from + PAGE_SIZE - 1);
         if (tenantId) kenloQuery = kenloQuery.eq('tenant_id', tenantId);
 
@@ -436,7 +450,8 @@ export async function fetchLeadsDoCorretorPorNome(
         .select('id,client_name,client_phone,client_email,message,interest_reference,attended_by_name,is_exclusive,interest_type,interest_is_sale,interest_is_rent,stage,temperature,portal,lead_timestamp,archived_at,archive_reason,updated_at,created_at,tenant_id')
         .ilike('attended_by_name', nomeCorretor)
         .is('archived_at', null)
-        .order('created_at', { ascending: false })
+        // event time: ordena pela data REAL do lead, não pela de import.
+        .order('lead_timestamp', { ascending: false })
         .range(from, from + PAGE_SIZE - 1);
       if (tenantId) kenloQuery = kenloQuery.eq('tenant_id', tenantId);
 

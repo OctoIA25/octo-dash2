@@ -699,11 +699,11 @@ export const LeadDetailsModal = ({
             </h4>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {/* Data de Entrada */}
+              {/* Data de Entrada — data real do lead (event time), não a de import */}
               <div>
                 <p className="text-xs text-muted-foreground mb-1">Data de Entrada</p>
                 <p className="text-sm font-semibold text-foreground">
-                  {formatarData(lead.created_at)}
+                  {formatarData(lead.event_at || lead.created_at)}
                 </p>
               </div>
 

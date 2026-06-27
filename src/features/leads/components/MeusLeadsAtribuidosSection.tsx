@@ -326,7 +326,8 @@ const KanbanCardContent = memo(({ lead, onClick, mostrarCorretor, isOverlay = fa
   const inicial = nome.charAt(0).toUpperCase();
   const corretorInicial = (corretorResponsavel || '?').charAt(0).toUpperCase();
 
-  const createdAt = lead.created_at ? new Date(lead.created_at) : null;
+  // event_at = data real do lead (quando surgiu no portal), não a de import.
+  const createdAt = lead.event_at ? new Date(lead.event_at) : (lead.created_at ? new Date(lead.created_at) : null);
   const dataFmt = createdAt
     ? createdAt.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
     : '';
@@ -980,7 +981,7 @@ export const MeusLeadsAtribuidosSection = ({
     const leadRecord = lead as unknown as Record<string, unknown>;
 
     if (filtroPeriodo === 'personalizado' && (debouncedDataInicio || debouncedDataFim)) {
-      const dataLead = new Date(lead.created_at);
+      const dataLead = new Date(lead.event_at || lead.created_at);
       const inicio = debouncedDataInicio ? new Date(debouncedDataInicio) : new Date(0);
       const fim = debouncedDataFim ? new Date(debouncedDataFim) : new Date();
       if (debouncedDataFim) fim.setHours(23, 59, 59, 999);
