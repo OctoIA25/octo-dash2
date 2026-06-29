@@ -31,10 +31,37 @@ function isPlatformOwner(email) {
   return (email || '').toLowerCase() === PLATFORM_OWNER_EMAIL;
 }
 
-/** Middleware: valida JWT Supabase e injeta req.userId/req.userEmail. */
+/**
+ * Middleware: autentica a requisição por um de dois caminhos:
+ *   1. JWT Supabase (usuário logado) — header Authorization: Bearer <jwt>.
+ *   2. Token de serviço (server-to-server, ex.: n8n) — header X-Service-Token,
+ *      comparado com process.env.DISPARADOR_SERVICE_TOKEN.
+ *
+ * O token de serviço representa o ORQUESTRADOR confiável, não uma empresa: ele
+ * pode agir em qualquer tenant, e o isolamento continua sendo o tenantId do
+ * payload (já scope-ado por .eq('tenant_id', ...) em cada query). Por isso
+ * marcamos req.isService = true, e resolveUserContext o trata como 'owner'.
+ *
+ * Sem DISPARADOR_SERVICE_TOKEN definido, o caminho de serviço fica DESLIGADO
+ * (não há token "vazio" válido) — só o JWT funciona, preservando o comportamento atual.
+ */
 function makeRequireSupabaseAuth(supabase) {
   return async function requireSupabaseAuth(req, res, next) {
     try {
+      // Caminho 1: token de serviço (server-to-server).
+      const serviceToken = process.env.DISPARADOR_SERVICE_TOKEN;
+      const providedService = req.headers['x-service-token'];
+      if (serviceToken && providedService) {
+        if (providedService !== serviceToken) {
+          return res.status(401).json({ error: 'invalid_service_token' });
+        }
+        req.isService = true;
+        req.userId = null;
+        req.userEmail = 'service:disparador';
+        return next();
+      }
+
+      // Caminho 2: JWT Supabase (usuário logado).
       const authHeader = req.headers.authorization || '';
       if (!authHeader.startsWith('Bearer ')) return res.status(401).json({ error: 'missing_authorization' });
       const { data, error } = await supabase.auth.getUser(authHeader.slice(7));
@@ -57,6 +84,9 @@ function makeRequireSupabaseAuth(supabase) {
  * - platform owner: role 'owner' sem necessidade de membership.
  */
 async function resolveUserContext(supabase, req, tenantId) {
+  // Token de serviço (n8n): orquestrador confiável, age em qualquer tenant.
+  // Isolamento permanece no tenantId do payload (scope manual por query).
+  if (req.isService) return { ok: true, role: 'owner', brokerName: null };
   if (isPlatformOwner(req.userEmail)) return { ok: true, role: 'owner', brokerName: null };
 
   const { data: membership, error: memErr } = await supabase

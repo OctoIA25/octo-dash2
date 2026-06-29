@@ -43,3 +43,9 @@ ehthumbs.db
 Desktop.ini
 
 docs/
+
+# Workflows n8n (não versionar)
+n8n/
+
+# Config local do Claude Code (não versionar)
+.claude/
