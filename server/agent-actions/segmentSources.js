@@ -7,9 +7,12 @@
 export const KENLO_SOURCE = {
   key: 'kenlo',
   table: 'kenlo_leads',
+  // kenlo_leads NÃO tem coluna `status` (o análogo é `stage`, não lido aqui).
+  // Incluí-la no SELECT quebrava o resolver com "column kenlo_leads.status does
+  // not exist". O LEADS_SOURCE mantém `status` porque a tabela `leads` o tem.
   select:
     'id, external_id, client_name, client_phone, attended_by_name, ' +
-    'archived_at, updated_at, lead_timestamp, interest_type, status',
+    'archived_at, updated_at, lead_timestamp, interest_type',
   cols: {
     name: 'client_name',
     phone: 'client_phone',
