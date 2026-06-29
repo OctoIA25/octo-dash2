@@ -413,7 +413,8 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
   // externo ou operação. Em produção, prefira o worker com flag dedicada.
   // -------------------------------------------------------------------------
   app.post(`${basePath}/run-queue`, requireSupabaseAuth, async (req, res) => {
-    if (!isPlatformOwner(req.userEmail)) return res.status(403).json({ ok: false, error: 'forbidden' });
+    // Owner OU token de serviço (orquestrador n8n) podem empurrar o worker.
+    if (!req.isService && !isPlatformOwner(req.userEmail)) return res.status(403).json({ ok: false, error: 'forbidden' });
     const summary = await runDueActions(supabase, {
       deliver: schedulerDeps.deliver,
       schedulerDeps,
