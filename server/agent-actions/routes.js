@@ -245,20 +245,27 @@ export function registerDispatchRoutes(app, basePath, supabase, options, deps) {
     const { tenantId, command, audienceId } = req.body || {};
     if (!tenantId || (!command && !audienceId)) return res.status(400).json({ ok: false, error: 'missing_fields' });
 
-    const ctx = await resolveUserContext(supabase, req, tenantId);
-    if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
+    try {
+      const ctx = await resolveUserContext(supabase, req, tenantId);
+      if (!ctx.ok) return res.status(statusFor(ctx.error)).json({ ok: false, error: ctx.error });
 
-    // Lê o modo de fonte pública configurado para o tenant (resiliente: fallback = leads_only).
-    const mode = await resolvePublicSourceMode(supabase, tenantId);
+      // Lê o modo de fonte pública configurado para o tenant (resiliente: fallback = leads_only).
+      const mode = await resolvePublicSourceMode(supabase, tenantId);
 
-    const result = await previewOperation(
-      supabase,
-      { command, audienceId, tenantId, mode, user: { id: req.userId, email: req.userEmail, role: ctx.role, brokerName: ctx.brokerName } },
-      // Interpretação via n8n: passamos contexto p/ o payload; a URL vem da env
-      // (DISPARADOR_WEBHOOK_URL) ou do default no interpreter.
-      { interpretOpts: { webhookUrl: options.disparadorWebhookUrl, usuario: req.userEmail } },
-    );
-    return res.status(result.ok ? 200 : statusFor(result.error)).json(result);
+      const result = await previewOperation(
+        supabase,
+        { command, audienceId, tenantId, mode, user: { id: req.userId, email: req.userEmail, role: ctx.role, brokerName: ctx.brokerName } },
+        // Interpretação via n8n: passamos contexto p/ o payload; a URL vem da env
+        // (DISPARADOR_WEBHOOK_URL) ou do default no interpreter.
+        { interpretOpts: { webhookUrl: options.disparadorWebhookUrl, usuario: req.userEmail } },
+      );
+      return res.status(result.ok ? 200 : statusFor(result.error)).json(result);
+    } catch (err) {
+      // Nunca deixar o request pendurado: responde 500 limpo em vez de
+      // virar rejection não tratada (que mascarava o 502/healthcheck).
+      console.error('[agent-actions] /preview falhou:', err?.message);
+      return res.status(500).json({ ok: false, error: 'preview_failed', detail: err?.message });
+    }
   });
 
   // -------------------------------------------------------------------------

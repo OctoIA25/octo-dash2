@@ -92,6 +92,10 @@ export function extractPlan(data) {
 async function defaultTransport(command, opts) {
   const url = opts.webhookUrl || DEFAULT_DISPARADOR_WEBHOOK_URL;
   const fetchImpl = opts.fetchImpl || fetch;
+  // Timeout obrigatório: sem ele, um n8n lento/inacessível trava o request
+  // indefinidamente, empilha conexões e derruba o healthcheck do container.
+  // No timeout, AbortSignal dispara AbortError → capturado por interpretCommand
+  // (catch abaixo) → vira { ok:false, error:'n8n_error' } → HTTP 502 limpo.
   const response = await fetchImpl(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -101,6 +105,7 @@ async function defaultTransport(command, opts) {
       empresa: opts.empresa || '',
       usuario: opts.usuario || '',
     }),
+    signal: AbortSignal.timeout(opts.timeoutMs || 20000),
   });
   if (!response.ok) {
     const err = new Error(`n8n HTTP ${response.status}`);
