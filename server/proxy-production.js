@@ -5210,6 +5210,10 @@ registerAgentActionRoutes(app, supabase);
 import { registerCommunicationRoutes } from './communication/index.js';
 registerCommunicationRoutes(app, supabase);
 
+// WhatsApp Cloud API (envio + templates). Sem isto, /api/v1/whatsapp/* dá 404 em prod.
+import { registerWhatsappRoutes } from './whatsapp/index.js';
+registerWhatsappRoutes(app, supabase);
+
 // ============================================
 // SANTA ÂNGELA — integração multi-tenant (config cifrada por tenant)
 // Registrar ANTES do 404 catch-all de /api/v1/*.
