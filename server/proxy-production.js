@@ -28,6 +28,8 @@ import { createWorker } from './watermark/worker.js';
 import { promises } from 'dns';
 import { assertSafeHttpUrl, parseHttpUrl } from './security/ssrfGuard.js';
 import { normalizePhone, phonesMatch } from './utils/phone.js';
+import { createWebhookDispatcher } from './webhookDispatch.js';
+import { computeNextAttempt, MAX_WEBHOOK_ATTEMPTS } from './webhookRetry.js';
 
 // Timeout do fetch de webhooks de saída (evita que um endpoint lento trave o loop de polling).
 const WEBHOOK_FETCH_TIMEOUT_MS = 10000;
@@ -321,73 +323,6 @@ const validateApiKey = async (req, res, next) => {
   }
 };
 
-async function dispatchWebhookEvent(tenantId, event, data) {
-  try {
-    const { data: webhooks, error } = await supabase
-      .from('webhook_subscriptions')
-      .select('id, url, secret, events')
-      .eq('tenant_id', tenantId)
-      .eq('status', 'active')
-      .contains('events', [event]);
-
-    if (error) {
-      console.error('Erro ao buscar webhooks:', error);
-      return;
-    }
-
-    if (!webhooks || webhooks.length === 0) return;
-
-    await Promise.allSettled(webhooks.map(async (webhook) => {
-      // Proteção SSRF: nunca disparar para loopback/redes privadas/link-local
-      // (ex.: 169.254.169.254 = metadata de cloud). Valida no momento do disparo,
-      // resolvendo o host — uma URL pública pode ter mudado de DNS após o cadastro.
-      const safe = await assertSafeHttpUrl(webhook.url);
-      if (!safe.ok) {
-        console.error(`Webhook ${webhook.id} bloqueado por segurança (SSRF: ${safe.reason})`);
-        return;
-      }
-
-      const payload = {
-        event,
-        timestamp: new Date().toISOString(),
-        webhook_id: webhook.id,
-        data
-      };
-
-      const body = JSON.stringify(payload);
-
-      const signature = `sha256=${crypto
-        .createHmac('sha256', webhook.secret)
-        .update(body)
-        .digest('hex')}`;
-
-      const response = await fetch(webhook.url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-OctoDash-Event': event,
-          'X-OctoDash-Signature': signature
-        },
-        body,
-        // Não seguir redirects: impede bypass do guard via 3xx para host interno.
-        redirect: 'manual',
-        // Timeout: um endpoint lento/pendurado não pode travar o loop de polling.
-        signal: AbortSignal.timeout(WEBHOOK_FETCH_TIMEOUT_MS)
-      });
-
-      if (!response.ok) {
-        console.error(`Webhook ${webhook.id} falhou com status ${response.status}`);
-      }
-    }));
-  } catch (error) {
-    console.error('Erro ao disparar webhook:', error);
-  }
-}
-
-const WEBHOOK_POLL_BASE_MS = 5000;
-const WEBHOOK_POLL_MAX_MS = 5 * 60 * 1000; // 5 minutos
-let webhookPollFailures = 0;
-
 const summarizeSupabaseError = (error) => {
   if (!error) return 'unknown error';
   const raw = typeof error.message === 'string' ? error.message : String(error);
@@ -402,6 +337,18 @@ const summarizeSupabaseError = (error) => {
   }
   return raw.length > 300 ? `${raw.slice(0, 300)}…` : raw;
 };
+
+const dispatchWebhookEvent = createWebhookDispatcher({
+  supabase,
+  fetchImpl: fetch,
+  assertSafeHttpUrl,
+  fetchTimeoutMs: WEBHOOK_FETCH_TIMEOUT_MS,
+  summarizeError: summarizeSupabaseError
+});
+
+const WEBHOOK_POLL_BASE_MS = 5000;
+const WEBHOOK_POLL_MAX_MS = 5 * 60 * 1000; // 5 minutos
+let webhookPollFailures = 0;
 
 async function processWebhookEvents() {
   try {
@@ -423,15 +370,29 @@ async function processWebhookEvents() {
           continue;
         }
 
-        await dispatchWebhookEvent(webhookEvent.tenant_id, eventType, webhookEvent.payload);
+        const result = await dispatchWebhookEvent(webhookEvent.tenant_id, eventType, webhookEvent.payload);
 
-        await supabase
-          .from('webhook_events')
-          .update({
-            status: 'delivered',
-            delivered_at: new Date().toISOString()
-          })
-          .eq('id', webhookEvent.id);
+        if (result.ok) {
+          await supabase
+            .from('webhook_events')
+            .update({ status: 'delivered', delivered_at: new Date().toISOString() })
+            .eq('id', webhookEvent.id);
+        } else {
+          const attempts = (webhookEvent.attempts || 0) + 1;
+          const exhausted = attempts >= MAX_WEBHOOK_ATTEMPTS;
+          await supabase
+            .from('webhook_events')
+            .update({
+              status: exhausted ? 'failed' : 'pending',
+              attempts,
+              last_error: result.error,
+              next_attempt_at: computeNextAttempt(attempts, Date.now())
+            })
+            .eq('id', webhookEvent.id);
+          if (exhausted) {
+            console.error(`Webhook event ${webhookEvent.id} esgotou ${MAX_WEBHOOK_ATTEMPTS} tentativas: ${result.error}`);
+          }
+        }
       }
     }
 
