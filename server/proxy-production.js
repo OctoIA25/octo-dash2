@@ -378,6 +378,8 @@ async function processWebhookEvents() {
             .update({ status: 'delivered', delivered_at: new Date().toISOString() })
             .eq('id', webhookEvent.id);
         } else {
+          // webhook_events.attempts tem DEFAULT 0 no schema (migration 20260517); a primeira
+          // re-tentativa é attempt=1 e o esgotamento ocorre em attempts >= MAX_WEBHOOK_ATTEMPTS (6).
           const attempts = (webhookEvent.attempts || 0) + 1;
           const exhausted = attempts >= MAX_WEBHOOK_ATTEMPTS;
           await supabase

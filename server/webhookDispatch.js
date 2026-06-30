@@ -26,7 +26,7 @@ export function createWebhookDispatcher({ supabase, fetchImpl, assertSafeHttpUrl
         // URL insegura é permanente; loga e NÃO conta como falha do evento
         // (não trava os demais webhooks nem dispara retry inútil).
         console.error(`Webhook ${webhook.id} bloqueado por segurança (SSRF: ${safe.reason})`);
-        return;
+        return { blocked: true };
       }
 
       const payload = { event, timestamp: new Date().toISOString(), webhook_id: webhook.id, data };
@@ -48,9 +48,14 @@ export function createWebhookDispatcher({ supabase, fetchImpl, assertSafeHttpUrl
       if (!response.ok) throw new Error(`status ${response.status}`);
     }));
 
+    const blocked = results.filter((r) => r.status === 'fulfilled' && r.value?.blocked).length;
+    if (blocked === webhooks.length) {
+      console.warn(`Webhook event: todas as ${webhooks.length} subscription(s) bloqueadas por SSRF — nada enviado (tenant ${tenantId}, evento ${event})`);
+    }
+
     const failures = results.filter((r) => r.status === 'rejected');
     if (failures.length > 0) {
-      const reason = failures[0].reason?.message || String(failures[0].reason);
+      const reason = failures.map(f => f.reason?.message || String(f.reason)).join('; ');
       return { ok: false, error: `${failures.length}/${webhooks.length} falhou: ${reason}` };
     }
     return { ok: true };
