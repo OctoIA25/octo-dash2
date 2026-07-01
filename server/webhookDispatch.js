@@ -45,7 +45,17 @@ export function createWebhookDispatcher({ supabase, fetchImpl, assertSafeHttpUrl
         signal: AbortSignal.timeout(fetchTimeoutMs)
       });
 
-      if (!response.ok) throw new Error(`status ${response.status}`);
+      // Ler o corpo UMA VEZ (stream não pode ser relido) e truncar para visibilidade nos logs.
+      const responseBody = (await response.text()).slice(0, 1000);
+      const responseStatus = response.status;
+
+      if (!response.ok) {
+        const err = new Error(`status ${responseStatus}`);
+        err.responseStatus = responseStatus;
+        err.responseBody = responseBody;
+        throw err;
+      }
+      return { responseStatus, responseBody };
     }));
 
     const blocked = results.filter((r) => r.status === 'fulfilled' && r.value?.blocked).length;
@@ -56,8 +66,13 @@ export function createWebhookDispatcher({ supabase, fetchImpl, assertSafeHttpUrl
     const failures = results.filter((r) => r.status === 'rejected');
     if (failures.length > 0) {
       const reason = failures.map(f => f.reason?.message || String(f.reason)).join('; ');
-      return { ok: false, error: `${failures.length}/${webhooks.length} falhou: ${reason}` };
+      // ponytail: N>1 webhooks → status/corpo do PRIMEIRO que falhou; raro na prática (1 por tenant).
+      const first = failures[0].reason;
+      return { ok: false, error: `${failures.length}/${webhooks.length} falhou: ${reason}`, responseStatus: first.responseStatus ?? null, responseBody: first.responseBody ?? null };
     }
-    return { ok: true };
+
+    // ponytail: N>1 webhooks → status/corpo do PRIMEIRO fulfilled não-bloqueado; raro na prática.
+    const firstOk = results.find((r) => r.status === 'fulfilled' && !r.value?.blocked);
+    return { ok: true, responseStatus: firstOk?.value?.responseStatus ?? null, responseBody: firstOk?.value?.responseBody ?? null };
   };
 }

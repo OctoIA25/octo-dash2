@@ -375,7 +375,12 @@ async function processWebhookEvents() {
         if (result.ok) {
           await supabase
             .from('webhook_events')
-            .update({ status: 'delivered', delivered_at: new Date().toISOString() })
+            .update({
+              status: 'delivered',
+              delivered_at: new Date().toISOString(),
+              response_status: result.responseStatus ?? null,
+              response_body: result.responseBody ?? null
+            })
             .eq('id', webhookEvent.id);
         } else {
           // webhook_events.attempts tem DEFAULT 0 no schema (migration 20260517); a primeira
@@ -388,7 +393,9 @@ async function processWebhookEvents() {
               status: exhausted ? 'failed' : 'pending',
               attempts,
               last_error: result.error,
-              next_attempt_at: computeNextAttempt(attempts, Date.now())
+              next_attempt_at: computeNextAttempt(attempts, Date.now()),
+              response_status: result.responseStatus ?? null,
+              response_body: result.responseBody ?? null
             })
             .eq('id', webhookEvent.id);
           if (exhausted) {
