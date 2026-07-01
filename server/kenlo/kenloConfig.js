@@ -34,7 +34,6 @@ export function loadKenloEnv(processEnv = process.env) {
     fullSyncTtlMs: num(processEnv.KENLO_FULL_SYNC_TTL_MS, 60 * 60 * 1000),
     syncWindowDays: num(processEnv.KENLO_SYNC_WINDOW_DAYS, 60),
     syncOverlapMin: num(processEnv.KENLO_SYNC_OVERLAP_MIN, 5),
-    liaWebhookUrl: processEnv.KENLO_LIA_WEBHOOK_URL || '',
     cron: processEnv.KENLO_SYNC_SCHEDULER_CRON || '*/3 * * * *',
   };
 }

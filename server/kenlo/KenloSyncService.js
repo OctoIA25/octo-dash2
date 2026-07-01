@@ -40,16 +40,6 @@ export function createKenloSyncService({
     return new Map((data || []).filter((r) => r.external_id).map((r) => [r.external_id, r]));
   }
 
-  async function fireLia(row) {
-    if (!cfg.liaWebhookUrl) return;
-    try {
-      await fetchImpl(cfg.liaWebhookUrl, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nome: row.client_name, numero: row.client_phone, portal: row.portal, codigo: row.interest_reference }),
-      });
-    } catch (e) { logger.warn(`[kenlo] webhook Lia falhou: ${e.message}`); }
-  }
-
   // IMPORTANTE: inserts e updates são chamadas SEPARADAS de upsertRows de propósito.
   // O supabase-js monta o `columns` do UPSERT como a UNIÃO das chaves de todas as
   // linhas do lote (postgrest-js: values.reduce(Object.keys)). Misturar a row "gorda"
@@ -114,7 +104,6 @@ export function createKenloSyncService({
 
           if (inserts.length) await upsertRows(inserts, stats);
           if (updates.length) { await upsertRows(updates, stats); stats.updated += updates.length; }
-          if (syncMode !== 'BACKFILL') { for (const row of newOnes) await fireLia(row); }
           stats.new += newOnes.length;
         }
         if (isLast) break; // última página deste portal; libera e vai ao próximo

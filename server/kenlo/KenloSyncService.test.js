@@ -33,7 +33,7 @@ const leadServiceStub = (leads) => ({
 const brokerStub = { assign: vi.fn().mockImplementation(async (_t, rows) => rows) };
 
 describe('KenloSyncService.syncTenant', () => {
-  it('Lia dispara só para leads NOVOS; existente alterado é atualizado mas não aciona a Lia', async () => {
+  it('leads novos são salvos e existente alterado é atualizado; Lia NÃO é mais acionada inline', async () => {
     const leads = [
       { _id: 'novo', timestamp: '2026-06-25T10:00:00Z', client: { name: 'A', phone: '11900000000' }, idMediaOrigin: 8, interest: { reference: 'R' } },
       { _id: 'velho', timestamp: '2026-06-25T09:00:00Z', client: { name: 'B Atualizado' }, idMediaOrigin: 8 },
@@ -43,16 +43,16 @@ describe('KenloSyncService.syncTenant', () => {
     const fetchImpl = vi.fn().mockResolvedValue({ ok: true, status: 200 });
     const svc = createKenloSyncService({
       supabase, leadService: leadServiceStub(leads), brokerAssigner: brokerStub,
-      processEnv: { KENLO_LIA_WEBHOOK_URL: 'https://webhook/lia' }, fetchImpl,
+      processEnv: {}, fetchImpl,
     });
     const r = await svc.syncTenant(integration, { syncMode: 'LIVE' });
     expect(r.new).toBe(1);                                  // só 'novo' conta como novo
     const saved = supabase.upserts.flat().map((x) => x.external_id);
     expect(saved).toContain('novo');
     expect(saved).toContain('velho');                       // existente alterado É atualizado agora
-    // Lia só para o novo (1 chamada), nunca para o existente.
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-    expect(fetchImpl).toHaveBeenCalledWith('https://webhook/lia', expect.objectContaining({ method: 'POST' }));
+    // fireLia foi removido: o disparo da Lia agora é via outbox (trigger DB),
+    // não mais inline no sync. O sync NÃO deve mais postar para a Lia.
+    expect(fetchImpl).not.toHaveBeenCalledWith('https://webhook/lia', expect.anything());
   });
 
   it('lead existente ALTERADO no Kenlo é atualizado (stage do CRM preservado, campos Kenlo atualizados)', async () => {
@@ -111,11 +111,11 @@ describe('KenloSyncService.syncTenant', () => {
     const fetchImpl = vi.fn().mockResolvedValue({ ok: true, status: 200 });
     const svc = createKenloSyncService({
       supabase, leadService: leadServiceStub(leads), brokerAssigner: brokerStub,
-      processEnv: { KENLO_LIA_WEBHOOK_URL: 'https://webhook/lia' }, fetchImpl,
+      processEnv: {}, fetchImpl,
     });
     const r = await svc.syncTenant(integration, { syncMode: 'BACKFILL', startDate: '2026-04-27' });
     expect(r.saved).toBe(1);                 // grava o lead no banco
-    expect(fetchImpl).not.toHaveBeenCalled(); // mas NÃO aciona a Lia
+    expect(fetchImpl).not.toHaveBeenCalled(); // não aciona nenhum webhook inline
   });
 
   it('syncTenant faz upsert por página (streaming), não acumula tudo', async () => {

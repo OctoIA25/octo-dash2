@@ -21,9 +21,8 @@ describe('kenloConfig', () => {
     expect(def.retries).toBe(3);
     expect(def.timeoutMs).toBe(15000);
     expect(def.perPage).toBe(200);
-    const over = loadKenloEnv({ KENLO_HTTP_RETRIES: '5', KENLO_LIA_WEBHOOK_URL: 'https://x/y' });
+    const over = loadKenloEnv({ KENLO_HTTP_RETRIES: '5' });
     expect(over.retries).toBe(5);
-    expect(over.liaWebhookUrl).toBe('https://x/y');
   });
 
   it('loadKenloEnv expõe syncWindowDays e syncOverlapMin com defaults', () => {
