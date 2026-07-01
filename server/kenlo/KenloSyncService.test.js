@@ -51,8 +51,10 @@ describe('KenloSyncService.syncTenant', () => {
     expect(saved).toContain('novo');
     expect(saved).toContain('velho');                       // existente alterado É atualizado agora
     // fireLia foi removido: o disparo da Lia agora é via outbox (trigger DB),
-    // não mais inline no sync. O sync NÃO deve mais postar para a Lia.
-    expect(fetchImpl).not.toHaveBeenCalledWith('https://webhook/lia', expect.anything());
+    // não mais inline no sync. Neste caminho o I/O do Kenlo é servido pelo
+    // leadServiceStub/fakeSupabase, então fetchImpl NÃO deve ser chamado de
+    // forma alguma — se alguém re-introduzir fireLia, este teste quebra.
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it('lead existente ALTERADO no Kenlo é atualizado (stage do CRM preservado, campos Kenlo atualizados)', async () => {
