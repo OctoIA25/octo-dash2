@@ -38,7 +38,7 @@ DECLARE
 BEGIN
   -- leads usa phone; kenlo_leads usa client_phone.
   v_telefone := COALESCE(v_row->>'phone', v_row->>'client_phone');
-  -- leads usa source; kenlo_leads usa portal. "portal" é o nome que a Lia já lê.
+  -- kenlo_leads usa portal (tentado 1º); leads usa source. "portal" é o nome que a Lia já lê.
   v_portal   := COALESCE(v_row->>'portal', v_row->>'source');
 
   INSERT INTO public.webhook_events (tenant_id, event_type, source_table, source_id, payload)
