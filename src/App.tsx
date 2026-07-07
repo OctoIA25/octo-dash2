@@ -29,7 +29,6 @@ import { MinimalLoginScreen } from "@/components/MinimalLoginScreen";
 import { OctoDashLoader } from "@/components/ui/OctoDashLoader";
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/useTheme";
-import { useKenloPolling } from "@/features/imoveis/hooks/useKenloPolling";
 import { NotificationsProvider } from "@/contexts/NotificationsContext";
 import { AuthProvider, useAuthContext } from "@/contexts/AuthContext";
 import { WatermarkReprocessNotice } from "@/features/settings/components/WatermarkReprocessNotice";
@@ -70,9 +69,6 @@ const AppContent = () => {
   // Inicializar tema - aplicado automaticamente em todo o site
   useTheme();
   
-  // Iniciar polling global do Kenlo quando autenticado
-  useKenloPolling();
-
   // Loading inicial APENAS na primeira verificação
   // Após isso, transições são instantâneas
   if (isLoading) {
