@@ -40,7 +40,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useLeadsData } from '../hooks/useLeadsData';
 import { useLeadsMetrics } from '../hooks/useLeadsMetrics';
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from '@/hooks/useTheme';
@@ -106,11 +105,12 @@ const PROPRIETARIO_STATUS = [
 ];
 
 const LeadSectionContent = () => {
-  const { leads: legacyLeads } = useLeadsData();
-  // Usar useLeadsMetrics para dados reais de leads (com filtros de tenant/agent)
-  const { processedLeads: metricsLeads, isLoading: isLoadingMetrics, isAdmin } = useLeadsMetrics();
-  // Usar leads do metrics se disponível, senão fallback para legacy
-  const leads = metricsLeads.length > 0 ? metricsLeads : legacyLeads;
+  // Fonte única de leads: useLeadsMetrics (filtros de tenant/agent, mesma base do Kanban).
+  // Antes havia um fallback para useLeadsData (Pipeline A) que disparava durante o loading e
+  // mostrava dados divergentes (arquivados/ordem/tipo_lead diferentes) até as métricas chegarem —
+  // um segundo fetch completo do tenant só para um fallback transitório. Removido: durante o
+  // loading os funis degradam para vazio (já tratam lista vazia), sem o flicker de dados errados.
+  const { processedLeads: leads } = useLeadsMetrics();
   const { user, isGestao, tenantId, isOwner } = useAuth();
 
   const OVERVIEW_VALUE = '__overview__';
