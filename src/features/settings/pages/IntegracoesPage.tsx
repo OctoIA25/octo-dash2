@@ -96,6 +96,15 @@ import {
   rotateZapSecret,
   testZapConfig,
 } from '@/features/settings/services/zapIntegrationService';
+import {
+  disableContact2SaleConfig,
+  fetchContact2SaleConfig,
+  fetchContact2SaleStatus,
+  runContact2SaleSync,
+  saveContact2SaleConfig,
+  testContact2SaleConfig,
+  type Contact2SaleStatusRow,
+} from '@/features/settings/services/contact2saleIntegrationService';
 import { ApiIntegrationTab } from '@/components/integrations/ApiIntegrationTab';
 import { WhatsAppIntegrationTab } from '@/features/chat/components/WhatsAppIntegrationTab';
 import { KenloSyncStatusCard } from '@/features/settings/components/KenloSyncStatusCard';
@@ -138,6 +147,17 @@ export const IntegracoesPage: React.FC = () => {
   const [isConnecting, setIsConnecting] = useState(false);
   const [kenloStatus, setKenloStatus] = useState<'inativo' | 'ativo' | 'erro'>('inativo');
   const [kenloLeads, setKenloLeads] = useState(0);
+
+  // Estados Contact2Sale
+  const [c2sApiToken, setC2sApiToken] = useState('');
+  const [c2sHasToken, setC2sHasToken] = useState(false);
+  const [c2sStatus, setC2sStatus] = useState<'inativo' | 'ativo' | 'erro'>('inativo');
+  const [c2sCompany, setC2sCompany] = useState<string | null>(null);
+  const [c2sSaving, setC2sSaving] = useState(false);
+  const [c2sTesting, setC2sTesting] = useState(false);
+  const [c2sSyncing, setC2sSyncing] = useState(false);
+  const [c2sSyncStatus, setC2sSyncStatus] = useState<Contact2SaleStatusRow | null>(null);
+  const [c2sError, setC2sError] = useState<string | null>(null);
 
   // Estados Santa Ângela
   const [saBaseUrl, setSaBaseUrl] = useState('');
@@ -314,9 +334,14 @@ export const IntegracoesPage: React.FC = () => {
   // Handler para conectar ao Kenlo
   const handleKenloConnect = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!kenloEmail || !kenloSenha) return;
-    
+    // CRM principal é exclusivo: conectar o Kenlo desativa a Contact2Sale.
+    if (c2sStatus === 'ativo' &&
+        !window.confirm('A Contact2Sale é o CRM principal deste cliente. Conectar o Kenlo vai desativá-la e passar a sincronizar os leads pelo Kenlo. Deseja continuar?')) {
+      return;
+    }
+
     setIsConnecting(true);
     
     try {
@@ -444,13 +469,132 @@ export const IntegracoesPage: React.FC = () => {
       }
       
       setKenloStatus('ativo');
-      
+      if (c2sStatus === 'ativo') {
+        setC2sStatus('inativo');        // desativada no servidor pela exclusividade
+        void refreshC2sStatus();
+      }
+
     } catch (error) {
       console.error('❌ Erro na conexão:', error);
       setKenloStatus('erro');
     } finally {
       setIsConnecting(false);
     }
+  };
+
+  // Handlers Contact2Sale
+  const refreshC2sStatus = useCallback(async () => {
+    if (!tenantId) return;
+    const { integrations } = await fetchContact2SaleStatus();
+    setC2sSyncStatus(integrations.find((i) => i.tenant_id === tenantId) || null);
+  }, [tenantId]);
+
+  // Relê só o status do Kenlo no banco. Kenlo e Contact2Sale são o CRM PRINCIPAL
+  // e são mutuamente exclusivos (ativar um desativa o outro no servidor — trigger
+  // + rota). Após ativar o C2S, o card do Kenlo precisa refletir a desativação na
+  // hora, senão a tela mostraria os dois "ativos" até um reload.
+  const syncKenloCardStatus = useCallback(async () => {
+    if (!tenantId) return;
+    const { integration } = await fetchKenloIntegration(tenantId);
+    setKenloStatus(integration?.status === 'active' ? 'ativo' : 'inativo');
+  }, [tenantId]);
+
+  useEffect(() => {
+    if (!tenantId) return;
+    fetchContact2SaleConfig(tenantId).then(({ config }) => {
+      if (!config) return;
+      setC2sHasToken(config.hasToken);
+      setC2sStatus(config.status === 'active' ? 'ativo' : 'inativo');
+    }).catch(() => { /* best-effort */ });
+    refreshC2sStatus().catch(() => { /* best-effort */ });
+  }, [tenantId, refreshC2sStatus]);
+
+  // Auto-refresh do status enquanto a sincronização está em andamento: o backfill
+  // dura minutos/horas, então sem isso o card fica congelado e o usuário precisa
+  // dar F5. Polla a cada 5s SÓ enquanto 'running' (e não travado); ao concluir,
+  // para sozinho — não há custo ocioso quando não está sincronizando.
+  const c2sRunning = c2sSyncStatus?.sync_state?.status === 'running' && !c2sSyncStatus?.stalled;
+  useEffect(() => {
+    if (!tenantId || !c2sRunning) return;
+    const id = setInterval(() => { refreshC2sStatus().catch(() => { /* best-effort */ }); }, 5000);
+    return () => clearInterval(id);
+  }, [tenantId, c2sRunning, refreshC2sStatus]);
+
+  // Traduz o código de erro do backend numa mensagem acionável. Sem isso o card
+  // só mostraria "Erro" e o admin não saberia o que corrigir.
+  const c2sErrorMessage = (code?: string | null): string => {
+    switch (code) {
+      case 'token_invalido': return 'A Contact2Sale recusou este token. Confira se ele foi gerado em Integrações → Gerar Token e copiado por completo.';
+      case 'token_obrigatorio_para_ativar':
+      case 'sem_token': return 'Informe o token da Contact2Sale para ativar a integração.';
+      case 'c2s_indisponivel': return 'A Contact2Sale não respondeu. Tente novamente em alguns instantes.';
+      case 'missing_authorization':
+      case 'invalid_token': return 'Sua sessão expirou. Recarregue a página e entre novamente.';
+      case 'forbidden': return 'Você não tem permissão para alterar a integração deste cliente.';
+      default:
+        // Erro cru do Postgres quando a migration da tabela ainda não foi aplicada
+        // (o token pode estar certo — "Testar conexão" funciona sem tocar no banco).
+        if (code && /does not exist|relation|tenant_contact2sale_config/i.test(code)) {
+          return 'A integração ainda não está disponível neste ambiente (configuração do banco pendente). Fale com o suporte.';
+        }
+        return 'Não foi possível concluir. Verifique o token e tente novamente.';
+    }
+  };
+
+  const handleC2sSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!tenantId || (!c2sApiToken && !c2sHasToken)) return;
+    // CRM principal é exclusivo: ativar a Contact2Sale desativa o Kenlo. Pede
+    // confirmação para não derrubar a sincronização atual sem o admin perceber.
+    if (kenloStatus === 'ativo' &&
+        !window.confirm('O Kenlo é o CRM principal deste cliente. Ativar a Contact2Sale vai desativar o Kenlo e passar a sincronizar os leads pela Contact2Sale. Deseja continuar?')) {
+      return;
+    }
+    setC2sSaving(true);
+    setC2sError(null);
+    const r = await saveContact2SaleConfig(tenantId, c2sApiToken, 'active');
+    if (r.ok) {
+      setC2sStatus('ativo');
+      setC2sHasToken(true);
+      setC2sCompany(r.company || null);
+      setC2sApiToken('');
+      await Promise.all([refreshC2sStatus(), syncKenloCardStatus()]); // Kenlo foi desativado no servidor
+    } else {
+      setC2sStatus('erro');
+      setC2sError(c2sErrorMessage(r.error));
+    }
+    setC2sSaving(false);
+  };
+
+  const handleC2sTest = async () => {
+    if (!tenantId || (!c2sApiToken && !c2sHasToken)) return;
+    setC2sTesting(true);
+    setC2sError(null);
+    const r = await testContact2SaleConfig(tenantId, c2sApiToken || undefined);
+    setC2sStatus(r.ok ? 'ativo' : 'erro');
+    if (r.company) setC2sCompany(r.company);
+    if (!r.ok) setC2sError(c2sErrorMessage(r.error));
+    setC2sTesting(false);
+  };
+
+  const handleC2sDisable = async () => {
+    if (!tenantId) return;
+    setC2sSaving(true);
+    setC2sError(null);
+    const r = await disableContact2SaleConfig(tenantId);
+    if (r.ok) setC2sStatus('inativo');
+    else { setC2sStatus('erro'); setC2sError(c2sErrorMessage(r.error)); }
+    setC2sSaving(false);
+  };
+
+  const handleC2sSync = async (full = false) => {
+    if (!tenantId) return;
+    setC2sSyncing(true);
+    setC2sError(null);
+    const r = await runContact2SaleSync(tenantId, full);
+    if (!r.ok) { setC2sStatus('erro'); setC2sError(c2sErrorMessage(r.error)); }
+    await refreshC2sStatus();
+    setC2sSyncing(false);
   };
 
   // Handlers Santa Ângela
@@ -564,6 +708,8 @@ export const IntegracoesPage: React.FC = () => {
 
   const status = statusConfig[kenloStatus];
   const StatusIcon = status.icon;
+  const activeIntegrationsCount = [kenloStatus, c2sStatus, saStatus, zapStatus].filter((s) => s === 'ativo').length;
+  const crmLeadsCount = c2sStatus === 'ativo' ? (c2sSyncStatus?.leads_count || 0) : kenloLeads;
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--bg-secondary, #f8fafc)' }}>
@@ -945,7 +1091,7 @@ export const IntegracoesPage: React.FC = () => {
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Total de Integrações</p>
-                  <p className="text-2xl font-bold text-gray-900 dark:text-slate-100">1</p>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-slate-100">4</p>
                 </div>
               </div>
             </div>
@@ -957,7 +1103,7 @@ export const IntegracoesPage: React.FC = () => {
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Integrações Ativas</p>
-                  <p className="text-2xl font-bold text-gray-900 dark:text-slate-100">{kenloStatus === 'ativo' ? 1 : 0}</p>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-slate-100">{activeIntegrationsCount}</p>
                 </div>
               </div>
             </div>
@@ -969,7 +1115,7 @@ export const IntegracoesPage: React.FC = () => {
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Leads Recebidos</p>
-                  <p className="text-2xl font-bold text-gray-900 dark:text-slate-100">{kenloLeads}</p>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-slate-100">{crmLeadsCount}</p>
                 </div>
               </div>
             </div>
@@ -979,7 +1125,7 @@ export const IntegracoesPage: React.FC = () => {
           <div className="mb-8">
             <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-300 mb-4 flex items-center gap-2">
               CRM
-              <span className="text-xs font-normal text-gray-400 dark:text-slate-500">(1)</span>
+              <span className="text-xs font-normal text-gray-400 dark:text-slate-500">(2)</span>
             </h2>
             
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -1111,6 +1257,156 @@ export const IntegracoesPage: React.FC = () => {
                           </>
                         )}
                       </button>
+                    )}
+                  </div>
+                </form>
+              </div>
+
+              {/* Card Contact2Sale */}
+              <div className={`bg-white dark:bg-slate-900 rounded-xl border-2 p-3 w-full relative transition-all ${
+                c2sStatus === 'ativo'
+                  ? 'border-green-200 bg-gradient-to-br from-white to-green-50/30'
+                  : c2sStatus === 'erro'
+                  ? 'border-red-200'
+                  : 'border-gray-200 dark:border-slate-800'
+              }`}>
+                <div className={`absolute right-3 top-3 px-2 py-1 rounded-full text-[10px] font-semibold flex items-center gap-1 border ${
+                  c2sStatus === 'ativo' ? statusConfig.ativo.color
+                  : c2sStatus === 'erro' ? statusConfig.erro.color
+                  : statusConfig.inativo.color
+                }`}>
+                  {c2sStatus === 'ativo' ? (
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                  ) : (
+                    <XCircle className="w-3.5 h-3.5" />
+                  )}
+                  {c2sStatus === 'ativo' ? 'Conectado' : c2sStatus === 'erro' ? 'Erro' : 'Desconectado'}
+                </div>
+
+                <div className="flex flex-col items-center text-center pt-1">
+                  <div className={`w-12 h-12 rounded-lg ring-2 flex items-center justify-center transition-all ${
+                    c2sStatus === 'ativo'
+                      ? 'ring-green-200 bg-green-50'
+                      : 'ring-black/5 bg-gray-50 dark:bg-slate-950'
+                  }`}>
+                    <Users className="w-6 h-6 text-cyan-600" />
+                  </div>
+                  <h3 className="font-semibold text-gray-900 dark:text-slate-100 text-sm mt-2">Contact2Sale</h3>
+                  <p className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">CRM principal com sincronização de leads</p>
+
+                  {c2sStatus === 'ativo' && (
+                    <div className="mt-2 p-2 rounded-lg bg-green-50 border border-green-100 w-full">
+                      <p className="text-[11px] text-green-700 font-medium">Integração ativa</p>
+                      <p className="text-[11px] text-green-600 mt-0.5">
+                        {c2sCompany || 'Token validado por tenant'}
+                      </p>
+                      {typeof c2sSyncStatus?.leads_count === 'number' && (
+                        <p className="text-[11px] text-green-600 mt-1">
+                          <strong>{c2sSyncStatus.leads_count}</strong> leads sincronizados
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <form onSubmit={handleC2sSave} className="mt-4 space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">Token da API</label>
+                    <input
+                      type="password"
+                      value={c2sApiToken}
+                      onChange={(e) => { setC2sApiToken(e.target.value); if (c2sError) setC2sError(null); }}
+                      placeholder={c2sHasToken ? '•••••••• (já configurado)' : 'Token Contact2Sale'}
+                      className="w-full px-3 py-2 border border-gray-200 dark:border-slate-800 rounded-lg text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                      disabled={c2sSaving}
+                    />
+                  </div>
+
+                  {c2sError && (
+                    <div className="p-2 rounded-lg border border-red-100 bg-red-50 text-[11px] text-red-700 flex items-start gap-1.5">
+                      <XCircle className="w-3.5 h-3.5 mt-px shrink-0" />
+                      <span>{c2sError}</span>
+                    </div>
+                  )}
+
+                  {c2sSyncStatus?.sync_state && (
+                    <div className={`p-2 rounded-lg border text-[11px] ${
+                      c2sSyncStatus.stalled || c2sSyncStatus.sync_state.status === 'error'
+                        ? 'bg-red-50 border-red-100 text-red-700'
+                        : c2sSyncStatus.sync_state.status === 'running'
+                        ? 'bg-blue-50 border-blue-100 text-blue-700'
+                        : 'bg-gray-50 border-gray-100 text-gray-600 dark:bg-slate-950 dark:border-slate-800 dark:text-slate-300'
+                    }`}>
+                      <p className="font-medium">
+                        {c2sSyncStatus.stalled
+                          ? 'Sync possivelmente travado'
+                          : c2sSyncStatus.sync_state.status === 'running'
+                          ? `Sincronizando ${c2sSyncStatus.sync_state.mode || ''}`
+                          : c2sSyncStatus.sync_state.status === 'error'
+                          ? 'Último sync com erro'
+                          : 'Último sync concluído'}
+                      </p>
+                      <p className="mt-0.5">
+                        Buscados: {c2sSyncStatus.sync_state.fetched || 0} · Salvos: {c2sSyncStatus.sync_state.saved || 0}
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="pt-1 space-y-2">
+                    {c2sStatus === 'ativo' ? (
+                      <button
+                        type="button"
+                        onClick={handleC2sDisable}
+                        disabled={c2sSaving}
+                        className="w-full px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {c2sSaving ? 'Desativando...' : 'Desativar'}
+                      </button>
+                    ) : (
+                      <button
+                        type="submit"
+                        disabled={c2sSaving || (!c2sApiToken && !c2sHasToken)}
+                        className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                      >
+                        {c2sSaving ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Salvando...
+                          </>
+                        ) : (
+                          'Ativar'
+                        )}
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={handleC2sTest}
+                      disabled={c2sTesting || (!c2sApiToken && !c2sHasToken)}
+                      className="w-full px-4 py-2 border border-gray-200 dark:border-slate-800 rounded-lg text-sm font-medium bg-white dark:bg-slate-900 hover:bg-gray-50 dark:hover:bg-slate-800/60 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-gray-900 dark:text-slate-100"
+                    >
+                      {c2sTesting ? 'Testando...' : 'Testar conexão'}
+                    </button>
+
+                    {c2sStatus === 'ativo' && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleC2sSync(false)}
+                          disabled={c2sSyncing}
+                          className="px-3 py-2 border border-gray-200 dark:border-slate-800 rounded-lg text-xs font-medium bg-white dark:bg-slate-900 hover:bg-gray-50 dark:hover:bg-slate-800/60 transition-colors disabled:opacity-50 text-gray-900 dark:text-slate-100"
+                        >
+                          {c2sSyncing ? 'Rodando...' : 'Sync'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleC2sSync(true)}
+                          disabled={c2sSyncing}
+                          className="px-3 py-2 border border-gray-200 dark:border-slate-800 rounded-lg text-xs font-medium bg-white dark:bg-slate-900 hover:bg-gray-50 dark:hover:bg-slate-800/60 transition-colors disabled:opacity-50 text-gray-900 dark:text-slate-100"
+                        >
+                          Full resync
+                        </button>
+                      </div>
                     )}
                   </div>
                 </form>

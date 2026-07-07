@@ -4066,6 +4066,13 @@ registerSantaAngelaRoutes(app, supabase);
 // Rotas owner/admin da config ZAP por tenant — mesmo resolver do feed (save invalida cache).
 registerZapRoutes(app, supabase, { resolver: zapConfigResolver });
 
+// Contact2Sale — CRM principal alternativo ao Kenlo. Registrar ANTES do 404 catch-all.
+import { registerContact2SaleRoutes, makeC2sRunner, createC2sConfigResolver, createC2sApiClient } from './contact2sale/index.js';
+const c2sResolver = createC2sConfigResolver({ supabase });
+const c2sApiClient = createC2sApiClient({ resolver: c2sResolver });
+const c2sRunner = makeC2sRunner(supabase, { resolver: c2sResolver, apiClient: c2sApiClient });
+registerContact2SaleRoutes(app, supabase, { resolver: c2sResolver, apiClient: c2sApiClient, runner: c2sRunner });
+
 // 404 Handler (DEVE ficar DEPOIS de todas as rotas)
 app.use('/api/v1/*', (req, res) => {
   res.status(404).json({
