@@ -19,6 +19,7 @@
  *   por requisição vive no apiClient; o timeout por tenant, no syncAllTenants.
  */
 import { mapSantaAngelaToLead } from './leadMapper.js';
+import { getDeletedTenantIds } from '../utils/tenantSoftDelete.js';
 
 const noopLogger = { info() {}, warn() {}, error() {} };
 const CONFIG_TABLE = 'tenant_santa_angela_config';
@@ -158,7 +159,10 @@ export function createSantaAngelaSyncService({
       logger.error(`[santa-angela] {"event":"santa-angela.sync.cycle.error","runId":"${runId}","error":${JSON.stringify(error.message)}}`);
       return [];
     }
-    const rows = data || [];
+    // Tenant soft-deletado (tenants.deleted_at) não sincroniza — service_role
+    // bypassa RLS, então o filtro é explícito aqui.
+    const deletedIds = await getDeletedTenantIds(supabase, (data || []).map((r) => r.tenant_id));
+    const rows = (data || []).filter((r) => !deletedIds.has(r.tenant_id));
     logger.info(`[santa-angela] {"event":"santa-angela.sync.cycle.start","runId":"${runId}","tenantsAtivos":${rows.length},"concurrency":${concurrency}}`);
 
     // p-limit: no máximo `concurrency` tenants em paralelo — evita abrir centenas

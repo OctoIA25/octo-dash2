@@ -15,6 +15,7 @@
  */
 
 import { buildOverview } from './kpisCompute.js';
+import { getDeletedTenantIds } from '../utils/tenantSoftDelete.js';
 import {
   monthPeriod,
   monthPeriodFromIso,
@@ -94,14 +95,19 @@ export async function resolveTenant(supabase, req) {
     return { error: 'no_tenant_access', status: 403 };
   }
 
-  if (requested) {
-    if (!tenantIds.includes(requested)) {
-      return { error: 'tenant_forbidden', status: 403 };
-    }
-    return { tenantId: requested };
+  if (requested && !tenantIds.includes(requested)) {
+    return { error: 'tenant_forbidden', status: 403 };
+  }
+  const tenantId = requested || tenantIds[0];
+
+  // Tenant soft-deletado não é acessível por usuário comum (a membership
+  // continua existindo no banco; o filtro é aqui). Owner, acima, pode.
+  const deletedIds = await getDeletedTenantIds(supabase, [tenantId]);
+  if (deletedIds.has(tenantId)) {
+    return { error: 'no_tenant_access', status: 403 };
   }
 
-  return { tenantId: tenantIds[0] };
+  return { tenantId };
 }
 
 /**

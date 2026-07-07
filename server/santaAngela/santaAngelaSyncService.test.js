@@ -24,11 +24,15 @@ function makeSupabase({ existing = [] } = {}) {
 }
 
 // Supabase fake para syncAllTenants: .from(config).select('tenant_id').eq('status','active')
-// resolve a lista de tenants ativos; demais operações (leads) resolvem vazio/sucesso.
-function makeSupabaseWithTenants(activeTenantIds) {
+// resolve a lista de tenants ativos; .in().not() (getDeletedTenantIds) resolve a
+// lista de soft-deletados; demais operações (leads) resolvem vazio/sucesso.
+function makeSupabaseWithTenants(activeTenantIds, deletedTenantIds = []) {
   return {
     from() { return this; },
     select() { return this; },
+    in() {
+      return { not: () => Promise.resolve({ data: deletedTenantIds.map((id) => ({ id })), error: null }) };
+    },
     eq(col, val) {
       if (col === 'status' && val === 'active') {
         return Promise.resolve({ data: activeTenantIds.map((t) => ({ tenant_id: t })), error: null });
@@ -174,6 +178,18 @@ it('syncAllTenants varre todos os tenants active e respeita o limite de concorr�
   expect(results.length).toBe(5);
   expect(results.every((r) => r.success)).toBe(true);
   expect(limit.tracker.max).toBeLessThanOrEqual(2); // nunca mais que 2 em paralelo
+});
+
+it('syncAllTenants: tenant soft-deletado (tenants.deleted_at) é pulado', async () => {
+  const supabase = makeSupabaseWithTenants(['vivo', 'morto'], ['morto']);
+  const synced = [];
+  const apiClient = {
+    fetchLeads: async (t) => { synced.push(t); return { ok: true, leads: [], status: 200 }; },
+  };
+  const svc = createSantaAngelaSyncService({ supabase, apiClient, pLimitImpl: makeBoundedLimit() });
+  const results = await svc.syncAllTenants('run-sd');
+  expect(results.map((r) => r.tenantId)).toEqual(['vivo']);
+  expect(synced).not.toContain('morto');
 });
 
 it('syncAllTenants: um tenant que falha não derruba os outros (allSettled isola)', async () => {

@@ -14,6 +14,7 @@
 import express from 'express';
 import multer from 'multer';
 import { createWatermarkService } from './service.js';
+import { getDeletedTenantIds } from '../utils/tenantSoftDelete.js';
 import { createWorker } from './worker.js';
 import { SIZES, WATERMARK_POSITIONS } from './config.js';
 
@@ -75,7 +76,12 @@ export function createWatermarkRouter(supabase) {
 
         if (!m) return res.status(403).json({ error: 'sem acesso a esta imobiliária' });
         if (admin && !ADMIN_ROLES.includes(m.role)) return res.status(403).json({ error: 'requer admin da imobiliária' });
-        
+
+        // Tenant soft-deletado: membro não acessa (a membership continua no
+        // banco; o filtro é aqui). Owner, acima, passa direto.
+        const deletedIds = await getDeletedTenantIds(supabase, [tenantId]);
+        if (deletedIds.has(tenantId)) return res.status(403).json({ error: 'sem acesso a esta imobiliária' });
+
         return next();
       } catch (e) {
         return res.status(500).json({ error: e.message });
