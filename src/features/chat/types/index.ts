@@ -59,3 +59,22 @@ export interface WhatsappConfig {
   display_phone_number: string | null;
   is_active: boolean;
 }
+
+export type MediaKind = 'image' | 'audio' | 'video' | 'document';
+
+export interface MessageContentProps {
+  message: WhatsappMessage;
+  isOutbound: boolean;
+}
+
+export interface PendingMessage {
+  tempId: string;
+  conversationId: string;
+  type: MediaKind;
+  file: File;
+  caption: string;
+  objectUrl: string;
+  status: 'uploading' | 'sending' | 'failed';
+  progress: number; // 0-100
+  error?: string;
+}
