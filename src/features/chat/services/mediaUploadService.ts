@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabaseClient';
+import { supabase, SUPABASE_URL } from '@/lib/supabaseClient';
 
 export type WhatsappMediaType = 'image' | 'audio' | 'video' | 'document';
 
