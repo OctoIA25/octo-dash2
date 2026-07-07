@@ -10,12 +10,12 @@ function fmt(s: number): string {
 }
 
 export function AudioContent({ message, isOutbound }: MessageContentProps) {
+  const { playing, currentTime, duration, rate, toggle, seek, cycleRate } = useAudioPlayer(
+    message.media_url ?? '',
+  );
   if (!message.media_url) {
     return <p className="italic opacity-80">[audio] indisponível</p>;
   }
-  const { playing, currentTime, duration, rate, toggle, seek, cycleRate } = useAudioPlayer(
-    message.media_url,
-  );
   const pct = duration > 0 ? (currentTime / duration) * 100 : 0;
 
   const onBarClick = (e: React.MouseEvent<HTMLDivElement>) => {
