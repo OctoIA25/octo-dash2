@@ -30,6 +30,8 @@ import { assertSafeHttpUrl, parseHttpUrl } from './security/ssrfGuard.js';
 import { normalizePhone, phonesMatch } from './utils/phone.js';
 import { createWebhookDispatcher } from './webhookDispatch.js';
 import { computeNextAttempt, MAX_WEBHOOK_ATTEMPTS } from './webhookRetry.js';
+import { getDeletedTenantIds } from './utils/tenantSoftDelete.js';
+import { createLeadAssignment } from './leadAssignment.js';
 
 // Timeout do fetch de webhooks de saída (evita que um endpoint lento trave o loop de polling).
 const WEBHOOK_FETCH_TIMEOUT_MS = 10000;
@@ -62,6 +64,20 @@ if (effectiveKey.startsWith('sb_') || !effectiveKey.startsWith('eyJ')) {
 
 const supabase = createClient(supabaseUrl, effectiveKey);
 console.log('🔌 Supabase conectado:', supabaseUrl, usingServiceRole ? '(service_role)' : '(anon)');
+
+// Pipeline de atribuição de leads (roleta, limites, exclusividade) — extraído
+// para leadAssignment.js na otimização do fluxo de criação de leads (cache por
+// requisição + queries em paralelo). Mesmas regras de negócio de antes.
+const {
+  tenantRoletaState,
+  createLeadLookupCache,
+  getPropertyCacheRow,
+  resolvePropertyExclusivity,
+  getAllBrokersFromACL,
+  findBrokerByIdentifier,
+  getNextBrokerFromRoleta,
+  resolveBrokerForLead,
+} = createLeadAssignment({ supabase });
 
 // =============================================================================
 // EXPRESS APP INITIALIZATION
@@ -206,42 +222,6 @@ const fetchPropertyData = async (propertyCode, tenantId) => {
   }
 };
 
-const resolvePropertyExclusivity = async (tenantId, propertyCode) => {
-  if (!tenantId || !propertyCode) {
-    return false;
-  }
-
-  const normalizedCode = propertyCode.trim().toUpperCase();
-
-  try {
-    const { data: localProperty } = await supabase
-      .from('imoveis_locais')
-      .select('exclusivo')
-      .eq('tenant_id', tenantId)
-      .eq('codigo_imovel', normalizedCode)
-      .maybeSingle();
-
-    if (localProperty && typeof localProperty.exclusivo === 'boolean') {
-      return localProperty.exclusivo;
-    }
-
-    const { data: brokerProperty } = await supabase
-      .from('imoveis_corretores')
-      .select('exclusivo')
-      .eq('tenant_id', tenantId)
-      .eq('codigo_imovel', normalizedCode)
-      .maybeSingle();
-
-    if (brokerProperty && typeof brokerProperty.exclusivo === 'boolean') {
-      return brokerProperty.exclusivo;
-    }
-  } catch (error) {
-    console.warn('⚠️ Não foi possível resolver exclusividade do imóvel:', error.message);
-  }
-
-  return false;
-};
-
 // =============================================================================
 // API v1 - CRM ENDPOINTS
 // =============================================================================
@@ -363,7 +343,20 @@ async function processWebhookEvents() {
     if (error) throw error;
 
     if (events?.length) {
+      // Tenant soft-deletado (tenants.deleted_at) não dispara webhook — a Lia é
+      // assinante e iniciaria conversa de WhatsApp em nome de imobiliária
+      // desativada. Marca 'failed' (só status: prod pode não ter a coluna
+      // last_error) para o evento não re-tentar a cada tick.
+      const deletedTenantIds = await getDeletedTenantIds(supabase, events.map((e) => e.tenant_id));
       for (const webhookEvent of events) {
+        if (deletedTenantIds.has(webhookEvent.tenant_id)) {
+          console.warn(`Webhook descartado (tenant soft-deletado): evento ${webhookEvent.id}, tenant ${webhookEvent.tenant_id}`);
+          await supabase
+            .from('webhook_events')
+            .update({ status: 'failed' })
+            .eq('id', webhookEvent.id);
+          continue;
+        }
         const eventType = webhookEvent.event_type || webhookEvent.event;
         if (!eventType) {
           console.error('Evento de webhook sem event_type:', webhookEvent);
@@ -736,502 +729,6 @@ const normalizeTemperature = (value) => {
     'frio': 'cold', 'morno': 'warm', 'quente': 'hot'
   };
   return tempMap[String(value).toLowerCase()] || 'cold';
-};
-
-// ============================================
-// ROLETA DE CORRETORES - Estado em memória por tenant
-// ============================================
-const tenantRoletaState = new Map();
-
-
-/**
- * Busca todos os corretores da aba "Acessos e Permissões" (tenant_brokers + tenant_memberships)
- * Esta é a fonte de verdade para listar corretores do sistema
- */
-const getAllBrokersFromACL = async (tenantId) => {
-  const brokerMap = new Map();
-  
-  try {
-    // 1. Buscar de tenant_brokers (corretores cadastrados via XML ou manualmente)
-    const { data: tenantBrokers, error: brokersError } = await supabase
-      .from('tenant_brokers')
-      .select('id, name, email, phone, photo_url, auth_user_id, status')
-      .eq('tenant_id', tenantId)
-      .eq('status', 'active');
-    
-    if (brokersError) {
-      console.error('❌ Erro ao buscar tenant_brokers:', brokersError);
-    }
-    
-    // Adicionar corretores de tenant_brokers ao mapa
-    (tenantBrokers || []).forEach(broker => {
-      const key = broker.auth_user_id || broker.id;
-      if (!brokerMap.has(key)) {
-        brokerMap.set(key, {
-          id: key,
-          broker_id: broker.id,
-          auth_user_id: broker.auth_user_id,
-          name: broker.name,
-          email: broker.email,
-          phone: normalizePhone(broker.phone, { withCountryCode: true }),
-          photo_url: broker.photo_url,
-          status: broker.status
-        });
-      }
-    });
-    
-    // 2. Buscar de tenant_memberships (usuários com acesso ao sistema)
-    // Nota: constraint atual só aceita 'admin' e 'corretor'
-    const { data: members, error: membersError } = await supabase
-      .from('tenant_memberships')
-      .select('user_id, role')
-      .eq('tenant_id', tenantId)
-      .eq('role', 'corretor');
-    
-    if (membersError) {
-      console.error('❌ Erro ao buscar tenant_memberships:', membersError);
-    }
-    
-    // Buscar dados dos usuários via user_profiles (view de auth.users)
-    const memberUserIds = (members || []).map(m => m.user_id).filter(id => !brokerMap.has(id));
-    
-    if (memberUserIds.length > 0) {
-      const { data: profiles, error: profilesError } = await supabase
-        .from('user_profiles')
-        .select('id, email, full_name, phone, avatar_url')
-        .in('id', memberUserIds);
-      
-      if (profilesError) {
-        console.error('❌ Erro ao buscar user_profiles:', profilesError);
-      }
-      
-      (profiles || []).forEach(profile => {
-        if (!brokerMap.has(profile.id)) {
-          const memberRole = members?.find(m => m.user_id === profile.id)?.role || 'corretor';
-          brokerMap.set(profile.id, {
-            id: profile.id,
-            auth_user_id: profile.id,
-            name: profile.full_name || profile.email?.split('@')[0] || 'Usuário',
-            email: profile.email,
-            phone: normalizePhone(profile.phone, { withCountryCode: true }),
-            photo_url: profile.avatar_url,
-            status: 'active',
-            role: memberRole
-          });
-        }
-      });
-    }
-    
-    return Array.from(brokerMap.values());
-  } catch (error) {
-    console.error('❌ Erro ao buscar corretores do ACL:', error);
-    return [];
-  }
-};
-
-/**
- * Busca corretor por nome, email ou telefone nas fontes do sistema
- * Ordem de busca: nome exato > email > telefone normalizado
- */
-const findBrokerByIdentifier = async (tenantId, { name, email, phone }) => {
-  // Buscar todos os corretores do ACL
-  const allBrokers = await getAllBrokersFromACL(tenantId);
-  
-  if (allBrokers.length === 0) return null;
-  
-  // 1. Buscar por nome (case insensitive)
-  if (name) {
-    const normalizedName = name.trim().toLowerCase();
-    const byName = allBrokers.find(b => b.name?.toLowerCase() === normalizedName);
-    if (byName) {
-      console.log(`✅ Corretor encontrado por nome: ${byName.name}`);
-      return byName;
-    }
-  }
-  
-  // 2. Buscar por email
-  if (email) {
-    const normalizedEmail = email.trim().toLowerCase();
-    const byEmail = allBrokers.find(b => b.email?.toLowerCase() === normalizedEmail);
-    if (byEmail) {
-      console.log(`✅ Corretor encontrado por email: ${byEmail.name}`);
-      return byEmail;
-    }
-  }
-  
-  // 3. Buscar por telefone (usando comparação normalizada)
-  if (phone) {
-    const byPhone = allBrokers.find(b => phonesMatch(b.phone, phone));
-    if (byPhone) {
-      console.log(`✅ Corretor encontrado por telefone: ${byPhone.name}`);
-      return byPhone;
-    }
-  }
-  
-  return null;
-};
-
-/**
- * Busca config de limite de leads do tenant + override do corretor.
- * Retorna { eligible, reason } indicando se o corretor pode receber novos leads.
- * Não bloqueia se a config estiver desativada.
- */
-const checkBrokerLeadLimitForTenant = async (tenantId, brokerId) => {
-  if (!tenantId || !brokerId) return { eligible: true };
-
-  try {
-    // 1. Buscar config global do tenant
-    const { data: cfg } = await supabase
-      .from('tenant_lead_limit_config')
-      .select('*')
-      .eq('tenant_id', tenantId)
-      .maybeSingle();
-
-    if (!cfg || !cfg.lead_limit_enabled) return { eligible: true };
-
-    // 2. Buscar override do corretor em tenant_memberships.permissions->lead_limit
-    const { data: membership } = await supabase
-      .from('tenant_memberships')
-      .select('permissions')
-      .eq('tenant_id', tenantId)
-      .eq('user_id', brokerId)
-      .maybeSingle();
-
-    const override = membership?.permissions?.lead_limit || {};
-
-    // Pausado: não recebe leads automáticos
-    if (override.receives_auto_leads === false) {
-      return { eligible: false, reason: `Corretor ${brokerId} pausado para recebimento automático` };
-    }
-
-    // Isento: sem limite
-    if (override.limit_exempt === true) return { eligible: true };
-
-    // Override habilita/desabilita individualmente
-    const effectiveEnabled = override.lead_limit_enabled !== undefined
-      ? override.lead_limit_enabled
-      : cfg.lead_limit_enabled;
-    if (!effectiveEnabled) return { eligible: true };
-
-    // Limites efetivos
-    const maxActive = override.custom_max_active_leads != null
-      ? override.custom_max_active_leads
-      : cfg.max_active_leads_per_broker;
-    const maxPending = override.custom_max_pending_response_leads != null
-      ? override.custom_max_pending_response_leads
-      : cfg.max_pending_response_leads_per_broker;
-
-    const pendingStatuses = Array.isArray(cfg.pending_statuses) && cfg.pending_statuses.length > 0
-      ? cfg.pending_statuses
-      : ['Novos Leads'];
-
-    // 3. Contar leads ativos do corretor
-    const [activeResult, pendingResult] = await Promise.all([
-      supabase
-        .from('leads')
-        .select('id', { count: 'exact', head: true })
-        .eq('tenant_id', tenantId)
-        .eq('assigned_agent_id', brokerId)
-        .neq('status', 'Arquivado'),
-      supabase
-        .from('leads')
-        .select('id', { count: 'exact', head: true })
-        .eq('tenant_id', tenantId)
-        .eq('assigned_agent_id', brokerId)
-        .in('status', pendingStatuses),
-    ]);
-
-    const activeCount = activeResult.count ?? 0;
-    const pendingCount = pendingResult.count ?? 0;
-
-    const mode = cfg.blocking_mode || 'both';
-    const carteiraBloqueada = mode !== 'pendencia' && activeCount >= maxActive;
-    const pendenciaBloqueada = mode !== 'carteira' && pendingCount >= maxPending;
-
-    if (carteiraBloqueada && pendenciaBloqueada) {
-      return {
-        eligible: false,
-        reason: `Carteira (${activeCount}/${maxActive}) e pendências (${pendingCount}/${maxPending}) no limite`,
-      };
-    }
-    if (carteiraBloqueada) {
-      return {
-        eligible: false,
-        reason: `Carteira no limite (${activeCount}/${maxActive} leads ativos)`,
-      };
-    }
-    if (pendenciaBloqueada) {
-      return {
-        eligible: false,
-        reason: `Muitas pendências (${pendingCount}/${maxPending} leads pendentes)`,
-      };
-    }
-
-    return { eligible: true };
-  } catch (err) {
-    console.error('❌ Erro ao checar limite de leads:', err);
-    return { eligible: true }; // fail-open: não bloqueia em erro
-  }
-};
-
-/**
- * Pipeline de atribuição automática de corretor:
- * 1. raw_data.attendedBy (leads Kenlo) - busca no ACL por nome/email/telefone
- * 2. properties_cache (XML sincronizado) - busca corretor responsável no ACL
- * 3. imoveis_corretores (Meus Imóveis) - busca corretor responsável no ACL
- * 4. Roleta (fallback) - distribui entre corretores do ACL
- */
-const resolveBrokerForLead = async (propertyCode, tenantId, rawData = null) => {
-  let broker = null;
-  let method = null;
-  
-  // 1. Verificar se veio com attendedBy do Kenlo
-  if (rawData?.attendedBy && Array.isArray(rawData.attendedBy) && rawData.attendedBy.length > 0) {
-    const attendedBroker = rawData.attendedBy[0];
-    if (attendedBroker?.name || attendedBroker?.email || attendedBroker?.phone) {
-      // Buscar corretor no ACL por nome/email/telefone
-      const foundBroker = await findBrokerByIdentifier(tenantId, {
-        name: attendedBroker.name,
-        email: attendedBroker.email,
-        phone: attendedBroker.phone || attendedBroker.cel
-      });
-      
-      if (foundBroker) {
-        const limitCheck = await checkBrokerLeadLimitForTenant(tenantId, foundBroker.id || foundBroker.auth_user_id);
-        if (!limitCheck.eligible) {
-          console.log(`⚠️ Corretor ${foundBroker.name} bloqueado por limite (Kenlo attendedBy): ${limitCheck.reason}. Tentando roleta...`);
-        } else {
-          broker = foundBroker;
-          method = 'kenlo_attended_by';
-          console.log(`✅ Corretor via Kenlo attendedBy (validado no ACL): ${broker.name}`);
-          return { broker, method };
-        }
-      }
-      
-      // Se não encontrou no ACL, usar dados do Kenlo mesmo (sem checar limite — ID desconhecido)
-      if (!broker && attendedBroker.name) {
-        broker = { 
-          name: attendedBroker.name, 
-          id: attendedBroker.id?.toString() || null,
-          phone: normalizePhone(attendedBroker.phone || attendedBroker.cel, { withCountryCode: true }),
-          email: attendedBroker.email
-        };
-        method = 'kenlo_attended_by';
-        console.log(`✅ Corretor via Kenlo attendedBy (não validado no ACL): ${broker.name}`);
-        return { broker, method };
-      }
-    }
-  }
-  
-  // 2. Buscar no cache/XML por código do imóvel
-  if (propertyCode) {
-    const code = propertyCode.trim().toUpperCase();
-    
-    // 2a. properties_cache (XML) - busca dados do corretor responsável
-    const { data: cached } = await supabase
-      .from('properties_cache')
-      .select('agent_name, agent_phone, agent_email')
-      .eq('tenant_id', tenantId)
-      .eq('property_code', code)
-      .single();
-    
-    if (cached?.agent_name || cached?.agent_email || cached?.agent_phone) {
-      // Buscar corretor no ACL por nome/email/telefone
-      const foundBroker = await findBrokerByIdentifier(tenantId, {
-        name: cached.agent_name,
-        email: cached.agent_email,
-        phone: cached.agent_phone
-      });
-      
-      if (foundBroker) {
-        const limitCheck = await checkBrokerLeadLimitForTenant(tenantId, foundBroker.id || foundBroker.auth_user_id);
-        if (!limitCheck.eligible) {
-          console.log(`⚠️ Corretor ${foundBroker.name} bloqueado por limite (XML cache): ${limitCheck.reason}. Tentando roleta...`);
-        } else {
-          broker = foundBroker;
-          method = 'xml_property_cache';
-          console.log(`✅ Corretor via XML/cache (validado no ACL): ${broker.name}`);
-          return { broker, method };
-        }
-      }
-      
-      // Se não encontrou no ACL, usar dados do XML mesmo (sem checar limite)
-      if (!broker && cached.agent_name) {
-        broker = { 
-          name: cached.agent_name, 
-          phone: normalizePhone(cached.agent_phone, { withCountryCode: true }),
-          email: cached.agent_email
-        };
-        method = 'xml_property_cache';
-        console.log(`✅ Corretor via XML/cache (não validado no ACL): ${broker.name}`);
-        return { broker, method };
-      }
-    }
-    
-    // 2b. imoveis_corretores (Meus Imóveis) - atribuição manual
-    const { data: manual } = await supabase
-      .from('imoveis_corretores')
-      .select('corretor_nome, corretor_id, corretor_telefone, corretor_email')
-      .eq('tenant_id', tenantId)
-      .eq('codigo_imovel', code)
-      .single();
-    
-    if (manual?.corretor_nome || manual?.corretor_email || manual?.corretor_telefone) {
-      // Buscar corretor no ACL por nome/email/telefone
-      const foundBroker = await findBrokerByIdentifier(tenantId, {
-        name: manual.corretor_nome,
-        email: manual.corretor_email,
-        phone: manual.corretor_telefone
-      });
-      
-      if (foundBroker) {
-        const limitCheck = await checkBrokerLeadLimitForTenant(tenantId, foundBroker.id || foundBroker.auth_user_id);
-        if (!limitCheck.eligible) {
-          console.log(`⚠️ Corretor ${foundBroker.name} bloqueado por limite (Meus Imóveis): ${limitCheck.reason}. Tentando roleta...`);
-        } else {
-          broker = foundBroker;
-          method = 'meus_imoveis';
-          console.log(`✅ Corretor via Meus Imóveis (validado no ACL): ${broker.name}`);
-          return { broker, method };
-        }
-      }
-      
-      // Se não encontrou no ACL, usar dados da tabela mesmo (sem checar limite)
-      if (!broker && manual.corretor_nome) {
-        broker = { 
-          name: manual.corretor_nome, 
-          id: manual.corretor_id, 
-          phone: normalizePhone(manual.corretor_telefone, { withCountryCode: true }),
-          email: manual.corretor_email
-        };
-        method = 'meus_imoveis';
-        console.log(`✅ Corretor via Meus Imóveis (não validado no ACL): ${broker.name}`);
-        return { broker, method };
-      }
-    }
-  }
-  
-  // 3. ROLETA - nenhum corretor responsável encontrado
-  console.log(`⚙️ Código ${propertyCode || 'N/A'} sem corretor responsável, usando roleta...`);
-  const roletaBroker = await getNextBrokerFromRoleta(tenantId);
-  
-  if (roletaBroker) {
-    broker = roletaBroker;
-    method = 'roleta';
-    console.log(`🎰 Corretor via roleta: ${broker.name}`);
-    return { broker, method };
-  }
-  
-  return { broker: null, method: null };
-};
-
-/**
- * Roleta racional de corretores (Multi-tenant)
- * Fonte primária: roleta_participantes (corretores selecionados pelo admin)
- * Fallback 1: Acessos e Permissões (tenant_memberships + tenant_brokers)
- * Fallback 2: imoveis_corretores (para compatibilidade)
- */
-const getNextBrokerFromRoleta = async (tenantId) => {
-  try {
-    let brokerList = [];
-    
-    // 1. FONTE PRIMÁRIA: Buscar corretores ATIVOS na tabela roleta_participantes
-    const { data: participantes, error: participantesError } = await supabase
-      .from('roleta_participantes')
-      .select('broker_id, broker_name, broker_email, broker_phone')
-      .eq('tenant_id', tenantId)
-      .eq('is_active', true);
-    
-    if (!participantesError && participantes && participantes.length > 0) {
-      brokerList = participantes.map(p => ({
-        id: p.broker_id,
-        name: p.broker_name,
-        email: p.broker_email,
-        phone: normalizePhone(p.broker_phone, { withCountryCode: true })
-      }));
-      console.log(`🎰 Roleta: ${brokerList.length} corretor(es) configurados na roleta`);
-    }
-    
-    // 2. FALLBACK 1: Se não houver participantes configurados, usar ACL (todos os corretores)
-    if (brokerList.length === 0) {
-      console.log('⚠️ Nenhum corretor configurado na roleta, usando ACL...');
-      brokerList = await getAllBrokersFromACL(tenantId);
-    }
-    
-    // 3. FALLBACK 2: Se não houver no ACL, tentar imoveis_corretores
-    if (brokerList.length === 0) {
-      console.log('⚠️ Nenhum corretor no ACL, tentando imoveis_corretores...');
-      const { data: brokers } = await supabase
-        .from('imoveis_corretores')
-        .select('corretor_nome, corretor_id, corretor_telefone, corretor_email')
-        .eq('tenant_id', tenantId)
-        .not('corretor_nome', 'is', null);
-      
-      if (brokers && brokers.length > 0) {
-        // Deduplicar por nome
-        const seen = new Set();
-        brokerList = brokers
-          .filter(b => {
-            if (seen.has(b.corretor_nome)) return false;
-            seen.add(b.corretor_nome);
-            return true;
-          })
-          .map(b => ({
-            id: b.corretor_id,
-            name: b.corretor_nome,
-            phone: normalizePhone(b.corretor_telefone, { withCountryCode: true }),
-            email: b.corretor_email
-          }));
-      }
-    }
-    
-    if (brokerList.length === 0) {
-      console.log('⚠️ Nenhum corretor disponível para roleta');
-      return null;
-    }
-
-    // Filtrar corretores bloqueados por limite de leads
-    const { data: limitCfg } = await supabase
-      .from('tenant_lead_limit_config')
-      .select('*')
-      .eq('tenant_id', tenantId)
-      .maybeSingle();
-
-    if (limitCfg?.lead_limit_enabled) {
-      const eligibleList = [];
-      for (const b of brokerList) {
-        const bid = b.id || b.auth_user_id;
-        const check = await checkBrokerLeadLimitForTenant(tenantId, bid);
-        if (check.eligible) {
-          eligibleList.push(b);
-        } else {
-          console.log(`⚠️ Roleta: ${b.name} ignorado — ${check.reason}`);
-        }
-      }
-      if (eligibleList.length === 0) {
-        console.log('⚠️ Roleta: todos os corretores estão no limite de leads');
-        return null;
-      }
-      brokerList = eligibleList;
-      console.log(`🎰 Roleta após filtro de limite: ${brokerList.length} corretor(es) elegível(is)`);
-    }
-
-    // Estado da roleta por tenant (round-robin)
-    if (!tenantRoletaState.has(tenantId)) {
-      tenantRoletaState.set(tenantId, { lastIndex: -1 });
-    }
-    
-    const state = tenantRoletaState.get(tenantId);
-    const nextIndex = (state.lastIndex + 1) % brokerList.length;
-    state.lastIndex = nextIndex;
-    
-    const selectedBroker = brokerList[nextIndex];
-    console.log(`🎰 Roleta: ${nextIndex + 1}/${brokerList.length} - ${selectedBroker.name}`);
-    return selectedBroker;
-  } catch (error) {
-    console.error('❌ Erro na roleta:', error);
-    return null;
-  }
 };
 
 /**
@@ -2198,36 +1695,48 @@ const createIncomingLead = async ({ tenantId, body, source = 'API' }) => {
   let assignedBrokerId = broker_id || null;
   let assignmentMethod = null;
   let propertyImage = interest_image;
-  const resolvedIsExclusive = normalizedExclusive !== null
-    ? normalizedExclusive
-    : await resolvePropertyExclusivity(tenantId, propertyCode);
 
-  if (!explicitBroker && auto_assign !== false) {
-    const { broker, method } = await resolveBrokerForLead(propertyCode, tenantId, raw_data);
-    if (broker) {
-      assignedBroker = broker.name;
-      assignedBrokerId = broker.id || broker.auth_user_id || null;
-      assignmentMethod = method;
-    }
-  } else if (explicitBroker) {
-    assignedBroker = explicitBroker;
-    assignmentMethod = 'explicit';
-    if (!assignedBrokerId) {
-      const foundBroker = await findBrokerByIdentifier(tenantId, { name: explicitBroker });
-      if (foundBroker) {
-        assignedBrokerId = foundBroker.id || foundBroker.auth_user_id;
+  // Cache por requisição: exclusividade, atribuição e foto compartilham as
+  // linhas de imóvel/ACL/configs já carregadas, sem repetir queries.
+  const lookupCache = createLeadLookupCache();
+
+  const resolveAssignment = async () => {
+    if (!explicitBroker && auto_assign !== false) {
+      const { broker, method } = await resolveBrokerForLead(propertyCode, tenantId, raw_data, lookupCache);
+      if (broker) {
+        assignedBroker = broker.name;
+        assignedBrokerId = broker.id || broker.auth_user_id || null;
+        assignmentMethod = method;
+      }
+    } else if (explicitBroker) {
+      assignedBroker = explicitBroker;
+      assignmentMethod = 'explicit';
+      if (!assignedBrokerId) {
+        const foundBroker = await findBrokerByIdentifier(tenantId, { name: explicitBroker }, lookupCache);
+        if (foundBroker) {
+          assignedBrokerId = foundBroker.id || foundBroker.auth_user_id;
+        }
       }
     }
-  }
+  };
+
+  // Exclusividade, atribuição de corretor e foto do imóvel são independentes
+  // entre si → uma rodada paralela no lugar de 3 blocos sequenciais.
+  const [resolvedIsExclusive, , propertyRow] = await Promise.all([
+    normalizedExclusive !== null
+      ? normalizedExclusive
+      : resolvePropertyExclusivity(tenantId, propertyCode, lookupCache),
+    resolveAssignment(),
+    // Wrapper async: um property_code não-string vira rejeição TRATADA pelo
+    // Promise.all (→ 500 do handler), não um throw síncrono que deixaria as
+    // outras promises órfãs com unhandled rejection.
+    (async () => (!propertyImage && propertyCode)
+      ? getPropertyCacheRow(tenantId, propertyCode.trim().toUpperCase(), lookupCache)
+      : null)(),
+  ]);
 
   if (!propertyImage && propertyCode) {
-    const { data: cached } = await supabase
-      .from('properties_cache')
-      .select('main_photo')
-      .eq('tenant_id', tenantId)
-      .eq('property_code', propertyCode.trim().toUpperCase())
-      .single();
-    propertyImage = cached?.main_photo || null;
+    propertyImage = propertyRow?.main_photo || null;
   }
 
   const now = new Date().toISOString();
@@ -2610,39 +2119,51 @@ app.post('/api/v1/leads', validateApiKey, async (req, res) => {
     let assignedBrokerId = broker_id || null;
     let assignmentMethod = null;
     let propertyImage = interest_image;
-    const resolvedIsExclusive = normalizedExclusive !== null
-      ? normalizedExclusive
-      : await resolvePropertyExclusivity(req.tenantId, propertyCode);
+
+    // Cache por requisição: exclusividade, atribuição e foto compartilham as
+    // linhas de imóvel/ACL/configs já carregadas, sem repetir queries.
+    const lookupCache = createLeadLookupCache();
 
     // Atribuição automática se não veio corretor explícito
-    if (!explicitBroker && auto_assign !== false) {
-      const { broker, method } = await resolveBrokerForLead(propertyCode, req.tenantId, raw_data);
-      if (broker) {
-        assignedBroker = broker.name;
-        assignedBrokerId = broker.id || broker.auth_user_id || null;
-        assignmentMethod = method;
-      }
-    } else if (explicitBroker) {
-      assignedBroker = explicitBroker;
-      assignmentMethod = 'explicit';
-      // Tentar encontrar o ID do corretor pelo nome
-      if (!assignedBrokerId) {
-        const foundBroker = await findBrokerByIdentifier(req.tenantId, { name: explicitBroker });
-        if (foundBroker) {
-          assignedBrokerId = foundBroker.id || foundBroker.auth_user_id;
+    const resolveAssignment = async () => {
+      if (!explicitBroker && auto_assign !== false) {
+        const { broker, method } = await resolveBrokerForLead(propertyCode, req.tenantId, raw_data, lookupCache);
+        if (broker) {
+          assignedBroker = broker.name;
+          assignedBrokerId = broker.id || broker.auth_user_id || null;
+          assignmentMethod = method;
+        }
+      } else if (explicitBroker) {
+        assignedBroker = explicitBroker;
+        assignmentMethod = 'explicit';
+        // Tentar encontrar o ID do corretor pelo nome
+        if (!assignedBrokerId) {
+          const foundBroker = await findBrokerByIdentifier(req.tenantId, { name: explicitBroker }, lookupCache);
+          if (foundBroker) {
+            assignedBrokerId = foundBroker.id || foundBroker.auth_user_id;
+          }
         }
       }
-    }
+    };
+
+    // Exclusividade, atribuição de corretor e foto do imóvel são independentes
+    // entre si → uma rodada paralela no lugar de 3 blocos sequenciais.
+    const [resolvedIsExclusive, , propertyRow] = await Promise.all([
+      normalizedExclusive !== null
+        ? normalizedExclusive
+        : resolvePropertyExclusivity(req.tenantId, propertyCode, lookupCache),
+      resolveAssignment(),
+      // Wrapper async: um property_code não-string vira rejeição TRATADA pelo
+      // Promise.all (→ 500 do handler), não um throw síncrono que deixaria as
+      // outras promises órfãs com unhandled rejection.
+      (async () => (!propertyImage && propertyCode)
+        ? getPropertyCacheRow(req.tenantId, propertyCode.trim().toUpperCase(), lookupCache)
+        : null)(),
+    ]);
 
     // Buscar foto do imóvel se não informada
     if (!propertyImage && propertyCode) {
-      const { data: cached } = await supabase
-        .from('properties_cache')
-        .select('main_photo')
-        .eq('tenant_id', req.tenantId)
-        .eq('property_code', propertyCode.trim().toUpperCase())
-        .single();
-      propertyImage = cached?.main_photo || null;
+      propertyImage = propertyRow?.main_photo || null;
     }
 
     // ============================================
@@ -5204,6 +4725,28 @@ if (process.env.SANTA_ANGELA_SYNC_SCHEDULER === '1') {
 // validateZapFeedAccess para que um save invalide o cache do feed na hora.
 import { registerZapRoutes } from './zap/index.js';
 registerZapRoutes(app, supabase, { resolver: zapConfigResolver });
+
+// Contact2Sale — CRM principal alternativo ao Kenlo (config cifrada por tenant;
+// ativação desativa o Kenlo — exclusividade D2). Runner ÚNICO compartilhado entre
+// rotas (sync/run) e scheduler (cron): guarda de reentrância POR TENANT — um
+// backfill longo de um tenant não adia o LIVE dos demais.
+import {
+  registerContact2SaleRoutes,
+  makeC2sRunner,
+  startC2sScheduler,
+  createC2sConfigResolver,
+  createC2sApiClient,
+} from './contact2sale/index.js';
+const c2sResolver = createC2sConfigResolver({ supabase });
+const c2sApiClient = createC2sApiClient({ resolver: c2sResolver });
+const c2sRunner = makeC2sRunner(supabase, { resolver: c2sResolver, apiClient: c2sApiClient });
+registerContact2SaleRoutes(app, supabase, { resolver: c2sResolver, apiClient: c2sApiClient, runner: c2sRunner });
+
+// Sync incremental automático (cron 3min, updated_gte real). Flag-gated para
+// rodar em UM processo, igual Kenlo/Santa Ângela.
+if (process.env.CONTACT2SALE_SYNC_SCHEDULER === '1') {
+  startC2sScheduler(supabase, { resolver: c2sResolver, apiClient: c2sApiClient, runner: c2sRunner });
+}
 
 // 404 para rotas da API não encontradas
 app.use('/api/v1/*', (req, res) => {
