@@ -33,9 +33,12 @@ export function ChatWindow({
     tenantId: tenantId ?? '',
   });
 
+  // Só as pendentes da conversa aberta (o estado persiste entre trocas de conversa).
+  const conversationPending = pending.filter((p) => p.conversationId === conversation?.id);
+
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages.length, pending.length, conversation?.id]);
+  }, [messages.length, conversationPending.length, conversation?.id]);
 
   if (!conversation) {
     return (
@@ -89,11 +92,9 @@ export function ChatWindow({
             {messages.map((m) => (
               <MessageBubble key={m.id} message={m} />
             ))}
-            {pending
-              .filter((p) => p.conversationId === conversation.id)
-              .map((p) => (
-                <PendingBubble key={p.tempId} pending={p} onRetry={retry} onCancel={cancel} />
-              ))}
+            {conversationPending.map((p) => (
+              <PendingBubble key={p.tempId} pending={p} onRetry={retry} onCancel={cancel} />
+            ))}
           </div>
         </div>
 

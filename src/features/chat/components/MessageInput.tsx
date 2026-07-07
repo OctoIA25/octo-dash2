@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react';
 import { File as FileIcon, Image, Loader2, Music, Paperclip, Send, Video, X } from 'lucide-react';
+import type { MediaKind } from '../types';
 
 export interface ComposeMedia {
   file: File;
-  type: 'image' | 'audio' | 'video' | 'document';
+  type: MediaKind;
 }
 
 interface Props {
