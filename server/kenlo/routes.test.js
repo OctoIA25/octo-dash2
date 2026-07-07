@@ -68,6 +68,17 @@ describe('rotas Kenlo', () => {
     expect(res.body.integrations[0].sync).toMatchObject({ status: 'done', saved: 42 });
   });
 
+  it('GET /sync/status usa heartbeat_at antes de started_at para detectar stalled', async () => {
+    const app = fakeApp();
+    const startedAt = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    const heartbeatAt = new Date().toISOString();
+    const syncState = JSON.stringify({ status: 'running', started_at: startedAt, heartbeat_at: heartbeatAt });
+    registerKenloRoutes(app, makeSupabase({ user: { id: 'u', email: OWNER }, integrations: [{ tenant_id: 't1', status: 'active', sync_state: syncState }] }), { runner: {} });
+    const res = await run(app.routes['GET /api/v1/kenlo/sync/status'], { headers: { authorization: 'Bearer t' } });
+    expect(res.statusCode).toBe(200);
+    expect(res.body.integrations[0].sync.stalled).toBeUndefined();
+  });
+
   it('GET /sync/status retorna integrações para owner', async () => {
     const app = fakeApp();
     registerKenloRoutes(app, makeSupabase({ user: { id: 'u', email: OWNER }, integrations: [{ tenant_id: 't1', status: 'active', leads_count: 5 }] }), { runner: {} });

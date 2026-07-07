@@ -8,14 +8,15 @@ import { makeSyncRunner } from './kenloScheduler.js';
 const PLATFORM_OWNER_EMAIL = 'octo.inteligenciaimobiliaria@gmail.com';
 const isPlatformOwner = (email) => (email || '').toLowerCase() === PLATFORM_OWNER_EMAIL;
 
-const STALLED_MS = 10 * 60 * 1000; // running há mais que isto sem terminar = travado (processo caiu)
+const STALLED_MS = 10 * 60 * 1000; // running há mais que isto sem heartbeat = travado (processo caiu)
 
 // Parse seguro do snapshot sync_state + deriva `stalled` (running preso).
 function parseSyncState(raw) {
   if (!raw) return null;
   let s;
   try { s = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch { return null; }
-  if (s?.status === 'running' && s.started_at && Date.now() - Date.parse(s.started_at) > STALLED_MS) {
+  const ref = s?.heartbeat_at || s?.started_at;
+  if (s?.status === 'running' && ref && Date.now() - Date.parse(ref) > STALLED_MS) {
     return { ...s, stalled: true };
   }
   return s;

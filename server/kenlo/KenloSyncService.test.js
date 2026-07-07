@@ -187,6 +187,35 @@ describe('KenloSyncService.syncAllTenants', () => {
     expect(updates.some((u) => u.last_sync_at)).toBe(true);
   });
 
+  it('tenant soft-deletado (tenants.deleted_at) é pulado no syncAllTenants', async () => {
+    const updates = [];
+    const branchingSupabase = {
+      from: (table) => {
+        if (table === 'kenlo_integrations') {
+          return {
+            select: () => ({ eq: () => Promise.resolve({ data: [
+              { tenant_id: 't-vivo', last_sync_at: null },
+              { tenant_id: 't-morto', last_sync_at: null },
+            ], error: null }) }),
+            update: (payload) => ({ eq: () => { updates.push(payload); return Promise.resolve({ error: null }); } }),
+          };
+        }
+        if (table === 'tenants') {
+          // getDeletedTenantIds: select('id').in('id', ids).not('deleted_at','is',null)
+          return { select: () => ({ in: () => ({ not: () => Promise.resolve({ data: [{ id: 't-morto' }], error: null }) }) }) };
+        }
+        return { // kenlo_leads
+          select: () => ({ eq: () => ({ in: () => Promise.resolve({ data: [], error: null }) }) }),
+          upsert: (b) => ({ select: () => Promise.resolve({ data: b, error: null }) }),
+        };
+      },
+    };
+    const leadService = { fetchPage: vi.fn().mockResolvedValue({ status: 200, leads: [], isLast: true }), fetchDetails: vi.fn() };
+    const svc = createKenloSyncService({ supabase: branchingSupabase, leadService, brokerAssigner: { assign: async (_t, r) => r }, processEnv: {}, now: () => Date.parse('2026-06-26T12:00:00Z') });
+    const results = await svc.syncAllTenants();
+    expect(results.map((r) => r.tenantId)).toEqual(['t-vivo']);
+  });
+
   it('reconciliação: tenant LIVE com last_full_sync_at vencido roda BACKFILL', async () => {
     const calls = [];
     const branchingSupabase = {
@@ -234,6 +263,75 @@ describe('KenloSyncService.syncAllTenants', () => {
     await svc.syncAllTenants();
     expect(updates.some((u) => u.last_sync_at)).toBe(true); // cursor avança apesar do erro
   });
+
+  it('1º sync do tenant (sem cursor) marca INSERTs com is_backfill=true — import histórico não aciona Lia', async () => {
+    // O trigger tr_enqueue_lead_created_webhook (migration 20260706_webhook_gate)
+    // só enfileira lead.created quando is_backfill=false. O MODO decide (D3):
+    // somente o import histórico (1º sync, sem cursor) marca a linha.
+    const rows = await syncAllCapturingUpserts({ tenant_id: 't1', last_sync_at: null });
+    const row = rows.find((r) => r.external_id === 'h1');
+    expect(row).toBeTruthy();
+    expect(row.is_backfill).toBe(true);
+    expect(row.source_crm).toBe('kenlo'); // proveniência estampada pelo ENGINE (provider.name)
+  });
+
+  it('connect legado (last_sync_at pré-semeado pelo browser, sem last_full_sync_at) ainda marca is_backfill', async () => {
+    // O connect legado do frontend grava last_sync_at NA CONEXÃO (kenloLeadsService.
+    // saveKenloIntegration), antes de qualquer ciclo do servidor. last_full_sync_at
+    // é escrito SÓ pelo servidor — é ele que detecta o verdadeiro 1º ciclo.
+    const rows = await syncAllCapturingUpserts({
+      tenant_id: 't1',
+      last_sync_at: '2026-06-26T11:59:00Z', // pré-semeado pelo connect do browser
+      last_full_sync_at: null,              // servidor nunca rodou
+    });
+    const row = rows.find((r) => r.external_id === 'h1');
+    expect(row).toBeTruthy();
+    expect(row.is_backfill).toBe(true);
+  });
+
+  it('reconciliação periódica (BACKFILL com cursor) NÃO marca is_backfill — lead recuperado ainda aciona', async () => {
+    // Reconciliação é operação de rotina: um lead novo que o LIVE perdeu deve
+    // disparar a Lia normalmente (o gate de frescor de 48h no trigger cuida dos
+    // antigos). A row nem envia a coluna — omissão = DEFAULT false no banco.
+    const rows = await syncAllCapturingUpserts({
+      tenant_id: 't1',
+      last_sync_at: '2026-06-26T11:00:00Z',
+      last_full_sync_at: '2026-06-26T08:00:00Z', // 4h atrás > TTL fixado abaixo → modo BACKFILL
+    }, { KENLO_FULL_SYNC_TTL_MS: '3600000' });   // TTL fixado: o teste não depende do default
+    const row = rows.find((r) => r.external_id === 'h1');
+    expect(row).toBeTruthy();
+    expect(row).not.toHaveProperty('is_backfill');
+  });
+
+  // Roda syncAllTenants com uma única integração e captura as rows upsertadas
+  // em kenlo_leads (sem existentes; tenants sem soft-delete).
+  async function syncAllCapturingUpserts(integrationRow, processEnv = {}) {
+    const upserts = [];
+    const branchingSupabase = {
+      from: (table) => {
+        if (table === 'kenlo_integrations') {
+          return {
+            select: () => ({ eq: () => Promise.resolve({ data: [integrationRow], error: null }) }),
+            update: () => ({ eq: () => Promise.resolve({ error: null }) }),
+          };
+        }
+        if (table === 'tenants') {
+          return { select: () => ({ in: () => ({ not: () => Promise.resolve({ data: [], error: null }) }) }) };
+        }
+        return { // kenlo_leads
+          select: () => ({ eq: () => ({ in: () => Promise.resolve({ data: [], error: null }) }) }),
+          upsert: (b) => { upserts.push(...b); return { select: () => Promise.resolve({ data: b, error: null }) }; },
+        };
+      },
+    };
+    const lead = { _id: 'h1', timestamp: '2026-06-25T10:00:00Z', client: { name: 'H' }, idMediaOrigin: 8 };
+    const svc = createKenloSyncService({
+      supabase: branchingSupabase, leadService: leadServiceStub([lead]), brokerAssigner: brokerStub,
+      processEnv, now: () => Date.parse('2026-06-26T12:00:00Z'),
+    });
+    await svc.syncAllTenants();
+    return upserts;
+  }
 
   it('persiste sync_state: running no início, done/contadores no fim', async () => {
     const states = [];

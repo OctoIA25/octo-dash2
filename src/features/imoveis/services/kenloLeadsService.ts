@@ -636,43 +636,6 @@ export const saveKenloIntegration = async (
 };
 
 /**
- * Atualiza APENAS dados de sync (leads_count, token, last_sync_at).
- * NUNCA sobrescreve email ou senha — evita race condition com alterações do usuário.
- */
-export const updateKenloSyncData = async (
-  tenantId: string,
-  leadsCount: number,
-  authToken?: string
-): Promise<{ success: boolean; error?: string }> => {
-  try {
-    const updateData: any = {
-      leads_count: leadsCount,
-      last_sync_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-
-    if (authToken) updateData.auth_token = authToken;
-
-    const { error } = await supabase
-      .from('kenlo_integrations')
-      .update(updateData)
-      .eq('tenant_id', tenantId);
-
-    if (error) {
-      console.error('[KenloSync] Erro ao atualizar sync data:', error);
-      return { success: false, error: error.message };
-    }
-
-    return { success: true };
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Erro desconhecido',
-    };
-  }
-};
-
-/**
  * Busca a integração Kenlo do tenant
  */
 export const fetchKenloIntegration = async (
