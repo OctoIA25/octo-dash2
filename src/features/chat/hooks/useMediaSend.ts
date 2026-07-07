@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { uploadWhatsappMediaWithProgress } from '../services/mediaUploadService';
 import { sendMediaMessage } from '../services/whatsappService';
 import type { MediaKind, PendingMessage } from '../types';
@@ -110,6 +110,18 @@ export function useMediaSend(args: Omit<Args, 'objectUrlFor'>) {
     return createMediaSender(args, { upload: uploadWhatsappMediaWithProgress, sendMedia: sendMediaMessage }, setPending);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [args.conversationId, args.contactPhone, args.tenantId]);
+
+  // Espelho do estado para revogar objectUrls no unmount sem recriar o efeito a cada render.
+  const pendingRef = useRef(pending);
+  pendingRef.current = pending;
+  useEffect(
+    () => () => {
+      for (const p of pendingRef.current) {
+        if (p.objectUrl.startsWith('blob:')) URL.revokeObjectURL(p.objectUrl);
+      }
+    },
+    [],
+  );
 
   return { pending, send: sender.send, retry: sender.retry, cancel: sender.cancel };
 }
