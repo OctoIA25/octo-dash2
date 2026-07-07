@@ -73,6 +73,16 @@ export function createC2sProvider({ supabase, apiClient, processEnv = process.en
       // congelado onde o engine confirmou por último; próximo ciclo retoma.
       if (!r.ok) { yield { pageError: true }; return; }
       const { withId, rows } = normalizePage(r.items, tenantId);
+      // MAIOR created_at já visto no ciclo (o topo). Gravado em `integration`
+      // (não em syncWindow) porque é o objeto que o engine repassa a commitPage.
+      // Vira o last_sync_at para o tenant DESTRAVAR de BACKFILL assim que o topo é
+      // processado — sem esperar o walk histórico (horas, 68k leads) fechar. Sem
+      // isto, last_sync_at só gravava no fim do ciclo inteiro e uma base grande
+      // nunca fechava → loop eterno de BACKFILL, leads novos parados.
+      const maxCreated = maxTimestamp(withId, 'created_at');
+      if (maxCreated && (!integration.maxCreatedSeen || Date.parse(maxCreated) > Date.parse(integration.maxCreatedSeen))) {
+        integration.maxCreatedSeen = maxCreated;
+      }
       // Cursor = MENOR created_at da página (a fronteira já percorrida). Próximo
       // ciclo pede created_lt=cursor → continua descendo no tempo.
       const cursor = minTimestamp(withId, 'created_at');
@@ -156,11 +166,20 @@ export function createC2sProvider({ supabase, apiClient, processEnv = process.en
         : backfillPages(integration, syncWindow);
     },
 
-    // Chamado pelo ENGINE somente quando a página foi persistida sem erro.
+    // Chamado pelo ENGINE (só quando a página foi persistida sem erro) — por página
+    // do BACKFILL. Além do backfill_cursor, grava last_sync_at = topo já visto
+    // (maxCreatedSeen) na PRIMEIRA confirmação: destrava o tenant de BACKFILL para
+    // LIVE assim que o topo entrou, sem esperar o walk histórico inteiro fechar
+    // (que numa base grande nunca fecha → loop eterno). Idempotente: uma vez
+    // preenchido, não sobrescreve (o LIVE passa a ser dono do last_sync_at).
     async commitPage(integration, cursor) {
+      const patch = { backfill_cursor: cursor };
+      if (!integration.last_sync_at && integration.maxCreatedSeen) {
+        patch.last_sync_at = integration.maxCreatedSeen;
+      }
       const { error } = await supabase
-        .from(CONFIG_TABLE).update({ backfill_cursor: cursor }).eq('tenant_id', integration.tenant_id);
-      if (error) logger.warn(`[contact2sale] persistir backfill_cursor falhou: ${error.message}`);
+        .from(CONFIG_TABLE).update(patch).eq('tenant_id', integration.tenant_id);
+      if (error) logger.warn(`[contact2sale] persistir cursor falhou: ${error.message}`);
     },
 
     fingerprint: c2sFingerprint,
@@ -170,15 +189,19 @@ export function createC2sProvider({ supabase, apiClient, processEnv = process.en
       // Conservador (≠ cursor-piso do Kenlo): erro ⇒ não avança nada; a
       // releitura idempotente da janela cobre o custo no ciclo seguinte.
       if (!stats || stats.errors > 0) return {};
-      // LIVE: cursor = MAIOR created_at processado (dado, não relógio) — imune a
-      // gap de scheduler. Se nada novo veio, mantém o last_sync_at anterior (não
-      // retrocede, não pula à frente). BACKFILL segue ancorando no início do walk
-      // (startedAt): o walk cobre a base inteira, o piso não se aplica.
-      const liveCursor = syncWindow.maxCreatedSeen || integration.last_sync_at;
-      const patch = { last_sync_at: syncMode === 'BACKFILL' ? syncWindow.startedAt : liveCursor };
+      // Cursor por DADO (maior created_at processado), não por relógio — imune a
+      // gap de scheduler. maxCreatedSeen vive em `integration` no BACKFILL (repassado
+      // ao commitPage) e em syncWindow no LIVE; os dois são o mesmo objeto no ciclo.
+      // Se nada novo veio, mantém o last_sync_at anterior (não retrocede/pula).
+      const maxSeen = integration.maxCreatedSeen || syncWindow.maxCreatedSeen;
+      const patch = { last_sync_at: maxSeen || integration.last_sync_at };
       if (syncMode === 'BACKFILL') {
+        // Walk COMPLETO (o ciclo chegou ao fim sem erro): carimba full e zera o
+        // cursor → o dia-a-dia vira LIVE puro. Se o ciclo for interrompido antes,
+        // buildCursorPatch nem roda, mas o commitPage já gravou last_sync_at →
+        // o tenant destrava para LIVE mesmo sem o walk histórico ter fechado.
         patch.last_full_sync_at = finishedAt;
-        patch.backfill_cursor = null; // walk completo: próximo ciclo já é LIVE
+        patch.backfill_cursor = null;
       }
       // leads_count para o card de status — só quando algo pode ter mudado
       // (a maioria dos ciclos LIVE é vazia; count seria custo por nada).

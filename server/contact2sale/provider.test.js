@@ -110,8 +110,19 @@ describe('createC2sProvider.fetchNormalizedPages — BACKFILL', () => {
     expect(pages[1].cursor).toBe('2026-01-01T10:00:00Z');
     expect(supabase.cursorUpdates).toHaveLength(0); // quem persiste é o engine (commitPage)
 
+    // FASE 2 (destrave): backfillPages já viu o topo (maior created = 2026-01-03) e
+    // gravou em integration.maxCreatedSeen. commitPage persiste isso como last_sync_at
+    // JUNTO com o backfill_cursor → no próximo ciclo resolveWindow escolhe LIVE, sem
+    // esperar o walk histórico (que pode nunca fechar numa base grande) terminar.
+    expect(integration.maxCreatedSeen).toBe('2026-01-03T10:00:00Z');
     await provider.commitPage(integration, pages[0].cursor);
-    expect(supabase.cursorUpdates).toEqual([{ backfill_cursor: '2026-01-02T10:00:00Z' }]);
+    expect(supabase.cursorUpdates).toEqual([{ backfill_cursor: '2026-01-02T10:00:00Z', last_sync_at: '2026-01-03T10:00:00Z' }]);
+
+    // Idempotente: com last_sync_at já preenchido, commitPage NÃO regrava o last_sync_at
+    // (o LIVE passa a ser dono dele) — só continua avançando o backfill_cursor.
+    const integration2 = { tenant_id: 't1', last_sync_at: '2026-01-03T10:00:00Z', maxCreatedSeen: '2026-01-03T10:00:00Z' };
+    await provider.commitPage(integration2, '2026-01-01T10:00:00Z');
+    expect(supabase.cursorUpdates[1]).toEqual({ backfill_cursor: '2026-01-01T10:00:00Z' });
   });
 
   it('primeira sync sem cursor começa do TOPO (sem created_lt, sort desc = base inteira do mais recente)', async () => {
@@ -137,6 +148,36 @@ describe('createC2sProvider.fetchNormalizedPages — BACKFILL', () => {
     expect(getLeads).toHaveBeenCalledTimes(2); // não pediu a página 3
     expect(pages[0].cursor).toBe('2026-01-01T10:00:00Z'); // página boa rendeu cursor
     expect(supabase.cursorUpdates).toHaveLength(0);       // provider nunca persiste sozinho
+  });
+
+  it('FASE 2: backfill INTERROMPIDO no meio (base grande) já destrava p/ LIVE — last_sync_at gravado no commitPage da 1ª página', async () => {
+    // Cenário real (Japi 68k leads): o walk NUNCA fecha (deploy/restart no meio),
+    // então buildCursorPatch nunca roda. Antes, last_sync_at ficava null p/ sempre
+    // → resolveWindow escolhia BACKFILL eternamente → leads novos parados.
+    // Agora: a 1ª página processa o topo, backfillPages grava integration.maxCreatedSeen,
+    // e o commitPage (por página, sem erro) persiste last_sync_at → próximo ciclo vira LIVE.
+    const supabase = fakeSupabase();
+    const getLeads = vi.fn().mockResolvedValue({
+      ok: true, status: 200, hasMore: true, // hasMore=true p/ sempre: simula base "infinita"
+      items: [rawLead('hoje', '2026-07-06T11:00:00Z'), rawLead('ontem', '2026-07-05T09:00:00Z')],
+    });
+    const provider = createC2sProvider({ supabase, apiClient: { getLeads }, processEnv: {}, now: () => NOW });
+    const integration = { tenant_id: 't1', backfill_cursor: null, last_sync_at: null, last_full_sync_at: null };
+    const gen = provider.fetchNormalizedPages(integration, provider.resolveWindow(integration));
+    const first = await gen.next(); // processa só a 1ª página (walk seria interrompido aqui)
+
+    // O topo foi visto e memorizado; o engine chama commitPage com o cursor da página.
+    expect(integration.maxCreatedSeen).toBe('2026-07-06T11:00:00Z');
+    await provider.commitPage(integration, first.value.cursor);
+    // last_sync_at gravado JUNTO com o backfill_cursor → tenant destravado.
+    expect(supabase.cursorUpdates[0]).toEqual({
+      backfill_cursor: '2026-07-05T09:00:00Z',
+      last_sync_at: '2026-07-06T11:00:00Z',
+    });
+
+    // Próximo ciclo: com last_sync_at preenchido, resolveWindow escolhe LIVE.
+    const next = provider.resolveWindow({ ...integration, last_sync_at: '2026-07-06T11:00:00Z' });
+    expect(next.syncMode).toBe('LIVE');
   });
 
   it('leads sem id são descartados (nunca viram linha com external_id vazio)', async () => {
@@ -282,9 +323,16 @@ describe('createC2sProvider.buildCursorPatch (avança SÓ em ciclo sem erro)', (
     expect(patch).toEqual({ last_sync_at: '2026-07-06T11:58:00Z', leads_count: 7 });
   });
 
-  it('BACKFILL completo → carimba full, zera backfill_cursor, ancora last_sync_at no início do walk e conta', async () => {
+  it('BACKFILL completo → carimba full, zera backfill_cursor, ancora last_sync_at no TOPO visto (maxCreatedSeen) e conta', async () => {
+    // backfillPages gravou o maior created visto em integration.maxCreatedSeen.
+    const integ = { tenant_id: 't1', maxCreatedSeen: '2026-07-06T11:59:00Z' };
+    const patch = await provider.buildCursorPatch({ integration: integ, syncWindow: { syncMode: 'BACKFILL', startedAt }, syncMode: 'BACKFILL', stats: { errors: 0, new: 0 }, finishedAt });
+    expect(patch).toEqual({ last_sync_at: '2026-07-06T11:59:00Z', last_full_sync_at: finishedAt, backfill_cursor: null, leads_count: 7 });
+  });
+
+  it('BACKFILL sem nada processado (maxCreatedSeen ausente) → mantém last_sync_at anterior; não regride', async () => {
     const patch = await provider.buildCursorPatch({ integration, syncWindow: { syncMode: 'BACKFILL', startedAt }, syncMode: 'BACKFILL', stats: { errors: 0, new: 0 }, finishedAt });
-    expect(patch).toEqual({ last_sync_at: startedAt, last_full_sync_at: finishedAt, backfill_cursor: null, leads_count: 7 });
+    expect(patch).toMatchObject({ last_sync_at: '2026-07-06T11:50:00.000Z', last_full_sync_at: finishedAt, backfill_cursor: null });
   });
 
   it('ciclo com erro → {} (cursor congelado; releitura idempotente cobre)', async () => {
