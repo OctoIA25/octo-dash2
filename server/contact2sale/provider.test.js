@@ -68,10 +68,10 @@ describe('createC2sProvider.resolveWindow', () => {
     });
     expect(w.syncMode).toBe('LIVE');
     expect(w.suppressAutomations).toBe(false);
-    expect(w.updatedGte).toBe('2026-07-06T11:45:00.000Z');
+    expect(w.createdGteFloor).toBe('2026-07-06T11:45:00.000Z');
   });
 
-  it('com cursores → LIVE incremental com overlap de 5min (updated_gte)', () => {
+  it('com cursores → LIVE com piso de criação = last_sync_at − 5min (overlap)', () => {
     const w = provider.resolveWindow({
       tenant_id: 't1',
       last_sync_at: '2026-07-06T11:50:00.000Z',
@@ -79,7 +79,7 @@ describe('createC2sProvider.resolveWindow', () => {
     });
     expect(w.syncMode).toBe('LIVE');
     expect(w.suppressAutomations).toBe(false);
-    expect(w.updatedGte).toBe('2026-07-06T11:45:00.000Z'); // last_sync_at − 5min
+    expect(w.createdGteFloor).toBe('2026-07-06T11:45:00.000Z'); // last_sync_at − 5min
   });
 });
 
@@ -151,78 +151,135 @@ describe('createC2sProvider.fetchNormalizedPages — BACKFILL', () => {
 });
 
 describe('createC2sProvider.fetchNormalizedPages — LIVE', () => {
+  // last_sync_at = maior created_at já processado; piso = last_sync_at − 5min = 11:45.
   const liveIntegration = { tenant_id: 't1', last_sync_at: '2026-07-06T11:50:00.000Z', last_full_sync_at: '2026-07-05T00:00:00Z' };
 
-  it('usa updated_gte + sort=updated_at e pagina até total_pages', async () => {
+  it('desce por created_at DESC com created_lt (o ÚNICO filtro que a C2S respeita), NUNCA updated_gte', async () => {
     const getLeads = vi.fn().mockResolvedValue({ ok: true, status: 200, items: [rawLead('l9', '2026-07-06T11:58:00Z')], hasMore: false });
     const provider = createC2sProvider({ supabase: fakeSupabase(), apiClient: { getLeads }, processEnv: {}, now: () => NOW });
     const w = provider.resolveWindow(liveIntegration);
     const pages = await drain(provider.fetchNormalizedPages(liveIntegration, w));
     expect(pages).toHaveLength(1);
-    // Formato %FT%TZ (SEM milissegundos): a C2S rejeita ".000Z" com 403.
-    expect(getLeads.mock.calls[0][1]).toMatchObject({ updated_gte: '2026-07-06T11:45:00Z', sort: 'updated_at', page: 1 });
+    expect(getLeads.mock.calls[0][1]).toMatchObject({ sort: '-created_at', page: 1 });
+    // 1ª página do topo NÃO leva created_lt (só a retomada dentro do ciclo leva).
+    expect(getLeads.mock.calls[0][1]).not.toHaveProperty('created_lt');
+    // GARANTIA anti-regressão: o filtro morto nunca mais é enviado.
+    expect(getLeads.mock.calls[0][1]).not.toHaveProperty('updated_gte');
   });
 
-  it('multi-página avança o updated_gte (cursor real) e volta a page=1 — imune a deslocamento de página', async () => {
-    // sort=updated_at é chave MUTÁVEL: paginar por offset pularia itens quando um
-    // lead é atualizado no meio do walk. Avançar o gte por página é imune a isso.
+  it('encontra lead novo: created acima do piso vira row e o cursor avança para o maior created', async () => {
+    // Lead criado 11:58 (> piso 11:45) → entra. Página incompleta encerra o ciclo.
+    const getLeads = vi.fn().mockResolvedValue({ ok: true, status: 200, items: [rawLead('novo', '2026-07-06T11:58:00Z')], hasMore: false });
+    const provider = createC2sProvider({ supabase: fakeSupabase(), apiClient: { getLeads }, processEnv: {}, now: () => NOW });
+    const w = provider.resolveWindow(liveIntegration);
+    const pages = await drain(provider.fetchNormalizedPages(liveIntegration, w));
+    expect(pages[0].rows.map((r) => r.external_id)).toEqual(['novo']);
+    expect(pages[0].fetched).toBe(1);
+    expect(w.maxCreatedSeen).toBe('2026-07-06T11:58:00Z'); // cursor = maior created processado
+  });
+
+  it('sem leads novos (só histórico abaixo do piso): descarta as rows e NÃO avança o cursor', async () => {
+    // Todos criados 11:40 (< piso 11:45): nada novo. keep=0 → nenhuma row, encerra.
+    const getLeads = vi.fn().mockResolvedValue({ ok: true, status: 200, items: [rawLead('velho', '2026-07-06T11:40:00Z')], hasMore: true });
+    const provider = createC2sProvider({ supabase: fakeSupabase(), apiClient: { getLeads }, processEnv: {}, now: () => NOW });
+    const w = provider.resolveWindow(liveIntegration);
+    const pages = await drain(provider.fetchNormalizedPages(liveIntegration, w));
+    expect(pages).toHaveLength(1);
+    expect(pages[0].rows).toEqual([]);          // nada acima do piso
+    expect(pages[0].fetched).toBe(1);           // mas contou o que a API mandou
+    expect(w.maxCreatedSeen).toBeUndefined();   // cursor NÃO avança (mantém last_sync_at anterior)
+    expect(getLeads).toHaveBeenCalledTimes(1);  // parou ao cruzar o piso (não pediu página 2)
+  });
+
+  it('atravessa a fronteira do cursor: importa os novos e PARA na página que cruza o piso', async () => {
+    // Página 1 (topo): 2 novos (11:58, 11:50) + 1 do piso pra baixo (11:40) → cruza → para.
+    const getLeads = vi.fn().mockResolvedValue({
+      ok: true, status: 200, hasMore: true,
+      items: [rawLead('n2', '2026-07-06T11:58:00Z'), rawLead('n1', '2026-07-06T11:50:00Z'), rawLead('velho', '2026-07-06T11:40:00Z')],
+    });
+    const provider = createC2sProvider({ supabase: fakeSupabase(), apiClient: { getLeads }, processEnv: {}, now: () => NOW });
+    const w = provider.resolveWindow(liveIntegration);
+    const pages = await drain(provider.fetchNormalizedPages(liveIntegration, w));
+    expect(pages).toHaveLength(1);
+    expect(pages[0].rows.map((r) => r.external_id)).toEqual(['n2', 'n1']); // só os acima do piso
+    expect(w.maxCreatedSeen).toBe('2026-07-06T11:58:00Z');
+    expect(getLeads).toHaveBeenCalledTimes(1); // cruzou o piso na pág 1 → não paginou
+  });
+
+  it('multi-página: retomada usa created_lt = min(created) da página cheia (não perde nada no overlap)', async () => {
+    // Página 1 cheia (só novos, não cruzou o piso) → continua com created_lt do min da pág.
+    // Página 2 traz o resto e cruza o piso → encerra.
     const getLeads = vi.fn()
-      .mockResolvedValueOnce({ ok: true, status: 200, items: [rawLead('a', '2026-07-06T11:50:00.000Z')], hasMore: true })
-      .mockResolvedValueOnce({ ok: true, status: 200, items: [rawLead('b', '2026-07-06T11:58:00.000Z')], hasMore: false });
+      .mockResolvedValueOnce({ ok: true, status: 200, hasMore: true,
+        items: [rawLead('n3', '2026-07-06T11:59:00Z'), rawLead('n2', '2026-07-06T11:52:00Z')] })
+      .mockResolvedValueOnce({ ok: true, status: 200, hasMore: true,
+        items: [rawLead('n1', '2026-07-06T11:48:00Z'), rawLead('velho', '2026-07-06T11:40:00Z')] });
     const provider = createC2sProvider({ supabase: fakeSupabase(), apiClient: { getLeads }, processEnv: {}, now: () => NOW });
     const w = provider.resolveWindow(liveIntegration);
     const pages = await drain(provider.fetchNormalizedPages(liveIntegration, w));
     expect(pages).toHaveLength(2);
-    expect(getLeads.mock.calls[0][1]).toMatchObject({ updated_gte: '2026-07-06T11:45:00Z', page: 1 });
-    // gte avançou p/ o max updated_at da página (normalizado sem ms), page reset.
-    expect(getLeads.mock.calls[1][1]).toMatchObject({ updated_gte: '2026-07-06T11:50:00Z', page: 1 });
+    expect(pages[0].rows.map((r) => r.external_id)).toEqual(['n3', 'n2']);
+    expect(pages[1].rows.map((r) => r.external_id)).toEqual(['n1']); // 'velho' abaixo do piso, cortado
+    // 1ª chamada sem created_lt; 2ª com created_lt = min(created) da pág 1 (11:52), formato %FT%TZ.
+    expect(getLeads.mock.calls[0][1]).not.toHaveProperty('created_lt');
+    expect(getLeads.mock.calls[1][1]).toMatchObject({ created_lt: '2026-07-06T11:52:00Z', sort: '-created_at', page: 1 });
+    expect(w.maxCreatedSeen).toBe('2026-07-06T11:59:00Z'); // maior de todos os processados
   });
 
-  it('cluster de updated_at idêntico ocupando a página inteira cai para page++ (não trava)', async () => {
-    // gte não avançou (max == gte atual) → única saída é offset dentro do cluster.
-    const cluster = [rawLead('a', '2026-07-06T11:45:00.000Z'), rawLead('b', '2026-07-06T11:45:00.000Z')];
-    const getLeads = vi.fn()
-      .mockResolvedValueOnce({ ok: true, status: 200, items: cluster, hasMore: true })
-      .mockResolvedValueOnce({ ok: true, status: 200, items: [rawLead('c', '2026-07-06T11:45:00.000Z')], hasMore: false });
+  it('página incompleta encerra o ciclo mesmo sem cruzar o piso (fim do stream)', async () => {
+    const getLeads = vi.fn().mockResolvedValue({ ok: true, status: 200, hasMore: false, items: [rawLead('n1', '2026-07-06T11:58:00Z')] });
     const provider = createC2sProvider({ supabase: fakeSupabase(), apiClient: { getLeads }, processEnv: {}, now: () => NOW });
     const w = provider.resolveWindow(liveIntegration);
     const pages = await drain(provider.fetchNormalizedPages(liveIntegration, w));
-    expect(pages).toHaveLength(2);
-    expect(getLeads.mock.calls[1][1]).toMatchObject({ updated_gte: '2026-07-06T11:45:00Z', page: 2 });
+    expect(pages).toHaveLength(1);
+    expect(getLeads).toHaveBeenCalledTimes(1); // hasMore=false → não pediu página 2
   });
 
-  it('normaliza a data para %FT%TZ: remove ms E converte offset -03:00 da C2S para UTC (senão 403)', async () => {
-    // A C2S devolve updated_at com offset (2026-07-06T08:58:00.000-03:00). Ao
-    // avançar o cursor com esse valor, o próximo request PRECISA sair como UTC
-    // sem ms — senão "invalid date or strptime format".
+  it('normaliza created_lt para %FT%TZ: remove ms E converte offset -03:00 da C2S para UTC (senão 403)', async () => {
+    // A C2S devolve created_at com offset. O created_lt de retomada PRECISA sair
+    // como UTC sem ms — senão "invalid date or strptime format".
     const getLeads = vi.fn()
-      .mockResolvedValueOnce({ ok: true, status: 200, items: [rawLead('a', '2026-07-06T08:58:00.000-03:00')], hasMore: true })
-      .mockResolvedValueOnce({ ok: true, status: 200, items: [], hasMore: false });
+      .mockResolvedValueOnce({ ok: true, status: 200, hasMore: true,
+        items: [rawLead('a', '2026-07-06T09:58:00.000-03:00'), rawLead('b', '2026-07-06T09:50:00.000-03:00')] }) // 12:58 e 12:50 UTC, ambos > piso
+      .mockResolvedValueOnce({ ok: true, status: 200, hasMore: false, items: [] });
     const provider = createC2sProvider({ supabase: fakeSupabase(), apiClient: { getLeads }, processEnv: {}, now: () => NOW });
     const w = provider.resolveWindow(liveIntegration);
     await drain(provider.fetchNormalizedPages(liveIntegration, w));
-    const sent = getLeads.mock.calls[1][1].updated_gte;
-    // 08:58 -03:00 == 11:58 UTC, sem ms.
-    expect(sent).toBe('2026-07-06T11:58:00Z');
-    expect(sent).not.toMatch(/\.\d{3}Z$/);   // sem milissegundos
+    const sent = getLeads.mock.calls[1][1].created_lt;
+    // min da pág 1 = 09:50 -03:00 == 12:50 UTC, sem ms.
+    expect(sent).toBe('2026-07-06T12:50:00Z');
+    expect(sent).not.toMatch(/\.\d{3}Z$/);        // sem milissegundos
     expect(sent).not.toMatch(/[+-]\d{2}:\d{2}$/); // sem offset
+  });
+
+  it('página com erro no LIVE → yield pageError e ABORTA (cursor congela no buildCursorPatch)', async () => {
+    const getLeads = vi.fn().mockResolvedValue({ ok: false, status: 503, items: [], hasMore: false });
+    const provider = createC2sProvider({ supabase: fakeSupabase(), apiClient: { getLeads }, processEnv: {}, now: () => NOW });
+    const w = provider.resolveWindow(liveIntegration);
+    const pages = await drain(provider.fetchNormalizedPages(liveIntegration, w));
+    expect(pages).toEqual([{ pageError: true }]);
+    expect(w.maxCreatedSeen).toBeUndefined();
   });
 });
 
 describe('createC2sProvider.buildCursorPatch (avança SÓ em ciclo sem erro)', () => {
-  const integration = { tenant_id: 't1' };
+  const integration = { tenant_id: 't1', last_sync_at: '2026-07-06T11:50:00.000Z' };
   const provider = createC2sProvider({ supabase: fakeSupabase({ leadsCount: 7 }), apiClient: {}, processEnv: {}, now: () => NOW });
   const startedAt = iso(NOW);
   const finishedAt = iso(NOW + 60_000);
 
-  it('LIVE ok sem novidade → last_sync_at = INÍCIO do ciclo (t0), nada mais (nem count)', async () => {
+  it('LIVE sem novidade (maxCreatedSeen ausente) → MANTÉM last_sync_at anterior (não pula p/ o relógio)', async () => {
     const patch = await provider.buildCursorPatch({ integration, syncWindow: { syncMode: 'LIVE', startedAt }, syncMode: 'LIVE', stats: { errors: 0, new: 0 }, finishedAt });
-    expect(patch).toEqual({ last_sync_at: startedAt });
+    expect(patch).toEqual({ last_sync_at: '2026-07-06T11:50:00.000Z' });
   });
 
-  it('LIVE com leads novos atualiza leads_count (card de status)', async () => {
-    const patch = await provider.buildCursorPatch({ integration, syncWindow: { syncMode: 'LIVE', startedAt }, syncMode: 'LIVE', stats: { errors: 0, new: 3 }, finishedAt });
-    expect(patch).toEqual({ last_sync_at: startedAt, leads_count: 7 });
+  it('LIVE com leads novos → last_sync_at = maior created processado + atualiza leads_count', async () => {
+    const patch = await provider.buildCursorPatch({
+      integration,
+      syncWindow: { syncMode: 'LIVE', startedAt, maxCreatedSeen: '2026-07-06T11:58:00Z' },
+      syncMode: 'LIVE', stats: { errors: 0, new: 3 }, finishedAt,
+    });
+    expect(patch).toEqual({ last_sync_at: '2026-07-06T11:58:00Z', leads_count: 7 });
   });
 
   it('BACKFILL completo → carimba full, zera backfill_cursor, ancora last_sync_at no início do walk e conta', async () => {
