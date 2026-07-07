@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { uploadWhatsappMediaWithProgress } from '../services/mediaUploadService';
 import { sendMediaMessage } from '../services/whatsappService';
 import type { MediaKind, PendingMessage } from '../types';
@@ -91,7 +91,7 @@ export function createMediaSender(args: Args, deps: Deps, setPending: SetPending
     },
     retry(tempId: string) {
       setPending((prev) => {
-        const item = prev.find((p) => p.tempId === tempId);
+        const item = prev.find((p) => p.tempId === tempId && p.status === 'failed');
         if (item) void run(item);
         return prev;
       });
@@ -105,12 +105,9 @@ export function createMediaSender(args: Args, deps: Deps, setPending: SetPending
 
 export function useMediaSend(args: Omit<Args, 'objectUrlFor'>) {
   const [pending, setPending] = useState<PendingMessage[]>([]);
-  const senderRef = useRef<ReturnType<typeof createMediaSender> | null>(null);
-  // recria o sender quando a conversa muda (limpa controllers)
+  // recria o sender quando a conversa muda (uploads em voo da conversa anterior continuam até concluir; ver nota Task 7)
   const sender = useMemo(() => {
-    const s = createMediaSender(args, { upload: uploadWhatsappMediaWithProgress, sendMedia: sendMediaMessage }, setPending);
-    senderRef.current = s;
-    return s;
+    return createMediaSender(args, { upload: uploadWhatsappMediaWithProgress, sendMedia: sendMediaMessage }, setPending);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [args.conversationId, args.contactPhone, args.tenantId]);
 

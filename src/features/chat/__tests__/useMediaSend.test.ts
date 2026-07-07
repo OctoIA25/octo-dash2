@@ -56,4 +56,17 @@ describe('createMediaSender', () => {
     sender.cancel(id);
     expect(get()).toHaveLength(0);
   });
+
+  it('cancel + abort do upload real: remove chamado 2x sem erro (idempotente)', async () => {
+    const upload = vi.fn().mockImplementation((p: { signal?: AbortSignal }) =>
+      new Promise((_, reject) => {
+        p.signal?.addEventListener('abort', () => reject(new DOMException('x', 'AbortError')));
+      }),
+    );
+    const { sender, get } = harness({ upload, sendMedia: vi.fn() });
+    const p = sender.send(makeFile(), 'image', '');
+    sender.cancel(get()[0].tempId);
+    await p; // deixa o catch de AbortError rodar e chamar remove() de novo
+    expect(get()).toHaveLength(0); // ainda 0, sem throw
+  });
 });
