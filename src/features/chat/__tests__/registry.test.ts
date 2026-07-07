@@ -17,4 +17,12 @@ describe('resolveContent', () => {
     expect(resolveContent('sticker')).toBe(FallbackContent);
     expect(resolveContent('system')).toBe(FallbackContent);
   });
+  it('image/video/audio mapeiam para seus componentes', async () => {
+    const { ImageContent } = await import('../components/messages/ImageContent');
+    const { VideoContent } = await import('../components/messages/VideoContent');
+    const { AudioContent } = await import('../components/messages/AudioContent');
+    expect(resolveContent('image')).toBe(ImageContent);
+    expect(resolveContent('video')).toBe(VideoContent);
+    expect(resolveContent('audio')).toBe(AudioContent);
+  });
 });
