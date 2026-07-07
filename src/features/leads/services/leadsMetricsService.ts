@@ -13,6 +13,7 @@
 import { supabase } from '@/lib/supabaseClient';
 import { CRMLead, LeadType, LEAD_TYPE_INTERESSADO, LEAD_TYPE_PROPRIETARIO } from './leadsService';
 import { ProcessedLead, canonicalizeOrigemLeads } from '@/data/realLeadsProcessor';
+import { KENLO_LEAD_COLUMNS_FOR_METRICS, LEADS_COLUMNS_FOR_METRICS } from './leadColumns';
 
 const TEST_TENANT_ID = 'tenant-area-de-teste';
 
@@ -97,7 +98,7 @@ async function fetchKenloLeadsAsCRM(
     while (hasMore) {
       let query = supabase
         .from('kenlo_leads')
-        .select('*')
+        .select(KENLO_LEAD_COLUMNS_FOR_METRICS)
         .eq('tenant_id', tenantId)
         .range(from, from + PAGE_SIZE - 1);
 
@@ -326,7 +327,7 @@ export async function fetchLeadsForMetrics(
     
     let query = supabase
       .from('leads')
-      .select('*')
+      .select(LEADS_COLUMNS_FOR_METRICS)
       .eq('tenant_id', tenantId);
 
     // Filtrar por corretor se não for admin
