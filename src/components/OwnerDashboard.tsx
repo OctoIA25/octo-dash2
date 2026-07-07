@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Search, Shield, Settings, X, Check, LogOut, Building2, Code2, ArrowRight, Loader2, Package } from 'lucide-react';
+import { Plus, Search, Shield, Settings, X, Check, LogOut, Building2, Code2, ArrowRight, Loader2, Package, Trash2 } from 'lucide-react';
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from '@/lib/supabaseClient';
 import { SidebarPermission } from '@/types/permissions';
@@ -15,7 +15,7 @@ const ALL_TENANT_FEATURES: { id: SidebarPermission; label: string; description: 
   { id: 'gestao-equipe', label: 'Gestão de Equipe', description: 'Gestão completa da equipe' },
   { id: 'imoveis', label: 'Imóveis', description: 'Gestão de imóveis' },
   { id: 'agentes-ia', label: 'Agentes de IA', description: 'Agentes inteligentes e automações' },
-  { id: 'octo-chat', label: 'Octo Chat', description: 'Assistente de chat inteligente' },
+  //{ id: 'octo-chat', label: 'Octo Chat', description: 'Assistente de chat inteligente' },
   { id: 'integracoes', label: 'Integrações', description: 'Conectar fontes de leads' },
   { id: 'central-leads', label: 'Central de Leads', description: 'Leads das integrações' },
   { id: 'atividades', label: 'Atividades', description: 'Atividades e tarefas' },
@@ -78,14 +78,20 @@ export const OwnerDashboard = () => {
     let data: TenantRow[] | null = null;
     let tenantsError: { message: string } | null = null;
     
-    // Primeira tentativa: com allowed_features
+    // Primeira tentativa: com allowed_features e sem soft-deletados
     const result1 = await supabase
       .from('tenants')
       .select('id, code, name, created_at, allowed_features')
+      .is('deleted_at', null)
       .order('created_at', { ascending: false });
-    
-    if (result1.error?.message?.includes('allowed_features does not exist')) {
-      // Coluna não existe ainda, buscar sem ela
+
+    if (
+      result1.error?.message?.includes('allowed_features does not exist') ||
+      result1.error?.message?.includes('deleted_at does not exist')
+    ) {
+      // Alguma coluna não existe ainda (migration pendente): busca na forma
+      // antiga para não quebrar o dashboard. Degrada sem filtro/features até
+      // a migration ser aplicada.
       const result2 = await supabase
         .from('tenants')
         .select('id, code, name, created_at')
@@ -219,6 +225,52 @@ export const OwnerDashboard = () => {
       return name.includes(q) || code.includes(q);
     });
   }, [search, tenants]);
+
+  // Soft-delete: marca tenants.deleted_at — o tenant some do login, dos syncs
+  // e dos envios, mas nenhum dado é apagado. Restauração via SQL:
+  // UPDATE tenants SET deleted_at = NULL WHERE id = '...'
+  const softDeleteTenant = async (tenant: OwnerTenant, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const confirmed = window.confirm(
+      `Desativar a imobiliária "${tenant.name}"?\n\n` +
+      'Os usuários dela perdem o acesso e os syncs/envios param. ' +
+      'Nenhum dado é apagado — dá para restaurar depois.'
+    );
+    if (!confirmed) return;
+
+    setError('');
+    const { data, error: deleteError } = await supabase
+      .from('tenants')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', tenant.id)
+      .is('deleted_at', null)
+      .select('id');
+
+    if (deleteError) {
+      if (deleteError.message?.includes('deleted_at')) {
+        setError('A coluna de soft-delete ainda não existe no banco. Execute a migration: supabase/migrations/20260703_add_soft_delete_to_tenants.sql');
+      } else {
+        setError(`Erro ao desativar imobiliária: ${deleteError.message}`);
+      }
+      return;
+    }
+    if (!data || data.length === 0) {
+      setError('Nenhuma linha atualizada — verifique as permissões (RLS) e se a migration de soft-delete foi aplicada.');
+      return;
+    }
+
+    // Impersonation apontando para o tenant desativado ficaria órfã
+    try {
+      const raw = localStorage.getItem('owner-impersonation');
+      if (raw && JSON.parse(raw)?.tenantId === tenant.id) {
+        localStorage.removeItem('owner-impersonation');
+      }
+    } catch {
+      // ignore
+    }
+
+    setTenants(prev => prev.filter(t => t.id !== tenant.id));
+  };
 
   const openTenant = async (tenant: OwnerTenant) => {
     setError('');
@@ -459,6 +511,16 @@ export const OwnerDashboard = () => {
                     <Settings className="h-3.5 w-3.5" />
                     Permissões
                   </button>
+                  {t.id !== TEST_TENANT_ID && (
+                    <button
+                      type="button"
+                      onClick={(e) => softDeleteTenant(t, e)}
+                      title="Desativar imobiliária (soft-delete)"
+                      className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-400 hover:text-red-600 hover:border-red-200 dark:hover:border-red-900/50 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </div>
               </div>
             );

@@ -5,6 +5,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
 import { useAuth } from "@/hooks/useAuth";
+import { OpenConversationLink } from '@/features/chat/components/OpenConversationLink';
 import { CriarLeadQuickModal } from './CriarLeadQuickModal';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabaseClient';
@@ -317,7 +318,7 @@ BolsaoCountdownLine.displayName = 'BolsaoCountdownLine';
  * GripVertical com listeners do dnd-kit) para renderizar à esquerda do avatar.
  * Quando `isOverlay=true` estamos desenhando o clone do DragOverlay.
  */
-const KanbanCardContent = memo(({ lead, onClick, mostrarCorretor, isOverlay = false, dragHandle, bolsaoConfig, nowMs, bolsaoStatus, onAssumirDoBolsao }: KanbanCardContentProps & { dragHandle?: React.ReactNode }) => {
+export const KanbanCardContent = memo(({ lead, onClick, mostrarCorretor, isOverlay = false, dragHandle, bolsaoConfig, nowMs, bolsaoStatus, onAssumirDoBolsao }: KanbanCardContentProps & { dragHandle?: React.ReactNode }) => {
   const nome = lead.nomedolead || 'Lead sem nome';
   const telefone = lead.lead || lead.numerocorretor || '';
   const portal = lead.portal || '';
@@ -378,11 +379,14 @@ const KanbanCardContent = memo(({ lead, onClick, mostrarCorretor, isOverlay = fa
           </p>
         </div>
         {telefone && (
-          <div className="flex items-center gap-1.5">
-            <Phone className="h-3 w-3 text-slate-400 dark:text-slate-500 shrink-0" />
-            <p className="text-[10px] leading-snug truncate text-slate-500 dark:text-slate-400">
-              {telefone}
-            </p>
+          <div className="flex items-center justify-between gap-1.5">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <Phone className="h-3 w-3 text-slate-400 dark:text-slate-500 shrink-0" />
+              <p className="text-[10px] leading-snug truncate text-slate-500 dark:text-slate-400">
+                {telefone}
+              </p>
+            </div>
+            <OpenConversationLink phone={telefone} contactName={lead.nomedolead} />
           </div>
         )}
       </div>

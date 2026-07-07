@@ -123,7 +123,7 @@ const GROUPS: SidebarGroup[] = [
           { id: 'metricas', label: 'Métricas', icon: BarChart3, route: '/estudo-mercado/metricas' },
         ],
       },
-      { id: 'octo-chat', label: 'Octo Chat', icon: MessageCircle, route: '/octo-chat', permission: 'octo-chat' },
+      //{ id: 'octo-chat', label: 'Octo Chat', icon: MessageCircle, route: '/octo-chat', permission: 'octo-chat' },
       { id: 'chat', label: 'WhatsApp', icon: MessageSquare, route: '/chat', permission: 'chat' },
     ],
   },

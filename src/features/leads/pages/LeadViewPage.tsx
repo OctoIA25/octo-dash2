@@ -1,4 +1,5 @@
 import { useNavigate, useParams, useSearchParams, useLocation } from 'react-router-dom';
+import { linkify } from '../utils/linkify';
 import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { parseConversation } from '@/utils/conversationParser';
 import { OctoDashLoader } from '@/components/ui/OctoDashLoader';
@@ -503,7 +504,7 @@ export const LeadViewPage = () => {
                 </h2>
                 
                 <div className="bg-[color:var(--bg-card)] rounded-lg p-4 border border-[color:var(--border)]">
-                  <p className="text-sm text-[color:var(--text-primary)] leading-relaxed whitespace-pre-wrap">{lead.observacoes}</p>
+                  <p className="text-sm text-[color:var(--text-primary)] leading-relaxed whitespace-pre-wrap">{linkify(lead.observacoes)}</p>
                 </div>
               </div>
             )}

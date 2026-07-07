@@ -4,7 +4,7 @@
  * Gerencia sidebar e renderização de páginas por rota
  */
 
-import React, { Suspense, useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { Suspense, useState, useCallback, useMemo } from 'react';
 import { lazyWithRetry } from '@/lib/lazyWithRetry';
 import { RouteErrorBoundary } from '@/shared/components/RouteErrorBoundary';
 import { Routes, Route, Navigate, useOutletContext, useLocation } from 'react-router-dom';
@@ -13,7 +13,6 @@ import { InicioNovaPage } from './inicio-nova/InicioNovaPage';
 import { useLeadsData } from '@/features/leads/hooks/useLeadsData';
 import { OctoDashLoader } from '@/components/ui/OctoDashLoader';
 import { useAuthContext } from '@/contexts/AuthContext';
-import { syncKenloLeadsOnce } from '@/features/imoveis/services/kenloPollingService';
 import {
   ADMIN_SIDEBAR_PERMISSIONS,
   CORRETOR_SIDEBAR_PERMISSIONS,
@@ -121,8 +120,7 @@ const DashboardLayout = () => {
 
   const { tenantId, user, isOwner } = useAuthContext();
   const location = useLocation();
-  const isKenloSyncingRef = useRef(false);
-  
+
   // Hook de dados - centralizado aqui para compartilhar entre todas as páginas
   const { leads, isLoading, lastUpdate, newLeadsCount, error, refetch, isRefetching } = useLeadsData();
 
@@ -154,47 +152,6 @@ const DashboardLayout = () => {
       }, 1000);
     }
   }, [isDirectUpdating, refetch]);
-
-  // Kenlo sync global: roda ao entrar no CRM e continua a cada 30s
-  useEffect(() => {
-    if (!tenantId || tenantId === 'owner') return;
-
-    let isMounted = true;
-
-    const runSync = async () => {
-      if (!isMounted) return;
-      if (isKenloSyncingRef.current) return;
-
-      try {
-        isKenloSyncingRef.current = true;
-        const result = await syncKenloLeadsOnce(tenantId);
-        if (!result.success) {
-          // Só logar se for um erro real, não se simplesmente não tem integração
-          const silentErrors = ['Integração Kenlo não configurada', 'Integração Kenlo não ativa', 'Sem token Kenlo', 'TenantId inválido'];
-          if (result.error && !silentErrors.includes(result.error)) {
-            console.warn('[DashboardLayout] syncKenloLeadsOnce falhou:', result);
-          }
-        } else {
-          if (DEBUG_LOGS) console.log('[DashboardLayout] syncKenloLeadsOnce concluído:', result);
-        }
-        // Atualizar os dados locais do CRM após sincronizar
-        await refetch();
-      } catch (err) {
-        console.error(' [DashboardLayout] Erro no sync Kenlo global:', err);
-      } finally {
-        isKenloSyncingRef.current = false;
-      }
-    };
-
-    // Primeira execução imediata ao entrar
-    runSync();
-
-    const intervalId = setInterval(runSync, 30000);
-    return () => {
-      isMounted = false;
-      clearInterval(intervalId);
-    };
-  }, [tenantId, refetch]);
 
   // Garantir que sempre temos dados para exibir
   const safeLeads = leads.length > 0 ? leads : [];
@@ -398,10 +355,11 @@ const DashboardLayout = () => {
             element={canAccess('comunicacao') ? <ComunicacaoPage /> : <Navigate to={defaultAllowedRoute} replace />}
           />
 
-          <Route
+          {/* ponytail: Octo Chat oculto a pedido; rota preservada comentada, só reabilitar */}
+          {/* <Route
             path="octo-chat"
             element={canAccess('octo-chat') ? <OctoChatPage /> : <Navigate to={defaultAllowedRoute} replace />}
-          />
+          /> */}
 
           <Route
             path="chat"

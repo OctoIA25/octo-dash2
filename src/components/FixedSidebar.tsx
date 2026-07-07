@@ -513,14 +513,15 @@ export const FixedSidebar = ({
       permissionKey: 'agentes-ia' as SidebarPermission
     },
     // Octo Chat - Nova seção principal
-    {
-      id: 'octo-chat' as SidebarSection,
-      label: 'Octo Chat',
-      icon: MessageCircle,
-      description: 'Assistente de chat inteligente',
-      hasSubMenu: false,
-      permissionKey: 'octo-chat' as SidebarPermission
-    },
+    // ponytail: ocultado da sidebar a pedido; lógica preservada, só reabilitar este bloco
+    // {
+    //   id: 'octo-chat' as SidebarSection,
+    //   label: 'Octo Chat',
+    //   icon: MessageCircle,
+    //   description: 'Assistente de chat inteligente',
+    //   hasSubMenu: false,
+    //   permissionKey: 'octo-chat' as SidebarPermission
+    // },
     // Chat WhatsApp (API Oficial)
     {
       id: 'chat' as SidebarSection,

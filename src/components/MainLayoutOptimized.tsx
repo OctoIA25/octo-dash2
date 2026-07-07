@@ -191,7 +191,7 @@ export const MainLayoutOptimized = ({ leads, onRefresh, isRefreshing, children }
     'bolsao': { icon: Inbox, label: 'Bolsão' },
     'imoveis': { icon: Building2, label: 'Imóveis' },
     'agentes-ia': { icon: Bot, label: 'Agentes de IA' },
-    'octo-chat': { icon: MessageCircle, label: 'Octo Chat' },
+   // 'octo-chat': { icon: MessageCircle, label: 'Octo Chat' },
     'integracoes': { icon: Plug, label: 'Integrações' },
     'central-leads': { icon: UsersRound, label: 'Central Leads' },
     'relatorios': { icon: BarChart3, label: 'Relatórios' },

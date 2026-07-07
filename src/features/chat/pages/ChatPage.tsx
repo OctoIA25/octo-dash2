@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Loader2, Plus, Settings } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
 import {
@@ -15,11 +16,11 @@ import { TemplatePicker } from '../components/TemplatePicker';
 import { WhatsAppIntegrationTab } from '../components/WhatsAppIntegrationTab';
 import { useChatConversations } from '../hooks/useChatConversations';
 import { useChatMessages } from '../hooks/useChatMessages';
-import { getOrCreateConversation, getWhatsappConfig } from '../services/chatService';
+import { getOrCreateConversation, getWhatsappConfig, normalizePhone } from '../services/chatService';
 import { uploadWhatsappMedia } from '../services/mediaUploadService';
 import { sendMediaMessage, sendTemplateMessage, sendTextMessage } from '../services/whatsappService';
 import type { ComposeMedia } from '../components/MessageInput';
-import type { WhatsappConfig } from '../types';
+import type { WhatsappConfig, WhatsappConversation } from '../types';
 
 export const ChatPage = () => {
   const { tenantId, isAdmin, isOwner } = useAuthContext();
@@ -35,8 +36,39 @@ export const ChatPage = () => {
   const [newChatError, setNewChatError] = useState<string | null>(null);
   const [templateOpen, setTemplateOpen] = useState(false);
 
-  const { conversations, loading: loadingConversations } = useChatConversations(tenantId);
+  const { conversations, loading: loadingConversations, refresh: refreshConversations } = useChatConversations(tenantId);
   const { messages, loading: loadingMessages } = useChatMessages(selectedId);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [deepLinkError, setDeepLinkError] = useState<string | null>(null);
+  // Conversa resolvida pelo deep-link — fallback de seleção para quando ela
+  // ainda não está na lista (recém-criada antes do realtime, ou arquivada).
+  const [deepLinkConversation, setDeepLinkConversation] = useState<WhatsappConversation | null>(null);
+
+  // Deep-link vindo do card do Kanban: /chat?phone=5511988887777&name=Fulano.
+  // Abre a conversa do número (getOrCreateConversation é idempotente) e só
+  // consome o parâmetro após sucesso — em caso de erro, F5 tenta de novo.
+  useEffect(() => {
+    const phoneParam = searchParams.get('phone');
+    if (!phoneParam || !tenantId || tenantId === 'owner') return;
+    const phone = normalizePhone(phoneParam);
+    if (phone.length < 10) {
+      setSearchParams({}, { replace: true });
+      return;
+    }
+    const contactName = searchParams.get('name')?.trim() || undefined;
+    getOrCreateConversation({ tenantId, contactPhone: phone, contactName })
+      .then((conv) => {
+        setDeepLinkConversation(conv);
+        setSelectedId(conv.id);
+        setDeepLinkError(null);
+        setSearchParams({}, { replace: true });
+        void refreshConversations();
+      })
+      .catch((err) => {
+        console.error('[chat] deep-link: erro ao abrir conversa:', err);
+        setDeepLinkError('Não foi possível abrir a conversa deste lead. Recarregue a página para tentar novamente.');
+      });
+  }, [searchParams, setSearchParams, tenantId, refreshConversations]);
 
   const reloadConfig = useCallback(async () => {
     if (!tenantId || tenantId === 'owner') return;
@@ -61,8 +93,10 @@ export const ChatPage = () => {
   }, [setupOpen, reloadConfig]);
 
   const selectedConversation = useMemo(
-    () => conversations.find((c) => c.id === selectedId) ?? null,
-    [conversations, selectedId],
+    () =>
+      conversations.find((c) => c.id === selectedId) ??
+      (deepLinkConversation?.id === selectedId ? deepLinkConversation : null),
+    [conversations, selectedId, deepLinkConversation],
   );
 
   const handleSend = async (text: string) => {
@@ -128,7 +162,7 @@ export const ChatPage = () => {
       setNewChatError('Selecione um tenant primeiro (impersonation).');
       return;
     }
-    const phone = newChatPhone.replace(/\D+/g, '');
+    const phone = normalizePhone(newChatPhone);
     if (phone.length < 10) {
       setNewChatError('Telefone inválido. Use o formato com DDI/DDD (ex.: 5511988887777).');
       return;
@@ -202,6 +236,12 @@ export const ChatPage = () => {
                 ? 'Nenhum número WhatsApp configurado para este tenant.'
                 : 'Integração WhatsApp inativa.'}
           </span>
+        </div>
+      )}
+
+      {deepLinkError && (
+        <div className="border-b bg-red-50 px-4 py-2 text-xs text-red-700 dark:bg-red-900/30 dark:text-red-200">
+          {deepLinkError}
         </div>
       )}
 

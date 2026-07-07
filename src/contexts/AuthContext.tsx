@@ -180,9 +180,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       if (membershipError || !memberships || memberships.length === 0) {
         console.warn('⚠️ [AuthContext] Nenhum membership encontrado');
-        // Refresh silencioso: pode ser um erro transitório (rede/JWT em
-        // renovação) — mantém a sessão atual em vez de deslogar o usuário.
-        if (background) return;
+        // ERRO na consulta pode ser transitório (rede/JWT em renovação): no
+        // refresh silencioso mantém a sessão. Mas resposta VÁLIDA e vazia é
+        // revogação real (membership removida ou tenant soft-deletado, que a
+        // view my_memberships_with_tenant filtra) → desloga mesmo em background,
+        // senão a sessão ativa sobrevive indefinidamente via TOKEN_REFRESHED.
+        if (background && membershipError) return;
         await supabase.auth.signOut();
         setAuthState({ isAuthenticated: false, user: null, isLoading: false });
         return;
