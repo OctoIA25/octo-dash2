@@ -148,6 +148,8 @@ export function createCrmSyncEngine({ supabase, provider, logger = noopLogger, r
           // Import histórico marca a linha: o trigger de outbox (WHEN is_backfill
           // IS NOT TRUE) não enfileira lead.created — Lia em silêncio no backfill.
           // Fora do backfill a coluna nem é enviada (DEFAULT false no banco).
+          // O gate de frescor (48h) fica no TRIGGER (lead_timestamp), não aqui —
+          // duplicá-lo no engine quebra a semântica "1º sync marca tudo" do Kenlo.
           inserts.push({
             ...row,
             kenlo_fingerprint: provider.fingerprint(row),

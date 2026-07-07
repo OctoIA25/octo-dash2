@@ -108,9 +108,17 @@ export function createC2sProvider({ supabase, apiClient, processEnv = process.en
 
     resolveWindow(integration) {
       const startedAt = iso(now());
-      // BACKFILL enquanto nenhum walk completo terminou (last_full_sync_at é
-      // carimbado apenas no fim). Import histórico = automações suprimidas (D3).
-      if (!integration.last_full_sync_at || !integration.last_sync_at) {
+      // LIVE tem PRIORIDADE assim que houve qualquer ciclo (last_sync_at existe):
+      // o scheduler de 1min precisa trazer lead novo sozinho pelo topo (updated_gte
+      // recente), sem esperar o backfill histórico terminar. Antes, BACKFILL ficava
+      // preso (last_full_sync_at nunca fechava numa base grande) e o cursor descia
+      // no tempo, ignorando os leads de hoje — que só entravam por resync manual.
+      //
+      // O import histórico profundo agora é SOB DEMANDA: o full resync (routes.js)
+      // zera last_sync_at + backfill_cursor + last_full_sync_at → cai no ramo
+      // BACKFILL abaixo (import silencioso por D3). Fora isso, o dia-a-dia é LIVE.
+      const backfillPedido = !integration.last_sync_at;
+      if (backfillPedido) {
         return {
           syncMode: 'BACKFILL',
           suppressAutomations: true,

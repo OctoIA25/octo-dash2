@@ -154,8 +154,11 @@ export function registerContact2SaleRoutes(app, supabase, options = {}) {
       });
     }
     if (full) {
+      // Zera last_sync_at também: resolveWindow escolhe LIVE sempre que last_sync_at
+      // existe (leads novos entram sozinhos). Para o full resync forçar o re-walk
+      // histórico (BACKFILL), o sinal precisa ser a AUSÊNCIA de last_sync_at.
       const { error } = await supabase.from(CONFIG_TABLE)
-        .update({ last_full_sync_at: null, backfill_cursor: null })
+        .update({ last_sync_at: null, last_full_sync_at: null, backfill_cursor: null })
         .eq('tenant_id', tenantId);
       if (error) return res.status(500).json({ ok: false, error: error.message });
     }

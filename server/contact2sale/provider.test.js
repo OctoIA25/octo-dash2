@@ -42,17 +42,33 @@ async function drain(gen) {
 describe('createC2sProvider.resolveWindow', () => {
   const provider = createC2sProvider({ supabase: fakeSupabase(), apiClient: {}, processEnv: {}, now: () => NOW });
 
-  it('sem last_full_sync_at → BACKFILL com suppressAutomations (import histórico silencioso)', () => {
+  it('1º ciclo do tenant (sem last_sync_at) → BACKFILL com suppressAutomations (import histórico silencioso)', () => {
     const w = provider.resolveWindow({ tenant_id: 't1', last_sync_at: null, last_full_sync_at: null, backfill_cursor: null });
     expect(w.syncMode).toBe('BACKFILL');
     expect(w.suppressAutomations).toBe(true);
     expect(w.startedAt).toBe(iso(NOW));
   });
 
-  it('backfill interrompido retoma do backfill_cursor', () => {
-    const w = provider.resolveWindow({ tenant_id: 't1', last_full_sync_at: null, backfill_cursor: '2026-05-01T00:00:00Z' });
+  it('resync com backfill_cursor mas sem last_sync_at retoma o BACKFILL do cursor', () => {
+    const w = provider.resolveWindow({ tenant_id: 't1', last_sync_at: null, last_full_sync_at: null, backfill_cursor: '2026-05-01T00:00:00Z' });
     expect(w.syncMode).toBe('BACKFILL');
     expect(w.backfillCursor).toBe('2026-05-01T00:00:00Z');
+  });
+
+  // REGRESSÃO (bug do atraso): com last_sync_at presente, o modo é LIVE MESMO
+  // com last_full_sync_at null — o scheduler pega leads novos sozinho, sem esperar
+  // o backfill histórico fechar. Antes, isto retornava BACKFILL e o lead novo só
+  // entrava por resync manual.
+  it('last_sync_at presente + last_full_sync_at null → LIVE (leads novos entram sozinhos, sem resync)', () => {
+    const w = provider.resolveWindow({
+      tenant_id: 't1',
+      last_sync_at: '2026-07-06T11:50:00.000Z',
+      last_full_sync_at: null,
+      backfill_cursor: '2025-11-29T00:00:00Z', // histórico ainda não drenado — NÃO deve travar o LIVE
+    });
+    expect(w.syncMode).toBe('LIVE');
+    expect(w.suppressAutomations).toBe(false);
+    expect(w.updatedGte).toBe('2026-07-06T11:45:00.000Z');
   });
 
   it('com cursores → LIVE incremental com overlap de 5min (updated_gte)', () => {

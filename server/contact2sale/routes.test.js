@@ -188,7 +188,9 @@ describe('rotas de sync (owner-only)', () => {
     const { post, runner, supabase } = syncSetup();
     const res = await post('/api/v1/contact2sale/sync/run', { tenantId: 't1', full: true });
     expect(res.statusCode).toBe(202);
-    expect(supabase.c2sUpdates).toEqual([{ last_full_sync_at: null, backfill_cursor: null, tenant: 't1' }]);
+    // last_sync_at também zerado: sinal para resolveWindow escolher BACKFILL
+    // (re-walk histórico); sem isso o modo ficaria LIVE e o histórico não re-varreria.
+    expect(supabase.c2sUpdates).toEqual([{ last_sync_at: null, last_full_sync_at: null, backfill_cursor: null, tenant: 't1' }]);
     expect(runner.trigger).toHaveBeenCalledWith({ tenantId: 't1' });
   });
 
