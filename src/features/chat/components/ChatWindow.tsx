@@ -3,13 +3,16 @@ import { FileText, MessageCircle } from 'lucide-react';
 import type { WhatsappConversation, WhatsappMessage } from '../types';
 import { MessageBubble } from './MessageBubble';
 import { MessageInput, type ComposeMedia } from './MessageInput';
+import { PendingBubble } from './messages/PendingBubble';
+import { LightboxProvider } from './lightbox/LightboxProvider';
+import { useMediaSend } from '../hooks/useMediaSend';
 
 interface Props {
   conversation: WhatsappConversation | null;
   messages: WhatsappMessage[];
   loading?: boolean;
+  tenantId: string | null;
   onSendText: (text: string) => Promise<void> | void;
-  onSendMedia: (params: { media: ComposeMedia; caption: string }) => Promise<void> | void;
   onOpenTemplate?: () => void;
   disabled?: boolean;
 }
@@ -18,16 +21,21 @@ export function ChatWindow({
   conversation,
   messages,
   loading,
+  tenantId,
   onSendText,
-  onSendMedia,
   onOpenTemplate,
   disabled,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const { pending, send, retry, cancel } = useMediaSend({
+    conversationId: conversation?.id ?? '',
+    contactPhone: conversation?.contact_phone ?? '',
+    tenantId: tenantId ?? '',
+  });
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages.length, conversation?.id]);
+  }, [messages.length, pending.length, conversation?.id]);
 
   if (!conversation) {
     return (
@@ -41,48 +49,56 @@ export function ChatWindow({
   const displayName =
     conversation.contact_name ?? conversation.contact_profile_name ?? conversation.contact_phone;
 
+  const handleSendMedia = ({ media, caption }: { media: ComposeMedia; caption: string }) => {
+    send(media.file, media.type, caption);
+  };
+
   return (
-    <div className="flex h-full flex-1 flex-col">
-      <div
-        className="flex items-center gap-3 border-b px-4 py-3"
-        style={{ borderColor: 'var(--border-color, #e5e7eb)' }}
-      >
-        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-500 text-white text-sm font-medium">
-          {displayName.slice(0, 2).toUpperCase()}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium">{displayName}</div>
-          <div className="truncate text-xs text-gray-500">{conversation.contact_phone}</div>
-        </div>
-        {onOpenTemplate && (
-          <button
-            type="button"
-            onClick={onOpenTemplate}
-            disabled={disabled}
-            title="Enviar template (HSM)"
-            className="inline-flex flex-none items-center gap-1.5 rounded-md border border-gray-200 px-2.5 py-1.5 text-xs font-medium hover:bg-gray-50 disabled:opacity-40 dark:border-slate-700 dark:hover:bg-slate-800"
-          >
-            <FileText className="h-3.5 w-3.5" />
-            Template
-          </button>
-        )}
-      </div>
-
-      <div
-        ref={scrollRef}
-        className="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900/40"
-      >
-        <div className="flex flex-col gap-2 p-4">
-          {loading && messages.length === 0 && (
-            <div className="text-center text-xs text-gray-500">Carregando mensagens...</div>
+    <LightboxProvider>
+      <div className="flex h-full flex-1 flex-col">
+        <div
+          className="flex items-center gap-3 border-b px-4 py-3"
+          style={{ borderColor: 'var(--border-color, #e5e7eb)' }}
+        >
+          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-500 text-white text-sm font-medium">
+            {displayName.slice(0, 2).toUpperCase()}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-medium">{displayName}</div>
+            <div className="truncate text-xs text-gray-500">{conversation.contact_phone}</div>
+          </div>
+          {onOpenTemplate && (
+            <button
+              type="button"
+              onClick={onOpenTemplate}
+              disabled={disabled}
+              title="Enviar template (HSM)"
+              className="inline-flex flex-none items-center gap-1.5 rounded-md border border-gray-200 px-2.5 py-1.5 text-xs font-medium hover:bg-gray-50 disabled:opacity-40 dark:border-slate-700 dark:hover:bg-slate-800"
+            >
+              <FileText className="h-3.5 w-3.5" />
+              Template
+            </button>
           )}
-          {messages.map((m) => (
-            <MessageBubble key={m.id} message={m} />
-          ))}
         </div>
-      </div>
 
-      <MessageInput disabled={disabled} onSendText={onSendText} onSendMedia={onSendMedia} />
-    </div>
+        <div ref={scrollRef} className="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900/40">
+          <div className="flex flex-col gap-2 p-4">
+            {loading && messages.length === 0 && (
+              <div className="text-center text-xs text-gray-500">Carregando mensagens...</div>
+            )}
+            {messages.map((m) => (
+              <MessageBubble key={m.id} message={m} />
+            ))}
+            {pending
+              .filter((p) => p.conversationId === conversation.id)
+              .map((p) => (
+                <PendingBubble key={p.tempId} pending={p} onRetry={retry} onCancel={cancel} />
+              ))}
+          </div>
+        </div>
+
+        <MessageInput disabled={disabled} onSendText={onSendText} onSendMedia={handleSendMedia} />
+      </div>
+    </LightboxProvider>
   );
 }

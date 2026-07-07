@@ -17,9 +17,7 @@ import { WhatsAppIntegrationTab } from '../components/WhatsAppIntegrationTab';
 import { useChatConversations } from '../hooks/useChatConversations';
 import { useChatMessages } from '../hooks/useChatMessages';
 import { getOrCreateConversation, getWhatsappConfig, normalizePhone } from '../services/chatService';
-import { uploadWhatsappMedia } from '../services/mediaUploadService';
-import { sendMediaMessage, sendTemplateMessage, sendTextMessage } from '../services/whatsappService';
-import type { ComposeMedia } from '../components/MessageInput';
+import { sendTemplateMessage, sendTextMessage } from '../services/whatsappService';
 import type { WhatsappConfig, WhatsappConversation } from '../types';
 
 export const ChatPage = () => {
@@ -109,33 +107,6 @@ export const ChatPage = () => {
     if (!result.ok) {
       console.error('[chat] falha ao enviar mensagem:', result.error);
       alert(`Falha ao enviar: ${result.error ?? 'erro desconhecido'}`);
-    }
-  };
-
-  const handleSendMedia = async ({ media, caption }: { media: ComposeMedia; caption: string }) => {
-    if (!selectedConversation || !tenantId || tenantId === 'owner') return;
-    try {
-      const uploaded = await uploadWhatsappMedia({
-        tenantId,
-        conversationId: selectedConversation.id,
-        file: media.file,
-        type: media.type,
-      });
-      const result = await sendMediaMessage({
-        conversationId: selectedConversation.id,
-        to: selectedConversation.contact_phone,
-        type: uploaded.type,
-        url: uploaded.url,
-        caption: caption || undefined,
-        filename: uploaded.type === 'document' ? uploaded.filename : undefined,
-      });
-      if (!result.ok) {
-        console.error('[chat] falha ao enviar mídia:', result.error);
-        alert(`Falha ao enviar anexo: ${result.error ?? 'erro desconhecido'}`);
-      }
-    } catch (err) {
-      console.error('[chat] erro no upload de mídia:', err);
-      alert(err instanceof Error ? err.message : 'Erro no upload de mídia.');
     }
   };
 
@@ -258,8 +229,8 @@ export const ChatPage = () => {
           conversation={selectedConversation}
           messages={messages}
           loading={loadingMessages}
+          tenantId={tenantId}
           onSendText={handleSend}
-          onSendMedia={handleSendMedia}
           onOpenTemplate={() => setTemplateOpen(true)}
           disabled={!config?.is_active}
         />
