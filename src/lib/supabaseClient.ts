@@ -166,6 +166,10 @@ Chaves publishable (começam com "sb_") NÃO funcionam para PostgREST e causam e
   throw new Error('Supabase anon key invalid. Must be JWT (eyJ...).');
 }
 
+// URL base do Supabase (já validada acima). Útil para montar endpoints REST/Storage
+// manualmente — ex.: upload assinado com progresso via XHR em mediaUploadService.
+export const SUPABASE_URL = supabaseUrl;
+
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   ...SUPABASE_AUTH_CONFIG,
   global: {

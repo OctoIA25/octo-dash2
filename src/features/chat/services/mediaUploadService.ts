@@ -133,15 +133,25 @@ export async function uploadWhatsappMediaWithProgress(params: {
   const { data: signed, error: signErr } = await supabase.storage
     .from('whatsapp-media')
     .createSignedUploadUrl(path);
-  if (signErr || !signed?.signedUrl) {
+  // signed.signedUrl é o path relativo (…/object/upload/sign/<path>?token=…); precisamos
+  // da URL absoluta do endpoint de storage. Montamos igual ao SDK (uploadToSignedUrl):
+  // PUT multipart pro endpoint de upload assinado, com o token na query — é o token que
+  // autoriza (não o RLS 'authenticated'), então um PUT cru do arquivo era rejeitado.
+  if (signErr || !signed?.signedUrl || !signed?.token) {
     throw signErr ?? new Error('Falha ao criar URL de upload.');
   }
 
+  const uploadUrl = new URL(`${SUPABASE_URL}/storage/v1/object/upload/sign/whatsapp-media/${path}`);
+  uploadUrl.searchParams.set('token', signed.token);
+
+  const form = new FormData();
+  form.append('cacheControl', '3600');
+  form.append('', file);
+
   await new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open('PUT', signed.signedUrl, true);
+    xhr.open('PUT', uploadUrl.toString(), true);
     xhr.setRequestHeader('x-upsert', 'false');
-    if (file.type) xhr.setRequestHeader('Content-Type', file.type);
 
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable && onProgress) {
@@ -151,14 +161,14 @@ export async function uploadWhatsappMediaWithProgress(params: {
     xhr.onload = () =>
       xhr.status >= 200 && xhr.status < 300
         ? resolve()
-        : reject(new Error(`Upload falhou (HTTP ${xhr.status})`));
+        : reject(new Error(`Upload falhou (HTTP ${xhr.status}): ${xhr.responseText || ''}`.trim()));
     xhr.onerror = () => reject(new Error('Erro de rede no upload.'));
     xhr.onabort = () => reject(new DOMException('Upload abortado', 'AbortError'));
 
     if (signal) {
       signal.addEventListener('abort', () => xhr.abort(), { once: true });
     }
-    xhr.send(file);
+    xhr.send(form);
   });
 
   const { data } = supabase.storage.from('whatsapp-media').getPublicUrl(path);
