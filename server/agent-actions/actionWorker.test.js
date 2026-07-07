@@ -5,29 +5,38 @@ import { createTenantRateLimiter } from '../communication/rateLimiter.js';
 const NOW = 1_750_000_000_000;
 
 /**
- * Fake do Supabase para o worker. Modela agent_action_queue (claim + finalize +
- * leitura por run) e agent_action_runs (update de fechamento).
+ * Fake do Supabase para o worker. Modela agent_action_queue (batch select +
+ * claim + finalize + leitura por run), agent_action_runs (select p/ throttle e
+ * update de fechamento) e communication_campaigns (n_per_min).
  *
  * `queue` é mutável: o claim altera status in-place, então uma 2ª chamada de
  * runDueActions NÃO re-pega o mesmo item (prova de idempotência do worker).
  *
- * `.or()` filtra next_attempt_at: itens com valor futuro são ignorados no select,
- * tornando os testes de backoff verídicos (o mesmo item não é reclamado de novo).
+ * `.or()` filtra next_attempt_at: itens com valor futuro são ignorados no
+ * batch select E no claim, tornando os testes de backoff verídicos (o mesmo
+ * item não é reclamado de novo).
  */
-function makeFake({ queue = [] } = {}) {
+function makeFake({ queue = [], runs = [], campaigns = [] } = {}) {
   const runUpdates = [];
 
   const queueNode = () => {
     let mode = null;
     let runFilter = null;
-    // O or-filter passado pelo claim: "next_attempt_at.is.null,next_attempt_at.lte.<iso>"
-    // Extraímos o threshold do lte para filtrar no maybeSingle.
+    // O or-filter do batch select/claim: "next_attempt_at.is.null,next_attempt_at.lte.<iso>"
     let orThresholdIso = null;
+
+    const isEligible = (q) => {
+      if (q.status !== 'pending') return false;
+      if (!orThresholdIso) return true; // sem filtro or: aceita tudo
+      const nat = q.next_attempt_at;
+      if (!nat) return true; // IS NULL → elegível
+      return nat <= orThresholdIso; // lte threshold → elegível
+    };
 
     const node = {
       _eqStatus: null,
       select() {
-        mode = 'select';
+        mode = mode === 'update' ? mode : 'select';
         return node;
       },
       update(patch) {
@@ -41,50 +50,50 @@ function makeFake({ queue = [] } = {}) {
         if (col === 'run_id') runFilter = val;
         return node;
       },
-      // Implementa o filtro de next_attempt_at do claim.
-      // Formato recebido: "next_attempt_at.is.null,next_attempt_at.lte.<isoString>"
       or(expr) {
         const m = /next_attempt_at\.lte\.(.+)$/.exec(expr);
         if (m) orThresholdIso = m[1];
         return node;
       },
       order: () => node,
-      limit: () => node,
+      limit(n) {
+        node._limit = n;
+        return node;
+      },
       async maybeSingle() {
-        // SELECT puro (sem patch): busca próximo pendente elegível.
-        if (mode === 'select' && !node._patch) {
-          const found = queue.find((q) => {
-            if (q.status !== 'pending') return false;
-            if (!orThresholdIso) return true; // sem filtro or: aceita tudo
-            const nat = q.next_attempt_at;
-            if (!nat) return true; // IS NULL → elegível
-            return nat <= orThresholdIso; // lte threshold → elegível
-          });
-          return { data: found ? { ...found } : null, error: null };
-        }
-        // UPDATE + SELECT (chain com .update().eq().select().maybeSingle()):
-        // aplica o patch e retorna o item atualizado (claim atômico simulado).
+        // UPDATE + SELECT (claim atômico: update().eq(id).eq(status).or().select().maybeSingle()):
+        // aplica o patch e retorna o item atualizado, respeitando a elegibilidade.
         if (node._patch && node._id) {
           const target = queue.find((q) => q.id === node._id);
           if (!target) return { data: null, error: null };
           if (node._eqStatus === 'pending' && target.status !== 'pending') {
             return { data: null, error: null };
           }
+          if (!isEligible(target)) return { data: null, error: null };
           Object.assign(target, node._patch);
           return { data: { ...target }, error: null };
         }
         return { data: null, error: null };
       },
-      // leitura por run (closeFinishedRuns): retorna status de todos do run
       then(resolve) {
+        // finalize / releaseToPending: update por id (sem maybeSingle)
         if (mode === 'update' && node._id) {
-          // finalize / releaseToPending: aplica patch ao item por id (sem maybeSingle)
           const target = queue.find((q) => q.id === node._id);
           if (target) Object.assign(target, node._patch);
           return resolve({ data: null, error: null });
         }
+        // closeFinishedRuns: select por run_id
         if (mode === 'select' && runFilter) {
           const rows = queue.filter((q) => q.run_id === runFilter).map((q) => ({ status: q.status }));
+          return resolve({ data: rows, error: null });
+        }
+        // batch select do tick: pendentes elegíveis, em ordem de created_at
+        if (mode === 'select') {
+          const rows = queue
+            .filter(isEligible)
+            .sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')))
+            .slice(0, node._limit || Infinity)
+            .map((q) => ({ ...q }));
           return resolve({ data: rows, error: null });
         }
         return resolve({ data: null, error: null });
@@ -95,13 +104,52 @@ function makeFake({ queue = [] } = {}) {
 
   const runsNode = () => {
     const node = {
+      _mode: null,
+      _inIds: null,
+      select() {
+        node._mode = node._mode === 'update' ? node._mode : 'select';
+        return node;
+      },
       update(patch) {
+        node._mode = 'update';
         node._patch = patch;
         return node;
       },
       eq(_c, v) {
-        runUpdates.push({ id: v, patch: node._patch });
+        if (node._mode === 'update') runUpdates.push({ id: v, patch: node._patch });
         return node;
+      },
+      in(_c, ids) {
+        node._inIds = ids;
+        return node;
+      },
+      then(resolve) {
+        // loadCampaignThrottles: select id/campaign_id por lista de runs
+        if (node._mode === 'select') {
+          const rows = runs
+            .filter((r) => !node._inIds || node._inIds.includes(r.id))
+            .map((r) => ({ id: r.id, campaign_id: r.campaign_id ?? null }));
+          return resolve({ data: rows, error: null });
+        }
+        return resolve({ data: null, error: null });
+      },
+    };
+    return node;
+  };
+
+  const campaignsNode = () => {
+    const node = {
+      _inIds: null,
+      select: () => node,
+      in(_c, ids) {
+        node._inIds = ids;
+        return node;
+      },
+      then(resolve) {
+        const rows = campaigns
+          .filter((c) => !node._inIds || node._inIds.includes(c.id))
+          .map((c) => ({ id: c.id, n_per_min: c.n_per_min ?? null }));
+        return resolve({ data: rows, error: null });
       },
     };
     return node;
@@ -110,6 +158,7 @@ function makeFake({ queue = [] } = {}) {
   const from = (table) => {
     if (table === 'agent_action_queue') return queueNode();
     if (table === 'agent_action_runs') return runsNode();
+    if (table === 'communication_campaigns') return campaignsNode();
     throw new Error(`tabela inesperada: ${table}`);
   };
 
@@ -133,6 +182,15 @@ const baseItem = (over) => ({
   ...over,
 });
 
+/** Deps mínimas de um tick (sem limiters — ilimitado, como o legado). */
+const baseDeps = (over = {}) => ({
+  nowMs: NOW,
+  schedulerDeps: {},
+  getEnvironment: () => 'production',
+  logger: { log: () => {}, warn: () => {} },
+  ...over,
+});
+
 describe('actionWorker.runDueActions', () => {
   it('drena itens pendentes e marca done; fecha o run com contadores', async () => {
     const { supabase, queue, runUpdates } = makeFake({
@@ -140,12 +198,7 @@ describe('actionWorker.runDueActions', () => {
     });
     const deliver = vi.fn(async () => ({ ok: true, messageId: 'wamid' }));
 
-    const summary = await runDueActions(supabase, {
-      nowMs: NOW,
-      deliver,
-      schedulerDeps: {},
-      getEnvironment: () => 'production',
-    });
+    const summary = await runDueActions(supabase, baseDeps({ deliver }));
 
     expect(summary.processed).toBe(2);
     expect(summary.done).toBe(2);
@@ -161,11 +214,11 @@ describe('actionWorker.runDueActions', () => {
     const { supabase, queue } = makeFake({ queue: [baseItem({ id: 'i1' })] });
     const deliver = vi.fn(async () => ({ ok: true, messageId: 'wamid' }));
 
-    await runDueActions(supabase, { nowMs: NOW, deliver, schedulerDeps: {}, getEnvironment: () => 'production' });
+    await runDueActions(supabase, baseDeps({ deliver }));
     expect(deliver).toHaveBeenCalledTimes(1);
 
     // segunda passada: nada pendente
-    const s2 = await runDueActions(supabase, { nowMs: NOW, deliver, schedulerDeps: {}, getEnvironment: () => 'production' });
+    const s2 = await runDueActions(supabase, baseDeps({ deliver }));
     expect(s2.processed).toBe(0);
     expect(deliver).toHaveBeenCalledTimes(1); // não reenviou
     expect(queue[0].status).toBe('done');
@@ -174,7 +227,7 @@ describe('actionWorker.runDueActions', () => {
   it('lead sem telefone → skipped, sem enviar', async () => {
     const { supabase, queue } = makeFake({ queue: [baseItem({ lead_phone: '' })] });
     const deliver = vi.fn();
-    const summary = await runDueActions(supabase, { nowMs: NOW, deliver, schedulerDeps: {}, getEnvironment: () => 'production' });
+    const summary = await runDueActions(supabase, baseDeps({ deliver }));
     expect(summary.skipped).toBe(1);
     expect(deliver).not.toHaveBeenCalled();
     expect(queue[0].status).toBe('skipped');
@@ -186,7 +239,7 @@ describe('actionWorker.runDueActions', () => {
       queue: [baseItem({ attempts: 4, max_attempts: 5 })],
     });
     const deliver = vi.fn(async () => ({ ok: false, errorMessage: 'meta down' }));
-    const summary = await runDueActions(supabase, { nowMs: NOW, deliver, schedulerDeps: {}, getEnvironment: () => 'production' });
+    const summary = await runDueActions(supabase, baseDeps({ deliver }));
     expect(summary.failed).toBe(1);
     // item ficou failed (dead-letter na última tentativa)
     expect(queue[0].status).toBe('failed');
@@ -197,7 +250,7 @@ describe('actionWorker.runDueActions', () => {
   it('ação desconhecida → failed sem quebrar o worker', async () => {
     const { supabase } = makeFake({ queue: [baseItem({ action_type: 'inexistente' })] });
     const deliver = vi.fn();
-    const summary = await runDueActions(supabase, { nowMs: NOW, deliver, schedulerDeps: {}, getEnvironment: () => 'production' });
+    const summary = await runDueActions(supabase, baseDeps({ deliver }));
     expect(summary.failed).toBe(1);
     expect(deliver).not.toHaveBeenCalled();
   });
@@ -207,17 +260,11 @@ describe('actionWorker.runDueActions', () => {
       queue: [baseItem({ id: 'a' }), baseItem({ id: 'b' }), baseItem({ id: 'c' })],
     });
     const deliver = vi.fn(async () => ({ ok: true }));
-    const summary = await runDueActions(supabase, {
-      nowMs: NOW,
-      limit: 2,
-      deliver,
-      schedulerDeps: {},
-      getEnvironment: () => 'production',
-    });
+    const summary = await runDueActions(supabase, baseDeps({ deliver, limit: 2 }));
     expect(summary.processed).toBe(2);
   });
 
-  // ─── Novos testes: backoff + max_attempts ───────────────────────────────────
+  // ─── Backoff + max_attempts ─────────────────────────────────────────────────
 
   it('falha transitória agenda retry: status volta a pending, next_attempt_at futuro, attempts incrementado', async () => {
     const { supabase, queue } = makeFake({
@@ -226,14 +273,11 @@ describe('actionWorker.runDueActions', () => {
     // deliver retorna failed (ainda há tentativas restantes → retry com backoff)
     const deliver = vi.fn(async () => ({ ok: false, status: 'failed', error: 'timeout' }));
 
-    const summary = await runDueActions(supabase, {
-      nowMs: NOW,
+    const summary = await runDueActions(supabase, baseDeps({
       deliver,
-      schedulerDeps: {},
-      getEnvironment: () => 'production',
       backoffBaseMs: 60_000,
       backoffMaxMs: 3_600_000,
-    });
+    }));
 
     expect(summary.retried).toBe(1);
     expect(summary.failed).toBe(0);
@@ -246,6 +290,17 @@ describe('actionWorker.runDueActions', () => {
     expect(queue[0].next_attempt_at).toBe(expectedNextAt);
   });
 
+  it('item em backoff (next_attempt_at futuro) não entra no lote do tick', async () => {
+    const future = new Date(NOW + 60_000).toISOString();
+    const { supabase } = makeFake({
+      queue: [baseItem({ id: 'i1', next_attempt_at: future })],
+    });
+    const deliver = vi.fn(async () => ({ ok: true }));
+    const summary = await runDueActions(supabase, baseDeps({ deliver }));
+    expect(summary.processed).toBe(0);
+    expect(deliver).not.toHaveBeenCalled();
+  });
+
   it('ao atingir max_attempts vira failed (dead-letter)', async () => {
     // attempts inicial = max_attempts - 1 = 4; após o claim = 5 = max_attempts → dead-letter
     const { supabase, queue } = makeFake({
@@ -253,17 +308,14 @@ describe('actionWorker.runDueActions', () => {
     });
     const deliver = vi.fn(async () => ({ ok: false, status: 'failed', error: 'api error' }));
 
-    const summary = await runDueActions(supabase, {
-      nowMs: NOW,
-      deliver,
-      schedulerDeps: {},
-      getEnvironment: () => 'production',
-    });
+    const summary = await runDueActions(supabase, baseDeps({ deliver }));
 
     expect(summary.failed).toBe(1);
     expect(summary.retried).toBe(0);
     expect(queue[0].status).toBe('failed');
   });
+
+  // ─── Rate limit por tenant ──────────────────────────────────────────────────
 
   it('rate-limit: não excede o burst no mesmo tick', async () => {
     // 3 itens do mesmo tenant, burst=2 → no máximo 2 deliveries por tick
@@ -279,20 +331,164 @@ describe('actionWorker.runDueActions', () => {
     // Relógio fixo (sem avanço): nenhum refill ocorre durante o tick
     const rateLimiter = createTenantRateLimiter({ ratePerSec: 1, burst: 2, now: () => NOW });
 
-    const summary = await runDueActions(supabase, {
-      nowMs: NOW,
-      deliver,
-      schedulerDeps: {},
-      getEnvironment: () => 'production',
-      rateLimiter,
-    });
+    const summary = await runDueActions(supabase, baseDeps({ deliver, rateLimiter }));
 
     // Com burst=2, no máximo 2 deliveries devem ocorrer
     expect(deliver.mock.calls.length).toBeLessThanOrEqual(2);
     expect(summary.throttled).toBeGreaterThanOrEqual(1);
-    // Itens throttled voltam a pending (não failed, não done)
+    // Itens throttled ficam pending (não failed, não done)
     const throttledItems = queue.filter((q) => q.status === 'pending');
     expect(throttledItems.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('rate limiter herdado de schedulerDeps quando não passado direto', async () => {
+    const { supabase } = makeFake({
+      queue: [baseItem({ id: 'a' }), baseItem({ id: 'b' })],
+    });
+    const deliver = vi.fn(async () => ({ ok: true }));
+    const rateLimiter = createTenantRateLimiter({ ratePerSec: 1, burst: 1, now: () => NOW });
+
+    const summary = await runDueActions(supabase, baseDeps({
+      deliver,
+      schedulerDeps: { rateLimiter },
+    }));
+
+    expect(deliver).toHaveBeenCalledTimes(1);
+    expect(summary.throttled).toBe(1);
+  });
+
+  // ─── Ordem + pool de lanes por tenant ───────────────────────────────────────
+
+  it('preserva a ordem de created_at dentro de cada tenant, com lanes em paralelo', async () => {
+    const t = (n) => `2025-01-01T00:00:0${n}Z`;
+    const { supabase, queue } = makeFake({
+      queue: [
+        baseItem({ id: 'a1', tenant_id: 't1', lead_id: 'a1', created_at: t(1) }),
+        baseItem({ id: 'b1', tenant_id: 't2', run_id: 'run-2', lead_id: 'b1', created_at: t(2) }),
+        baseItem({ id: 'a2', tenant_id: 't1', lead_id: 'a2', created_at: t(3) }),
+        baseItem({ id: 'b2', tenant_id: 't2', run_id: 'run-2', lead_id: 'b2', created_at: t(4) }),
+        baseItem({ id: 'a3', tenant_id: 't1', lead_id: 'a3', created_at: t(5) }),
+      ],
+    });
+
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const order = [];
+    const deliver = vi.fn(async (_sb, params) => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      order.push({ tenant: params.tenantId, lead: params.lead.id });
+      await new Promise((r) => setTimeout(r, 2));
+      inFlight -= 1;
+      return { ok: true, messageId: 'x' };
+    });
+
+    const summary = await runDueActions(supabase, baseDeps({ deliver, tenantConcurrency: 2 }));
+
+    expect(summary.done).toBe(5);
+    expect(queue.every((q) => q.status === 'done')).toBe(true);
+    // Ordem por tenant preservada (lane serial)
+    expect(order.filter((o) => o.tenant === 't1').map((o) => o.lead)).toEqual(['a1', 'a2', 'a3']);
+    expect(order.filter((o) => o.tenant === 't2').map((o) => o.lead)).toEqual(['b1', 'b2']);
+    // O pool realmente rodou 2 lanes ao mesmo tempo
+    expect(maxInFlight).toBe(2);
+  });
+
+  it('tenantConcurrency=1 mantém o processamento totalmente serial', async () => {
+    const { supabase } = makeFake({
+      queue: [
+        baseItem({ id: 'a1', tenant_id: 't1' }),
+        baseItem({ id: 'b1', tenant_id: 't2', run_id: 'run-2' }),
+      ],
+    });
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const deliver = vi.fn(async () => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((r) => setTimeout(r, 2));
+      inFlight -= 1;
+      return { ok: true };
+    });
+
+    const summary = await runDueActions(supabase, baseDeps({ deliver, tenantConcurrency: 1 }));
+    expect(summary.done).toBe(2);
+    expect(maxInFlight).toBe(1);
+  });
+
+  // ─── Throttle por campanha (n_per_min do banco) ─────────────────────────────
+
+  it('honra n_per_min da campanha: burst inicial limitado e refill com o tempo', async () => {
+    const mk = () =>
+      makeFake({
+        queue: [
+          baseItem({ id: 'c1', lead_id: 'c1', created_at: '2025-01-01T00:00:01Z' }),
+          baseItem({ id: 'c2', lead_id: 'c2', created_at: '2025-01-01T00:00:02Z' }),
+          baseItem({ id: 'c3', lead_id: 'c3', created_at: '2025-01-01T00:00:03Z' }),
+        ],
+        runs: [{ id: 'run-1', campaign_id: 'camp-1' }],
+        campaigns: [{ id: 'camp-1', n_per_min: 60 }], // 1/s, burst 1
+      });
+
+    const { supabase, queue } = mk();
+    const order = [];
+    const deliver = vi.fn(async (_sb, params) => {
+      order.push(params.lead.id);
+      return { ok: true };
+    });
+    const campaignLimiters = new Map(); // persistente entre os dois ticks
+
+    // Tick 1 (relógio parado): só o burst inicial (1 token) passa.
+    let clock = NOW;
+    const s1 = await runDueActions(supabase, baseDeps({
+      deliver,
+      campaignLimiters,
+      rateNow: () => clock,
+    }));
+    expect(s1.done).toBe(1);
+    expect(s1.throttled).toBe(2);
+    expect(order).toEqual(['c1']); // o primeiro da fila, não outro
+    expect(queue.filter((q) => q.status === 'pending').length).toBe(2);
+
+    // Tick 2, 1s depois: refill de 1 token → sai exatamente o próximo (FIFO).
+    clock = NOW + 1_000;
+    const s2 = await runDueActions(supabase, baseDeps({
+      deliver,
+      campaignLimiters,
+      rateNow: () => clock,
+    }));
+    expect(s2.done).toBe(1);
+    expect(order).toEqual(['c1', 'c2']);
+  });
+
+  it('campanha sem token não bloqueia itens de outros runs do mesmo tenant', async () => {
+    const { supabase, queue } = makeFake({
+      queue: [
+        baseItem({ id: 'c1', lead_id: 'c1', created_at: '2025-01-01T00:00:01Z' }),
+        baseItem({ id: 'c2', lead_id: 'c2', created_at: '2025-01-01T00:00:02Z' }),
+        baseItem({ id: 'x1', lead_id: 'x1', run_id: 'run-livre', created_at: '2025-01-01T00:00:03Z' }),
+      ],
+      runs: [
+        { id: 'run-1', campaign_id: 'camp-1' },
+        { id: 'run-livre', campaign_id: null }, // disparo manual, sem throttle
+      ],
+      campaigns: [{ id: 'camp-1', n_per_min: 60 }], // burst 1
+    });
+    const order = [];
+    const deliver = vi.fn(async (_sb, params) => {
+      order.push(params.lead.id);
+      return { ok: true };
+    });
+
+    const summary = await runDueActions(supabase, baseDeps({
+      deliver,
+      campaignLimiters: new Map(),
+      rateNow: () => NOW, // relógio parado: sem refill no tick
+    }));
+
+    expect(order).toEqual(['c1', 'x1']); // c2 barrado; item livre segue
+    expect(summary.throttled).toBe(1);
+    expect(queue.find((q) => q.id === 'c2').status).toBe('pending');
   });
 
   it('sucesso continua finalizando done (regressão: caminho feliz não mudou)', async () => {
@@ -301,12 +497,7 @@ describe('actionWorker.runDueActions', () => {
     });
     const deliver = vi.fn(async () => ({ ok: true, messageId: 'msg-ok' }));
 
-    const summary = await runDueActions(supabase, {
-      nowMs: NOW,
-      deliver,
-      schedulerDeps: {},
-      getEnvironment: () => 'production',
-    });
+    const summary = await runDueActions(supabase, baseDeps({ deliver }));
 
     expect(summary.done).toBe(1);
     expect(summary.failed).toBe(0);

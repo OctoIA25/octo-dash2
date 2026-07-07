@@ -4,6 +4,7 @@
  * via executeCampaignDispatch. Falha → schedule_status='error' + motivo. Nunca lança.
  */
 import { computeNextOccurrence } from './recurrence.js';
+import { getDeletedTenantIds } from '../utils/tenantSoftDelete.js';
 
 const CAMPAIGNS_TABLE = 'communication_campaigns';
 const SYSTEM_USER = { id: null, email: 'system@scheduler', role: 'owner', brokerName: null };
@@ -22,8 +23,21 @@ export async function runDueCampaigns(supabase, deps = {}) {
     .limit(limit);
   if (error || !due) return { processed: 0, dispatched: 0, failed: 0 };
 
+  // Tenant soft-deletado (tenants.deleted_at): a campanha não dispara NEM se
+  // reagenda — marca 'error' para matar a recorrência na fonte. O guard do
+  // deliverRecommendation só bloqueia item a item; o dispatch em si (audiência
+  // + enqueue) "funcionaria" e reagendaria a recorrência para sempre.
+  const deletedIds = await getDeletedTenantIds(supabase, due.map((c) => c.tenant_id));
+
   for (const camp of due) {
     processed += 1;
+    if (deletedIds.has(camp.tenant_id)) {
+      failed += 1;
+      await supabase.from(CAMPAIGNS_TABLE)
+        .update({ schedule_status: 'error', schedule_error: 'tenant_soft_deletado' })
+        .eq('id', camp.id).then(() => {}, () => {});
+      continue;
+    }
     try {
       // Claim atômico: só uma instância marca 'dispatched' a partir de 'scheduled'.
       const { data: claimed } = await supabase

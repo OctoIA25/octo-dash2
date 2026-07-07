@@ -25,8 +25,11 @@ import {
 } from './emailTransport.js';
 import { encryptSecret, decryptSecret, hasEncryptionKey } from './crypto.js';
 import { CHANNELS, resolveDelivery } from './channels.js';
-import { loadWhatsappContext, sendWhatsappTemplate } from './whatsappSender.js';
+import { loadWhatsappContext, loadWhatsappRows, sendWhatsappTemplate } from './whatsappSender.js';
 import { runDueSchedules, computeNextRun } from './scheduler.js';
+import { getDeletedTenantIds } from '../utils/tenantSoftDelete.js';
+import { memoizeTtl } from '../utils/ttlMemo.js';
+import { createTenantRateLimiter } from '../communication/rateLimiter.js';
 import { runDueRecovery } from './recoveryWorker.js';
 import { runDueActions } from '../agent-actions/actionWorker.js';
 import { runDueCampaigns } from '../agent-actions/campaignScheduler.js';
@@ -245,6 +248,38 @@ export async function deliverRecommendation(supabase, params, deps) {
   } = params;
   const { resolveTransport, sendWhatsapp, findDuplicate } = deps;
 
+  // 🪦 Tenant soft-deletado (tenants.deleted_at) não envia NADA. Este é o
+  // guarda central: envio manual, agendado, recuperação e campanhas passam
+  // todos por aqui. Falha estruturada (não exceção) para os workers marcarem
+  // o item como failed pelos caminhos que já existem.
+  // Workers injetam via deps uma versão com cache curto por tenant
+  // (makeSchedulerDeps); sem a dep, a checagem vai fresca ao banco.
+  const checkDeleted = deps.getDeletedTenantIds ?? getDeletedTenantIds;
+  const deletedTenants = await checkDeleted(supabase, [tenantId]);
+  if (deletedTenants.has(tenantId)) {
+    logSend(
+      'bloqueado',
+      { tenant: tenantId, canal: channel, destino: delivery.recipient, motivo: 'tenant_soft_deletado' },
+      'warn',
+    );
+    return {
+      outcome: 'failed',
+      ok: false,
+      status: 'failed',
+      channel,
+      recipient: delivery.recipient,
+      redirected: Boolean(delivery.redirected),
+      isTest,
+      environment: delivery.environment,
+      intended: delivery.intended ?? delivery.intendedEmail ?? null,
+      intendedEmail: channel === 'email' ? delivery.intendedEmail : null,
+      messageId: null,
+      transport: null,
+      historyId: null,
+      errorMessage: 'imobiliária desativada (soft-delete)',
+    };
+  }
+
   // Idempotência: retry com mesma chave dentro da janela não duplica.
   const refs = idempotencyRefs ?? sanitizedProps.map((p) => p.referencia);
   const idempotencyKey = computeIdempotencyKey({ tenantId, leadId: lead.id, channel, refs });
@@ -390,10 +425,25 @@ export async function deliverRecommendation(supabase, params, deps) {
   };
 }
 
-/** Constrói a função de envio WhatsApp padrão (contexto do tenant + Meta). */
+/**
+ * Constrói a função de envio WhatsApp padrão (contexto do tenant + Meta).
+ *
+ * `options.configTtlMs` liga o cache por tenant das linhas de config (creds
+ * Meta + template fixo): usado pelos WORKERS, onde milhares de mensagens do
+ * mesmo tenant leriam as mesmas 2 linhas. O envio manual/teste via HTTP NÃO
+ * passa a opção e continua lendo config fresca a cada envio (quem acabou de
+ * editar a config vê o efeito imediato). Só resultados ok entram no cache —
+ * erro de query não fica colado por TTL.
+ */
 export function makeDefaultSendWhatsapp(supabase, options = {}) {
+  const loadRows = options.configTtlMs
+    ? memoizeTtl((tenantId) => loadWhatsappRows(supabase, tenantId), options.configTtlMs, {
+        shouldCache: (rows) => rows.ok,
+      })
+    : (tenantId) => loadWhatsappRows(supabase, tenantId);
   return async ({ tenantId, to, params, templateName }) => {
-    const ctx = await loadWhatsappContext(supabase, tenantId, options.processEnv || process.env, templateName);
+    const rows = await loadRows(tenantId);
+    const ctx = await loadWhatsappContext(supabase, tenantId, options.processEnv || process.env, templateName, rows);
     if (!ctx.ok) {
       const err = new Error(ctx.error);
       err.code = ctx.error;
@@ -728,19 +778,53 @@ export function makeSaveConfigHandler(supabase, options = {}) {
 
 const SCHEDULES_TABLE = 'recommendation_schedules';
 
-/** Dependências do worker/agendamento, com defaults de produção. */
+// Validade do cache de config por tenant nos workers (creds Meta, template
+// fixo, soft-delete). Curto de propósito: colapsa as N leituras de um ciclo
+// de envio em ~1, mas uma mudança de config/desativação vale em segundos.
+const WORKER_CONFIG_TTL_MS = 10_000;
+
+/**
+ * Dependências do worker/agendamento, com defaults de produção.
+ *
+ * Além das funções de envio, carrega o que os workers compartilham entre
+ * ticks: caches de config por tenant (TTL curto) e os rate limiters (token
+ * bucket por tenant + um por campanha para n_per_min). Ambos só funcionam se
+ * este bundle for criado UMA vez e reusado — é o que startRecommendationScheduler
+ * faz; handlers HTTP que criam um bundle por request apenas perdem o ganho.
+ */
 export function makeSchedulerDeps(supabase, options = {}) {
   const processEnv = options.processEnv || process.env;
+  const configTtlMs = options.configTtlMs ?? WORKER_CONFIG_TTL_MS;
+  const cachedDeletedTenants = memoizeTtl(
+    (ids) => getDeletedTenantIds(supabase, ids),
+    configTtlMs,
+    { keyOf: (ids) => [...ids].sort().join(',') },
+  );
   return {
     deliver: deliverRecommendation,
     resolveDelivery,
     resolveTransport: options.resolveTransport || makeResolveTenantTransport(supabase, options),
-    sendWhatsapp: options.sendWhatsapp || makeDefaultSendWhatsapp(supabase, options),
+    sendWhatsapp: options.sendWhatsapp || makeDefaultSendWhatsapp(supabase, { ...options, configTtlMs }),
     findDuplicate:
       options.findDuplicate ||
       ((args) => findRecentDuplicate(supabase, { ...args, windowMs: 10 * 60 * 1000 })),
     getEnvironment: options.getEnvironment || (() => environmentFromEnv(processEnv)),
     logger: options.logger || console,
+    // Cache curto do guard de soft-delete usado por deliverRecommendation.
+    getDeletedTenantIds: (_supabase, ids) => cachedDeletedTenants((ids || []).filter(Boolean)),
+    // Suavização do ritmo de envio por tenant (protege a API da Meta). O
+    // default é folgado: não limita o volume de campanhas, só evita rajadas.
+    rateLimiter:
+      options.rateLimiter ||
+      createTenantRateLimiter({
+        ratePerSec: Number(processEnv.OUTBOX_RATE_PER_SEC) || 10,
+        burst: Number(processEnv.OUTBOX_RATE_BURST) || 20,
+      }),
+    // Token buckets por campanha (throttle n_per_min do banco). Persistem
+    // entre ticks — recriar por tick zeraria o pacing a cada 5s.
+    campaignLimiters: options.campaignLimiters || new Map(),
+    // Quantos tenants o worker do outbox processa em paralelo por tick.
+    tenantConcurrency: Number(processEnv.OUTBOX_TENANT_CONCURRENCY) || 4,
   };
 }
 

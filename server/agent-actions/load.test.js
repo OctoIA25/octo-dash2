@@ -90,6 +90,7 @@ function makeFakeSupabase(run) {
       _tenant: null,
       _eqStatus: null,
       _patch: null,
+      _inIds: null,
 
       insert(row) {
         counters.insertOrUpsert += 1;
@@ -109,6 +110,10 @@ function makeFakeSupabase(run) {
         if (col === 'id') node._id = val;
         if (col === 'tenant_id') node._tenant = val;
         if (col === 'status') node._eqStatus = val;
+        return node;
+      },
+      in(col, ids) {
+        if (col === 'id') node._inIds = ids;
         return node;
       },
       async maybeSingle() {
@@ -133,10 +138,20 @@ function makeFakeSupabase(run) {
       },
 
       // update sem .select() (ex.: closeFinishedRuns faz update().eq(id))
+      // e select em lista (loadCampaignThrottles faz select().in('id', runIds))
       then(resolve) {
         if (node._op === 'update' && node._id) {
           const row = runs.get(node._id);
           if (row) Object.assign(row, node._patch);
+          return resolve({ error: null });
+        }
+        if (node._op === 'select' && node._inIds) {
+          counters.runsSelect += 1;
+          const rows = node._inIds
+            .map((id) => runs.get(id))
+            .filter(Boolean)
+            .map((r) => ({ id: r.id, campaign_id: r.campaign_id ?? null }));
+          return resolve({ data: rows, error: null });
         }
         return resolve({ error: null });
       },
@@ -196,7 +211,10 @@ function makeFakeSupabase(run) {
         return node;
       },
       order: () => node,
-      limit: () => node,
+      limit(n) {
+        node._limit = n;
+        return node;
+      },
 
       async maybeSingle() {
         // SELECT sem patch → claimNextPending (busca próximo pendente)
@@ -225,8 +243,9 @@ function makeFakeSupabase(run) {
         return { data: null, error: null };
       },
 
-      // then: usado por finalize/releaseToPending (update sem maybeSingle)
-      //       e por closeFinishedRuns (select por run_id)
+      // then: usado por finalize/releaseToPending (update sem maybeSingle),
+      //       por closeFinishedRuns (select por run_id) e pelo batch select
+      //       do tick (select de pendentes elegíveis com limit)
       then(resolve) {
         if (mode === 'update' && node._id) {
           const target = queue.find((q) => q.id === node._id);
@@ -238,6 +257,19 @@ function makeFakeSupabase(run) {
           const rows = queue
             .filter((q) => q.run_id === runFilter)
             .map((q) => ({ status: q.status }));
+          return resolve({ data: rows, error: null });
+        }
+        if (mode === 'select') {
+          const rows = queue
+            .filter((q) => {
+              if (q.status !== 'pending') return false;
+              if (!orThresholdIso) return true;
+              const nat = q.next_attempt_at;
+              if (!nat) return true;
+              return nat <= orThresholdIso;
+            })
+            .slice(0, node._limit || Infinity)
+            .map((q) => ({ ...q }));
           return resolve({ data: rows, error: null });
         }
         return resolve({ data: null, error: null });
@@ -281,7 +313,7 @@ async function drainAll(supabase, n) {
 //   beforeEnqueue → afterEnqueue → afterDrain
 // Isso permite isolar o delta de cada fase e provar que:
 //   (a) enqueue é bulk: delta_enqueue.insertOrUpsert == 1
-//   (b) drain não faz select em runs: delta_drain.runsSelect == 0
+//   (b) drain não faz select em runs POR ITEM: delta_drain.runsSelect ≤ 1 (lookup O(1) do throttle de campanha)
 // ---------------------------------------------------------------------------
 
 async function runScenario(n) {
@@ -349,13 +381,13 @@ describe('Carga: enqueue bulk e drain sem N+1', () => {
     expect(deltaEnqueue.insertOrUpsert).toBe(1);
 
     // Fase drain: nenhum select em agent_action_runs (sem N+1)
-    expect(deltaDrain.runsSelect).toBe(0);
+    expect(deltaDrain.runsSelect).toBeLessThanOrEqual(1);
 
     // closeFinishedRuns: 1 select em queue por run (O(runs), não O(itens))
     expect(deltaDrain.queueSelectByRun).toBe(1);
   });
 
-  it('N=100: deltaEnqueue.insertOrUpsert = 1 (bulk), deltaDrain.runsSelect = 0', async () => {
+  it('N=100: deltaEnqueue.insertOrUpsert = 1 (bulk), deltaDrain.runsSelect ≤ 1', async () => {
     const { confirmResult, summary, deltaEnqueue, deltaDrain } = await runScenario(100);
 
     expect(confirmResult.ok).toBe(true);
@@ -363,11 +395,11 @@ describe('Carga: enqueue bulk e drain sem N+1', () => {
     expect(summary.done).toBe(100);
 
     expect(deltaEnqueue.insertOrUpsert).toBe(1);
-    expect(deltaDrain.runsSelect).toBe(0);
+    expect(deltaDrain.runsSelect).toBeLessThanOrEqual(1);
     expect(deltaDrain.queueSelectByRun).toBe(1);
   });
 
-  it('N=1000: deltaEnqueue.insertOrUpsert = 1 (bulk), deltaDrain.runsSelect = 0', async () => {
+  it('N=1000: deltaEnqueue.insertOrUpsert = 1 (bulk), deltaDrain.runsSelect ≤ 1', async () => {
     const { confirmResult, summary, deltaEnqueue, deltaDrain } = await runScenario(1000);
 
     expect(confirmResult.ok).toBe(true);
@@ -375,7 +407,7 @@ describe('Carga: enqueue bulk e drain sem N+1', () => {
     expect(summary.done).toBe(1000);
 
     expect(deltaEnqueue.insertOrUpsert).toBe(1);
-    expect(deltaDrain.runsSelect).toBe(0);
+    expect(deltaDrain.runsSelect).toBeLessThanOrEqual(1);
     expect(deltaDrain.queueSelectByRun).toBe(1);
   });
 
@@ -384,7 +416,7 @@ describe('Carga: enqueue bulk e drain sem N+1', () => {
   // N=10000 causava SÓ quando a suíte inteira (server + React/jsdom) compete por
   // CPU — isolado o teste de 10k passava, mas na suíte completa estourava o
   // default de 5s de forma intermitente. 2k roda rápido e prova o mesmo.
-  it('N=2000: deltaEnqueue.insertOrUpsert < 50 (bulk provado), deltaDrain.runsSelect = 0', async () => {
+  it('N=2000: deltaEnqueue.insertOrUpsert < 50 (bulk provado), deltaDrain.runsSelect ≤ 1', async () => {
     const { confirmResult, summary, deltaEnqueue, deltaDrain } = await runScenario(2000);
 
     expect(confirmResult.ok).toBe(true);
@@ -394,7 +426,7 @@ describe('Carga: enqueue bulk e drain sem N+1', () => {
     // Prova principal: não é 1 insert/upsert por lead (bulk real)
     expect(deltaEnqueue.insertOrUpsert).toBeLessThan(50);
     // Prova secundária: worker não faz select em runs durante o drain por item
-    expect(deltaDrain.runsSelect).toBe(0);
+    expect(deltaDrain.runsSelect).toBeLessThanOrEqual(1);
     // closeFinishedRuns: O(runs), não O(itens) — com 1 run, deve ser ~1
     expect(deltaDrain.queueSelectByRun).toBeLessThanOrEqual(5);
   });
@@ -411,13 +443,15 @@ describe('Carga: enqueue bulk e drain sem N+1', () => {
     expect(diff).toBeLessThan(5);
   });
 
-  it('deltaDrain.runsSelect = 0 para todos os N (sem N+1 no worker)', async () => {
+  it('deltaDrain.runsSelect ≤ 1 para todos os N (sem N+1 no worker)', async () => {
+    // O drain faz no máximo 1 select em runs POR TICK (lookup do throttle de
+    // campanha, O(1)) — nunca 1 por item.
     for (const n of [1, 100, 1000, 2000]) {
       const { deltaDrain } = await runScenario(n);
       expect(
         deltaDrain.runsSelect,
-        `N=${n}: runsSelect durante drain deve ser 0`,
-      ).toBe(0);
+        `N=${n}: runsSelect durante drain deve ser O(1), não O(N)`,
+      ).toBeLessThanOrEqual(1);
     }
   });
 

@@ -12,6 +12,32 @@
 const DEFAULT_GRAPH_VERSION = 'v21.0';
 
 /**
+ * Busca no banco as duas linhas de config que o envio precisa (credenciais Meta
+ * + template fixo do tenant). Separado de loadWhatsappContext para permitir
+ * cache por tenant nos workers: as linhas não variam por mensagem.
+ *
+ * @returns {{ ok: true, config, rec } | { ok: false, error }} — `ok: false`
+ *          apenas em erro de QUERY (não cacheável); "não configurado" é um
+ *          estado válido (ok: true com config nula/inativa).
+ */
+export async function loadWhatsappRows(supabase, tenantId) {
+  const { data: config, error: cfgErr } = await supabase
+    .from('whatsapp_config')
+    .select('phone_number_id, access_token, is_active')
+    .eq('tenant_id', tenantId)
+    .maybeSingle();
+  if (cfgErr) return { ok: false, error: 'whatsapp_config_error' };
+  if (!config || !config.is_active) return { ok: true, config: config || null, rec: null };
+
+  const { data: rec } = await supabase
+    .from('tenant_recommendation_config')
+    .select('whatsapp_template_name, whatsapp_template_language')
+    .eq('tenant_id', tenantId)
+    .maybeSingle();
+  return { ok: true, config, rec };
+}
+
+/**
  * Carrega as credenciais Meta + o template a usar no envio.
  *
  * A Meta só permite mensagens iniciadas pela empresa via TEMPLATE aprovado.
@@ -23,6 +49,8 @@ const DEFAULT_GRAPH_VERSION = 'v21.0';
  *
  * @param {string|null} templateNameOverride nome de um template aprovado a usar
  *        neste envio. Ausente (null) → comportamento idêntico ao atual (fixo).
+ * @param {object|null} preloadedRows resultado de loadWhatsappRows já em mãos
+ *        (ex.: vindo de cache por tenant nos workers). Ausente → busca no banco.
  * @returns {{ ok: true, config, template, graphVersion } | { ok: false, error }}
  */
 export async function loadWhatsappContext(
@@ -30,20 +58,12 @@ export async function loadWhatsappContext(
   tenantId,
   processEnv = process.env,
   templateNameOverride = null,
+  preloadedRows = null,
 ) {
-  const { data: config, error: cfgErr } = await supabase
-    .from('whatsapp_config')
-    .select('phone_number_id, access_token, is_active')
-    .eq('tenant_id', tenantId)
-    .maybeSingle();
-  if (cfgErr) return { ok: false, error: 'whatsapp_config_error' };
+  const rows = preloadedRows ?? (await loadWhatsappRows(supabase, tenantId));
+  if (!rows.ok) return { ok: false, error: rows.error };
+  const { config, rec } = rows;
   if (!config || !config.is_active) return { ok: false, error: 'whatsapp_not_configured' };
-
-  const { data: rec } = await supabase
-    .from('tenant_recommendation_config')
-    .select('whatsapp_template_name, whatsapp_template_language')
-    .eq('tenant_id', tenantId)
-    .maybeSingle();
 
   // Override por-disparo: usa o template escolhido. O idioma ainda vem da config
   // do tenant (quando houver) ou do padrão — NÃO exige o template fixo.
