@@ -105,6 +105,10 @@ export function createC2sProvider({ supabase, apiClient, processEnv = process.en
     const tenantId = integration.tenant_id;
     const floorMs = Date.parse(syncWindow.createdGteFloor);
     let createdLt = null; // retomada de página DENTRO do ciclo (created_lt desce)
+    // Janela do ciclo: o PISO de criação. Um piso muito antigo (ex.: cursor herdado
+    // de um backfill interrompido) explica um LIVE pesado (re-varre meses) — este
+    // log torna isso visível sem query no banco.
+    logger.info(`[contact2sale] {"event":"c2s.live.window","tenantId":"${tenantId}","createdGteFloor":"${syncWindow.createdGteFloor}"}`);
     for (;;) {
       const params = { ...baseParams, sort: '-created_at', ...(createdLt && { created_lt: toC2sDate(createdLt) }) };
       const r = await apiClient.getLeads(tenantId, { ...params, page: 1 });
