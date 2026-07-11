@@ -49,3 +49,6 @@ n8n/
 
 # Config local do Claude Code (não versionar)
 .claude/
+
+# graphify tool cache
+graphify-out/
