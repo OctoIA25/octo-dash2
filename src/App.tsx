@@ -41,6 +41,7 @@ const LeadViewPage = lazyWithRetry(() =>
 const ImovelViewPage = lazyWithRetry(() =>
   import("@/features/imoveis/pages/ImovelViewPage").then((module) => ({ default: module.ImovelViewPage }))
 );
+const TenantStatusPage = lazyWithRetry(() => import("@/features/status/pages/TenantStatusPage"));
 const OwnerDashboard = lazyWithRetry(() =>
   import("@/components/OwnerDashboard").then((module) => ({ default: module.OwnerDashboard }))
 );
@@ -105,7 +106,12 @@ const AppContent = () => {
                   <Route path="/imovel/:codigo" element={
                     isAuthenticated ? <ImovelViewPage /> : <MinimalLoginScreen />
                   } />
-                  
+
+                  {/* Status do Tenant — diagnóstico interno, SOMENTE owner */}
+                  <Route path="/owner/status" element={
+                    isAuthenticated && isOwner ? <TenantStatusPage /> : <MinimalLoginScreen />
+                  } />
+
                   {/* Rotas protegidas - requerem autenticação */}
                   <Route path="/*" element={
                     isAuthenticated ? (

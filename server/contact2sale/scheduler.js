@@ -10,6 +10,7 @@ import { createC2sApiClient } from './c2sApiClient.js';
 import { createC2sProvider } from './provider.js';
 import { createCrmSyncEngine } from '../crmSync/engine.js';
 import { createC2sSyncRunner } from './syncRunner.js';
+import { recordHeartbeat } from '../observability/heartbeat.js';
 
 export function makeC2sEngine(supabase, options = {}) {
   const processEnv = options.processEnv || process.env;
@@ -25,7 +26,14 @@ export function makeC2sEngine(supabase, options = {}) {
 
 export function makeC2sRunner(supabase, options = {}) {
   const engine = options.engine || makeC2sEngine(supabase, options);
-  return createC2sSyncRunner(engine, options);
+  // Heartbeat passivo por-tenant (P1 observabilidade). Wiring supabase→helper
+  // aqui; o runner não conhece observabilidade. options espalhado antes p/ um
+  // caller não sobrescrever o callback sem querer. Nunca lança (helper absorve).
+  return createC2sSyncRunner(engine, {
+    ...options,
+    onTenantCycleEnd: ({ result, ok, durationMs }) =>
+      recordHeartbeat(supabase, 'c2s_sync', { result, ok, durationMs }),
+  });
 }
 
 export async function startC2sScheduler(supabase, options = {}) {

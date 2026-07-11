@@ -23,6 +23,8 @@ import { dirname } from 'path';
 import fs from 'fs';
 import { createClient } from '@supabase/supabase-js';
 import { registerScrapeRoute } from './scrapers/index.js';
+import { registerHealthRoutes } from './observability/healthRoutes.js';
+import { registerTenantHealthRoutes } from './observability/tenantHealthRoutes.js';
 import { createWatermarkRouter } from './watermark/routes.js';
 import { createWorker } from './watermark/worker.js';
 import { promises } from 'dns';
@@ -472,6 +474,13 @@ app.get('/api/v1/health', (req, res) => {
     service: 'OctoDash CRM API'
   });
 });
+
+// GET /api/v1/health/jobs — saúde dos jobs (P1 observabilidade). Protegido por
+// X-Health-Token. Registrado nos DOIS entrypoints (proxy-production + api-server).
+registerHealthRoutes(app, supabase);
+
+// GET /api/v1/health/tenant/:tenantId — status operacional por tenant (P2, owner-only).
+registerTenantHealthRoutes(app, supabase);
 
 // ============================================
 // API v1 - LEADS

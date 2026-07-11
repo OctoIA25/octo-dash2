@@ -4019,6 +4019,14 @@ app.get('/api/v1/health', (req, res) => {
   });
 });
 
+// GET /api/v1/health/jobs — saúde dos jobs (P1 observabilidade). Protegido por
+// X-Health-Token. Registrado nos DOIS entrypoints (api-server + proxy-production).
+import { registerHealthRoutes } from './observability/healthRoutes.js';
+registerHealthRoutes(app, supabase);
+// GET /api/v1/health/tenant/:tenantId — status operacional por tenant (P2, owner-only).
+import { registerTenantHealthRoutes } from './observability/tenantHealthRoutes.js';
+registerTenantHealthRoutes(app, supabase);
+
 // ============================================
 // SCRAPER - Estudo de Mercado (substitui n8n)
 // ============================================

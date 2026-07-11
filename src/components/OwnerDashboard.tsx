@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Search, Shield, Settings, X, Check, LogOut, Building2, Code2, ArrowRight, Loader2, Package, Trash2 } from 'lucide-react';
+import { Plus, Search, Shield, Settings, X, Check, LogOut, Building2, Code2, ArrowRight, Loader2, Package, Trash2, Activity } from 'lucide-react';
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from '@/lib/supabaseClient';
 import { SidebarPermission } from '@/types/permissions';
@@ -367,6 +367,14 @@ export const OwnerDashboard = () => {
           </div>
 
           <div className="flex items-center gap-2">
+            <a
+              href="/owner/status"
+              className="inline-flex items-center gap-2 h-10 px-4 rounded-xl border border-slate-200 dark:border-slate-800 text-[13px] font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors"
+            >
+              <Activity className="h-4 w-4" />
+              Status
+            </a>
+
             <button
               type="button"
               className="inline-flex items-center gap-2 h-10 px-4 rounded-xl border border-slate-200 dark:border-slate-800 text-[13px] font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors"

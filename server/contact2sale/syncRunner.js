@@ -12,7 +12,7 @@
  * ponytail: guarda por-processo (deploy é instância única, scheduler flag-gated
  * p/ UM processo). Multi-instância exigiria advisory lock por tenant no Postgres.
  */
-export function createC2sSyncRunner(engine, { logger = console, maxConcurrentTenants = 5 } = {}) {
+export function createC2sSyncRunner(engine, { logger = console, maxConcurrentTenants = 5, onTenantCycleEnd = () => {} } = {}) {
   const inFlight = new Set(); // tenantIds enfileirados ou em execução
   const queue = [];
   const configuredMax = Number(maxConcurrentTenants);
@@ -27,11 +27,19 @@ export function createC2sSyncRunner(engine, { logger = console, maxConcurrentTen
     while (activeCount < maxWorkers && queue.length > 0) {
       const integ = queue.shift();
       activeCount++;
+      const startedAt = Date.now();
       Promise.resolve(engine.runTenantCycle(integ))
-        .catch((e) => {
-          // runTenantCycle já gravou sync_state 'error'; aqui é só telemetria.
-          logError(`[contact2sale] ciclo tenant=${integ.tenant_id} falhou: ${e?.message}`);
-        })
+        // Heartbeat passivo POR TENANT (P1 observabilidade): carimba a conclusão
+        // real de cada ciclo (sucesso ou erro). try/catch garante que a telemetria
+        // nunca vire rejeição — o .catch de erro real e o .finally seguem intactos.
+        .then(
+          (stats) => { try { onTenantCycleEnd({ result: stats, ok: true, durationMs: Date.now() - startedAt }); } catch { /* passivo */ } },
+          (e) => {
+            // runTenantCycle já gravou sync_state 'error'; aqui é só telemetria.
+            logError(`[contact2sale] ciclo tenant=${integ.tenant_id} falhou: ${e?.message}`);
+            try { onTenantCycleEnd({ result: { error: e?.message }, ok: false, durationMs: Date.now() - startedAt }); } catch { /* passivo */ }
+          },
+        )
         .finally(() => {
           activeCount--;
           inFlight.delete(integ.tenant_id);

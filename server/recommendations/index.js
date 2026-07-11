@@ -28,6 +28,7 @@ import { CHANNELS, resolveDelivery } from './channels.js';
 import { loadWhatsappContext, loadWhatsappRows, sendWhatsappTemplate } from './whatsappSender.js';
 import { runDueSchedules, computeNextRun } from './scheduler.js';
 import { getDeletedTenantIds } from '../utils/tenantSoftDelete.js';
+import { recordHeartbeat } from '../observability/heartbeat.js';
 import { memoizeTtl } from '../utils/ttlMemo.js';
 import { createTenantRateLimiter } from '../communication/rateLimiter.js';
 import { runDueRecovery } from './recoveryWorker.js';
@@ -995,12 +996,27 @@ export async function startRecommendationScheduler(supabase, options = {}) {
     // Mesmo tick atende os dois consumidores da fila de envio: agendamentos
     // vencidos e a fila do Agente de Recuperação. Reutilizam as MESMAS deps
     // (deliver, resolveDelivery, sendWhatsapp, findDuplicate, ambiente).
-    runDueSchedules(supabase, deps).catch((e) =>
-      console.error('[scheduler] erro na execução:', e?.message),
-    );
-    runDueRecovery(supabase, deps).catch((e) =>
-      console.error('[recovery] erro na execução:', e?.message),
-    );
+    // Os .catch individuais preservam o comportamento (cada um loga e não
+    // derruba o outro). allSettled só coleta o desfecho p/ o heartbeat passivo:
+    // ok=true só quando os DOIS resolvem; nenhum mascara o outro.
+    const startedAt = Date.now();
+    Promise.allSettled([
+      runDueSchedules(supabase, deps).catch((e) => {
+        console.error('[scheduler] erro na execução:', e?.message);
+        throw e;
+      }),
+      runDueRecovery(supabase, deps).catch((e) => {
+        console.error('[recovery] erro na execução:', e?.message);
+        throw e;
+      }),
+    ]).then((results) => {
+      const ok = results.every((r) => r.status === 'fulfilled');
+      recordHeartbeat(supabase, 'recommendation_scheduler', {
+        result: { schedules: results[0].status, recovery: results[1].status },
+        ok,
+        durationMs: Date.now() - startedAt,
+      });
+    });
   });
 
   // Loop contínuo do outbox de ações (agent_action_queue).
@@ -1017,12 +1033,20 @@ export async function startRecommendationScheduler(supabase, options = {}) {
     // passamos deliver/getEnvironment achatados E o bundle inteiro como
     // schedulerDeps (mesma forma do drain pós-confirm em agent-actions/routes.js).
     // Passar `deps` cru deixaria deps.schedulerDeps=undefined e quebraria o envio.
+    const outboxStartedAt = Date.now();
     runDueActions(supabase, {
       deliver: deps.deliver,
       schedulerDeps: deps,
       getEnvironment: deps.getEnvironment,
-    }).catch((e) =>
-      console.error('[agent-actions] erro no loop do outbox:', e?.message),
+    }).then(
+      // Heartbeat passivo do outbox (P1 observabilidade). O helper amostra este
+      // job p/ ~1x/min (throttle interno) — o loop segue em outboxLoopMs. Captura
+      // o summary que antes caía no .finally sem uso. Erro carimba ok=false.
+      (summary) => recordHeartbeat(supabase, 'outbox_worker', { result: summary, ok: true, durationMs: Date.now() - outboxStartedAt }),
+      (e) => {
+        console.error('[agent-actions] erro no loop do outbox:', e?.message);
+        recordHeartbeat(supabase, 'outbox_worker', { result: { error: e?.message }, ok: false, durationMs: Date.now() - outboxStartedAt });
+      },
     ).finally(() => {
       outboxTickRunning = false;
     });

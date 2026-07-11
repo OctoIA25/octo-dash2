@@ -13,7 +13,7 @@
  * (scheduler já é flag-gated p/ um processo). Se virar multi-instância, subir
  * a guarda p/ um lock distribuído (advisory lock no Postgres por tenant).
  */
-export function createSyncRunner(syncService, { logger = console } = {}) {
+export function createSyncRunner(syncService, { logger = console, onCycleEnd = () => {} } = {}) {
   let running = false;
 
   function trigger() {
@@ -21,9 +21,19 @@ export function createSyncRunner(syncService, { logger = console } = {}) {
     running = true;
     // .then(invoke) — não invoca fora do Promise: assim um throw síncrono de
     // syncAllTenants ainda cai no .catch e o .finally sempre libera a guarda.
+    const startedAt = Date.now();
     Promise.resolve()
       .then(() => syncService.syncAllTenants())
-      .catch((e) => logger.error(`[kenlo] erro no ciclo: ${e?.message}`))
+      // onCycleEnd é heartbeat PASSIVO: try/catch aqui garante que uma falha da
+      // telemetria nunca vire rejeição do ciclo nem impeça o .finally de liberar
+      // a guarda. Sucesso e erro carimbam (ok distingue) — o helper decide o ping.
+      .then(
+        (result) => { try { onCycleEnd({ result, ok: true, durationMs: Date.now() - startedAt }); } catch { /* passivo */ } },
+        (e) => {
+          logger.error(`[kenlo] erro no ciclo: ${e?.message}`);
+          try { onCycleEnd({ result: { error: e?.message }, ok: false, durationMs: Date.now() - startedAt }); } catch { /* passivo */ }
+        },
+      )
       .finally(() => { running = false; });
     return { started: true, alreadyRunning: false };
   }

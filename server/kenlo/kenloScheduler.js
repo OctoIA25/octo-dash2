@@ -12,6 +12,7 @@ import { makeBrokerLookups } from './brokerLookups.js';
 import { createKenloSyncService } from './KenloSyncService.js';
 import { createSyncRunner } from './syncRunner.js';
 import puppeteerLoginDriver from './puppeteerLoginDriver.js';
+import { recordHeartbeat } from '../observability/heartbeat.js';
 
 export function makeSyncService(supabase, options = {}) {
   const processEnv = options.processEnv || process.env;
@@ -28,7 +29,13 @@ export function makeSyncService(supabase, options = {}) {
 
 export function makeSyncRunner(supabase, options = {}) {
   const syncService = options.syncService || makeSyncService(supabase, options);
-  return createSyncRunner(syncService);
+  // Heartbeat passivo do ciclo agregado (P1 observabilidade). onCycleEnd é o
+  // callback opcional do runner — o wiring supabase→helper vive aqui, o runner
+  // não conhece observabilidade. Nunca lança (recordHeartbeat absorve tudo).
+  return createSyncRunner(syncService, {
+    onCycleEnd: ({ result, ok, durationMs }) =>
+      recordHeartbeat(supabase, 'kenlo_sync', { result, ok, durationMs }),
+  });
 }
 
 export async function startKenloScheduler(supabase, options = {}) {
