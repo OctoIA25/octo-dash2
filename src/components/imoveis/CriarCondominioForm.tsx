@@ -496,6 +496,12 @@ export const CriarCondominioForm = ({
     }
   }, [cepStatus, handleInputChange]);
 
+  // Popula o form ao ABRIR o modal ou ao trocar QUAL condomínio se edita.
+  // Depende de `initialData?.id` (valor estável), não do objeto `initialData` —
+  // este é recriado a cada render do pai (buildEditDataFromCondominio inline),
+  // e ter o objeto na dep fazia o reset disparar no meio de uma edição (ex.: um
+  // refetch de leads em background re-renderiza o pai), sobrescrevendo `fotos`
+  // com initialData.fotos e apagando a reordenação em andamento.
   useEffect(() => {
     if (isOpen) {
       if (isEdit && initialData) {
@@ -513,7 +519,8 @@ export const CriarCondominioForm = ({
       setSubmitStatus('idle');
       setSubmitMessage('');
     }
-  }, [initialData, isEdit, isOpen]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialData?.id, isEdit, isOpen]);
 
   // Carrega um condomínio existente no form (modo edit). Disparado pelo autocomplete
   // ou pelo botão "Editar este em vez de criar novo" no dialog de duplicidade.
@@ -620,11 +627,16 @@ export const CriarCondominioForm = ({
       // mantendo um único INSERT (em vez de INSERT + UPDATE).
       const targetId = editingId ?? crypto.randomUUID();
       const fotosNormalizadas = normalizeFotos(formData.fotos);
-      
-      const fotosUploaded: typeof fotosNormalizadas = [];
-      for (let i = 0; i < fotosNormalizadas.length; i++) {
-        const f = fotosNormalizadas[i];
-        if (isDataUrl(f.url)) {
+
+      // Sobe as fotos EM PARALELO (antes era um for sequencial: o tempo total era a
+      // soma de cada upload). O map preserva a ordem — cada resultado fica no mesmo
+      // índice —, então capa/ordenação continuam idênticas. Fotos já persistidas
+      // (URL http) passam direto sem custo. Se qualquer upload falhar, o Promise.all
+      // rejeita e cai no mesmo catch de antes.
+      const fotosUploaded = await Promise.all(
+        fotosNormalizadas.map(async (f, i) => {
+          if (!isDataUrl(f.url)) return f;
+
           const blob = await dataUrlToBlob(f.url);
           const ext = guessExtFromBlob(blob, 'jpg');
           const path = `${tenantId}/${targetId}/foto-${Date.now()}-${i}.${ext}`;
@@ -640,11 +652,9 @@ export const CriarCondominioForm = ({
             throw new Error(`Falha ao enviar a foto ${i + 1} para o storage. Tente novamente.`);
           }
           console.log(`[CriarCondominioForm] foto ${i + 1} OK → ${publicUrl}`);
-          fotosUploaded.push({ ...f, url: publicUrl, id });
-        } else {
-          fotosUploaded.push(f);
-        }
-      }
+          return { ...f, url: publicUrl, id };
+        }),
+      );
 
       // Preparar dados para inserção
       const condominioData = {
