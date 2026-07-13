@@ -98,8 +98,13 @@ export function useLeadsMetrics(options: UseLeadsMetricsOptions = {}): UseLeadsM
       return inFlightFetchRef.current;
     }
 
-    // Fallback para localStorage se tenantId não estiver disponível via useAuth
-    let effectiveTenantId = tenantId;
+    // Resolve o tenant efetivo. `tenantId === 'owner'` é o estado transitório do
+    // owner logo após entrar num tenant: o AuthContext ainda não reprocessou a
+    // impersonation, mas o localStorage já a tem (gravada antes do reload). Tratar
+    // 'owner' como "ainda não resolvido" e cair no localStorage evita disparar a
+    // query com tenant_id=eq.owner (dado errado no 1º paint) — mesmo comportamento
+    // de resolveTenantId, que já prioriza a impersonation.
+    let effectiveTenantId = tenantId && tenantId !== 'owner' ? tenantId : null;
     if (!effectiveTenantId) {
       try {
         const impersonation = localStorage.getItem('owner-impersonation');
@@ -112,7 +117,8 @@ export function useLeadsMetrics(options: UseLeadsMetricsOptions = {}): UseLeadsM
       }
     }
 
-    if (!effectiveTenantId) {
+    // Owner sem impersonação ativa não tem tenant de leads: não busca.
+    if (!effectiveTenantId || effectiveTenantId === 'owner') {
       console.warn('⚠️ useLeadsMetrics: tenantId não disponível');
       setIsLoading(false);
       return;

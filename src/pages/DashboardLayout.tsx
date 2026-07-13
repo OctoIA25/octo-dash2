@@ -202,8 +202,13 @@ const DashboardLayout = () => {
     return allowedSidebarPermissions.includes(permission);
   }, [allowedSidebarPermissions]);
 
-  // Mostrar loading apenas se não temos dados
-  if (isLoading && leads.length === 0 && !error) {
+  // O loader de tela cheia só faz sentido para as rotas que REALMENTE consomem o
+  // `leads` deste layout por prop (recebem safeLeads). As demais (Início, Meus Leads,
+  // Métricas, Imóveis, etc.) fazem seu próprio fetch e têm loading interno — prendê-las
+  // a este gate as deixa ~segundos em "Carregando CRM..." esperando dados que não usam.
+  const ROTAS_QUE_USAM_LEADS_DO_LAYOUT = ['/recrutamento', '/gestao-equipe', '/bolsao', '/configuracoes'];
+  const rotaUsaLeadsDoLayout = ROTAS_QUE_USAM_LEADS_DO_LAYOUT.some((r) => location.pathname.startsWith(r));
+  if (isLoading && leads.length === 0 && !error && rotaUsaLeadsDoLayout) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--bg-primary)' }}>
         <OctoDashLoader message="Carregando CRM..." size="lg" />

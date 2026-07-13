@@ -395,7 +395,7 @@ export function InicioNovaPage() {
   const userRole = user?.systemRole === 'owner' ? 'Owner' : user?.systemRole === 'admin' ? 'Gestor' : user?.systemRole === 'team_leader' ? 'Líder' : 'Corretor';
 
   const leadsNoFunil = generalMetrics?.totalLeads ?? leads.length;
-  const conversaoMes = generalMetrics?.taxaConversao ?? 0;
+  const conversaoMes = generalMetrics?.conversionRate ?? 0;
 
   const leadsNoFunilTrend = useMemo(() => {
     const now = new Date();

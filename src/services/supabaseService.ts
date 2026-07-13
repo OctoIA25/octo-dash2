@@ -129,22 +129,49 @@ interface CRMLeadRow {
   created_at: string | null;
 }
 
+const KENLO_LEADS_COLUMNS =
+  'id,external_id,client_name,client_phone,client_email,lead_timestamp,created_at,portal,message,interest_reference,interest_type,interest_is_sale,interest_is_rent,attended_by_name,stage,temperature,is_exclusive,archived_at,archive_reason';
+
+// Nº de páginas buscadas em paralelo por vez. Substitui o loop serial (uma página
+// só começava quando a anterior voltava) por lotes concorrentes, sem sobrecarregar
+// o Supabase com todas de uma vez.
+const KENLO_PAGE_CONCURRENCY = 6;
+
+async function fetchKenloLeadsPage(tenantId: string, pageIndex: number): Promise<KenloLeadRow[]> {
+  const from = pageIndex * PAGE_SIZE;
+  const { data, error } = await supabase
+    .from('kenlo_leads')
+    .select(KENLO_LEADS_COLUMNS)
+    .eq('tenant_id', tenantId)
+    // ORDER BY estável é obrigatório ao paginar por offset em paralelo: sem ele o
+    // PostgREST não garante que as janelas de offset sejam fatias disjuntas de uma
+    // mesma ordenação → páginas concorrentes podem duplicar/perder linhas. O loop
+    // serial mascarava isso; os lotes concorrentes expõem. Mesmo padrão das demais
+    // paginações do projeto (leadsService, leadsMetricsService).
+    .order('created_at', { ascending: false })
+    .range(from, from + PAGE_SIZE - 1);
+  if (error) throw new Error(error.message);
+  return (data ?? []) as KenloLeadRow[];
+}
+
 async function fetchKenloLeadsPaginated(tenantId: string): Promise<KenloLeadRow[]> {
   const rows: KenloLeadRow[] = [];
-  let from = 0;
+  let batchStart = 0;
+  // Sem count antecipado (evita a query extra e o race de tenant): pede um lote,
+  // concatena na ordem das páginas, e para quando alguma página vier com < PAGE_SIZE
+  // — o mesmo critério de fim do loop serial original, agora avaliado por lote.
+  // ponytail: no pior caso o último lote busca algumas páginas além do fim (retornam
+  // vazias) — troca ~5 requests extras por eliminar a serialização de N páginas.
   while (true) {
-    const { data, error } = await supabase
-      .from('kenlo_leads')
-      .select(
-        'id,external_id,client_name,client_phone,client_email,lead_timestamp,created_at,portal,message,interest_reference,interest_type,interest_is_sale,interest_is_rent,attended_by_name,stage,temperature,is_exclusive,archived_at,archive_reason'
+    const pages = await Promise.all(
+      Array.from({ length: KENLO_PAGE_CONCURRENCY }, (_, i) =>
+        fetchKenloLeadsPage(tenantId, batchStart + i)
       )
-      .eq('tenant_id', tenantId)
-      .range(from, from + PAGE_SIZE - 1);
-    if (error) throw new Error(error.message);
-    const page = (data ?? []) as KenloLeadRow[];
-    rows.push(...page);
-    if (page.length < PAGE_SIZE) break;
-    from += PAGE_SIZE;
+    );
+    for (const page of pages) rows.push(...page);
+    const reachedEnd = pages.some((page) => page.length < PAGE_SIZE);
+    if (reachedEnd) break;
+    batchStart += KENLO_PAGE_CONCURRENCY;
   }
   return rows;
 }

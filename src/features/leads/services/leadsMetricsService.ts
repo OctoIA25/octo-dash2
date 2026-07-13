@@ -352,16 +352,20 @@ export async function fetchLeadsForMetrics(
     // Ordenar por data de criação (mais recentes primeiro)
     query = query.order('created_at', { ascending: false });
 
-    const { data, error } = await query;
+    // `leads` (CRM) e `kenlo_leads` são independentes até o dedup abaixo — busca-se
+    // as duas fontes em paralelo em vez de esperar uma terminar antes da outra.
+    const [leadsResult, kenloLeads] = await Promise.all([
+      query,
+      fetchKenloLeadsAsCRM(tenantId, agentId, includeArchived),
+    ]);
 
-    if (error) {
-      console.error('❌ Erro ao buscar leads para métricas:', error);
-      return [];
+    if (leadsResult.error) {
+      // Erro ao buscar CRM não invalida os kenlo já obtidos: segue com os que houver
+      // (mais resiliente que o antigo return [], que descartava tudo).
+      console.error('❌ Erro ao buscar leads para métricas:', leadsResult.error);
     }
 
-    const crmLeads = (data || []) as CRMLead[];
-
-    const kenloLeads = await fetchKenloLeadsAsCRM(tenantId, agentId, includeArchived);
+    const crmLeads = (leadsResult.data || []) as CRMLead[];
 
     // Dedupe kenlo_leads que já foram migrados para `leads`.
     // O vínculo é leads.source_lead_id === kenlo_leads.external_id (após conversão,
