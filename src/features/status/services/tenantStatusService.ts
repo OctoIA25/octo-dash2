@@ -50,11 +50,23 @@ export interface WhatsappCard {
   error?: string;
 }
 
+export interface LiaBlock {
+  available: boolean;
+  ativa: boolean;
+  minutos_desde_ultima_msg?: number | null;
+  mensagens?: { total: number; ia: number; corretor: number; proporcao_ia_corretor: number | null };
+  followups?: { pending: number; sent: number; cancelled: number; expired: number; taxa_envio: number };
+  perguntas?: { pendente: number; respondida: number; taxa_resposta: number; tempo_mediano_min: number | null };
+  visitas?: { total: number; confirmadas: number; taxa_confirmacao: number };
+  engajamento?: { interacao_media: number | null; lead_mais_ativo: number | null };
+  qualificacao?: { fatos: number; leads_qualificados: number };
+}
+
 export interface IaCard {
   available: boolean;
   provider: string | null;
   model: string | null;
-  telemetry: 'not_instrumented';
+  lia?: LiaBlock;
   error?: string;
 }
 

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   classifyFailure, parseSyncState, deriveSyncCard,
-  deriveOutboxCard, deriveWebhooksCard, deriveWhatsappCard, unavailableCard,
+  deriveOutboxCard, deriveWebhooksCard, deriveWhatsappCard, unavailableCard, deriveLiaCard,
 } from './tenantHealthLogic.js';
 
 describe('classifyFailure', () => {
@@ -107,5 +107,110 @@ describe('deriveOutboxCard / deriveWebhooksCard / deriveWhatsappCard', () => {
 describe('unavailableCard', () => {
   it('available:false com erro genérico (não vaza detalhe)', () => {
     expect(unavailableCard()).toEqual({ available: false, status: 'unknown', failure_origin: 'internal', error: 'query failed' });
+  });
+});
+
+describe('deriveLiaCard', () => {
+  const NOW = Date.parse('2026-07-12T04:20:00.000Z');
+  const base = {
+    totalMensagens: 561, msgsIA: 410, msgsCorretor: 151,
+    ultimaMsgAt: '2026-07-12T04:05:00.000Z',
+    fPending: 20, fSent: 45, fCancelled: 244, fExpired: 10,
+    pPendente: 133, pRespondida: 35,
+    respostasRows: [
+      { criado_em: '2026-07-12T00:00:00.000Z', respondida_em: '2026-07-12T00:10:00.000Z' }, // 10min
+      { criado_em: '2026-07-12T00:00:00.000Z', respondida_em: '2026-07-12T00:30:00.000Z' }, // 30min
+      { criado_em: '2026-07-12T00:00:00.000Z', respondida_em: '2026-07-12T01:30:00.000Z' }, // 90min
+    ],
+    visTotal: 89, visConfirmadas: 1,
+    interacoes: [1, 5, 64, 2], // avg 18, max 64
+    fatos: 298, leadsQualificados: 160,
+    now: NOW,
+  };
+
+  it('tenant sem LIA (0 mensagens) => ativa:false e nada mais', () => {
+    const c = deriveLiaCard({ ...base, totalMensagens: 0 });
+    expect(c).toEqual({ available: true, ativa: false });
+  });
+
+  it('tenant ativo => ativa:true com todos os blocos', () => {
+    const c = deriveLiaCard(base);
+    expect(c.available).toBe(true);
+    expect(c.ativa).toBe(true);
+    expect(c.minutos_desde_ultima_msg).toBe(15); // 04:20 - 04:05
+    expect(c.mensagens).toEqual({ total: 561, ia: 410, corretor: 151, proporcao_ia_corretor: 2.72 });
+    expect(c.followups).toEqual({ pending: 20, sent: 45, cancelled: 244, expired: 10, taxa_envio: 0.14 });
+    expect(c.perguntas.pendente).toBe(133);
+    expect(c.perguntas.respondida).toBe(35);
+    expect(c.perguntas.taxa_resposta).toBe(0.21);
+    expect(c.perguntas.tempo_mediano_min).toBe(30); // mediana de [10,30,90]
+    expect(c.visitas).toEqual({ total: 89, confirmadas: 1, taxa_confirmacao: 0.01 });
+    expect(c.engajamento).toEqual({ interacao_media: 18, lead_mais_ativo: 64 });
+    expect(c.qualificacao).toEqual({ fatos: 298, leads_qualificados: 160 });
+  });
+
+  it('proporcao_ia_corretor é null quando corretor não respondeu nada', () => {
+    const c = deriveLiaCard({ ...base, msgsCorretor: 0 });
+    expect(c.mensagens.proporcao_ia_corretor).toBeNull();
+  });
+
+  it('mediana com nº par de respostas = média dos 2 centrais', () => {
+    const c = deriveLiaCard({
+      ...base,
+      respostasRows: [
+        { criado_em: '2026-07-12T00:00:00.000Z', respondida_em: '2026-07-12T00:10:00.000Z' }, // 10
+        { criado_em: '2026-07-12T00:00:00.000Z', respondida_em: '2026-07-12T00:20:00.000Z' }, // 20
+        { criado_em: '2026-07-12T00:00:00.000Z', respondida_em: '2026-07-12T00:30:00.000Z' }, // 30
+        { criado_em: '2026-07-12T00:00:00.000Z', respondida_em: '2026-07-12T00:50:00.000Z' }, // 50
+      ],
+    });
+    expect(c.perguntas.tempo_mediano_min).toBe(25); // (20+30)/2
+  });
+
+  it('tempo_mediano_min é null sem respostas, e ignora linhas com timestamp inválido', () => {
+    expect(deriveLiaCard({ ...base, respostasRows: [] }).perguntas.tempo_mediano_min).toBeNull();
+    const c = deriveLiaCard({
+      ...base,
+      respostasRows: [{ criado_em: 'lixo', respondida_em: null }],
+    });
+    expect(c.perguntas.tempo_mediano_min).toBeNull();
+  });
+
+  it('tempo_mediano_min ignora delta negativo (respondida antes de criada — skew/ordem)', () => {
+    const c = deriveLiaCard({
+      ...base,
+      respostasRows: [
+        { criado_em: '2026-07-12T01:00:00.000Z', respondida_em: '2026-07-12T00:30:00.000Z' }, // -30min: descartado
+        { criado_em: '2026-07-12T00:00:00.000Z', respondida_em: '2026-07-12T00:20:00.000Z' }, // 20min: vale
+      ],
+    });
+    expect(c.perguntas.tempo_mediano_min).toBe(20); // só a linha válida entra
+  });
+
+  it('engajamento null quando não há interações', () => {
+    const c = deriveLiaCard({ ...base, interacoes: [] });
+    expect(c.engajamento).toEqual({ interacao_media: null, lead_mais_ativo: null });
+  });
+
+  it('taxas viram 0 (não NaN) quando denominador é 0', () => {
+    const c = deriveLiaCard({
+      ...base, totalMensagens: 1, msgsIA: 1, msgsCorretor: 0,
+      fPending: 0, fSent: 0, fCancelled: 0, fExpired: 0,
+      pPendente: 0, pRespondida: 0, respostasRows: [],
+      visTotal: 0, visConfirmadas: 0,
+    });
+    expect(c.followups.taxa_envio).toBe(0);
+    expect(c.perguntas.taxa_resposta).toBe(0);
+    expect(c.visitas.taxa_confirmacao).toBe(0);
+  });
+
+  it('minutos_desde_ultima_msg é null se não há timestamp', () => {
+    const c = deriveLiaCard({ ...base, ultimaMsgAt: null });
+    expect(c.minutos_desde_ultima_msg).toBeNull();
+  });
+
+  it('minutos_desde_ultima_msg nunca é negativo (timestamp futuro por skew => 0)', () => {
+    const c = deriveLiaCard({ ...base, ultimaMsgAt: '2026-07-12T05:00:00.000Z', now: NOW }); // NOW = 04:20, msg no futuro
+    expect(c.minutos_desde_ultima_msg).toBe(0);
   });
 });

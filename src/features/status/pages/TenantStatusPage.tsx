@@ -7,10 +7,10 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { RefreshCw, Loader2 } from 'lucide-react';
+import { RefreshCw, Loader2, Sparkles } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { fetchTenantStatus, type CardStatus, type FailureOrigin, type JobStatus } from '../services/tenantStatusService';
+import { fetchTenantStatus, type CardStatus, type FailureOrigin, type JobStatus, type LiaBlock } from '../services/tenantStatusService';
 
 interface OwnerTenant { id: string; code: string; name: string }
 const SELECTED_KEY = 'owner-status-selected-tenant';
@@ -30,12 +30,12 @@ const ORIGIN_LABEL: Record<Exclude<FailureOrigin, null>, string> = {
   config:   '🟡 Config do tenant',
 };
 
-function StatusBadge({ status }: { status: CardStatus }) {
+function StatusBadge({ status, labelOverride }: { status: CardStatus; labelOverride?: string }) {
   const s = STATUS_STYLE[status] ?? STATUS_STYLE.unknown;
   return (
     <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600">
       <span className={`h-2 w-2 rounded-full ${s.dot}`} />
-      {s.label}
+      {labelOverride ?? s.label}
     </span>
   );
 }
@@ -64,6 +64,121 @@ function StatusCard({
         {children}
         {origin && (
           <div className="mt-2 text-xs text-slate-500">{ORIGIN_LABEL[origin]}</div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// --- Card da LIA: mesmo vocabulário visual da página (slate + sinal), stat tiles. ---
+
+// "A LIA está parada?" em uma cor. <60min ativa, <24h lenta, senão parada.
+function liaActivity(mins: number | null | undefined): { status: CardStatus; label: string } {
+  if (mins == null) return { status: 'unknown', label: 'sem registro' };
+  if (mins < 60) return { status: 'ok', label: 'ativa agora' };
+  if (mins < 24 * 60) return { status: 'degraded', label: 'sem atividade recente' };
+  return { status: 'error', label: 'parada' };
+}
+
+// "há 12 min" / "há 3 h" / "há 5 d" — legível para o owner.
+function humanizeMins(mins: number | null | undefined): string {
+  if (mins == null) return '—';
+  if (mins < 60) return `há ${mins} min`;
+  if (mins < 24 * 60) return `há ${Math.round(mins / 60)} h`;
+  return `há ${Math.round(mins / (24 * 60))} d`;
+}
+
+const pct = (n: number) => `${Math.round(n * 100)}%`;
+
+// Número grande + rótulo pequeno + subtexto opcional. tone tinge só o número.
+function StatTile({
+  value, label, sub, tone = 'neutral',
+}: {
+  value: React.ReactNode; label: string; sub?: React.ReactNode;
+  tone?: 'neutral' | 'ok' | 'warn' | 'bad';
+}) {
+  const toneCls = {
+    neutral: 'text-slate-900', ok: 'text-emerald-600', warn: 'text-amber-600', bad: 'text-red-600',
+  }[tone];
+  return (
+    <div className="rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2.5">
+      <div className={`text-xl font-semibold tabular-nums leading-tight ${toneCls}`}>{value}</div>
+      <div className="mt-0.5 text-[11px] font-medium uppercase tracking-wide text-slate-400">{label}</div>
+      {sub != null && <div className="mt-0.5 text-xs text-slate-500">{sub}</div>}
+    </div>
+  );
+}
+
+// Card IA + LIA em largura total (span 3), como o de Jobs. Provider/Modelo discretos
+// no topo; métricas da LIA em tiles agrupados pelas perguntas do owner.
+function IaLiaCard({ available, provider, model, lia }: {
+  available: boolean; provider: string | null; model: string | null; lia?: LiaBlock;
+}) {
+  const activity = liaActivity(lia?.ativa ? lia.minutos_desde_ultima_msg : null);
+  const badge = lia?.ativa ? activity.status : (available ? 'inactive' : 'unknown');
+  const badgeLabel = !lia || !lia.available
+    ? 'indisponível'
+    : !lia.ativa ? 'não ativa neste tenant' : activity.label;
+
+  return (
+    <Card className="sm:col-span-2 lg:col-span-3">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-slate-400" />
+          <CardTitle className="text-base font-semibold text-slate-900">IA · LIA</CardTitle>
+          <span className="text-xs text-slate-400">
+            {provider ? `${provider}${model ? ` · ${model}` : ''}` : 'sem provider configurado'}
+          </span>
+        </div>
+        <StatusBadge status={badge} labelOverride={badgeLabel} />
+      </CardHeader>
+      <CardContent className="pt-0">
+        {(!lia || !lia.available) && (
+          <p className="text-sm text-slate-500">Métricas da LIA indisponíveis no momento.</p>
+        )}
+        {lia?.available && !lia.ativa && (
+          <p className="text-sm text-slate-500">
+            A LIA ainda não conversou com corretores deste tenant.
+          </p>
+        )}
+        {lia?.ativa && (
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+            <StatTile
+              value={humanizeMins(lia.minutos_desde_ultima_msg)}
+              label="Última mensagem"
+              tone={activity.status === 'ok' ? 'ok' : activity.status === 'degraded' ? 'warn' : activity.status === 'error' ? 'bad' : 'neutral'}
+            />
+            <StatTile
+              value={lia.mensagens!.total}
+              label="Mensagens"
+              sub={`${lia.mensagens!.ia} IA · ${lia.mensagens!.corretor} corretor`}
+            />
+            <StatTile
+              value={`${lia.perguntas!.respondida}/${lia.perguntas!.pendente + lia.perguntas!.respondida}`}
+              label="Perguntas respondidas"
+              sub={`${pct(lia.perguntas!.taxa_resposta)} · mediana ${lia.perguntas!.tempo_mediano_min == null ? '—' : `${lia.perguntas!.tempo_mediano_min} min`}`}
+              tone={lia.perguntas!.pendente > lia.perguntas!.respondida ? 'warn' : 'neutral'}
+            />
+            <StatTile
+              value={lia.followups!.sent}
+              label="Follow-ups enviados"
+              sub={`${pct(lia.followups!.taxa_envio)} · ${lia.followups!.pending} pendentes`}
+            />
+            <StatTile
+              value={`${lia.visitas!.confirmadas}/${lia.visitas!.total}`}
+              label="Visitas confirmadas"
+            />
+            <StatTile
+              value={lia.engajamento!.interacao_media == null ? '—' : lia.engajamento!.interacao_media}
+              label="Interação média / lead"
+              sub={lia.engajamento!.lead_mais_ativo == null ? undefined : `máx ${lia.engajamento!.lead_mais_ativo}`}
+            />
+            <StatTile
+              value={lia.qualificacao!.fatos}
+              label="Fatos qualificados"
+              sub={`${lia.qualificacao!.leads_qualificados} leads`}
+            />
+          </div>
         )}
       </CardContent>
     </Card>
@@ -179,11 +294,12 @@ export default function TenantStatusPage() {
             <Field label="Falhas" value={data.tenant.whatsapp.failed} />
           </StatusCard>
 
-          <StatusCard title="IA" status={data.tenant.ia.available ? 'ok' : 'unknown'}>
-            <Field label="Provider" value={data.tenant.ia.provider ?? 'não configurado'} />
-            <Field label="Modelo" value={data.tenant.ia.model} />
-            <Field label="Telemetria" value="não instrumentada" />
-          </StatusCard>
+          <IaLiaCard
+            available={data.tenant.ia.available}
+            provider={data.tenant.ia.provider}
+            model={data.tenant.ia.model}
+            lia={data.tenant.ia.lia}
+          />
 
           {/* Plataforma (global — não é deste tenant) */}
           <Card className="sm:col-span-2 lg:col-span-3">

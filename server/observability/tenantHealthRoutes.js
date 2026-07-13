@@ -16,6 +16,7 @@ import { makeRequireOwner } from '../utils/ownerAuth.js';
 import { JOB_LIMITS } from './healthRoutes.js';
 import {
   deriveSyncCard, deriveOutboxCard, deriveWebhooksCard, deriveWhatsappCard, unavailableCard,
+  deriveLiaCard,
 } from './tenantHealthLogic.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -40,6 +41,17 @@ async function lastErrorFrom(supabase, table, tenantId, errorCol, statusCol, sta
   return data?.[0]?.[errorCol] || null;
 }
 
+// Traz valores de UMA coluna (com filtros) — p/ agregados que o PostgREST não faz nativo.
+// ponytail: teto de 5000 linhas ok no volume atual (maior tabela lia_* = ~560 linhas);
+// se alguma lia_* passar de 5000, interacao_media/leads_qualificados subcontam — subir o limite ou paginar.
+async function selectCol(supabase, table, col, filters, limit = 5000) {
+  let q = supabase.from(table).select(col).limit(limit);
+  for (const [c, v] of Object.entries(filters)) q = q.eq(c, v);
+  const { data, error } = await q;
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+
 export function registerTenantHealthRoutes(app, supabase) {
   const requireOwner = makeRequireOwner(supabase);
 
@@ -49,7 +61,7 @@ export function registerTenantHealthRoutes(app, supabase) {
       return res.status(400).json({ error: 'invalid_tenant_id' });
     }
     const now = Date.now();
-
+    
     // Cada thunk é independente. allSettled: falha isolada → card indisponível.
     const [
       c2s, kenlo, ia,
@@ -57,6 +69,12 @@ export function registerTenantHealthRoutes(app, supabase) {
       webhookFailures, webhookErr,
       waConfig, waQueued, waFailed, waErr,
       jobs, tenantRow,
+      // LIA (todas filtram por tenant_id):
+      liaMsgTotal, liaMsgIA, liaMsgUser, liaLastMsg,
+      liaFpending, liaFsent, liaFcancelled, liaFexpired,
+      liaPpendente, liaPrespondida, liaRespostas,
+      liaVisTotal, liaVisConfirmadas,
+      liaInteracoes, liaFatos, liaFactsRows,
     ] = await Promise.allSettled([
       
       supabase.from('tenant_contact2sale_config').select('status,last_sync_at,sync_state').eq('tenant_id', tenantId).maybeSingle(),
@@ -80,6 +98,28 @@ export function registerTenantHealthRoutes(app, supabase) {
       supabase.from('job_heartbeats').select('job_name,last_run_at,last_result'),
       // Soft-delete: diagnóstico legítimo p/ owner (não bloqueia — só sinaliza).
       supabase.from('tenants').select('deleted_at').eq('id', tenantId).maybeSingle(),
+
+      // --- LIA (só leitura, agregados; toda query filtra tenant_id) ---
+      // NÃO ler colunas mortas de lia_lead_extra (empreendimentos_shown/liked/rejected,
+      // search_context, conversation_state, inferred_profile, rejection_count): 0/339
+      // populadas em 2026-07-12. Métrica sobre coluna vazia engana — não construir sobre elas.
+      countBy(supabase, 'lia_corretor_messages', { tenant_id: tenantId }),
+      countBy(supabase, 'lia_corretor_messages', { tenant_id: tenantId, role: 'assistant' }),
+      countBy(supabase, 'lia_corretor_messages', { tenant_id: tenantId, role: 'user' }),
+      supabase.from('lia_corretor_messages').select('created_at')
+        .eq('tenant_id', tenantId).order('created_at', { ascending: false }).limit(1),
+      countBy(supabase, 'lia_followups', { tenant_id: tenantId, status: 'pending' }),
+      countBy(supabase, 'lia_followups', { tenant_id: tenantId, status: 'sent' }),
+      countBy(supabase, 'lia_followups', { tenant_id: tenantId, status: 'cancelled' }),
+      countBy(supabase, 'lia_followups', { tenant_id: tenantId, status: 'expired' }),
+      countBy(supabase, 'lia_perguntas_corretor', { tenant_id: tenantId, status: 'pendente' }),
+      countBy(supabase, 'lia_perguntas_corretor', { tenant_id: tenantId, status: 'respondida' }),
+      selectCol(supabase, 'lia_perguntas_corretor', 'criado_em,respondida_em', { tenant_id: tenantId, status: 'respondida' }),
+      countBy(supabase, 'lia_visitas', { tenant_id: tenantId }),
+      countBy(supabase, 'lia_visitas', { tenant_id: tenantId, status: 'confirmada' }),
+      selectCol(supabase, 'lia_lead_extra', 'interaction_count', { tenant_id: tenantId }),
+      countBy(supabase, 'lia_lead_facts', { tenant_id: tenantId }),
+      selectCol(supabase, 'lia_lead_facts', 'lead_id', { tenant_id: tenantId }),
     ]);
 
     // --- Cards por tenant (cada um degrada isolado) ---
@@ -113,13 +153,32 @@ export function registerTenantHealthRoutes(app, supabase) {
         })
       : unavailableCard();
 
+    // IA + LIA. Card base (provider/model) degrada junto do api_keys; o bloco lia
+    // degrada isolado (allSettled). telemetry:'not_instrumented' foi substituído.
     if (ia.status === 'fulfilled' && !ia.value.error) {
       const key = ia.value.data?.[0];
-      tenant.ia = key
-        ? { available: true, provider: key.provider, model: key.model, telemetry: 'not_instrumented' }
-        : { available: true, provider: null, model: null, telemetry: 'not_instrumented' };
+      tenant.ia = { available: true, provider: key?.provider ?? null, model: key?.model ?? null };
     } else {
       tenant.ia = unavailableCard();
+    }
+    // Bloco lia: exige as leituras essenciais fulfilled; senão indisponível.
+    const liaCore = [liaMsgTotal, liaMsgIA, liaMsgUser, liaFpending, liaFsent, liaFcancelled, liaFexpired, liaPpendente, liaPrespondida, liaVisTotal, liaVisConfirmadas, liaFatos];
+    const val = (s, d) => (s.status === 'fulfilled' ? s.value : d);
+    if (liaCore.every((s) => s.status === 'fulfilled')) {
+      tenant.ia.lia = deriveLiaCard({
+        totalMensagens: liaMsgTotal.value, msgsIA: liaMsgIA.value, msgsCorretor: liaMsgUser.value,
+        ultimaMsgAt: (liaLastMsg.status === 'fulfilled' && !liaLastMsg.value.error) ? (liaLastMsg.value.data?.[0]?.created_at ?? null) : null,
+        fPending: liaFpending.value, fSent: liaFsent.value, fCancelled: liaFcancelled.value, fExpired: liaFexpired.value,
+        pPendente: liaPpendente.value, pRespondida: liaPrespondida.value,
+        respostasRows: val(liaRespostas, []),
+        visTotal: liaVisTotal.value, visConfirmadas: liaVisConfirmadas.value,
+        interacoes: val(liaInteracoes, []).map((r) => r.interaction_count).filter((n) => typeof n === 'number'),
+        fatos: liaFatos.value,
+        leadsQualificados: new Set(val(liaFactsRows, []).map((r) => r.lead_id)).size,
+        now,
+      });
+    } else if (tenant.ia.available) {
+      tenant.ia.lia = unavailableCard();
     }
 
     // --- Plataforma: liveness global dos jobs (reusa JOB_LIMITS da P1) ---

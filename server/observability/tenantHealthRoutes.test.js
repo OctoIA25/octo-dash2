@@ -103,7 +103,7 @@ describe('GET /api/v1/health/tenant/:tenantId', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body.tenant.contact2sale.status).toBe('ok');
     expect(res.body.tenant.kenlo.status).toBe('inactive'); // sem config
-    expect(res.body.tenant.ia).toEqual({ available: true, provider: 'anthropic', model: 'claude-sonnet-5', telemetry: 'not_instrumented' });
+    expect(res.body.tenant.ia).toMatchObject({ available: true, provider: 'anthropic', model: 'claude-sonnet-5' });
     expect(res.body.tenant.ia.api_key).toBeUndefined(); // NUNCA expõe
     expect(res.body.platform.jobs.c2s_sync.ok).toBe(true);
     expect(res.body.exists).toBe(true);
@@ -154,5 +154,47 @@ describe('GET /api/v1/health/tenant/:tenantId', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body.deleted_at).toBe('2026-07-01T00:00:00Z');
     expect(res.body.exists).toBe(true);
+  });
+
+  it('200 owner: card ia ganha bloco lia (ativa) e perde telemetry', async () => {
+    const app = fakeApp();
+    const supabase = makeSupabase({
+      user: OWNER_USER,
+      tables: {
+        tenant_api_keys: { data: [{ provider: 'anthropic', model: 'claude-sonnet-5' }], error: null },
+        // LIA: mensagens com count>0 => ativa:true. (mock dá o mesmo count a todas as queries da tabela)
+        lia_corretor_messages: { count: 561, error: null, data: [{ created_at: '2026-07-12T04:05:00.000Z' }] },
+        lia_followups: { count: 45, error: null },
+        lia_perguntas_corretor: { count: 35, error: null, data: [] },
+        lia_visitas: { count: 89, error: null },
+        lia_lead_extra: { count: 0, error: null, data: [{ interaction_count: 5 }] },
+        lia_lead_facts: { count: 298, error: null, data: [{ lead_id: 'a' }] },
+      },
+    });
+    registerTenantHealthRoutes(app, supabase);
+    const res = await run(app.routes['GET /api/v1/health/tenant/:tenantId'], reqFor(UUID));
+    expect(res.statusCode).toBe(200);
+    expect(res.body.tenant.ia.lia).toBeDefined();
+    expect(res.body.tenant.ia.lia.ativa).toBe(true);
+    expect(res.body.tenant.ia.telemetry).toBeUndefined();
+  });
+
+  it('200 owner: tenant sem LIA => ia.lia.ativa:false', async () => {
+    const app = fakeApp();
+    const supabase = makeSupabase({
+      user: OWNER_USER,
+      tables: {
+        tenant_api_keys: { data: [], error: null },
+        lia_corretor_messages: { count: 0, error: null, data: [] },
+        lia_followups: { count: 0, error: null },
+        lia_perguntas_corretor: { count: 0, error: null, data: [] },
+        lia_visitas: { count: 0, error: null },
+        lia_lead_extra: { count: 0, error: null, data: [] },
+        lia_lead_facts: { count: 0, error: null, data: [] },
+      },
+    });
+    registerTenantHealthRoutes(app, supabase);
+    const res = await run(app.routes['GET /api/v1/health/tenant/:tenantId'], reqFor(UUID));
+    expect(res.body.tenant.ia.lia).toEqual({ available: true, ativa: false });
   });
 });

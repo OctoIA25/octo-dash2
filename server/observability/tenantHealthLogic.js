@@ -133,3 +133,67 @@ export function deriveWhatsappCard({ active = false, queued = 0, failed = 0, las
 export function unavailableCard() {
   return { available: false, status: 'unknown', failure_origin: 'internal', error: 'query failed' };
 }
+
+const round1 = (n) => Math.round(n * 10) / 10;
+const round2 = (n) => Math.round(n * 100) / 100;
+
+// Mediana de uma lista de números (já filtrada). [] => null.
+function median(nums) {
+  if (!nums.length) return null;
+  const s = [...nums].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
+/**
+ * Deriva o bloco `ia.lia` do card de IA a partir de contagens/linhas já lidas.
+ * PURO — toda a matemática do diagnóstico da LIA. Ver spec 2026-07-12.
+ * @param {object} i  ver JSDoc dos campos no plano/spec (contagens + respostasRows + interacoes)
+ */
+export function deriveLiaCard(i) {
+  const now = i.now ?? Date.now();
+  if (!(i.totalMensagens > 0)) {
+    return { available: true, ativa: false };
+  }
+
+  const totalFollowups = i.fPending + i.fSent + i.fCancelled + i.fExpired;
+  const totalPerguntas = i.pPendente + i.pRespondida;
+
+  // tempo até resposta: deltas em minutos, só linhas com ambos timestamps válidos.
+  const deltas = (i.respostasRows || [])
+    .map((r) => (Date.parse(r?.respondida_em) - Date.parse(r?.criado_em)) / 60000)
+    .filter((d) => Number.isFinite(d) && d >= 0);
+
+  const interacoes = i.interacoes || [];
+
+  return {
+    available: true,
+    ativa: true,
+    // max(0): timestamp futuro (skew de relógio) não deve virar "há -N min".
+    minutos_desde_ultima_msg: i.ultimaMsgAt ? Math.max(0, Math.round((now - Date.parse(i.ultimaMsgAt)) / 60000)) : null,
+    mensagens: {
+      total: i.totalMensagens,
+      ia: i.msgsIA,
+      corretor: i.msgsCorretor,
+      proporcao_ia_corretor: i.msgsCorretor > 0 ? round2(i.msgsIA / i.msgsCorretor) : null,
+    },
+    followups: {
+      pending: i.fPending, sent: i.fSent, cancelled: i.fCancelled, expired: i.fExpired,
+      taxa_envio: totalFollowups > 0 ? round2(i.fSent / totalFollowups) : 0,
+    },
+    perguntas: {
+      pendente: i.pPendente, respondida: i.pRespondida,
+      taxa_resposta: totalPerguntas > 0 ? round2(i.pRespondida / totalPerguntas) : 0,
+      tempo_mediano_min: deltas.length ? Math.round(median(deltas)) : null,
+    },
+    visitas: {
+      total: i.visTotal, confirmadas: i.visConfirmadas,
+      taxa_confirmacao: i.visTotal > 0 ? round2(i.visConfirmadas / i.visTotal) : 0,
+    },
+    engajamento: {
+      interacao_media: interacoes.length ? round1(interacoes.reduce((a, b) => a + b, 0) / interacoes.length) : null,
+      lead_mais_ativo: interacoes.length ? Math.max(...interacoes) : null,
+    },
+    qualificacao: { fatos: i.fatos, leads_qualificados: i.leadsQualificados },
+  };
+}
