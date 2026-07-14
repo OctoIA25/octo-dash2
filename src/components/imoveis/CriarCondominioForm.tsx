@@ -151,6 +151,7 @@ interface CondominioFormData {
   
   // Infraestrutura - Básico
   infra_esgoto: boolean;
+  infra_gas_encanado: boolean;
   infra_guarita: boolean;
   infra_praca_recreacao: boolean;
   
@@ -262,6 +263,7 @@ const initialFormData: CondominioFormData = {
   infra_reaprov_agua_chuva: false,
   infra_energia_solar: false,
   infra_esgoto: false,
+  infra_gas_encanado: false,
   infra_guarita: false,
   infra_praca_recreacao: false,
   infra_mirante: false,
@@ -336,6 +338,7 @@ const TIPOS_CONDOMINIO = [
   'Condomínio Residencial',
   'Edifício',
   'Loteamento',
+  'Conjunto Habitacional',
   'Condomínio Comercial',
   'Conjunto Comercial',
   'Shopping',
@@ -687,6 +690,7 @@ export const CriarCondominioForm = ({
         infra_reaprov_agua_chuva: formData.infra_reaprov_agua_chuva,
         infra_energia_solar: formData.infra_energia_solar,
         infra_esgoto: formData.infra_esgoto,
+        infra_gas_encanado: formData.infra_gas_encanado,
         infra_guarita: formData.infra_guarita,
         infra_praca_recreacao: formData.infra_praca_recreacao,
         infra_mirante: formData.infra_mirante,
@@ -1228,6 +1232,7 @@ export const CriarCondominioForm = ({
             <CollapsibleContent className="pt-3">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-card/50 rounded-lg border">
                 <InfraCheckbox field="infra_esgoto" label="Esgoto" />
+                <InfraCheckbox field="infra_gas_encanado" label="Gás Encanado" />
                 <InfraCheckbox field="infra_guarita" label="Guarita" />
                 <InfraCheckbox field="infra_praca_recreacao" label="Praça/Recreação Infantil" />
               </div>
