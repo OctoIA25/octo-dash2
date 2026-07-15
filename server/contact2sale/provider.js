@@ -160,7 +160,16 @@ export function createC2sProvider({ supabase, apiClient, processEnv = process.en
       }
       // PISO de criação para o mini-walk LIVE: last_sync_at (= maior created_at já
       // processado) − overlap. O LIVE desce do topo e para ao cruzar este piso.
-      const createdGteFloor = iso(Date.parse(integration.last_sync_at) - cfg.overlapMin * 60 * 1000);
+      const overlapFloorMs = Date.parse(integration.last_sync_at) - cfg.overlapMin * 60 * 1000;
+      // Janela de REVISITA (por-tenant vence o default global; null/ausente cai no
+      // default; 0 desliga): recua o piso até `agora − revisitDays` para re-buscar
+      // leads antigos e pegar updates de campos que o C2S preencheu após a criação
+      // (ex.: prop_ref). O piso final é o MAIS ANTIGO entre overlap e revisita — assim
+      // o LIVE segue trazendo o topo novo E re-varrendo a janela de N dias. O
+      // fingerprint dedupa: re-ler lead inalterado não gera escrita.
+      const revisitDays = integration.revisit_days != null ? integration.revisit_days : cfg.revisitDays;
+      const revisitFloorMs = revisitDays > 0 ? now() - revisitDays * 24 * 60 * 60 * 1000 : overlapFloorMs;
+      const createdGteFloor = iso(Math.min(overlapFloorMs, revisitFloorMs));
       return { syncMode: 'LIVE', suppressAutomations: false, createdGteFloor, startedAt };
     },
 

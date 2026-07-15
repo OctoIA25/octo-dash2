@@ -21,6 +21,13 @@ export function loadC2sEnv(processEnv = process.env) {
     burst: Math.max(1, num(processEnv.C2S_BURST, 5)),
     perPage: Math.min(num(processEnv.C2S_PER_PAGE, C2S_MAX_PER_PAGE), C2S_MAX_PER_PAGE),
     overlapMin: num(processEnv.C2S_SYNC_OVERLAP_MIN, 5),
+    // Janela de REVISITA: no LIVE, o piso de criação recua até `agora − revisitDays`
+    // para re-buscar leads antigos e capturar updates de campos (ex.: prop_ref
+    // preenchido depois da criação). A API C2S não filtra por data de update
+    // (só created_lt), então re-varrer por created_at é a única forma. Custo baixo:
+    // o fingerprint dedupa o que não mudou. Default global; a imobiliária pode
+    // sobrescrever via coluna revisit_days em tenant_contact2sale_config. 0 = desliga.
+    revisitDays: Math.max(0, num(processEnv.C2S_REVISIT_DAYS, 7)),
     // A cada 1 min (granularidade mínima do cron): lead novo na C2S aparece no
     // CRM em ~1 min. O runner por-tenant pula quem já está em ciclo, então ticks
     // frequentes durante um backfill longo não empilham chamadas. Latência de

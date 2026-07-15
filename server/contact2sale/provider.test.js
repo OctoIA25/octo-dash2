@@ -65,6 +65,7 @@ describe('createC2sProvider.resolveWindow', () => {
       last_sync_at: '2026-07-06T11:50:00.000Z',
       last_full_sync_at: null,
       backfill_cursor: '2025-11-29T00:00:00Z', // histórico ainda não drenado — NÃO deve travar o LIVE
+      revisit_days: 0, // isola o piso-overlap (revisita testada abaixo)
     });
     expect(w.syncMode).toBe('LIVE');
     expect(w.suppressAutomations).toBe(false);
@@ -76,9 +77,39 @@ describe('createC2sProvider.resolveWindow', () => {
       tenant_id: 't1',
       last_sync_at: '2026-07-06T11:50:00.000Z',
       last_full_sync_at: '2026-07-05T00:00:00.000Z',
+      revisit_days: 0, // revisita desligada → piso é só o overlap
     });
     expect(w.syncMode).toBe('LIVE');
     expect(w.suppressAutomations).toBe(false);
+    expect(w.createdGteFloor).toBe('2026-07-06T11:45:00.000Z'); // last_sync_at − 5min
+  });
+});
+
+describe('createC2sProvider.resolveWindow — janela de revisita', () => {
+  const base = { tenant_id: 't1', last_sync_at: '2026-07-06T11:50:00.000Z', last_full_sync_at: '2026-07-05T00:00:00.000Z' };
+
+  it('revisit_days por-tenant recua o piso para agora − N dias (mais antigo que o overlap)', () => {
+    const provider = createC2sProvider({ supabase: fakeSupabase(), apiClient: {}, processEnv: {}, now: () => NOW });
+    const w = provider.resolveWindow({ ...base, revisit_days: 7 });
+    // NOW = 2026-07-06T12:00 → 7 dias antes = 2026-06-29T12:00 (bem antes do overlap de −5min)
+    expect(w.createdGteFloor).toBe('2026-06-29T12:00:00.000Z');
+  });
+
+  it('revisit_days do tenant VENCE o default global do env', () => {
+    const provider = createC2sProvider({ supabase: fakeSupabase(), apiClient: {}, processEnv: { C2S_REVISIT_DAYS: '30' }, now: () => NOW });
+    const w = provider.resolveWindow({ ...base, revisit_days: 2 }); // tenant=2d ganha do env=30d
+    expect(w.createdGteFloor).toBe('2026-07-04T12:00:00.000Z'); // NOW − 2d
+  });
+
+  it('revisit_days null/ausente cai no default global (env C2S_REVISIT_DAYS)', () => {
+    const provider = createC2sProvider({ supabase: fakeSupabase(), apiClient: {}, processEnv: { C2S_REVISIT_DAYS: '3' }, now: () => NOW });
+    const w = provider.resolveWindow({ ...base }); // sem revisit_days → default 3
+    expect(w.createdGteFloor).toBe('2026-07-03T12:00:00.000Z'); // NOW − 3d
+  });
+
+  it('revisit_days = 0 desliga a revisita → piso volta a ser só o overlap', () => {
+    const provider = createC2sProvider({ supabase: fakeSupabase(), apiClient: {}, processEnv: { C2S_REVISIT_DAYS: '7' }, now: () => NOW });
+    const w = provider.resolveWindow({ ...base, revisit_days: 0 }); // 0 do tenant sobrepõe o default 7
     expect(w.createdGteFloor).toBe('2026-07-06T11:45:00.000Z'); // last_sync_at − 5min
   });
 });
