@@ -27,6 +27,19 @@ function normalizePhone(customer) {
   return p;
 }
 
+// Extrai o código do imóvel: prefere prop_ref; fallback para description quando
+// a C2S manda o código diretamente no campo (ex.: description="AP1146" com
+// prop_ref=null) ou no padrão [CODIGO] (ex.: "[AP1146] Apartamento...").
+function extractPropRef(product) {
+  if (product?.prop_ref) return product.prop_ref;
+  const desc = product?.description || '';
+  const bracket = desc.match(/^\[([A-Z]{2}\d+)\]/);
+  if (bracket) return bracket[1];
+  const bare = desc.match(/^([A-Z]{2}\d+)$/);
+  if (bare) return bare[1];
+  return null;
+}
+
 // A mensagem do lead é a primeira fala do CLIENTE (messages inclui falas do
 // corretor). Fallbacks: first_message (se a API incluir) e a description do
 // interesse — validar formato real no piloto com token de produção.
@@ -92,7 +105,7 @@ export function normalizeC2sLead(rawItem, tenantId) {
     portal: a.lead_source?.name || a.channel?.name || null,
     message: firstCustomerMessage(rawItem),
     interest_image: a.product?.image || null,
-    interest_reference: a.product?.prop_ref || null,
+    interest_reference: extractPropRef(a.product),
     interest_type: negotiation,
     interest_is_sale: negotiation ? /venda|compra/i.test(negotiation) : null,
     interest_is_rent: negotiation ? /loca|alug/i.test(negotiation) : null,
