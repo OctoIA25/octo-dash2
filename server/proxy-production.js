@@ -715,6 +715,14 @@ const extractZapCode = async (message, tenantId) => {
   return data?.[0]?.codigo_imovel ?? null;
 };
 
+// Helper: resolve o código do imóvel do body, tolerante ao nome da chave.
+// O webhook lead.created emite o código como `codigo`, mas integrações antigas
+// usam interest_reference/property_code/codigo_imovel. Sem `codigo` aqui, um
+// loopback (ex.: Lia/n8n reenviando o webhook para /api/v1/leads) grava o lead
+// SEM código → card do Kanban aparece com "—". Um único ponto de verdade.
+const resolvePropertyCode = (body = {}) =>
+  body.interest_reference || body.property_code || body.codigo_imovel || body.codigo || null;
+
 // Helper: Normalize stage value (accepts numeric or string)
 const normalizeStage = (value) => {
   if (!value) return 'new';
@@ -1650,7 +1658,7 @@ const createIncomingLead = async ({ tenantId, body, source = 'API' }) => {
     return 1;
   })();
 
-  const propertyCode = interest_reference || property_code || codigo_imovel;
+  const propertyCode = resolvePropertyCode(body);
   const explicitBroker = attended_by || assigned_agent || corretor;
   const leadStage = normalizeStage(stage || etapa_funil);
   const leadTemperature = normalizeTemperature(temperature || temperatura);
@@ -2104,7 +2112,7 @@ app.post('/api/v1/leads', validateApiKey, async (req, res) => {
     })();
     
     // Normalizar campos
-    const propertyCode = interest_reference || property_code || codigo_imovel;
+    const propertyCode = resolvePropertyCode(req.body);
     const explicitBroker = attended_by || assigned_agent || corretor;
     const leadStage = normalizeStage(stage || etapa_funil);
     const leadTemperature = normalizeTemperature(temperature || temperatura);
@@ -2292,7 +2300,7 @@ app.put('/api/v1/leads/:id', validateApiKey, async (req, res) => {
     } = req.body;
     
     // Normalizar campos
-    const propertyCode = interest_reference || property_code || codigo_imovel;
+    const propertyCode = resolvePropertyCode(req.body);
     const broker = attended_by || assigned_agent || corretor;
     const leadStage = (stage || etapa_funil) ? normalizeStage(stage || etapa_funil) : null;
     const leadTemperature = (temperature || temperatura) ? normalizeTemperature(temperature || temperatura) : null;
@@ -2379,7 +2387,7 @@ app.patch('/api/v1/leads/:id', validateApiKey, async (req, res) => {
     } = req.body;
     
     // Normalizar campos
-    const propertyCode = interest_reference || property_code || codigo_imovel;
+    const propertyCode = resolvePropertyCode(req.body);
     const broker = attended_by || assigned_agent || corretor;
     const leadStage = (stage || etapa_funil) ? normalizeStage(stage || etapa_funil) : undefined;
     const leadTemperature = (temperature || temperatura) ? normalizeTemperature(temperature || temperatura) : undefined;
@@ -2673,7 +2681,7 @@ app.post('/api/v1/leads/upsert', validateApiKey, async (req, res) => {
     } = req.body;
     
     // Normalizar campos
-    const propertyCode = interest_reference || property_code || codigo_imovel;
+    const propertyCode = resolvePropertyCode(req.body);
     const broker = attended_by || assigned_agent || corretor;
     const leadStage = normalizeStage(stage || etapa_funil);
     const leadTemperature = normalizeTemperature(temperature || temperatura);
@@ -3101,7 +3109,7 @@ app.post('/api/v1/leads/roleta', validateApiKey, async (req, res) => {
     }
 
     // Normalizar campos
-    const propertyCode = interest_reference || property_code || codigo_imovel;
+    const propertyCode = resolvePropertyCode(req.body);
     const leadStage = normalizeStage(stage || etapa_funil);
     const leadTemperature = normalizeTemperature(temperature || temperatura);
     const leadMessage = message || comments;
