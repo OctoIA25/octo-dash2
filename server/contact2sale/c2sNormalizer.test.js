@@ -105,6 +105,35 @@ describe('normalizeC2sLead', () => {
     });
   });
 
+  describe('extractPropRef — fallback de código do imóvel', () => {
+    const withProduct = (productOver) => raw({}, { product: { id: 'p1', real_estate_detail: { negotiation_name: 'Compra' }, ...productOver } });
+
+    it('prop_ref preenchido → usa direto, ignora description', () => {
+      const row = normalizeC2sLead(withProduct({ prop_ref: 'AP1146', description: 'outra coisa' }), 't1');
+      expect(row.interest_reference).toBe('AP1146');
+    });
+
+    it('prop_ref null + description é só o código → extrai', () => {
+      const row = normalizeC2sLead(withProduct({ prop_ref: null, description: 'CA0826' }), 't1');
+      expect(row.interest_reference).toBe('CA0826');
+    });
+
+    it('prop_ref null + description no padrão [CODIGO] → extrai', () => {
+      const row = normalizeC2sLead(withProduct({ prop_ref: null, description: '[AP1208] Apartamento com 2 Quartos' }), 't1');
+      expect(row.interest_reference).toBe('AP1208');
+    });
+
+    it('prop_ref null + description genérica → null', () => {
+      const row = normalizeC2sLead(withProduct({ prop_ref: null, description: 'Em locar um imóvel' }), 't1');
+      expect(row.interest_reference).toBeNull();
+    });
+
+    it('prop_ref null + product null → null', () => {
+      const row = normalizeC2sLead(raw({}, { product: null }), 't1');
+      expect(row.interest_reference).toBeNull();
+    });
+  });
+
   it('portal cai para channel quando lead_source ausente; message cai para description sem msg do cliente', () => {
     const r = raw({ messages: [{ sender_type: 'Seller', body: 'Oi' }] }, { lead_source: null });
     const row = normalizeC2sLead(r, 't1');
