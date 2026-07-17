@@ -128,7 +128,16 @@ export function createCrmSyncEngine({ supabase, provider, logger = noopLogger, r
     }
 
     for await (const page of provider.fetchNormalizedPages(integration, syncWindow)) {
-      if (page.pageError) { stats.errors++; continue; } // página falhou: sync incompleto desta fatia
+      if (page.pageError) {
+        stats.errors++;
+        // Guarda o motivo da PRIMEIRA falha (status/error do provider, quando houver)
+        // p/ o error_message do sync_state ser específico em vez de "N falha(s)".
+        // Kenlo não envia page.error → fica undefined, tratado adiante.
+        if (!stats.errorReason && (page.error || page.status)) {
+          stats.errorReason = page.error || `status ${page.status}`;
+        }
+        continue; // página falhou: sync incompleto desta fatia
+      }
       const errorsBefore = stats.errors;
       stats.fetched += page.fetched || 0;
       stats.skippedTest += page.skippedTest || 0;
@@ -213,7 +222,9 @@ export function createCrmSyncEngine({ supabase, provider, logger = noopLogger, r
         sync_state: JSON.stringify({
           status: stats.errors > 0 ? 'error' : 'done', mode: syncWindow.syncMode, finished_at: finishedAt,
           fetched: stats.fetched, new: stats.new, updated: stats.updated, saved: stats.saved, errors: stats.errors,
-          error_message: stats.errors > 0 ? `${stats.errors} falha(s) durante o sync` : null,
+          error_message: stats.errors > 0
+            ? (stats.errorReason ? `${stats.errorReason} (${stats.errors} falha(s))` : `${stats.errors} falha(s) durante o sync`)
+            : null,
         }),
       };
       await supabase.from(provider.configTable).update(patch).eq('tenant_id', integ.tenant_id);

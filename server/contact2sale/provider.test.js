@@ -325,11 +325,11 @@ describe('createC2sProvider.fetchNormalizedPages — LIVE', () => {
   });
 
   it('página com erro no LIVE → yield pageError e ABORTA (cursor congela no buildCursorPatch)', async () => {
-    const getLeads = vi.fn().mockResolvedValue({ ok: false, status: 503, items: [], hasMore: false });
+    const getLeads = vi.fn().mockResolvedValue({ ok: false, status: 503, error: 'status 503', items: [], hasMore: false });
     const provider = createC2sProvider({ supabase: fakeSupabase(), apiClient: { getLeads }, processEnv: {}, now: () => NOW });
     const w = provider.resolveWindow(liveIntegration);
     const pages = await drain(provider.fetchNormalizedPages(liveIntegration, w));
-    expect(pages).toEqual([{ pageError: true }]);
+    expect(pages).toEqual([{ pageError: true, error: 'status 503', status: 503 }]); // motivo propagado p/ o sync_state
     expect(w.maxCreatedSeen).toBeUndefined();
   });
 });

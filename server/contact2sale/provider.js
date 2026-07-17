@@ -71,7 +71,14 @@ export function createC2sProvider({ supabase, apiClient, processEnv = process.en
       const r = await apiClient.getLeads(tenantId, { ...params, page });
       // Falha de página ABORTA o ciclo (a C2S é um stream único): cursor
       // congelado onde o engine confirmou por último; próximo ciclo retoma.
-      if (!r.ok) { yield { pageError: true }; return; }
+      // Propaga o motivo (r.error já é legível: "status 429", "network_or_timeout",
+      // "missing_token") p/ o engine gravar no sync_state em vez do rollup genérico.
+      // Loga também: o abort é mudo por padrão e o card só mostra o rollup até o
+      // deploy do fix do sync_state — este warn revela o motivo real já nos logs.
+      if (!r.ok) {
+        logger.warn(`[contact2sale] {"event":"c2s.page.error","tenantId":"${tenantId}","mode":"BACKFILL","page":${page},"status":${r.status},"error":"${r.error}"}`);
+        yield { pageError: true, error: r.error, status: r.status }; return;
+      }
       const { withId, rows } = normalizePage(r.items, tenantId);
       // MAIOR created_at já visto no ciclo (o topo). Gravado em `integration`
       // (não em syncWindow) porque é o objeto que o engine repassa a commitPage.
@@ -112,7 +119,10 @@ export function createC2sProvider({ supabase, apiClient, processEnv = process.en
     for (;;) {
       const params = { ...baseParams, sort: '-created_at', ...(createdLt && { created_lt: toC2sDate(createdLt) }) };
       const r = await apiClient.getLeads(tenantId, { ...params, page: 1 });
-      if (!r.ok) { yield { pageError: true }; return; }
+      if (!r.ok) {
+        logger.warn(`[contact2sale] {"event":"c2s.page.error","tenantId":"${tenantId}","mode":"LIVE","createdLt":"${createdLt || ''}","status":${r.status},"error":"${r.error}"}`);
+        yield { pageError: true, error: r.error, status: r.status }; return;
+      }
       const { withId, rows } = normalizePage(r.items, tenantId);
       // Só os leads ACIMA do piso interessam ao LIVE (o resto é histórico já visto).
       // Filtra por VALOR (não fatia por posição): robusto se a página vier fora de
