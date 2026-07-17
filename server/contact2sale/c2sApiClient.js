@@ -15,6 +15,18 @@ import { createTenantRateLimiter } from '../communication/rateLimiter.js';
 const noopLogger = { info() {}, warn() {}, error() {} };
 const RETRIABLE = new Set([408, 429, 500, 502, 503, 504]);
 
+// A C2S manda Retry-After no 429 em formato humano ("1 minute", "90 seconds")
+// além do numérico-em-segundos do HTTP. Converte p/ ms; null se ausente/ilegível.
+function parseRetryAfter(header) {
+  if (!header) return null;
+  const s = String(header).trim().toLowerCase();
+  if (/^\d+$/.test(s)) return Number(s) * 1000;               // "60" = segundos
+  const m = s.match(/^(\d+)\s*(second|minute|hour)s?$/);      // "1 minute"
+  if (!m) return null;
+  const unit = { second: 1000, minute: 60000, hour: 3600000 }[m[2]];
+  return Number(m[1]) * unit;
+}
+
 export function createC2sApiClient({
   resolver, fetchImpl = fetch, processEnv = process.env,
   now = Date.now, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), logger = noopLogger,
@@ -44,7 +56,9 @@ export function createC2sApiClient({
       });
       let body = null;
       try { body = await resp.json(); } catch { body = null; }
-      return { status: resp.status, body };
+      // Retry-After (segundos ou "1 minute") p/ o 429 respeitar a janela da C2S
+      // em vez de backoff cego que desiste antes do bloqueio acabar.
+      return { status: resp.status, body, retryAfterMs: parseRetryAfter(resp.headers?.get?.('retry-after')) };
     } catch {
       return { status: 0, body: null }; // rede/timeout
     } finally {
@@ -72,9 +86,12 @@ export function createC2sApiClient({
         return r;
       }
       if (attempt < cfg.retries) {
+        // Retry-After manda (a C2S bloqueia por 1 min no 429; backoff cego de
+        // segundos desistiria antes). Cap p/ um ciclo travado não segurar o worker.
         const backoff = cfg.backoffMs * 2 ** attempt;
         const jitter = backoff * 0.25 * ((attempt % 3) / 3); // determinístico, sem Math.random
-        await sleep(backoff + jitter);
+        const wait = r.retryAfterMs != null ? Math.min(r.retryAfterMs, cfg.maxRetryAfterMs) : backoff + jitter;
+        await sleep(wait);
       } else {
         return r;
       }

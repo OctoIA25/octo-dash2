@@ -16,6 +16,9 @@ export function loadC2sEnv(processEnv = process.env) {
     timeoutMs: num(processEnv.C2S_HTTP_TIMEOUT_MS, 15000),
     breakerThreshold: num(processEnv.C2S_BREAKER_THRESHOLD, 5),
     breakerCooldownMs: num(processEnv.C2S_BREAKER_COOLDOWN_MS, 60000),
+    // Teto do respeito ao Retry-After: a C2S pede "1 minute" no 429; esperamos até
+    // 65s. Cap evita um Retry-After absurdo do servidor prender o worker.
+    maxRetryAfterMs: num(processEnv.C2S_MAX_RETRY_AFTER_MS, 65000),
     // Clamp ≥1: rate/burst 0 travaria o waitForToken em loop infinito.
     ratePerMin: Math.max(1, num(processEnv.C2S_RATE_PER_MIN, 10)),
     burst: Math.max(1, num(processEnv.C2S_BURST, 5)),

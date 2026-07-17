@@ -100,6 +100,19 @@ describe('c2sApiClient.getLeads', () => {
     expect(clock()).toBeGreaterThan(0);         // houve backoff (sleep avançou o relógio)
   });
 
+  it('429 respeita Retry-After ("1 minute") em vez do backoff cego, e re-tenta com sucesso', async () => {
+    const headers = (retryAfter) => ({ get: (k) => (k.toLowerCase() === 'retry-after' ? retryAfter : null) });
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce({ status: 429, json: async () => null, headers: headers('1 minute') })
+      .mockResolvedValueOnce({ status: 200, json: async () => okBody, headers: headers(null) });
+    const { client, clock } = makeClient({ fetchImpl });
+    const r = await client.getLeads('t1', {});
+    expect(r.ok).toBe(true);                       // recuperou na 2ª tentativa
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(clock()).toBeGreaterThanOrEqual(60000); // esperou o minuto do Retry-After, não ~500ms
+    expect(clock()).toBeLessThanOrEqual(65000);    // respeitou o cap maxRetryAfterMs
+  });
+
   it('circuit breaker abre após N falhas e bloqueia a chamada seguinte sem rede', async () => {
     const fetchImpl = vi.fn(async () => jsonResp(500, null));
     const { client } = makeClient({ fetchImpl, env: { C2S_HTTP_RETRIES: '0', C2S_BREAKER_THRESHOLD: '2' } });
