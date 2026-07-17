@@ -18,6 +18,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import { OctoDashLoader } from '@/components/ui/OctoDashLoader';
 import { FotosUploader, type Foto } from '@/components/imoveis/FotosUploader';
 
@@ -536,24 +537,40 @@ export const LancamentoViewPage = () => {
           </div>
         </div>
 
-        <div className="flex flex-col gap-2 pt-1">
-          <label className="flex items-center gap-2 text-sm text-text-primary cursor-pointer">
-            <input
-              type="checkbox"
-              className="h-4 w-4 accent-primary"
+        <div className="flex flex-col gap-1 pt-1">
+          <label
+            htmlFor="lanc-exclusivo"
+            className="flex items-start gap-3 rounded-lg border border-transparent p-3 -mx-1 hover:bg-muted/40 hover:border-border transition-colors cursor-pointer"
+          >
+            <Checkbox
+              id="lanc-exclusivo"
               checked={exclusivo}
-              onChange={(e) => setExclusivo(e.target.checked)}
+              onCheckedChange={(v) => setExclusivo(v === true)}
+              className="mt-0.5"
             />
-            Marcar como destaque (exibe selo no card do site)
+            <span>
+              <span className="block text-sm font-medium text-text-primary">Destaque</span>
+              <span className="block text-xs text-text-secondary">
+                Exibe um selo de destaque no card do site.
+              </span>
+            </span>
           </label>
-          <label className="flex items-center gap-2 text-sm text-text-primary cursor-pointer">
-            <input
-              type="checkbox"
-              className="h-4 w-4 accent-primary"
+          <label
+            htmlFor="lanc-publicar"
+            className="flex items-start gap-3 rounded-lg border border-transparent p-3 -mx-1 hover:bg-muted/40 hover:border-border transition-colors cursor-pointer"
+          >
+            <Checkbox
+              id="lanc-publicar"
               checked={publicarSite}
-              onChange={(e) => setPublicarSite(e.target.checked)}
+              onCheckedChange={(v) => setPublicarSite(v === true)}
+              className="mt-0.5"
             />
-            Publicar no site público
+            <span>
+              <span className="block text-sm font-medium text-text-primary">Publicar no site</span>
+              <span className="block text-xs text-text-secondary">
+                Quando desmarcado, o lançamento não aparece no site público.
+              </span>
+            </span>
           </label>
         </div>
       </section>
