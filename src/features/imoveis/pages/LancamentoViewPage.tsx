@@ -30,6 +30,16 @@ interface Lancamento {
   book_pdf: string | null;
   book_pdf_filename: string | null;
   fotos: Foto[];
+  // Campos do Portal público (cards de empreendimento)
+  cidade: string | null;
+  bairro: string | null;
+  estagio: string | null;
+  construtora: string | null;
+  dormitorios: string | null;
+  specs: string | null;
+  preco_texto: string | null;
+  exclusivo: boolean;
+  publicar_site: boolean;
 }
 
 const MAX_PDF_MB = 200;
@@ -93,6 +103,15 @@ export const LancamentoViewPage = () => {
   const [editandoNome, setEditandoNome] = useState(false);
   const [descricao, setDescricao] = useState('');
   const [enderecoPlantao, setEnderecoPlantao] = useState('');
+  const [cidade, setCidade] = useState('');
+  const [bairro, setBairro] = useState('');
+  const [estagio, setEstagio] = useState('');
+  const [construtora, setConstrutora] = useState('');
+  const [dormitorios, setDormitorios] = useState('');
+  const [specs, setSpecs] = useState('');
+  const [precoTexto, setPrecoTexto] = useState('');
+  const [exclusivo, setExclusivo] = useState(false);
+  const [publicarSite, setPublicarSite] = useState(true);
   const [fotos, setFotos] = useState<Foto[]>([]);
   const [bookPdf, setBookPdf] = useState<string | null>(null);
   const [bookFilename, setBookFilename] = useState<string | null>(null);
@@ -127,6 +146,15 @@ export const LancamentoViewPage = () => {
     setNome(normalized.nome);
     setDescricao(normalized.descricao ?? '');
     setEnderecoPlantao(normalized.endereco_plantao ?? '');
+    setCidade(normalized.cidade ?? '');
+    setBairro(normalized.bairro ?? '');
+    setEstagio(normalized.estagio ?? '');
+    setConstrutora(normalized.construtora ?? '');
+    setDormitorios(normalized.dormitorios ?? '');
+    setSpecs(normalized.specs ?? '');
+    setPrecoTexto(normalized.preco_texto ?? '');
+    setExclusivo(normalized.exclusivo ?? false);
+    setPublicarSite(normalized.publicar_site ?? true);
     setFotos(normalized.fotos);
     setBookPdf(normalized.book_pdf);
     setBookFilename(normalized.book_pdf_filename);
@@ -229,6 +257,15 @@ export const LancamentoViewPage = () => {
           nome: nomeTrim,
           descricao: descricao || null,
           endereco_plantao: enderecoPlantao.trim() || null,
+          cidade: cidade.trim() || null,
+          bairro: bairro.trim() || null,
+          estagio: estagio.trim() || null,
+          construtora: construtora.trim() || null,
+          dormitorios: dormitorios.trim() || null,
+          specs: specs.trim() || null,
+          preco_texto: precoTexto.trim() || null,
+          exclusivo: exclusivo,
+          publicar_site: publicarSite,
           book_pdf: bookPdfUrl,
           book_pdf_filename: bookPdfName,
           fotos: fotosFinais,
@@ -422,6 +459,103 @@ export const LancamentoViewPage = () => {
           onChange={(e) => setDescricao(e.target.value)}
           rows={8}
         />
+      </section>
+
+      <section className="rounded-xl border border-border bg-card p-5 space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold text-text-primary">Dados do Portal</h2>
+          <p className="text-xs text-text-secondary mt-1">
+            Informações exibidas nos cards de empreendimento do site público. Deixe em branco
+            para omitir do card.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <label htmlFor="lanc-cidade" className="text-sm font-medium text-text-primary">Cidade</label>
+            <Input
+              id="lanc-cidade"
+              placeholder="Ex: São Paulo"
+              value={cidade}
+              onChange={(e) => setCidade(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="lanc-bairro" className="text-sm font-medium text-text-primary">Bairro</label>
+            <Input
+              id="lanc-bairro"
+              placeholder="Ex: Vila Mariana"
+              value={bairro}
+              onChange={(e) => setBairro(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="lanc-estagio" className="text-sm font-medium text-text-primary">Estágio</label>
+            <Input
+              id="lanc-estagio"
+              placeholder="Ex: Em obras / Lançamento / Pronto"
+              value={estagio}
+              onChange={(e) => setEstagio(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="lanc-construtora" className="text-sm font-medium text-text-primary">Construtora</label>
+            <Input
+              id="lanc-construtora"
+              placeholder="Ex: Incorporadora XYZ"
+              value={construtora}
+              onChange={(e) => setConstrutora(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="lanc-dormitorios" className="text-sm font-medium text-text-primary">Dormitórios</label>
+            <Input
+              id="lanc-dormitorios"
+              placeholder="Ex: 2 e 3 dorms"
+              value={dormitorios}
+              onChange={(e) => setDormitorios(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="lanc-preco" className="text-sm font-medium text-text-primary">Preço (texto)</label>
+            <Input
+              id="lanc-preco"
+              placeholder="Ex: Consultar valor / a partir de R$ 500 mil"
+              value={precoTexto}
+              onChange={(e) => setPrecoTexto(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5 sm:col-span-2">
+            <label htmlFor="lanc-specs" className="text-sm font-medium text-text-primary">Specs</label>
+            <Input
+              id="lanc-specs"
+              placeholder="Ex: 58–105 m² · 2 e 3 dorms"
+              value={specs}
+              onChange={(e) => setSpecs(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2 pt-1">
+          <label className="flex items-center gap-2 text-sm text-text-primary cursor-pointer">
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-primary"
+              checked={exclusivo}
+              onChange={(e) => setExclusivo(e.target.checked)}
+            />
+            Marcar como destaque (exibe selo no card do site)
+          </label>
+          <label className="flex items-center gap-2 text-sm text-text-primary cursor-pointer">
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-primary"
+              checked={publicarSite}
+              onChange={(e) => setPublicarSite(e.target.checked)}
+            />
+            Publicar no site público
+          </label>
+        </div>
       </section>
 
       <section className="rounded-xl border border-border bg-card p-5 space-y-3">
