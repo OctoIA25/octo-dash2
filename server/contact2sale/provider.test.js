@@ -86,7 +86,10 @@ describe('createC2sProvider.resolveWindow', () => {
 });
 
 describe('createC2sProvider.resolveWindow — janela de revisita', () => {
-  const base = { tenant_id: 't1', last_sync_at: '2026-07-06T11:50:00.000Z', last_full_sync_at: '2026-07-05T00:00:00.000Z' };
+  // last_revisit_at ANTIGO (2h > intervalo default 60min) força uma revisita ativa:
+  // sem ele o fail-safe conservador (ausente = "revisou agora") não revisaria e o
+  // piso seria só o overlap. Estes testes exercitam o PISO; a cadência vem depois.
+  const base = { tenant_id: 't1', last_sync_at: '2026-07-06T11:50:00.000Z', last_full_sync_at: '2026-07-05T00:00:00.000Z', last_revisit_at: '2026-07-06T10:00:00.000Z' };
 
   it('revisit_days por-tenant recua o piso para agora − N dias (mais antigo que o overlap)', () => {
     const provider = createC2sProvider({ supabase: fakeSupabase(), apiClient: {}, processEnv: {}, now: () => NOW });
@@ -137,10 +140,12 @@ describe('createC2sProvider.resolveWindow — cadência da revisita (evita 429)'
     expect(w.createdGteFloor).toBe(REVISIT_FLOOR);
   });
 
-  it('FAIL-SAFE: last_revisit_at ausente (nunca revisou / coluna nova) → revisita agora', () => {
+  it('FAIL-SAFE CONSERVADOR: last_revisit_at ausente (coluna nova) → NÃO revisa; rotina leve primeiro', () => {
+    // Incidente 2026-07-21 (2ª ordem): ausente disparando revisita prendia o tenant
+    // em 429 num loop (o porquê está no comentário de lastRevisitMs em provider.js).
     const w = provider().resolveWindow({ ...base }); // sem last_revisit_at
-    expect(w.isRevisit).toBe(true);
-    expect(w.createdGteFloor).toBe(REVISIT_FLOOR);
+    expect(w.isRevisit).toBe(false);
+    expect(w.createdGteFloor).toBe(OVERLAP_FLOOR); // piso leve, NÃO 7 dias
   });
 
   it('revisit_days=0 nunca revisita, mesmo sem last_revisit_at', () => {

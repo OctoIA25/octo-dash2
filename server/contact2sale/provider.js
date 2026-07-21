@@ -179,10 +179,14 @@ export function createC2sProvider({ supabase, apiClient, processEnv = process.en
       // páginas. Fazer isso TODO tick estoura o rate limit (429, incidente 2026-07-21),
       // então a revisita é ESPORÁDICA: só quando passou revisitIntervalMin desde a
       // última (last_revisit_at). Fora dessa cadência, o piso é só o overlap.
-      // last_revisit_at ausente/NULL = nunca revisou → revisar agora (fail-safe).
       const revisitDays = integration.revisit_days != null ? integration.revisit_days : cfg.revisitDays;
       const revisitDueMs = cfg.revisitIntervalMin * 60 * 1000;
-      const lastRevisitMs = integration.last_revisit_at ? Date.parse(integration.last_revisit_at) : 0;
+      // last_revisit_at AUSENTE conta como "revisou agora" (fail-safe conservador),
+      // não "revisar já": se disparasse revisita, um tenant preso por 429 nunca
+      // gravaria last_revisit_at (buildCursorPatch não roda em erro) e re-varreria N
+      // dias todo ciclo → o loop que este fix elimina. Assim a rotina leve destrava o
+      // cursor primeiro e a 1ª revisita real vem revisitIntervalMin depois.
+      const lastRevisitMs = integration.last_revisit_at ? Date.parse(integration.last_revisit_at) : now();
       const isRevisit = revisitDays > 0 && (now() - lastRevisitMs >= revisitDueMs);
       const floorMs = isRevisit
         ? Math.min(overlapFloorMs, now() - revisitDays * 24 * 60 * 60 * 1000)
