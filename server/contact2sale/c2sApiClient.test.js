@@ -124,6 +124,45 @@ describe('c2sApiClient.getLeads', () => {
     expect(fetchImpl.mock.calls.length).toBe(calls); // nada novo: breaker aberto
   });
 
+  it('breaker NÃO fica preso: após o cooldown fecha e exige novas N falhas para reabrir', async () => {
+    // Regressão do incidente 2026-07-21: b.fails não zerava ao abrir, então
+    // após o cooldown UMA falha isolada re-armava o breaker para sempre e o
+    // sync ficava parado por horas (alternância 429/network_or_timeout).
+    let t = 0;
+    let mode = 500; // servidor começa falhando
+    const fetchImpl = vi.fn(async () => jsonResp(mode, mode === 200 ? okBody : null));
+    const client = createC2sApiClient({
+      resolver: { resolveConfig: async (id) => ({ tenantId: id, apiToken: 'tok', status: 'active' }) },
+      fetchImpl,
+      processEnv: {
+        C2S_BASE_URL: 'https://api.test/integration',
+        C2S_HTTP_RETRIES: '0', C2S_BREAKER_THRESHOLD: '2',
+        C2S_BREAKER_COOLDOWN_MS: '60000', C2S_RATE_PER_MIN: '600',
+      },
+      now: () => t,
+      sleep: async (ms) => { t += ms; },
+    });
+
+    await client.getLeads('t1', {}); // falha 1
+    await client.getLeads('t1', {}); // falha 2 → abre (openUntil = 0 + 60000)
+    expect((await client.getLeads('t1', {})).status).toBe(0); // aberto: sem rede
+    const callsWhileOpen = fetchImpl.mock.calls.length;
+
+    t = 60001;        // passa o cooldown (relógio só avança aqui: retries=0 e rate alto não geram sleep)
+    mode = 200;       // servidor recuperou
+    const ok = await client.getLeads('t1', {});
+    expect(ok.ok).toBe(true); // breaker fechou e a chamada foi de fato à API
+    expect(fetchImpl.mock.calls.length).toBe(callsWhileOpen + 1);
+
+    // E como b.fails foi zerado ao abrir, UMA falha isolada agora NÃO reabre
+    // (threshold=2). Antes do fix, reabriria na primeira.
+    mode = 500;
+    const before = fetchImpl.mock.calls.length;
+    const r = await client.getLeads('t1', {});
+    expect(r.status).toBe(500);                 // tentou de verdade (não bloqueou)
+    expect(fetchImpl.mock.calls.length).toBe(before + 1);
+  });
+
   it('respeita o rate limit por tenant (token bucket aguarda recarga)', async () => {
     const fetchImpl = vi.fn(async () => jsonResp(200, okBody));
     const { client, clock } = makeClient({ fetchImpl, env: { C2S_RATE_PER_MIN: '60', C2S_BURST: '1' } });

@@ -170,17 +170,24 @@ export function createC2sProvider({ supabase, apiClient, processEnv = process.en
       }
       // PISO de criação para o mini-walk LIVE: last_sync_at (= maior created_at já
       // processado) − overlap. O LIVE desce do topo e para ao cruzar este piso.
+      // Este é o piso da ROTINA (todo tick de 1min): traz o topo novo em ~1 página.
       const overlapFloorMs = Date.parse(integration.last_sync_at) - cfg.overlapMin * 60 * 1000;
-      // Janela de REVISITA (por-tenant vence o default global; null/ausente cai no
-      // default; 0 desliga): recua o piso até `agora − revisitDays` para re-buscar
-      // leads antigos e pegar updates de campos que o C2S preencheu após a criação
-      // (ex.: prop_ref). O piso final é o MAIS ANTIGO entre overlap e revisita — assim
-      // o LIVE segue trazendo o topo novo E re-varrendo a janela de N dias. O
-      // fingerprint dedupa: re-ler lead inalterado não gera escrita.
+      // Janela de REVISITA (por-tenant vence o default; null/ausente cai no default;
+      // 0 desliga): recua o piso até `agora − revisitDays` para re-capturar updates
+      // que o C2S preencheu após a criação (ex.: prop_ref). Como a API C2S só filtra
+      // por created_lt, a revisita re-varre N dias por created_at DESC — dezenas de
+      // páginas. Fazer isso TODO tick estoura o rate limit (429, incidente 2026-07-21),
+      // então a revisita é ESPORÁDICA: só quando passou revisitIntervalMin desde a
+      // última (last_revisit_at). Fora dessa cadência, o piso é só o overlap.
+      // last_revisit_at ausente/NULL = nunca revisou → revisar agora (fail-safe).
       const revisitDays = integration.revisit_days != null ? integration.revisit_days : cfg.revisitDays;
-      const revisitFloorMs = revisitDays > 0 ? now() - revisitDays * 24 * 60 * 60 * 1000 : overlapFloorMs;
-      const createdGteFloor = iso(Math.min(overlapFloorMs, revisitFloorMs));
-      return { syncMode: 'LIVE', suppressAutomations: false, createdGteFloor, startedAt };
+      const revisitDueMs = cfg.revisitIntervalMin * 60 * 1000;
+      const lastRevisitMs = integration.last_revisit_at ? Date.parse(integration.last_revisit_at) : 0;
+      const isRevisit = revisitDays > 0 && (now() - lastRevisitMs >= revisitDueMs);
+      const floorMs = isRevisit
+        ? Math.min(overlapFloorMs, now() - revisitDays * 24 * 60 * 60 * 1000)
+        : overlapFloorMs;
+      return { syncMode: 'LIVE', suppressAutomations: false, createdGteFloor: iso(floorMs), startedAt, isRevisit };
     },
 
     fetchNormalizedPages(integration, syncWindow = {}) {
@@ -218,6 +225,10 @@ export function createC2sProvider({ supabase, apiClient, processEnv = process.en
       // Se nada novo veio, mantém o last_sync_at anterior (não retrocede/pula).
       const maxSeen = integration.maxCreatedSeen || syncWindow.maxCreatedSeen;
       const patch = { last_sync_at: maxSeen || integration.last_sync_at };
+      // Carimba a revisita SÓ quando este ciclo de fato recuou N dias (isRevisit)
+      // e terminou sem erro — reinicia a cadência de revisitIntervalMin. Ciclo de
+      // rotina não mexe: senão a próxima revisita seria adiada indevidamente.
+      if (syncWindow.isRevisit) patch.last_revisit_at = finishedAt;
       if (syncMode === 'BACKFILL') {
         // Walk COMPLETO (o ciclo chegou ao fim sem erro): carimba full e zera o
         // cursor → o dia-a-dia vira LIVE puro. Se o ciclo for interrompido antes,

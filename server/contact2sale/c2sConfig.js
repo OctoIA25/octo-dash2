@@ -31,6 +31,12 @@ export function loadC2sEnv(processEnv = process.env) {
     // o fingerprint dedupa o que não mudou. Default global; a imobiliária pode
     // sobrescrever via coluna revisit_days em tenant_contact2sale_config. 0 = desliga.
     revisitDays: Math.max(0, num(processEnv.C2S_REVISIT_DAYS, 7)),
+    // Cadência da REVISITA (minutos): de quanto em quanto tempo o LIVE recua
+    // revisitDays para re-capturar updates tardios (ex.: prop_ref). A ROTINA
+    // (todo tick de 1min) usa só o overlap — a revisita de N dias fora dessa
+    // cadência estouraria o rate limit da C2S (429, incidente 2026-07-21).
+    // Clamp ≥1: 0 faria toda rotina virar revisita (o problema original).
+    revisitIntervalMin: Math.max(1, num(processEnv.C2S_REVISIT_INTERVAL_MIN, 60)),
     // A cada 1 min (granularidade mínima do cron): lead novo na C2S aparece no
     // CRM em ~1 min. O runner por-tenant pula quem já está em ciclo, então ticks
     // frequentes durante um backfill longo não empilham chamadas. Latência de

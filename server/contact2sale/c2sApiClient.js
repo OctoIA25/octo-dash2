@@ -83,6 +83,9 @@ export function createC2sApiClient({
       b.fails++;
       if (b.fails >= cfg.breakerThreshold) {
         b.openUntil = now() + cfg.breakerCooldownMs;
+        // Zera AO ABRIR: só sucesso/4xx-terminal reseta b.fails, então sem isto
+        // ele fica ≥ threshold e uma falha isolada pós-cooldown re-arma para sempre.
+        b.fails = 0;
         return r;
       }
       if (attempt < cfg.retries) {

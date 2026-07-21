@@ -114,6 +114,57 @@ describe('createC2sProvider.resolveWindow — janela de revisita', () => {
   });
 });
 
+// Cadência da revisita (incidente 2026-07-21): a re-varredura de N dias NÃO pode
+// rodar todo tick de 1min (estoura o rate limit da C2S → 429). Vira esporádica:
+// só quando passou C2S_REVISIT_INTERVAL_MIN desde last_revisit_at.
+describe('createC2sProvider.resolveWindow — cadência da revisita (evita 429)', () => {
+  const base = { tenant_id: 't1', last_sync_at: '2026-07-06T11:50:00.000Z', last_full_sync_at: '2026-07-05T00:00:00.000Z', revisit_days: 7 };
+  const provider = () => createC2sProvider({ supabase: fakeSupabase(), apiClient: {}, processEnv: { C2S_REVISIT_INTERVAL_MIN: '60' }, now: () => NOW });
+  const minsAgo = (m) => iso(NOW - m * 60 * 1000);
+  const OVERLAP_FLOOR = '2026-07-06T11:45:00.000Z'; // last_sync_at − 5min (piso da rotina)
+  const REVISIT_FLOOR = '2026-06-29T12:00:00.000Z'; // NOW − 7d (piso quando revisita)
+
+  it('ROTINA: revisita recente (last_revisit_at < 60min) → piso é só o overlap (walk de ~1 página)', () => {
+    // Última revisita há 10min (< 60): este tick NÃO revisita.
+    const w = provider().resolveWindow({ ...base, last_revisit_at: minsAgo(10) });
+    expect(w.isRevisit).toBe(false);
+    expect(w.createdGteFloor).toBe(OVERLAP_FLOOR); // NÃO 7 dias
+  });
+
+  it('REVISITA: passou o intervalo (last_revisit_at ≥ 60min) → piso recua N dias', () => {
+    const w = provider().resolveWindow({ ...base, last_revisit_at: minsAgo(61) });
+    expect(w.isRevisit).toBe(true);
+    expect(w.createdGteFloor).toBe(REVISIT_FLOOR);
+  });
+
+  it('FAIL-SAFE: last_revisit_at ausente (nunca revisou / coluna nova) → revisita agora', () => {
+    const w = provider().resolveWindow({ ...base }); // sem last_revisit_at
+    expect(w.isRevisit).toBe(true);
+    expect(w.createdGteFloor).toBe(REVISIT_FLOOR);
+  });
+
+  it('revisit_days=0 nunca revisita, mesmo sem last_revisit_at', () => {
+    const w = provider().resolveWindow({ ...base, revisit_days: 0 });
+    expect(w.isRevisit).toBe(false);
+    expect(w.createdGteFloor).toBe(OVERLAP_FLOOR); // só overlap
+  });
+
+  it('buildCursorPatch carimba last_revisit_at SÓ em ciclo de revisita sem erro', async () => {
+    const p = provider();
+    const stats = { fetched: 5, new: 0, updated: 0, saved: 0, errors: 0 };
+    const finishedAt = iso(NOW);
+
+    const revisitPatch = await p.buildCursorPatch({ integration: base, syncWindow: { isRevisit: true }, syncMode: 'LIVE', stats, finishedAt });
+    expect(revisitPatch.last_revisit_at).toBe(finishedAt);
+
+    const routinePatch = await p.buildCursorPatch({ integration: base, syncWindow: { isRevisit: false }, syncMode: 'LIVE', stats, finishedAt });
+    expect(routinePatch.last_revisit_at).toBeUndefined(); // rotina não adia a próxima revisita
+
+    const errPatch = await p.buildCursorPatch({ integration: base, syncWindow: { isRevisit: true }, syncMode: 'LIVE', stats: { ...stats, errors: 1 }, finishedAt });
+    expect(errPatch).toEqual({}); // erro ⇒ não avança nada (nem o carimbo)
+  });
+});
+
 describe('createC2sProvider.fetchNormalizedPages — BACKFILL', () => {
   it('caminha por created_at DESC (mais recente 1º) com created_lt de retomada; cursor = min da página', async () => {
     const supabase = fakeSupabase();
@@ -224,7 +275,9 @@ describe('createC2sProvider.fetchNormalizedPages — BACKFILL', () => {
 
 describe('createC2sProvider.fetchNormalizedPages — LIVE', () => {
   // last_sync_at = maior created_at já processado; piso = last_sync_at − 5min = 11:45.
-  const liveIntegration = { tenant_id: 't1', last_sync_at: '2026-07-06T11:50:00.000Z', last_full_sync_at: '2026-07-05T00:00:00Z' };
+  // last_revisit_at recente (5min atrás) → estes testes exercitam a ROTINA (piso
+  // overlap, walk de ~1 página), não o ciclo de revisita esporádico de N dias.
+  const liveIntegration = { tenant_id: 't1', last_sync_at: '2026-07-06T11:50:00.000Z', last_full_sync_at: '2026-07-05T00:00:00Z', last_revisit_at: '2026-07-06T11:55:00.000Z' };
 
   it('desce por created_at DESC com created_lt (o ÚNICO filtro que a C2S respeita), NUNCA updated_gte', async () => {
     const getLeads = vi.fn().mockResolvedValue({ ok: true, status: 200, items: [rawLead('l9', '2026-07-06T11:58:00Z')], hasMore: false });
