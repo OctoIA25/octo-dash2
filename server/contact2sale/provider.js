@@ -48,6 +48,13 @@ const minTimestamp = (items, field) => pickTimestamp(items, field, false);
 // só na borda de envio (os cursores internos seguem comparáveis por Date.parse).
 const toC2sDate = (x) => new Date(x).toISOString().replace(/\.\d{3}Z$/, 'Z');
 
+// status do último ciclo lido do sync_state (JSON string escrito pelo engine).
+// null se ausente/ilegível — tratado como "sem erro conhecido" pelo chamador.
+const parseSyncStatus = (raw) => {
+  if (!raw) return null;
+  try { return JSON.parse(raw)?.status ?? null; } catch { return null; }
+};
+
 export function createC2sProvider({ supabase, apiClient, processEnv = process.env, now = Date.now, logger = noopLogger }) {
   const cfg = loadC2sEnv(processEnv);
   // ponytail: sem first_message/custom_attributes até validar com token real —
@@ -187,7 +194,18 @@ export function createC2sProvider({ supabase, apiClient, processEnv = process.en
       // dias todo ciclo → o loop que este fix elimina. Assim a rotina leve destrava o
       // cursor primeiro e a 1ª revisita real vem revisitIntervalMin depois.
       const lastRevisitMs = integration.last_revisit_at ? Date.parse(integration.last_revisit_at) : now();
-      const isRevisit = revisitDays > 0 && (now() - lastRevisitMs >= revisitDueMs);
+      // NÃO escalar para revisita quando o último ciclo NÃO terminou 'done'
+      // (erro/running). Motivo (residual do incidente 2026-07-21): a revisita só
+      // carimba last_revisit_at em ciclo sem erro (buildCursorPatch retorna {} no
+      // erro), então um tenant em 429 sustentado congela last_revisit_at no
+      // passado — passados revisitIntervalMin, isRevisit voltaria a true TODO tick
+      // e a re-varredura de N dias reacenderia o loop de 429. Em erro, o piso fica
+      // só no overlap (walk leve de ~1 página) até o tenant se recuperar; a
+      // revisita real vem no 1º ciclo 'done' seguinte.
+      const lastStatus = parseSyncStatus(integration.sync_state);
+      const isRevisit = revisitDays > 0
+        && (now() - lastRevisitMs >= revisitDueMs)
+        && lastStatus !== 'error' && lastStatus !== 'running';
       const floorMs = isRevisit
         ? Math.min(overlapFloorMs, now() - revisitDays * 24 * 60 * 60 * 1000)
         : overlapFloorMs;

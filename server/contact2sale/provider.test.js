@@ -154,6 +154,33 @@ describe('createC2sProvider.resolveWindow — cadência da revisita (evita 429)'
     expect(w.createdGteFloor).toBe(OVERLAP_FLOOR); // só overlap
   });
 
+  it('RESIDUAL 429: revisita DEVIDA mas último ciclo em erro → NÃO revisa (evita reacender o loop)', () => {
+    // Sem esta guarda, um tenant preso em 429 congela last_revisit_at (buildCursorPatch
+    // não roda em erro) e, passados 60min, re-varreria 7 dias TODO tick → volta o incidente.
+    const errored = JSON.stringify({ status: 'error', errors: 1 });
+    const w = provider().resolveWindow({ ...base, last_revisit_at: minsAgo(61), sync_state: errored });
+    expect(w.isRevisit).toBe(false);
+    expect(w.createdGteFloor).toBe(OVERLAP_FLOOR); // piso leve até recuperar
+  });
+
+  it('RESIDUAL 429: último ciclo em running (stalled/em voo) → também NÃO revisa', () => {
+    const running = JSON.stringify({ status: 'running' });
+    const w = provider().resolveWindow({ ...base, last_revisit_at: minsAgo(61), sync_state: running });
+    expect(w.isRevisit).toBe(false);
+  });
+
+  it('revisita DEVIDA e último ciclo done → revisa normalmente (guarda não bloqueia o caso feliz)', () => {
+    const done = JSON.stringify({ status: 'done', errors: 0 });
+    const w = provider().resolveWindow({ ...base, last_revisit_at: minsAgo(61), sync_state: done });
+    expect(w.isRevisit).toBe(true);
+    expect(w.createdGteFloor).toBe(REVISIT_FLOOR);
+  });
+
+  it('sync_state ausente/ilegível não bloqueia a revisita devida (trata como sem erro)', () => {
+    const w = provider().resolveWindow({ ...base, last_revisit_at: minsAgo(61), sync_state: 'nao-json{' });
+    expect(w.isRevisit).toBe(true);
+  });
+
   it('buildCursorPatch carimba last_revisit_at SÓ em ciclo de revisita sem erro', async () => {
     const p = provider();
     const stats = { fetched: 5, new: 0, updated: 0, saved: 0, errors: 0 };
