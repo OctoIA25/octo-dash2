@@ -15,4 +15,9 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Build the Docker image
-      run: docker build . --file Dockerfile --tag my-image-name:$(date +%s)
+      run: |
+        docker build . --file Dockerfile --tag my-image-name:$(date +%s) \
+          --build-arg VITE_SUPABASE_URL="${{ secrets.VITE_SUPABASE_URL }}" \
+          --build-arg VITE_SUPABASE_ANON_KEY="${{ secrets.VITE_SUPABASE_ANON_KEY }}" \
+          --build-arg VITE_GOOGLE_CALENDAR_CLIENT_ID="${{ secrets.VITE_GOOGLE_CALENDAR_CLIENT_ID }}" \
+          --build-arg VITE_GOOGLE_CALENDAR_CLIENT_SECRET="${{ secrets.VITE_GOOGLE_CALENDAR_CLIENT_SECRET }}"
