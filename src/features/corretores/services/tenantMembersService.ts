@@ -19,6 +19,7 @@ export interface TenantMember {
   sidebar_permissions?: SidebarPermission[];
   created_at: string;
   leader_user_id?: string | null;
+  creci?: string | null;
 }
 
 export interface CreateMemberData {
@@ -30,6 +31,7 @@ export interface CreateMemberData {
   team?: TeamColor;
   permissions?: Record<string, unknown>;
   sidebarPermissions?: SidebarPermission[];
+  creci?: string;
 }
 
 // Função para obter permissões padrão baseado no role
@@ -52,7 +54,11 @@ export interface ServiceResult {
   data?: any;
 }
 
-function mapTenantMemberRow(member: any, leaderMap: Record<string, string | null> = {}): TenantMember | null {
+function mapTenantMemberRow(
+  member: any,
+  leaderMap: Record<string, string | null> = {},
+  creciMap: Record<string, string | null> = {},
+): TenantMember | null {
   const rawPermissions = member.permissions && typeof member.permissions === 'object' ? member.permissions : undefined;
   const sidebarPerms =
     (Array.isArray(member.sidebar_permissions) ? member.sidebar_permissions : undefined) ||
@@ -74,6 +80,9 @@ function mapTenantMemberRow(member: any, leaderMap: Record<string, string | null
     sidebar_permissions: sidebarPerms,
     created_at: member.created_at,
     leader_user_id: leaderMap[member.user_id] ?? member.leader_user_id ?? null,
+    // A RPC get_tenant_members não retorna a coluna `creci` (é anterior a ela);
+    // creciMap traz o valor do select paralelo. member.creci cobre o fallback direto.
+    creci: creciMap[member.user_id] ?? member.creci ?? null,
   };
 }
 
@@ -113,23 +122,26 @@ export async function fetchTenantMembers(tenantId: string): Promise<TenantMember
       return fetchTenantMembersDirectly(tenantId);
     }
 
-    // Mapear resultado da RPC para o formato esperado
-    // Buscar leader_user_id diretamente (campo novo, não retornado pela RPC antiga)
+    // Mapear resultado da RPC para o formato esperado.
+    // A RPC get_tenant_members não retorna colunas novas (leader_user_id, creci);
+    // buscamos ambas num único select paralelo e fazemos merge por user_id.
     const memberIds = (members as any[]).map((m: any) => m.user_id);
     const leaderMap: Record<string, string | null> = {};
+    const creciMap: Record<string, string | null> = {};
     if (memberIds.length > 0) {
-      const { data: leaderData } = await supabase
+      const { data: extraData } = await supabase
         .from('tenant_memberships')
-        .select('user_id, leader_user_id')
+        .select('user_id, leader_user_id, creci')
         .eq('tenant_id', tenantId)
         .in('user_id', memberIds);
-      (leaderData || []).forEach((row: any) => {
+      (extraData || []).forEach((row: any) => {
         leaderMap[row.user_id] = row.leader_user_id ?? null;
+        creciMap[row.user_id] = row.creci ?? null;
       });
     }
 
     return (members as any[])
-      .map((member: any) => mapTenantMemberRow(member, leaderMap))
+      .map((member: any) => mapTenantMemberRow(member, leaderMap, creciMap))
       .filter((member): member is TenantMember => Boolean(member));
   } catch (error) {
     console.error('Erro ao buscar membros do tenant:', error);
@@ -182,6 +194,7 @@ export async function createTenantMember(
           tenant_id: tenantId,
           role: memberData.role,
           permissions: fullPermissions,
+          creci: memberData.creci?.trim() || null,
         });
 
       if (membershipError) {
@@ -259,7 +272,7 @@ export async function createTenantMember(
 
     const { error: permissionsPersistError } = await supabase
       .from('tenant_memberships')
-      .update({ permissions: fullPermissions })
+      .update({ permissions: fullPermissions, creci: memberData.creci?.trim() || null })
       .eq('user_id', userId)
       .eq('tenant_id', tenantId);
 
@@ -314,12 +327,17 @@ export async function updateMemberRole(
  */
 export async function updateMemberPermissions(
   memberId: string,
-  permissions: Record<string, any>
+  permissions: Record<string, any>,
+  creci?: string | null
 ): Promise<ServiceResult> {
   try {
+    // `creci` undefined = não mexe na coluna (retrocompat). null/string = grava.
+    const updatePayload: Record<string, any> =
+      creci === undefined ? { permissions } : { permissions, creci };
+
     const { data, error } = await supabase
       .from('tenant_memberships')
-      .update({ permissions })
+      .update(updatePayload)
       .eq('id', memberId)
       .select('id');
 
@@ -442,26 +460,32 @@ export async function deleteMemberCompletely(
   tenantId: string
 ): Promise<ServiceResult> {
   try {
-    
-    // 1. Remover da tabela tenant_memberships
+    // 1. Remover da tabela tenant_memberships — é o que efetivamente tira o acesso.
+    //    Se ISTO falhar, a exclusão falhou (retornamos erro). Os passos seguintes
+    //    são limpeza best-effort: seus erros são logados mas não derrubam a operação
+    //    (broker/auth órfãos são lixo reutilizável, não bloqueiam nada).
     const { error: membershipError } = await supabase
       .from('tenant_memberships')
       .delete()
       .eq('id', memberId);
-    
+
     if (membershipError) {
       console.error('❌ Erro ao remover membership:', membershipError);
-      // Continuar mesmo com erro
-    } else {
+      return { success: false, error: membershipError.message || 'Erro ao remover vínculo do membro' };
     }
-    
-    // 2. Remover da tabela tenant_brokers (se existir)
+
+    // 2. Remover da tabela tenant_brokers. A coluna é `auth_user_id` (não `user_id`).
     const { error: brokerError } = await supabase
       .from('tenant_brokers')
       .delete()
-      .eq('user_id', userId)
+      .eq('auth_user_id', userId)
       .eq('tenant_id', tenantId);
-    
+
+    if (brokerError) {
+      console.warn('⚠️ Membership removida, mas erro ao remover tenant_brokers:', brokerError);
+    }
+
+    // 3. Remover histórico de conversas do agente (limpeza).
     const { error: historicoError } = await supabase
       .from('agent_conversations')
       .delete()
@@ -469,26 +493,23 @@ export async function deleteMemberCompletely(
       .eq('tenant_id', tenantId);
 
     if (historicoError) {
-      console.error('Erro ao remover o histórico de conversas', historicoError);
+      console.warn('⚠️ Erro ao remover histórico de conversas:', historicoError);
     }
 
-    if (brokerError) {
-    } else {
-    }
-    
-    // 3. Tentar remover o usuário do Auth usando RPC (se existir)
-    // Nota: Isso requer uma função RPC no Supabase com permissões de admin
+    // 4. Best-effort: remover do auth.users via RPC (requer service_role no Supabase).
+    //    ponytail: RPC pode não existir ainda — logamos e seguimos; o usuário sem
+    //    membership já não acessa. Upgrade: criar/expor delete_user_completely no DB.
     try {
       const { error: authError } = await supabase.rpc('delete_user_completely', {
-        p_user_id: userId
+        p_user_id: userId,
       });
-      
       if (authError) {
-      } else {
+        console.warn('⚠️ Erro ao remover usuário do auth (RPC delete_user_completely):', authError);
       }
     } catch (e) {
+      console.warn('⚠️ RPC delete_user_completely indisponível:', e);
     }
-    
+
     return { success: true };
   } catch (error: any) {
     console.error('❌ Erro na exclusão completa:', error);

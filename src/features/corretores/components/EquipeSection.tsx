@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { Search, ChevronDown, Users, UserPlus, Shield, User, Loader2, Trash2, Mail, Lock, Unlock, Camera, AlertTriangle, CheckCircle, Settings, Info, Ban, X } from 'lucide-react';
+import { Search, ChevronDown, Users, UserPlus, Shield, User, Loader2, Trash2, Mail, Lock, Unlock, Camera, AlertTriangle, CheckCircle, Settings, Info, Ban, X, IdCard } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import {
@@ -20,8 +20,6 @@ import {
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { ProcessedLead } from '@/data/realLeadsProcessor';
-import { EquipeDetailsSidebar } from './EquipeDetailsSidebar';
-import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from "@/hooks/useAuth";
 import { fetchTenantMembers, createTenantMember, updateMemberRole, removeTenantMember, updateMemberPermissions, updateMemberLeader, deleteMemberCompletely, adminUpdateMemberPassword, adminUpdateMemberEmail, type TenantMember } from '../services/tenantMembersService';
 import { fetchTeams, setTeamLeader, type Team } from '../services/teamsManagementService';
@@ -40,39 +38,6 @@ import {
   type BrokerLeadCounts,
   type BrokerStatus,
 } from '../services/tenantLeadLimitService';
-
-// Função para excluir corretor completamente (tenant_memberships + tenant_brokers + auth.users)
-async function deleteCorretorCompleto(memberId: string, brokerUuid?: string, tenantId?: string): Promise<{ success: boolean; error?: string }> {
-  try {
-    // 1. Remover de tenant_memberships
-    const { error: membershipError } = await supabase
-      .from('tenant_memberships')
-      .delete()
-      .eq('id', memberId);
-
-    if (membershipError) {
-      console.error('Erro ao remover membership:', membershipError);
-    }
-
-    // 2. Se tiver broker_uuid, remover de tenant_brokers
-    if (brokerUuid && tenantId) {
-      const { error: brokerError } = await supabase
-        .from('tenant_brokers')
-        .delete()
-        .eq('auth_user_id', brokerUuid)
-        .eq('tenant_id', tenantId);
-
-      if (brokerError) {
-        console.error('Erro ao remover broker:', brokerError);
-      }
-    }
-
-    return { success: true };
-  } catch (error: any) {
-    console.error('Erro ao excluir corretor:', error);
-    return { success: false, error: error.message };
-  }
-}
 
 interface EquipeSectionProps {
   leads: ProcessedLead[];
@@ -119,7 +84,6 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
   const [equipeFilter, setEquipeFilter] = useState<string>('todas');
   const [cargoFilter, setCargoFilter] = useState<string>('todos');
   const [sortBy, setSortBy] = useState<string>('nome');
-  const [membroSelecionado, setMembroSelecionado] = useState<MembroEquipe | null>(null);
 
   // Estados para membros do banco de dados
   const [tenantMembers, setTenantMembers] = useState<TenantMember[]>([]);
@@ -131,6 +95,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
   const [newMemberSurname, setNewMemberSurname] = useState('');
   const [newMemberEmail, setNewMemberEmail] = useState('');
   const [newMemberPassword, setNewMemberPassword] = useState('');
+  const [newMemberCreci, setNewMemberCreci] = useState('');
   const [newMemberPhoto, setNewMemberPhoto] = useState<string>('');
   const newMemberPhotoInputRef = useRef<HTMLInputElement>(null);
   const [newMemberRole, setNewMemberRole] = useState<'admin' | 'corretor' | 'team_leader'>('corretor');
@@ -162,6 +127,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
   const [editSubPermissions, setEditSubPermissions] = useState<Record<string, boolean>>({});
   const [editSpecialPermissions, setEditSpecialPermissions] = useState<Record<string, boolean>>({ can_manage_roleta: false });
   const [editMemberPhoto, setEditMemberPhoto] = useState<string>('');
+  const [editMemberCreci, setEditMemberCreci] = useState<string>('');
   const editMemberPhotoInputRef = useRef<HTMLInputElement>(null);
   const [isSavingPermissions, setIsSavingPermissions] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -357,7 +323,8 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
         name: `${newMemberName} ${newMemberSurname}`.trim() || undefined,
         team: newMemberTeam || undefined,
         permissions: { ...permissions, photo: newMemberPhoto || null } as any,
-        sidebarPermissions: sidebarPerms as any
+        sidebarPermissions: sidebarPerms as any,
+        creci: newMemberCreci.trim() || undefined,
       };
       
       const result = await createTenantMember(tenantId!, memberData);
@@ -376,6 +343,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
         setNewMemberSurname('');
         setNewMemberEmail('');
         setNewMemberPassword('');
+        setNewMemberCreci('');
         setNewMemberPhoto('');
         setNewMemberRole('corretor');
         setNewMemberTeam('');
@@ -481,6 +449,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
     const sidebarPerms = currentPerms.sidebar_permissions || [];
     const currentPhoto = (currentPerms as any).photo as string | undefined;
     setEditMemberPhoto(currentPhoto || '');
+    setEditMemberCreci(member.creci || '');
     
     // Definir permissões de abas baseado nas sidebar_permissions salvas ou padrão por role
     const defaultPerms: Record<string, boolean> = {
@@ -564,7 +533,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
         lead_limit: Object.keys(editBrokerOverride).length > 0 ? editBrokerOverride : undefined,
       };
       
-      const result = await updateMemberPermissions(editingMember.id, newPermissions);
+      const result = await updateMemberPermissions(editingMember.id, newPermissions, editMemberCreci.trim() || null);
       
       if (!result.success) {
         toast.error(result.error || 'Erro ao salvar permissões');
@@ -688,6 +657,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
         leadsAtivos: 0,
         taxaConversao: 0,
         email: member.email,
+        creci: member.creci ?? undefined,
         foto,
       };
 
@@ -768,9 +738,9 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
       {/* Área Principal - Cards */}
       <div 
         className="px-6 py-6 transition-all duration-300 overflow-y-auto"
-        style={{ 
-          width: membroSelecionado ? 'calc(100% - 480px)' : '100%',
-          maxWidth: membroSelecionado ? 'calc(100% - 480px)' : '100%',
+        style={{
+          width: '100%',
+          maxWidth: '100%',
           minHeight: '100vh'
         }}
       >
@@ -1127,8 +1097,6 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
               const handleMemberClick = () => {
                 if (tenantMember) {
                   handleOpenEditModal(tenantMember);
-                } else {
-                  setMembroSelecionado(membro);
                 }
               };
 
@@ -1215,25 +1183,6 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
           Exibindo {membrosFiltrados.length} de {membrosEquipe.length} pessoas
         </div>
       </div>
-
-      {/* Sidebar de Detalhes */}
-      {membroSelecionado && (
-        <EquipeDetailsSidebar 
-          membro={membroSelecionado}
-          onClose={() => setMembroSelecionado(null)}
-          onDelete={async (memberId, brokerUuid) => {
-            const result = await deleteCorretorCompleto(memberId, brokerUuid, tenantId);
-            if (result.success) {
-              toast.success('Corretor excluído com sucesso');
-              setMembroSelecionado(null);
-              loadTenantMembers(); // Recarregar lista
-            } else {
-              toast.error(result.error || 'Erro ao excluir corretor');
-              throw new Error(result.error);
-            }
-          }}
-        />
-      )}
 
       {/* Drawer lateral: Novo Membro */}
       {isNewMemberModalOpen && (
@@ -1527,6 +1476,22 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
               </div>
             )}
 
+            {/* CRECI (opcional) */}
+            <div className="space-y-2">
+              <Label htmlFor="creci" className="flex items-center gap-2">
+                <IdCard className="h-4 w-4 text-gray-500 dark:text-slate-400" />
+                CRECI (opcional)
+              </Label>
+              <Input
+                id="creci"
+                type="text"
+                placeholder="Ex: 123456-F"
+                value={newMemberCreci}
+                onChange={(e) => setNewMemberCreci(e.target.value)}
+                className="h-10"
+              />
+            </div>
+
             {/* Permissões Granulares - Accordion Harmônico */}
             <div className="border border-gray-200 dark:border-slate-800 rounded-lg overflow-hidden">
               <button
@@ -1664,6 +1629,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
             setIsEditModalOpen(false);
             setEditingMember(null);
             setEditMemberPhoto('');
+            setEditMemberCreci('');
             setShowDeleteConfirm(false);
           }}
           style={{ position: 'fixed', top: 56, left: 0, right: 0, bottom: 0, zIndex: 99998 }}
@@ -1691,6 +1657,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                   setIsEditModalOpen(false);
                   setEditingMember(null);
                   setEditMemberPhoto('');
+                  setEditMemberCreci('');
                   setShowDeleteConfirm(false);
                 }}
                 className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors"
@@ -1926,6 +1893,22 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                   <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">PNG, JPG ou WebP (máx. 2MB).</p>
                 </div>
               </div>
+            </div>
+            {/* CRECI (opcional) */}
+            <div className="space-y-2">
+              <Label htmlFor="edit-creci" className="flex items-center gap-2">
+                <IdCard className="h-4 w-4 text-gray-500 dark:text-slate-400" />
+                CRECI (opcional)
+              </Label>
+              <Input
+                id="edit-creci"
+                type="text"
+                placeholder="Ex: 123456-F"
+                value={editMemberCreci}
+                onChange={(e) => setEditMemberCreci(e.target.value)}
+                disabled={isSavingPermissions}
+                className="h-10"
+              />
             </div>
             {/* Permissões de Abas Principais */}
             <div className="space-y-3">
