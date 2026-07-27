@@ -129,6 +129,7 @@ const TAB_CONFIGS: TabConfig[] = [
       { id: 'metricas-individuais', label: 'Métricas Individuais', icon: User, href: '/relatorios?tab=metricas-individuais', isQuery: true },
       { id: 'imoveis', label: 'Imóveis', icon: Building2, href: '/relatorios?tab=imoveis', isQuery: true },
       { id: 'financeiro', label: 'Financeiro', icon: DollarSign, href: '/relatorios?tab=financeiro', isQuery: true },
+      { id: 'enps', label: 'eNPS', icon: Sparkles, href: '/relatorios?tab=enps', isQuery: true },
       { id: 'excel', label: 'Excel', icon: FileText, href: '/relatorios?tab=excel', isQuery: true },
     ],
   },
