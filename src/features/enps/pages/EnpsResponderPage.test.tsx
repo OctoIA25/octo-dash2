@@ -3,7 +3,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EnpsResponderPage } from './EnpsResponderPage';
 import { setEnpsService } from '../hooks/useEnps';
-import type { EnpsService } from '../types';
+import type { EnpsService, EnpsResponderContext } from '../types';
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
@@ -22,7 +22,10 @@ const baseCtx = {
   alreadyResponded: false,
 };
 
-function mockService(over: Partial<typeof baseCtx>, submit = vi.fn().mockResolvedValue({ ok: true })) {
+// Partial<EnpsResponderContext> (não Partial<typeof baseCtx>): baseCtx.cycle.status
+// é inferido como o literal 'open' via `as const`, então Partial<typeof baseCtx>
+// rejeita status:'closed' no teste de ciclo fechado. O tipo real aceita ambos.
+function mockService(over: Partial<EnpsResponderContext>, submit = vi.fn().mockResolvedValue({ ok: true })) {
   setEnpsService({ getResponderContext: vi.fn().mockResolvedValue({ ...baseCtx, ...over }), submitResponse: submit } as unknown as EnpsService);
   return submit;
 }
