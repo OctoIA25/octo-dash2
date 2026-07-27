@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Send, Loader2, User, Eye } from 'lucide-react';
 import { sendMessageToAgent, getWebhookUrl } from '../services/agentWebhookService';
+import { emitChatTelemetry, chatStatusFrom } from '../services/agentTelemetryService';
 import { AgentMessageRecord } from '../services/agentConversationService';
 import { MessageText } from './MessageText';
 
@@ -135,8 +136,21 @@ export const CaioKotlerChat = ({
       });
     }
 
+    const sendStartedMs = Date.now();
     const result = await sendMessageToAgent('Marketing', text, user?.name || 'Usuário', user?.tenantName || '');
     setIsSending(false);
+
+    // Telemetria (fire-and-forget, nunca lança): latência + status real do
+    // roundtrip — resposta vazia conta como empty_response, mesmo que a UI
+    // mostre o texto de fallback.
+    emitChatTelemetry({
+      tenantId: user?.tenantId,
+      agentSlug: 'caio',
+      conversationId,
+      status: chatStatusFrom(result),
+      durationMs: Date.now() - sendStartedMs,
+      errorMessage: result.success ? null : result.error || null,
+    });
 
     if (!result.success) {
       console.error('❌ Erro ao enviar:', result.error);

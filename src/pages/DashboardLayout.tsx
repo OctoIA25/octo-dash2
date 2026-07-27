@@ -91,6 +91,7 @@ const CorretoresPage = lazyWithRetry(() => import('@/features/corretores/pages/C
 const ImoveisPage = lazyWithRetry(() => import('@/features/imoveis/pages/ImoveisPage').then(m => ({ default: m.ImoveisPage })));
 const LancamentoViewPage = lazyWithRetry(() => import('@/features/imoveis/pages/LancamentoViewPage').then(m => ({ default: m.LancamentoViewPage })));
 const AgentesIaPage = lazyWithRetry(() => import('@/features/agentes-ia/pages/AgentesIaPage').then(m => ({ default: m.AgentesIaPage })));
+const AgentesTelemetriaPage = lazyWithRetry(() => import('@/features/agentes-ia/pages/AgentesTelemetriaPage').then(m => ({ default: m.AgentesTelemetriaPage })));
 const ComunicacaoPage = lazyWithRetry(() => import('@/features/comunicacao').then(m => ({ default: m.ComunicacaoPage })));
 const OctoChatPage = lazyWithRetry(() => import('@/features/agentes-ia/pages/OctoChatPage').then(m => ({ default: m.OctoChatPage })));
 const ChatPage = lazyWithRetry(() => import('@/features/chat/pages/ChatPage').then(m => ({ default: m.ChatPage })));
@@ -348,6 +349,13 @@ const DashboardLayout = () => {
           <Route
             path="agentes-ia/disparador"
             element={<Navigate to="/comunicacao/disparador" replace />}
+          />
+
+          {/* Telemetria: rota específica ANTES de :agent?; o gate gestão/owner
+              fino é da própria página (corretor é redirecionado lá dentro). */}
+          <Route
+            path="agentes-ia/telemetria"
+            element={canAccess('agentes-ia') ? <AgentesTelemetriaPage /> : <Navigate to={defaultAllowedRoute} replace />}
           />
 
           <Route

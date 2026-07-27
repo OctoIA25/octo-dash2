@@ -35,6 +35,7 @@
 
 import { getAction } from './actionRegistry.js';
 import { createTenantRateLimiter } from '../communication/rateLimiter.js';
+import { emitAgentEvent } from '../agent-telemetry/emit.js';
 
 const QUEUE_TABLE = 'agent_action_queue';
 const RUNS_TABLE = 'agent_action_runs';
@@ -108,7 +109,7 @@ async function closeFinishedRuns(supabase, runIds, nowIso, logger) {
     try {
       const { data: items } = await supabase
         .from(QUEUE_TABLE)
-        .select('status')
+        .select('status, tenant_id')
         .eq('run_id', runId);
       const rows = items || [];
       const pending = rows.filter((r) => r.status === 'pending' || r.status === 'processing').length;
@@ -116,15 +117,31 @@ async function closeFinishedRuns(supabase, runIds, nowIso, logger) {
 
       const sent = rows.filter((r) => r.status === 'done').length;
       const failed = rows.filter((r) => r.status === 'failed').length;
+      const runStatus = failed > 0 && sent === 0 ? 'failed' : 'done';
       await supabase
         .from(RUNS_TABLE)
         .update({
-          status: failed > 0 && sent === 0 ? 'failed' : 'done',
+          status: runStatus,
           sent_count: sent,
           failed_count: failed,
           completed_at: nowIso,
         })
         .eq('id', runId);
+
+      // Telemetria: 1 evento 'execution' por run fechado (nunca por item — os
+      // itens já vivem em agent_action_queue; contadores/funil/campaign_id
+      // ficam no run, não duplicamos aqui; correlação via execution_id=run.id).
+      // Fire-and-forget, nunca lança. Run sem itens não emite (sem tenant).
+      if (rows.length > 0) {
+        emitAgentEvent(supabase, {
+          tenant_id: rows[0].tenant_id,
+          agent_slug: 'disparador',
+          event_type: 'execution',
+          status: runStatus === 'failed' ? 'error' : 'ok',
+          execution_id: runId,
+          occurred_at: nowIso,
+        });
+      }
     } catch (err) {
       logger?.warn?.(`[agent-actions] falha ao fechar run ${runId}: ${err?.message}`);
     }

@@ -5,6 +5,9 @@
  */
 
 import OpenAI from 'openai';
+import { emitAgentEvent } from '../agent-telemetry/emit.js';
+
+const MODEL = 'gpt-4.1-mini';
 
 const SYSTEM_PROMPT = `Analise o texto fornecido e extraia APENAS as informações de localização geográfica (endereço, rua, bairro, cidade, estado, CEP, país, condomínio), tipo do imóvel e os diferenciais do local.
 Responda SOMENTE com as informações encontradas, sem explicações ou texto adicional.
@@ -73,13 +76,30 @@ function parseAiResponse(text) {
 }
 
 /**
+ * Mapeia o `usage` da resposta da OpenAI para os campos de tokens do evento
+ * de telemetria. Puro (testável). `usage` ausente → tudo null ("não
+ * informado" ≠ 0 — só gravamos consumo real).
+ */
+export function openAiUsageToTokens(usage) {
+  return {
+    input_tokens: usage?.prompt_tokens ?? null,
+    output_tokens: usage?.completion_tokens ?? null,
+    cached_tokens: usage?.prompt_tokens_details?.cached_tokens ?? null,
+    total_tokens: usage?.total_tokens ?? null,
+  };
+}
+
+/**
  * Enriquece dados extraidos com OpenAI
  * @param {string} htmlText - Texto limpo da pagina (sem tags HTML)
  * @param {string} apiKey - OpenAI API key
+ * @param {object|null} [telemetry] - { supabase, tenantId } para emitir o
+ *   evento llm_call com o usage real. Sem contexto (ou sem tenant), nada é
+ *   emitido — telemetria nunca muda o comportamento do enriquecimento.
  * @returns {Promise<{rua, bairro, cidade, estado, tipo, diferenciais, condominio, localizacao_completa}>}
  */
 
-export async function enrichWithAI(htmlText, apiKey) {
+export async function enrichWithAI(htmlText, apiKey, telemetry = null) {
   if (!apiKey) {
     console.warn('⚠️ OpenAI API key nao configurada, pulando enriquecimento AI');
     return {};
@@ -88,11 +108,28 @@ export async function enrichWithAI(htmlText, apiKey) {
   // Limitar texto para nao exceder tokens (primeiros 8000 chars)
   const truncatedText = htmlText.substring(0, 8000);
 
+  const startedMs = Date.now();
+  // Fire-and-forget: emitAgentEvent nunca lança (ver agent-telemetry/emit.js).
+  const report = (status, usage, errorMessage) => {
+    if (!telemetry?.supabase || !telemetry?.tenantId) return;
+    emitAgentEvent(telemetry.supabase, {
+      tenant_id: telemetry.tenantId,
+      agent_slug: 'estudo-mercado',
+      event_type: 'llm_call',
+      status,
+      model: MODEL,
+      provider: 'openai',
+      duration_ms: Date.now() - startedMs,
+      error_message: errorMessage || null,
+      ...openAiUsageToTokens(usage),
+    });
+  };
+
   try {
     const openai = new OpenAI({ apiKey });
 
     const response = await openai.chat.completions.create({
-      model: 'gpt-4.1-mini',
+      model: MODEL,
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: `Texto para análise:\n${truncatedText}` }
@@ -102,8 +139,10 @@ export async function enrichWithAI(htmlText, apiKey) {
     });
 
     const content = response.choices?.[0]?.message?.content || '';
+    report(content ? 'ok' : 'empty_response', response.usage, null);
     return parseAiResponse(content);
   } catch (error) {
+    report('error', null, error.message);
     console.error('❌ Erro OpenAI enrichment:', error.message);
     return {};
   }

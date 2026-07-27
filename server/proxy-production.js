@@ -4718,6 +4718,11 @@ registerAgentActionRoutes(app, supabase);
 import { registerCommunicationRoutes } from './communication/index.js';
 registerCommunicationRoutes(app, supabase);
 
+// Telemetria de Agentes IA — ingest de eventos (front, server e n8n).
+// Registrado nos DOIS entrypoints (sem isto, 404 em produção).
+import { registerAgentTelemetryRoutes } from './agent-telemetry/routes.js';
+registerAgentTelemetryRoutes(app, supabase);
+
 // WhatsApp Cloud API (envio + templates). Sem isto, /api/v1/whatsapp/* dá 404 em prod.
 import { registerWhatsappRoutes } from './whatsapp/index.js';
 registerWhatsappRoutes(app, supabase);

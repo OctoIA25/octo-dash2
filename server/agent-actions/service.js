@@ -19,6 +19,7 @@
 
 import crypto from 'crypto';
 import { interpretCommand } from './interpreter.js';
+import { emitAgentEvent } from '../agent-telemetry/emit.js';
 import { resolveSegment, resolveSegmentDual } from './segmentResolver.js';
 import { getAction } from './actionRegistry.js';
 import { validateSegment } from './segmentSchema.js';
@@ -44,12 +45,41 @@ function recipientKey(lead) {
 }
 
 /**
+ * Mapeia o resultado do interpretador para os campos de telemetria do evento
+ * llm_call. Puro (testável). Semântica dos status:
+ *  - ok: o n8n devolveu um plano utilizável;
+ *  - refused: o LLM entendeu mas o pedido não é suportado (fluxo normal de
+ *    clarificação, não é falha);
+ *  - timeout: o n8n não respondeu dentro do AbortSignal do interpreter;
+ *  - error: demais falhas (n8n fora, plano malformado, segmento inválido).
+ */
+export function interpretTelemetry(interpreted) {
+  if (interpreted?.ok) return { status: 'ok' };
+  const error = interpreted?.error || 'unknown';
+  if (error === 'n8n_error') {
+    const detail = String(interpreted?.detail || '');
+    const isTimeout = /abort|timeout/i.test(detail);
+    return {
+      status: isTimeout ? 'timeout' : 'error',
+      error_class: 'n8n_error',
+      error_message: detail || null,
+    };
+  }
+  if (error === 'unsupported_intent') return { status: 'refused', error_class: 'unsupported_intent' };
+  return { status: 'error', error_class: error };
+}
+
+/**
  * Constrói a prévia da operação e persiste o run 'pending'.
  *
  * @param supabase client (service_role)
  * @param input { command, tenantId, user: { id, email, role, brokerName? } }
- * @param deps  { interpret?, resolve?, nowMs?, maxRecipients?, interpretOpts? }
+ * @param deps  { interpret?, resolve?, nowMs?, maxRecipients?, interpretOpts?,
+ *              emitEvent?, durationNow? }
  *              interpretOpts é repassado ao interpreter (webhookUrl/usuario do n8n).
+ *              emitEvent/durationNow são costuras da telemetria (default:
+ *              emitAgentEvent / Date.now — durationNow é FUNÇÃO, como o
+ *              rateNow do actionWorker, porque mede elapsed real).
  */
 export async function previewOperation(supabase, input, deps = {}) {
   const { command, audienceId, tenantId, mode, campaignId = null, user = {} } = input;
@@ -58,6 +88,8 @@ export async function previewOperation(supabase, input, deps = {}) {
     resolve = resolveSegmentDual,
     nowMs = Date.now(),
     maxRecipients = DEFAULT_MAX_RECIPIENTS,
+    emitEvent = emitAgentEvent,
+    durationNow = Date.now,
   } = deps;
 
   if (!tenantId) return { ok: false, error: 'tenant_required' };
@@ -74,7 +106,19 @@ export async function previewOperation(supabase, input, deps = {}) {
     operation = { action: 'send_whatsapp', segment: segCheck.segment, params: { message: '' }, needsMessage: true };
   } else {
     if (!command || !String(command).trim()) return { ok: false, error: 'empty_command' };
+    // Telemetria da chamada LLM (n8n): latência medida com relógio real
+    // (durationNow) — nowMs injetado é o "agora" lógico do run, não serve
+    // para medir elapsed.
+    const interpretStartedMs = durationNow();
     const interpreted = await interpret(command, deps.interpretOpts || {});
+    emitEvent(supabase, {
+      tenant_id: tenantId,
+      agent_slug: 'disparador',
+      event_type: 'llm_call',
+      provider: 'n8n',
+      duration_ms: durationNow() - interpretStartedMs,
+      ...interpretTelemetry(interpreted),
+    }); // fire-and-forget: emitAgentEvent nunca lança (ver agent-telemetry/emit.js)
     if (!interpreted.ok) {
       return { ok: false, error: interpreted.error, clarification: interpreted.clarification || null };
     }
@@ -313,4 +357,4 @@ export async function confirmOperation(supabase, input, deps = {}) {
   return { ok: true, enqueued: items.length, runId: previewToken };
 }
 
-export const __test__ = { RUNS_TABLE, QUEUE_TABLE, MASS_ROLES, DEFAULT_MAX_RECIPIENTS };
+export const __test__ = { RUNS_TABLE, QUEUE_TABLE, MASS_ROLES, DEFAULT_MAX_RECIPIENTS, interpretTelemetry };

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { previewOperation, confirmOperation } from './service.js';
+import { previewOperation, confirmOperation, interpretTelemetry } from './service.js';
 
 const NOW = 1_750_000_000_000;
 const TENANT = 't1';
@@ -96,6 +96,7 @@ function makeFakeSupabaseForAudience(segment) {
 
 function makeFake({ runs = new Map() } = {}) {
   const queueUpserts = [];
+  const telemetryInserts = [];
 
   const from = (table) => {
     if (table === 'agent_action_runs') {
@@ -158,10 +159,20 @@ function makeFake({ runs = new Map() } = {}) {
         },
       };
     }
+    // Telemetria (llm_call do interpretador): grava e segue — sem isto, o
+    // emitAgentEvent default apenas degradaria em warn (nunca lança).
+    if (table === 'agent_telemetry_events') {
+      return {
+        insert(row) {
+          telemetryInserts.push(row);
+          return { error: null };
+        },
+      };
+    }
     throw new Error(`tabela inesperada: ${table}`);
   };
 
-  return { supabase: { from }, runs, queueUpserts };
+  return { supabase: { from }, runs, queueUpserts, telemetryInserts };
 }
 
 /** interpret fake: devolve a operação pronta. */
@@ -894,5 +905,128 @@ describe('confirmOperation variableMapping', () => {
     // (b) templateParams cai no fallback: [message]
     expect(queueUpserts).toHaveLength(1);
     expect(queueUpserts[0].payload.templateParams).toEqual(['Olá!']);
+  });
+});
+
+describe('interpretTelemetry — resultado do interpretador → campos do evento llm_call', () => {
+  it('plano ok → status ok, sem campos de erro', () => {
+    expect(interpretTelemetry({ ok: true, operation: {} })).toEqual({ status: 'ok' });
+  });
+
+  it('n8n_error: timeout/abort no detail vira status timeout; outros viram error', () => {
+    expect(
+      interpretTelemetry({ ok: false, error: 'n8n_error', detail: 'The operation was aborted due to timeout' }),
+    ).toMatchObject({ status: 'timeout', error_class: 'n8n_error' });
+    expect(
+      interpretTelemetry({ ok: false, error: 'n8n_error', detail: 'fetch failed' }),
+    ).toMatchObject({ status: 'error', error_class: 'n8n_error', error_message: 'fetch failed' });
+  });
+
+  it('unsupported_intent (clarificação) → refused, não é falha', () => {
+    expect(interpretTelemetry({ ok: false, error: 'unsupported_intent' })).toEqual({
+      status: 'refused',
+      error_class: 'unsupported_intent',
+    });
+  });
+
+  it('demais erros → status error com a classe original', () => {
+    expect(interpretTelemetry({ ok: false, error: 'invalid_plan' })).toEqual({
+      status: 'error',
+      error_class: 'invalid_plan',
+    });
+    expect(interpretTelemetry(null)).toEqual({ status: 'error', error_class: 'unknown' });
+  });
+});
+
+describe('previewOperation — telemetria da interpretação (llm_call)', () => {
+  const okInterpret = () =>
+    fakeInterpret({
+      action: 'send_whatsapp',
+      segment: { type: 'archived' },
+      params: { message: 'Oi' },
+      needsMessage: false,
+    });
+
+  it('emite llm_call ok com tenant, provider n8n e duração exata (relógio injetado)', async () => {
+    const { supabase } = makeFake();
+    const emitEvent = vi.fn();
+    // durationNow é função (como rateNow no worker): cada chamada avança 250ms
+    let clock = 10_000;
+    const durationNow = vi.fn(() => (clock += 250));
+    const r = await previewOperation(
+      supabase,
+      { command: 'arquivados', tenantId: TENANT, user: adminUser },
+      {
+        nowMs: NOW,
+        interpret: okInterpret(),
+        resolve: fakeResolve([{ id: '1', name: 'A', phone: '5511000000001' }]),
+        emitEvent,
+        durationNow,
+      },
+    );
+    expect(r.ok).toBe(true);
+    expect(emitEvent).toHaveBeenCalledTimes(1);
+    const [sb, evt] = emitEvent.mock.calls[0];
+    expect(sb).toBe(supabase);
+    expect(evt).toMatchObject({
+      tenant_id: TENANT,
+      agent_slug: 'disparador',
+      event_type: 'llm_call',
+      provider: 'n8n',
+      status: 'ok',
+      duration_ms: 250,
+    });
+  });
+
+  it('interpretação recusada emite refused e o preview ainda retorna a clarificação', async () => {
+    const { supabase } = makeFake();
+    const emitEvent = vi.fn();
+    const r = await previewOperation(
+      supabase,
+      { command: 'faz algo estranho', tenantId: TENANT, user: adminUser },
+      { nowMs: NOW, interpret: fakeInterpret(null, false), emitEvent },
+    );
+    expect(r.ok).toBe(false);
+    expect(r.error).toBe('unsupported_intent');
+    expect(r.clarification).toBe('?');
+    expect(emitEvent.mock.calls[0][1]).toMatchObject({
+      status: 'refused',
+      error_class: 'unsupported_intent',
+    });
+  });
+
+  it('caminho por audienceId NÃO emite llm_call (não há interpretação)', async () => {
+    const supabase = makeFakeSupabaseForAudience({ type: 'archived' });
+    const emitEvent = vi.fn();
+    const r = await previewOperation(
+      supabase,
+      { audienceId: 'aud-1', tenantId: TENANT, user: adminUser },
+      { nowMs: NOW, resolve: fakeResolve([{ id: '1', name: 'A', phone: '5511000000001' }]), emitEvent },
+    );
+    expect(r.ok).toBe(true);
+    expect(emitEvent).not.toHaveBeenCalled();
+  });
+
+  it('sem emitEvent injetado, o default grava na tabela de telemetria (fire-and-forget)', async () => {
+    const { supabase, telemetryInserts } = makeFake();
+    const r = await previewOperation(
+      supabase,
+      { command: 'arquivados', tenantId: TENANT, user: adminUser },
+      {
+        nowMs: NOW,
+        interpret: okInterpret(),
+        resolve: fakeResolve([{ id: '1', name: 'A', phone: '5511000000001' }]),
+      },
+    );
+    expect(r.ok).toBe(true);
+    // o insert do emitAgentEvent resolve em microtask; 1 tick basta
+    await new Promise((res) => setTimeout(res, 0));
+    expect(telemetryInserts).toHaveLength(1);
+    expect(telemetryInserts[0]).toMatchObject({
+      tenant_id: TENANT,
+      agent_slug: 'disparador',
+      event_type: 'llm_call',
+      status: 'ok',
+    });
   });
 });

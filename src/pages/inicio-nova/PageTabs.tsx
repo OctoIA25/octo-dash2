@@ -113,6 +113,9 @@ const TAB_CONFIGS: TabConfig[] = [
     tabs: [
       { id: 'agente-marketing', label: 'Marketing', icon: Bot, href: '/agentes-ia/agente-marketing' },
       { id: 'agente-comportamental', label: 'Comportamental', icon: Headphones, href: '/agentes-ia/agente-comportamental' },
+      // Telemetria é gestão/owner — filtrada dinamicamente no useMemo (mesmo
+      // padrão da aba "Equipes" do Bolsão).
+      { id: 'telemetria', label: 'Telemetria', icon: BarChart3, href: '/agentes-ia/telemetria' },
     ],
   },
   {
@@ -252,7 +255,7 @@ function tabButtonClass(active: boolean): string {
 export function PageTabs() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { tenantId } = useAuthContext();
+  const { tenantId, isGestao, isOwner } = useAuthContext();
 
   // Carrega o config do bolsão pra decidir se a aba "Equipes" aparece
   const [teamQueueEnabled, setTeamQueueEnabled] = useState(false);
@@ -270,11 +273,15 @@ export function PageTabs() {
     const baseCfg = TAB_CONFIGS.find((c) => location.pathname.startsWith(c.basePath));
     if (!baseCfg) return { activeConfig: null, activeTabId: null };
 
-    // Filtro dinâmico: aba "Equipes" do Bolsão só aparece se team_queue_enabled
-    const cfg: TabConfig =
-      baseCfg.basePath === '/bolsao'
-        ? { ...baseCfg, tabs: baseCfg.tabs.filter((t) => t.id !== 'equipes' || teamQueueEnabled) }
-        : baseCfg;
+    // Filtros dinâmicos: aba "Equipes" do Bolsão só com team_queue_enabled;
+    // aba "Telemetria" dos Agentes só para gestão/owner (corretor não vê
+    // custos da empresa — a rota também redireciona, isto é só UX).
+    let cfg: TabConfig = baseCfg;
+    if (baseCfg.basePath === '/bolsao') {
+      cfg = { ...baseCfg, tabs: baseCfg.tabs.filter((t) => t.id !== 'equipes' || teamQueueEnabled) };
+    } else if (baseCfg.basePath === '/agentes-ia') {
+      cfg = { ...baseCfg, tabs: baseCfg.tabs.filter((t) => t.id !== 'telemetria' || isGestao || isOwner) };
+    }
 
     let activeId: string | null = null;
     if (cfg.matchStrategy === 'pathSegment') {
@@ -285,7 +292,7 @@ export function PageTabs() {
       activeId = params.get(cfg.queryKey) || cfg.tabs[0]?.id || null;
     }
     return { activeConfig: cfg, activeTabId: activeId };
-  }, [location.pathname, location.search, teamQueueEnabled]);
+  }, [location.pathname, location.search, teamQueueEnabled, isGestao, isOwner]);
 
   const tabs = activeConfig?.tabs ?? EMPTY_TABS;
   const { visibleTabs, overflowTabs, containerRef, registerTab } = useOverflowTabs(

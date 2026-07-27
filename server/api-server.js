@@ -4067,6 +4067,10 @@ registerAgentActionRoutes(app, supabase);
 import { registerCommunicationRoutes } from './communication/index.js';
 registerCommunicationRoutes(app, supabase);
 
+// Telemetria de Agentes IA — ingest de eventos (front, server e n8n).
+import { registerAgentTelemetryRoutes } from './agent-telemetry/routes.js';
+registerAgentTelemetryRoutes(app, supabase);
+
 // Santa Ângela — integração multi-tenant. Registrar ANTES do 404 catch-all.
 import { registerSantaAngelaRoutes } from './santaAngela/index.js';
 registerSantaAngelaRoutes(app, supabase);

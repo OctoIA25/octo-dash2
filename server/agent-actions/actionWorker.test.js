@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { runDueActions } from './actionWorker.js';
+import { runDueActions, __test__ } from './actionWorker.js';
 import { createTenantRateLimiter } from '../communication/rateLimiter.js';
 
 const NOW = 1_750_000_000_000;
@@ -7,7 +7,8 @@ const NOW = 1_750_000_000_000;
 /**
  * Fake do Supabase para o worker. Modela agent_action_queue (batch select +
  * claim + finalize + leitura por run), agent_action_runs (select p/ throttle e
- * update de fechamento) e communication_campaigns (n_per_min).
+ * update de fechamento), communication_campaigns (n_per_min) e
+ * agent_telemetry_events (captura dos eventos emitidos no fechamento).
  *
  * `queue` é mutável: o claim altera status in-place, então uma 2ª chamada de
  * runDueActions NÃO re-pega o mesmo item (prova de idempotência do worker).
@@ -18,6 +19,7 @@ const NOW = 1_750_000_000_000;
  */
 function makeFake({ queue = [], runs = [], campaigns = [] } = {}) {
   const runUpdates = [];
+  const telemetryInserts = [];
 
   const queueNode = () => {
     let mode = null;
@@ -82,9 +84,11 @@ function makeFake({ queue = [], runs = [], campaigns = [] } = {}) {
           if (target) Object.assign(target, node._patch);
           return resolve({ data: null, error: null });
         }
-        // closeFinishedRuns: select por run_id
+        // closeFinishedRuns: select por run_id (status + tenant p/ telemetria)
         if (mode === 'select' && runFilter) {
-          const rows = queue.filter((q) => q.run_id === runFilter).map((q) => ({ status: q.status }));
+          const rows = queue
+            .filter((q) => q.run_id === runFilter)
+            .map((q) => ({ status: q.status, tenant_id: q.tenant_id }));
           return resolve({ data: rows, error: null });
         }
         // batch select do tick: pendentes elegíveis, em ordem de created_at
@@ -159,10 +163,19 @@ function makeFake({ queue = [], runs = [], campaigns = [] } = {}) {
     if (table === 'agent_action_queue') return queueNode();
     if (table === 'agent_action_runs') return runsNode();
     if (table === 'communication_campaigns') return campaignsNode();
+    // Telemetria (execution do fechamento de run): grava e segue.
+    if (table === 'agent_telemetry_events') {
+      return {
+        insert(row) {
+          telemetryInserts.push(row);
+          return { error: null };
+        },
+      };
+    }
     throw new Error(`tabela inesperada: ${table}`);
   };
 
-  return { supabase: { from }, queue, runUpdates };
+  return { supabase: { from }, queue, runUpdates, telemetryInserts };
 }
 
 const baseItem = (over) => ({
@@ -507,5 +520,74 @@ describe('actionWorker.runDueActions', () => {
     const close = runUpdates.find((u) => u.id === 'run-1');
     expect(close.patch.status).toBe('done');
     expect(close.patch.sent_count).toBe(1);
+  });
+});
+
+describe('closeFinishedRuns — telemetria de fechamento (1 evento execution por run)', () => {
+  const { closeFinishedRuns } = __test__;
+  const NOW_ISO = '2026-07-25T00:00:00.000Z';
+  // Deixa o insert fire-and-forget do emitAgentEvent assentar (1 tick basta).
+  const flush = () => new Promise((res) => setTimeout(res, 0));
+
+  it('run concluído emite execution ok com contagens e tenant dos itens', async () => {
+    const queue = [
+      { id: 'i1', run_id: 'r1', status: 'done', tenant_id: 't1' },
+      { id: 'i2', run_id: 'r1', status: 'failed', tenant_id: 't1' },
+    ];
+    const { supabase, runUpdates, telemetryInserts } = makeFake({ queue });
+
+    await closeFinishedRuns(supabase, ['r1'], NOW_ISO, console);
+
+    // fechamento do run preservado (comportamento pré-existente)
+    expect(runUpdates).toContainEqual({
+      id: 'r1',
+      patch: expect.objectContaining({ status: 'done', sent_count: 1, failed_count: 1 }),
+    });
+    await flush();
+    expect(telemetryInserts).toHaveLength(1);
+    expect(telemetryInserts[0]).toMatchObject({
+      tenant_id: 't1',
+      agent_slug: 'disparador',
+      event_type: 'execution',
+      status: 'ok',
+      execution_id: 'r1',
+      occurred_at: NOW_ISO,
+    });
+    // contadores/funil NÃO são duplicados no evento — vivem no run
+    expect(telemetryInserts[0].metadata).toEqual({});
+  });
+
+  it('run 100% falho emite execution error', async () => {
+    const queue = [{ id: 'i1', run_id: 'r1', status: 'failed', tenant_id: 't1' }];
+    const { supabase, telemetryInserts } = makeFake({ queue });
+
+    await closeFinishedRuns(supabase, ['r1'], NOW_ISO, console);
+    await flush();
+
+    expect(telemetryInserts[0]).toMatchObject({ status: 'error', execution_id: 'r1' });
+  });
+
+  it('run sem itens fecha (comportamento pré-existente) mas não emite evento', async () => {
+    const { supabase, runUpdates, telemetryInserts } = makeFake({ queue: [] });
+
+    await closeFinishedRuns(supabase, ['r-vazio'], NOW_ISO, console);
+    await flush();
+
+    expect(runUpdates.find((u) => u.id === 'r-vazio')).toBeTruthy();
+    expect(telemetryInserts).toHaveLength(0);
+  });
+
+  it('run com item pendente não fecha nem emite', async () => {
+    const queue = [
+      { id: 'i1', run_id: 'r1', status: 'done', tenant_id: 't1' },
+      { id: 'i2', run_id: 'r1', status: 'pending', tenant_id: 't1' },
+    ];
+    const { supabase, runUpdates, telemetryInserts } = makeFake({ queue });
+
+    await closeFinishedRuns(supabase, ['r1'], NOW_ISO, console);
+    await flush();
+
+    expect(runUpdates).toHaveLength(0);
+    expect(telemetryInserts).toHaveLength(0);
   });
 });

@@ -22,6 +22,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from "@/hooks/useAuth";
+import { emitChatTelemetry, chatStatusFrom } from '../services/agentTelemetryService';
 import { useToast } from '@/hooks/use-toast';
 import { useTheme } from '@/hooks/useTheme';
 import { User, Send, Loader2, X, Paperclip, Eye } from 'lucide-react';
@@ -569,6 +570,7 @@ export const ElaineChat = ({
       // Verificar se a mensagem está presente
 
       // Enviar mensagem com dados comportamentais usando função específica do Agente Comportamental
+      const sendStartedMs = Date.now();
       const result = await sendMessageToElaine(
         message || '', // Garantir que sempre seja uma string
         user?.name || 'Administrador',
@@ -579,6 +581,18 @@ export const ElaineChat = ({
         resultadoUsuario,
         user?.tenantName || '' // empresa = imobiliária do usuário (tenant)
       );
+
+      // Telemetria (fire-and-forget, nunca lança): latência + status real do
+      // roundtrip — 204/corpo vazio conta como empty_response, mesmo que a UI
+      // mostre o texto de fallback abaixo.
+      emitChatTelemetry({
+        tenantId: user?.tenantId,
+        agentSlug: 'elaine',
+        conversationId,
+        status: chatStatusFrom(result),
+        durationMs: Date.now() - sendStartedMs,
+        errorMessage: result.success ? null : result.error || null,
+      });
 
       if (!result.success) {
         throw new Error(result.error || 'Falha ao enviar mensagem');
