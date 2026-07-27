@@ -1,0 +1,188 @@
+/**
+ * GET /api/v1/enps — agregação oficial do eNPS, tudo pré-calculado no servidor.
+ * GET /api/v1/enps/cycle/:cycleId — bootstrap da página de resposta.
+ *
+ * DOIS eNPS distintos (empresa via enps_empresa, gestor via enps_gestor), lidos
+ * das COLUNAS GERADAS. N-MÍNIMO GLOBAL: todo painel derivado de resposta só sai
+ * com count>=N; abaixo → { insufficient: true }. Isso É a garantia de anonimato
+ * (§5). Participação é exceção: contagens, nunca linhas por-usuário.
+ *
+ * Ranking em JS (PostgREST não faz GROUP BY ... HAVING): exclui NULL leader,
+ * exige N≥5 respostas E time mínimo (k-anon prático).
+ *
+ * O ciclo é resolvido por survey_id (via loadEnpsSurvey), pois `kind` vive em
+ * `surveys`, não em `survey_cycles`.
+ */
+import { summarize } from './calc.js';
+import { getDeletedTenantIds } from '../utils/tenantSoftDelete.js';
+import { loadEnpsSurvey as defaultLoadEnpsSurvey } from './runnerDb.js';
+
+const PLATFORM_OWNER_EMAIL = 'octo.inteligenciaimobiliaria@gmail.com';
+const isPlatformOwner = (email) => (email || '').toLowerCase() === PLATFORM_OWNER_EMAIL;
+
+const RESPONSES = 'survey_responses';
+const DISPATCHES = 'survey_dispatches';
+const CYCLES = 'survey_cycles';
+
+const MIN_RESPONSES = Number(process.env.ENPS_MIN_RESPONSES) || 5;
+const MIN_TEAM_SIZE = Number(process.env.ENPS_MIN_TEAM_SIZE) || 5;
+const INSUFFICIENT = { insufficient: true };
+
+export async function resolveTenant(supabase, req) {
+  const requested = typeof req.query?.tenantId === 'string' ? req.query.tenantId.trim() : '';
+  if (isPlatformOwner(req.userEmail)) {
+    if (!requested) return { error: 'tenant_required_for_owner', status: 400 };
+    const { data, error } = await supabase.from('tenants').select('id').eq('id', requested).maybeSingle();
+    if (error) throw error;
+    if (!data) return { error: 'tenant_not_found', status: 404 };
+    return { tenantId: requested };
+  }
+  const { data: memberships, error } = await supabase.from('tenant_memberships').select('tenant_id').eq('user_id', req.userId);
+  if (error) throw error;
+  const tenantIds = (memberships || []).map((m) => m.tenant_id);
+  if (tenantIds.length === 0) return { error: 'no_tenant_access', status: 403 };
+  if (requested && !tenantIds.includes(requested)) return { error: 'tenant_forbidden', status: 403 };
+  const tenantId = requested || tenantIds[0];
+  const deleted = await getDeletedTenantIds(supabase, [tenantId]);
+  if (deleted.has(tenantId)) return { error: 'no_tenant_access', status: 403 };
+  return { tenantId };
+}
+
+function npsBlock(scores) {
+  if (scores.length < MIN_RESPONSES) return INSUFFICIENT;
+  return summarize(scores);
+}
+function distributionBlock(scores) {
+  if (scores.length < MIN_RESPONSES) return INSUFFICIENT;
+  const buckets = Array.from({ length: 11 }, (_, i) => ({ score: i, count: 0 }));
+  for (const s of scores) if (s >= 0 && s <= 10) buckets[s].count += 1;
+  return { buckets, count: scores.length };
+}
+function rankingBlock(responses, teamSizeByLeader) {
+  const byLeader = new Map();
+  for (const r of responses) {
+    const leader = r.subject_leader_user_id;
+    if (!leader || r.enps_gestor == null) continue;
+    if (!byLeader.has(leader)) byLeader.set(leader, []);
+    byLeader.get(leader).push(r.enps_gestor);
+  }
+  const out = [];
+  for (const [leader, scores] of byLeader) {
+    if (scores.length < MIN_RESPONSES) continue;
+    if ((teamSizeByLeader.get(leader) || 0) < MIN_TEAM_SIZE) continue;
+    const s = summarize(scores);
+    out.push({ leaderUserId: leader, enps: s.enps, count: s.count });
+  }
+  return out.sort((a, b) => b.enps - a.enps);
+}
+
+export function makeAggregateHandler(supabase, deps = {}) {
+  const loadEnpsSurvey = deps.loadEnpsSurvey || ((tenantId) => defaultLoadEnpsSurvey(supabase, tenantId));
+  return async function aggregateHandler(req, res) {
+    try {
+      const resolved = await resolveTenant(supabase, req);
+      if (resolved.error) return res.status(resolved.status).json({ ok: false, error: resolved.error });
+      const { tenantId } = resolved;
+
+      const period = typeof req.query?.period === 'string' ? req.query.period : null;
+      const periodStart = period || `${new Date().getUTCFullYear()}-${String(new Date().getUTCMonth() + 1).padStart(2, '0')}-01`;
+
+      const survey = await loadEnpsSurvey(tenantId);
+      const emptyEnvelope = { ok: true, empresa: INSUFFICIENT, gestor: INSUFFICIENT, distribuicao: INSUFFICIENT, comentarios: INSUFFICIENT, ranking: [], evolucao: [], participacao: { enviadas: 0, respondidas: 0, pendentes: 0, taxa: 0 } };
+      if (!survey) return res.json(emptyEnvelope);
+
+      // Ciclo por survey_id (não por kind — kind vive em surveys).
+      const { data: cycle, error: cErr } = await supabase
+        .from(CYCLES).select('id, status, period_start')
+        .eq('tenant_id', tenantId).eq('survey_id', survey.id).eq('period_start', periodStart)
+        .maybeSingle();
+      if (cErr) throw cErr;
+      if (!cycle) return res.json(emptyEnvelope);
+
+      const [{ data: responses, error: rErr }, { data: dispatches, error: dErr }, { data: members, error: mErr }] = await Promise.all([
+        supabase.from(RESPONSES).select('enps_empresa, enps_gestor, subject_leader_user_id, answers').eq('cycle_id', cycle.id),
+        supabase.from(DISPATCHES).select('status, has_responded').eq('cycle_id', cycle.id),
+        supabase.from('tenant_memberships').select('leader_user_id').eq('tenant_id', tenantId).eq('role', 'corretor'),
+      ]);
+      if (rErr) throw rErr; if (dErr) throw dErr; if (mErr) throw mErr;
+
+      const rows = responses || [];
+      const empresaScores = rows.map((r) => r.enps_empresa).filter((n) => n != null);
+      const gestorScores = rows.map((r) => r.enps_gestor).filter((n) => n != null);
+
+      const disp = dispatches || [];
+      const enviadas = disp.filter((d) => d.status === 'sent').length;
+      const respondidas = disp.filter((d) => d.has_responded).length;
+      const pendentes = disp.filter((d) => d.status === 'sent' && !d.has_responded).length;
+      const participacao = { enviadas, respondidas, pendentes, taxa: enviadas ? Math.round((respondidas / enviadas) * 100) : 0 };
+
+      const teamSizeByLeader = new Map();
+      for (const m of members || []) { if (m.leader_user_id) teamSizeByLeader.set(m.leader_user_id, (teamSizeByLeader.get(m.leader_user_id) || 0) + 1); }
+
+      const comentarios = rows.length < MIN_RESPONSES ? INSUFFICIENT
+        : { items: rows.map((r) => r.answers?.q_comentario).filter((c) => typeof c === 'string' && c.trim()), count: rows.length };
+
+      return res.json({
+        ok: true,
+        empresa: npsBlock(empresaScores),
+        gestor: npsBlock(gestorScores),
+        distribuicao: distributionBlock(empresaScores),
+        ranking: rankingBlock(rows, teamSizeByLeader),
+        comentarios,
+        participacao,
+        evolucao: [],
+      });
+    } catch (err) {
+      console.error('[enps] erro na agregação:', err);
+      return res.status(500).json({ ok: false, error: 'enps_internal_error' });
+    }
+  };
+}
+
+/**
+ * GET /api/v1/enps/cycle/:cycleId — bootstrap da página de resposta.
+ * Autorização = existência de dispatch para (cycle_id, jwt.uid): 403 se ausente
+ * (não vaza status/perguntas de um ciclo de outro tenant). Devolve status,
+ * questions, hasLeader (controla a Q2) e alreadyResponded (curto-circuito).
+ */
+export function makeCycleContextHandler(supabase) {
+  return async function cycleContextHandler(req, res) {
+    try {
+      const userId = req.userId;
+      const cycleId = req.params?.cycleId;
+      if (!cycleId) return res.status(400).json({ ok: false, error: 'missing_cycle_id' });
+
+      const { data: cycle, error: cErr } = await supabase
+        .from(CYCLES).select('id, status, survey_id').eq('id', cycleId).maybeSingle();
+      if (cErr) throw cErr;
+      if (!cycle) return res.status(404).json({ ok: false, error: 'cycle_not_found' });
+
+      // Autorização: o jwt-user tem dispatch neste ciclo?
+      const { data: dispatch, error: dErr } = await supabase
+        .from(DISPATCHES).select('id, has_responded').eq('cycle_id', cycleId).eq('respondent_user_id', userId).maybeSingle();
+      if (dErr) throw dErr;
+      if (!dispatch) return res.status(403).json({ ok: false, error: 'no_dispatch_for_user' });
+
+      // Perguntas do survey do ciclo.
+      const { data: survey, error: sErr } = await supabase
+        .from('surveys').select('questions').eq('id', cycle.survey_id).maybeSingle();
+      if (sErr) throw sErr;
+
+      // hasLeader: o corretor tem leader_user_id?
+      const { data: membership, error: mErr } = await supabase
+        .from('tenant_memberships').select('leader_user_id').eq('user_id', userId).maybeSingle();
+      if (mErr) throw mErr;
+
+      return res.json({
+        ok: true,
+        cycle: { id: cycle.id, status: cycle.status },
+        questions: survey?.questions ?? [],
+        hasLeader: Boolean(membership?.leader_user_id),
+        alreadyResponded: Boolean(dispatch.has_responded),
+      });
+    } catch (err) {
+      console.error('[enps] erro no bootstrap do ciclo:', err);
+      return res.status(500).json({ ok: false, error: 'enps_internal_error' });
+    }
+  };
+}
