@@ -4,7 +4,7 @@ import { makeSubmitHandler } from './submitHandler.js';
 function makeRes() {
   return { statusCode: 0, body: null, status(c) { this.statusCode = c; return this; }, json(b) { this.body = b; return this; } };
 }
-function makeSupabase({ dispatch, claimRows = [{ id: 'd1' }], onInsert } = {}) {
+function makeSupabase({ dispatch, claimRows = [{ id: 'd1' }], membership = { leader_user_id: 'g1' }, onInsert } = {}) {
   const inserted = [];
   return {
     inserted,
@@ -15,6 +15,9 @@ function makeSupabase({ dispatch, claimRows = [{ id: 'd1' }], onInsert } = {}) {
           update: () => ({ eq: () => ({ eq: () => ({ eq: () => ({ select: async () => ({ data: claimRows, error: null }) }) }) }) }),
         };
       }
+      if (table === 'tenant_memberships') {
+        return { select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: membership, error: null }) }) }) }) };
+      }
       if (table === 'survey_responses') {
         return { insert: (row) => { inserted.push(row); onInsert?.(row); return { select: () => ({ single: async () => ({ data: { id: 'r1' }, error: null }) }) }; } };
       }
@@ -23,7 +26,9 @@ function makeSupabase({ dispatch, claimRows = [{ id: 'd1' }], onInsert } = {}) {
   };
 }
 const baseReq = (overrides = {}) => ({ userId: 'u1', userEmail: 'c@imob.com', body: { cycle_id: 'cyc1', answers: { q_empresa: 9, q_gestor: 8, q_comentario: 'ok' }, ...overrides } });
-const dispatchOf = (o = {}) => ({ id: 'd1', tenant_id: 'tenant-A', cycle_id: 'cyc1', respondent_user_id: 'u1', has_responded: false, subject_leader_user_id: 'g1', ...o });
+// subject_leader_user_id NÃO é coluna real de survey_dispatches (só de survey_responses) —
+// o fake NÃO deve carregá-la; o gestor vem do fake de tenant_memberships acima.
+const dispatchOf = (o = {}) => ({ id: 'd1', tenant_id: 'tenant-A', cycle_id: 'cyc1', respondent_user_id: 'u1', has_responded: false, ...o });
 
 describe('submit eNPS — anti-IDOR + atômico', () => {
   it('sem dispatch p/ (cycle, jwt.uid) → 403', async () => {

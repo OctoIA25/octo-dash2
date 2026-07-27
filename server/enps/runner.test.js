@@ -56,6 +56,26 @@ describe('enps runner — envio inicial (claim-before-send)', () => {
     await runner.trigger();
     await vi.waitFor(() => expect(deps.markDispatch).toHaveBeenCalledWith('d1', expect.objectContaining({ status: 'failed' })));
   });
+
+  it('dispatch existente status=pending (throttle no burst do dia-1): reprocessa SEM claimDispatch, marca sent', async () => {
+    const pending = { id: 'd1', respondent_user_id: 'u1', channel: 'email', recipient: 'u1@x.com', status: 'pending', has_responded: false, sends_count: 0, last_sent_at: null };
+    const deps = baseDeps({ listDispatches: vi.fn(async () => [pending]) });
+    const runner = makeEnpsRunner({}, deps);
+    await runner.trigger();
+    await vi.waitFor(() => expect(deps.sendSurvey).toHaveBeenCalledTimes(1));
+    expect(deps.claimDispatch).not.toHaveBeenCalled(); // linha já reservada; upsert de novo daria conflito (null)
+    expect(deps.markDispatch).toHaveBeenCalledWith('d1', expect.objectContaining({ status: 'sent', sends_count: 1 }));
+  });
+
+  it('dispatch existente status=failed: reprocessa e marca sent na próxima tentativa', async () => {
+    const failed = { id: 'd1', respondent_user_id: 'u1', channel: 'email', recipient: 'u1@x.com', status: 'failed', has_responded: false, sends_count: 1, last_sent_at: null };
+    const deps = baseDeps({ listDispatches: vi.fn(async () => [failed]) });
+    const runner = makeEnpsRunner({}, deps);
+    await runner.trigger();
+    await vi.waitFor(() => expect(deps.sendSurvey).toHaveBeenCalledTimes(1));
+    expect(deps.claimDispatch).not.toHaveBeenCalled();
+    expect(deps.markDispatch).toHaveBeenCalledWith('d1', expect.objectContaining({ status: 'sent', sends_count: 2 }));
+  });
 });
 
 describe('enps runner — lembrete (UPDATE ... RETURNING guarda o efeito)', () => {

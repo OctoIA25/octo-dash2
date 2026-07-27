@@ -52,11 +52,16 @@ function npsBlock(scores) {
   if (scores.length < MIN_RESPONSES) return INSUFFICIENT;
   return summarize(scores);
 }
-function distributionBlock(scores) {
-  if (scores.length < MIN_RESPONSES) return INSUFFICIENT;
-  const buckets = Array.from({ length: 11 }, (_, i) => ({ score: i, count: 0 }));
+/** Um bloco {label,count} por score 0..10 — label é a STRING da nota (contrato do front). */
+function distBuckets(scores) {
+  const buckets = Array.from({ length: 11 }, (_, i) => ({ label: String(i), count: 0 }));
   for (const s of scores) if (s >= 0 && s <= 10) buckets[s].count += 1;
-  return { buckets, count: scores.length };
+  return buckets;
+}
+/** Gate por N de RESPOSTAS (rows.length, não por score) — ambos os scores saem juntos ou nenhum. */
+function distributionBlock(responseCount, empresaScores, gestorScores) {
+  if (responseCount < MIN_RESPONSES) return INSUFFICIENT;
+  return { empresa: distBuckets(empresaScores), gestor: distBuckets(gestorScores) };
 }
 function rankingBlock(responses, teamSizeByLeader) {
   const byLeader = new Map();
@@ -76,6 +81,30 @@ function rankingBlock(responses, teamSizeByLeader) {
   return out.sort((a, b) => b.enps - a.enps);
 }
 
+/**
+ * Nomes dos líderes que aparecem no ranking. Mesmo padrão de roster.js/leadAssignment.js:
+ * tenant_brokers (name, por auth_user_id) é primário, user_profiles (full_name, por id) é fallback.
+ */
+async function loadLeaderNames(supabase, tenantId, leaderIds) {
+  const nameMap = new Map();
+  if (leaderIds.length === 0) return nameMap;
+
+  const { data: brokers, error: bErr } = await supabase
+    .from('tenant_brokers').select('auth_user_id, name')
+    .eq('tenant_id', tenantId).in('auth_user_id', leaderIds);
+  if (bErr) throw bErr;
+  for (const b of brokers || []) if (b.auth_user_id && b.name) nameMap.set(b.auth_user_id, b.name);
+
+  const missingIds = leaderIds.filter((id) => !nameMap.has(id));
+  if (missingIds.length > 0) {
+    const { data: profiles, error: pErr } = await supabase
+      .from('user_profiles').select('id, full_name').in('id', missingIds);
+    if (pErr) throw pErr;
+    for (const p of profiles || []) if (p.full_name) nameMap.set(p.id, p.full_name);
+  }
+  return nameMap;
+}
+
 export function makeAggregateHandler(supabase, deps = {}) {
   const loadEnpsSurvey = deps.loadEnpsSurvey || ((tenantId) => defaultLoadEnpsSurvey(supabase, tenantId));
   return async function aggregateHandler(req, res) {
@@ -88,7 +117,15 @@ export function makeAggregateHandler(supabase, deps = {}) {
       const periodStart = period || `${new Date().getUTCFullYear()}-${String(new Date().getUTCMonth() + 1).padStart(2, '0')}-01`;
 
       const survey = await loadEnpsSurvey(tenantId);
-      const emptyEnvelope = { ok: true, empresa: INSUFFICIENT, gestor: INSUFFICIENT, distribuicao: INSUFFICIENT, comentarios: INSUFFICIENT, ranking: [], evolucao: [], participacao: { enviadas: 0, respondidas: 0, pendentes: 0, taxa: 0 } };
+      const emptyEnvelope = {
+        ok: true,
+        geral: { empresa: INSUFFICIENT, gestor: INSUFFICIENT },
+        evolucao: [],
+        participacao: { sent: 0, responded: 0, pending: 0, rate: 0 },
+        ranking: [],
+        distribuicao: INSUFFICIENT,
+        comentarios: INSUFFICIENT,
+      };
       if (!survey) return res.json(emptyEnvelope);
 
       // Ciclo por survey_id (não por kind — kind vive em surveys).
@@ -111,26 +148,29 @@ export function makeAggregateHandler(supabase, deps = {}) {
       const gestorScores = rows.map((r) => r.enps_gestor).filter((n) => n != null);
 
       const disp = dispatches || [];
-      const enviadas = disp.filter((d) => d.status === 'sent').length;
-      const respondidas = disp.filter((d) => d.has_responded).length;
-      const pendentes = disp.filter((d) => d.status === 'sent' && !d.has_responded).length;
-      const participacao = { enviadas, respondidas, pendentes, taxa: enviadas ? Math.round((respondidas / enviadas) * 100) : 0 };
+      const sent = disp.filter((d) => d.status === 'sent').length;
+      const responded = disp.filter((d) => d.has_responded).length;
+      const pending = disp.filter((d) => d.status === 'sent' && !d.has_responded).length;
+      const participacao = { sent, responded, pending, rate: sent ? Math.round((responded / sent) * 100) : 0 };
 
       const teamSizeByLeader = new Map();
       for (const m of members || []) { if (m.leader_user_id) teamSizeByLeader.set(m.leader_user_id, (teamSizeByLeader.get(m.leader_user_id) || 0) + 1); }
 
       const comentarios = rows.length < MIN_RESPONSES ? INSUFFICIENT
-        : { items: rows.map((r) => r.answers?.q_comentario).filter((c) => typeof c === 'string' && c.trim()), count: rows.length };
+        : rows.map((r) => ({ text: r.answers?.q_comentario })).filter((c) => typeof c.text === 'string' && c.text.trim());
+
+      const ranking = rankingBlock(rows, teamSizeByLeader);
+      const nameMap = await loadLeaderNames(supabase, tenantId, ranking.map((r) => r.leaderUserId));
+      const rankingWithNames = ranking.map((r) => ({ ...r, leaderName: nameMap.get(r.leaderUserId) ?? 'Gestor' }));
 
       return res.json({
         ok: true,
-        empresa: npsBlock(empresaScores),
-        gestor: npsBlock(gestorScores),
-        distribuicao: distributionBlock(empresaScores),
-        ranking: rankingBlock(rows, teamSizeByLeader),
-        comentarios,
-        participacao,
+        geral: { empresa: npsBlock(empresaScores), gestor: npsBlock(gestorScores) },
         evolucao: [],
+        participacao,
+        ranking: rankingWithNames,
+        distribuicao: distributionBlock(rows.length, empresaScores, gestorScores),
+        comentarios,
       });
     } catch (err) {
       console.error('[enps] erro na agregação:', err);

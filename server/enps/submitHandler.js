@@ -38,15 +38,23 @@ export function makeSubmitHandler(supabase) {
       if (answersError) return res.status(400).json({ ok: false, error: answersError });
 
       // 1. Dispatch do PRÓPRIO jwt-user neste ciclo. Ausente → 403 (anti-IDOR).
+      // subject_leader_user_id NÃO existe em survey_dispatches (só em survey_responses,
+      // migration:95) — selecionar só colunas reais do dispatch.
       const { data: dispatch, error: dErr } = await supabase
         .from(DISPATCHES)
-        .select('id, tenant_id, cycle_id, respondent_user_id, has_responded, subject_leader_user_id')
+        .select('id, tenant_id, cycle_id, respondent_user_id, has_responded')
         .eq('cycle_id', cycleId).eq('respondent_user_id', userId).maybeSingle();
       if (dErr) throw dErr;
       if (!dispatch) return res.status(403).json({ ok: false, error: 'no_dispatch_for_user' });
       if (dispatch.has_responded) return res.status(409).json({ ok: false, error: 'already_responded' });
 
       const tenantId = dispatch.tenant_id; // SEMPRE da linha, nunca do body.
+
+      // Gestor avaliado na Q2 vem do membership do respondente (não do dispatch).
+      const { data: membership, error: mErr } = await supabase
+        .from('tenant_memberships').select('leader_user_id')
+        .eq('user_id', userId).eq('tenant_id', tenantId).maybeSingle();
+      if (mErr) throw mErr;
 
       // 2. UPDATE condicional atômico: só um submit vence a transição false→true.
       const { data: claimed, error: uErr } = await supabase
@@ -63,7 +71,7 @@ export function makeSubmitHandler(supabase) {
         .from(RESPONSES)
         .insert({
           tenant_id: tenantId, cycle_id: cycleId, answers,
-          subject_leader_user_id: answers.q_gestor != null ? dispatch.subject_leader_user_id : null,
+          subject_leader_user_id: answers.q_gestor != null ? (membership?.leader_user_id ?? null) : null,
           respondent_user_id: allowIndividual ? userId : null,
         })
         .select('id').single();

@@ -5,7 +5,8 @@ function makeRes() {
   return { statusCode: 200, body: null, status(c) { this.statusCode = c; return this; }, json(b) { this.body = b; return this; } };
 }
 // Fake supabase parametrizado por tabela; survey_id resolvido por loadEnpsSurvey mockado via deps.
-function makeSupabase({ responses = [], cycle = { id: 'cyc1', status: 'open' }, dispatches = [], members = [] } = {}) {
+// brokers/profiles alimentam a resolução de leaderName no ranking (loadLeaderNames).
+function makeSupabase({ responses = [], cycle = { id: 'cyc1', status: 'open' }, dispatches = [], members = [], brokers = [], profiles = [] } = {}) {
   return {
     from(table) {
       if (table === 'tenant_memberships') {
@@ -19,6 +20,8 @@ function makeSupabase({ responses = [], cycle = { id: 'cyc1', status: 'open' }, 
       }
       if (table === 'survey_responses') return { select: () => ({ eq: async () => ({ data: responses, error: null }) }) };
       if (table === 'survey_dispatches') return { select: () => ({ eq: async () => ({ data: dispatches, error: null }) }) };
+      if (table === 'tenant_brokers') return { select: () => ({ eq: () => ({ in: async () => ({ data: brokers, error: null }) }) }) };
+      if (table === 'user_profiles') return { select: () => ({ in: async () => ({ data: profiles, error: null }) }) };
       throw new Error(`tabela inesperada: ${table}`);
     },
   };
@@ -35,8 +38,8 @@ describe('agregação eNPS — N-mínimo global', () => {
     const res = makeRes();
     await makeAggregateHandler(supabase, deps)(req(), res);
     expect(res.statusCode).toBe(200);
-    expect(res.body.empresa).toEqual({ insufficient: true });
-    expect(res.body.gestor).toEqual({ insufficient: true });
+    expect(res.body.geral.empresa).toEqual({ insufficient: true });
+    expect(res.body.geral.gestor).toEqual({ insufficient: true });
     expect(res.body.distribuicao).toEqual({ insufficient: true });
     expect(res.body.comentarios).toEqual({ insufficient: true });
   });
@@ -45,7 +48,7 @@ describe('agregação eNPS — N-mínimo global', () => {
     const supabase = makeSupabase({ responses: rows(2), dispatches: [{ status: 'sent', has_responded: true }, { status: 'sent', has_responded: false }] });
     const res = makeRes();
     await makeAggregateHandler(supabase, deps)(req(), res);
-    expect(res.body.participacao).toMatchObject({ enviadas: 2, respondidas: 1, pendentes: 1 });
+    expect(res.body.participacao).toMatchObject({ sent: 2, responded: 1, pending: 1 });
   });
 });
 
@@ -54,16 +57,42 @@ describe('agregação eNPS — dois scores separados', () => {
     const supabase = makeSupabase({ responses: rows(5, { empresa: 9, gestor: 0 }) });
     const res = makeRes();
     await makeAggregateHandler(supabase, deps)(req(), res);
-    expect(res.body.empresa.enps).toBe(100);
-    expect(res.body.gestor.enps).toBe(-100);
+    expect(res.body.geral.empresa.enps).toBe(100);
+    expect(res.body.geral.gestor.enps).toBe(-100);
+  });
+});
+
+describe('agregação eNPS — distribuição (ambos os scores)', () => {
+  it('N suficiente: devolve buckets 0..10 p/ empresa E gestor, label é a string da nota', async () => {
+    const supabase = makeSupabase({ responses: rows(5, { empresa: 9, gestor: 0 }) });
+    const res = makeRes();
+    await makeAggregateHandler(supabase, deps)(req(), res);
+    expect(res.body.distribuicao.empresa).toHaveLength(11);
+    expect(res.body.distribuicao.gestor).toHaveLength(11);
+    expect(res.body.distribuicao.empresa.find((b) => b.label === '9')).toMatchObject({ label: '9', count: 5 });
+    expect(res.body.distribuicao.gestor.find((b) => b.label === '0')).toMatchObject({ label: '0', count: 5 });
+  });
+});
+
+describe('agregação eNPS — comentários', () => {
+  it('N suficiente: array de {text}, não {items,count}', async () => {
+    const supabase = makeSupabase({
+      responses: Array.from({ length: 5 }, (_, i) => ({ enps_empresa: 9, enps_gestor: 9, subject_leader_user_id: null, answers: { q_comentario: `c${i}` } })),
+    });
+    const res = makeRes();
+    await makeAggregateHandler(supabase, deps)(req(), res);
+    expect(Array.isArray(res.body.comentarios)).toBe(true);
+    expect(res.body.comentarios).toContainEqual({ text: 'c0' });
+    expect(res.body.comentarios).toHaveLength(5);
   });
 });
 
 describe('agregação eNPS — ranking', () => {
-  it('exclui NULL e exige N≥5 + time mínimo', async () => {
+  it('exclui NULL e exige N≥5 + time mínimo; leaderName resolvido (tenant_brokers → user_profiles)', async () => {
     const supabase = makeSupabase({
       responses: [...rows(5, { gestor: 10, leader: 'g1' }), ...rows(5, { gestor: 3, leader: 'g2' }), ...rows(4, { leader: null })],
       members: [...Array.from({ length: 6 }, () => ({ leader_user_id: 'g1' })), ...Array.from({ length: 2 }, () => ({ leader_user_id: 'g2' }))],
+      brokers: [{ auth_user_id: 'g1', name: 'Gestor Um' }],
     });
     const res = makeRes();
     await makeAggregateHandler(supabase, deps)(req(), res);
@@ -71,6 +100,8 @@ describe('agregação eNPS — ranking', () => {
     expect(leaders).toContain('g1');
     expect(leaders).not.toContain('g2');
     expect(leaders).not.toContain(null);
+    const g1Row = res.body.ranking.find((r) => r.leaderUserId === 'g1');
+    expect(g1Row.leaderName).toBe('Gestor Um');
   });
 });
 

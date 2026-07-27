@@ -58,6 +58,28 @@ export function makeEnpsRunner(supabase, options = {}) {
     return { channel: 'email', recipient: corretor.email || null };
   }
 
+  /**
+   * Envia + marca o resultado num dispatch JÁ reservado (claim feito por fora,
+   * seja o claim novo de sendInitial ou uma linha 'pending'/'failed' existente
+   * sendo reprocessada). Único ponto que decide sent/throttled/failed —
+   * reusado pelos dois caminhos p/ não duplicar a lógica de marcação.
+   */
+  async function attemptSend({ tenantId, dispatchId, channel, recipient, sendsCountBefore, cycle, corretor, survey }) {
+    const content = deps.buildContent({ survey, cycle, corretor });
+    const params = [corretor.email || 'corretor', `${db.responderLink(cycle.id)}`];
+    const r = await sendSurvey({ tenantId, channel, recipient, content, params });
+
+    if (r.status === 'sent') {
+      await deps.markDispatch(dispatchId, { status: 'sent', sends_count: sendsCountBefore + 1, last_sent_at: now().toISOString(), error: null });
+    } else if (r.status === 'throttled') {
+      logger.log?.(`[enps] throttled tenant=${tenantId} user=${corretor.userId} — pending p/ próximo tick`);
+    } else if (r.status === 'skipped_no_contact') {
+      await deps.markDispatch(dispatchId, { status: 'skipped_no_contact', error: r.error || null });
+    } else {
+      await deps.markDispatch(dispatchId, { status: 'failed', error: r.error || 'falha no envio' });
+    }
+  }
+
   async function sendInitial({ tenantId, cycle, corretor, survey }) {
     const { channel, recipient } = resolveChannel(corretor, survey);
     if (!recipient) {
@@ -67,19 +89,22 @@ export function makeEnpsRunner(supabase, options = {}) {
     const claimed = await deps.claimDispatch({ tenantId, cycleId: cycle.id, respondentUserId: corretor.userId, channel, recipient, status: 'pending' });
     if (!claimed) return; // conflito → outra instância/tick já reservou; NÃO envia.
 
-    const content = deps.buildContent({ survey, cycle, corretor });
-    const params = [corretor.email || 'corretor', `${db.responderLink(cycle.id)}`];
-    const r = await sendSurvey({ tenantId, channel, recipient, content, params });
+    await attemptSend({ tenantId, dispatchId: claimed.id, channel, recipient, sendsCountBefore: 0, cycle, corretor, survey });
+  }
 
-    if (r.status === 'sent') {
-      await deps.markDispatch(claimed.id, { status: 'sent', sends_count: 1, last_sent_at: now().toISOString(), error: null });
-    } else if (r.status === 'throttled') {
-      logger.log?.(`[enps] throttled tenant=${tenantId} user=${corretor.userId} — pending p/ próximo tick`);
-    } else if (r.status === 'skipped_no_contact') {
-      await deps.markDispatch(claimed.id, { status: 'skipped_no_contact', error: r.error || null });
-    } else {
-      await deps.markDispatch(claimed.id, { status: 'failed', error: r.error || 'falha no envio' });
-    }
+  /**
+   * Reprocessa um dispatch EXISTENTE preso em 'pending' (throttle no dia-1) ou
+   * 'failed' (erro de transporte). A linha já está reservada (claim original) —
+   * claimDispatch NÃO se aplica de novo (upsert com o mesmo par cycle+respondent
+   * daria conflito e devolveria null). Reusa channel/recipient já gravados no
+   * dispatch (snapshot do claim original), não resolveChannel de novo.
+   */
+  async function retrySend({ tenantId, cycle, dispatch, corretor, survey }) {
+    if (!dispatch.recipient) return; // sem contato no claim original — nada a reenviar.
+    await attemptSend({
+      tenantId, dispatchId: dispatch.id, channel: dispatch.channel, recipient: dispatch.recipient,
+      sendsCountBefore: dispatch.sends_count || 0, cycle, corretor, survey,
+    });
   }
 
   async function sendReminder({ tenantId, cycle, dispatch, survey, corretor }) {
@@ -113,6 +138,13 @@ export function makeEnpsRunner(supabase, options = {}) {
     for (const corretor of corretores) {
       const existing = dispatchByUser.get(corretor.userId);
       if (!existing) { await sendInitial({ tenantId, cycle, corretor, survey }); continue; }
+      if (existing.status === 'pending' || existing.status === 'failed') {
+        // Throttle no burst do dia-1 (status='pending' nunca chegou a enviar) ou
+        // falha de transporte anterior — sem isso, essas pessoas não recebem
+        // pesquisa neste ciclo (só reminder exige status='sent').
+        await retrySend({ tenantId, cycle, dispatch: existing, corretor, survey });
+        continue;
+      }
       if (existing.status === 'sent' && existing.has_responded === false) {
         const elapsed = msSince(existing.last_sent_at, today);
         const dueMs = survey.reminder_every_days * 24 * 60 * 60 * 1000;
