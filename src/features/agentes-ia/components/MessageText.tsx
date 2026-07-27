@@ -29,12 +29,41 @@ export function InlineMarkdown({ text }: { text: string }) {
   );
 }
 
+/**
+ * Remove a sintaxe Markdown, deixando texto puro para colar em WhatsApp/e-mail.
+ * A tela renderiza o Markdown bonito, mas ao copiar o usuário quer o conteúdo
+ * sem os marcadores crus (#, **, *, `, -, [texto](url)).
+ */
+export function stripMarkdown(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => {
+      let out = line.replace(/^\s*#{1,6}\s+/, ''); // títulos: # a ######
+      out = out.replace(/^(\s*)[-*+]\s+/, '$1• '); // listas: -, *, + → •
+      out = out.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1'); // links: [texto](url) → texto
+      out = out.replace(/(\*\*|__)(.+?)\1/g, '$2'); // negrito
+      out = out.replace(/(\*|_)(.+?)\1/g, '$2'); // itálico
+      out = out.replace(/`([^`]+)`/g, '$1'); // código inline
+      return out;
+    })
+    .join('\n');
+}
+
+/** Copia o conteúdo sem Markdown quando o usuário seleciona e usa Ctrl+C. */
+function handleCopy(event: React.ClipboardEvent<HTMLDivElement>) {
+  const selected = window.getSelection()?.toString();
+  if (!selected) return;
+
+  event.clipboardData.setData('text/plain', stripMarkdown(selected));
+  event.preventDefault();
+}
+
 /** Renderiza o texto multilinha aplicando títulos, listas e parágrafos. */
 export function MessageText({ text }: { text: string }) {
   const lines = text.split('\n');
 
   return (
-    <div className="space-y-2 text-sm leading-relaxed">
+    <div className="space-y-2 text-sm leading-relaxed" onCopy={handleCopy}>
       {lines.map((line, index) => {
         const trimmed = line.trim();
 
