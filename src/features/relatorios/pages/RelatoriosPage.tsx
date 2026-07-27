@@ -59,6 +59,7 @@ import { useRelatorios } from '../hooks/useRelatorios';
 import { useLeadSourceChannels } from '../hooks/useLeadSourceChannels';
 
 import { GenericImportPage } from '@/features/relatorios/import/generic/pages/GenericImportPage';
+import { EnpsCorretoresSection } from '../enps/EnpsCorretoresSection';
 
 import { buildCorretorMetricasCompletas } from '../utils/buildCorretorMetricasCompletas';
 import { buscarValorTotal, formatarValorMonetario, buscarImoveisAtivos } from '../services/relatoriosService';
@@ -220,8 +221,8 @@ export const RelatoriosPage = () => {
   const [dataFinal, setDataFinal] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [exibirValores, setExibirValores] = useState(true);
   const _tab = searchParams.get('tab');
-  const activeSubArea: 'marketing' | 'metricas' | 'metricas-individuais' | 'imoveis' | 'financeiro' | 'excel' =
-    _tab === 'metricas' || _tab === 'imoveis' || _tab === 'metricas-individuais' || _tab === 'excel' || _tab === 'financeiro' ? _tab : 'marketing';
+  const activeSubArea: 'marketing' | 'metricas' | 'metricas-individuais' | 'imoveis' | 'financeiro' | 'excel' | 'enps' =
+    _tab === 'metricas' || _tab === 'imoveis' || _tab === 'metricas-individuais' || _tab === 'excel' || _tab === 'financeiro' || _tab === 'enps' ? _tab : 'marketing';
 
   const initialMetricasSubArea = useMemo(() => {
     const fromQuery = searchParams.get('metricasSubArea');
@@ -3257,6 +3258,11 @@ export const RelatoriosPage = () => {
         </>
       )}
         </>
+      )}
+
+      {/* SEÇÃO eNPS DE CORRETORES */}
+      {activeSubArea === 'enps' && (
+        <EnpsCorretoresSection tenantId={tenantId} />
       )}
       </div>
     </div>
