@@ -1,0 +1,18 @@
+[
+  { "id": "c1e5b898-dea5-4ca2-b87e-17005619745e", "nome": "Reserva Castanheira", "dormitorios": "Lotes" },
+  { "id": "54faa312-478a-4731-83fc-d43a282214ee", "nome": "Lago Samambaia", "dormitorios": "Lotes" },
+  { "id": "e0b7ab97-8dce-4f1c-a6fe-178bc70ab411", "nome": "Villagio Engordadouro", "dormitorios": "Lotes" },
+  { "id": "a912ac87-90ab-4587-b209-db6361941a81", "nome": "Vitale Fernande", "dormitorios": "Lotes" },
+  { "id": "9ce7ac73-0e04-4490-9604-eef12f4ed8cb", "nome": "Vistta Castanho", "dormitorios": "Lotes" },
+  { "id": "1e11b93d-c79c-49b1-b274-e75d3d7d7672", "nome": "Altissimi", "bairro": "Retiro" },
+  { "id": "187d4b94-51cf-4b4f-9127-80c0d2c3a296", "nome": "Residencial Bellacqua", "bairro": "Retiro" },
+  { "id": "a517b0bd-2eb7-4993-8fa8-7da448839e63", "nome": "Maitá", "dormitorios": "2 e 3 dorms", "specs": "45–87 m² · 2 e 3 dorms" },
+  { "id": "5f020813-9a4b-495a-8708-b0eacce84105", "nome": "Manawa", "cidade": "Jundiaí", "bairro": "Parque da Represa" },
+  { "id": "9de02c12-4037-41e4-b1be-ff9fd4c43d7a", "nome": "Mutton", "construtora": "Mac Lucer" },
+  { "id": "1409b51b-d890-44a8-bea5-770ec6f7aace", "nome": "Nexus", "construtora": "Mac Lucer" },
+  { "id": "71fbf50c-6c40-4016-b806-15c4abc05f01", "nome": "Avelã", "bairro": "Jardim Primavera" },
+  { "id": "990cdad9-c258-4eb6-96c8-35c9e5fcdfba", "nome": "Vallis", "construtora": "Mac Lucer" },
+  { "id": "6bedc51f-8654-4b35-bd89-cbf8cccfa129", "nome": "Soleggiato", "cidade": "Jundiaí", "bairro": "Anhangabaú", "construtora": "Mac Lucer" },
+  { "id": "8e4e84f9-43cd-44bc-9dc9-5b4b590183f5", "nome": "Auten Jundiaí", "bairro": "Anhangabaú", "dormitorios": "4 suítes" },
+  { "id": "5f4ae161-de7c-46c5-9e90-42db68ea8d0a", "nome": "Allegrato", "cidade": "Jundiaí", "bairro": "Medeiros", "dormitorios": "2 suítes" }
+]

@@ -1,0 +1,12 @@
+[
+  { "id": "fffd841a-f4fe-433c-862d-5642fc84c2da", "nome": "Forest Houses", "cidade": "Louveira", "bairro": "Leitão", "construtora": "Manduca Empreendimentos", "specs": "147–200 m² · 3 suítes" },
+  { "id": "a9893011-be73-4b19-8d55-a7946f143964", "nome": "Vila Itália", "bairro": "Vila Itália", "dormitorios": "3 dorms", "specs": "92–96 m² · 3 dorms" },
+  { "id": "5f4ae161-de7c-46c5-9e90-42db68ea8d0a", "nome": "Allegrato", "construtora": "Santa Ângela", "specs": "55–64 m² · 2 dorms" },
+  { "id": "5c32a490-c147-466a-aff1-eb2fef14aa6f", "nome": "Gran Ville Santo Ângelo", "specs": "Lotes a partir de 360 m²" },
+  { "id": "71fbf50c-6c40-4016-b806-15c4abc05f01", "nome": "Avelã", "dormitorios": "2 e 3 dorms", "specs": "66–86 m² · 2 e 3 dorms" },
+  { "id": "6bedc51f-8654-4b35-bd89-cbf8cccfa129", "nome": "Soleggiato", "dormitorios": "Até 4 suítes", "specs": "130–160 m² · até 4 suítes" },
+  { "id": "0ffe4c02-0b7c-4c17-b58d-4790ab00b009", "nome": "Singolare", "dormitorios": "3 dorms" },
+  { "id": "3f1d5425-aa78-4077-ba97-f405374e57e9", "nome": "Portal dos Lagos", "construtora": "Santa Angela", "specs": "Lotes de 420 a 908 m²" },
+  { "id": "d25d8a4a-821c-4493-ab01-4c6b067cb289", "nome": "Hub 9 de julho", "bairro": "Anhangabaú" },
+  { "id": "3fa12af5-8a6b-4020-852c-e2704aaa132f", "nome": "Residencial Terras da Alvorada", "bairro": "Medeiros" }
+]

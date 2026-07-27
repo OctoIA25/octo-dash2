@@ -1,0 +1,14 @@
+[
+  { "id": "5c32a490-c147-466a-aff1-eb2fef14aa6f", "nome": "Gran Ville Santo Ângelo", "dormitorios": "Lotes" },
+  { "id": "7ce43757-a06f-415b-b04c-6adbf53b1e61", "nome": "Santorini", "construtora": "Santa Angela", "dormitorios": "2 e 3 dorms", "specs": "83–111 m² · 2 e 3 dorms" },
+  { "id": "9de02c12-4037-41e4-b1be-ff9fd4c43d7a", "nome": "Mutton", "bairro": "Centro" },
+  { "id": "1409b51b-d890-44a8-bea5-770ec6f7aace", "nome": "Nexus", "cidade": "Jundiaí", "dormitorios": "2 dorms", "specs": "57–61 m² · 2 dorms" },
+  { "id": "990cdad9-c258-4eb6-96c8-35c9e5fcdfba", "nome": "Vallis", "cidade": "Jundiaí", "dormitorios": "2 e 3 dorms", "specs": "59–89 m² · 2 e 3 dorms" },
+  { "id": "03ab0219-09b2-4b8f-af8e-84ab4aef5008", "nome": "Diferenziato", "cidade": "Jundiaí", "bairro": "Medeiros", "construtora": "Santa Angela", "dormitorios": "2 e 3 dorms", "specs": "54–82 m² · 2 e 3 dorms" },
+  { "id": "bf357401-3764-4e5e-8066-9ebe6d7e6159", "nome": "Maxx Santa Ângela", "specs": "51–98 m² · 2 e 3 dorms" },
+  { "id": "3f1d5425-aa78-4077-ba97-f405374e57e9", "nome": "Portal dos Lagos", "dormitorios": "Lotes" },
+  { "id": "1929cab8-510b-42e9-b30a-33a1dcd43822", "nome": "Terrace Serra do Japi", "dormitorios": "3 e 4 suítes", "specs": "157–203 m² · 3 e 4 suítes" },
+  { "id": "24860ab4-e86d-4344-af47-652b53201cd5", "nome": "Resort Prime", "dormitorios": "Lotes", "specs": "Lotes a partir de 110 m²" },
+  { "id": "2c3e4f49-ad42-426b-b31b-9a43fdb2fbf9", "nome": "Villagio Tunis", "dormitorios": "Lotes" },
+  { "id": "d26e81a2-4543-4913-82f4-e5b8af628046", "nome": "Reserva Marajoara", "dormitorios": "Lotes", "specs": "Lotes a partir de 600 m²" }
+]

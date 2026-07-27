@@ -1,0 +1,631 @@
+[
+  {
+    "id": "c1e5b898-dea5-4ca2-b87e-17005619745e",
+    "nome": "Reserva Castanheira",
+    "cidade": "Jundiaí",
+    "bairro": "Medeiros",
+    "construtora": null,
+    "dormitorios": null,
+    "specs": "250 m²",
+    "estagio": null,
+    "_confianca": {
+      "cidade": "alta",
+      "bairro": "alta",
+      "construtora": null,
+      "dormitorios": null,
+      "specs": "baixa"
+    }
+  },
+  {
+    "id": "08ae2e4d-3655-42be-ad30-93591efadbc6",
+    "nome": "Gioviale",
+    "cidade": null,
+    "bairro": null,
+    "construtora": null,
+    "dormitorios": "2 ou 3 dorms",
+    "specs": "53–85 m² · 2 ou 3 dorms",
+    "estagio": null,
+    "_confianca": {
+      "cidade": null,
+      "bairro": null,
+      "construtora": null,
+      "dormitorios": "baixa",
+      "specs": "baixa"
+    }
+  },
+  {
+    "id": "1e20bd63-6e81-4255-9d0f-d227ef847250",
+    "nome": "Altos da Avenida",
+    "cidade": "Jundiaí",
+    "bairro": "Jardim do Lago",
+    "construtora": "Santa Angela",
+    "dormitorios": null,
+    "specs": "58–105 m²",
+    "estagio": null,
+    "_confianca": {
+      "cidade": "alta",
+      "bairro": "alta",
+      "construtora": "baixa",
+      "dormitorios": null,
+      "specs": "baixa"
+    }
+  },
+  {
+    "id": "54faa312-478a-4731-83fc-d43a282214ee",
+    "nome": "Lago Samambaia",
+    "cidade": "Jundiaí",
+    "bairro": null,
+    "construtora": null,
+    "dormitorios": null,
+    "specs": "500 m²",
+    "estagio": null,
+    "_confianca": {
+      "cidade": "alta",
+      "bairro": null,
+      "construtora": null,
+      "dormitorios": null,
+      "specs": "baixa"
+    }
+  },
+  {
+    "id": "e0b7ab97-8dce-4f1c-a6fe-178bc70ab411",
+    "nome": "Villagio Engordadouro",
+    "cidade": null,
+    "bairro": null,
+    "construtora": null,
+    "dormitorios": null,
+    "specs": null,
+    "estagio": null,
+    "_confianca": {
+      "cidade": null,
+      "bairro": null,
+      "construtora": null,
+      "dormitorios": null,
+      "specs": null
+    }
+  },
+  {
+    "id": "a912ac87-90ab-4587-b209-db6361941a81",
+    "nome": "Vitale Fernande",
+    "cidade": "Jundiaí",
+    "bairro": "Fernandes",
+    "construtora": "Grupo Haganá",
+    "dormitorios": null,
+    "specs": "200–384 m²",
+    "estagio": null,
+    "_confianca": {
+      "cidade": "alta",
+      "bairro": "alta",
+      "construtora": "baixa",
+      "dormitorios": null,
+      "specs": "baixa"
+    }
+  },
+  {
+    "id": "9ce7ac73-0e04-4490-9604-eef12f4ed8cb",
+    "nome": "Vistta Castanho",
+    "cidade": "Jundiaí",
+    "bairro": "Castanho",
+    "construtora": "Rodovia Presidente Tancredo",
+    "dormitorios": null,
+    "specs": null,
+    "estagio": null,
+    "_confianca": {
+      "cidade": "alta",
+      "bairro": "alta",
+      "construtora": "baixa",
+      "dormitorios": null,
+      "specs": null
+    }
+  },
+  {
+    "id": "5c32a490-c147-466a-aff1-eb2fef14aa6f",
+    "nome": "Gran Ville Santo Ângelo",
+    "cidade": "Itupeva",
+    "bairro": null,
+    "construtora": "GP Desenvolvimento Urbano",
+    "dormitorios": null,
+    "specs": null,
+    "estagio": null,
+    "_confianca": {
+      "cidade": "alta",
+      "bairro": null,
+      "construtora": "baixa",
+      "dormitorios": null,
+      "specs": null
+    }
+  },
+  {
+    "id": "1e11b93d-c79c-49b1-b274-e75d3d7d7672",
+    "nome": "Altissimi",
+    "cidade": "Jundiaí",
+    "bairro": null,
+    "construtora": "Mac Lucer",
+    "dormitorios": "2 e 3 dorms",
+    "specs": "64–86 m² · 2 e 3 dorms",
+    "estagio": null,
+    "_confianca": {
+      "cidade": "alta",
+      "bairro": null,
+      "construtora": "baixa",
+      "dormitorios": "baixa",
+      "specs": "baixa"
+    }
+  },
+  {
+    "id": "71fbf50c-6c40-4016-b806-15c4abc05f01",
+    "nome": "Avelã",
+    "cidade": "Itupeva",
+    "bairro": null,
+    "construtora": "Mac Lucer",
+    "dormitorios": null,
+    "specs": null,
+    "estagio": null,
+    "_confianca": {
+      "cidade": "alta",
+      "bairro": null,
+      "construtora": "baixa",
+      "dormitorios": null,
+      "specs": null
+    }
+  },
+  {
+    "id": "187d4b94-51cf-4b4f-9127-80c0d2c3a296",
+    "nome": "Residencial Bellacqua",
+    "cidade": null,
+    "bairro": null,
+    "construtora": "Mac Lucer Empreendimentos",
+    "dormitorios": "2 dorms",
+    "specs": "68–103 m² · 2 dorms",
+    "estagio": null,
+    "_confianca": {
+      "cidade": null,
+      "bairro": null,
+      "construtora": "baixa",
+      "dormitorios": "baixa",
+      "specs": "baixa"
+    }
+  },
+  {
+    "id": "a517b0bd-2eb7-4993-8fa8-7da448839e63",
+    "nome": "Maitá",
+    "cidade": null,
+    "bairro": null,
+    "construtora": "Mac Lucer",
+    "dormitorios": null,
+    "specs": null,
+    "estagio": null,
+    "_confianca": {
+      "cidade": null,
+      "bairro": null,
+      "construtora": "baixa",
+      "dormitorios": null,
+      "specs": null
+    }
+  },
+  {
+    "id": "5f020813-9a4b-495a-8708-b0eacce84105",
+    "nome": "Manawa",
+    "cidade": null,
+    "bairro": null,
+    "construtora": "Mac Lucer",
+    "dormitorios": "3 dorms",
+    "specs": "15–90 m² · 3 dorms",
+    "estagio": null,
+    "_confianca": {
+      "cidade": null,
+      "bairro": null,
+      "construtora": "baixa",
+      "dormitorios": "baixa",
+      "specs": "baixa"
+    }
+  },
+  {
+    "id": "9de02c12-4037-41e4-b1be-ff9fd4c43d7a",
+    "nome": "Mutton",
+    "cidade": "Itatiba",
+    "bairro": null,
+    "construtora": null,
+    "dormitorios": "2 dorms",
+    "specs": "57–67 m² · 2 dorms",
+    "estagio": null,
+    "_confianca": {
+      "cidade": "baixa",
+      "bairro": null,
+      "construtora": null,
+      "dormitorios": "baixa",
+      "specs": "baixa"
+    }
+  },
+  {
+    "id": "1409b51b-d890-44a8-bea5-770ec6f7aace",
+    "nome": "Nexus",
+    "cidade": null,
+    "bairro": "Torres de São José",
+    "construtora": null,
+    "dormitorios": null,
+    "specs": null,
+    "estagio": null,
+    "_confianca": {
+      "cidade": null,
+      "bairro": "alta",
+      "construtora": null,
+      "dormitorios": null,
+      "specs": null
+    }
+  },
+  {
+    "id": "0ffe4c02-0b7c-4c17-b58d-4790ab00b009",
+    "nome": "Singolare",
+    "cidade": "Valinhos",
+    "bairro": "Vila Itália",
+    "construtora": null,
+    "dormitorios": null,
+    "specs": "92–96 m²",
+    "estagio": null,
+    "_confianca": {
+      "cidade": "baixa",
+      "bairro": "alta",
+      "construtora": null,
+      "dormitorios": null,
+      "specs": "baixa"
+    }
+  },
+  {
+    "id": "990cdad9-c258-4eb6-96c8-35c9e5fcdfba",
+    "nome": "Vallis",
+    "cidade": null,
+    "bairro": "Parque da Represa",
+    "construtora": null,
+    "dormitorios": "2 dorms",
+    "specs": "59–88 m² · 2 dorms",
+    "estagio": null,
+    "_confianca": {
+      "cidade": null,
+      "bairro": "alta",
+      "construtora": null,
+      "dormitorios": "baixa",
+      "specs": "baixa"
+    }
+  },
+  {
+    "id": "a9893011-be73-4b19-8d55-a7946f143964",
+    "nome": "Vila Itália",
+    "cidade": "Valinhos",
+    "bairro": null,
+    "construtora": "Mac Lucer",
+    "dormitorios": null,
+    "specs": null,
+    "estagio": null,
+    "_confianca": {
+      "cidade": "baixa",
+      "bairro": null,
+      "construtora": "baixa",
+      "dormitorios": null,
+      "specs": null
+    }
+  },
+  {
+    "id": "7ce43757-a06f-415b-b04c-6adbf53b1e61",
+    "nome": "Santorini",
+    "cidade": null,
+    "bairro": null,
+    "construtora": null,
+    "dormitorios": null,
+    "specs": "83–185 m²",
+    "estagio": null,
+    "_confianca": {
+      "cidade": null,
+      "bairro": null,
+      "construtora": null,
+      "dormitorios": null,
+      "specs": "baixa"
+    }
+  },
+  {
+    "id": "5f4ae161-de7c-46c5-9e90-42db68ea8d0a",
+    "nome": "Allegrato",
+    "cidade": null,
+    "bairro": null,
+    "construtora": null,
+    "dormitorios": null,
+    "specs": null,
+    "estagio": null,
+    "_confianca": {
+      "cidade": null,
+      "bairro": null,
+      "construtora": null,
+      "dormitorios": null,
+      "specs": null
+    }
+  },
+  {
+    "id": "03ab0219-09b2-4b8f-af8e-84ab4aef5008",
+    "nome": "Diferenziato",
+    "cidade": null,
+    "bairro": null,
+    "construtora": null,
+    "dormitorios": null,
+    "specs": null,
+    "estagio": null,
+    "_confianca": {
+      "cidade": null,
+      "bairro": null,
+      "construtora": null,
+      "dormitorios": null,
+      "specs": null
+    }
+  },
+  {
+    "id": "47144f9f-fc77-4fb7-888b-8ddbc27f0633",
+    "nome": "Gaudi",
+    "cidade": null,
+    "bairro": "Vila Arens",
+    "construtora": null,
+    "dormitorios": null,
+    "specs": null,
+    "estagio": null,
+    "_confianca": {
+      "cidade": null,
+      "bairro": "baixa",
+      "construtora": null,
+      "dormitorios": null,
+      "specs": null
+    }
+  },
+  {
+    "id": "eb7ba6ae-7de5-4dce-9a40-023606e41afe",
+    "nome": "Jardins do Horto",
+    "cidade": null,
+    "bairro": "Horto Florestal",
+    "construtora": "Construtora Santa Angela",
+    "dormitorios": null,
+    "specs": "72–95 m²",
+    "estagio": null,
+    "_confianca": {
+      "cidade": null,
+      "bairro": "baixa",
+      "construtora": "baixa",
+      "dormitorios": null,
+      "specs": "baixa"
+    }
+  },
+  {
+    "id": "bf357401-3764-4e5e-8066-9ebe6d7e6159",
+    "nome": "Maxx Santa Ângela",
+    "cidade": "Jundiaí",
+    "bairro": null,
+    "construtora": "Santa",
+    "dormitorios": "2 a 3 dorms",
+    "specs": "51–98 m² · 2 a 3 dorms",
+    "estagio": null,
+    "_confianca": {
+      "cidade": "alta",
+      "bairro": null,
+      "construtora": "baixa",
+      "dormitorios": "baixa",
+      "specs": "baixa"
+    }
+  },
+  {
+    "id": "3f1d5425-aa78-4077-ba97-f405374e57e9",
+    "nome": "Portal dos Lagos",
+    "cidade": "Jundiaí",
+    "bairro": "Corrupira",
+    "construtora": null,
+    "dormitorios": null,
+    "specs": null,
+    "estagio": null,
+    "_confianca": {
+      "cidade": "alta",
+      "bairro": "alta",
+      "construtora": null,
+      "dormitorios": null,
+      "specs": null
+    }
+  },
+  {
+    "id": "24860ab4-e86d-4344-af47-652b53201cd5",
+    "nome": "Resort Prime",
+    "cidade": null,
+    "bairro": "Engordadouro",
+    "construtora": "Resort Prime Santa",
+    "dormitorios": null,
+    "specs": "110–600 m²",
+    "estagio": null,
+    "_confianca": {
+      "cidade": null,
+      "bairro": "alta",
+      "construtora": "baixa",
+      "dormitorios": null,
+      "specs": "baixa"
+    }
+  },
+  {
+    "id": "8e4e84f9-43cd-44bc-9dc9-5b4b590183f5",
+    "nome": "Auten Jundiaí",
+    "cidade": null,
+    "bairro": null,
+    "construtora": null,
+    "dormitorios": null,
+    "specs": "128–264 m²",
+    "estagio": null,
+    "_confianca": {
+      "cidade": null,
+      "bairro": null,
+      "construtora": null,
+      "dormitorios": null,
+      "specs": "baixa"
+    }
+  },
+  {
+    "id": "1929cab8-510b-42e9-b30a-33a1dcd43822",
+    "nome": "Terrace Serra do Japi",
+    "cidade": null,
+    "bairro": null,
+    "construtora": "Auten Incorporadora",
+    "dormitorios": null,
+    "specs": "157–203 m²",
+    "estagio": null,
+    "_confianca": {
+      "cidade": null,
+      "bairro": null,
+      "construtora": "baixa",
+      "dormitorios": null,
+      "specs": "baixa"
+    }
+  },
+  {
+    "id": "bd37ae3d-b3ec-4dfe-8906-3d460c2cb37f",
+    "nome": "OASIS",
+    "cidade": null,
+    "bairro": "Jardim Quinta das Videiras",
+    "construtora": null,
+    "dormitorios": "2 e 3 dorms",
+    "specs": "89–116 m² · 2 e 3 dorms",
+    "estagio": null,
+    "_confianca": {
+      "cidade": null,
+      "bairro": "baixa",
+      "construtora": null,
+      "dormitorios": "baixa",
+      "specs": "baixa"
+    }
+  },
+  {
+    "id": "d26e81a2-4543-4913-82f4-e5b8af628046",
+    "nome": "Reserva Marajoara",
+    "cidade": null,
+    "bairro": "Jardim Samambaia",
+    "construtora": "Mera Arquitetura Paisagística",
+    "dormitorios": null,
+    "specs": "33–600 m²",
+    "estagio": null,
+    "_confianca": {
+      "cidade": null,
+      "bairro": "baixa",
+      "construtora": "baixa",
+      "dormitorios": null,
+      "specs": "baixa"
+    }
+  },
+  {
+    "id": "2c3e4f49-ad42-426b-b31b-9a43fdb2fbf9",
+    "nome": "Villagio Tunis",
+    "cidade": "Jundiaí",
+    "bairro": "Engordadouro",
+    "construtora": null,
+    "dormitorios": null,
+    "specs": null,
+    "estagio": null,
+    "_confianca": {
+      "cidade": "alta",
+      "bairro": "alta",
+      "construtora": null,
+      "dormitorios": null,
+      "specs": null
+    }
+  },
+  {
+    "id": "bce49603-a6d2-43a2-9d84-d625cf67ace4",
+    "nome": "Forest Houses",
+    "cidade": null,
+    "bairro": null,
+    "construtora": null,
+    "dormitorios": null,
+    "specs": null,
+    "estagio": null,
+    "_confianca": {
+      "cidade": null,
+      "bairro": null,
+      "construtora": null,
+      "dormitorios": null,
+      "specs": null
+    }
+  },
+  {
+    "id": "fffd841a-f4fe-433c-862d-5642fc84c2da",
+    "nome": "Forest Houses",
+    "cidade": "Louveira",
+    "bairro": null,
+    "construtora": "Manduca Empreendimentos",
+    "dormitorios": "3 suítes",
+    "specs": null,
+    "estagio": null,
+    "_confianca": {
+      "cidade": "baixa",
+      "bairro": null,
+      "construtora": "baixa",
+      "dormitorios": "baixa",
+      "specs": null
+    }
+  },
+  {
+    "id": "6bedc51f-8654-4b35-bd89-cbf8cccfa129",
+    "nome": "Soleggiato",
+    "cidade": null,
+    "bairro": null,
+    "construtora": null,
+    "dormitorios": null,
+    "specs": null,
+    "estagio": null,
+    "_confianca": {
+      "cidade": null,
+      "bairro": null,
+      "construtora": null,
+      "dormitorios": null,
+      "specs": null
+    }
+  },
+  {
+    "id": "d25d8a4a-821c-4493-ab01-4c6b067cb289",
+    "nome": "Hub 9 de julho",
+    "cidade": null,
+    "bairro": null,
+    "construtora": null,
+    "dormitorios": null,
+    "specs": "25–87 m²",
+    "estagio": null,
+    "_confianca": {
+      "cidade": null,
+      "bairro": null,
+      "construtora": null,
+      "dormitorios": null,
+      "specs": "baixa"
+    }
+  },
+  {
+    "id": "99f1e19c-577c-49cd-8e2b-ab6ed786b2cd",
+    "nome": "Anhangabaú Design",
+    "cidade": null,
+    "bairro": "Anhangabaú",
+    "construtora": "Tebas Engenharia",
+    "dormitorios": null,
+    "specs": "50–83 m²",
+    "estagio": null,
+    "_confianca": {
+      "cidade": null,
+      "bairro": "alta",
+      "construtora": "baixa",
+      "dormitorios": null,
+      "specs": "baixa"
+    }
+  },
+  {
+    "id": "3fa12af5-8a6b-4020-852c-e2704aaa132f",
+    "nome": "Residencial Terras da Alvorada",
+    "cidade": null,
+    "bairro": null,
+    "construtora": "Tebas Engenharia",
+    "dormitorios": null,
+    "specs": "325–817 m²",
+    "estagio": null,
+    "_confianca": {
+      "cidade": null,
+      "bairro": null,
+      "construtora": "baixa",
+      "dormitorios": null,
+      "specs": "baixa"
+    }
+  }
+]
