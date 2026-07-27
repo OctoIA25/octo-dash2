@@ -1,0 +1,42 @@
+/**
+ * Hook de consumo do eNPS via React Query. Depende só do CONTRATO EnpsService.
+ * Clone do useKpis.
+ */
+import { useQuery } from '@tanstack/react-query';
+import { useMemo } from 'react';
+import { useAuthContext } from '@/contexts/AuthContext';
+import { restEnpsService } from '../services/restEnpsService';
+import type { EnpsPeriod, EnpsOverview, EnpsService } from '../types';
+
+let enpsServiceProvider: EnpsService = restEnpsService;
+export function getEnpsService(): EnpsService { return enpsServiceProvider; }
+export function setEnpsService(service: EnpsService): void { enpsServiceProvider = service; }
+
+function currentMonthPeriod(): EnpsPeriod {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const iso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const label = start.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  return { startDate: iso(start), endDate: iso(now), label: label.charAt(0).toUpperCase() + label.slice(1) };
+}
+
+export interface UseEnpsOptions { period?: EnpsPeriod; leader?: string | null; corretor?: string | null }
+export interface UseEnpsResult { data: EnpsOverview | undefined; isLoading: boolean; isError: boolean; refetch: () => void; period: EnpsPeriod; tenantReady: boolean }
+
+export function useEnps(options: UseEnpsOptions = {}): UseEnpsResult {
+  const { tenantId } = useAuthContext();
+  const tenantReady = Boolean(tenantId && tenantId !== 'owner');
+  const period = useMemo(() => options.period ?? currentMonthPeriod(), [options.period]);
+  const leader = options.leader ?? null;
+  const corretor = options.corretor ?? null;
+
+  const query = useQuery<EnpsOverview>({
+    queryKey: ['enps', 'overview', tenantId, period.startDate, period.endDate, leader, corretor],
+    queryFn: () => enpsServiceProvider.getOverview({ tenantId: tenantId as string, period, leader, corretor }),
+    enabled: tenantReady,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  return { data: query.data, isLoading: query.isLoading, isError: query.isError, refetch: () => query.refetch(), period, tenantReady };
+}

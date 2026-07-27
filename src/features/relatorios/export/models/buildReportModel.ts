@@ -326,9 +326,10 @@ function emptyModel(base: Base): ReportModel {
   return { title: 'Relatório', ...base, groups: [], sections: [] };
 }
 
-// Aceita tambem 'excel' (aba de importacao, sem relatorio exportavel): cai no
-// `default` -> emptyModel. As demais sub-areas tem builder dedicado.
-export function buildReportModel(subArea: RelatoriosSubArea | 'excel', source: ReportSource): ReportModel {
+// Aceita tambem 'excel' (aba de importacao) e 'enps' (secao eNPS, com painel
+// proprio): ambas sem relatorio exportavel aqui, caem no `default` -> emptyModel.
+// As demais sub-areas tem builder dedicado.
+export function buildReportModel(subArea: RelatoriosSubArea | 'excel' | 'enps', source: ReportSource): ReportModel {
   const base: Base = { subtitle: source.subtitle, meta: source.meta ?? [] };
   switch (subArea) {
     case 'marketing':
