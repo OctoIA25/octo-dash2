@@ -101,13 +101,13 @@ export const FUNNEL_COLORS = [
 
 /**
  * Paleta para STATUS DE TEMPERATURA
- * Usando gradiente azul: Frio (claro) → Quente (escuro)
- * REGRA: Quanto mais quente, mais escuro
+ * Cor semântica: comunica urgência (fonte única para badges e gráficos).
+ * Alinhada às badges da tabela (LeadsTable.tsx): red-500 / orange-500 / blue-500.
  */
 export const TEMPERATURE_COLORS = {
-  quente: COLORS.blue.veryDark,    // Azul Muito Escuro #1a233b (mais quente)
-  morno: COLORS.blue.mediumDark,   // Azul Médio-Escuro #2a4a8d
-  frio: COLORS.blue.veryLight      // Azul Muito Claro #8ec8f2 (mais frio)
+  quente: COLORS.red.medium,     // Vermelho #DC2626 - alta conversão
+  morno: COLORS.orange.medium,   // Laranja #EA580C - esquentando
+  frio: COLORS.blue.mediumLight  // Azul #6391c5 - novos leads
 };
 
 /**

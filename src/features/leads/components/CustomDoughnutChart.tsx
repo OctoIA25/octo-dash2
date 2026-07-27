@@ -1,5 +1,6 @@
 import { ProcessedLead } from "@/data/realLeadsProcessor";
 import { Badge } from "@/components/ui/badge";
+import { getColorByTemperature } from "@/utils/colors";
 
 interface CustomDoughnutChartProps {
   leads: ProcessedLead[];
@@ -20,9 +21,7 @@ export const CustomDoughnutChart = ({ leads }: CustomDoughnutChartProps) => {
     label: temp,
     value: count,
     percentage: ((count / totalLeads) * 100).toFixed(1),
-    color: temp.toLowerCase().includes('quente') ? '#234890' :
-           temp.toLowerCase().includes('morno') ? '#73A6D3' :
-           temp.toLowerCase().includes('frio') ? '#F4F8FA' : '#9CA3AF'
+    color: getColorByTemperature(temp)
   }));
 
   // Calcular ângulos para o doughnut

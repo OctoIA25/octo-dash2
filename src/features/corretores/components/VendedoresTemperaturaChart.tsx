@@ -2,6 +2,7 @@ import { useEffect, useRef, useMemo } from 'react';
 import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Thermometer } from 'lucide-react';
+import { TEMPERATURE_COLORS } from '@/utils/colors';
 
 interface VendedoresTemperaturaChartProps {
   leads: ProcessedLead[];
@@ -22,9 +23,9 @@ export const VendedoresTemperaturaChart = ({ leads }: VendedoresTemperaturaChart
     if (!leads || leads.length === 0) {
       // Dados de demonstração quando não há dados reais
       return [
-        { y: 0, label: "Quente", color: "#234890" },
-        { y: 0, label: "Morno", color: "#73A6D3" },
-        { y: 0, label: "Frio", color: "#F4F8FA" }
+        { y: 0, label: "Quente", color: TEMPERATURE_COLORS.quente },
+        { y: 0, label: "Morno", color: TEMPERATURE_COLORS.morno },
+        { y: 0, label: "Frio", color: TEMPERATURE_COLORS.frio }
       ];
     }
 
@@ -41,9 +42,9 @@ export const VendedoresTemperaturaChart = ({ leads }: VendedoresTemperaturaChart
     ).length;
 
     return [
-      { y: quentes, label: "Quente", color: "#234890" },
-      { y: mornos, label: "Morno", color: "#73A6D3" },
-      { y: frios, label: "Frio", color: "#F4F8FA" }
+      { y: quentes, label: "Quente", color: TEMPERATURE_COLORS.quente },
+      { y: mornos, label: "Morno", color: TEMPERATURE_COLORS.morno },
+      { y: frios, label: "Frio", color: TEMPERATURE_COLORS.frio }
     ];
   }, [leads]);
 
