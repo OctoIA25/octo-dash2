@@ -108,6 +108,7 @@ const NotificacoesPage = lazyWithRetry(() => import('@/features/notificacoes/pag
 const JuridicoPage = lazyWithRetry(() => import('@/features/juridico/pages/JuridicoPage').then(m => ({ default: m.JuridicoPage })));
 const MetasPage = lazyWithRetry(() => import('@/features/metas/pages/MetasPage').then(m => ({ default: m.MetasPage })));
 const KpiAdminPage = lazyWithRetry(() => import('@/features/kpis').then(m => ({ default: m.KpiAdminPage })));
+const EnpsResponderPage = lazyWithRetry(() => import('@/features/enps/pages/EnpsResponderPage').then(m => ({ default: m.EnpsResponderPage })));
 
 // Loading Fallback para páginas individuais
 const PageLoader = () => (
@@ -418,6 +419,10 @@ const DashboardLayout = () => {
             path="relatorios" 
             element={canAccess('relatorios') ? <RelatoriosPage /> : <Navigate to={defaultAllowedRoute} replace />} 
           />
+
+          {/* eNPS: página de resposta do corretor (in-app, autenticada, sem gate de
+              permissão — todo corretor logado responde a própria pesquisa; spec §7). */}
+          <Route path="enps/responder" element={<EnpsResponderPage />} />
           
           <Route 
             path="estudo-mercado/avaliacao" 
