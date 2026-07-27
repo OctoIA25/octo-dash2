@@ -4770,6 +4770,18 @@ if (process.env.CONTACT2SALE_SYNC_SCHEDULER === '1') {
   startC2sScheduler(supabase, { resolver: c2sResolver, apiClient: c2sApiClient, runner: c2sRunner });
 }
 
+// ============================================
+// eNPS DE CORRETORES — pesquisa recorrente (envio + submissão + agregação)
+// Registrar ANTES do 404 catch-all de /api/v1/*. Scheduler flag-gated
+// (ENPS_SCHEDULER=1) para rodar em UM processo — reentrância POR TENANT no runner.
+// ============================================
+import { registerEnpsRoutes, startEnpsScheduler, makeEnpsRunner } from './enps/index.js';
+const enpsRunner = makeEnpsRunner(supabase);
+registerEnpsRoutes(app, supabase);
+if (process.env.ENPS_SCHEDULER === '1') {
+  startEnpsScheduler(supabase, { runner: enpsRunner });
+}
+
 // 404 para rotas da API não encontradas
 app.use('/api/v1/*', (req, res) => {
   res.status(404).json({

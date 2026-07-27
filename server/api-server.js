@@ -4085,6 +4085,14 @@ const c2sApiClient = createC2sApiClient({ resolver: c2sResolver });
 const c2sRunner = makeC2sRunner(supabase, { resolver: c2sResolver, apiClient: c2sApiClient });
 registerContact2SaleRoutes(app, supabase, { resolver: c2sResolver, apiClient: c2sApiClient, runner: c2sRunner });
 
+// eNPS de Corretores — pesquisa recorrente. Registrar ANTES do 404 catch-all.
+import { registerEnpsRoutes, startEnpsScheduler, makeEnpsRunner } from './enps/index.js';
+const enpsRunner = makeEnpsRunner(supabase);
+registerEnpsRoutes(app, supabase);
+if (process.env.ENPS_SCHEDULER === '1') {
+  startEnpsScheduler(supabase, { runner: enpsRunner });
+}
+
 // 404 Handler (DEVE ficar DEPOIS de todas as rotas)
 app.use('/api/v1/*', (req, res) => {
   res.status(404).json({
