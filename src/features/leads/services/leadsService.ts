@@ -119,7 +119,9 @@ const KENLO_KANBAN_COLUMNS =
   'id,client_name,client_phone,client_email,message,interest_reference,attended_by_name,is_exclusive,interest_type,interest_is_sale,interest_is_rent,stage,temperature,portal,lead_timestamp,archived_at,archive_reason,updated_at,created_at,tenant_id';
 
 const KENLO_PAGE_SIZE = 1000;
-const KENLO_PAGE_CONCURRENCY = 6; // lotes paralelos em vez de páginas em série
+// Manter baixo: cada página é sort+offset no Postgres, por usuário — 6 em paralelo
+// saturou o banco (incidente 28/jul; ver idx_kenlo_leads_tenant_created).
+const KENLO_PAGE_CONCURRENCY = 2;
 
 // Pagina kenlo_leads em lotes concorrentes. `buildPageQuery(from)` deve devolver a
 // query já filtrada/ordenada para o intervalo [from, from+PAGE_SIZE). Para quando um

@@ -35,8 +35,9 @@ interface CacheEntry {
   tenantId: string;
 }
 
-// Cache em memória para dados do Supabase - aumentado para navegação mais rápida
-const CACHE_DURATION = 120000; // 2 minutos (aumentado de 30 segundos)
+// Cache em memória para dados do Supabase. Casado com o intervalo do auto-update:
+// cada miss dispara a varredura paginada completa do tenant no Postgres.
+const CACHE_DURATION = 300000; // 5 minutos
 let dataCache: CacheEntry | null = null;
 
 const TEST_TENANT_ID = 'tenant-area-de-teste';
@@ -296,10 +297,12 @@ export const useLeadsData = (): LeadsDataResponse => {
       
       abortControllerRef.current = new AbortController();
       
-      // Usar retry com backoff exponencial
+      // Retry refaz a varredura paginada INTEIRA. No caminho automático (background)
+      // fica em 1 tentativa extra — com o banco degradado, 3 retries por aba viram
+      // tempestade (amplificador do incidente 28/jul). Interativo mantém 3.
       const processedLeads = await retryWithBackoff(async () => {
         return await fetchSupabaseLeadsData({ throwOnError: true });
-      }, 3, 1000);
+      }, isAutomatic ? 1 : 3, 1000);
       
       // Salvar no cache
       setCachedData(processedLeads, effectiveTenantId || 'default');
@@ -513,10 +516,10 @@ export const useLeadsData = (): LeadsDataResponse => {
         
         await fetchLeadsData(false, true); // isManualRefetch=false, isAutomatic=true
         if (DEBUG_LOGS) console.log(`✅ [${dateStamp} ${timestamp}] 🗄️ Auto-update concluído com sucesso!`);
-        if (DEBUG_LOGS) console.log(`⏰ Próxima atualização em: 1 minuto (60 segundos)`);
+        if (DEBUG_LOGS) console.log(`⏰ Próxima atualização em: 5 minutos (300 segundos)`);
       } catch (error) {
         if (DEBUG_LOGS) console.warn('⚠️ Auto-update Supabase falhou:', error);
-        if (DEBUG_LOGS) console.log('🔄 Tentativa automática na próxima execução (1 minuto)');
+        if (DEBUG_LOGS) console.log('🔄 Tentativa automática na próxima execução (5 minutos)');
         // NUNCA recarregar página em caso de erro
       }
     };
@@ -532,9 +535,10 @@ export const useLeadsData = (): LeadsDataResponse => {
         autoUpdate();
       }, 10000);
       
-      // ⏰ ATUALIZAÇÃO AUTOMÁTICA: A CADA 1 MINUTO (60 SEGUNDOS)
-      interval = setInterval(autoUpdate, 60000); // 60 segundos = 1 minuto exato
-      if (DEBUG_LOGS) console.log('⏰ 🗄️ Auto-update do Supabase configurado: CADA 1 MINUTO (60s)');
+      // ⏰ ATUALIZAÇÃO AUTOMÁTICA: A CADA 5 MINUTOS — cada tick com cache expirado
+      // dispara a varredura paginada completa; 60s por aba foi amplificador do 28/jul
+      interval = setInterval(autoUpdate, 300000);
+      if (DEBUG_LOGS) console.log('⏰ 🗄️ Auto-update do Supabase configurado: CADA 5 MINUTOS');
       if (DEBUG_LOGS) console.log('📊 Dados serão atualizados automaticamente do PostgreSQL');
     } else {
       if (DEBUG_LOGS) console.log('⏰ Auto-update aguardando dados iniciais...');

@@ -132,10 +132,11 @@ interface CRMLeadRow {
 const KENLO_LEADS_COLUMNS =
   'id,external_id,client_name,client_phone,client_email,lead_timestamp,created_at,portal,message,interest_reference,interest_type,interest_is_sale,interest_is_rent,attended_by_name,stage,temperature,is_exclusive,archived_at,archive_reason';
 
-// Nº de páginas buscadas em paralelo por vez. Substitui o loop serial (uma página
-// só começava quando a anterior voltava) por lotes concorrentes, sem sobrecarregar
-// o Supabase com todas de uma vez.
-const KENLO_PAGE_CONCURRENCY = 6;
+// Nº de páginas buscadas em paralelo por vez. Manter baixo: cada página é uma query
+// com sort+offset no Postgres e isso roda POR USUÁRIO — com 6, a soma das abas
+// saturou o banco (incidente 28/jul). Reavaliar só com idx_kenlo_leads_tenant_created
+// no ar e métricas de carga do banco em mãos.
+const KENLO_PAGE_CONCURRENCY = 2;
 
 async function fetchKenloLeadsPage(tenantId: string, pageIndex: number): Promise<KenloLeadRow[]> {
   const from = pageIndex * PAGE_SIZE;
