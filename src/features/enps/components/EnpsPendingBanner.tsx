@@ -3,8 +3,9 @@
  * e ainda não respondeu. Descoberta in-app (o eNPS também chega por e-mail/WhatsApp,
  * mas quem não abre o canal não veria a pesquisa). Não bloqueia nada; dispensável.
  *
- * Some sozinho quando: não há pendência, o corretor responde (a query invalida ao
- * voltar), ou o ciclo fecha. O "×" esconde na sessão atual (state local).
+ * Some sozinho quando: não há pendência; o corretor responde (EnpsResponderPage
+ * invalida a query ['enps','pending'] no sucesso do submit → refetch → pending:false);
+ * ou o ciclo fecha. O "×" esconde na sessão atual (state local).
  */
 import { useState } from 'react';
 import { Link } from 'react-router-dom';

@@ -6,6 +6,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
@@ -44,6 +45,7 @@ function Banner({ title, subtitle }: { title: string; subtitle?: string }) {
 export function EnpsResponderPage() {
   const [params] = useSearchParams();
   const cycleId = params.get('cycle') ?? '';
+  const queryClient = useQueryClient();
 
   const [ctx, setCtx] = useState<EnpsResponderContext | null>(null);
   const [loading, setLoading] = useState(true);
@@ -81,6 +83,9 @@ export function EnpsResponderPage() {
     setSending(true);
     try {
       await getEnpsService().submitResponse({ cycle_id: ctx.cycle.id, answers, allow_individual: optIn });
+      // Invalida a pendência para o banner da dash sumir na hora (senão fica até
+      // o staleTime de 5min expirar). Prefixo ['enps','pending'] cobre qualquer tenantId.
+      queryClient.invalidateQueries({ queryKey: ['enps', 'pending'] });
       toast.success('Resposta enviada. Obrigado!');
       setDone(true);
     } catch (e) {

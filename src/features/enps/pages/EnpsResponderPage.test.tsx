@@ -1,5 +1,6 @@
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EnpsResponderPage } from './EnpsResponderPage';
 import { setEnpsService } from '../hooks/useEnps';
@@ -7,8 +8,16 @@ import type { EnpsService, EnpsResponderContext } from '../types';
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
+// A página usa useQueryClient (invalida a pendência ao responder), então precisa
+// de um QueryClientProvider. Devolvemos o client para os testes espionarem invalidateQueries.
 function renderAt(cycle: string) {
-  return render(<MemoryRouter initialEntries={[`/enps/responder?cycle=${cycle}`]}><EnpsResponderPage /></MemoryRouter>);
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const result = render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[`/enps/responder?cycle=${cycle}`]}><EnpsResponderPage /></MemoryRouter>
+    </QueryClientProvider>,
+  );
+  return { ...result, queryClient };
 }
 
 const baseCtx = {
@@ -76,5 +85,15 @@ describe('EnpsResponderPage', () => {
     mockService({ cycle: { id: 'cyc-1', status: 'closed' } });
     renderAt('cyc-1');
     await waitFor(() => expect(screen.getByText(/pesquisa foi encerrada/i)).toBeInTheDocument());
+  });
+
+  it('invalida a query de pendência ao responder (banner some na dash)', async () => {
+    mockService({ hasLeader: false });
+    const { queryClient } = renderAt('cyc-1');
+    const spy = vi.spyOn(queryClient, 'invalidateQueries');
+    await waitFor(() => screen.getByText('Recomendaria a imobiliária?'));
+    fireEvent.click(screen.getByRole('button', { name: 'Nota 9 para q_empresa' }));
+    fireEvent.click(screen.getByRole('button', { name: /enviar resposta/i }));
+    await waitFor(() => expect(spy).toHaveBeenCalledWith({ queryKey: ['enps', 'pending'] }));
   });
 });
