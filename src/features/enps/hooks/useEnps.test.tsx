@@ -2,7 +2,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ReactNode } from 'react';
-import { useEnps, setEnpsService } from './useEnps';
+import { useEnps, useEnpsPending, setEnpsService } from './useEnps';
 import type { EnpsService, EnpsOverview } from '../types';
 
 let mockTenantId: string | undefined = 'tenant-1';
@@ -48,5 +48,36 @@ describe('useEnps', () => {
     const { result } = renderHook(() => useEnps(), { wrapper });
     expect(result.current.tenantReady).toBe(false);
     expect(getOverview).not.toHaveBeenCalled();
+  });
+});
+
+describe('useEnpsPending', () => {
+  beforeEach(() => { mockTenantId = 'tenant-1'; vi.clearAllMocks(); });
+
+  it('busca a pendência e retorna o resultado do serviço', async () => {
+    const getPending = vi.fn().mockResolvedValue({ pending: true, cycleId: 'cyc-1', periodStart: '2026-07-01' });
+    setEnpsService({ getPending } as unknown as EnpsService);
+    const { result } = renderHook(() => useEnpsPending(), { wrapper });
+    await waitFor(() => expect(result.current.pending).toBe(true));
+    expect(getPending).toHaveBeenCalledTimes(1);
+    expect(result.current).toMatchObject({ pending: true, cycleId: 'cyc-1' });
+  });
+
+  it('sem tenant não dispara e devolve {pending:false}', async () => {
+    mockTenantId = undefined;
+    const getPending = vi.fn().mockResolvedValue({ pending: true, cycleId: 'x', periodStart: '' });
+    setEnpsService({ getPending } as unknown as EnpsService);
+    const { result } = renderHook(() => useEnpsPending(), { wrapper });
+    expect(result.current).toEqual({ pending: false });
+    expect(getPending).not.toHaveBeenCalled();
+  });
+
+  it('owner não dispara (banner é do corretor)', async () => {
+    mockTenantId = 'owner';
+    const getPending = vi.fn().mockResolvedValue({ pending: true, cycleId: 'x', periodStart: '' });
+    setEnpsService({ getPending } as unknown as EnpsService);
+    const { result } = renderHook(() => useEnpsPending(), { wrapper });
+    expect(result.current).toEqual({ pending: false });
+    expect(getPending).not.toHaveBeenCalled();
   });
 });

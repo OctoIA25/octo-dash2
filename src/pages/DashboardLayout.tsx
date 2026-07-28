@@ -10,6 +10,7 @@ import { RouteErrorBoundary } from '@/shared/components/RouteErrorBoundary';
 import { Routes, Route, Navigate, useOutletContext, useLocation } from 'react-router-dom';
 import { NovoLayout } from './inicio-nova/NovoLayout';
 import { InicioNovaPage } from './inicio-nova/InicioNovaPage';
+import { EnpsPendingBanner } from '@/features/enps/components/EnpsPendingBanner';
 import { useLeadsData } from '@/features/leads/hooks/useLeadsData';
 import { OctoDashLoader } from '@/components/ui/OctoDashLoader';
 import { useAuthContext } from '@/contexts/AuthContext';
@@ -224,6 +225,7 @@ const DashboardLayout = () => {
       onRefresh={handleDirectSupabaseCall}
       isRefreshing={isDirectUpdating || isRefetching}
     >
+      <EnpsPendingBanner />
       <RouteErrorBoundary>
       <Suspense fallback={<PageLoader />}>
         <Routes>

@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabaseClient';
-import type { EnpsService, EnpsResponderContext, EnpsSubmitInput, EnpsOverview } from '../types';
+import type { EnpsService, EnpsResponderContext, EnpsSubmitInput, EnpsOverview, EnpsPending } from '../types';
 
 const REQUEST_TIMEOUT_MS = 20_000;
 
@@ -51,6 +51,19 @@ export const restEnpsService: EnpsService = {
       if (res.status === 403) throw new Error('Este link não é válido para o seu usuário.');
       if (!res.ok || !json.ok) throw new Error(json.error || `HTTP ${res.status}`);
       return { ok: true };
+    } finally { clearTimeout(timeout); }
+  },
+  async getPending(): Promise<EnpsPending> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      const res = await fetch('/api/v1/enps/pending', { headers: { ...(await authHeader()) }, signal: controller.signal });
+      const json = (await res.json().catch(() => ({}))) as { ok?: boolean; pending?: boolean; cycleId?: string; periodStart?: string };
+      // Banner é secundário: qualquer falha → trata como "sem pendência" (não quebra a dash).
+      if (!res.ok || !json.ok || !json.pending || !json.cycleId) return { pending: false };
+      return { pending: true, cycleId: json.cycleId, periodStart: json.periodStart ?? '' };
+    } catch {
+      return { pending: false };
     } finally { clearTimeout(timeout); }
   },
 } as EnpsService;

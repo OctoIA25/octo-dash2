@@ -226,3 +226,46 @@ export function makeCycleContextHandler(supabase) {
     }
   };
 }
+
+/**
+ * GET /api/v1/enps/pending — "eu tenho uma pesquisa pendente?" para o banner da dash.
+ * Self-scoped: olha SÓ os dispatches do próprio jwt-user com has_responded=false,
+ * e devolve o primeiro cujo ciclo ainda está 'open'. Anonimato preservado — ninguém
+ * vê a pendência de outro corretor. Sem cycleId na URL (a dash não o conhece).
+ * Resposta: { ok, pending: false } ou { ok, pending: true, cycleId, periodStart }.
+ * O front formata o rótulo do período (mesmo padrão do useEnps).
+ */
+export function makePendingHandler(supabase) {
+  return async function pendingHandler(req, res) {
+    try {
+      const userId = req.userId;
+      // Dispatches não respondidos do próprio corretor. 'sent' = recebeu e não
+      // respondeu; 'pending' = throttled no dia-1, ainda vale responder.
+      const { data: dispatches, error: dErr } = await supabase
+        .from(DISPATCHES)
+        .select('cycle_id')
+        .eq('respondent_user_id', userId)
+        .eq('has_responded', false)
+        .in('status', ['pending', 'sent']);
+      if (dErr) throw dErr;
+      if (!dispatches || dispatches.length === 0) return res.json({ ok: true, pending: false });
+
+      const cycleIds = dispatches.map((d) => d.cycle_id);
+      const { data: openCycle, error: cErr } = await supabase
+        .from(CYCLES)
+        .select('id, period_start')
+        .in('id', cycleIds)
+        .eq('status', 'open')
+        .order('period_start', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (cErr) throw cErr;
+      if (!openCycle) return res.json({ ok: true, pending: false });
+
+      return res.json({ ok: true, pending: true, cycleId: openCycle.id, periodStart: openCycle.period_start });
+    } catch (err) {
+      console.error('[enps] erro ao checar pendência:', err);
+      return res.status(500).json({ ok: false, error: 'enps_internal_error' });
+    }
+  };
+}

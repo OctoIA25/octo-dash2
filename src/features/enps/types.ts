@@ -84,6 +84,15 @@ export interface EnpsOverview {
 }
 
 /**
+ * Pendência do próprio corretor (banner da dash). `pending:false` quando não há
+ * nada a responder; senão traz o cycleId (p/ o link) e o period_start cru (o
+ * front formata o rótulo). Self-scoped no servidor — nunca expõe pendência alheia.
+ */
+export type EnpsPending =
+  | { pending: false }
+  | { pending: true; cycleId: string; periodStart: string };
+
+/**
  * Serviço do módulo eNPS. `restEnpsService` é a implementação real (fetch);
  * testes injetam um fake via `setEnpsService`. `getOverview` foi adicionado
  * pela Task 11 (dashboard de visão geral) — não faz parte do responder.
@@ -92,4 +101,5 @@ export interface EnpsService {
   getOverview(params: { tenantId: string; period: EnpsPeriod; leader?: string | null; corretor?: string | null }): Promise<EnpsOverview>;
   getResponderContext(cycleId: string): Promise<EnpsResponderContext>;
   submitResponse(input: EnpsSubmitInput): Promise<{ ok: true }>;
+  getPending(): Promise<EnpsPending>;
 }

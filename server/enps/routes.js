@@ -3,11 +3,12 @@
  *   POST /api/v1/enps/responses        — submissão (anti-IDOR + atômica)
  *   GET  /api/v1/enps                  — agregação (dois eNPS + N-mínimo)
  *   GET  /api/v1/enps/cycle/:cycleId   — bootstrap da página de resposta
+ *   GET  /api/v1/enps/pending          — pendência do próprio corretor (banner da dash)
  *
  * Auth idêntica ao kpis: Bearer → supabase.auth.getUser → req.userId/req.userEmail.
  */
 import { makeSubmitHandler } from './submitHandler.js';
-import { makeAggregateHandler, makeCycleContextHandler } from './aggregate.js';
+import { makeAggregateHandler, makeCycleContextHandler, makePendingHandler } from './aggregate.js';
 
 export function makeRequireSupabaseAuth(supabase) {
   return async function requireSupabaseAuth(req, res, next) {
@@ -32,4 +33,5 @@ export function registerEnpsRoutes(app, supabase) {
   app.post('/api/v1/enps/responses', requireSupabaseAuth, makeSubmitHandler(supabase));
   app.get('/api/v1/enps', requireSupabaseAuth, makeAggregateHandler(supabase));
   app.get('/api/v1/enps/cycle/:cycleId', requireSupabaseAuth, makeCycleContextHandler(supabase));
+  app.get('/api/v1/enps/pending', requireSupabaseAuth, makePendingHandler(supabase));
 }

@@ -6,7 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { restEnpsService } from '../services/restEnpsService';
-import type { EnpsPeriod, EnpsOverview, EnpsService } from '../types';
+import type { EnpsPeriod, EnpsOverview, EnpsService, EnpsPending } from '../types';
 
 let enpsServiceProvider: EnpsService = restEnpsService;
 export function getEnpsService(): EnpsService { return enpsServiceProvider; }
@@ -39,4 +39,23 @@ export function useEnps(options: UseEnpsOptions = {}): UseEnpsResult {
   });
 
   return { data: query.data, isLoading: query.isLoading, isError: query.isError, refetch: () => query.refetch(), period, tenantReady };
+}
+
+/**
+ * Pendência de eNPS do próprio corretor, para o banner da dash. Leve e cacheado
+ * (a pendência não muda a cada minuto). Só roda com tenant real (não owner).
+ * O service já trata falha como "sem pendência" — o banner nunca quebra a dash.
+ */
+export function useEnpsPending(): EnpsPending {
+  const { tenantId } = useAuthContext();
+  const tenantReady = Boolean(tenantId && tenantId !== 'owner');
+
+  const query = useQuery<EnpsPending>({
+    queryKey: ['enps', 'pending', tenantId],
+    queryFn: () => enpsServiceProvider.getPending(),
+    enabled: tenantReady,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  return query.data ?? { pending: false };
 }
