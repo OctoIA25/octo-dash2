@@ -166,6 +166,7 @@ export function makeAggregateHandler(supabase, deps = {}) {
       const resolved = await resolveTenant(supabase, req);
       if (resolved.error) return res.status(resolved.status).json({ ok: false, error: resolved.error });
       const { tenantId } = resolved;
+      const { targetLeaderIds, scope } = await resolveTeamScope(supabase, req, tenantId);
 
       const period = typeof req.query?.period === 'string' ? req.query.period : null;
       const periodStart = period || `${new Date().getUTCFullYear()}-${String(new Date().getUTCMonth() + 1).padStart(2, '0')}-01`;
@@ -173,6 +174,7 @@ export function makeAggregateHandler(supabase, deps = {}) {
       const survey = await loadEnpsSurvey(tenantId);
       const emptyEnvelope = {
         ok: true,
+        scope,
         geral: { empresa: INSUFFICIENT, gestor: INSUFFICIENT },
         evolucao: [],
         participacao: { sent: 0, responded: 0, pending: 0, rate: 0 },
@@ -192,21 +194,32 @@ export function makeAggregateHandler(supabase, deps = {}) {
 
       const [{ data: responses, error: rErr }, { data: dispatches, error: dErr }, { data: members, error: mErr }] = await Promise.all([
         supabase.from(RESPONSES).select('enps_empresa, enps_gestor, subject_leader_user_id, answers').eq('cycle_id', cycle.id),
-        supabase.from(DISPATCHES).select('status, has_responded').eq('cycle_id', cycle.id),
-        supabase.from('tenant_memberships').select('leader_user_id').eq('tenant_id', tenantId).eq('role', 'corretor'),
+        supabase.from(DISPATCHES).select('status, has_responded, respondent_user_id').eq('cycle_id', cycle.id),
+        supabase.from('tenant_memberships').select('user_id, leader_user_id').eq('tenant_id', tenantId).eq('role', 'corretor'),
       ]);
       if (rErr) throw rErr; if (dErr) throw dErr; if (mErr) throw mErr;
 
-      const rows = responses || [];
+      let rows = responses || [];
+      let disp = dispatches || [];
+      if (targetLeaderIds !== null) {
+        const leaderSet = new Set(targetLeaderIds);
+        rows = rows.filter((r) => leaderSet.has(r.subject_leader_user_id));
+        // Participação escopada: dispatches dos corretores cujo líder está no alvo.
+        const teamMemberIds = new Set(
+          (members || []).filter((m) => leaderSet.has(m.leader_user_id)).map((m) => m.user_id),
+        );
+        disp = disp.filter((d) => teamMemberIds.has(d.respondent_user_id));
+      }
+
       const empresaScores = rows.map((r) => r.enps_empresa).filter((n) => n != null);
       const gestorScores = rows.map((r) => r.enps_gestor).filter((n) => n != null);
 
-      const disp = dispatches || [];
       const sent = disp.filter((d) => d.status === 'sent').length;
       const responded = disp.filter((d) => d.has_responded).length;
       const pending = disp.filter((d) => d.status === 'sent' && !d.has_responded).length;
       const participacao = { sent, responded, pending, rate: sent ? Math.round((responded / sent) * 100) : 0 };
 
+      // ponytail: teamSizeByLeader global — rankingBlock já só vê rows filtrado
       const teamSizeByLeader = new Map();
       for (const m of members || []) { if (m.leader_user_id) teamSizeByLeader.set(m.leader_user_id, (teamSizeByLeader.get(m.leader_user_id) || 0) + 1); }
 
@@ -219,6 +232,7 @@ export function makeAggregateHandler(supabase, deps = {}) {
 
       return res.json({
         ok: true,
+        scope,
         geral: { empresa: npsBlock(empresaScores), gestor: npsBlock(gestorScores) },
         evolucao: [],
         participacao,

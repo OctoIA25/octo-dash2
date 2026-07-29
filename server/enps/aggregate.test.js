@@ -6,15 +6,25 @@ function makeRes() {
 }
 // Fake supabase parametrizado por tabela; survey_id resolvido por loadEnpsSurvey mockado via deps.
 // brokers/profiles alimentam a resolução de leaderName no ranking (loadLeaderNames).
-function makeSupabase({ responses = [], cycle = { id: 'cyc1', status: 'open' }, dispatches = [], members = [], brokers = [], profiles = [] } = {}) {
+// role: linha de tenant_memberships p/ o lookup de resolveTeamScope (default: sem role, sem filtro).
+// teams: linhas de `teams` p/ resolveTeamScope (owner/admin: dropdown; team_leader: travado).
+function makeSupabase({ responses = [], cycle = { id: 'cyc1', status: 'open' }, dispatches = [], members = [], brokers = [], profiles = [], role = null, teams = [] } = {}) {
   return {
     from(table) {
       if (table === 'tenant_memberships') {
         return { select: () => ({ eq: (col, val) => {
+          // resolveTenant: .eq('user_id', u) — awaited direto (dá o tenant_id do membership).
           if (col === 'user_id') return { data: [{ tenant_id: 't1' }], error: null };
-          return { eq: async () => ({ data: members, error: null }) };
+          // col === 'tenant_id': ramifica pelo 2º .eq() —
+          //   .eq('role', 'corretor')        → membros do time (awaited)
+          //   .eq('user_id', u).maybeSingle() → role do requisitante (resolveTeamScope)
+          return { eq: (col2) => {
+            if (col2 === 'role') return { data: members, error: null };
+            return { maybeSingle: async () => ({ data: role ? { role } : null, error: null }) };
+          } };
         } }) };
       }
+      if (table === 'teams') return { select: () => ({ eq: async () => ({ data: teams, error: null }) }) };
       if (table === 'survey_cycles') {
         return { select: () => ({ eq: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: cycle, error: null }) }) }) }) }) };
       }
@@ -102,6 +112,48 @@ describe('agregação eNPS — ranking', () => {
     expect(leaders).not.toContain(null);
     const g1Row = res.body.ranking.find((r) => r.leaderUserId === 'g1');
     expect(g1Row.leaderName).toBe('Gestor Um');
+  });
+});
+
+describe('agregação eNPS — filtro de equipe (?team=)', () => {
+  it('handler filtra respostas por equipe e devolve scope', async () => {
+    const responses = [
+      ...Array.from({ length: 6 }, () => ({ enps_empresa: 10, enps_gestor: 10, subject_leader_user_id: 'lead-red', answers: {} })),
+      ...Array.from({ length: 6 }, () => ({ enps_empresa: 0, enps_gestor: 0, subject_leader_user_id: 'lead-blue', answers: {} })),
+    ];
+    const supabase = makeSupabase({
+      responses,
+      role: 'admin',
+      teams: [
+        { id: 'te-red', name: 'Vermelha', color: 'red', leader_user_id: 'lead-red' },
+        { id: 'te-blue', name: 'Azul', color: 'blue', leader_user_id: 'lead-blue' },
+      ],
+    });
+    const res = makeRes();
+    await makeAggregateHandler(supabase, deps)(req({ team: 'te-red' }), res);
+    expect(res.body.scope.teamId).toBe('te-red');
+    expect(res.body.geral.empresa).not.toEqual({ insufficient: true });
+    // eNPS de 6 notas 10 = 100 (todos promotores) — só a equipe vermelha entra na conta.
+    expect(res.body.geral.empresa.enps).toBe(100);
+    expect(res.body.geral.gestor.enps).toBe(100);
+  });
+
+  it('owner sem team => sem filtro (comportamento atual preservado)', async () => {
+    const responses = [
+      ...Array.from({ length: 6 }, () => ({ enps_empresa: 10, enps_gestor: 10, subject_leader_user_id: 'lead-red', answers: {} })),
+      ...Array.from({ length: 6 }, () => ({ enps_empresa: 0, enps_gestor: 0, subject_leader_user_id: 'lead-blue', answers: {} })),
+    ];
+    const supabase = makeSupabase({
+      responses,
+      role: 'admin',
+      teams: [{ id: 'te-red', name: 'Vermelha', color: 'red', leader_user_id: 'lead-red' }],
+    });
+    const res = makeRes();
+    await makeAggregateHandler(supabase, deps)(req(), res);
+    expect(res.body.scope.teamId).toBeNull();
+    expect(res.body.scope.locked).toBe(false);
+    // sem filtro: 6 promotores (10) + 6 detratores (0) de 12 => eNPS = 50 - 50 = 0
+    expect(res.body.geral.empresa.enps).toBe(0);
   });
 });
 
