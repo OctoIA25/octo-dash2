@@ -29,6 +29,7 @@ function baseResult() {
     ranking: [{ leaderUserId: 'l1', leaderName: 'Ana', enps: 50, count: 6 }],
     distribuicao: { empresa: [{ label: 'Promotores', count: 6 }], gestor: [{ label: 'Promotores', count: 5 }] },
     comentarios: [{ text: 'Ótimo ambiente' }],
+    scope: { locked: false, teamId: null, teamName: null, teams: [] },
   } as unknown as EnpsOverview;
   return { data, isLoading: false, isError: false, refetch: vi.fn(), period: data.period, tenantReady: true };
 }
@@ -65,5 +66,22 @@ describe('EnpsCorretoresSection', () => {
     hookState.current = makeState({ isLoading: true, data: undefined });
     const { container } = render(<EnpsCorretoresSection tenantId="t1" />);
     expect(container.querySelector('.animate-pulse')).not.toBeNull();
+  });
+
+  it('mostra dropdown de equipes para admin (scope.locked=false)', () => {
+    const data = { ...baseResult().data, scope: { locked: false, teamId: null, teamName: null, teams: [{ id: 'te-red', name: 'Vermelha', color: 'red' }] } } as unknown as EnpsOverview;
+    hookState.current = makeState({ data });
+    render(<EnpsCorretoresSection tenantId="t1" />);
+    expect(screen.getByRole('combobox')).toBeInTheDocument();
+    expect(screen.getByText('Vermelha')).toBeInTheDocument();
+    expect(screen.getByText(/todas as equipes/i)).toBeInTheDocument();
+  });
+
+  it('mostra chip travado (sem dropdown) para team_leader', () => {
+    const data = { ...baseResult().data, scope: { locked: true, teamId: 'te-red', teamName: 'Vermelha', teams: [] } } as unknown as EnpsOverview;
+    hookState.current = makeState({ data });
+    render(<EnpsCorretoresSection tenantId="t1" />);
+    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.getByText(/vermelha/i)).toBeInTheDocument();
   });
 });
