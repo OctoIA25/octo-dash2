@@ -48,6 +48,60 @@ export async function resolveTenant(supabase, req) {
   return { tenantId };
 }
 
+/**
+ * Escopo de equipe efetivo do requisitante. Owner/admin: livre (dropdown +
+ * ?team opcional). team_leader: TRAVADO nas equipes que lidera (ignora ?team).
+ * Nunca vaza outro tenant: a query de teams é sempre .eq('tenant_id', tenantId).
+ * Devolve targetLeaderIds (null = sem filtro) + scope para a UI.
+ */
+export async function resolveTeamScope(supabase, req, tenantId) {
+  const owner = isPlatformOwner(req.userEmail);
+
+  // Role do requisitante neste tenant (middleware só dá userId/email).
+  let role = null;
+  if (!owner) {
+    const { data: m, error } = await supabase
+      .from('tenant_memberships').select('role')
+      .eq('tenant_id', tenantId).eq('user_id', req.userId).maybeSingle();
+    if (error) throw error;
+    role = m?.role ?? null;
+  }
+
+  const requestedTeam = typeof req.query?.team === 'string' ? req.query.team.trim() : '';
+  const emptyScope = { locked: false, teamId: null, teamName: null, teams: [] };
+
+  // team_leader: travado nas equipes que lidera.
+  if (role === 'team_leader') {
+    const { data: led, error } = await supabase
+      .from('teams').select('id, name, color, leader_user_id')
+      .eq('tenant_id', tenantId).eq('leader_user_id', req.userId);
+    if (error) throw error;
+    const rows = led || [];
+    const targetLeaderIds = [...new Set(rows.map((t) => t.leader_user_id).filter(Boolean))];
+    const teamName = rows.length === 1 ? rows[0].name : null;
+    return { targetLeaderIds, scope: { locked: true, teamId: rows.length === 1 ? rows[0].id : null, teamName, teams: [] } };
+  }
+
+  // Owner ou admin: livre, com dropdown.
+  if (owner || role === 'admin') {
+    const { data: all, error } = await supabase
+      .from('teams').select('id, name, color, leader_user_id').eq('tenant_id', tenantId);
+    if (error) throw error;
+    const teams = (all || []).map((t) => ({ id: t.id, name: t.name, color: t.color }));
+    if (requestedTeam) {
+      const match = (all || []).find((t) => t.id === requestedTeam);
+      if (match && match.leader_user_id) {
+        return { targetLeaderIds: [match.leader_user_id], scope: { locked: false, teamId: match.id, teamName: match.name, teams } };
+      }
+      // team inválido/outro tenant: trata como "todas" (nunca vaza).
+    }
+    return { targetLeaderIds: null, scope: { locked: false, teamId: null, teamName: null, teams } };
+  }
+
+  // corretor / sem membership: comportamento atual (sem filtro).
+  return { targetLeaderIds: null, scope: emptyScope };
+}
+
 function npsBlock(scores) {
   if (scores.length < MIN_RESPONSES) return INSUFFICIENT;
   return summarize(scores);

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { makeAggregateHandler, makeCycleContextHandler } from './aggregate.js';
+import { makeAggregateHandler, makeCycleContextHandler, resolveTeamScope } from './aggregate.js';
 
 function makeRes() {
   return { statusCode: 200, body: null, status(c) { this.statusCode = c; return this; }, json(b) { this.body = b; return this; } };
@@ -134,5 +134,75 @@ describe('bootstrap do responder — GET /enps/cycle/:id', () => {
     const res = makeRes();
     await makeCycleContextHandler(supabase)({ userId: 'u1', params: { cycleId: 'cyc1' } }, res);
     expect(res.statusCode).toBe(403);
+  });
+});
+
+// Fake configurável por tabela p/ resolveTeamScope. Cada tabela devolve linhas fixas.
+// Suporta .eq().eq().maybeSingle() (tenant_memberships) e .eq() encadeável/thenable (teams).
+function makeScopeSupabase(tables) {
+  const q = (rows) => {
+    const builder = {
+      _rows: rows,
+      select() { return builder; },
+      eq() { return builder; },
+      in() { return builder; },
+      maybeSingle: async () => ({ data: builder._rows[0] ?? null, error: null }),
+      then(res) { return Promise.resolve({ data: builder._rows, error: null }).then(res); },
+    };
+    return builder;
+  };
+  return { from: (name) => q(tables[name] || []) };
+}
+
+describe('resolveTeamScope', () => {
+  const T = 'tenant-1';
+
+  it('admin sem team => sem filtro, lista equipes p/ dropdown', async () => {
+    const supabase = makeScopeSupabase({
+      tenant_memberships: [{ role: 'admin' }],
+      teams: [{ id: 'te-red', name: 'Vermelha', color: 'red', leader_user_id: 'lead-red' }],
+    });
+    const req = { userId: 'u-admin', userEmail: 'a@x.com', query: {} };
+    const { targetLeaderIds, scope } = await resolveTeamScope(supabase, req, T);
+    expect(targetLeaderIds).toBeNull();
+    expect(scope.locked).toBe(false);
+    expect(scope.teams).toEqual([{ id: 'te-red', name: 'Vermelha', color: 'red' }]);
+    expect(scope.teamId).toBeNull();
+  });
+
+  it('admin com team válido => filtra pelo líder da equipe', async () => {
+    const supabase = makeScopeSupabase({
+      tenant_memberships: [{ role: 'admin' }],
+      teams: [{ id: 'te-red', name: 'Vermelha', color: 'red', leader_user_id: 'lead-red' }],
+    });
+    const req = { userId: 'u-admin', userEmail: 'a@x.com', query: { team: 'te-red' } };
+    const { targetLeaderIds, scope } = await resolveTeamScope(supabase, req, T);
+    expect(targetLeaderIds).toEqual(['lead-red']);
+    expect(scope.teamId).toBe('te-red');
+    expect(scope.teamName).toBe('Vermelha');
+  });
+
+  it('team_leader => travado no próprio líder, IGNORA team da query', async () => {
+    const supabase = makeScopeSupabase({
+      tenant_memberships: [{ role: 'team_leader' }],
+      teams: [{ id: 'te-red', name: 'Vermelha', color: 'red', leader_user_id: 'u-leader' }],
+    });
+    const req = { userId: 'u-leader', userEmail: 'l@x.com', query: { team: 'te-blue' } };
+    const { targetLeaderIds, scope } = await resolveTeamScope(supabase, req, T);
+    expect(targetLeaderIds).toEqual(['u-leader']);
+    expect(scope.locked).toBe(true);
+    expect(scope.teams).toEqual([]);
+    expect(scope.teamName).toBe('Vermelha');
+  });
+
+  it('team_leader sem equipe => targetLeaderIds vazio (tudo insufficient)', async () => {
+    const supabase = makeScopeSupabase({
+      tenant_memberships: [{ role: 'team_leader' }],
+      teams: [],
+    });
+    const req = { userId: 'u-leader', userEmail: 'l@x.com', query: {} };
+    const { targetLeaderIds, scope } = await resolveTeamScope(supabase, req, T);
+    expect(targetLeaderIds).toEqual([]);
+    expect(scope.locked).toBe(true);
   });
 });
