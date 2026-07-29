@@ -72,6 +72,14 @@ export interface EnpsComentario { text: string; leaderUserId?: string }
 export interface EnpsParticipacao { sent: number; responded: number; pending: number; rate: number }
 export interface EnpsIndividual { evolucao: EnpsEvolucaoPoint[]; comentarios: EnpsComentario[] }
 
+export interface EnpsScopeTeam { id: string; name: string; color: string }
+export interface EnpsScope {
+  locked: boolean;
+  teamId: string | null;
+  teamName: string | null;
+  teams: EnpsScopeTeam[];
+}
+
 export interface EnpsOverview {
   period: EnpsPeriod;
   geral: { empresa: EnpsScoreBlock | Insufficient; gestor: EnpsScoreBlock | Insufficient };
@@ -81,6 +89,7 @@ export interface EnpsOverview {
   distribuicao: { empresa: EnpsDistBucket[]; gestor: EnpsDistBucket[] } | Insufficient;
   comentarios: EnpsComentario[] | Insufficient;
   individual?: EnpsIndividual;
+  scope: EnpsScope;
 }
 
 /**
@@ -98,7 +107,7 @@ export type EnpsPending =
  * pela Task 11 (dashboard de visão geral) — não faz parte do responder.
  */
 export interface EnpsService {
-  getOverview(params: { tenantId: string; period: EnpsPeriod; leader?: string | null; corretor?: string | null }): Promise<EnpsOverview>;
+  getOverview(params: { tenantId: string; period: EnpsPeriod; leader?: string | null; corretor?: string | null; team?: string | null }): Promise<EnpsOverview>;
   getResponderContext(cycleId: string): Promise<EnpsResponderContext>;
   submitResponse(input: EnpsSubmitInput): Promise<{ ok: true }>;
   getPending(): Promise<EnpsPending>;
