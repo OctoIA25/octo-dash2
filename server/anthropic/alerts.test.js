@@ -1,6 +1,6 @@
 // server/anthropic/alerts.test.js
 import { describe, it, expect, vi } from 'vitest';
-import { shouldAlert, resolveOwnerRecipient, buildAlertContent, sendOwnerAlert, markAlerted } from './alerts.js';
+import { shouldAlert, resolveOwnerRecipient, buildAlertContent, sendOwnerAlert, markAlerted, checkAndSendOwnerAlert } from './alerts.js';
 
 const dtoWarning = {
   provider: 'anthropic', status: 'warning',
@@ -88,5 +88,25 @@ describe('markAlerted', () => {
     const sb = fakeSupabaseOwners();
     await markAlerted(sb, 't1', '2026-07-30T12:00:00.000Z');
     expect(sb._updates[0]).toMatchObject({ last_alerted_at: '2026-07-30T12:00:00.000Z' });
+  });
+});
+
+describe('checkAndSendOwnerAlert (composto — usado pelo scheduler e pelas rotas)', () => {
+  it('sem transição → não alerta, sem side effects', async () => {
+    const sb = fakeSupabaseOwners({ user_id: 'u-1' });
+    const r = await checkAndSendOwnerAlert(sb, { dto: dtoWarning, prevState: 'warning', tenantId: 't1', processEnv: {} });
+    expect(r).toEqual({ alerted: false });
+    expect(sb._inserted).toBeUndefined();
+    expect(sb._updates).toEqual([]);
+  });
+
+  it('transição normal→warning → alerta enviado (notification + last_alerted_at)', async () => {
+    const sb = fakeSupabaseOwners({ user_id: 'u-1' });
+    // processEnv: {} → sem SMTP_HOST → transporte simulado (não dispara e-mail de verdade)
+    // e sem ANTHROPIC_ALERT_EMAIL → cai no e-mail default do owner.
+    const r = await checkAndSendOwnerAlert(sb, { dto: dtoWarning, prevState: 'normal', tenantId: 't1', processEnv: {} });
+    expect(r).toEqual({ alerted: true });
+    expect(sb._inserted).toMatchObject({ tenant_id: 't1', user_id: 'u-1', type: 'warning' });
+    expect(sb._updates.at(-1)).toHaveProperty('last_alerted_at');
   });
 });

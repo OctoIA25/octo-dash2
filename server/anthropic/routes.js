@@ -5,9 +5,9 @@
  * A API key nunca volta ao frontend (só maskedKey / hasKey).
  */
 import { createAnthropicConfigResolver } from './configResolver.js';
-import { createAnthropicService } from './service.js';
+import { createAnthropicService, weekWindow } from './service.js';
 import { fetchCostReport, AnthropicApiError } from './client.js';
-import { weekWindow } from './service.js';
+import { checkAndSendOwnerAlert } from './alerts.js';
 
 const PLATFORM_OWNER_EMAIL = 'octo.inteligenciaimobiliaria@gmail.com';
 const isPlatformOwner = (email) => (email || '').toLowerCase() === PLATFORM_OWNER_EMAIL;
@@ -49,6 +49,19 @@ function makeRequireOwnerOrTenantAdmin(supabase) {
   };
 }
 
+/** last_state ANTES do recálculo manual — mesmo padrão best-effort do scheduler. */
+async function readPrevState(supabase, tenantId) {
+  try {
+    const { data, error } = await supabase
+      .from('tenant_anthropic_config').select('last_state').eq('tenant_id', tenantId).maybeSingle();
+    if (error) { console.warn(`[anthropic] readPrevState (rota) falhou tenant=${tenantId}: ${error.message}`); return null; }
+    return data?.last_state ?? null;
+  } catch (err) {
+    console.warn(`[anthropic] readPrevState (rota) falhou tenant=${tenantId}: ${err?.message}`);
+    return null;
+  }
+}
+
 function maskKey(apiKey) {
   if (!apiKey) return null;
   const tail = String(apiKey).slice(-4);
@@ -63,18 +76,14 @@ export function registerAnthropicRoutes(app, supabase, options = {}) {
   const clientImpl = options.clientImpl || fetchCostReport;
 
   app.post('/api/v1/anthropic/config', requireManager, async (req, res) => {
-    const { tenantId, apiKey, weeklyLimitUsd, alertThresholdBps } = req.body || {};
+    const { tenantId, apiKey, alertThresholdBps } = req.body || {};
     if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId obrigatório' });
-    if (weeklyLimitUsd !== undefined && weeklyLimitUsd !== null) {
-      const n = Number(weeklyLimitUsd);
-      if (!Number.isFinite(n) || n <= 0) return res.status(400).json({ ok: false, error: 'weeklyLimitUsd inválido' });
-    }
     if (alertThresholdBps !== undefined && alertThresholdBps !== null) {
       if (!Number.isInteger(alertThresholdBps) || alertThresholdBps < 1 || alertThresholdBps > 10000) {
         return res.status(400).json({ ok: false, error: 'alertThresholdBps inválido (inteiro 1..10000)' });
       }
     }
-    const saved = await resolver.saveConfig(tenantId, { apiKey, weeklyLimitUsd, alertThresholdBps });
+    const saved = await resolver.saveConfig(tenantId, { apiKey, alertThresholdBps });
     if (!saved.ok) return res.status(400).json(saved);
     res.status(200).json({ ok: true });
   });
@@ -114,14 +123,18 @@ export function registerAnthropicRoutes(app, supabase, options = {}) {
   app.post('/api/v1/anthropic/usage', requireOwner, async (req, res) => {
     const { tenantId } = req.body || {};
     if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId obrigatório' });
+    const prevState = await readPrevState(supabase, tenantId);
     const usage = await service.getWeeklyUsage(tenantId);
+    await checkAndSendOwnerAlert(supabase, { dto: usage, prevState, tenantId });
     res.status(200).json({ ok: true, usage });
   });
 
   app.post('/api/v1/anthropic/refresh', requireManager, async (req, res) => {
     const { tenantId } = req.body || {};
     if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId obrigatório' });
-    await service.getWeeklyUsage(tenantId);
+    const prevState = await readPrevState(supabase, tenantId);
+    const dto = await service.getWeeklyUsage(tenantId);
+    await checkAndSendOwnerAlert(supabase, { dto, prevState, tenantId });
     res.status(200).json({ ok: true });
   });
 }

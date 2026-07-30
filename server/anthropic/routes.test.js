@@ -144,6 +144,47 @@ describe('POST /api/v1/anthropic/config — alertThresholdBps', () => {
   });
 });
 
+describe('POST /api/v1/anthropic/usage — recálculo manual dispara alerta na transição', () => {
+  // Fake dedicado (não o fakeSupabase compartilhado): precisa servir auth +
+  // tenant_anthropic_config (prev/markAlerted) + platform_owners + notifications.
+  function fakeSupabaseWithAlertPath({ prevState }) {
+    const api = {
+      _inserted: undefined,
+      _lastAlertedAt: undefined,
+      auth: { getUser: async (token) => (token === 'owner_tok' ? { data: { user: { id: 'o', email: OWNER } }, error: null } : { data: { user: null }, error: 'x' }) },
+      from(table) { api._table = table; return api; },
+      select() { return api; },
+      eq(col, val) { api._col = col; api._val = val; return api; },
+      async maybeSingle() {
+        if (api._table === 'tenant_anthropic_config') return { data: { last_state: prevState }, error: null };
+        if (api._table === 'platform_owners') return { data: { user_id: 'owner-user-1' }, error: null };
+        return { data: null, error: null };
+      },
+      insert(payload) { api._inserted = payload; return { select: () => ({ single: async () => ({ data: { id: 'n1' }, error: null }) }) }; },
+      update(payload) { if (api._table === 'tenant_anthropic_config' && 'last_alerted_at' in payload) api._lastAlertedAt = payload.last_alerted_at; return api; },
+      then(resolve) { resolve({ error: null }); }, // resolve update(...).eq(...) como promise
+    };
+    return api;
+  }
+
+  it('DTO warning + prev normal → alerta enviado (notification inserida) mesmo fora do scheduler', async () => {
+    const prevSmtp = process.env.SMTP_HOST;
+    delete process.env.SMTP_HOST; // força transporte simulado (sem rede real no teste)
+    try {
+      const app = fakeApp();
+      const supabase = fakeSupabaseWithAlertPath({ prevState: 'normal' });
+      const warningService = { getWeeklyUsage: async () => ({ ...dtoStub, status: 'warning', usage: { ...dtoStub.usage, percentage: 90 } }) };
+      registerAnthropicRoutes(app, supabase, { resolver: fakeResolver, service: warningService });
+      const res = await run(app.routes['POST /api/v1/anthropic/usage'], { headers: { authorization: 'Bearer owner_tok' }, body: { tenantId: 't1' } });
+      expect(res.statusCode).toBe(200);
+      expect(supabase._inserted).toMatchObject({ tenant_id: 't1', user_id: 'owner-user-1', type: 'warning' });
+      expect(supabase._lastAlertedAt).toEqual(expect.any(String));
+    } finally {
+      if (prevSmtp === undefined) delete process.env.SMTP_HOST; else process.env.SMTP_HOST = prevSmtp;
+    }
+  });
+});
+
 describe('POST /api/v1/anthropic/config/get — devolve o limiar', () => {
   it('config inclui alertThresholdBps', async () => {
     const app = fakeApp();

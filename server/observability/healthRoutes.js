@@ -19,6 +19,7 @@ const JOB_LIMITS = {
   kenlo_sync: 15 * 60 * 1000,
   outbox_worker: 5 * 60 * 1000,
   recommendation_scheduler: 2 * 60 * 60 * 1000,
+  anthropic_usage: 2 * 60 * 60 * 1000,
 };
 
 export function registerHealthRoutes(app, supabase) {

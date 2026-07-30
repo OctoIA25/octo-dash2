@@ -12,6 +12,9 @@
  * tenant; o E-MAIL é o canal garantido.
  */
 
+import { loadAnthropicEnv } from './config.js';
+import { createEmailTransport, fromAddressFromEnv } from '../recommendations/emailTransport.js';
+
 const CONFIG_TABLE = 'tenant_anthropic_config';
 
 /** Dispara só na transição para warning (permanecer em warning não re-alerta). */
@@ -94,4 +97,25 @@ export async function sendOwnerAlert(supabase, { dto, tenantId, recipient, trans
 /** Auditoria: quando o último aviso foi enviado (nenhuma lógica lê). */
 export async function markAlerted(supabase, tenantId, atIso) {
   await supabase.from(CONFIG_TABLE).update({ last_alerted_at: atIso }).eq('tenant_id', tenantId);
+}
+
+/**
+ * Checa a transição e dispara o aviso (email+sino) quando ela ocorre.
+ * Best-effort: nunca lança. Compartilhado entre scheduler e rotas de recálculo
+ * manual (/usage, /refresh) para nenhum caminho de recálculo engolir a transição.
+ * Cria transporte por chamada — transições são raras; custo desprezível.
+ */
+export async function checkAndSendOwnerAlert(supabase, { dto, prevState, tenantId, processEnv = process.env }) {
+  if (!shouldAlert(dto, prevState)) return { alerted: false };
+  try {
+    const env = loadAnthropicEnv(processEnv);
+    const transport = await createEmailTransport({ processEnv });
+    const recipient = await resolveOwnerRecipient(supabase, env.alertEmail);
+    await sendOwnerAlert(supabase, { dto, tenantId, recipient, transport, from: fromAddressFromEnv(processEnv) });
+    await markAlerted(supabase, tenantId, new Date().toISOString());
+    return { alerted: true };
+  } catch (err) {
+    console.warn(`[anthropic] checkAndSendOwnerAlert falhou tenant=${tenantId}: ${err?.message}`);
+    return { alerted: false };
+  }
 }

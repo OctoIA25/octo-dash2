@@ -7,8 +7,7 @@
 import { loadAnthropicEnv } from './config.js';
 import { createAnthropicService } from './service.js';
 import { recordHeartbeat } from '../observability/heartbeat.js';
-import { shouldAlert, resolveOwnerRecipient, sendOwnerAlert, markAlerted } from './alerts.js';
-import { createEmailTransport, fromAddressFromEnv } from '../recommendations/emailTransport.js';
+import { checkAndSendOwnerAlert } from './alerts.js';
 
 const CONFIG_TABLE = 'tenant_anthropic_config';
 
@@ -37,37 +36,24 @@ async function defaultReadPrevState(supabase, tenantId) {
 
 export function makeAnthropicRunner(supabase, options = {}) {
   const processEnv = options.processEnv || process.env;
-  const env = loadAnthropicEnv(processEnv);
   const service = options.service || createAnthropicService({ supabase, processEnv });
   const listConfiguredTenants = options.listConfiguredTenants || (() => defaultListConfiguredTenants(supabase));
   const readPrevState = options.readPrevState || ((tenantId) => defaultReadPrevState(supabase, tenantId));
   const recordHeartbeatImpl = options.recordHeartbeatImpl || ((name, opts) => recordHeartbeat(supabase, name, opts));
-  const alerts = options.alertsImpl || { resolveOwnerRecipient, sendOwnerAlert, markAlerted, createTransport: () => createEmailTransport({ processEnv }) };
+  const alerts = options.alertsImpl || { checkAndSendOwnerAlert };
 
   async function runAll() {
     const start = Date.now();
     const tenants = await listConfiguredTenants();
     let errors = 0;
     let alertsSent = 0;
-    let transport = null;   // lazy: só cria se algum alerta disparar
-    let recipient = null;
 
     for (const tenantId of tenants) {
       try {
         const prevState = await readPrevState(tenantId);
         const dto = await service.getWeeklyUsage(tenantId);
-        // shouldAlert é pura (sem I/O) — chamada direto, sem passar pelo DI de alerts.
-        if (shouldAlert(dto, prevState)) {
-          try {
-            if (!transport) transport = await alerts.createTransport();
-            if (!recipient) recipient = await alerts.resolveOwnerRecipient(supabase, env.alertEmail);
-            await alerts.sendOwnerAlert(supabase, { dto, tenantId, recipient, transport, from: fromAddressFromEnv(processEnv) });
-            await alerts.markAlerted(supabase, tenantId, new Date().toISOString());
-            alertsSent += 1;
-          } catch (err) {
-            console.warn(`[anthropic] alerta falhou tenant=${tenantId}: ${err?.message}`);
-          }
-        }
+        const r = await alerts.checkAndSendOwnerAlert(supabase, { dto, prevState, tenantId, processEnv });
+        if (r.alerted) alertsSent += 1;
       } catch (err) {
         errors += 1;
         console.error(`[anthropic] runAll tenant=${tenantId} falhou: ${err?.message}`);

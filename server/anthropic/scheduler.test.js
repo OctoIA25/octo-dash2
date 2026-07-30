@@ -50,17 +50,12 @@ describe('makeAnthropicRunner.runAll', () => {
 describe('runAll — alerta na transição p/ warning', () => {
   const dtoW = { status: 'warning', window: { startsAt: 'w1', endsAt: 'w2' }, usage: { current: 76, limit: 500, percentage: 15.2 }, fetchedAt: 'f1' };
 
-  function alertSpies() {
-    return {
-      resolveOwnerRecipient: vi.fn().mockResolvedValue({ email: 'o@x.com', userId: 'u1' }),
-      sendOwnerAlert: vi.fn().mockResolvedValue({ emailOk: true, bellOk: true }),
-      markAlerted: vi.fn().mockResolvedValue(undefined),
-      createTransport: vi.fn().mockResolvedValue({ send: vi.fn() }),
-    };
+  function alertSpies(checkImpl) {
+    return { checkAndSendOwnerAlert: vi.fn(checkImpl) };
   }
 
-  it('prev normal + novo warning → 1 alerta + markAlerted', async () => {
-    const spies = alertSpies();
+  it('prev normal + novo warning → 1 alerta, helper chamado com dto/prevState/tenantId', async () => {
+    const spies = alertSpies(async () => ({ alerted: true }));
     const runner = makeAnthropicRunner({}, {
       listConfiguredTenants: async () => ['t1'],
       readPrevState: async () => 'normal',
@@ -71,12 +66,13 @@ describe('runAll — alerta na transição p/ warning', () => {
     });
     const r = await runner.runAll();
     expect(r.alerts).toBe(1);
-    expect(spies.sendOwnerAlert).toHaveBeenCalledOnce();
-    expect(spies.markAlerted).toHaveBeenCalledWith(expect.anything(), 't1', expect.any(String));
+    expect(spies.checkAndSendOwnerAlert).toHaveBeenCalledOnce();
+    const [, args] = spies.checkAndSendOwnerAlert.mock.calls[0];
+    expect(args).toMatchObject({ dto: dtoW, prevState: 'normal', tenantId: 't1' });
   });
 
   it('prev warning + novo warning → 0 alertas (dedup)', async () => {
-    const spies = alertSpies();
+    const spies = alertSpies(async () => ({ alerted: false }));
     const runner = makeAnthropicRunner({}, {
       listConfiguredTenants: async () => ['t1'],
       readPrevState: async () => 'warning',
@@ -86,12 +82,10 @@ describe('runAll — alerta na transição p/ warning', () => {
     });
     const r = await runner.runAll();
     expect(r.alerts).toBe(0);
-    expect(spies.sendOwnerAlert).not.toHaveBeenCalled();
   });
 
   it('falha no envio do alerta não derruba o tick nem os demais tenants', async () => {
-    const spies = alertSpies();
-    spies.sendOwnerAlert.mockRejectedValue(new Error('boom'));
+    const spies = alertSpies(async () => { throw new Error('boom'); });
     const runner = makeAnthropicRunner({}, {
       listConfiguredTenants: async () => ['t1', 't2'],
       readPrevState: async () => 'normal',

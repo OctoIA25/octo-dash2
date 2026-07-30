@@ -60,6 +60,7 @@ describe('GET /api/v1/health/jobs', () => {
       { job_name: 'kenlo_sync', last_run_at: iso(NOW - 1000), last_result: { ok: true } },
       { job_name: 'outbox_worker', last_run_at: iso(NOW - 1000), last_result: { ok: true } },
       { job_name: 'recommendation_scheduler', last_run_at: iso(NOW - 1000), last_result: { ok: true } },
+      { job_name: 'anthropic_usage', last_run_at: iso(NOW - 1000), last_result: { ok: true } },
     ];
     registerHealthRoutes(app, makeSupabase({ rows }));
     const res = await run(app.routes['GET /api/v1/health/jobs'], makeReq('segredo'));
