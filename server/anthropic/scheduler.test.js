@@ -1,5 +1,5 @@
 // server/anthropic/scheduler.test.js
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { makeAnthropicRunner } from './scheduler.js';
 import { loadAnthropicEnv } from './config.js';
 
@@ -44,5 +44,62 @@ describe('makeAnthropicRunner.runAll', () => {
     expect(called).toEqual(['t1', 't2']);
     expect(r.processed).toBe(2);
     expect(r.errors).toBe(1);
+  });
+});
+
+describe('runAll — alerta na transição p/ warning', () => {
+  const dtoW = { status: 'warning', window: { startsAt: 'w1', endsAt: 'w2' }, usage: { current: 76, limit: 500, percentage: 15.2 }, fetchedAt: 'f1' };
+
+  function alertSpies() {
+    return {
+      resolveOwnerRecipient: vi.fn().mockResolvedValue({ email: 'o@x.com', userId: 'u1' }),
+      sendOwnerAlert: vi.fn().mockResolvedValue({ emailOk: true, bellOk: true }),
+      markAlerted: vi.fn().mockResolvedValue(undefined),
+      createTransport: vi.fn().mockResolvedValue({ send: vi.fn() }),
+    };
+  }
+
+  it('prev normal + novo warning → 1 alerta + markAlerted', async () => {
+    const spies = alertSpies();
+    const runner = makeAnthropicRunner({}, {
+      listConfiguredTenants: async () => ['t1'],
+      readPrevState: async () => 'normal',
+      service: { getWeeklyUsage: async () => dtoW },
+      recordHeartbeatImpl: async () => {},
+      alertsImpl: spies,
+      processEnv: { ANTHROPIC_WEEKLY_BUDGET_USD: '500' },
+    });
+    const r = await runner.runAll();
+    expect(r.alerts).toBe(1);
+    expect(spies.sendOwnerAlert).toHaveBeenCalledOnce();
+    expect(spies.markAlerted).toHaveBeenCalledWith(expect.anything(), 't1', expect.any(String));
+  });
+
+  it('prev warning + novo warning → 0 alertas (dedup)', async () => {
+    const spies = alertSpies();
+    const runner = makeAnthropicRunner({}, {
+      listConfiguredTenants: async () => ['t1'],
+      readPrevState: async () => 'warning',
+      service: { getWeeklyUsage: async () => dtoW },
+      recordHeartbeatImpl: async () => {},
+      alertsImpl: spies,
+    });
+    const r = await runner.runAll();
+    expect(r.alerts).toBe(0);
+    expect(spies.sendOwnerAlert).not.toHaveBeenCalled();
+  });
+
+  it('falha no envio do alerta não derruba o tick nem os demais tenants', async () => {
+    const spies = alertSpies();
+    spies.sendOwnerAlert.mockRejectedValue(new Error('boom'));
+    const runner = makeAnthropicRunner({}, {
+      listConfiguredTenants: async () => ['t1', 't2'],
+      readPrevState: async () => 'normal',
+      service: { getWeeklyUsage: async () => dtoW },
+      recordHeartbeatImpl: async () => {},
+      alertsImpl: spies,
+    });
+    const r = await runner.runAll();
+    expect(r.processed).toBe(2);
   });
 });
