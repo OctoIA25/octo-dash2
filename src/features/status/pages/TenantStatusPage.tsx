@@ -185,6 +185,59 @@ function IaLiaCard({ available, provider, model, lia }: {
   );
 }
 
+function AnthropicUsageCard({ a }: { a: {
+  available: boolean; status: string; percentage: number | null;
+  usage_usd: number | null; limit_usd: number | null;
+  window_start: string | null; window_end: string | null;
+  last_error: string | null; last_synced_at: string | null;
+} }) {
+  const usd = (n: number | null) => (n == null ? '—' : `US$ ${n.toFixed(2)}`);
+  const day = (s: string | null) => (s ? s.slice(5, 10).split('-').reverse().join('/') : '—'); // MM-DD → DD/MM
+  const hasData = a.status === 'normal' || a.status === 'warning';
+  const warn = a.status === 'warning';
+  const naText: Record<string, string> = {
+    not_configured: 'API não configurada',
+    insufficient_data: 'Dados indisponíveis',
+    error: `Erro na integração${a.last_error ? ` (${a.last_error})` : ''}`,
+  };
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+        <CardTitle className="text-base font-semibold text-slate-900">Anthropic — Uso semanal</CardTitle>
+        {warn && <span className="text-xs font-medium text-amber-600">⚠ Atenção</span>}
+      </CardHeader>
+      <CardContent className="pt-0">
+        {hasData ? (
+          <>
+            <div className={`text-2xl font-semibold tabular-nums ${warn ? 'text-amber-600' : 'text-slate-900'}`}>
+              {a.percentage != null ? `${a.percentage.toFixed(2).replace('.', ',')}%` : '—'}
+            </div>
+            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+              <div
+                className={`h-full rounded-full ${warn ? 'bg-amber-500' : 'bg-slate-400'}`}
+                style={{ width: `${Math.min(100, Math.max(0, a.percentage ?? 0))}%` }}
+              />
+            </div>
+            <div className="mt-3 space-y-1">
+              <Field label="Limite" value={usd(a.limit_usd)} />
+              <Field label="Atual" value={usd(a.usage_usd)} />
+              <Field label="Janela" value={`${day(a.window_start)} → ${day(a.window_end)}`} />
+              <Field label="Status" value={warn ? 'Atenção — alerta disparado' : 'Normal'} />
+              <Field label="Atualizado" value={a.last_synced_at?.slice(0, 16).replace('T', ' ')} />
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="text-2xl font-semibold text-slate-400">N/A</div>
+            <div className="mt-1 text-sm text-slate-500">{naText[a.status] || 'Indisponível'}</div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function TenantStatusPage() {
   const [tenants, setTenants] = useState<OwnerTenant[]>([]);
   const [tenantId, setTenantId] = useState<string>(() => localStorage.getItem(SELECTED_KEY) || '');
@@ -300,6 +353,8 @@ export default function TenantStatusPage() {
             model={data.tenant.ia.model}
             lia={data.tenant.ia.lia}
           />
+
+          <AnthropicUsageCard a={data.tenant.anthropic} />
 
           {/* Plataforma (global — não é deste tenant) */}
           <Card className="sm:col-span-2 lg:col-span-3">

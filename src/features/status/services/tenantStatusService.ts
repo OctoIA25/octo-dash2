@@ -83,6 +83,17 @@ export interface TenantStatus {
     webhooks: WebhooksCard;
     whatsapp: WhatsappCard;
     ia: IaCard;
+    anthropic: {
+      available: boolean;
+      status: 'normal' | 'warning' | 'not_configured' | 'insufficient_data' | 'error';
+      percentage: number | null;
+      usage_usd: number | null;
+      limit_usd: number | null;
+      window_start: string | null;
+      window_end: string | null;
+      last_error: string | null;
+      last_synced_at: string | null;
+    };
   };
   platform: {
     jobs: Record<string, JobStatus> & { available?: boolean };
