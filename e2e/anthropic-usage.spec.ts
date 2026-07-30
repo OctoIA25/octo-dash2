@@ -7,6 +7,12 @@ import { createClient } from '@supabase/supabase-js';
  * PRÉ-CONDIÇÕES (gate manual — ver plano):
  *  - app rodando (`npm run dev`: Vite 8080 + Express 3001);
  *  - migration `20260729_create_tenant_anthropic_config` aplicada no Supabase;
+ *  - migration `20260730_anthropic_fase2_threshold_alert` aplicada no Supabase
+ *    (adiciona `alert_threshold_bps`/`last_alerted_at` — sem ela o teste do
+ *    campo "Avisar quando passar de (%)" falha ao salvar/persistir);
+ *  - env `ANTHROPIC_WEEKLY_BUDGET_USD` setado no processo do servidor (é o
+ *    teto semanal GLOBAL, denominador do %; sem ele o card cai em
+ *    `insufficient_data` mesmo com key configurada — ver server/anthropic/usage.js);
  *  - snapshot semeado em `tenant_anthropic_config` para o tenant de teste (via
  *    seedAnthropicSnapshot abaixo — precisa de SUPABASE_SERVICE_ROLE_KEY, RLS
  *    sem policies bloqueia anon/authenticated nessa tabela);
@@ -51,9 +57,44 @@ async function gotoTenantStatus(page: Page, tenantId: string) {
 }
 
 /**
+ * Leva o owner à aba Integrações (`/configuracoes`, tab default e explícita
+ * `?tab=integrations` — ver src/features/settings/pages/IntegracoesPage.tsx)
+ * DENTRO do tenant de teste, não no console `/owner/*`.
+ *
+ * `/configuracoes` é uma rota do `DashboardLayout` (tenant-scoped); o owner só
+ * cai nele impersonando um tenant. A UI de impersonation é um botão "abrir"
+ * na lista de tenants do OwnerDashboard (`openTenant` em
+ * src/components/OwnerDashboard.tsx) que grava `localStorage['owner-impersonation']
+ * = {tenantId, tenantCode, tenantName}` e recarrega — replicamos isso direto
+ * (mesmo contrato lido em src/hooks/useAuth.ts) em vez de depender do texto/
+ * posição exata desse botão, que não faz parte do fluxo sob teste aqui.
+ */
+async function gotoIntegracoes(page: Page, tenantId: string) {
+  await page.evaluate(
+    ({ tenantId, tenantCode }) => {
+      localStorage.setItem(
+        'owner-impersonation',
+        JSON.stringify({ tenantId, tenantCode, tenantName: tenantCode }),
+      );
+    },
+    { tenantId, tenantCode: process.env.E2E_TENANT ?? tenantId },
+  );
+  await page.goto('/configuracoes?tab=integrations');
+  await page.waitForLoadState('networkidle');
+}
+
+/**
  * Semeia diretamente `tenant_anthropic_config` (bypassa a Anthropic real).
- * Espelha as colunas de server/anthropic/service.js::persistSnapshot e da
- * migration 20260729_create_tenant_anthropic_config.
+ * Espelha as colunas de server/anthropic/service.js::persistSnapshot e das
+ * migrations 20260729_create_tenant_anthropic_config (Fase 1) e
+ * 20260730_anthropic_fase2_threshold_alert (Fase 2: alert_threshold_bps).
+ *
+ * `alert_threshold_bps` e `last_state` têm default que preserva o comportamento
+ * da Fase 1: default 1430 (14,30%, mesmo default da migration/coluna) e
+ * `last_state` espelhando o `status` semeado (é o que o scheduler grava —
+ * ver server/anthropic/service.js::persistSnapshot). Os 6 testes da Fase 1
+ * não passam esses campos, então continuam exercitando exatamente os mesmos
+ * valores de antes.
  *
  * Requer SUPABASE_SERVICE_ROLE_KEY (a tabela tem RLS ligado SEM policies —
  * só service_role enxerga, igual tenant_contact2sale_config).
@@ -68,6 +109,7 @@ async function seedAnthropicSnapshot(
     weekly_limit_usd?: number | null;
     last_window_start?: string | null;
     last_window_end?: string | null;
+    alert_threshold_bps?: number;
   },
 ) {
   const url = process.env.VITE_SUPABASE_URL;
@@ -88,6 +130,7 @@ async function seedAnthropicSnapshot(
       weekly_limit_usd: snapshot.weekly_limit_usd ?? null,
       last_window_start: snapshot.last_window_start ?? null,
       last_window_end: snapshot.last_window_end ?? null,
+      alert_threshold_bps: snapshot.alert_threshold_bps ?? 1430,
       last_synced_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     },
@@ -181,6 +224,51 @@ test.describe('Anthropic — uso semanal (Status do Tenant)', () => {
     await expect(card).toContainText('API não configurada');
     // Regressão: sem key/limite deve ler "N/A", NUNCA "0%" (falso positivo de uso zero).
     await expect(card).not.toContainText('0%');
+  });
+});
+
+test.describe('Anthropic — limiar de alerta (aba Integrações, Fase 2)', () => {
+  // Este bloco cobre o CAMPO persistido (config/get round-trip), não o disparo
+  // do alerta em si. O disparo real (sino+email — server/anthropic/alerts.js,
+  // acionado na transição normal→warning pelo scheduler) não é assertável
+  // aqui sem SMTP/infra de e-mail e sem esperar um tick real do scheduler.
+  // Os efeitos observáveis que ESTE spec assert:
+  //  (a) o limiar em % fica persistido e sobrevive a reload (este teste);
+  //  (b) o card de atenção aparece quando o snapshot está em `warning`
+  //      (já coberto pelos testes da Fase 1 acima, ex. "≥ 14,30% mostra
+  //      estado de atenção" — o limiar configurável só muda O NÚMERO que
+  //      dispara esse mesmo estado, não o estado em si).
+  test('salva e persiste o limiar de aviso em % (round-trip via config/get)', async ({ page }) => {
+    // Sem key configurada o card mostraria "Desconectado", mas o campo do
+    // limiar é editável independente disso — não precisa semear uma key real
+    // aqui (o teste é sobre o campo, não sobre o status "Conectado").
+    await loginAsOwner(page);
+    await gotoIntegracoes(page, TEST_TENANT_ID);
+
+    // O card não linka <label htmlFor> ao <input> (getByLabel não resolve),
+    // então escopamos pelo título do card e usamos o placeholder do campo
+    // ("Ex: 14,30") — mesmo padrão de resiliência dos outros testes deste
+    // arquivo (getByText(...).locator('..').locator('..')).
+    const card = page.getByText('Anthropic (Claude)').locator('..').locator('..');
+    await expect(card.getByText('Avisar quando passar de (%)')).toBeVisible();
+
+    const thresholdInput = card.getByPlaceholder('Ex: 14,30');
+    await thresholdInput.fill('50,00');
+    await card.getByRole('button', { name: /^salvar$/i }).click();
+
+    // "Salvar" reidrata o campo com o que voltou de config/get (ver
+    // handleAnthropicSave em IntegracoesPage.tsx) — se o servidor persistiu
+    // errado ou não persistiu, o valor mostrado aqui já seria outro.
+    await expect(thresholdInput).toHaveValue('50,00');
+
+    // Reload força uma leitura NOVA (fetchAnthropicConfig no useEffect de
+    // montagem), não o estado em memória do save acima — é o que garante que
+    // o valor está no banco (alert_threshold_bps), não só no state do React.
+    await page.reload();
+    await page.waitForLoadState('networkidle');
+
+    const cardAfterReload = page.getByText('Anthropic (Claude)').locator('..').locator('..');
+    await expect(cardAfterReload.getByPlaceholder('Ex: 14,30')).toHaveValue('50,00');
   });
 });
 
