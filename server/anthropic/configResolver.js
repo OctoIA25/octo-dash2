@@ -32,18 +32,21 @@ export function createAnthropicConfigResolver({ supabase, processEnv = process.e
       weeklyLimitUsd: data.weekly_limit_usd == null ? null : Number(data.weekly_limit_usd),
       status: data.status,
       lastSyncedAt: data.last_synced_at ?? null,
+      alertThresholdBps: data.alert_threshold_bps == null ? 1430 : Number(data.alert_threshold_bps),
+      lastAlertedAt: data.last_alerted_at ?? null,
     };
     cache.set(tenantId, { value: resolved, cachedAt: now() });
     return resolved;
   }
 
-  async function saveConfig(tenantId, { apiKey, weeklyLimitUsd, status } = {}) {
+  async function saveConfig(tenantId, { apiKey, weeklyLimitUsd, status, alertThresholdBps } = {}) {
     if (apiKey && !hasEncryptionKey(processEnv)) {
       return { ok: false, error: 'EMAIL_ENCRYPTION_KEY ausente — não é seguro salvar a API key' };
     }
     const payload = { tenant_id: tenantId, updated_at: new Date().toISOString() };
     if (status) payload.status = status;
     if (weeklyLimitUsd !== undefined) payload.weekly_limit_usd = weeklyLimitUsd;
+    if (alertThresholdBps !== undefined) payload.alert_threshold_bps = alertThresholdBps;
     if (apiKey) payload.admin_api_key_encrypted = encryptSecret(apiKey, processEnv);
 
     const { error } = await supabase.from(TABLE).upsert(payload, { onConflict: 'tenant_id' });
