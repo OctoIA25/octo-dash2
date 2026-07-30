@@ -63,13 +63,18 @@ export function registerAnthropicRoutes(app, supabase, options = {}) {
   const clientImpl = options.clientImpl || fetchCostReport;
 
   app.post('/api/v1/anthropic/config', requireManager, async (req, res) => {
-    const { tenantId, apiKey, weeklyLimitUsd } = req.body || {};
+    const { tenantId, apiKey, weeklyLimitUsd, alertThresholdBps } = req.body || {};
     if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId obrigatório' });
     if (weeklyLimitUsd !== undefined && weeklyLimitUsd !== null) {
       const n = Number(weeklyLimitUsd);
       if (!Number.isFinite(n) || n <= 0) return res.status(400).json({ ok: false, error: 'weeklyLimitUsd inválido' });
     }
-    const saved = await resolver.saveConfig(tenantId, { apiKey, weeklyLimitUsd });
+    if (alertThresholdBps !== undefined && alertThresholdBps !== null) {
+      if (!Number.isInteger(alertThresholdBps) || alertThresholdBps < 1 || alertThresholdBps > 10000) {
+        return res.status(400).json({ ok: false, error: 'alertThresholdBps inválido (inteiro 1..10000)' });
+      }
+    }
+    const saved = await resolver.saveConfig(tenantId, { apiKey, weeklyLimitUsd, alertThresholdBps });
     if (!saved.ok) return res.status(400).json(saved);
     res.status(200).json({ ok: true });
   });
@@ -86,6 +91,7 @@ export function registerAnthropicRoutes(app, supabase, options = {}) {
         hasKey: Boolean(cfg.apiKey), maskedKey: maskKey(cfg.apiKey),
         weeklyLimitUsd: cfg.weeklyLimitUsd ?? null,
         lastSyncedAt: cfg.lastSyncedAt ?? null,
+        alertThresholdBps: cfg.alertThresholdBps ?? 1430,
       },
     });
   });

@@ -37,7 +37,13 @@ function fakeSupabase({ users = {}, memberships = {} } = {}) {
 
 const dtoStub = { status: 'normal', usage: { current: 64.2, limit: 500, percentage: 12.84 }, window: { startsAt: 'a', endsAt: 'b' }, fetchedAt: 'z', provider: 'anthropic' };
 const fakeService = { getWeeklyUsage: async () => dtoStub };
-const fakeResolver = { resolveConfig: async () => ({ tenantId: 't1', apiKey: 'sk-ant-admin01-abcd', weeklyLimitUsd: 500, status: 'normal', lastSyncedAt: '2026-07-29T12:00:00Z' }), saveConfig: async () => ({ ok: true }), invalidate() {} };
+
+const savedCalls = [];
+const fakeResolver = {
+  resolveConfig: async () => ({ tenantId: 't1', apiKey: 'sk-ant-admin01-abcd', weeklyLimitUsd: 500, status: 'normal', lastSyncedAt: null, alertThresholdBps: 1430 }),
+  saveConfig: async (tenantId, input) => { savedCalls.push({ tenantId, input }); return { ok: true }; },
+  invalidate() {},
+};
 
 describe('POST /api/v1/anthropic/usage (owner-only)', () => {
   it('Owner → 200 com DTO', async () => {
@@ -95,7 +101,7 @@ describe('POST /api/v1/anthropic/config/get (owner|gestor)', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body.config.hasKey).toBe(true);
     expect(res.body.config.maskedKey).toBe('••••abcd');
-    expect(res.body.config.lastSyncedAt).toBe('2026-07-29T12:00:00Z');
+    expect(res.body.config.lastSyncedAt).toBe(null);
     expect(JSON.stringify(res.body)).not.toContain('sk-ant-admin01-abcd');
   });
 
@@ -108,5 +114,46 @@ describe('POST /api/v1/anthropic/config/get (owner|gestor)', () => {
     registerAnthropicRoutes(app, supabase, { resolver: fakeResolver, service: fakeService });
     const res = await run(app.routes['POST /api/v1/anthropic/config/get'], { headers: { authorization: 'Bearer corretor_tok' }, body: { tenantId: 't1' } });
     expect(res.statusCode).toBe(403);
+  });
+});
+
+describe('POST /api/v1/anthropic/config — alertThresholdBps', () => {
+  it('aceita e repassa alertThresholdBps ao resolver', async () => {
+    const app = fakeApp();
+    const supabase = fakeSupabase({
+      users: { gestor_tok: { id: 'g', email: 'g@x.com' } },
+      memberships: { 't1:g': 'admin' },
+    });
+    registerAnthropicRoutes(app, supabase, { resolver: fakeResolver, service: fakeService });
+    savedCalls.length = 0; // clear
+    const res = await run(app.routes['POST /api/v1/anthropic/config'],
+      { headers: { authorization: 'Bearer gestor_tok' }, body: { tenantId: 't1', alertThresholdBps: 5000 } });
+    expect(res.statusCode).toBe(200);
+    expect(savedCalls.at(-1).input.alertThresholdBps).toBe(5000);
+  });
+  it.each([[0], [10001], ['abc'], [14.3]])('rejeita alertThresholdBps inválido %s → 400', async (bad) => {
+    const app = fakeApp();
+    const supabase = fakeSupabase({
+      users: { gestor_tok: { id: 'g', email: 'g@x.com' } },
+      memberships: { 't1:g': 'admin' },
+    });
+    registerAnthropicRoutes(app, supabase, { resolver: fakeResolver, service: fakeService });
+    const res = await run(app.routes['POST /api/v1/anthropic/config'],
+      { headers: { authorization: 'Bearer gestor_tok' }, body: { tenantId: 't1', alertThresholdBps: bad } });
+    expect(res.statusCode).toBe(400);
+  });
+});
+
+describe('POST /api/v1/anthropic/config/get — devolve o limiar', () => {
+  it('config inclui alertThresholdBps', async () => {
+    const app = fakeApp();
+    const supabase = fakeSupabase({
+      users: { gestor_tok: { id: 'g', email: 'g@x.com' } },
+      memberships: { 't1:g': 'admin' },
+    });
+    registerAnthropicRoutes(app, supabase, { resolver: fakeResolver, service: fakeService });
+    const res = await run(app.routes['POST /api/v1/anthropic/config/get'],
+      { headers: { authorization: 'Bearer gestor_tok' }, body: { tenantId: 't1' } });
+    expect(res.body.config.alertThresholdBps).toBe(1430);
   });
 });
