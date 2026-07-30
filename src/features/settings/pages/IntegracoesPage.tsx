@@ -105,6 +105,12 @@ import {
   testContact2SaleConfig,
   type Contact2SaleStatusRow,
 } from '@/features/settings/services/contact2saleIntegrationService';
+import {
+  fetchAnthropicConfig,
+  saveAnthropicConfig,
+  testAnthropicConfig,
+  type AnthropicConfigView,
+} from '@/features/settings/services/anthropicIntegrationService';
 import { ApiIntegrationTab } from '@/components/integrations/ApiIntegrationTab';
 import { WhatsAppIntegrationTab } from '@/features/chat/components/WhatsAppIntegrationTab';
 import { KenloSyncStatusCard } from '@/features/settings/components/KenloSyncStatusCard';
@@ -158,6 +164,15 @@ export const IntegracoesPage: React.FC = () => {
   const [c2sSyncing, setC2sSyncing] = useState(false);
   const [c2sSyncStatus, setC2sSyncStatus] = useState<Contact2SaleStatusRow | null>(null);
   const [c2sError, setC2sError] = useState<string | null>(null);
+
+  // Estados Anthropic (uso semanal)
+  const [anthropicCfg, setAnthropicCfg] = useState<AnthropicConfigView | null>(null);
+  const [anthropicKeyInput, setAnthropicKeyInput] = useState(''); // vazio = não altera a key
+  const [anthropicLimit, setAnthropicLimit] = useState('');
+  const [anthropicTesting, setAnthropicTesting] = useState(false);
+  const [anthropicSaving, setAnthropicSaving] = useState(false);
+  const [anthropicTestMsg, setAnthropicTestMsg] = useState<string | null>(null);
+  const [anthropicError, setAnthropicError] = useState<string | null>(null);
 
   // Estados Santa Ângela
   const [saBaseUrl, setSaBaseUrl] = useState('');
@@ -595,6 +610,42 @@ export const IntegracoesPage: React.FC = () => {
     if (!r.ok) { setC2sStatus('erro'); setC2sError(c2sErrorMessage(r.error)); }
     await refreshC2sStatus();
     setC2sSyncing(false);
+  };
+
+  // Handlers Anthropic
+  useEffect(() => {
+    if (!tenantId) return;
+    fetchAnthropicConfig(tenantId).then(({ config }) => {
+      setAnthropicCfg(config);
+      setAnthropicLimit(config?.weeklyLimitUsd != null ? String(config.weeklyLimitUsd) : '');
+    }).catch(() => { /* best-effort */ });
+  }, [tenantId]);
+
+  const handleAnthropicTest = async () => {
+    if (!tenantId) return;
+    setAnthropicTesting(true);
+    setAnthropicTestMsg(null);
+    setAnthropicError(null);
+    const r = await testAnthropicConfig(tenantId, anthropicKeyInput || undefined);
+    setAnthropicTestMsg(r.ok ? '✓ Conexão OK' : `✗ Falhou: ${r.error || 'erro desconhecido'}`);
+    setAnthropicTesting(false);
+  };
+
+  const handleAnthropicSave = async () => {
+    if (!tenantId) return;
+    setAnthropicSaving(true);
+    setAnthropicError(null);
+    const limitNum = anthropicLimit === '' ? undefined : Number(anthropicLimit);
+    const r = await saveAnthropicConfig(tenantId, {
+      ...(anthropicKeyInput ? { apiKey: anthropicKeyInput } : {}),
+      ...(limitNum !== undefined && !Number.isNaN(limitNum) ? { weeklyLimitUsd: limitNum } : {}),
+    });
+    if (!r.ok) setAnthropicError(r.error || 'Não foi possível salvar.');
+    setAnthropicKeyInput('');
+    const { config } = await fetchAnthropicConfig(tenantId);
+    setAnthropicCfg(config);
+    setAnthropicLimit(config?.weeklyLimitUsd != null ? String(config.weeklyLimitUsd) : '');
+    setAnthropicSaving(false);
   };
 
   // Handlers Santa Ângela
@@ -1410,6 +1461,117 @@ export const IntegracoesPage: React.FC = () => {
                     )}
                   </div>
                 </form>
+              </div>
+
+              {/* Card Anthropic (uso semanal) */}
+              <div className={`bg-white dark:bg-slate-900 rounded-xl border-2 p-3 w-full relative transition-all ${
+                anthropicCfg?.status === 'active'
+                  ? 'border-green-200 bg-gradient-to-br from-white to-green-50/30'
+                  : anthropicError
+                  ? 'border-red-200'
+                  : 'border-gray-200 dark:border-slate-800'
+              }`}>
+                <div className={`absolute right-3 top-3 px-2 py-1 rounded-full text-[10px] font-semibold flex items-center gap-1 border ${
+                  anthropicCfg?.status === 'active' ? statusConfig.ativo.color
+                  : anthropicError ? statusConfig.erro.color
+                  : statusConfig.inativo.color
+                }`}>
+                  {anthropicCfg?.status === 'active' ? (
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                  ) : (
+                    <XCircle className="w-3.5 h-3.5" />
+                  )}
+                  {anthropicCfg?.status === 'active' ? 'Conectado' : anthropicError ? 'Erro' : 'Desconectado'}
+                </div>
+
+                <div className="flex flex-col items-center text-center pt-1">
+                  <div className={`w-12 h-12 rounded-lg ring-2 flex items-center justify-center transition-all ${
+                    anthropicCfg?.status === 'active'
+                      ? 'ring-green-200 bg-green-50'
+                      : 'ring-black/5 bg-gray-50 dark:bg-slate-950'
+                  }`}>
+                    <Zap className="w-6 h-6 text-orange-600" />
+                  </div>
+                  <h3 className="font-semibold text-gray-900 dark:text-slate-100 text-sm mt-2">Anthropic (Claude)</h3>
+                  <p className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">API key e limite semanal de uso (USD)</p>
+                </div>
+
+                <div className="mt-4 space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">API Key</label>
+                    <input
+                      type="password"
+                      value={anthropicKeyInput}
+                      onChange={(e) => { setAnthropicKeyInput(e.target.value); setAnthropicTestMsg(null); if (anthropicError) setAnthropicError(null); }}
+                      placeholder={anthropicCfg?.hasKey ? (anthropicCfg.maskedKey || '•••• (já configurada)') : 'sk-ant-...'}
+                      className="w-full px-3 py-2 border border-gray-200 dark:border-slate-800 rounded-lg text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                      disabled={anthropicSaving}
+                    />
+                    {anthropicCfg?.hasKey && !anthropicKeyInput && (
+                      <p className="text-[11px] text-gray-500 dark:text-slate-400 mt-1">
+                        Key atual: {anthropicCfg.maskedKey}. Digite uma nova acima para substituir.
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">Limite semanal (USD)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={anthropicLimit}
+                      onChange={(e) => setAnthropicLimit(e.target.value)}
+                      placeholder="Ex: 50"
+                      className="w-full px-3 py-2 border border-gray-200 dark:border-slate-800 rounded-lg text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                      disabled={anthropicSaving}
+                    />
+                  </div>
+
+                  {anthropicError && (
+                    <div className="p-2 rounded-lg border border-red-100 bg-red-50 text-[11px] text-red-700 flex items-start gap-1.5">
+                      <XCircle className="w-3.5 h-3.5 mt-px shrink-0" />
+                      <span>{anthropicError}</span>
+                    </div>
+                  )}
+
+                  {anthropicTestMsg && (
+                    <div className={`p-2 rounded-lg border text-[11px] ${
+                      anthropicTestMsg.startsWith('✓')
+                        ? 'bg-green-50 border-green-100 text-green-700'
+                        : 'bg-red-50 border-red-100 text-red-700'
+                    }`}>
+                      {anthropicTestMsg}
+                    </div>
+                  )}
+
+                  <div className="pt-1 space-y-2">
+                    <button
+                      type="button"
+                      onClick={handleAnthropicTest}
+                      disabled={anthropicTesting}
+                      className="w-full px-4 py-2 border border-gray-200 dark:border-slate-800 rounded-lg text-sm font-medium bg-white dark:bg-slate-900 hover:bg-gray-50 dark:hover:bg-slate-800/60 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-gray-900 dark:text-slate-100"
+                    >
+                      {anthropicTesting ? 'Testando...' : 'Testar conexão'}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleAnthropicSave}
+                      disabled={anthropicSaving}
+                      className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      {anthropicSaving ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Salvando...
+                        </>
+                      ) : (
+                        'Salvar'
+                      )}
+                    </button>
+                  </div>
+                </div>
               </div>
 
               {/* Card Santa Ângela */}
