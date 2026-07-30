@@ -4764,10 +4764,21 @@ const c2sApiClient = createC2sApiClient({ resolver: c2sResolver });
 const c2sRunner = makeC2sRunner(supabase, { resolver: c2sResolver, apiClient: c2sApiClient });
 registerContact2SaleRoutes(app, supabase, { resolver: c2sResolver, apiClient: c2sApiClient, runner: c2sRunner });
 
+import { registerAnthropicRoutes } from './anthropic/routes.js';
+import { startAnthropicScheduler } from './anthropic/scheduler.js';
+
 // Sync incremental automático (cron 3min, updated_gte real). Flag-gated para
 // rodar em UM processo, igual Kenlo/Santa Ângela.
 if (process.env.CONTACT2SALE_SYNC_SCHEDULER === '1') {
   startC2sScheduler(supabase, { resolver: c2sResolver, apiClient: c2sApiClient, runner: c2sRunner });
+}
+
+// Anthropic — monitoramento de uso semanal (Admin API de Usage & Cost). Rotas
+// protegidas (usage owner-only). Scheduler flag-gated (ANTHROPIC_SCHEDULER=1) para
+// rodar em UM processo; cron horário recalcula o snapshot por tenant configurado.
+registerAnthropicRoutes(app, supabase);
+if (process.env.ANTHROPIC_SCHEDULER === '1') {
+  startAnthropicScheduler(supabase);
 }
 
 // ============================================

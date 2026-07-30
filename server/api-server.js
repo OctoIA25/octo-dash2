@@ -4085,6 +4085,9 @@ const c2sApiClient = createC2sApiClient({ resolver: c2sResolver });
 const c2sRunner = makeC2sRunner(supabase, { resolver: c2sResolver, apiClient: c2sApiClient });
 registerContact2SaleRoutes(app, supabase, { resolver: c2sResolver, apiClient: c2sApiClient, runner: c2sRunner });
 
+import { registerAnthropicRoutes } from './anthropic/routes.js';
+registerAnthropicRoutes(app, supabase);
+
 // eNPS de Corretores — pesquisa recorrente. Registrar ANTES do 404 catch-all.
 import { registerEnpsRoutes, startEnpsScheduler, makeEnpsRunner } from './enps/index.js';
 const enpsRunner = makeEnpsRunner(supabase);
