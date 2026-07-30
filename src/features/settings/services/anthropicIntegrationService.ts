@@ -18,6 +18,7 @@ export interface AnthropicConfigView {
   hasKey: boolean;
   maskedKey: string | null;
   weeklyLimitUsd: number | null;
+  alertThresholdBps: number | null;
 }
 
 export async function fetchAnthropicConfig(
@@ -32,7 +33,7 @@ export async function fetchAnthropicConfig(
 
 export async function saveAnthropicConfig(
   tenantId: string,
-  input: { apiKey?: string; weeklyLimitUsd?: number },
+  input: { apiKey?: string; alertThresholdBps?: number },
 ): Promise<{ ok: boolean; error?: string }> {
   const res = await fetch('/api/v1/anthropic/config', {
     method: 'POST', headers: await authHeaders(), body: JSON.stringify({ tenantId, ...input }),

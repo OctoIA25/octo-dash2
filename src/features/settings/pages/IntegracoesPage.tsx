@@ -168,7 +168,7 @@ export const IntegracoesPage: React.FC = () => {
   // Estados Anthropic (uso semanal)
   const [anthropicCfg, setAnthropicCfg] = useState<AnthropicConfigView | null>(null);
   const [anthropicKeyInput, setAnthropicKeyInput] = useState(''); // vazio = não altera a key
-  const [anthropicLimit, setAnthropicLimit] = useState('');
+  const [anthropicThresholdPct, setAnthropicThresholdPct] = useState('14,30');
   const [anthropicTesting, setAnthropicTesting] = useState(false);
   const [anthropicSaving, setAnthropicSaving] = useState(false);
   const [anthropicTestMsg, setAnthropicTestMsg] = useState<string | null>(null);
@@ -617,7 +617,9 @@ export const IntegracoesPage: React.FC = () => {
     if (!tenantId) return;
     fetchAnthropicConfig(tenantId).then(({ config }) => {
       setAnthropicCfg(config);
-      setAnthropicLimit(config?.weeklyLimitUsd != null ? String(config.weeklyLimitUsd) : '');
+      setAnthropicThresholdPct(
+        config?.alertThresholdBps != null ? (config.alertThresholdBps / 100).toFixed(2).replace('.', ',') : '14,30',
+      );
     }).catch(() => { /* best-effort */ });
   }, [tenantId]);
 
@@ -633,18 +635,25 @@ export const IntegracoesPage: React.FC = () => {
 
   const handleAnthropicSave = async () => {
     if (!tenantId) return;
-    setAnthropicSaving(true);
     setAnthropicError(null);
-    const limitNum = anthropicLimit === '' ? undefined : Number(anthropicLimit);
+    const pct = Number(anthropicThresholdPct.replace(',', '.'));
+    const bps = Math.round(pct * 100);
+    if (!Number.isFinite(pct) || bps < 1 || bps > 10000) {
+      setAnthropicError('Informe um percentual válido entre 0,01% e 100%.');
+      return;
+    }
+    setAnthropicSaving(true);
     const r = await saveAnthropicConfig(tenantId, {
       ...(anthropicKeyInput ? { apiKey: anthropicKeyInput } : {}),
-      ...(limitNum !== undefined && !Number.isNaN(limitNum) ? { weeklyLimitUsd: limitNum } : {}),
+      alertThresholdBps: bps,
     });
     if (!r.ok) setAnthropicError(r.error || 'Não foi possível salvar.');
     setAnthropicKeyInput('');
     const { config } = await fetchAnthropicConfig(tenantId);
     setAnthropicCfg(config);
-    setAnthropicLimit(config?.weeklyLimitUsd != null ? String(config.weeklyLimitUsd) : '');
+    setAnthropicThresholdPct(
+      config?.alertThresholdBps != null ? (config.alertThresholdBps / 100).toFixed(2).replace('.', ',') : '14,30',
+    );
     setAnthropicSaving(false);
   };
 
@@ -1465,35 +1474,35 @@ export const IntegracoesPage: React.FC = () => {
 
               {/* Card Anthropic (uso semanal) */}
               <div className={`bg-white dark:bg-slate-900 rounded-xl border-2 p-3 w-full relative transition-all ${
-                anthropicCfg?.status === 'active'
+                anthropicCfg?.hasKey
                   ? 'border-green-200 bg-gradient-to-br from-white to-green-50/30'
                   : anthropicError
                   ? 'border-red-200'
                   : 'border-gray-200 dark:border-slate-800'
               }`}>
                 <div className={`absolute right-3 top-3 px-2 py-1 rounded-full text-[10px] font-semibold flex items-center gap-1 border ${
-                  anthropicCfg?.status === 'active' ? statusConfig.ativo.color
+                  anthropicCfg?.hasKey ? statusConfig.ativo.color
                   : anthropicError ? statusConfig.erro.color
                   : statusConfig.inativo.color
                 }`}>
-                  {anthropicCfg?.status === 'active' ? (
+                  {anthropicCfg?.hasKey ? (
                     <CheckCircle2 className="w-3.5 h-3.5" />
                   ) : (
                     <XCircle className="w-3.5 h-3.5" />
                   )}
-                  {anthropicCfg?.status === 'active' ? 'Conectado' : anthropicError ? 'Erro' : 'Desconectado'}
+                  {anthropicCfg?.hasKey ? 'Conectado' : anthropicError ? 'Erro' : 'Desconectado'}
                 </div>
 
                 <div className="flex flex-col items-center text-center pt-1">
                   <div className={`w-12 h-12 rounded-lg ring-2 flex items-center justify-center transition-all ${
-                    anthropicCfg?.status === 'active'
+                    anthropicCfg?.hasKey
                       ? 'ring-green-200 bg-green-50'
                       : 'ring-black/5 bg-gray-50 dark:bg-slate-950'
                   }`}>
                     <Zap className="w-6 h-6 text-orange-600" />
                   </div>
                   <h3 className="font-semibold text-gray-900 dark:text-slate-100 text-sm mt-2">Anthropic (Claude)</h3>
-                  <p className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">API key e limite semanal de uso (USD)</p>
+                  <p className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">API key e limiar de aviso de uso semanal (%)</p>
                 </div>
 
                 <div className="mt-4 space-y-3">
@@ -1515,14 +1524,13 @@ export const IntegracoesPage: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">Limite semanal (USD)</label>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">Avisar quando passar de (%)</label>
                     <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={anthropicLimit}
-                      onChange={(e) => setAnthropicLimit(e.target.value)}
-                      placeholder="Ex: 50"
+                      type="text"
+                      inputMode="decimal"
+                      value={anthropicThresholdPct}
+                      onChange={(e) => { setAnthropicThresholdPct(e.target.value); if (anthropicError) setAnthropicError(null); }}
+                      placeholder="Ex: 14,30"
                       className="w-full px-3 py-2 border border-gray-200 dark:border-slate-800 rounded-lg text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
                       disabled={anthropicSaving}
                     />
