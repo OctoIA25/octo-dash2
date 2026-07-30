@@ -53,26 +53,38 @@ describe('evaluateThreshold (basis points)', () => {
   it('threshold exportado é 1430', () => {
     expect(WEEKLY_USAGE_ALERT_THRESHOLD_BPS).toBe(1430);
   });
+  it('aceita limiar customizado em bps', () => {
+    expect(evaluateThreshold(50, 5000)).toBe('warning');    // 50,00% >= 50,00%
+    expect(evaluateThreshold(49.99, 5000)).toBe('normal');  // 4999 < 5000
+    expect(evaluateThreshold(80, 8000)).toBe('warning');
+    expect(evaluateThreshold(15, 2000)).toBe('normal');     // 1500 < 2000
+  });
+  it('sem segundo arg usa o default 1430 (fronteira preservada)', () => {
+    expect(evaluateThreshold(14.29)).toBe('normal');
+    expect(evaluateThreshold(14.30)).toBe('warning');
+  });
 });
 
-describe('classifyState', () => {
+describe('classifyState (Fase 2: hasBudget + thresholdBps)', () => {
   it('sem key → not_configured', () => {
-    expect(classifyState({ hasKey: false, hasLimit: true, errorCode: null, percentage: 10 })).toBe('not_configured');
+    expect(classifyState({ hasKey: false, hasBudget: true, errorCode: null, percentage: 10 })).toBe('not_configured');
   });
-  it('sem limite → not_configured', () => {
-    expect(classifyState({ hasKey: true, hasLimit: false, errorCode: null, percentage: null })).toBe('not_configured');
+  it('key sem budget (env ausente/<=0) → insufficient_data', () => {
+    expect(classifyState({ hasKey: true, hasBudget: false, errorCode: null, percentage: null })).toBe('insufficient_data');
   });
   it('erro na chamada → error', () => {
-    expect(classifyState({ hasKey: true, hasLimit: true, errorCode: 'rate_limited', percentage: null })).toBe('error');
+    expect(classifyState({ hasKey: true, hasBudget: true, errorCode: 'rate_limited', percentage: null })).toBe('error');
   });
-  it('key+limite mas percentage null (dados insuficientes) → insufficient_data', () => {
-    expect(classifyState({ hasKey: true, hasLimit: true, errorCode: null, percentage: null })).toBe('insufficient_data');
+  it('percentage null com key+budget → insufficient_data', () => {
+    expect(classifyState({ hasKey: true, hasBudget: true, errorCode: null, percentage: null })).toBe('insufficient_data');
   });
-  it('percentage < 14.30 → normal', () => {
-    expect(classifyState({ hasKey: true, hasLimit: true, errorCode: null, percentage: 12.84 })).toBe('normal');
+  it('usa o thresholdBps do tenant', () => {
+    expect(classifyState({ hasKey: true, hasBudget: true, errorCode: null, percentage: 15, thresholdBps: 2000 })).toBe('normal');
+    expect(classifyState({ hasKey: true, hasBudget: true, errorCode: null, percentage: 15, thresholdBps: 1430 })).toBe('warning');
   });
-  it('percentage >= 14.30 → warning', () => {
-    expect(classifyState({ hasKey: true, hasLimit: true, errorCode: null, percentage: 15.2 })).toBe('warning');
+  it('sem thresholdBps usa o default 1430', () => {
+    expect(classifyState({ hasKey: true, hasBudget: true, errorCode: null, percentage: 12.84 })).toBe('normal');
+    expect(classifyState({ hasKey: true, hasBudget: true, errorCode: null, percentage: 15.2 })).toBe('warning');
   });
 });
 
