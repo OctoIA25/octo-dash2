@@ -16,7 +16,7 @@ import { makeRequireOwner } from '../utils/ownerAuth.js';
 import { JOB_LIMITS } from './healthRoutes.js';
 import {
   deriveSyncCard, deriveOutboxCard, deriveWebhooksCard, deriveWhatsappCard, unavailableCard,
-  deriveLiaCard,
+  deriveLiaCard, deriveAnthropicCard,
 } from './tenantHealthLogic.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -75,6 +75,7 @@ export function registerTenantHealthRoutes(app, supabase) {
       liaPpendente, liaPrespondida, liaRespostas,
       liaVisTotal, liaVisConfirmadas,
       liaInteracoes, liaFatos, liaFactsRows,
+      anthropicRes,
     ] = await Promise.allSettled([
       
       supabase.from('tenant_contact2sale_config').select('status,last_sync_at,sync_state').eq('tenant_id', tenantId).maybeSingle(),
@@ -120,6 +121,10 @@ export function registerTenantHealthRoutes(app, supabase) {
       selectCol(supabase, 'lia_lead_extra', 'interaction_count', { tenant_id: tenantId }),
       countBy(supabase, 'lia_lead_facts', { tenant_id: tenantId }),
       selectCol(supabase, 'lia_lead_facts', 'lead_id', { tenant_id: tenantId }),
+
+      supabase.from('tenant_anthropic_config')
+        .select('status,last_state,last_percentage,last_usage_usd,weekly_limit_usd,last_window_start,last_window_end,last_error,last_synced_at')
+        .eq('tenant_id', tenantId).maybeSingle(),
     ]);
 
     // --- Cards por tenant (cada um degrada isolado) ---
@@ -130,6 +135,9 @@ export function registerTenantHealthRoutes(app, supabase) {
 
     tenant.kenlo = kenlo.status === 'fulfilled' && !kenlo.value.error
       ? deriveSyncCard(kenlo.value.data, now) : unavailableCard();
+
+    tenant.anthropic = anthropicRes.status === 'fulfilled' && !anthropicRes.value.error
+      ? deriveAnthropicCard(anthropicRes.value.data) : unavailableCard();
 
     tenant.outbox = (outboxPending.status === 'fulfilled' && outboxFailed.status === 'fulfilled')
       ? deriveOutboxCard({

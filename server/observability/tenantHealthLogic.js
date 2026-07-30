@@ -127,6 +127,30 @@ export function deriveWhatsappCard({ active = false, queued = 0, failed = 0, las
 }
 
 /**
+ * Deriva o card Anthropic do snapshot em tenant_anthropic_config. Sem linha →
+ * not_configured. Não recalcula nada aqui (o scheduler já persistiu o snapshot).
+ */
+export function deriveAnthropicCard(row) {
+  if (!row) {
+    return {
+      available: true, status: 'not_configured', percentage: null, usage_usd: null,
+      limit_usd: null, window_start: null, window_end: null, last_error: null, last_synced_at: null,
+    };
+  }
+  return {
+    available: true,
+    status: row.last_state || 'not_configured',
+    percentage: row.last_percentage == null ? null : Number(row.last_percentage),
+    usage_usd: row.last_usage_usd == null ? null : Number(row.last_usage_usd),
+    limit_usd: row.weekly_limit_usd == null ? null : Number(row.weekly_limit_usd),
+    window_start: row.last_window_start || null,
+    window_end: row.last_window_end || null,
+    last_error: row.last_error || null,
+    last_synced_at: row.last_synced_at || null,
+  };
+}
+
+/**
  * Card indisponível: a LEITURA falhou (≠ estado ruim). Erro genérico, sem
  * mensagem crua do banco (não vaza schema).
  */

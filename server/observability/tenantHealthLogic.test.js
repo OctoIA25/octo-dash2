@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   classifyFailure, parseSyncState, deriveSyncCard,
   deriveOutboxCard, deriveWebhooksCard, deriveWhatsappCard, unavailableCard, deriveLiaCard,
+  deriveAnthropicCard,
 } from './tenantHealthLogic.js';
 
 describe('classifyFailure', () => {
@@ -212,5 +213,28 @@ describe('deriveLiaCard', () => {
   it('minutos_desde_ultima_msg nunca é negativo (timestamp futuro por skew => 0)', () => {
     const c = deriveLiaCard({ ...base, ultimaMsgAt: '2026-07-12T05:00:00.000Z', now: NOW }); // NOW = 04:20, msg no futuro
     expect(c.minutos_desde_ultima_msg).toBe(0);
+  });
+});
+
+describe('deriveAnthropicCard', () => {
+  it('sem linha → not_configured', () => {
+    const c = deriveAnthropicCard(null);
+    expect(c).toMatchObject({ available: true, status: 'not_configured', percentage: null });
+  });
+  it('snapshot normal', () => {
+    const c = deriveAnthropicCard({
+      last_state: 'normal', last_percentage: 12.84, last_usage_usd: 64.2, weekly_limit_usd: 500,
+      last_window_start: '2026-07-22T00:00:00Z', last_window_end: '2026-07-29T12:00:00Z',
+      last_error: null, last_synced_at: '2026-07-29T12:00:00Z',
+    });
+    expect(c).toMatchObject({ available: true, status: 'normal', percentage: 12.84, usage_usd: 64.2, limit_usd: 500 });
+  });
+  it('snapshot warning preserva percentual', () => {
+    expect(deriveAnthropicCard({ last_state: 'warning', last_percentage: 15.2, weekly_limit_usd: 500 }).status).toBe('warning');
+  });
+  it('snapshot error → status error + last_error', () => {
+    const c = deriveAnthropicCard({ last_state: 'error', last_error: 'rate_limited', weekly_limit_usd: 500 });
+    expect(c.status).toBe('error');
+    expect(c.last_error).toBe('rate_limited');
   });
 });
