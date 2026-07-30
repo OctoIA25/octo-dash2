@@ -12,13 +12,11 @@ function fakeSupabase() {
 }
 const bucket = (...cents) => ({ results: cents.map((a) => ({ amount: String(a), currency: 'USD' })) });
 
-function svc({ cfg, clientImpl }) {
+function svc({ cfg, clientImpl, env = { ANTHROPIC_WEEKLY_BUDGET_USD: '500' } }) {
   const resolver = { resolveConfig: async () => cfg, saveConfig: async () => ({ ok: true }), invalidate() {} };
   const supabase = fakeSupabase();
-  return {
-    service: createAnthropicService({ supabase, resolver, clientImpl, now: () => FIXED_NOW }),
-    supabaseStore: supabase._store
-  };
+  const service = createAnthropicService({ supabase, resolver, clientImpl, processEnv: env, now: () => FIXED_NOW });
+  return { service, supabaseStore: supabase._store };
 }
 
 describe('weekWindow', () => {
@@ -31,38 +29,47 @@ describe('weekWindow', () => {
 
 describe('getWeeklyUsage', () => {
   it('sem key → not_configured', async () => {
-    const { service } = svc({ cfg: { apiKey: null, weeklyLimitUsd: 500 } });
-    const dto = await service.getWeeklyUsage('t1');
-    expect(dto.status).toBe('not_configured');
-    expect(dto.usage.percentage).toBeNull();
-  });
-
-  it('sem limite → not_configured', async () => {
-    const { service } = svc({ cfg: { apiKey: 'k', weeklyLimitUsd: null } });
+    const { service } = svc({ cfg: { apiKey: null, alertThresholdBps: 1430 } });
     const dto = await service.getWeeklyUsage('t1');
     expect(dto.status).toBe('not_configured');
   });
 
-  it('uso normal → normal + percentual correto', async () => {
-    const clientImpl = async () => [bucket(6420)]; // 64.20 USD
-    const { service } = svc({ cfg: { apiKey: 'k', weeklyLimitUsd: 500 }, clientImpl });
+  it('key sem budget no env → insufficient_data SEM chamar o client', async () => {
+    let called = 0;
+    const clientImpl = async () => { called += 1; return []; };
+    const { service } = svc({ cfg: { apiKey: 'k', alertThresholdBps: 1430 }, clientImpl, env: {} });
+    const dto = await service.getWeeklyUsage('t1');
+    expect(dto.status).toBe('insufficient_data');
+    expect(called).toBe(0);
+  });
+
+  it('uso normal → percentual contra o budget do env; limit no DTO = budget', async () => {
+    const clientImpl = async () => [bucket(6420)]; // 64.20 / 500 = 12.84%
+    const { service } = svc({ cfg: { apiKey: 'k', alertThresholdBps: 1430 }, clientImpl });
     const dto = await service.getWeeklyUsage('t1');
     expect(dto.status).toBe('normal');
-    expect(dto.usage.current).toBeCloseTo(64.2, 5);
+    expect(dto.usage.limit).toBe(500);
     expect(dto.usage.percentage).toBe(12.84);
   });
 
-  it('uso ≥ 14,30% → warning', async () => {
-    const clientImpl = async () => [bucket(7600)]; // 76.00 / 500 = 15.2%
-    const { service } = svc({ cfg: { apiKey: 'k', weeklyLimitUsd: 500 }, clientImpl });
-    const dto = await service.getWeeklyUsage('t1');
-    expect(dto.status).toBe('warning');
-    expect(dto.usage.percentage).toBe(15.2);
+  it('usa o alertThresholdBps do tenant', async () => {
+    const clientImpl = async () => [bucket(7600)]; // 15.2%
+    const a = await svc({ cfg: { apiKey: 'k', alertThresholdBps: 2000 }, clientImpl }).service.getWeeklyUsage('t1');
+    expect(a.status).toBe('normal');   // 1520 < 2000
+    const b = await svc({ cfg: { apiKey: 'k', alertThresholdBps: 1430 }, clientImpl }).service.getWeeklyUsage('t1');
+    expect(b.status).toBe('warning');  // 1520 >= 1430
+  });
+
+  it('snapshot grava o denominador usado em weekly_limit_usd (repurpose)', async () => {
+    const clientImpl = async () => [bucket(6420)];
+    const { service, supabaseStore } = svc({ cfg: { apiKey: 'k', alertThresholdBps: 1430 }, clientImpl });
+    await service.getWeeklyUsage('t1');
+    expect(supabaseStore.t1.weekly_limit_usd).toBe(500);
   });
 
   it('erro do client → error (sem vazar detalhe além do code)', async () => {
     const clientImpl = async () => { throw new AnthropicApiError('rate_limited'); };
-    const { service, supabaseStore } = svc({ cfg: { apiKey: 'k', weeklyLimitUsd: 500 }, clientImpl });
+    const { service, supabaseStore } = svc({ cfg: { apiKey: 'k', alertThresholdBps: 1430 }, clientImpl });
     const dto = await service.getWeeklyUsage('t1');
     expect(dto.status).toBe('error');
     expect(dto.usage.percentage).toBeNull();
@@ -72,7 +79,7 @@ describe('getWeeklyUsage', () => {
 
   it('recalcular com o mesmo uso é idempotente (mesmo estado warning)', async () => {
     const clientImpl = async () => [bucket(7600)];
-    const { service } = svc({ cfg: { apiKey: 'k', weeklyLimitUsd: 500 }, clientImpl });
+    const { service } = svc({ cfg: { apiKey: 'k', alertThresholdBps: 1430 }, clientImpl });
     const a = await service.getWeeklyUsage('t1');
     const b = await service.getWeeklyUsage('t1');
     expect(a.status).toBe('warning');

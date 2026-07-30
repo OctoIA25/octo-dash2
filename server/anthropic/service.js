@@ -1,8 +1,10 @@
 /**
  * Orquestra a integração Anthropic: config → client → cálculo → snapshot.
  * Uma função por passo (sem monólito). O scheduler chama getWeeklyUsage por
- * tenant; a rota da UI lê o snapshot já persistido.
+ * tenant; a rota da UI lê o snapshot já persistido. Denominador do percentual
+ * = ANTHROPIC_WEEKLY_BUDGET_USD (env global); limiar = alertThresholdBps (tenant).
  */
+import { loadAnthropicEnv } from './config.js';
 import { fetchCostReport, AnthropicApiError } from './client.js';
 import { createAnthropicConfigResolver } from './configResolver.js';
 import { sumCostUsd, computePercentage, classifyState, buildUsageDto } from './usage.js';
@@ -18,6 +20,7 @@ export function weekWindow(now = Date.now()) {
 }
 
 export function createAnthropicService({ supabase, resolver, clientImpl = fetchCostReport, processEnv = process.env, now = Date.now }) {
+  const env = loadAnthropicEnv(processEnv);
   const cfgResolver = resolver || createAnthropicConfigResolver({ supabase, processEnv, now });
 
   async function persistSnapshot(tenantId, dto) {
@@ -32,6 +35,7 @@ export function createAnthropicService({ supabase, resolver, clientImpl = fetchC
       last_error: null, // preenchido só no ramo de erro abaixo
       last_synced_at: dto.fetchedAt,
       updated_at: new Date().toISOString(),
+      weekly_limit_usd: dto.usage.limit, // repurpose: denominador usado (env) p/ o card do Status
     }, { onConflict: 'tenant_id' });
     if (error) console.error(`[anthropic] persistSnapshot falhou tenant=${tenantId}: ${error.message}`);
   }
@@ -50,11 +54,12 @@ export function createAnthropicService({ supabase, resolver, clientImpl = fetchC
     const fetchedAt = new Date(now()).toISOString();
     const cfg = await cfgResolver.resolveConfig(tenantId);
     const hasKey = Boolean(cfg?.apiKey);
-    const hasLimit = Number.isFinite(Number(cfg?.weeklyLimitUsd)) && Number(cfg.weeklyLimitUsd) > 0;
+    const hasBudget = env.budgetUsd > 0;
+    const thresholdBps = cfg?.alertThresholdBps ?? 1430;
 
-    if (!hasKey || !hasLimit) {
-      const state = classifyState({ hasKey, hasLimit, errorCode: null, percentage: null });
-      const dto = buildUsageDto({ current: null, limit: cfg?.weeklyLimitUsd ?? null, percentage: null, state, window, fetchedAt });
+    if (!hasKey || !hasBudget) {
+      const state = classifyState({ hasKey, hasBudget, errorCode: null, percentage: null, thresholdBps });
+      const dto = buildUsageDto({ current: null, limit: hasBudget ? env.budgetUsd : null, percentage: null, state, window, fetchedAt });
       await persistSnapshot(tenantId, dto);
       return dto;
     }
@@ -64,16 +69,16 @@ export function createAnthropicService({ supabase, resolver, clientImpl = fetchC
       buckets = await clientImpl({ apiKey: cfg.apiKey, startingAt: window.startsAt, endingAt: window.endsAt });
     } catch (err) {
       const code = err instanceof AnthropicApiError ? err.code : 'provider_error';
-      const state = classifyState({ hasKey, hasLimit, errorCode: code, percentage: null });
-      const dto = buildUsageDto({ current: null, limit: cfg.weeklyLimitUsd, percentage: null, state, window, fetchedAt });
+      const state = classifyState({ hasKey, hasBudget, errorCode: code, percentage: null, thresholdBps });
+      const dto = buildUsageDto({ current: null, limit: env.budgetUsd, percentage: null, state, window, fetchedAt });
       await persistError(tenantId, dto, code);
       return dto;
     }
 
     const current = sumCostUsd(buckets);
-    const percentage = computePercentage(current, cfg.weeklyLimitUsd);
-    const state = classifyState({ hasKey, hasLimit, errorCode: null, percentage });
-    const dto = buildUsageDto({ current, limit: cfg.weeklyLimitUsd, percentage, state, window, fetchedAt });
+    const percentage = computePercentage(current, env.budgetUsd);
+    const state = classifyState({ hasKey, hasBudget, errorCode: null, percentage, thresholdBps });
+    const dto = buildUsageDto({ current, limit: env.budgetUsd, percentage, state, window, fetchedAt });
     await persistSnapshot(tenantId, dto);
     return dto;
   }
