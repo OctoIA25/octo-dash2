@@ -37,7 +37,7 @@ function fakeSupabase({ users = {}, memberships = {} } = {}) {
 
 const dtoStub = { status: 'normal', usage: { current: 64.2, limit: 500, percentage: 12.84 }, window: { startsAt: 'a', endsAt: 'b' }, fetchedAt: 'z', provider: 'anthropic' };
 const fakeService = { getWeeklyUsage: async () => dtoStub };
-const fakeResolver = { resolveConfig: async () => ({ tenantId: 't1', apiKey: 'sk-ant-admin01-abcd', weeklyLimitUsd: 500, status: 'normal' }), saveConfig: async () => ({ ok: true }), invalidate() {} };
+const fakeResolver = { resolveConfig: async () => ({ tenantId: 't1', apiKey: 'sk-ant-admin01-abcd', weeklyLimitUsd: 500, status: 'normal', lastSyncedAt: '2026-07-29T12:00:00Z' }), saveConfig: async () => ({ ok: true }), invalidate() {} };
 
 describe('POST /api/v1/anthropic/usage (owner-only)', () => {
   it('Owner → 200 com DTO', async () => {
@@ -95,6 +95,7 @@ describe('POST /api/v1/anthropic/config/get (owner|gestor)', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body.config.hasKey).toBe(true);
     expect(res.body.config.maskedKey).toBe('••••abcd');
+    expect(res.body.config.lastSyncedAt).toBe('2026-07-29T12:00:00Z');
     expect(JSON.stringify(res.body)).not.toContain('sk-ant-admin01-abcd');
   });
 

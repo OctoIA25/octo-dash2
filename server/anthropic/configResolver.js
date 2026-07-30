@@ -31,6 +31,7 @@ export function createAnthropicConfigResolver({ supabase, processEnv = process.e
       apiKey: decryptOrNull(data.admin_api_key_encrypted),
       weeklyLimitUsd: data.weekly_limit_usd == null ? null : Number(data.weekly_limit_usd),
       status: data.status,
+      lastSyncedAt: data.last_synced_at ?? null,
     };
     cache.set(tenantId, { value: resolved, cachedAt: now() });
     return resolved;

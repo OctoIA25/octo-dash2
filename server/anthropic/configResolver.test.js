@@ -26,11 +26,11 @@ describe('createAnthropicConfigResolver', () => {
 
   it('resolveConfig decifra a key e devolve limite/status', async () => {
     const supabase = fakeSupabase({
-      t1: { tenant_id: 't1', admin_api_key_encrypted: encryptSecret('sk-ant-admin01-secret', ENV), weekly_limit_usd: 500, status: 'normal' },
+      t1: { tenant_id: 't1', admin_api_key_encrypted: encryptSecret('sk-ant-admin01-secret', ENV), weekly_limit_usd: 500, status: 'normal', last_synced_at: '2026-07-29T12:00:00Z' },
     });
     const r = createAnthropicConfigResolver({ supabase, processEnv: ENV, now });
     const cfg = await r.resolveConfig('t1');
-    expect(cfg).toEqual({ tenantId: 't1', apiKey: 'sk-ant-admin01-secret', weeklyLimitUsd: 500, status: 'normal' });
+    expect(cfg).toEqual({ tenantId: 't1', apiKey: 'sk-ant-admin01-secret', weeklyLimitUsd: 500, status: 'normal', lastSyncedAt: '2026-07-29T12:00:00Z' });
   });
 
   it('sem linha → null', async () => {

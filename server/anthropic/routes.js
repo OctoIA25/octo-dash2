@@ -85,6 +85,7 @@ export function registerAnthropicRoutes(app, supabase, options = {}) {
         tenantId: cfg.tenantId, status: cfg.status,
         hasKey: Boolean(cfg.apiKey), maskedKey: maskKey(cfg.apiKey),
         weeklyLimitUsd: cfg.weeklyLimitUsd ?? null,
+        lastSyncedAt: cfg.lastSyncedAt ?? null,
       },
     });
   });
