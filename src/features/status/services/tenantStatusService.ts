@@ -93,6 +93,7 @@ export interface TenantStatus {
       window_end: string | null;
       last_error: string | null;
       last_synced_at: string | null;
+      mode: 'api' | 'max';
     };
   };
   platform: {

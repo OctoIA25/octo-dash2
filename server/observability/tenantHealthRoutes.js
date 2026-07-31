@@ -123,7 +123,7 @@ export function registerTenantHealthRoutes(app, supabase) {
       selectCol(supabase, 'lia_lead_facts', 'lead_id', { tenant_id: tenantId }),
 
       supabase.from('tenant_anthropic_config')
-        .select('status,last_state,last_percentage,last_usage_usd,weekly_limit_usd,last_window_start,last_window_end,last_error,last_synced_at')
+        .select('status,last_state,last_percentage,last_usage_usd,weekly_limit_usd,last_window_start,last_window_end,last_error,last_synced_at,mode')
         .eq('tenant_id', tenantId).maybeSingle(),
     ]);
 

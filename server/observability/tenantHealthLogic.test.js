@@ -237,4 +237,8 @@ describe('deriveAnthropicCard', () => {
     expect(c.status).toBe('error');
     expect(c.last_error).toBe('rate_limited');
   });
+  it('deriveAnthropicCard expõe mode (default api; max passa)', () => {
+    expect(deriveAnthropicCard(null).mode).toBe('api');
+    expect(deriveAnthropicCard({ last_state: 'normal', mode: 'max' }).mode).toBe('max');
+  });
 });

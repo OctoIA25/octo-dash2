@@ -135,6 +135,7 @@ export function deriveAnthropicCard(row) {
     return {
       available: true, status: 'not_configured', percentage: null, usage_usd: null,
       limit_usd: null, window_start: null, window_end: null, last_error: null, last_synced_at: null,
+      mode: 'api',
     };
   }
   return {
@@ -147,6 +148,7 @@ export function deriveAnthropicCard(row) {
     window_end: row.last_window_end || null,
     last_error: row.last_error || null,
     last_synced_at: row.last_synced_at || null,
+    mode: row.mode || 'api',
   };
 }
 

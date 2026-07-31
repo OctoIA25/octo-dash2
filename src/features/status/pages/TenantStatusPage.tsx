@@ -185,21 +185,30 @@ function IaLiaCard({ available, provider, model, lia }: {
   );
 }
 
+const STALE_MS = 30 * 60 * 1000;
+
+// Texto do card "N/A" — depende do modo porque no MAX não existe "API configurada"
+// (não há chamada à API de billing; os dados vêm do reporter local). CC 3 (1 if + 2 ternários independentes).
+function naTextFor(status: string, isMax: boolean, lastError: string | null): string {
+  if (status === 'not_configured') return isMax ? 'Aguardando dados do reporter' : 'API não configurada';
+  if (status === 'insufficient_data') return 'Dados indisponíveis';
+  if (status === 'error') return `Erro na integração${lastError ? ` (${lastError})` : ''}`;
+  return 'Indisponível';
+}
+
 function AnthropicUsageCard({ a }: { a: {
   available: boolean; status: string; percentage: number | null;
   usage_usd: number | null; limit_usd: number | null;
   window_start: string | null; window_end: string | null;
-  last_error: string | null; last_synced_at: string | null;
+  last_error: string | null; last_synced_at: string | null; mode: string;
 } }) {
   const usd = (n: number | null) => (n == null ? '—' : `US$ ${n.toFixed(2)}`);
   const day = (s: string | null) => (s ? s.slice(5, 10).split('-').reverse().join('/') : '—'); // MM-DD → DD/MM
   const hasData = a.status === 'normal' || a.status === 'warning';
   const warn = a.status === 'warning';
-  const naText: Record<string, string> = {
-    not_configured: 'API não configurada',
-    insufficient_data: 'Dados indisponíveis',
-    error: `Erro na integração${a.last_error ? ` (${a.last_error})` : ''}`,
-  };
+  const isMax = a.mode === 'max';
+  const staleMs = a.last_synced_at ? Date.now() - Date.parse(a.last_synced_at) : null;
+  const isStale = isMax && hasData && staleMs != null && staleMs > STALE_MS;
 
   return (
     <Card>
@@ -220,17 +229,20 @@ function AnthropicUsageCard({ a }: { a: {
               />
             </div>
             <div className="mt-3 space-y-1">
-              <Field label="Limite" value={usd(a.limit_usd)} />
-              <Field label="Atual" value={usd(a.usage_usd)} />
+              {!isMax && <Field label="Limite" value={usd(a.limit_usd)} />}
+              {!isMax && <Field label="Atual" value={usd(a.usage_usd)} />}
               <Field label="Janela" value={`${day(a.window_start)} → ${day(a.window_end)}`} />
               <Field label="Status" value={warn ? 'Atenção — alerta disparado' : 'Normal'} />
               <Field label="Atualizado" value={a.last_synced_at?.slice(0, 16).replace('T', ' ')} />
             </div>
+            {isStale && (
+              <div className="mt-1 text-xs text-amber-600">dado possivelmente defasado (reporter parado?)</div>
+            )}
           </>
         ) : (
           <>
             <div className="text-2xl font-semibold text-slate-400">N/A</div>
-            <div className="mt-1 text-sm text-slate-500">{naText[a.status] || 'Indisponível'}</div>
+            <div className="mt-1 text-sm text-slate-500">{naTextFor(a.status, isMax, a.last_error)}</div>
           </>
         )}
       </CardContent>
