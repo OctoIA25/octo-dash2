@@ -167,10 +167,12 @@ export const IntegracoesPage: React.FC = () => {
 
   // Estados Anthropic (uso semanal)
   const [anthropicCfg, setAnthropicCfg] = useState<AnthropicConfigView | null>(null);
+  const [anthropicMode, setAnthropicMode] = useState<'api' | 'max'>('api');
   const [anthropicKeyInput, setAnthropicKeyInput] = useState(''); // vazio = não altera a key
   const [anthropicThresholdPct, setAnthropicThresholdPct] = useState('14,30');
   const [anthropicTesting, setAnthropicTesting] = useState(false);
   const [anthropicSaving, setAnthropicSaving] = useState(false);
+  const [anthropicSwitchingMode, setAnthropicSwitchingMode] = useState(false);
   const [anthropicTestMsg, setAnthropicTestMsg] = useState<string | null>(null);
   const [anthropicError, setAnthropicError] = useState<string | null>(null);
 
@@ -617,11 +619,28 @@ export const IntegracoesPage: React.FC = () => {
     if (!tenantId) return;
     fetchAnthropicConfig(tenantId).then(({ config }) => {
       setAnthropicCfg(config);
+      setAnthropicMode(config?.mode ?? 'api');
       setAnthropicThresholdPct(
         config?.alertThresholdBps != null ? (config.alertThresholdBps / 100).toFixed(2).replace('.', ',') : '14,30',
       );
     }).catch(() => { /* best-effort */ });
   }, [tenantId]);
+
+  const handleAnthropicModeChange = async (novo: 'api' | 'max') => {
+    if (!tenantId || novo === anthropicMode || anthropicSwitchingMode) return;
+    if (!window.confirm('Trocar o modo reinicia o snapshot de uso. Continuar?')) return;
+    setAnthropicSwitchingMode(true);
+    setAnthropicError(null);
+    const r = await saveAnthropicConfig(tenantId, { mode: novo });
+    if (!r.ok) setAnthropicError(r.error || 'Não foi possível trocar o modo.');
+    const { config } = await fetchAnthropicConfig(tenantId);
+    setAnthropicCfg(config);
+    setAnthropicMode(config?.mode ?? novo);
+    setAnthropicThresholdPct(
+      config?.alertThresholdBps != null ? (config.alertThresholdBps / 100).toFixed(2).replace('.', ',') : '14,30',
+    );
+    setAnthropicSwitchingMode(false);
+  };
 
   const handleAnthropicTest = async () => {
     if (!tenantId) return;
@@ -1473,29 +1492,34 @@ export const IntegracoesPage: React.FC = () => {
               </div>
 
               {/* Card Anthropic (uso semanal) */}
+              {(() => {
+                const anthropicConnected = anthropicMode === 'max'
+                  ? Boolean(anthropicCfg?.lastSyncedAt && Date.now() - Date.parse(anthropicCfg.lastSyncedAt) < 30 * 60 * 1000)
+                  : anthropicCfg?.hasKey;
+                return (
               <div className={`bg-white dark:bg-slate-900 rounded-xl border-2 p-3 w-full relative transition-all ${
-                anthropicCfg?.hasKey
+                anthropicConnected
                   ? 'border-green-200 bg-gradient-to-br from-white to-green-50/30'
                   : anthropicError
                   ? 'border-red-200'
                   : 'border-gray-200 dark:border-slate-800'
               }`}>
                 <div className={`absolute right-3 top-3 px-2 py-1 rounded-full text-[10px] font-semibold flex items-center gap-1 border ${
-                  anthropicCfg?.hasKey ? statusConfig.ativo.color
+                  anthropicConnected ? statusConfig.ativo.color
                   : anthropicError ? statusConfig.erro.color
                   : statusConfig.inativo.color
                 }`}>
-                  {anthropicCfg?.hasKey ? (
+                  {anthropicConnected ? (
                     <CheckCircle2 className="w-3.5 h-3.5" />
                   ) : (
                     <XCircle className="w-3.5 h-3.5" />
                   )}
-                  {anthropicCfg?.hasKey ? 'Conectado' : anthropicError ? 'Erro' : 'Desconectado'}
+                  {anthropicConnected ? 'Conectado' : anthropicError ? 'Erro' : 'Desconectado'}
                 </div>
 
                 <div className="flex flex-col items-center text-center pt-1">
                   <div className={`w-12 h-12 rounded-lg ring-2 flex items-center justify-center transition-all ${
-                    anthropicCfg?.hasKey
+                    anthropicConnected
                       ? 'ring-green-200 bg-green-50'
                       : 'ring-black/5 bg-gray-50 dark:bg-slate-950'
                   }`}>
@@ -1505,23 +1529,58 @@ export const IntegracoesPage: React.FC = () => {
                   <p className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">API key e limiar de aviso de uso semanal (%)</p>
                 </div>
 
+                {/* Toggle segmentado API | MAX */}
+                <div className="mt-3 flex p-0.5 rounded-lg bg-gray-100 dark:bg-slate-800 text-xs font-medium">
+                  {(['api', 'max'] as const).map((opt) => (
+                    <button
+                      key={opt}
+                      type="button"
+                      onClick={() => handleAnthropicModeChange(opt)}
+                      disabled={anthropicSwitchingMode}
+                      className={`flex-1 py-1.5 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                        anthropicMode === opt
+                          ? 'bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 shadow-sm'
+                          : 'text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      {opt === 'api' ? 'API' : 'MAX'}
+                    </button>
+                  ))}
+                </div>
+
                 <div className="mt-4 space-y-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">API Key</label>
-                    <input
-                      type="password"
-                      value={anthropicKeyInput}
-                      onChange={(e) => { setAnthropicKeyInput(e.target.value); setAnthropicTestMsg(null); if (anthropicError) setAnthropicError(null); }}
-                      placeholder={anthropicCfg?.hasKey ? (anthropicCfg.maskedKey || '•••• (já configurada)') : 'sk-ant-...'}
-                      className="w-full px-3 py-2 border border-gray-200 dark:border-slate-800 rounded-lg text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
-                      disabled={anthropicSaving}
-                    />
-                    {anthropicCfg?.hasKey && !anthropicKeyInput && (
-                      <p className="text-[11px] text-gray-500 dark:text-slate-400 mt-1">
-                        Key atual: {anthropicCfg.maskedKey}. Digite uma nova acima para substituir.
+                  {anthropicMode === 'api' && (
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">API Key</label>
+                      <input
+                        type="password"
+                        value={anthropicKeyInput}
+                        onChange={(e) => { setAnthropicKeyInput(e.target.value); setAnthropicTestMsg(null); if (anthropicError) setAnthropicError(null); }}
+                        placeholder={anthropicCfg?.hasKey ? (anthropicCfg.maskedKey || '•••• (já configurada)') : 'sk-ant-...'}
+                        className="w-full px-3 py-2 border border-gray-200 dark:border-slate-800 rounded-lg text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                        disabled={anthropicSaving}
+                      />
+                      {anthropicCfg?.hasKey && !anthropicKeyInput && (
+                        <p className="text-[11px] text-gray-500 dark:text-slate-400 mt-1">
+                          Key atual: {anthropicCfg.maskedKey}. Digite uma nova acima para substituir.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {anthropicMode === 'max' && (
+                    <div className="rounded-lg border border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 p-2.5">
+                      <pre className="text-[10.5px] leading-snug text-gray-700 dark:text-slate-300 whitespace-pre-wrap break-words font-mono">
+{`# Na máquina onde a IA roda (logada na conta Max):
+# 1) copie scripts/octodash-max-usage-reporter.cjs para o servidor
+# 2) crontab -e e adicione:
+*/5 * * * * OCTODASH_URL=https://SEU_DOMINIO OCTODASH_API_KEY=<key da aba API> node /caminho/octodash-max-usage-reporter.cjs`}
+                      </pre>
+                      <p className="text-[11px] text-gray-500 dark:text-slate-400 mt-2">
+                        A key é a da aba <strong>API</strong> (gerencie lá) — nunca cole a key aqui.
                       </p>
-                    )}
-                  </div>
+                    </div>
+                  )}
 
                   <div>
                     <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">Avisar quando passar de (%)</label>
@@ -1554,14 +1613,16 @@ export const IntegracoesPage: React.FC = () => {
                   )}
 
                   <div className="pt-1 space-y-2">
-                    <button
-                      type="button"
-                      onClick={handleAnthropicTest}
-                      disabled={anthropicTesting}
-                      className="w-full px-4 py-2 border border-gray-200 dark:border-slate-800 rounded-lg text-sm font-medium bg-white dark:bg-slate-900 hover:bg-gray-50 dark:hover:bg-slate-800/60 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-gray-900 dark:text-slate-100"
-                    >
-                      {anthropicTesting ? 'Testando...' : 'Testar conexão'}
-                    </button>
+                    {anthropicMode === 'api' && (
+                      <button
+                        type="button"
+                        onClick={handleAnthropicTest}
+                        disabled={anthropicTesting}
+                        className="w-full px-4 py-2 border border-gray-200 dark:border-slate-800 rounded-lg text-sm font-medium bg-white dark:bg-slate-900 hover:bg-gray-50 dark:hover:bg-slate-800/60 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-gray-900 dark:text-slate-100"
+                      >
+                        {anthropicTesting ? 'Testando...' : 'Testar conexão'}
+                      </button>
+                    )}
 
                     <button
                       type="button"
@@ -1581,6 +1642,8 @@ export const IntegracoesPage: React.FC = () => {
                   </div>
                 </div>
               </div>
+                );
+              })()}
 
               {/* Card Santa Ângela */}
               <div className={`bg-white dark:bg-slate-900 rounded-xl border-2 p-3 w-full relative transition-all ${
