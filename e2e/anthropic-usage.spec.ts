@@ -10,6 +10,9 @@ import { createClient } from '@supabase/supabase-js';
  *  - migration `20260730_anthropic_fase2_threshold_alert` aplicada no Supabase
  *    (adiciona `alert_threshold_bps`/`last_alerted_at` — sem ela o teste do
  *    campo "Avisar quando passar de (%)" falha ao salvar/persistir);
+ *  - migration `20260730_anthropic_fase3_mode` aplicada no Supabase (adiciona
+ *    a coluna `mode` + CHECK `('api','max')` — sem ela o toggle MAX e o
+ *    ingest `/api/v1/anthropic/usage-report` falham: coluna inexistente);
  *  - env `ANTHROPIC_WEEKLY_BUDGET_USD` setado no processo do servidor (é o
  *    teto semanal GLOBAL, denominador do %; sem ele o card cai em
  *    `insufficient_data` mesmo com key configurada — ver server/anthropic/usage.js);
@@ -18,9 +21,15 @@ import { createClient } from '@supabase/supabase-js';
  *    sem policies bloqueia anon/authenticated nessa tabela);
  *  - usuários de teste existentes: owner (email hardcoded da plataforma),
  *    gestor (role admin/team_leader) e corretor no tenant de teste;
+ *  - para o cenário MAX (teste de request abaixo): uma `tenant_api_key` de
+ *    teste cadastrada para o tenant (mesma tabela/fluxo usado pelas rotas
+ *    `/api/v1/leads`, validada por `validateApiKey` em server/api-server.js e
+ *    server/proxy-production.js — é o que autentica o POST no ingest MAX, já
+ *    que essa rota não usa Supabase Auth);
  *  - variáveis: E2E_TENANT, E2E_TENANT_ID, E2E_OWNER_EMAIL, E2E_OWNER_PASSWORD,
  *    E2E_GESTOR_EMAIL, E2E_GESTOR_PASSWORD, E2E_CORRETOR_EMAIL,
- *    E2E_CORRETOR_PASSWORD, VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
+ *    E2E_CORRETOR_PASSWORD, VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
+ *    E2E_TENANT_API_KEY (só para o teste de ingest MAX — ver NOTA abaixo).
  *
  * NOTA: os seletores de login dependem do `MinimalLoginScreen` real (mesmo
  * padrão de e2e/kpis.spec.ts). Ajustar ao DOM na 1ª execução (browser_snapshot).
@@ -86,8 +95,9 @@ async function gotoIntegracoes(page: Page, tenantId: string) {
 /**
  * Semeia diretamente `tenant_anthropic_config` (bypassa a Anthropic real).
  * Espelha as colunas de server/anthropic/service.js::persistSnapshot e das
- * migrations 20260729_create_tenant_anthropic_config (Fase 1) e
- * 20260730_anthropic_fase2_threshold_alert (Fase 2: alert_threshold_bps).
+ * migrations 20260729_create_tenant_anthropic_config (Fase 1),
+ * 20260730_anthropic_fase2_threshold_alert (Fase 2: alert_threshold_bps) e
+ * 20260730_anthropic_fase3_mode (Fase 3: coluna `mode`).
  *
  * `alert_threshold_bps` e `last_state` têm default que preserva o comportamento
  * da Fase 1: default 1430 (14,30%, mesmo default da migration/coluna) e
@@ -95,6 +105,10 @@ async function gotoIntegracoes(page: Page, tenantId: string) {
  * ver server/anthropic/service.js::persistSnapshot). Os 6 testes da Fase 1
  * não passam esses campos, então continuam exercitando exatamente os mesmos
  * valores de antes.
+ *
+ * `mode` default `'api'` pelo mesmo motivo: os testes de Fase 1/2 não passam
+ * esse campo e não podem mudar de semântica — só o cenário MAX (Fase 3) passa
+ * `mode: 'max'` explicitamente.
  *
  * Requer SUPABASE_SERVICE_ROLE_KEY (a tabela tem RLS ligado SEM policies —
  * só service_role enxerga, igual tenant_contact2sale_config).
@@ -110,6 +124,7 @@ async function seedAnthropicSnapshot(
     last_window_start?: string | null;
     last_window_end?: string | null;
     alert_threshold_bps?: number;
+    mode?: 'api' | 'max';
   },
 ) {
   const url = process.env.VITE_SUPABASE_URL;
@@ -131,6 +146,7 @@ async function seedAnthropicSnapshot(
       last_window_start: snapshot.last_window_start ?? null,
       last_window_end: snapshot.last_window_end ?? null,
       alert_threshold_bps: snapshot.alert_threshold_bps ?? 1430,
+      mode: snapshot.mode ?? 'api',
       last_synced_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     },
@@ -292,5 +308,80 @@ test.describe('Anthropic — autorização', () => {
       data: { tenantId: TEST_TENANT_ID },
     });
     expect(res.status()).toBe(403);
+  });
+});
+
+test.describe('Anthropic — modo MAX (aba Integrações, Fase 3)', () => {
+  // Trocar de modo é destrutivo do snapshot (handleAnthropicModeChange em
+  // IntegracoesPage.tsx reseta o config ao salvar), por isso a UI usa um
+  // `window.confirm()` nativo antes de aplicar — o teste aceita esse dialog
+  // via `page.on('dialog', ...)` (não há como interagir com um confirm()
+  // nativo pelos seletores normais do Playwright).
+  test('alternar para MAX esconde a API key e mostra as instruções do reporter', async ({ page }) => {
+    await seedAnthropicSnapshot(TEST_TENANT_ID, { status: 'not_configured', mode: 'api' });
+    await loginAsOwner(page);
+    await gotoIntegracoes(page, TEST_TENANT_ID);
+
+    const card = page.getByText('Anthropic (Claude)').locator('..').locator('..');
+
+    // Toggle segmentado API | MAX visível com os dois modos.
+    const apiTab = card.getByRole('button', { name: /^api$/i });
+    const maxTab = card.getByRole('button', { name: /^max$/i });
+    await expect(apiTab).toBeVisible();
+    await expect(maxTab).toBeVisible();
+
+    // Estado inicial (modo api): campo de key visível, bloco do reporter ausente.
+    await expect(card.getByPlaceholder('sk-ant-...')).toBeVisible();
+
+    page.once('dialog', (dialog) => dialog.accept());
+    await maxTab.click();
+    await page.waitForLoadState('networkidle');
+
+    // Pós-troca (modo max): campo de key some, instruções do reporter aparecem.
+    // `octodash-max-usage-reporter.cjs` é o nome real do script referenciado no
+    // bloco de instruções (ver IntegracoesPage.tsx) — string distintiva o
+    // suficiente para não colidir com nenhum outro texto da página.
+    await expect(card.getByPlaceholder('sk-ant-...')).not.toBeVisible();
+    await expect(card).toContainText('octodash-max-usage-reporter.cjs');
+  });
+});
+
+test.describe('Anthropic — ingest do modo MAX (Fase 3)', () => {
+  // POST /api/v1/anthropic/usage-report é autenticado por tenant_api_key
+  // (validateApiKey nos entrypoints — server/anthropic/ingest.js não usa
+  // Supabase Auth), diferente das demais rotas Anthropic. Requer
+  // E2E_TENANT_API_KEY: uma tenant_api_key de teste válida para o tenant de
+  // teste (mesmo mecanismo usado por /api/v1/leads). Sem ela, skip alto —
+  // não faz sentido rodar este bloco sem essa credencial.
+  test.skip(
+    !process.env.E2E_TENANT_API_KEY,
+    'Requer E2E_TENANT_API_KEY (tenant_api_key de teste) para autenticar o ingest MAX.',
+  );
+
+  test('tenant em modo max: 200 e {ok:true}', async ({ request }) => {
+    await seedAnthropicSnapshot(TEST_TENANT_ID, { status: 'normal', mode: 'max' });
+
+    const res = await request.post('/api/v1/anthropic/usage-report', {
+      headers: { Authorization: `Bearer ${process.env.E2E_TENANT_API_KEY}` },
+      data: { week_pct: 42 },
+    });
+
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({ ok: true });
+  });
+
+  test('tenant em modo api: 409 (ingest MAX não se aplica)', async ({ request }) => {
+    await seedAnthropicSnapshot(TEST_TENANT_ID, { status: 'normal', mode: 'api' });
+
+    const res = await request.post('/api/v1/anthropic/usage-report', {
+      headers: { Authorization: `Bearer ${process.env.E2E_TENANT_API_KEY}` },
+      data: { week_pct: 42 },
+    });
+
+    // ingestMaxUsage retorna code: 'mode_not_max' quando o tenant não está em
+    // modo max — os dois entrypoints (api-server.js / proxy-production.js)
+    // mapeiam esse code para HTTP 409 (ver `r.code === 'mode_not_max' ? 409 : 400`).
+    expect(res.status()).toBe(409);
   });
 });
