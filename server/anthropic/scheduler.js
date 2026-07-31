@@ -11,12 +11,18 @@ import { checkAndSendOwnerAlert } from './alerts.js';
 
 const CONFIG_TABLE = 'tenant_anthropic_config';
 
-/** Tenants com admin_api_key_encrypted não nula (o budget agora é global de env). */
+/**
+ * Tenants com admin_api_key_encrypted não nula E mode='api' (o budget agora é
+ * global de env). Tenants MAX são push via ingest — o tick os pularia de
+ * qualquer forma sem key, mas filtrar aqui evita o upsert not_configured que
+ * re-armaria o dedup.
+ */
 async function defaultListConfiguredTenants(supabase) {
   const { data, error } = await supabase
     .from(CONFIG_TABLE)
     .select('tenant_id')
-    .not('admin_api_key_encrypted', 'is', null);
+    .not('admin_api_key_encrypted', 'is', null)
+    .eq('mode', 'api');
   if (error) { console.warn(`[anthropic] listConfiguredTenants falhou: ${error.message}`); return []; }
   return (data || []).map((r) => r.tenant_id);
 }

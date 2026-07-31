@@ -40,7 +40,7 @@ const fakeService = { getWeeklyUsage: async () => dtoStub };
 
 const savedCalls = [];
 const fakeResolver = {
-  resolveConfig: async () => ({ tenantId: 't1', apiKey: 'sk-ant-admin01-abcd', weeklyLimitUsd: 500, status: 'normal', lastSyncedAt: null, alertThresholdBps: 1430 }),
+  resolveConfig: async () => ({ tenantId: 't1', apiKey: 'sk-ant-admin01-abcd', weeklyLimitUsd: 500, status: 'normal', lastSyncedAt: null, alertThresholdBps: 1430, mode: 'api' }),
   saveConfig: async (tenantId, input) => { savedCalls.push({ tenantId, input }); return { ok: true }; },
   invalidate() {},
 };
@@ -196,5 +196,45 @@ describe('POST /api/v1/anthropic/config/get — devolve o limiar', () => {
     const res = await run(app.routes['POST /api/v1/anthropic/config/get'],
       { headers: { authorization: 'Bearer gestor_tok' }, body: { tenantId: 't1' } });
     expect(res.body.config.alertThresholdBps).toBe(1430);
+  });
+});
+
+describe('POST /config — mode', () => {
+  it('aceita e repassa mode válido', async () => {
+    const app = fakeApp();
+    const supabase = fakeSupabase({
+      users: { gestor_tok: { id: 'g', email: 'g@x.com' } },
+      memberships: { 't1:g': 'admin' },
+    });
+    registerAnthropicRoutes(app, supabase, { resolver: fakeResolver, service: fakeService });
+    const res = await run(app.routes['POST /api/v1/anthropic/config'],
+      { headers: { authorization: 'Bearer gestor_tok' }, body: { tenantId: 't1', mode: 'max' } });
+    expect(res.statusCode).toBe(200);
+    expect(savedCalls.at(-1).input.mode).toBe('max');
+  });
+  it.each([['both'], [1], ['MAX ']])('mode inválido %s → 400', async (bad) => {
+    const app = fakeApp();
+    const supabase = fakeSupabase({
+      users: { gestor_tok: { id: 'g', email: 'g@x.com' } },
+      memberships: { 't1:g': 'admin' },
+    });
+    registerAnthropicRoutes(app, supabase, { resolver: fakeResolver, service: fakeService });
+    const res = await run(app.routes['POST /api/v1/anthropic/config'],
+      { headers: { authorization: 'Bearer gestor_tok' }, body: { tenantId: 't1', mode: bad } });
+    expect(res.statusCode).toBe(400);
+  });
+});
+
+describe('POST /config/get — devolve mode', () => {
+  it('config inclui mode', async () => {
+    const app = fakeApp();
+    const supabase = fakeSupabase({
+      users: { gestor_tok: { id: 'g', email: 'g@x.com' } },
+      memberships: { 't1:g': 'admin' },
+    });
+    registerAnthropicRoutes(app, supabase, { resolver: fakeResolver, service: fakeService });
+    const res = await run(app.routes['POST /api/v1/anthropic/config/get'],
+      { headers: { authorization: 'Bearer gestor_tok' }, body: { tenantId: 't1' } });
+    expect(res.body.config.mode).toBe('api');
   });
 });

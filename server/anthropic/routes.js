@@ -76,14 +76,17 @@ export function registerAnthropicRoutes(app, supabase, options = {}) {
   const clientImpl = options.clientImpl || fetchCostReport;
 
   app.post('/api/v1/anthropic/config', requireManager, async (req, res) => {
-    const { tenantId, apiKey, alertThresholdBps } = req.body || {};
+    const { tenantId, apiKey, alertThresholdBps, mode } = req.body || {};
     if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId obrigatório' });
     if (alertThresholdBps !== undefined && alertThresholdBps !== null) {
       if (!Number.isInteger(alertThresholdBps) || alertThresholdBps < 1 || alertThresholdBps > 10000) {
         return res.status(400).json({ ok: false, error: 'alertThresholdBps inválido (inteiro 1..10000)' });
       }
     }
-    const saved = await resolver.saveConfig(tenantId, { apiKey, alertThresholdBps });
+    if (mode !== undefined && mode !== null && mode !== 'api' && mode !== 'max') {
+      return res.status(400).json({ ok: false, error: "mode inválido ('api'|'max')" });
+    }
+    const saved = await resolver.saveConfig(tenantId, { apiKey, alertThresholdBps, mode });
     if (!saved.ok) return res.status(400).json(saved);
     res.status(200).json({ ok: true });
   });
@@ -101,6 +104,7 @@ export function registerAnthropicRoutes(app, supabase, options = {}) {
         weeklyLimitUsd: cfg.weeklyLimitUsd ?? null,
         lastSyncedAt: cfg.lastSyncedAt ?? null,
         alertThresholdBps: cfg.alertThresholdBps ?? 1430,
+        mode: cfg.mode ?? 'api',
       },
     });
   });

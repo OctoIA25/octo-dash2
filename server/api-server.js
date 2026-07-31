@@ -4086,7 +4086,15 @@ const c2sRunner = makeC2sRunner(supabase, { resolver: c2sResolver, apiClient: c2
 registerContact2SaleRoutes(app, supabase, { resolver: c2sResolver, apiClient: c2sApiClient, runner: c2sRunner });
 
 import { registerAnthropicRoutes } from './anthropic/routes.js';
+import { ingestMaxUsage } from './anthropic/ingest.js';
 registerAnthropicRoutes(app, supabase);
+
+// Ingest do modo MAX (reporter get_usage POSTa o % da assinatura). Auth pela
+// tenant_api_key (validateApiKey) — mesmo padrão das rotas /api/v1/leads.
+app.post('/api/v1/anthropic/usage-report', validateApiKey, async (req, res) => {
+  const r = await ingestMaxUsage(supabase, req.tenantId, req.body || {});
+  res.status(r.ok ? 200 : (r.code === 'mode_not_max' ? 409 : 400)).json(r);
+});
 
 // eNPS de Corretores — pesquisa recorrente. Registrar ANTES do 404 catch-all.
 import { registerEnpsRoutes, startEnpsScheduler, makeEnpsRunner } from './enps/index.js';

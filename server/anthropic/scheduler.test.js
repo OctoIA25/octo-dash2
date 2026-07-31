@@ -97,3 +97,23 @@ describe('runAll — alerta na transição p/ warning', () => {
     expect(r.processed).toBe(2);
   });
 });
+
+describe('defaultListConfiguredTenants — só mode=api', () => {
+  it('filtra admin_api_key não-nula E mode=api', async () => {
+    const calls = [];
+    const supabase = {
+      from() { return supabase; }, select() { return supabase; },
+      not(c, op, v) { calls.push(['not', c, op, v]); return supabase; },
+      eq(c, v) { calls.push(['eq', c, v]); return Promise.resolve({ data: [{ tenant_id: 't1' }], error: null }); },
+    };
+    const runner = makeAnthropicRunner(supabase, {
+      readPrevState: async () => null,
+      service: { getWeeklyUsage: async () => ({ status: 'normal', window: {}, usage: {} }) },
+      recordHeartbeatImpl: async () => {},
+      alertsImpl: { checkAndSendOwnerAlert: async () => ({ alerted: false }) },
+    });
+    const r = await runner.runAll();
+    expect(r.processed).toBe(1);
+    expect(calls).toContainEqual(['eq', 'mode', 'api']);
+  });
+});

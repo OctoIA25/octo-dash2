@@ -4766,6 +4766,7 @@ registerContact2SaleRoutes(app, supabase, { resolver: c2sResolver, apiClient: c2
 
 import { registerAnthropicRoutes } from './anthropic/routes.js';
 import { startAnthropicScheduler } from './anthropic/scheduler.js';
+import { ingestMaxUsage } from './anthropic/ingest.js';
 
 // Sync incremental automático (cron 3min, updated_gte real). Flag-gated para
 // rodar em UM processo, igual Kenlo/Santa Ângela.
@@ -4780,6 +4781,13 @@ registerAnthropicRoutes(app, supabase);
 if (process.env.ANTHROPIC_SCHEDULER === '1') {
   startAnthropicScheduler(supabase);
 }
+
+// Ingest do modo MAX (reporter get_usage POSTa o % da assinatura). Auth pela
+// tenant_api_key (validateApiKey) — mesmo padrão das rotas /api/v1/leads.
+app.post('/api/v1/anthropic/usage-report', validateApiKey, async (req, res) => {
+  const r = await ingestMaxUsage(supabase, req.tenantId, req.body || {});
+  res.status(r.ok ? 200 : (r.code === 'mode_not_max' ? 409 : 400)).json(r);
+});
 
 // ============================================
 // eNPS DE CORRETORES — pesquisa recorrente (envio + submissão + agregação)
