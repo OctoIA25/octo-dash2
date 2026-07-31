@@ -12,9 +12,20 @@ function fakeSupabase(rowByTenant = {}) {
   const api = {
     _store: store,
     from() { return api; },
-    select() { api._op = 'select'; return api; },
+    select(cols) { api._op = 'select'; api._cols = cols; return api; },
     eq(_col, val) { api._tenant = val; return api; },
-    async maybeSingle() { return { data: store[api._tenant] ?? null, error: null }; },
+    async maybeSingle() {
+      const row = store[api._tenant];
+      if (!row) return { data: null, error: null };
+      // Se houve select específico, retornar apenas essas colunas
+      if (api._cols && api._cols !== '*') {
+        const cols = api._cols.split(',').map(c => c.trim());
+        const filtered = {};
+        cols.forEach(c => { if (c in row) filtered[c] = row[c]; });
+        return { data: filtered, error: null };
+      }
+      return { data: row, error: null };
+    },
     async upsert(payload) { store[payload.tenant_id] = { ...store[payload.tenant_id], ...payload }; return { error: null }; },
   };
   return api;
@@ -31,7 +42,7 @@ describe('createAnthropicConfigResolver', () => {
     });
     const r = createAnthropicConfigResolver({ supabase, processEnv: ENV, now });
     const cfg = await r.resolveConfig('t1');
-    expect(cfg).toEqual({ tenantId: 't1', apiKey: 'sk-ant-admin01-secret', weeklyLimitUsd: 500, status: 'normal', lastSyncedAt: '2026-07-29T12:00:00Z', alertThresholdBps: 2000, lastAlertedAt: null });
+    expect(cfg).toEqual({ tenantId: 't1', apiKey: 'sk-ant-admin01-secret', weeklyLimitUsd: 500, status: 'normal', lastSyncedAt: '2026-07-29T12:00:00Z', alertThresholdBps: 2000, lastAlertedAt: null, mode: 'api' });
   });
 
   it('sem linha → null', async () => {
@@ -67,6 +78,31 @@ describe('createAnthropicConfigResolver', () => {
     const res = await r.saveConfig('t1', { alertThresholdBps: 5000 });
     expect(res.ok).toBe(true);
     expect(supabase._store.t1.alert_threshold_bps).toBe(5000);
+  });
+
+  it('resolveConfig expõe mode (default api quando coluna ausente)', async () => {
+    const supabase = fakeSupabase({ t1: { tenant_id: 't1', status: 'normal' } });
+    const r = createAnthropicConfigResolver({ supabase, processEnv: ENV, now });
+    expect((await r.resolveConfig('t1')).mode).toBe('api');
+  });
+
+  it('saveConfig com mode DIFERENTE reseta o snapshot', async () => {
+    const supabase = fakeSupabase({ t1: { tenant_id: 't1', mode: 'api', last_state: 'warning', last_percentage: 50, status: 'warning' } });
+    const r = createAnthropicConfigResolver({ supabase, processEnv: ENV, now });
+    const res = await r.saveConfig('t1', { mode: 'max' });
+    expect(res.ok).toBe(true);
+    expect(supabase._store.t1.mode).toBe('max');
+    expect(supabase._store.t1.status).toBe('not_configured');
+    expect(supabase._store.t1.last_state).toBeNull();
+    expect(supabase._store.t1.last_percentage).toBeNull();
+  });
+
+  it('saveConfig com o MESMO mode não reseta', async () => {
+    const supabase = fakeSupabase({ t1: { tenant_id: 't1', mode: 'max', last_state: 'warning', last_percentage: 50 } });
+    const r = createAnthropicConfigResolver({ supabase, processEnv: ENV, now });
+    await r.saveConfig('t1', { mode: 'max', alertThresholdBps: 2000 });
+    expect(supabase._store.t1.last_state).toBe('warning');
+    expect(supabase._store.t1.alert_threshold_bps).toBe(2000);
   });
 });
 

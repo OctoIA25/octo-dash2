@@ -34,12 +34,13 @@ export function createAnthropicConfigResolver({ supabase, processEnv = process.e
       lastSyncedAt: data.last_synced_at ?? null,
       alertThresholdBps: data.alert_threshold_bps == null ? 1430 : Number(data.alert_threshold_bps),
       lastAlertedAt: data.last_alerted_at ?? null,
+      mode: data.mode || 'api',
     };
     cache.set(tenantId, { value: resolved, cachedAt: now() });
     return resolved;
   }
 
-  async function saveConfig(tenantId, { apiKey, weeklyLimitUsd, status, alertThresholdBps } = {}) {
+  async function saveConfig(tenantId, { apiKey, weeklyLimitUsd, status, alertThresholdBps, mode } = {}) {
     if (apiKey && !hasEncryptionKey(processEnv)) {
       return { ok: false, error: 'EMAIL_ENCRYPTION_KEY ausente — não é seguro salvar a API key' };
     }
@@ -48,6 +49,20 @@ export function createAnthropicConfigResolver({ supabase, processEnv = process.e
     if (weeklyLimitUsd !== undefined) payload.weekly_limit_usd = weeklyLimitUsd;
     if (alertThresholdBps !== undefined) payload.alert_threshold_bps = alertThresholdBps;
     if (apiKey) payload.admin_api_key_encrypted = encryptSecret(apiKey, processEnv);
+
+    if (mode !== undefined) {
+      payload.mode = mode;
+      // Troca de modo invalida o snapshot do modo anterior (o card não pode
+      // exibir % de USD do modo API como se fosse % da assinatura, e vice-versa).
+      const { data: cur } = await supabase.from(TABLE).select('mode').eq('tenant_id', tenantId).maybeSingle();
+      if ((cur?.mode || 'api') !== mode) {
+        Object.assign(payload, {
+          status: 'not_configured', last_state: null, last_percentage: null,
+          last_usage_usd: null, weekly_limit_usd: null, last_window_start: null,
+          last_window_end: null, last_error: null, last_synced_at: null,
+        });
+      }
+    }
 
     const { error } = await supabase.from(TABLE).upsert(payload, { onConflict: 'tenant_id' });
     if (error) return { ok: false, error: error.message };
