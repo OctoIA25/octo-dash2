@@ -6,8 +6,9 @@ const FIXED_NOW = Date.parse('2026-07-29T12:00:00.000Z');
 
 function fakeSupabase() {
   const store = {};
-  const api = { _store: store, from() { return api; }, eq(_c, v) { api._t = v; return api; },
-    async upsert(p) { store[p.tenant_id] = { ...store[p.tenant_id], ...p }; return { error: null }; } };
+  const api = { _store: store, from() { return api; }, select() { return api; }, eq(_c, v) { api._t = v; return api; },
+    async upsert(p) { store[p.tenant_id] = { ...store[p.tenant_id], ...p }; return { error: null }; },
+    async maybeSingle() { return { data: store[api._t] ?? null, error: null }; } };
   return api;
 }
 const bucket = (...cents) => ({ results: cents.map((a) => ({ amount: String(a), currency: 'USD' })) });
@@ -85,5 +86,29 @@ describe('getWeeklyUsage', () => {
     expect(a.status).toBe('warning');
     expect(b.status).toBe('warning');
     expect(a.usage.percentage).toBe(b.usage.percentage);
+  });
+
+  it('modo max: espelha o snapshot SEM persistir nem chamar o client', async () => {
+    let called = 0;
+    const clientImpl = async () => { called += 1; return []; };
+    const resolver = { resolveConfig: async () => ({ tenantId: 't1', mode: 'max', apiKey: null, alertThresholdBps: 1430 }), saveConfig: async () => ({ ok: true }), invalidate() {} };
+    const supabase = fakeSupabase();
+    supabase._store.t1 = { tenant_id: 't1', last_state: 'warning', last_percentage: 41, last_window_start: 'ws', last_window_end: 'we', last_synced_at: 'ts' };
+    const before = JSON.stringify(supabase._store.t1);
+    const service = createAnthropicService({ supabase, resolver, clientImpl, processEnv: { ANTHROPIC_WEEKLY_BUDGET_USD: '500' }, now: () => FIXED_NOW });
+    const dto = await service.getWeeklyUsage('t1');
+    expect(called).toBe(0);
+    expect(dto.status).toBe('warning');
+    expect(dto.usage.percentage).toBe(41);
+    expect(dto.usage.limit).toBeNull();
+    expect(JSON.stringify(supabase._store.t1)).toBe(before); // nada persistido
+  });
+  it('modo max sem linha → not_configured, sem persistir', async () => {
+    const resolver = { resolveConfig: async () => ({ tenantId: 't1', mode: 'max' }), saveConfig: async () => ({ ok: true }), invalidate() {} };
+    const supabase = fakeSupabase();
+    const service = createAnthropicService({ supabase, resolver, clientImpl: async () => [], processEnv: {}, now: () => FIXED_NOW });
+    const dto = await service.getWeeklyUsage('t1');
+    expect(dto.status).toBe('not_configured');
+    expect(supabase._store.t1).toBeUndefined();
   });
 });

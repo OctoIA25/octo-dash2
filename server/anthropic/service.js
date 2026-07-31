@@ -53,6 +53,25 @@ export function createAnthropicService({ supabase, resolver, clientImpl = fetchC
     const window = weekWindow(now());
     const fetchedAt = new Date(now()).toISOString();
     const cfg = await cfgResolver.resolveConfig(tenantId);
+
+    // Tenant no modo MAX: o snapshot pertence ao ingest (reporter). Recalcular
+    // aqui (rotas /usage e /refresh, ou um tick que escapou do filtro do
+    // scheduler) apagaria o % da assinatura e re-armaria o dedup do alerta.
+    // Devolve um espelho do snapshot persistido, SEM persistir nada.
+    if (cfg?.mode === 'max') {
+      const { data: row } = await supabase
+        .from(TABLE)
+        .select('last_state,last_percentage,last_window_start,last_window_end,last_synced_at')
+        .eq('tenant_id', tenantId).maybeSingle();
+      return buildUsageDto({
+        current: null, limit: null,
+        percentage: row?.last_percentage == null ? null : Number(row.last_percentage),
+        state: row?.last_state ?? 'not_configured',
+        window: { startsAt: row?.last_window_start ?? null, endsAt: row?.last_window_end ?? null },
+        fetchedAt: row?.last_synced_at ?? fetchedAt,
+      });
+    }
+
     const hasKey = Boolean(cfg?.apiKey);
     const hasBudget = env.budgetUsd > 0;
     const thresholdBps = cfg?.alertThresholdBps ?? 1430;
