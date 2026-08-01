@@ -11,6 +11,7 @@ import { PageTabs } from './PageTabs';
 import { LogoutConfirmModal } from '@/components/LogoutConfirmModal';
 import { useHeaderSlot } from '@/contexts/HeaderSlotContext';
 import { useNovoActions } from '@/contexts/NovoActionsContext';
+import { ViewAsSelector } from '@/components/ViewAsSelector';
 
 function getInitials(name: string): string {
   return (
@@ -171,6 +172,9 @@ export function NovoHeader() {
           <Bell className="w-[18px] h-[18px] text-slate-600 dark:text-slate-300" strokeWidth={2} />
           <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white dark:ring-slate-900" />
         </button>
+
+        {/* Só renderiza para owner/admin — ver ViewAsContext.canViewAsOthers. */}
+        <ViewAsSelector />
 
         <div ref={profileRef} className="relative pl-3 border-l border-slate-200 dark:border-slate-800">
           <button

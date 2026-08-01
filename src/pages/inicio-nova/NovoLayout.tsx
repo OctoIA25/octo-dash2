@@ -10,6 +10,7 @@ import { NovoHeader } from './NovoHeader';
 import type { ProcessedLead } from '@/data/realLeadsProcessor';
 import { HeaderSlotProvider } from '@/contexts/HeaderSlotContext';
 import { NovoActionsProvider } from '@/contexts/NovoActionsContext';
+import { ViewAsProvider } from '@/contexts/ViewAsContext';
 import { SupportButton } from '@/components/support/SupportButton';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { SupportService } from '@/components/support/SupportService';
@@ -38,6 +39,7 @@ export function NovoLayout({ leads, onRefresh, isRefreshing, children }: NovoLay
   }, [user, tenantId])
 
   return (
+    <ViewAsProvider>
     <HeaderSlotProvider>
       <NovoActionsProvider>
         <div
@@ -68,5 +70,6 @@ export function NovoLayout({ leads, onRefresh, isRefreshing, children }: NovoLay
         </div>
       </NovoActionsProvider>
     </HeaderSlotProvider>
+    </ViewAsProvider>
   );
 }

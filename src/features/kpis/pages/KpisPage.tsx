@@ -13,6 +13,7 @@ import { monthPeriod, previousMonthPeriod } from '../period';
 import type { KpiPeriod } from '../types';
 import { computeCanManageKpis } from '../admin/hooks/useKpiAdmin';
 import { useAuthContext } from '@/contexts/AuthContext';
+import { useEffectiveUser } from '@/contexts/ViewAsContext';
 import {
   KpiCommercialCharts,
   KpiFunnelCard,
@@ -38,7 +39,11 @@ function isCurrentMonth(period: KpiPeriod): boolean {
 
 export function KpisPage() {
   const [period, setPeriod] = useState<KpiPeriod>(() => monthPeriod());
-  const { data, isLoading, isError, refetch, tenantReady } = useKpis({ period });
+  // "Visualizar como": `actingUserId` é null sem contexto ativo (comportamento
+  // padrão). Ele entra na queryKey do useKpis, então o cache nunca mistura os
+  // KPIs de um usuário com os de outro. O servidor revalida quem pode assumir quem.
+  const { actingUserId } = useEffectiveUser();
+  const { data, isLoading, isError, refetch, tenantReady } = useKpis({ period, agentId: actingUserId });
   const { isGestao, isOwner } = useAuthContext();
   const navigate = useNavigate();
   const canManageKpis = computeCanManageKpis({ isGestao, isOwner });

@@ -16,6 +16,7 @@
 
 import { buildOverview } from './kpisCompute.js';
 import { getDeletedTenantIds } from '../utils/tenantSoftDelete.js';
+import { authorizeActingUser } from '../viewAs/authorize.js';
 import {
   monthPeriod,
   monthPeriodFromIso,
@@ -128,6 +129,23 @@ export function makeKpisHandler(supabase) {
         return res.status(resolved.status).json({ ok: false, error: resolved.error });
       }
       const { tenantId } = resolved;
+
+      // `?agentId=` restringe os KPIs de LEADS a um corretor — é o que o
+      // "visualizar como" usa. NÃO é auto-serviço: o servidor confere que quem
+      // pede pode assumir aquele contexto e que o alvo é do mesmo tenant.
+      // Os contadores de tenant (imóveis, captação, equipe, VGV/VGC) não têm
+      // atribuição por corretor no schema e seguem com o total do tenant.
+      const acting = await authorizeActingUser(supabase, {
+        userId: req.userId,
+        userEmail: req.userEmail,
+        tenantId,
+        actingUserId: req.query?.agentId,
+      });
+      if (!acting.ok) {
+        return res.status(acting.status).json({ ok: false, error: acting.error });
+      }
+      const agentId = acting.actingUserId;
+
       const period = resolvePeriod(req);
       const prevPeriod = previousMonthPeriod(period);
       const periodScope = { tenantId, periodType: 'month', periodStart: period.startDate };
@@ -145,8 +163,8 @@ export function makeKpisHandler(supabase) {
         targets,
         values,
       ] = await Promise.all([
-        fetchLeads(supabase, { tenantId, period }),
-        fetchLeads(supabase, { tenantId, period: prevPeriod }),
+        fetchLeads(supabase, { tenantId, period, agentId }),
+        fetchLeads(supabase, { tenantId, period: prevPeriod, agentId }),
         countImoveisAtivos(supabase, { tenantId }),
         countCaptacao(supabase, { tenantId, period }),
         countCorretoresAtivos(supabase, { tenantId }),

@@ -4058,6 +4058,12 @@ import { registerKpisRoutes } from './kpis/index.js';
 registerKpisRoutes(app, supabase);
 
 // ============================================
+// VISUALIZAR COMO — Owner/Admin veem o dashboard no contexto de outro usuário
+// ============================================
+import { registerViewAsRoutes } from './viewAs/index.js';
+registerViewAsRoutes(app, supabase);
+
+// ============================================
 // AGENTE DISPARADOR — interpreta NL → ações (WhatsApp) com prévia + confirmação
 // ============================================
 import { registerAgentActionRoutes } from './agent-actions/routes.js';

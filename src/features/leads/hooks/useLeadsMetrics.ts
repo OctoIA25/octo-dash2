@@ -10,6 +10,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '@/hooks/useAuth';
+import { useEffectiveUser } from '@/contexts/ViewAsContext';
 import { 
   fetchLeadsForMetrics, 
   crmLeadsToProcessedLeads,
@@ -76,8 +77,15 @@ export function useLeadsMetrics(options: UseLeadsMetricsOptions = {}): UseLeadsM
 
   // Admin = owner (por flag, email ou impersonation), admin ou gestão
   const effectiveIsOwner = isOwner || isOwnerByEmail || isOwnerImpersonating;
-  const isAdmin = effectiveIsOwner || authIsAdmin || isGestao;
-  
+  const realIsAdmin = effectiveIsOwner || authIsAdmin || isGestao;
+
+  // "Visualizar como": sem contexto ativo, `scope` é o próprio usuário — então
+  // o comportamento padrão não muda. Com contexto, o recorte (todos x só os
+  // próprios) passa a ser o do usuário visualizado.
+  const scope = useEffectiveUser();
+  const isAdmin = scope.isViewingAs ? scope.isAdmin : realIsAdmin;
+  const scopeUserId = scope.id ?? user?.id;
+
   
   // States
   const [leads, setLeads] = useState<CRMLead[]>([]);
@@ -130,7 +138,7 @@ export function useLeadsMetrics(options: UseLeadsMetricsOptions = {}): UseLeadsM
         setError(null);
 
         // Admin vê todos, corretor vê só os próprios
-        const agentId = isAdmin ? null : user?.id || null;
+        const agentId = isAdmin ? null : scopeUserId || null;
 
         const data = await fetchLeadsForMetrics(effectiveTenantId, agentId, leadType);
 
@@ -149,7 +157,7 @@ export function useLeadsMetrics(options: UseLeadsMetricsOptions = {}): UseLeadsM
     } finally {
       inFlightFetchRef.current = null;
     }
-  }, [tenantId, isAdmin, user?.id, leadType]);
+  }, [tenantId, isAdmin, scopeUserId, leadType]);
 
   // Initial fetch - também re-executa quando tenantId ou isAdmin muda
   // Importante: isAdmin pode mudar de false para true quando o auth state carrega completamente

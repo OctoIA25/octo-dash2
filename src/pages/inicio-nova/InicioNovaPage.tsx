@@ -28,6 +28,7 @@ import {
   Hand,
 } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
+import { useEffectiveUser } from '@/contexts/ViewAsContext';
 import { useFeaturedGoal } from '@/features/metas/hooks/useGoals';
 import { formatGoalValue, formatPercent } from '@/features/metas/domain';
 import { useLeadsMetrics } from '@/features/leads/hooks/useLeadsMetrics';
@@ -353,6 +354,7 @@ export function InicioNovaPage() {
   const [searchParams] = useSearchParams();
   const activeInicioTab = searchParams.get('tab') || 'funil';
   const { user, tenantName } = useAuthContext();
+  const scope = useEffectiveUser();
   // `processedLeads` normaliza `leads` + `kenlo_leads` no formato ProcessedLead
   // (etapa_atual, status_temperatura, valor_imovel, corretor_responsavel).
   // `useLeadsMetrics` assina `leadsEventEmitter`, então o Pipeline aqui
@@ -382,15 +384,17 @@ export function InicioNovaPage() {
     };
   }, [featuredGoal]);
 
+  // Saudação segue o usuário VISUALIZADO — é o sinal mais direto de que o
+  // contexto está ativo. Sem contexto, `scope` é o próprio usuário.
   const userName = useMemo(() => {
-    if (!user?.email) return 'Gabriel';
-    const prefix = user.email.split('@')[0].replace(/[._-]/g, ' ');
+    if (!scope.email) return 'Usuário';
+    const prefix = scope.email.split('@')[0].replace(/[._-]/g, ' ');
     return prefix
       .split(' ')
       .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
       .join(' ')
       .slice(0, 30);
-  }, [user?.email]);
+  }, [scope.email]);
 
   const userRole = user?.systemRole === 'owner' ? 'Owner' : user?.systemRole === 'admin' ? 'Gestor' : user?.systemRole === 'team_leader' ? 'Líder' : 'Corretor';
 

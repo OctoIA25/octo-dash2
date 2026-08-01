@@ -5,6 +5,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
 import { useAuth } from "@/hooks/useAuth";
+import { useEffectiveUser } from "@/contexts/ViewAsContext";
 import { OpenConversationLink } from '@/features/chat/components/OpenConversationLink';
 import { CriarLeadQuickModal } from './CriarLeadQuickModal';
 import { useToast } from '@/hooks/use-toast';
@@ -595,7 +596,15 @@ interface MeusLeadsAtribuidosSectionProps {
 export const MeusLeadsAtribuidosSection = ({
   leadType = LEAD_TYPE_INTERESSADO,
 }: MeusLeadsAtribuidosSectionProps = {}) => {
-  const { user, isCorretor, isAdmin, isOwner, isLoading: authLoading, tenantId } = useAuth();
+  const { user, isCorretor: realIsCorretor, isAdmin: realIsAdmin, isOwner, isLoading: authLoading, tenantId } = useAuth();
+
+  // "Visualizar como": sem contexto ativo, `scope` é o próprio usuário e nada
+  // muda. Com contexto, a LEITURA (quais leads, quais colunas) passa a ser a do
+  // usuário visualizado. Escritas continuam com o usuário real — ver
+  // `assumed_by: user?.id` abaixo — e `isOwner` (sync server-side) idem.
+  const scope = useEffectiveUser();
+  const isAdmin = scope.isViewingAs ? scope.isAdmin : realIsAdmin;
+  const isCorretor = scope.isViewingAs ? !scope.isAdmin : realIsCorretor;
   const kanbanColumns = useMemo(() => getKanbanColumns(leadType), [leadType]);
 
   // Ao abrir a tela, o owner força um sync server-side (debounce interno evita
@@ -793,14 +802,14 @@ export const MeusLeadsAtribuidosSection = ({
 
     // Para corretor: buscar por ID do usuário ou por nome
     // Tentar obter userId do auth, senão buscar diretamente da sessão Supabase
-    let userId = user?.id;
+    let userId = scope.id;
     if (!userId) {
       const { data: { session } } = await supabase.auth.getSession();
       userId = session?.user?.id;
     }
-    
+
     // Usar name do AuthUser ou extrair do email
-    const corretorNome = user?.name || user?.email?.split('@')[0] || '';
+    const corretorNome = scope.name || scope.email?.split('@')[0] || '';
     
     
     if (!userId && !corretorNome) {
@@ -834,7 +843,7 @@ export const MeusLeadsAtribuidosSection = ({
     } finally {
       setLoading(false);
     }
-  }, [authLoading, isAdmin, user?.id, user?.name, user?.email, toast, tenantId, leadType]);
+  }, [authLoading, isAdmin, scope.id, scope.name, scope.email, toast, tenantId, leadType]);
 
   // Carregar ao montar - buscar sempre que o componente montar (busca userId da sessão)
   useEffect(() => {
@@ -1398,7 +1407,7 @@ const handleDragEnd = useCallback(async (event: DragEndEvent) => {
         isConfirmandoLead={false}
         isAdmin={isAdmin}
         isCorretor={isCorretor}
-        currentCorretor={user?.email?.split('@')[0] || ''}
+        currentCorretor={scope.email?.split('@')[0] || ''}
         onAtualizarStatusLead={async (leadId: number, novoStatus: string) => {
           try {
             const result = await atualizarStatusLeadCRM(String(leadId), novoStatus);

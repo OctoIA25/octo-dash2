@@ -4691,6 +4691,13 @@ import { registerKpisRoutes } from './kpis/index.js';
 registerKpisRoutes(app, supabase);
 
 // ============================================
+// VISUALIZAR COMO — Owner/Admin veem o dashboard no contexto de outro usuário
+// Registrar ANTES do 404 catch-all de /api/v1/*.
+// ============================================
+import { registerViewAsRoutes } from './viewAs/index.js';
+registerViewAsRoutes(app, supabase);
+
+// ============================================
 // KENLO — sincronização nativa de leads (substitui automação N8N)
 // Registrar ANTES do 404 catch-all de /api/v1/*.
 // ============================================
