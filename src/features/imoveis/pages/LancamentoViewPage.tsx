@@ -15,6 +15,7 @@ import {
 import { supabase } from '@/lib/supabaseClient';
 import { uploadFotoComMarca } from '@/lib/watermarkUpload';
 import { useAuth } from '@/hooks/useAuth';
+import { normalizeSiteUrl } from '@/lib/normalizeSiteUrl';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -28,6 +29,7 @@ interface Lancamento {
   nome: string;
   descricao: string | null;
   endereco_plantao: string | null;
+  site_url: string | null;
   book_pdf: string | null;
   book_pdf_filename: string | null;
   fotos: Foto[];
@@ -104,6 +106,7 @@ export const LancamentoViewPage = () => {
   const [editandoNome, setEditandoNome] = useState(false);
   const [descricao, setDescricao] = useState('');
   const [enderecoPlantao, setEnderecoPlantao] = useState('');
+  const [siteUrl, setSiteUrl] = useState('');
   const [cidade, setCidade] = useState('');
   const [bairro, setBairro] = useState('');
   const [estagio, setEstagio] = useState('');
@@ -147,6 +150,7 @@ export const LancamentoViewPage = () => {
     setNome(normalized.nome);
     setDescricao(normalized.descricao ?? '');
     setEnderecoPlantao(normalized.endereco_plantao ?? '');
+    setSiteUrl(normalized.site_url ?? '');
     setCidade(normalized.cidade ?? '');
     setBairro(normalized.bairro ?? '');
     setEstagio(normalized.estagio ?? '');
@@ -204,6 +208,11 @@ export const LancamentoViewPage = () => {
       alert('Informe o nome do lançamento.');
       return;
     }
+    const siteUrlNormalizado = normalizeSiteUrl(siteUrl);
+    if (siteUrlNormalizado === undefined) {
+      alert('O link do site do lançamento é inválido. Use um endereço como https://seusite.com.br/lancamento.');
+      return;
+    }
     setIsSaving(true);
 
     try {
@@ -258,6 +267,7 @@ export const LancamentoViewPage = () => {
           nome: nomeTrim,
           descricao: descricao || null,
           endereco_plantao: enderecoPlantao.trim() || null,
+          site_url: siteUrlNormalizado,
           cidade: cidade.trim() || null,
           bairro: bairro.trim() || null,
           estagio: estagio.trim() || null,
@@ -290,6 +300,7 @@ export const LancamentoViewPage = () => {
       setBookPdf(bookPdfUrl);
       setBookFilename(bookPdfName);
       setFotos(fotosFinais);
+      setSiteUrl(siteUrlNormalizado ?? '');
       setEditandoNome(false);
       setSavedAt(new Date());
     } catch (err) {
@@ -573,6 +584,26 @@ export const LancamentoViewPage = () => {
             </span>
           </label>
         </div>
+      </section>
+
+      <section className="rounded-xl border border-border bg-card p-5 space-y-3">
+        <div>
+          <h2 className="text-lg font-semibold text-text-primary">
+            Link do site do lançamento{' '}
+            <span className="text-sm font-normal text-text-secondary">(opcional)</span>
+          </h2>
+          <p className="text-xs text-text-secondary mt-1">
+            Landing page do empreendimento. A Lia envia esse link para o cliente nos atendimentos.
+            Se ficar em branco, ela não oferece o link.
+          </p>
+        </div>
+        <Input
+          type="url"
+          inputMode="url"
+          placeholder="Ex: https://seusite.com.br/residencial-vista-mar"
+          value={siteUrl}
+          onChange={(e) => setSiteUrl(e.target.value)}
+        />
       </section>
 
       <section className="rounded-xl border border-border bg-card p-5 space-y-3">

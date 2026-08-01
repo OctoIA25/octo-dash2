@@ -3892,6 +3892,8 @@ const mapLancamentoFromDB = (row) => ({
   // nesse caso a Lia deve dizer que o corretor entrará em contato para
   // informar o endereço e combinar a melhor data.
   endereco_plantao: row.endereco_plantao || null,
+  // Landing page do empreendimento. null = não cadastrado; a Lia não oferece link.
+  site_url: row.site_url || null,
   book_pdf_url: row.book_pdf || null,
   book_pdf_filename: row.book_pdf_filename || null,
   fotos: (Array.isArray(row.fotos) ? row.fotos : []).map((f) => ({
@@ -3916,7 +3918,7 @@ app.get('/api/v1/lancamentos', validateApiKey, async (req, res) => {
 
     let query = supabase
       .from('lancamentos')
-      .select('id, nome, descricao, endereco_plantao, book_pdf, book_pdf_filename, fotos, created_at, updated_at', { count: 'exact' })
+      .select('id, nome, descricao, endereco_plantao, site_url, book_pdf, book_pdf_filename, fotos, created_at, updated_at', { count: 'exact' })
       .eq('tenant_id', req.tenantId)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
@@ -3944,6 +3946,7 @@ app.get('/api/v1/lancamentos', validateApiKey, async (req, res) => {
         id: row.id,
         nome: row.nome,
         endereco_plantao: row.endereco_plantao || null,
+        site_url: row.site_url || null,
         capa_url: capa?.url || null,
         total_fotos: fotos.length,
         tem_book: !!row.book_pdf,
