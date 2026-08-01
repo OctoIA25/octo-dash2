@@ -30,6 +30,12 @@
 import { isPlatformOwner } from '../utils/ownerAuth.js';
 import { normalizeEvent } from './emit.js';
 import { costForModelBreakdown } from './pricing.js';
+import { computeEscalationMetrics } from './derive/escalations.js';
+import { fetchEscalationRows, fetchClosedLeadIds } from './derive/escalationsQuery.js';
+import { computeCostMetrics } from './derive/costMetrics.js';
+import { billableEventsFromByModel, sumVgcBrl, fetchRateForDate } from './derive/costQuery.js';
+import { pickRate } from './pricing/exchange.js';
+import { computeQualityMetrics } from './derive/qualityMetrics.js';
 
 const MAX_BATCH = 50;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -181,6 +187,20 @@ async function resolveReadScope(req, res, supabase) {
 async function countBy(supabase, table, filters) {
   let q = supabase.from(table).select('id', { count: 'exact', head: true });
   for (const [col, val] of Object.entries(filters)) q = q.eq(col, val);
+  const { count, error } = await q;
+  if (error) throw new Error(error.message);
+  return count || 0;
+}
+
+/**
+ * Conta linhas do tenant onde `dateCol` cai na janela [from, to). Só head:true.
+ * Extras: pares [operador, coluna, valor] (ex.: ['gt','final_sale_value',0]).
+ */
+async function countInWindow(supabase, table, tenantId, dateCol, { from, to }, extras = []) {
+  let q = supabase.from(table).select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId);
+  if (from) q = q.gte(dateCol, from);
+  if (to) q = q.lt(dateCol, to);
+  for (const [op, col, val] of extras) q = q[op](col, val);
   const { count, error } = await q;
   if (error) throw new Error(error.message);
   return count || 0;
@@ -423,6 +443,158 @@ export function registerAgentTelemetryRoutes(app, supabase) {
       return res.json({ disparador, delivery, chat, lia, recovery });
     } catch (err) {
       console.error('[agent-telemetry] erro no overview:', err?.message);
+      return res.status(500).json({ error: 'internal_error' });
+    }
+  });
+
+  // ----------------------------------------------------------- escalations
+  // Escalonamento IA→corretor DERIVADO de lia_perguntas_corretor (não emitido):
+  // coleta (escalationsQuery) → matemática pura (escalations) → DTO. Requer
+  // tenantId (métrica por-tenant; sem cross-tenant). Janela por criado_em.
+  app.get('/api/v1/agent-telemetry/escalations', async (req, res) => {
+    try {
+      const scope = await resolveReadScope(req, res, supabase);
+      if (!scope) return;
+      if (!scope.tenantId) return res.status(400).json({ error: 'tenant_required' });
+
+      const window = parseWindow(req.query);
+      if (!window.ok) return res.status(400).json({ error: window.reason });
+
+      const rows = await fetchEscalationRows(supabase, scope.tenantId, window);
+      const closedLeadIds = await fetchClosedLeadIds(supabase, scope.tenantId);
+
+      return res.json({
+        window: { from: window.from, to: window.to },
+        escalations: computeEscalationMetrics(rows, closedLeadIds),
+      });
+    } catch (err) {
+      console.error('[agent-telemetry] erro no escalations:', err?.message);
+      return res.status(500).json({ error: 'internal_error' });
+    }
+  });
+
+  // ----------------------------------------------------------------- costs
+  // Cards financeiros (Fatia B): custo USD (summary) → BRL (câmbio vigente) ÷
+  // denominadores de negócio. N/A honesto em costMetrics (sem câmbio/venda → null,
+  // nunca 0 fingido). Requer tenantId. Janela por from/to (default 30d).
+  app.get('/api/v1/agent-telemetry/costs', async (req, res) => {
+    try {
+      const scope = await resolveReadScope(req, res, supabase);
+      if (!scope) return;
+      if (!scope.tenantId) return res.status(400).json({ error: 'tenant_required' });
+
+      const window = parseWindow(req.query);
+      if (!window.ok) return res.status(400).json({ error: window.reason });
+      const t = scope.tenantId;
+
+      const { data: rawSummary, error: sErr } = await supabase.rpc('agent_telemetry_summary', {
+        p_tenant_id: t, p_from: window.from, p_to: window.to,
+        p_agent_slug: null, p_model: null, p_status: null, p_event_type: null,
+      });
+      if (sErr) throw new Error(sErr.message);
+
+      const { totalUsd, rows: byModel } = costForModelBreakdown((rawSummary || {}).by_model || []);
+      // Câmbio na borda final da janela (to), ou "agora" quando aberta.
+      const refDate = window.to ? new Date(window.to) : new Date();
+      const vgcStart = (window.from || '1970-01-01').slice(0, 10);
+      const vgcEnd = (window.to || refDate.toISOString()).slice(0, 10);
+
+      const [rate, vgcBrl, attendedLeads, closedSales] = await Promise.all([
+        fetchRateForDate(supabase, pickRate, refDate),
+        sumVgcBrl(supabase, t, vgcStart, vgcEnd),
+        countInWindow(supabase, 'leads', t, 'first_response_at', window),
+        countInWindow(supabase, 'leads', t, 'closing_date', window, [['gt', 'final_sale_value', 0]]),
+      ]);
+
+      return res.json({
+        window: { from: window.from, to: window.to },
+        costs: computeCostMetrics({
+          costUsd: totalUsd,
+          rate,
+          billableEvents: billableEventsFromByModel(byModel),
+          attendedLeads,
+          closedSales,
+          vgcBrl,
+        }),
+      });
+    } catch (err) {
+      console.error('[agent-telemetry] erro no costs:', err?.message);
+      return res.status(500).json({ error: 'internal_error' });
+    }
+  });
+
+  // ----------------------------------------------------- evaluations (write)
+  // Avaliação humana de qualidade (Fatia C). O avaliador é SEMPRE o usuário do
+  // JWT (nunca do body) — serviço não avalia (não tem quem). UPSERT idempotente
+  // por (tenant, agent, execution, avaliador).
+  app.post('/api/v1/agent-telemetry/evaluations', async (req, res) => {
+    try {
+      const auth = await authenticate(req, supabase);
+      if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
+      if (!auth.userId) return res.status(400).json({ error: 'evaluator_required' });
+
+      const body = req.body || {};
+      const tenantId = String(body.tenantId ?? '').trim();
+      if (!UUID_RE.test(tenantId)) return res.status(400).json({ error: 'invalid_tenant_id' });
+      const agentSlug = optionalFilter(body.agentSlug);
+      if (!agentSlug) return res.status(400).json({ error: 'agent_slug_required' });
+      if (body.verdict !== 'correct' && body.verdict !== 'incorrect') {
+        return res.status(400).json({ error: 'invalid_verdict' });
+      }
+
+      const authz = await authorizeTenant(supabase, auth, tenantId);
+      if (!authz.ok) return res.status(authz.status).json({ error: authz.error });
+
+      const { error } = await supabase.from('agent_response_evaluations').upsert(
+        {
+          tenant_id: tenantId,
+          agent_slug: agentSlug,
+          execution_id: optionalFilter(body.executionId),
+          verdict: body.verdict,
+          note: optionalFilter(body.note),
+          evaluator_user_id: auth.userId, // do JWT, nunca do body
+        },
+        { onConflict: 'tenant_id,agent_slug,execution_id,evaluator_user_id' },
+      );
+      if (error) {
+        console.error('[agent-telemetry] upsert de avaliação falhou:', error.message);
+        return res.status(500).json({ error: 'insert_failed' });
+      }
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error('[agent-telemetry] erro em evaluations:', err?.message);
+      return res.status(500).json({ error: 'internal_error' });
+    }
+  });
+
+  // ------------------------------------------------------ quality (read)
+  // Consolida avaliações em 3 estados (confirmed_correct/wrong/not_evaluated).
+  // Elegíveis = execuções do agente na janela (denominador do não-avaliado).
+  app.get('/api/v1/agent-telemetry/quality', async (req, res) => {
+    try {
+      const scope = await resolveReadScope(req, res, supabase);
+      if (!scope) return;
+      if (!scope.tenantId) return res.status(400).json({ error: 'tenant_required' });
+
+      const window = parseWindow(req.query);
+      if (!window.ok) return res.status(400).json({ error: window.reason });
+      const t = scope.tenantId;
+      const agent = optionalFilter(req.query.agent);
+
+      const evalFilter = { tenant_id: t, ...(agent ? { agent_slug: agent } : {}) };
+      const [evaluable, correct, incorrect] = await Promise.all([
+        countInWindow(supabase, 'agent_telemetry_events', t, 'occurred_at', window,
+          [['eq', 'event_type', 'execution'], ...(agent ? [['eq', 'agent_slug', agent]] : [])]),
+        countBy(supabase, 'agent_response_evaluations', { ...evalFilter, verdict: 'correct' }),
+        countBy(supabase, 'agent_response_evaluations', { ...evalFilter, verdict: 'incorrect' }),
+      ]);
+
+      return res.json({
+        window: { from: window.from, to: window.to },
+        quality: computeQualityMetrics({ evaluable, correct, incorrect }),
+      });
+    } catch (err) {
+      console.error('[agent-telemetry] erro em quality:', err?.message);
       return res.status(500).json({ error: 'internal_error' });
     }
   });

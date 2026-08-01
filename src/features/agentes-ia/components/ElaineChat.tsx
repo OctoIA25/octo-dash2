@@ -23,6 +23,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from "@/hooks/useAuth";
 import { emitChatTelemetry, chatStatusFrom } from '../services/agentTelemetryService';
+import { EvaluationButtons } from './EvaluationButtons';
 import { useToast } from '@/hooks/use-toast';
 import { useTheme } from '@/hooks/useTheme';
 import { User, Send, Loader2, X, Paperclip, Eye } from 'lucide-react';
@@ -860,6 +861,9 @@ export const ElaineChat = ({
               >
                 {message.timestamp.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
               </p>
+              {message.sender === 'agent' && !isReadOnly && (
+                <EvaluationButtons tenantId={user?.tenantId} agentSlug="elaine" executionId={activeConversationId} />
+              )}
             </div>
           </div>
         ))}

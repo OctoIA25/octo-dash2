@@ -76,7 +76,12 @@ describe('POST /api/v1/agent-telemetry/events — handler', () => {
     insert = vi.fn(async () => ({ error: null }));
     membershipResult = { data: { tenant_id: TENANT }, error: null };
     getUserResult = { data: { user: { id: 'u1', email: 'admin@imob.com' } }, error: null };
-    const app = { post: (_path, h) => { handler = h; }, get: () => {} };
+    // Há mais de uma rota POST agora (events + evaluations) — capturar por path,
+    // não "último vence", senão o handler de events é sobrescrito.
+    const app = {
+      post: (path, h) => { if (path === '/api/v1/agent-telemetry/events') handler = h; },
+      get: () => {},
+    };
     registerAgentTelemetryRoutes(app, supabase);
     process.env.AGENT_TELEMETRY_SERVICE_TOKEN = 'segredo';
   });

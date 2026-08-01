@@ -12,6 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Send, Loader2, User, Eye } from 'lucide-react';
 import { sendMessageToAgent, getWebhookUrl } from '../services/agentWebhookService';
 import { emitChatTelemetry, chatStatusFrom } from '../services/agentTelemetryService';
+import { EvaluationButtons } from './EvaluationButtons';
 import { AgentMessageRecord } from '../services/agentConversationService';
 import { MessageText } from './MessageText';
 
@@ -329,6 +330,11 @@ export const CaioKotlerChat = ({
               <span className={`text-xs mt-1.5 px-2 ${isDarkMode ? 'text-gray-500' : 'text-gray-600'}`}>
                 {message.timestamp.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
               </span>
+              {message.sender === 'agent' && !isReadOnly && (
+                <div className="px-2">
+                  <EvaluationButtons tenantId={user?.tenantId} agentSlug="caio" executionId={activeConversationId} />
+                </div>
+              )}
             </div>
           </div>
         ))}

@@ -12,15 +12,21 @@ import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
-  Activity, AlertTriangle, Bot, CircleDollarSign, Clock, Cpu, RefreshCw, Send, Timer, Zap,
+  Activity, AlertTriangle, Bot, CircleDollarSign, Clock, Cpu, GitBranch, RefreshCw, Send, ShieldCheck, ThumbsDown, Timer, Zap,
 } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
 import {
+  fetchTelemetryCosts,
   fetchTelemetryErrors,
+  fetchTelemetryEscalations,
   fetchTelemetryOverview,
+  fetchTelemetryQuality,
   fetchTelemetrySummary,
   fetchTelemetryTimeseries,
+  fmtBrl,
+  fmtMinutes,
   fmtMs,
+  fmtPercent,
   fmtRate,
   fmtTokens,
   fmtUsd,
@@ -214,6 +220,26 @@ export const AgentesTelemetriaPage = () => {
     queryFn: () => fetchTelemetryOverview(tenantId),
     enabled,
   });
+  // Escalonamento é derivado (lia_perguntas_corretor) e respeita a janela — por
+  // isso entra na queryKey. Independe de eventos em agent_telemetry_events.
+  const escalationsQ = useQuery({
+    queryKey: ['agent-telemetry', 'escalations', tenantId, windowKey],
+    queryFn: () => fetchTelemetryEscalations({ tenantId, window: windowKey }),
+    enabled,
+  });
+  // Custos em R$ derivam do custo USD + câmbio + denominadores de negócio;
+  // dependem da janela (não do filtro de agente/modelo/status).
+  const costsQ = useQuery({
+    queryKey: ['agent-telemetry', 'costs', tenantId, windowKey],
+    queryFn: () => fetchTelemetryCosts({ tenantId, window: windowKey }),
+    enabled,
+  });
+  // Qualidade: avaliações humanas em 3 estados; respeita janela e o filtro de agente.
+  const qualityQ = useQuery({
+    queryKey: ['agent-telemetry', 'quality', tenantId, windowKey, agent],
+    queryFn: () => fetchTelemetryQuality({ tenantId, window: windowKey }, agent || null),
+    enabled,
+  });
 
   if (!canView) return <Navigate to="/agentes-ia/agente-marketing" replace />;
 
@@ -304,7 +330,10 @@ export const AgentesTelemetriaPage = () => {
                 title={`Sem eventos de telemetria ${windowKey === 'all' ? 'registrados' : `na janela de ${windowLabel}`}`}
                 help="Os emissores do CRM (interpretação do Disparador, fechamento de runs e chats) gravam aqui conforme os agentes rodam. Custo/tokens dos agentes n8n (Lia, Elaine, Caio) só aparecem depois que os fluxos n8n ganharem o nó Report Telemetry (T6)."
               />
-              {/* A operação (tabelas existentes) segue visível mesmo sem eventos novos */}
+              {/* Escalonamento e operação vêm de tabelas próprias — visíveis mesmo sem eventos novos */}
+              <EscalationSection escalationsQ={escalationsQ} windowLabel={windowLabel} />
+              <QualitySection qualityQ={qualityQ} windowLabel={windowLabel} />
+              <CostsSection costsQ={costsQ} windowLabel={windowLabel} />
               <OperationSection overviewQ={overviewQ} />
             </div>
           ) : summary ? (
@@ -466,6 +495,9 @@ export const AgentesTelemetriaPage = () => {
                 )}
               </Section>
 
+              <EscalationSection escalationsQ={escalationsQ} windowLabel={windowLabel} />
+              <QualitySection qualityQ={qualityQ} windowLabel={windowLabel} />
+              <CostsSection costsQ={costsQ} windowLabel={windowLabel} />
               <OperationSection overviewQ={overviewQ} />
             </>
           ) : null}
@@ -479,6 +511,109 @@ export const AgentesTelemetriaPage = () => {
  * Operação por agente — agregados das tabelas EXISTENTES (overview da T4).
  * As taxas mostram a FÓRMULA no subtítulo (§6.5 — nada de indicador inventado).
  */
+function QualitySection({ qualityQ, windowLabel }: {
+  qualityQ: ReturnType<typeof useQuery<Awaited<ReturnType<typeof fetchTelemetryQuality>>>>;
+  windowLabel: string;
+}) {
+  const q = qualityQ.data;
+  return (
+    <Section
+      title="Qualidade · avaliações"
+      sub={`Avaliação humana das respostas (correta/incorreta) — não medimos alucinação automaticamente. Não-avaliado NUNCA conta como correto · janela: ${windowLabel}.`}
+    >
+      {qualityQ.isLoading ? (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} h={112} />)}
+        </div>
+      ) : qualityQ.isError ? (
+        <ErrorCard onRetry={() => qualityQ.refetch()} />
+      ) : q ? (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <StatCard icon={ShieldCheck} label="Corretas (confirmadas)" value={q.confirmed_correct.toLocaleString('pt-BR')} />
+          <StatCard icon={ThumbsDown} label="Incorretas (confirmadas)" value={q.confirmed_wrong.toLocaleString('pt-BR')} />
+          <StatCard icon={AlertTriangle} label="Não avaliadas" value={q.not_evaluated.toLocaleString('pt-BR')}
+            sub="não confundir com correto" />
+          <StatCard icon={Activity} label="Taxa de incorretas" value={fmtPercent(q.wrong_rate)}
+            sub={q.evaluated > 0 ? `sobre ${q.evaluated.toLocaleString('pt-BR')} avaliadas` : 'sem avaliações ainda'} />
+        </div>
+      ) : null}
+    </Section>
+  );
+}
+
+function CostsSection({ costsQ, windowLabel }: {
+  costsQ: ReturnType<typeof useQuery<Awaited<ReturnType<typeof fetchTelemetryCosts>>>>;
+  windowLabel: string;
+}) {
+  const c = costsQ.data;
+  // Nota de câmbio: sem taxa vigente, os cards em R$ ficam "—" (nunca convertidos
+  // com câmbio inventado). Com taxa, mostramos qual foi usada (auditoria).
+  const rateNote = c?.total.exchange_rate != null
+    ? `câmbio USD/BRL ${c.total.exchange_rate.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+    : 'sem câmbio cadastrado → valores em R$ indisponíveis';
+  return (
+    <Section
+      title="Custos em R$"
+      sub={`Custo de IA (USD) convertido ao câmbio manual, dividido por denominadores de negócio · ${rateNote} · janela: ${windowLabel}.`}
+    >
+      {costsQ.isLoading ? (
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+          {Array.from({ length: 5 }).map((_, i) => <SkeletonCard key={i} h={112} />)}
+        </div>
+      ) : costsQ.isError ? (
+        <ErrorCard onRetry={() => costsQ.refetch()} />
+      ) : c ? (
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+          <StatCard icon={CircleDollarSign} label="Custo total (R$)" value={fmtBrl(c.total.cost_brl)}
+            sub={c.total.cost_usd != null ? `${fmtUsd(c.total.cost_usd)} × câmbio` : 'sem custo com preço conhecido'} />
+          <StatCard icon={Activity} label="Custo médio / evento" value={fmtBrl(c.per_event.value_brl)}
+            sub={`${c.per_event.denominator.toLocaleString('pt-BR')} chamadas com custo`} />
+          <StatCard icon={Bot} label="Custo / lead atendido" value={fmtBrl(c.per_lead.value_brl)}
+            sub={`${c.per_lead.denominator.toLocaleString('pt-BR')} leads atendidos`} />
+          <StatCard icon={CircleDollarSign} label="Custo / venda fechada" value={fmtBrl(c.per_sale.value_brl)}
+            sub={`${c.per_sale.denominator.toLocaleString('pt-BR')} vendas na janela`} />
+          <StatCard icon={Activity} label="% custo IA / VGC" value={c.pct_over_vgc.value != null ? fmtPercent(c.pct_over_vgc.value / 100) : '—'}
+            sub={c.pct_over_vgc.vgc_brl > 0 ? `VGC ${fmtBrl(c.pct_over_vgc.vgc_brl)}` : 'sem VGC na janela'} />
+        </div>
+      ) : null}
+    </Section>
+  );
+}
+
+function EscalationSection({ escalationsQ, windowLabel }: {
+  escalationsQ: ReturnType<typeof useQuery<Awaited<ReturnType<typeof fetchTelemetryEscalations>>>>;
+  windowLabel: string;
+}) {
+  const e = escalationsQ.data;
+  // rate null = sem leads escalonados (N/A honesto); 0 = fecharam zero (real).
+  const closureValue = e ? fmtPercent(e.closure.rate) : '—';
+  return (
+    <Section
+      title="Autonomia · Escalonamento IA→corretor"
+      sub={`Derivado das perguntas da Lia ao corretor (lia_perguntas_corretor) — quando a IA transfere a decisão ao humano · janela: ${windowLabel}.`}
+    >
+      {escalationsQ.isLoading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+          {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} h={112} />)}
+        </div>
+      ) : escalationsQ.isError ? (
+        <ErrorCard onRetry={() => escalationsQ.refetch()} />
+      ) : e ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+          <StatCard icon={GitBranch} label="Escalonamentos" value={e.total.toLocaleString('pt-BR')}
+            sub={`${e.resolved.toLocaleString('pt-BR')} resolvidos · ${e.pending.toLocaleString('pt-BR')} pendentes`} />
+          <StatCard icon={Clock} label="Tempo até resposta (P50)" value={fmtMinutes(e.response_time.p50_minutes)}
+            sub={e.response_time.samples > 0 ? `${e.response_time.samples.toLocaleString('pt-BR')} resolvidos medidos` : 'sem resolvidos na janela'} />
+          <StatCard icon={Timer} label="Tempo até resposta (P95)" value={fmtMinutes(e.response_time.p95_minutes)}
+            sub="criado→respondido; cauda longa (P95, não média)" />
+          <StatCard icon={Activity} label="Fechamento de escalonados" value={closureValue}
+            sub={`${e.closure.closed_leads.toLocaleString('pt-BR')}/${e.closure.escalated_leads.toLocaleString('pt-BR')} leads escalonados fecharam`} />
+        </div>
+      ) : null}
+    </Section>
+  );
+}
+
 function OperationSection({ overviewQ }: { overviewQ: ReturnType<typeof useQuery<Awaited<ReturnType<typeof fetchTelemetryOverview>>>> }) {
   const ov = overviewQ.data;
   return (
