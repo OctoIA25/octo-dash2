@@ -182,9 +182,21 @@ const retryWithBackoff = async <T>(
 };
 
 // Hook personalizado para gerenciar dados de leads
-export const useLeadsData = (): LeadsDataResponse => {
+interface UseLeadsDataOptions {
+  /**
+   * Quando false, o hook não busca nada (fica inerte).
+   *
+   * Este hook varre o tenant INTEIRO em kenlo_leads — dezenas de milhares de
+   * linhas, ~2 páginas por vez — e vive no layout, então rodava em toda rota do
+   * CRM, inclusive nas que fazem o próprio fetch e nunca leem este `leads`.
+   * Quem monta o layout decide quando ligar. Ver DashboardLayout.
+   */
+  enabled?: boolean;
+}
+
+export const useLeadsData = ({ enabled = true }: UseLeadsDataOptions = {}): LeadsDataResponse => {
   const [leads, setLeads] = useState<ProcessedLead[]>([]);
-  const [isLoading, setIsLoading] = useState(true); // Iniciar como loading para primeira carga
+  const [isLoading, setIsLoading] = useState(enabled); // Iniciar como loading para primeira carga
   const [isRefetching, setIsRefetching] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [newLeadsCount, setNewLeadsCount] = useState(0);
@@ -456,9 +468,10 @@ export const useLeadsData = (): LeadsDataResponse => {
 
   // Buscar dados na inicialização - APENAS SUPABASE VIA API KEY - OTIMIZADO
   useEffect(() => {
+    if (!enabled) return;
     if (DEBUG_LOGS) console.log(' Inicializando dados do Supabase...');
     if (DEBUG_LOGS) console.log(' Conectando diretamente ao banco PostgreSQL via API KEY');
-    
+
     const initializeData = async () => {
       try {
         // OTIMIZAÇÃO: Remover diagnóstico pesado na primeira carga
@@ -490,17 +503,20 @@ export const useLeadsData = (): LeadsDataResponse => {
     };
     
     initializeData();
-  }, []); // Remover dependência do fetchLeadsData para evitar loops
+    // `enabled` entra aqui para a carga disparar ao navegar para uma rota que
+    // usa estes leads. `fetchLeadsData` continua fora para evitar loops.
+  }, [enabled]);
 
   // Sincronização com Kanban — re-fetch imediato quando um card é movido
   useEffect(() => {
+    if (!enabled) return;
     const unsubscribe = leadsEventEmitter.subscribe(() => {
       if (DEBUG_LOGS) console.log('🔔 [useLeadsData] Evento de atualização recebido — refetch');
       dataCache = null;
       fetchLeadsData(true);
     });
     return unsubscribe;
-  }, [fetchLeadsData]);
+  }, [fetchLeadsData, enabled]);
 
   // Atualização automática harmônica a cada 60 segundos - APENAS DADOS, SEM RELOAD
   useEffect(() => {

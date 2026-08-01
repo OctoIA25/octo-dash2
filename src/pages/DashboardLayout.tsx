@@ -23,6 +23,13 @@ import {
 
 const DEBUG_LOGS = import.meta.env?.VITE_DEBUG_LOGS === 'true';
 
+// Únicas rotas que consomem o `leads` deste layout (recebem por prop). As demais
+// — Início, Meus Leads, Métricas, Imóveis... — fazem o próprio fetch e nunca leem
+// este array. Como `useLeadsData` varre o tenant inteiro em kenlo_leads (dezenas de
+// milhares de linhas, ~2 páginas por vez), rodá-lo fora destas rotas era puro
+// desperdício: dezenas de idas ao banco por navegação, sem nada consumindo.
+const ROTAS_QUE_USAM_LEADS_DO_LAYOUT = ['/recrutamento', '/gestao-equipe', '/bolsao', '/configuracoes'];
+
 const SIDEBAR_PERMISSION_ORDER: SidebarPermission[] = [
   'leads',
   'notificacoes',
@@ -124,8 +131,11 @@ const DashboardLayout = () => {
   const { tenantId, user, isOwner } = useAuthContext();
   const location = useLocation();
 
-  // Hook de dados - centralizado aqui para compartilhar entre todas as páginas
-  const { leads, isLoading, lastUpdate, newLeadsCount, error, refetch, isRefetching } = useLeadsData();
+  // Hook de dados - só busca nas rotas que realmente consomem este `leads`.
+  const rotaUsaLeadsDoLayout = ROTAS_QUE_USAM_LEADS_DO_LAYOUT.some((r) => location.pathname.startsWith(r));
+  const { leads, isLoading, lastUpdate, newLeadsCount, error, refetch, isRefetching } = useLeadsData({
+    enabled: rotaUsaLeadsDoLayout,
+  });
 
   if (DEBUG_LOGS) console.log(' DashboardLayout - dados:', { leadsCount: leads?.length, isLoading, error: error?.substring(0, 50) });
   
@@ -209,8 +219,6 @@ const DashboardLayout = () => {
   // `leads` deste layout por prop (recebem safeLeads). As demais (Início, Meus Leads,
   // Métricas, Imóveis, etc.) fazem seu próprio fetch e têm loading interno — prendê-las
   // a este gate as deixa ~segundos em "Carregando CRM..." esperando dados que não usam.
-  const ROTAS_QUE_USAM_LEADS_DO_LAYOUT = ['/recrutamento', '/gestao-equipe', '/bolsao', '/configuracoes'];
-  const rotaUsaLeadsDoLayout = ROTAS_QUE_USAM_LEADS_DO_LAYOUT.some((r) => location.pathname.startsWith(r));
   if (isLoading && leads.length === 0 && !error && rotaUsaLeadsDoLayout) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--bg-primary)' }}>
