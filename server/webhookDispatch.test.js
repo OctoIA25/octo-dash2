@@ -83,6 +83,24 @@ describe('createWebhookDispatcher', () => {
     expect(result.responseBody).toBe('OK');
   });
 
+  // Antes isso era conferido lendo o texto de proxy-production.js; agora o dispatch
+  // vive aqui, então dá para checar o comportamento real em vez do código-fonte.
+  it('o fetch usa timeout e não segue redirects (anti-SSRF por redirect)', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => 'OK' });
+    const dispatcher = createWebhookDispatcher({
+      supabase: makeSupabase({ webhooks: ONE_WEBHOOK }),
+      fetchImpl,
+      assertSafeHttpUrl: makeSafeUrl(),
+      fetchTimeoutMs: 5000,
+      summarizeError: String
+    });
+
+    await dispatcher('tenant-1', 'lead.created', {});
+    const [, options] = fetchImpl.mock.calls[0];
+    expect(options.redirect).toBe('manual');
+    expect(options.signal).toBeInstanceOf(AbortSignal);
+  });
+
   it('falha: retorna responseStatus e responseBody mesmo em erro HTTP', async () => {
     const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status: 404, text: async () => 'not found' });
     const dispatcher = createWebhookDispatcher({

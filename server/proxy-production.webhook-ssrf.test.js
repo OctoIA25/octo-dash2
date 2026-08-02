@@ -21,17 +21,17 @@ function sliceBetween(startMarker, endMarker) {
   return end === -1 ? rest : rest.slice(0, end);
 }
 
-describe('A5 — dispatchWebhookEvent', () => {
-  const dispatch = sliceBetween('async function dispatchWebhookEvent', 'const WEBHOOK_POLL_BASE_MS');
+/**
+ * O dispatch saiu do monolito para ./webhookDispatch.js, que recebe fetch e guard
+ * injetados e é testado por comportamento em webhookDispatch.test.js. O que resta
+ * verificar aqui é a MONTAGEM: um módulo seguro chamado sem o guard é inseguro.
+ */
+describe('A5 — dispatchWebhookEvent (wiring)', () => {
+  const wiring = sliceBetween('const dispatchWebhookEvent = createWebhookDispatcher(', '});');
 
-  it('valida a URL (SSRF) antes do fetch e aborta se reprovada', () => {
-    expect(dispatch.includes('await assertSafeHttpUrl(webhook.url)')).toBe(true);
-    expect(/if \(!safe\.ok\)[\s\S]*return;/.test(dispatch)).toBe(true);
-  });
-
-  it('o fetch usa timeout e não segue redirects', () => {
-    expect(dispatch.includes('AbortSignal.timeout(WEBHOOK_FETCH_TIMEOUT_MS)')).toBe(true);
-    expect(dispatch.includes("redirect: 'manual'")).toBe(true);
+  it('injeta o guard de SSRF e o timeout no dispatcher', () => {
+    expect(wiring.includes('assertSafeHttpUrl')).toBe(true);
+    expect(wiring.includes('fetchTimeoutMs: WEBHOOK_FETCH_TIMEOUT_MS')).toBe(true);
   });
 });
 
