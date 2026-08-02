@@ -108,6 +108,15 @@ describe('resolveTenant — isolamento por tenant', () => {
     expect(await resolveTenant(supabase, req)).toEqual({ tenantId: 't9' });
   });
 
+  it('owner pedindo tenant com id não-uuid (sintético) → 404, não 500', async () => {
+    const uuidError = { code: '22P02', message: 'invalid input syntax for type uuid: "tenant-area-de-teste"' };
+    const supabase = {
+      from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: uuidError }) }) }) }),
+    };
+    const req = { userId: 'owner', userEmail: OWNER_EMAIL, query: { tenantId: 'tenant-area-de-teste' } };
+    expect(await resolveTenant(supabase, req)).toEqual({ error: 'tenant_not_found', status: 404 });
+  });
+
   it('owner pedindo tenant inexistente → 404', async () => {
     const supabase = makeSupabase({ tenants: ['t9'] });
     const req = { userId: 'owner', userEmail: OWNER_EMAIL, query: { tenantId: 'nope' } };

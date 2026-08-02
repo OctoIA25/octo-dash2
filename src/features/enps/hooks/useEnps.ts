@@ -24,9 +24,18 @@ function currentMonthPeriod(): EnpsPeriod {
 export interface UseEnpsOptions { period?: EnpsPeriod; leader?: string | null; corretor?: string | null }
 export interface UseEnpsResult { data: EnpsOverview | undefined; isLoading: boolean; isError: boolean; refetch: () => void; period: EnpsPeriod; tenantReady: boolean }
 
+/**
+ * 'owner' (sem impersonation) e o tenant sintético de teste não existem no banco:
+ * não há eNPS a buscar, e o id sintético não é uuid (o servidor devolve 404).
+ * Mesma constante local de useLeadsData.ts e leadsMetricsService.ts.
+ */
+const TEST_TENANT_ID = 'tenant-area-de-teste';
+const isRealTenant = (tenantId?: string | null) =>
+  Boolean(tenantId && tenantId !== 'owner' && tenantId !== TEST_TENANT_ID);
+
 export function useEnps(options: UseEnpsOptions = {}): UseEnpsResult {
   const { tenantId } = useAuthContext();
-  const tenantReady = Boolean(tenantId && tenantId !== 'owner');
+  const tenantReady = isRealTenant(tenantId);
   const period = useMemo(() => options.period ?? currentMonthPeriod(), [options.period]);
   const leader = options.leader ?? null;
   const corretor = options.corretor ?? null;
@@ -48,7 +57,7 @@ export function useEnps(options: UseEnpsOptions = {}): UseEnpsResult {
  */
 export function useEnpsPending(): EnpsPending {
   const { tenantId } = useAuthContext();
-  const tenantReady = Boolean(tenantId && tenantId !== 'owner');
+  const tenantReady = isRealTenant(tenantId);
 
   const query = useQuery<EnpsPending>({
     queryKey: ['enps', 'pending', tenantId],

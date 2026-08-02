@@ -14,6 +14,9 @@ import type { EnpsScoreBlock, EnpsEvolucaoPoint } from '@/features/enps/types';
 
 const INSUFFICIENT_MSG = 'Respostas insuficientes para exibir com segurança (anonimato).';
 
+/** eNPS vem 0–10 com uma casa decimal (server/enps/calc.js). Exibe em pt-BR. */
+const fmtScore = (n: number) => n.toFixed(1).replace('.', ',');
+
 function Empty({ children }: { children: React.ReactNode }) {
   return <div className="rounded-xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40 p-6 text-center"><p className="text-[12.5px] text-slate-500 dark:text-slate-400">{children}</p></div>;
 }
@@ -24,7 +27,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 function scoreToCard(id: string, label: string, block: EnpsScoreBlock, deltaVsPrev: number | null): KpiSummaryCard {
   return {
     id, metricKey: null, source: 'crm', unit: 'count', label, displayOrder: 0, category: 'enps',
-    isFeatured: true, rawValue: block.score, displayValue: String(block.score), target: null, progressPercent: null,
+    isFeatured: true, rawValue: block.score, displayValue: fmtScore(block.score), target: null, progressPercent: null,
     trend: deltaVsPrev === null ? null : { percent: deltaVsPrev, positive: deltaVsPrev >= 0 },
   };
 }
@@ -32,7 +35,7 @@ function scoreToCard(id: string, label: string, block: EnpsScoreBlock, deltaVsPr
 function ScoreBarLabel(props: { x?: number; y?: number; width?: number; value?: number }) {
   const { x, y, width, value } = props;
   if (typeof x !== 'number' || typeof y !== 'number' || typeof width !== 'number' || typeof value !== 'number') return null;
-  return <text x={x + width / 2} y={y - 8} textAnchor="middle" fill="#334155" fontSize={12} fontWeight={700}>{value}</text>;
+  return <text x={x + width / 2} y={y - 8} textAnchor="middle" fill="#334155" fontSize={12} fontWeight={700}>{fmtScore(value)}</text>;
 }
 
 function EvolucaoChart({ title, serie, pick }: { title: string; serie: EnpsEvolucaoPoint[]; pick: (p: EnpsEvolucaoPoint) => number | null }) {
@@ -86,7 +89,11 @@ function DistBars({ title, buckets }: { title: string; buckets: { label: string;
 }
 
 export function EnpsCorretoresSection({ tenantId: _tenantId }: { tenantId?: string }) {
-  const { data, isLoading, isError, refetch } = useEnps();
+  const { data, isLoading, isError, refetch, tenantReady } = useEnps();
+
+  // Sem tenant real (owner sem impersonation, Área de Teste) não há o que buscar —
+  // é estado vazio, não falha de carregamento.
+  if (!tenantReady) return <Empty>Selecione uma imobiliária para ver o eNPS.</Empty>;
 
   if (isLoading) {
     return (
@@ -157,7 +164,7 @@ export function EnpsCorretoresSection({ tenantId: _tenantId }: { tenantId?: stri
                   <tr key={row.leaderUserId} className={`${idx % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-slate-50 dark:bg-slate-950'}`}>
                     <td className="py-2.5 pl-3 pr-3 text-xs"><span className="inline-flex min-w-7 justify-center rounded-full bg-blue-50 text-blue-700 border border-blue-100 px-2 py-0.5 font-semibold">{idx + 1}</span></td>
                     <td className="py-2.5 px-3 text-xs font-semibold text-slate-900 dark:text-slate-100">{row.leaderName}</td>
-                    <td className="py-2.5 px-3 text-right text-xs tabular-nums text-slate-800 dark:text-slate-200">{row.enps}</td>
+                    <td className="py-2.5 px-3 text-right text-xs tabular-nums text-slate-800 dark:text-slate-200">{fmtScore(row.enps)}</td>
                     <td className="py-2.5 pr-3 text-right text-xs tabular-nums text-slate-500">{row.count}</td>
                   </tr>
                 ))}

@@ -6,9 +6,25 @@ const DISPATCHES = 'survey_dispatches';
 const CYCLES = 'survey_cycles';
 const SURVEYS = 'surveys';
 
+/**
+ * Domínio do app em produção. Fallback porque link SEM host não é degradação, é
+ * e-mail quebrado: o Gmail transforma "/enps/responder?..." em "http:///enps/..."
+ * e o corretor bate em "Redirect Notice".
+ */
+const DEFAULT_PUBLIC_URL = 'https://octodash.octoia.org';
+
+/**
+ * Base pública do app = a PRIMEIRA origem de `CORS_ORIGINS` (a env que já declara
+ * onde o app é servido). Sem env nova: o domínio do app mora num lugar só.
+ */
+export function publicBaseUrl(env = process.env) {
+  const first = (env.CORS_ORIGINS || '').split(',')[0].trim().replace(/\/+$/, '');
+  if (!first) return DEFAULT_PUBLIC_URL;
+  return /^https?:\/\//i.test(first) ? first : `https://${first}`;
+}
+
 export function responderLink(cycleId) {
-  const base = process.env.APP_PUBLIC_URL || '';
-  return `${base}/enps/responder?cycle=${cycleId}`;
+  return `${publicBaseUrl()}/enps/responder?cycle=${cycleId}`;
 }
 
 export function buildContent({ survey, cycle }) {

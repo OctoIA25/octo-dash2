@@ -14,11 +14,10 @@
  * `surveys`, não em `survey_cycles`.
  */
 import { summarize } from './calc.js';
-import { getDeletedTenantIds } from '../utils/tenantSoftDelete.js';
+// Mesma resolução de tenant dos KPIs (era uma cópia idêntica aqui): owner impersona
+// via ?tenantId=, os demais derivam da membership, tenant soft-deletado é 403.
+import { resolveTenant } from '../kpis/index.js';
 import { loadEnpsSurvey as defaultLoadEnpsSurvey } from './runnerDb.js';
-
-const PLATFORM_OWNER_EMAIL = 'octo.inteligenciaimobiliaria@gmail.com';
-const isPlatformOwner = (email) => (email || '').toLowerCase() === PLATFORM_OWNER_EMAIL;
 
 const RESPONSES = 'survey_responses';
 const DISPATCHES = 'survey_dispatches';
@@ -27,26 +26,6 @@ const CYCLES = 'survey_cycles';
 const MIN_RESPONSES = Number(process.env.ENPS_MIN_RESPONSES) || 5;
 const MIN_TEAM_SIZE = Number(process.env.ENPS_MIN_TEAM_SIZE) || 5;
 const INSUFFICIENT = { insufficient: true };
-
-export async function resolveTenant(supabase, req) {
-  const requested = typeof req.query?.tenantId === 'string' ? req.query.tenantId.trim() : '';
-  if (isPlatformOwner(req.userEmail)) {
-    if (!requested) return { error: 'tenant_required_for_owner', status: 400 };
-    const { data, error } = await supabase.from('tenants').select('id').eq('id', requested).maybeSingle();
-    if (error) throw error;
-    if (!data) return { error: 'tenant_not_found', status: 404 };
-    return { tenantId: requested };
-  }
-  const { data: memberships, error } = await supabase.from('tenant_memberships').select('tenant_id').eq('user_id', req.userId);
-  if (error) throw error;
-  const tenantIds = (memberships || []).map((m) => m.tenant_id);
-  if (tenantIds.length === 0) return { error: 'no_tenant_access', status: 403 };
-  if (requested && !tenantIds.includes(requested)) return { error: 'tenant_forbidden', status: 403 };
-  const tenantId = requested || tenantIds[0];
-  const deleted = await getDeletedTenantIds(supabase, [tenantId]);
-  if (deleted.has(tenantId)) return { error: 'no_tenant_access', status: 403 };
-  return { tenantId };
-}
 
 function npsBlock(scores) {
   if (scores.length < MIN_RESPONSES) return INSUFFICIENT;

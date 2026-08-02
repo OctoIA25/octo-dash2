@@ -79,7 +79,9 @@ export async function resolveTenant(supabase, req) {
       .select('id')
       .eq('id', requested)
       .maybeSingle();
-    if (error) throw error;
+    // 22P02 = id fora do formato uuid (ex.: o tenant sintético 'tenant-area-de-teste'
+    // do painel do owner, que não existe no banco). Isso é "não encontrado", não erro.
+    if (error && error.code !== '22P02') throw error;
     if (!data) return { error: 'tenant_not_found', status: 404 };
     return { tenantId: requested };
   }

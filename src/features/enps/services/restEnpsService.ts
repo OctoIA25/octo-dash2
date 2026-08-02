@@ -1,12 +1,13 @@
-import { supabase } from '@/lib/supabaseClient';
+/**
+ * Cliente REST do eNPS. Usa `authedFetch` (não `fetch` cru): em 401 ele faz UM
+ * refresh da sessão e re-tenta. Sem isso o painel quebrava de forma intermitente
+ * com "Não foi possível carregar o eNPS" — o retry do React Query repete a chamada
+ * com o MESMO token expirado, então os dois tentos batem 401.
+ */
+import { authedFetch } from '@/features/comunicacao/services/authedFetch';
 import type { EnpsService, EnpsResponderContext, EnpsSubmitInput, EnpsOverview, EnpsPending } from '../types';
 
 const REQUEST_TIMEOUT_MS = 20_000;
-
-async function authHeader(): Promise<Record<string, string>> {
-  const { data: { session } } = await supabase.auth.getSession();
-  return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
-}
 
 export const restEnpsService: EnpsService = {
   async getOverview({ tenantId, period, leader, corretor }): Promise<EnpsOverview> {
@@ -17,7 +18,7 @@ export const restEnpsService: EnpsService = {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
-      const res = await fetch(`/api/v1/enps?${params.toString()}`, { headers: { ...(await authHeader()) }, signal: controller.signal });
+      const res = await authedFetch(`/api/v1/enps?${params.toString()}`, { signal: controller.signal });
       const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string } & Partial<EnpsOverview>;
       if (!res.ok || !json.ok || !json.geral) throw new Error(json.error || `HTTP ${res.status}`);
       return {
@@ -32,7 +33,7 @@ export const restEnpsService: EnpsService = {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
-      const res = await fetch(`/api/v1/enps/cycle/${encodeURIComponent(cycleId)}`, { headers: { ...(await authHeader()) }, signal: controller.signal });
+      const res = await authedFetch(`/api/v1/enps/cycle/${encodeURIComponent(cycleId)}`, { signal: controller.signal });
       const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string } & Partial<EnpsResponderContext>;
       if (!res.ok || !json.ok || !json.cycle) throw new Error(json.error || `HTTP ${res.status}`);
       return { cycle: json.cycle, questions: json.questions ?? [], hasLeader: !!json.hasLeader, alreadyResponded: !!json.alreadyResponded };
@@ -42,9 +43,8 @@ export const restEnpsService: EnpsService = {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
-      const res = await fetch('/api/v1/enps/responses', {
-        method: 'POST', headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
-        body: JSON.stringify(input), signal: controller.signal,
+      const res = await authedFetch('/api/v1/enps/responses', {
+        method: 'POST', body: JSON.stringify(input), signal: controller.signal,
       });
       const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
       if (res.status === 409) throw new Error('Você já respondeu esta pesquisa.');
@@ -57,7 +57,7 @@ export const restEnpsService: EnpsService = {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
-      const res = await fetch('/api/v1/enps/pending', { headers: { ...(await authHeader()) }, signal: controller.signal });
+      const res = await authedFetch('/api/v1/enps/pending', { signal: controller.signal });
       const json = (await res.json().catch(() => ({}))) as { ok?: boolean; pending?: boolean; cycleId?: string; periodStart?: string };
       // Banner é secundário: qualquer falha → trata como "sem pendência" (não quebra a dash).
       if (!res.ok || !json.ok || !json.pending || !json.cycleId) return { pending: false };
