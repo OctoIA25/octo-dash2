@@ -1,8 +1,10 @@
 // Cálculo oficial de eNPS (Employee Net Promoter Score).
 // Funções puras, sem I/O: dirigem eNPS-empresa E eNPS-gestor (uma chamada por pergunta).
 //
-// Escala 0–10: promotores 9–10, neutros 7–8, detratores 0–6.
-// eNPS = %promotores − %detratores. Sem respostas ⇒ null (não NaN); só neutros ⇒ 0.
+// Escala das notas 0–10: promotores 9–10, neutros 7–8, detratores 0–6.
+// eNPS = %promotores − %detratores (índice −100..+100) NORMALIZADO para 0–10 com
+// uma casa decimal: 0 = só detratores, 5 = neutro, 10 = só promotores.
+// Sem respostas ⇒ null (não NaN); só neutros ⇒ 5.
 
 export function classify(score) {
   if (score >= 9) return 'promoter';
@@ -25,7 +27,7 @@ export function summarize(scores) {
   const count = scores.length;
   const value = count === 0
     ? null
-    : Math.round((promoters / count) * 100 - (detractors / count) * 100);
+    : Math.round((((promoters - detractors) / count) * 100 + 100) / 2) / 10;
 
   return { score: value, enps: value, promoters, passives, detractors, count };
 }

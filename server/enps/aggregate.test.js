@@ -67,8 +67,8 @@ describe('agregação eNPS — dois scores separados', () => {
     const supabase = makeSupabase({ responses: rows(5, { empresa: 9, gestor: 0 }) });
     const res = makeRes();
     await makeAggregateHandler(supabase, deps)(req(), res);
-    expect(res.body.geral.empresa.enps).toBe(100);
-    expect(res.body.geral.gestor.enps).toBe(-100);
+    expect(res.body.geral.empresa.enps).toBe(10);
+    expect(res.body.geral.gestor.enps).toBe(0);
   });
 });
 
@@ -133,9 +133,9 @@ describe('agregação eNPS — filtro de equipe (?team=)', () => {
     await makeAggregateHandler(supabase, deps)(req({ team: 'te-red' }), res);
     expect(res.body.scope.teamId).toBe('te-red');
     expect(res.body.geral.empresa).not.toEqual({ insufficient: true });
-    // eNPS de 6 notas 10 = 100 (todos promotores) — só a equipe vermelha entra na conta.
-    expect(res.body.geral.empresa.enps).toBe(100);
-    expect(res.body.geral.gestor.enps).toBe(100);
+    // 6 notas 10 = todos promotores = 10 na escala 0–10 — só a equipe vermelha entra na conta.
+    expect(res.body.geral.empresa.enps).toBe(10);
+    expect(res.body.geral.gestor.enps).toBe(10);
   });
 
   it('owner sem team => sem filtro (comportamento atual preservado)', async () => {
@@ -152,8 +152,8 @@ describe('agregação eNPS — filtro de equipe (?team=)', () => {
     await makeAggregateHandler(supabase, deps)(req(), res);
     expect(res.body.scope.teamId).toBeNull();
     expect(res.body.scope.locked).toBe(false);
-    // sem filtro: 6 promotores (10) + 6 detratores (0) de 12 => eNPS = 50 - 50 = 0
-    expect(res.body.geral.empresa.enps).toBe(0);
+    // sem filtro: 6 promotores + 6 detratores de 12 => índice 0, que na escala 0–10 é 5.
+    expect(res.body.geral.empresa.enps).toBe(5);
   });
 });
 

@@ -16,33 +16,33 @@ describe('classify', () => {
   });
 });
 
-describe('enps', () => {
+describe('enps (escala 0–10)', () => {
   it('vazio ⇒ null (não NaN)', () => {
     expect(enps([])).toBeNull();
   });
-  it('só neutros ⇒ 0', () => {
-    expect(enps([7, 8, 7])).toBe(0);
+  it('só neutros ⇒ 5 (meio da escala)', () => {
+    expect(enps([7, 8, 7])).toBe(5);
   });
-  it('%promotores − %detratores', () => {
-    // 2 promotores, 1 neutro, 1 detrator de 4 ⇒ 50% − 25% = 25
-    expect(enps([10, 9, 8, 0])).toBe(25);
+  it('%promotores − %detratores normalizado', () => {
+    // 2 promotores, 1 neutro, 1 detrator de 4 ⇒ índice 25 ⇒ (25+100)/20 = 6,3
+    expect(enps([10, 9, 8, 0])).toBe(6.3);
   });
-  it('só promotores ⇒ 100', () => {
-    expect(enps([9, 10])).toBe(100);
+  it('só promotores ⇒ 10', () => {
+    expect(enps([9, 10])).toBe(10);
   });
-  it('só detratores ⇒ -100', () => {
-    expect(enps([0, 6])).toBe(-100);
+  it('só detratores ⇒ 0', () => {
+    expect(enps([0, 6])).toBe(0);
   });
-  it('arredonda para inteiro (1 promotor, 2 detratores de 3)', () => {
-    // 33.33% − 66.66% = -33.33 ⇒ -33
-    expect(enps([9, 0, 6])).toBe(-33);
+  it('arredonda para uma casa (1 promotor, 2 detratores de 3)', () => {
+    // índice -33.33 ⇒ (-33.33+100)/20 = 3.33 ⇒ 3,3
+    expect(enps([9, 0, 6])).toBe(3.3);
   });
 });
 
 describe('summarize', () => {
   it('conta cada classe, count e enps juntos', () => {
     expect(summarize([10, 9, 8, 0])).toEqual({
-      score: 25, enps: 25, promoters: 2, passives: 1, detractors: 1, count: 4,
+      score: 6.3, enps: 6.3, promoters: 2, passives: 1, detractors: 1, count: 4,
     });
   });
   it('vazio ⇒ zeros e enps null', () => {
