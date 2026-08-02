@@ -21,7 +21,7 @@ function currentMonthPeriod(): EnpsPeriod {
   return { startDate: iso(start), endDate: iso(now), label: label.charAt(0).toUpperCase() + label.slice(1) };
 }
 
-export interface UseEnpsOptions { period?: EnpsPeriod; leader?: string | null; corretor?: string | null }
+export interface UseEnpsOptions { period?: EnpsPeriod; leader?: string | null; corretor?: string | null; team?: string | null }
 export interface UseEnpsResult { data: EnpsOverview | undefined; isLoading: boolean; isError: boolean; refetch: () => void; period: EnpsPeriod; tenantReady: boolean }
 
 /**
@@ -39,10 +39,11 @@ export function useEnps(options: UseEnpsOptions = {}): UseEnpsResult {
   const period = useMemo(() => options.period ?? currentMonthPeriod(), [options.period]);
   const leader = options.leader ?? null;
   const corretor = options.corretor ?? null;
+  const team = options.team ?? null;
 
   const query = useQuery<EnpsOverview>({
-    queryKey: ['enps', 'overview', tenantId, period.startDate, period.endDate, leader, corretor],
-    queryFn: () => enpsServiceProvider.getOverview({ tenantId: tenantId as string, period, leader, corretor }),
+    queryKey: ['enps', 'overview', tenantId, period.startDate, period.endDate, leader, corretor, team],
+    queryFn: () => enpsServiceProvider.getOverview({ tenantId: tenantId as string, period, leader, corretor, team }),
     enabled: tenantReady,
     staleTime: 5 * 60 * 1000,
   });

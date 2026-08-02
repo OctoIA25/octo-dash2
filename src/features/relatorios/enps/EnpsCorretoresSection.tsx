@@ -5,6 +5,7 @@
  * Gráfico: Bar + LabelList + label custom, SEM <YAxis> (Recharts 3). NUNCA usar as
  * classes de CSS global que sabotam gráficos.
  */
+import { useState } from 'react';
 import { Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis } from 'recharts';
 import { KpiHeroCard, KpiCompactCard } from '@/features/kpis/components/KpiComponents';
 import type { KpiSummaryCard } from '@/features/kpis/types';
@@ -89,7 +90,8 @@ function DistBars({ title, buckets }: { title: string; buckets: { label: string;
 }
 
 export function EnpsCorretoresSection({ tenantId: _tenantId }: { tenantId?: string }) {
-  const { data, isLoading, isError, refetch, tenantReady } = useEnps();
+  const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
+  const { data, isLoading, isError, refetch, tenantReady } = useEnps({ team: selectedTeam });
 
   // Sem tenant real (owner sem impersonation, Área de Teste) não há o que buscar —
   // é estado vazio, não falha de carregamento.
@@ -113,6 +115,7 @@ export function EnpsCorretoresSection({ tenantId: _tenantId }: { tenantId?: stri
   }
 
   const { geral, evolucao, participacao, ranking, distribuicao, comentarios, individual } = data;
+  const scope = data?.scope;
   const empresaOk = !isInsufficient(geral.empresa);
   const gestorOk = !isInsufficient(geral.gestor);
   const prev = evolucao.length >= 2 ? evolucao[evolucao.length - 2] : undefined;
@@ -129,6 +132,29 @@ export function EnpsCorretoresSection({ tenantId: _tenantId }: { tenantId?: stri
 
   return (
     <div className="space-y-8">
+      {scope && (
+        scope.locked ? (
+          scope.teamName && (
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Equipe</span>
+              <span className="inline-flex items-center rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-1 text-[12.5px] font-semibold text-slate-700 dark:text-slate-200">{scope.teamName}</span>
+            </div>
+          )
+        ) : scope.teams.length > 0 ? (
+          <div className="flex items-center gap-2">
+            <label htmlFor="enps-team" className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Equipe</label>
+            <select
+              id="enps-team"
+              value={selectedTeam ?? ''}
+              onChange={(e) => setSelectedTeam(e.target.value || null)}
+              className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-[13px] text-slate-700 dark:text-slate-200"
+            >
+              <option value="">Todas as equipes</option>
+              {scope.teams.map((t) => (<option key={t.id} value={t.id}>{t.name}</option>))}
+            </select>
+          </div>
+        ) : null
+      )}
       <section>
         <h2 className="text-[15px] font-bold text-slate-900 dark:text-slate-100 mb-3">eNPS Geral</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

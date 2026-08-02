@@ -10,11 +10,12 @@ import type { EnpsService, EnpsResponderContext, EnpsSubmitInput, EnpsOverview, 
 const REQUEST_TIMEOUT_MS = 20_000;
 
 export const restEnpsService: EnpsService = {
-  async getOverview({ tenantId, period, leader, corretor }): Promise<EnpsOverview> {
+  async getOverview({ tenantId, period, leader, corretor, team }): Promise<EnpsOverview> {
     const params = new URLSearchParams({ period: period.startDate });
     if (tenantId && tenantId !== 'owner') params.set('tenantId', tenantId);
     if (leader) params.set('leader', leader);
     if (corretor) params.set('corretor', corretor);
+    if (team) params.set('team', team);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
@@ -26,6 +27,7 @@ export const restEnpsService: EnpsService = {
         participacao: json.participacao ?? { sent: 0, responded: 0, pending: 0, rate: 0 },
         ranking: json.ranking ?? [], distribuicao: json.distribuicao ?? { insufficient: true },
         comentarios: json.comentarios ?? { insufficient: true }, individual: json.individual,
+        scope: json.scope ?? { locked: false, teamId: null, teamName: null, teams: [] },
       };
     } finally { clearTimeout(timeout); }
   },
