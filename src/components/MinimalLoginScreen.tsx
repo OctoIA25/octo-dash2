@@ -12,15 +12,13 @@ import { isOwnerEmail } from '@/lib/ownerEmails';
  const SELECTED_TENANT_KEY = 'owner-selected-tenant';
 
 export const MinimalLoginScreen = () => {
-  const { login, registerWithTenantCode } = useAuth();
+  const { login } = useAuth();
   const [tenantCode, setTenantCode] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [mode, setMode] = useState<'login' | 'register'>('login');
 
   useEffect(() => {
     const selected = localStorage.getItem(SELECTED_TENANT_KEY);
@@ -36,7 +34,7 @@ export const MinimalLoginScreen = () => {
     setError('');
     setIsLoading(true);
 
-    const isOwnerAttempt = mode === 'login' && isOwnerEmail(email);
+    const isOwnerAttempt = isOwnerEmail(email);
 
     if (!email.trim()) {
       setError('E-mail é obrigatório');
@@ -50,31 +48,11 @@ export const MinimalLoginScreen = () => {
       return;
     }
 
-    if (mode === 'register') {
-      if (!confirmPassword) {
-        setError('Confirme a senha');
-        setIsLoading(false);
-        return;
-      }
-      if (password !== confirmPassword) {
-        setError('As senhas não coincidem');
-        setIsLoading(false);
-        return;
-      }
-    }
-
     try {
-      const success =
-        mode === 'login'
-          ? await login(isOwnerAttempt ? 'OWNER' : tenantCode.trim(), email.trim(), password)
-          : (await registerWithTenantCode(tenantCode.trim(), email.trim(), password)).ok;
+      const success = await login(isOwnerAttempt ? 'OWNER' : tenantCode.trim(), email.trim(), password);
 
       if (!success) {
-        setError(
-          mode === 'login'
-            ? 'Credenciais inválidas. Verifique código, e-mail e senha.'
-            : 'Não foi possível criar conta. Verifique os dados.'
-        );
+        setError('Credenciais inválidas. Verifique código, e-mail e senha.');
         setIsLoading(false);
       } else {
         window.location.reload();
@@ -144,13 +122,9 @@ export const MinimalLoginScreen = () => {
         {/* Formulário */}
         <div className="flex-1 flex items-center justify-center">
           <div className="w-full max-w-sm">
-            <h2 className="text-2xl font-semibold text-gray-900 mb-2">
-              {mode === 'login' ? 'Entrar' : 'Criar conta'}
-            </h2>
+            <h2 className="text-2xl font-semibold text-gray-900 mb-2">Entrar</h2>
             <p className="text-gray-500 text-sm mb-8">
-              {mode === 'login'
-                ? 'Bem-vindo de volta. Entre na sua conta.'
-                : 'Preencha os dados para criar sua conta.'}
+              Bem-vindo de volta. Entre na sua conta.
             </p>
 
             <form onSubmit={handleSubmit} className="space-y-5">
@@ -175,14 +149,12 @@ export const MinimalLoginScreen = () => {
                   <label className="block text-sm font-medium text-gray-700">
                     Senha
                   </label>
-                  {mode === 'login' && (
-                    <button
-                      type="button"
-                      className="text-xs text-gray-500 hover:text-blue-600"
-                    >
-                      Esqueceu?
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    className="text-xs text-gray-500 hover:text-blue-600"
+                  >
+                    Esqueceu?
+                  </button>
                 </div>
                 <div className="relative">
                   <input
@@ -203,23 +175,6 @@ export const MinimalLoginScreen = () => {
                 </div>
               </div>
 
-              {/* Confirmar Senha (apenas no registro) */}
-              {mode === 'register' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Confirmar Senha
-                  </label>
-                  <input
-                    type="password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="••••••••"
-                    disabled={isLoading}
-                    className="w-full h-11 px-3 border border-gray-200 bg-white text-gray-900 placeholder-gray-400 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-500"
-                  />
-                </div>
-              )}
-
               {/* Erro */}
               {error && (
                 <div className="text-red-600 text-sm bg-red-50 border border-red-200 p-3">
@@ -230,9 +185,9 @@ export const MinimalLoginScreen = () => {
               {/* Botão Submit */}
               <button
                 type="submit"
-                disabled={isLoading || !email || !password || (mode === 'register' && !tenantCode)}
-                style={{ 
-                  backgroundColor: (isLoading || !email || !password || (mode === 'register' && !tenantCode)) ? '#64748b' : '#1a5276', 
+                disabled={isLoading || !email || !password}
+                style={{
+                  backgroundColor: (isLoading || !email || !password) ? '#64748b' : '#1a5276',
                   color: '#ffffff',
                   opacity: 1
                 }}
@@ -244,33 +199,8 @@ export const MinimalLoginScreen = () => {
                     <span>Processando...</span>
                   </>
                 ) : (
-                  <span>{mode === 'login' ? 'Entrar' : 'Criar conta'}</span>
+                  <span>Entrar</span>
                 )}
-              </button>
-
-              {/* Separador */}
-              <div className="relative my-6">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-gray-200" />
-                </div>
-                <div className="relative flex justify-center text-xs">
-                  <span className="px-2 bg-white text-gray-400">ou</span>
-                </div>
-              </div>
-
-              {/* Toggle Login/Registro */}
-              <button
-                type="button"
-                onClick={() => {
-                  setMode(mode === 'login' ? 'register' : 'login');
-                  setError('');
-                  setConfirmPassword('');
-                }}
-                disabled={isLoading}
-                style={{ backgroundColor: '#ffffff', color: '#1a5276', border: '2px solid #1a5276' }}
-                className="w-full h-12 text-sm font-semibold hover:bg-blue-50 disabled:opacity-50 flex items-center justify-center gap-2 transition-colors"
-              >
-                {mode === 'login' ? 'Criar nova conta' : 'Já tenho uma conta'}
               </button>
             </form>
           </div>

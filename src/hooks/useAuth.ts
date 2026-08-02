@@ -497,32 +497,9 @@ export const useAuth = () => {
     return { ok: true as const };
   }, []);
 
-  const registerWithTenantCode = useCallback(async (tenantCode: string, email: string, password: string) => {
-    const { data, error } = await supabase.auth.signUp({ email, password });
-    if (error || !data.user) {
-      return { ok: false as const, error: error?.message || 'Falha no cadastro' };
-    }
-
-    // Ensure we have a session; depending on email confirmation settings, session may be null.
-    const sessionUserId = data.user.id;
-    if (!sessionUserId) {
-      return { ok: false as const, error: 'Falha no cadastro (usuário inválido)' };
-    }
-
-    // If email confirmation is enabled, user may not be authenticated yet.
-    const { data: sessionData } = await supabase.auth.getSession();
-    if (!sessionData.session) {
-      return { ok: false as const, error: 'Cadastro criado. Confirme seu email para continuar.' };
-    }
-
-    const { error: rpcError } = await supabase.rpc('join_tenant_by_code', { p_code: tenantCode });
-    if (rpcError) {
-      await supabase.auth.signOut();
-      return { ok: false as const, error: rpcError.message || 'Erro ao vincular imobiliária' };
-    }
-
-    return { ok: true as const };
-  }, []);
+  // Auto-cadastro removido: contas são criadas por owner/admin em Acessos e Permissões.
+  // A RPC `join_tenant_by_code` continua no banco — revogar o grant ao role `authenticated`
+  // se quiser fechar o caminho no servidor também.
 
   const logout = useCallback(async () => {
     localStorage.removeItem(OWNER_IMPERSONATION_KEY);
@@ -547,7 +524,6 @@ export const useAuth = () => {
     ...authState,
     login,
     loginWithTenantCode,
-    registerWithTenantCode,
     logout,
     corretores: CORRETORES,
     isGestao,
