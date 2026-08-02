@@ -17,7 +17,6 @@ import {
   MessageCircle,
   MessageSquare,
   Plug,
-  ChevronDown,
   ChevronRight,
   Search,
   Inbox,
@@ -32,6 +31,7 @@ import {
   Target,
 } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
+import { TenantSwitcher } from '@/components/TenantSwitcher';
 import { SidebarPermission } from '@/types/permissions';
 import octoLogo from '@/assets/octodash-logo.png';
 
@@ -316,20 +316,22 @@ export function NovaSidebar() {
         <span className="font-semibold text-slate-900 dark:text-slate-100 text-[15px] tracking-tight">Octo IA</span>
       </div>
 
-      {/* Workspace selector */}
+      {/* Workspace selector — troca de tenant só existe para owner. Para os
+          demais é só um rótulo: sem chevron nem hover, para não prometer um
+          menu que não abre. */}
       <div className="px-3 pt-3">
-        <button
-          type="button"
-          className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:outline-none"
-        >
-          <div className="w-7 h-7 rounded-md bg-emerald-500 flex items-center justify-center text-white text-[13px] font-semibold">
-            {(tenantName || 'I').charAt(0).toUpperCase()}
+        {isOwner ? (
+          <TenantSwitcher />
+        ) : (
+          <div className="w-full flex items-center gap-2 px-2.5 py-2">
+            <div className="w-7 h-7 rounded-md bg-emerald-500 flex items-center justify-center text-white text-[13px] font-semibold shrink-0">
+              {(tenantName || 'I').charAt(0).toUpperCase()}
+            </div>
+            <span className="flex-1 text-left text-[13px] font-medium text-slate-800 dark:text-slate-200 truncate">
+              {tenantName || 'Imobiliária'}
+            </span>
           </div>
-          <span className="flex-1 text-left text-[13px] font-medium text-slate-800 dark:text-slate-200 truncate">
-            {tenantName || 'Imobiliária'}
-          </span>
-          <ChevronDown className="w-4 h-4 text-slate-400" />
-        </button>
+        )}
       </div>
 
       {/* Busca */}

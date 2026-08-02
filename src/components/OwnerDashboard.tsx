@@ -3,6 +3,15 @@ import { Plus, Search, Shield, Settings, X, Check, LogOut, Building2, Code2, Arr
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from '@/lib/supabaseClient';
 import { SidebarPermission } from '@/types/permissions';
+import {
+  DEFAULT_TENANT_FEATURES,
+  TEST_TENANT_ID,
+  clearImpersonatedTenant,
+  enterTenant,
+  fetchOwnerTenants,
+  getImpersonatedTenantId,
+  type OwnerTenant
+} from '@/services/ownerTenantsService';
 
 // Lista completa de features disponíveis para tenants
 const ALL_TENANT_FEATURES: { id: SidebarPermission; label: string; description: string }[] = [
@@ -22,32 +31,6 @@ const ALL_TENANT_FEATURES: { id: SidebarPermission; label: string; description: 
   { id: 'relatorios', label: 'Relatórios', description: 'Relatórios e análises' },
   { id: 'excel', label: 'Excel', description: 'Importar tabela do excel'},
 ];
-
-// Features padrão para novos tenants
-const DEFAULT_TENANT_FEATURES: SidebarPermission[] = [
-  'leads', 'notificacoes', 'metricas', 'estudo-mercado', 'imoveis', 'octo-chat'
-];
-
-type OwnerTenant = {
-  id: string;
-  name: string;
-  code: string;
-  createdAt: string;
-  allowedFeatures?: SidebarPermission[];
-};
-
-const SELECTED_TENANT_KEY = 'owner-selected-tenant';
-
-type TenantRow = {
-  id: string;
-  code: string;
-  name: string;
-  created_at: string;
-  allowed_features?: SidebarPermission[];
-};
-
-const TEST_TENANT_ID = 'tenant-area-de-teste';
-const TEST_TENANT_CODE = 'TESTE';
 
 export const OwnerDashboard = () => {
   const { user, logout } = useAuth();
@@ -73,68 +56,15 @@ export const OwnerDashboard = () => {
   const loadTenants = async () => {
     setIsLoadingTenants(true);
     setError('');
-    
-    // Tentar buscar com allowed_features, se falhar buscar sem
-    let data: TenantRow[] | null = null;
-    let tenantsError: { message: string } | null = null;
-    
-    // Primeira tentativa: com allowed_features e sem soft-deletados
-    const result1 = await supabase
-      .from('tenants')
-      .select('id, code, name, created_at, allowed_features')
-      .is('deleted_at', null)
-      .order('created_at', { ascending: false });
 
-    if (
-      result1.error?.message?.includes('allowed_features does not exist') ||
-      result1.error?.message?.includes('deleted_at does not exist')
-    ) {
-      // Alguma coluna não existe ainda (migration pendente): busca na forma
-      // antiga para não quebrar o dashboard. Degrada sem filtro/features até
-      // a migration ser aplicada.
-      const result2 = await supabase
-        .from('tenants')
-        .select('id, code, name, created_at')
-        .order('created_at', { ascending: false });
-      
-      data = result2.data as TenantRow[];
-      tenantsError = result2.error;
-    } else {
-      data = result1.data as TenantRow[];
-      tenantsError = result1.error;
-    }
-
-    if (tenantsError) {
-      setError(tenantsError.message);
+    try {
+      setTenants(await fetchOwnerTenants());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao carregar imobiliárias');
       setTenants([]);
+    } finally {
       setIsLoadingTenants(false);
-      return;
     }
-
-    const mapped = (data || []).map((t) => ({
-      id: t.id,
-      code: t.code,
-      name: t.name,
-      createdAt: t.created_at,
-      allowedFeatures: t.allowed_features || DEFAULT_TENANT_FEATURES
-    }));
-
-    const hasTestTenant = mapped.some((t) => (t.name || '').trim().toLowerCase() === 'imobiliária de teste' || t.code === TEST_TENANT_CODE);
-    const withTestTenant = hasTestTenant
-      ? mapped
-      : [
-          {
-            id: TEST_TENANT_ID,
-            name: 'Imobiliária de teste',
-            code: TEST_TENANT_CODE,
-            createdAt: new Date().toISOString(),
-            allowedFeatures: DEFAULT_TENANT_FEATURES,
-          },
-          ...mapped,
-        ];
-
-    setTenants(withTestTenant);
-    setIsLoadingTenants(false);
   };
   
   // Abrir modal de permissões
@@ -259,14 +189,10 @@ export const OwnerDashboard = () => {
       return;
     }
 
-    // Impersonation apontando para o tenant desativado ficaria órfã
-    try {
-      const raw = localStorage.getItem('owner-impersonation');
-      if (raw && JSON.parse(raw)?.tenantId === tenant.id) {
-        localStorage.removeItem('owner-impersonation');
-      }
-    } catch {
-      // ignore
+    // Impersonation apontando para o tenant desativado ficaria órfã. Sem
+    // reload: o owner já está no painel, não há tela de tenant para recarregar.
+    if (getImpersonatedTenantId() === tenant.id) {
+      clearImpersonatedTenant();
     }
 
     setTenants(prev => prev.filter(t => t.id !== tenant.id));
@@ -274,12 +200,7 @@ export const OwnerDashboard = () => {
 
   const openTenant = async (tenant: OwnerTenant) => {
     setError('');
-    localStorage.setItem('owner-impersonation', JSON.stringify({
-      tenantId: tenant.id,
-      tenantCode: tenant.code,
-      tenantName: tenant.name
-    }));
-    window.location.reload();
+    enterTenant(tenant);
   };
 
   const onCreateTenant = async () => {
