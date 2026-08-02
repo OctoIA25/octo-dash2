@@ -111,8 +111,8 @@ describe('bootstrap do responder — GET /enps/cycle/:id', () => {
       from(table) {
         if (table === 'survey_cycles') return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: 'cyc1', status: 'open', survey_id: 'srv-enps' }, error: null }) }) }) };
         if (table === 'surveys') return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { questions: [{ key: 'q_empresa' }] }, error: null }) }) }) };
-        if (table === 'survey_dispatches') return { select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: 'd1', has_responded: false }, error: null }) }) }) }) };
-        if (table === 'tenant_memberships') return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { leader_user_id: 'g1' }, error: null }) }) }) };
+        if (table === 'survey_dispatches') return { select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: 'd1', has_responded: false, tenant_id: 't1' }, error: null }) }) }) }) };
+        if (table === 'tenant_memberships') return { select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { leader_user_id: 'g1' }, error: null }) }) }) }) };
         throw new Error(table);
       },
     };
@@ -121,6 +121,40 @@ describe('bootstrap do responder — GET /enps/cycle/:id', () => {
     expect(res.statusCode).toBe(200); // json() sem status() → 200
     expect(res.body).toMatchObject({ ok: true, cycle: { id: 'cyc1', status: 'open' }, hasLeader: true, alreadyResponded: false });
     expect(res.body.questions).toHaveLength(1);
+  });
+
+  // Regressão do 500: corretor membro de 2+ tenants. Sem o .eq('tenant_id'), a query
+  // casava 2 linhas e o maybeSingle() devolvia PGRST116 → catch → 500.
+  it('corretor em 2+ tenants: filtra membership pelo tenant do dispatch (não estoura 500)', async () => {
+    const memberships = [
+      { user_id: 'u1', tenant_id: 't1', leader_user_id: 'g1' },
+      { user_id: 'u1', tenant_id: 't2', leader_user_id: 'g9' },
+    ];
+    const supabase = {
+      from(table) {
+        if (table === 'survey_cycles') return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: 'cyc1', status: 'open', survey_id: 'srv-enps' }, error: null }) }) }) };
+        if (table === 'surveys') return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { questions: [] }, error: null }) }) }) };
+        if (table === 'survey_dispatches') return { select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: 'd1', has_responded: false, tenant_id: 't1' }, error: null }) }) }) }) };
+        if (table === 'tenant_memberships') {
+          // Mock fiel ao PostgREST: >1 linha no maybeSingle() vira erro, não data.
+          const filtered = (f) => memberships.filter((m) => Object.entries(f).every(([k, v]) => m[k] === v));
+          const chain = (f) => ({
+            eq: (k, v) => chain({ ...f, [k]: v }),
+            maybeSingle: async () => {
+              const rows = filtered(f);
+              if (rows.length > 1) return { data: null, error: { code: 'PGRST116', message: 'multiple rows' } };
+              return { data: rows[0] ?? null, error: null };
+            },
+          });
+          return { select: () => chain({}) };
+        }
+        throw new Error(table);
+      },
+    };
+    const res = makeRes();
+    await makeCycleContextHandler(supabase)({ userId: 'u1', params: { cycleId: 'cyc1' } }, res);
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({ ok: true, hasLeader: true });
   });
 
   it('sem dispatch do jwt-user no ciclo → 403 (não vaza o ciclo de outro tenant)', async () => {

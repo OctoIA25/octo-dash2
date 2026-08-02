@@ -199,7 +199,7 @@ export function makeCycleContextHandler(supabase) {
 
       // Autorização: o jwt-user tem dispatch neste ciclo?
       const { data: dispatch, error: dErr } = await supabase
-        .from(DISPATCHES).select('id, has_responded').eq('cycle_id', cycleId).eq('respondent_user_id', userId).maybeSingle();
+        .from(DISPATCHES).select('id, has_responded, tenant_id').eq('cycle_id', cycleId).eq('respondent_user_id', userId).maybeSingle();
       if (dErr) throw dErr;
       if (!dispatch) return res.status(403).json({ ok: false, error: 'no_dispatch_for_user' });
 
@@ -208,9 +208,12 @@ export function makeCycleContextHandler(supabase) {
         .from('surveys').select('questions').eq('id', cycle.survey_id).maybeSingle();
       if (sErr) throw sErr;
 
-      // hasLeader: o corretor tem leader_user_id?
+      // hasLeader: o corretor tem leader_user_id NESTE tenant. O filtro por tenant é
+      // obrigatório: quem é membro de 2+ tenants faria maybeSingle() estourar PGRST116
+      // ("multiple rows") → 500. tenant_id vem da linha do dispatch (mesmo padrão do submit).
       const { data: membership, error: mErr } = await supabase
-        .from('tenant_memberships').select('leader_user_id').eq('user_id', userId).maybeSingle();
+        .from('tenant_memberships').select('leader_user_id')
+        .eq('user_id', userId).eq('tenant_id', dispatch.tenant_id).maybeSingle();
       if (mErr) throw mErr;
 
       return res.json({
