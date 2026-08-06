@@ -367,32 +367,42 @@ async function processWebhookEvents() {
 
         const result = await dispatchWebhookEvent(webhookEvent.tenant_id, eventType, webhookEvent.payload);
 
-        if (result.ok) {
-          await supabase
+        // Gravar o desfecho não pode falhar calado: um erro de schema (coluna
+        // ausente em prod) deixaria o evento 'pending' com attempts=0 re-tentando
+        // para sempre, indistinguível de fila normal. Loga e segue — o evento
+        // re-tenta no próximo tick, agora com rastro.
+        const recordOutcome = async (patch) => {
+          const { error: updateError } = await supabase
             .from('webhook_events')
-            .update({
-              status: 'delivered',
-              delivered_at: new Date().toISOString(),
-              response_status: result.responseStatus ?? null,
-              response_body: result.responseBody ?? null
-            })
+            .update(patch)
             .eq('id', webhookEvent.id);
+          if (updateError) {
+            console.error(
+              `Webhook event ${webhookEvent.id}: falha ao gravar desfecho — ${summarizeSupabaseError(updateError)}`
+            );
+          }
+        };
+
+        if (result.ok) {
+          await recordOutcome({
+            status: 'delivered',
+            delivered_at: new Date().toISOString(),
+            response_status: result.responseStatus ?? null,
+            response_body: result.responseBody ?? null
+          });
         } else {
           // webhook_events.attempts tem DEFAULT 0 no schema (migration 20260517); a primeira
           // re-tentativa é attempt=1 e o esgotamento ocorre em attempts >= MAX_WEBHOOK_ATTEMPTS (6).
           const attempts = (webhookEvent.attempts || 0) + 1;
           const exhausted = attempts >= MAX_WEBHOOK_ATTEMPTS;
-          await supabase
-            .from('webhook_events')
-            .update({
-              status: exhausted ? 'failed' : 'pending',
-              attempts,
-              last_error: result.error,
-              next_attempt_at: computeNextAttempt(attempts, Date.now()),
-              response_status: result.responseStatus ?? null,
-              response_body: result.responseBody ?? null
-            })
-            .eq('id', webhookEvent.id);
+          await recordOutcome({
+            status: exhausted ? 'failed' : 'pending',
+            attempts,
+            last_error: result.error,
+            next_attempt_at: computeNextAttempt(attempts, Date.now()),
+            response_status: result.responseStatus ?? null,
+            response_body: result.responseBody ?? null
+          });
           if (exhausted) {
             console.error(`Webhook event ${webhookEvent.id} esgotou ${MAX_WEBHOOK_ATTEMPTS} tentativas: ${result.error}`);
           }
