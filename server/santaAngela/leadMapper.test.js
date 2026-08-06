@@ -24,6 +24,18 @@ it('mapSantaAngelaToLead mapeia campos e status', () => {
   expect(lead.custom_fields.santa_angela_situacao).toBe('EM ATENDIMENTO');
 });
 
+it('property_code recebe o NOME do empreendimento, nunca o cpfcnpj', () => {
+  const saLead = { id: 'x3', nome: 'Z', cpfcnpj: '15330336848', tipo: '4' };
+  const comImovel = mapSantaAngelaToLead(saLead, 't', { id: '55', codigo: '8801', nome: 'RESERVA CASTANHEIRA' });
+  expect(comImovel.property_code).toBe('RESERVA CASTANHEIRA');
+  expect(comImovel.custom_fields.santa_angela_empreendimento_codigo).toBe('8801');
+  expect(comImovel.custom_fields.santa_angela_cpfcnpj).toBe('15330336848'); // CPF fica onde é lugar dele
+
+  const semImovel = mapSantaAngelaToLead(saLead, 't');
+  expect(semImovel.property_code).toBe(null);
+  expect(semImovel.property_type).toBe(null); // saLead.tipo é tipo de pessoa
+});
+
 it('mapSantaAngelaToLead status default = Novos Leads', () => {
   const lead = mapSantaAngelaToLead({ id: 'x2', nome: 'Y' }, 't');
   expect(lead.status).toBe('Novos Leads');

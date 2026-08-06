@@ -968,10 +968,18 @@ const normalizeZapLeadPayload = (payload) => {
   const customer = body.customer || body.client || body.contact || lead.customer || lead.client || {};
   const listing = body.listing || body.property || body.imovel || lead.listing || lead.property || {};
   const zapLeadId = pickNestedText(body, ['id', 'leadId', 'lead_id', 'lead.id', 'data.id', 'payload.id']);
+  // Mesma lista do proxy-production: o Grupo OLX manda o imóvel em
+  // clientListingId/originListingId, não em listing/listingId.
   const propertyCode = pickFirstNonEmpty(
     body.interest_reference,
     body.property_code,
     body.codigo_imovel,
+    body.clientListingId,
+    body.client_listing_id,
+    body.extraData?.clientListingId,
+    body.originListingId,
+    body.origin_listing_id,
+    body.extraData?.originListingId,
     body.listingId,
     body.externalListingId,
     body.propertyId,

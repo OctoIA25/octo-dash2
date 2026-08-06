@@ -33,7 +33,7 @@ export function createSantaAngelaSyncService({
   const tenantTimeoutMs = Number(processEnv.SANTA_ANGELA_TENANT_TIMEOUT_MS) || DEFAULT_TENANT_TIMEOUT_MS;
   async function getExisting(tenantId) {
     const { data, error } = await supabase
-      .from('leads').select('phone, source_lead_id, status, assigned_agent_name')
+      .from('leads').select('phone, source_lead_id, status, assigned_agent_name, property_code')
       .eq('tenant_id', tenantId).eq('source', 'Santa Angela');
     if (error) { logger.warn(`[santa-angela] erro lendo existentes: ${error.message}`); return { phoneSet: new Set(), sourceIdSet: new Set(), bySourceId: new Map() }; }
     const phoneSet = new Set((data || []).map((l) => l.phone).filter(Boolean));
@@ -44,7 +44,11 @@ export function createSantaAngelaSyncService({
     // pra só gravar quando status/corretor da origem realmente mudaram.
     const bySourceId = new Map((data || [])
       .filter((l) => l.source_lead_id)
-      .map((l) => [l.source_lead_id, { status: l.status, assigned_agent_name: l.assigned_agent_name }]));
+      .map((l) => [l.source_lead_id, {
+        status: l.status,
+        assigned_agent_name: l.assigned_agent_name,
+        property_code: l.property_code,
+      }]));
     return { phoneSet, sourceIdSet, bySourceId };
   }
 
@@ -71,9 +75,13 @@ export function createSantaAngelaSyncService({
   // Retorna 'updated' | 'unchanged' | 'error'.
   async function updateExisting(lead, tenantId, current) {
     const next = { status: lead.status, assigned_agent_name: lead.assigned_agent_name };
+    // property_code só entra quando temos um valor NOVO: o detalhe do prospect pode
+    // falhar (400 de carteira alheia) e null não pode apagar um código já gravado.
+    const fillsPropertyCode = Boolean(lead.property_code) && lead.property_code !== current?.property_code;
     const changed = !current
       || current.status !== next.status
-      || current.assigned_agent_name !== next.assigned_agent_name;
+      || current.assigned_agent_name !== next.assigned_agent_name
+      || fillsPropertyCode;
     if (!changed) return 'unchanged';
 
     const { error } = await supabase.from('leads')
@@ -81,10 +89,28 @@ export function createSantaAngelaSyncService({
         status: next.status,
         assigned_agent_name: next.assigned_agent_name,
         custom_fields: lead.custom_fields,
+        ...(fillsPropertyCode ? { property_code: lead.property_code } : {}),
         updated_at: new Date().toISOString(),
       })
       .eq('source_lead_id', lead.source_lead_id).eq('tenant_id', tenantId);
     return error ? 'error' : 'updated';
+  }
+
+  // Qual imóvel o lead procura. O grid não diz — só o detalhe do prospect
+  // (/prospects/{id} → empreendimento_id) cruzado com /empreendimentos.
+  //
+  // Custo: 1 requisição por lead SEM código. Quem já tem código não é consultado
+  // de novo, então o custo cai a ~zero depois do primeiro ciclo e o histórico é
+  // preenchido sozinho ao longo dos ciclos seguintes.
+  // ponytail: teto = tamanho da página (100 detalhes/ciclo a 5 req/s ≈ 20s). Se a
+  // página crescer, buscar os detalhes em lote/paralelo antes de estourar o timeout do tenant.
+  async function resolveEmpreendimento(tenantId, saLead, current) {
+    if (current?.property_code) return null; // já sabemos o imóvel deste lead
+    const detail = await apiClient.fetchProspectDetail(tenantId, saLead.id);
+    const empreendimentoId = detail?.empreendimento_id;
+    if (!empreendimentoId) return null;
+    const byId = await apiClient.fetchEmpreendimentos(tenantId); // cacheado por tenant
+    return byId.get(String(empreendimentoId)) || null;
   }
 
   async function syncTenant(tenantId, runId = '-') {
@@ -117,9 +143,10 @@ export function createSantaAngelaSyncService({
 
     const { phoneSet, sourceIdSet, bySourceId } = await getExisting(tenantId);
     for (const saLead of fetched.leads) {
-      const mapped = mapSantaAngelaToLead(saLead, tenantId);
+      const current = saLead.id ? bySourceId.get(saLead.id) : undefined;
+      const mapped = mapSantaAngelaToLead(saLead, tenantId, await resolveEmpreendimento(tenantId, saLead, current));
       if (saLead.id && sourceIdSet.has(saLead.id)) {
-        if (await updateExisting(mapped, tenantId, bySourceId.get(saLead.id)) === 'updated') result.updatedLeads++;
+        if (await updateExisting(mapped, tenantId, current) === 'updated') result.updatedLeads++;
       } else if (mapped.phone && phoneSet.has(mapped.phone)) {
         // pula: telefone já existe sob outro source_id (evita violar unique_phone_per_tenant)
       } else if (await insertNew(mapped)) {

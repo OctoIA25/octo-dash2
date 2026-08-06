@@ -694,27 +694,6 @@ app.get('/api/v1/leads/phone/:phone', validateApiKey, async (req, res) => {
   }
 });
 
-const extractZapCode = async (message, tenantId) => {
-  if (!message || !tenantId) return null;
-
-  const bairro = message.match(/\d+\s*-\s*([^,]+),/)?.[1]?.trim();
-  if (!bairro) return null;
-
-  const { data, error } = await supabase
-    .from('imoveis_locais')
-    .select('codigo_imovel')
-    .eq('tenant_id', tenantId)
-    .ilike('bairro', `%${bairro}%`)
-    .limit(1);
-
-  if (error) {
-    console.log('❌ Erro ao buscar código do Zap:', error);
-    return null;
-  }
-
-  return data?.[0]?.codigo_imovel ?? null;
-};
-
 // Helper: resolve o código do imóvel do body, tolerante ao nome da chave.
 // O webhook lead.created emite o código como `codigo`, mas integrações antigas
 // usam interest_reference/property_code/codigo_imovel. Sem `codigo` aqui, um
@@ -1548,10 +1527,20 @@ const normalizeZapLeadPayload = (payload) => {
     'payload.id',
     'payload.leadId',
   ]);
+  // clientListingId é o ID do anúncio como ELE foi publicado (o nosso, no feed
+  // VRSync); originListingId é o ID interno do portal. É assim que o Grupo OLX
+  // manda o imóvel — nenhum dos dois chega em `listing`/`listingId`, que só
+  // existem em integrações antigas. Sem eles o lead chega na Lia sem imóvel.
   const propertyCode = pickFirstNonEmpty(
     body.interest_reference,
     body.property_code,
     body.codigo_imovel,
+    body.clientListingId,
+    body.client_listing_id,
+    body.extraData?.clientListingId,
+    body.originListingId,
+    body.origin_listing_id,
+    body.extraData?.originListingId,
     body.listingId,
     body.listing_id,
     body.externalListingId,
@@ -1911,15 +1900,11 @@ app.get('/api/v1/integrations/grupo-olx/vrsync.xml', validateZapFeedAccess, crea
 
 app.post('/api/v1/integrations/zapimoveis/webhook', validateZapFeedAccess, async (req, res) => {
   try {
+    // O código do imóvel vem do payload (clientListingId/originListingId), não é
+    // inferido. Havia aqui um fallback que extraía o BAIRRO do texto da mensagem e
+    // pegava o primeiro imóvel daquele bairro — chute que sobrescrevia o código real
+    // e gravava um imóvel qualquer (inclusive não-aprovados, fora do feed).
     const normalizedLead = normalizeZapLeadPayload(req.body);
-
-    const zapCode = await extractZapCode(normalizedLead.message, req.tenantId);
-    if (zapCode) {
-      normalizedLead.interest_reference = zapCode;
-      normalizedLead.property_code = zapCode;
-      normalizedLead.codigo_imovel = zapCode;
-      normalizedLead.interest_type = 'property';
-    }
 
     const result = await createIncomingLead({
       tenantId: req.tenantId,

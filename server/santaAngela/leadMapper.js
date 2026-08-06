@@ -8,7 +8,15 @@ export function mapAssignedAgentName(corretorNome) {
   return name.toUpperCase() === 'JAPI LEADS' ? null : name;
 }
 
-export function mapSantaAngelaToLead(saLead, tenantId) {
+/**
+ * `empreendimento` vem do detalhe do prospect (/prospects/{id} → empreendimento_id)
+ * cruzado com /empreendimentos. É a ÚNICA fonte de imóvel dessa API: o grid não
+ * traz nada de imóvel. Guardamos o NOME em property_code porque é ele que chega
+ * na Lia (webhook lead.created manda `codigo` = property_code) e `codigo_empreendimento`
+ * é ambíguo — "0001" hoje é de três empreendimentos diferentes. O código e o id
+ * ficam em custom_fields para quem precisar casar com o ERP.
+ */
+export function mapSantaAngelaToLead(saLead, tenantId, empreendimento = null) {
   const statusTitulo = saLead.situacaocadastropessoa_titulo || '';
   let status = 'Novos Leads';
   if (statusTitulo.includes('NOVO')) status = 'Novos Leads';
@@ -32,8 +40,8 @@ export function mapSantaAngelaToLead(saLead, tenantId) {
     source_lead_id: saLead.id,
     status,
     property_id: null,
-    property_code: saLead.cpfcnpj || null,
-    property_type: saLead.tipo || null,
+    property_code: empreendimento?.nome || null,
+    property_type: null, // saLead.tipo é tipo de PESSOA, não de imóvel
     assigned_agent_id: null,
     assigned_agent_name: mapAssignedAgentName(saLead.corretor_nome),
     tags: ['Santa Angela', saLead.midia_titulo || 'Outros'],
@@ -49,6 +57,8 @@ export function mapSantaAngelaToLead(saLead, tenantId) {
       santa_angela_midia_sigla: saLead.midia_sigla,
       santa_angela_rd_uuid: saLead.rd_uuid,
       santa_angela_temperatura: status,
+      santa_angela_empreendimento_id: empreendimento?.id ?? null,
+      santa_angela_empreendimento_codigo: empreendimento?.codigo ?? null,
     },
     visit_date: null,
     closing_date: null,

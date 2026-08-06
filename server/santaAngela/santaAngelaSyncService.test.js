@@ -67,7 +67,18 @@ function makeBoundedLimit() {
   return factory;
 }
 
-const okClient = (leads) => ({ fetchLeads: async () => ({ ok: true, leads, status: 200 }) });
+// detalhes: { [prospectId]: empreendimento_id }; empreendimentos: id → { id, codigo, nome }
+const okClient = (leads, { detalhes = {}, empreendimentos = {}, calls } = {}) => ({
+  fetchLeads: async () => ({ ok: true, leads, status: 200 }),
+  fetchProspectDetail: async (_t, id) => {
+    if (calls) calls.detalhes.push(id);
+    return id in detalhes ? { id, empreendimento_id: detalhes[id] } : null;
+  },
+  fetchEmpreendimentos: async () => {
+    if (calls) calls.empreendimentos++;
+    return new Map(Object.entries(empreendimentos));
+  },
+});
 
 it('syncTenant insere lead novo', async () => {
   const { supabase, state } = makeSupabase({ existing: [] });
@@ -223,4 +234,51 @@ it('syncAllTenants: tenant pendurado estoura por timeout sem bloquear os demais'
   const hang = results.find((r) => r.tenantId === 'hang');
   expect(hang.success).toBe(false);
   expect(hang.message).toMatch(/timeout/);
+});
+
+it('syncTenant: lead novo entra com o empreendimento em property_code', async () => {
+  const { supabase, state } = makeSupabase({ existing: [] });
+  const svc = createSantaAngelaSyncService({ supabase,
+    apiClient: okClient([{ id: 'p1', nome: 'Novo', celular: '111' }], {
+      detalhes: { p1: '55' },
+      empreendimentos: { 55: { id: '55', codigo: '8801', nome: 'RESERVA CASTANHEIRA' } },
+    }) });
+  await svc.syncTenant('t1');
+  expect(state.inserted[0].property_code).toBe('RESERVA CASTANHEIRA');
+});
+
+it('syncTenant: lead existente SEM código é preenchido; quem já tem não gasta requisição', async () => {
+  const calls = { detalhes: [], empreendimentos: 0 };
+  const { supabase, state } = makeSupabase({
+    existing: [
+      { phone: 'A', source_lead_id: 'semCodigo', status: 'Novos Leads', assigned_agent_name: null, property_code: null },
+      { phone: 'B', source_lead_id: 'comCodigo', status: 'Novos Leads', assigned_agent_name: null, property_code: 'PORTAL DOS LAGOS' },
+    ],
+  });
+  const svc = createSantaAngelaSyncService({ supabase,
+    apiClient: okClient(
+      [{ id: 'semCodigo', nome: 'A', celular: 'A' }, { id: 'comCodigo', nome: 'B', celular: 'B' }],
+      { detalhes: { semCodigo: '55' },
+        empreendimentos: { 55: { id: '55', codigo: '8801', nome: 'RESERVA CASTANHEIRA' } },
+        calls },
+    ) });
+  await svc.syncTenant('t1');
+
+  expect(calls.detalhes).toEqual(['semCodigo']); // 'comCodigo' não é consultado de novo
+  const upd = state.updated.filter((u) => u.table === 'leads');
+  expect(upd.length).toBe(1);
+  expect(upd[0].payload.property_code).toBe('RESERVA CASTANHEIRA');
+});
+
+it('syncTenant: detalhe indisponível não apaga o código já gravado', async () => {
+  // /prospects/{id} responde 400 em prospect de outra carteira → fetchProspectDetail = null.
+  const { supabase, state } = makeSupabase({
+    existing: [{ phone: 'C', source_lead_id: 'x', status: 'Novos Leads', assigned_agent_name: null, property_code: null }],
+  });
+  const svc = createSantaAngelaSyncService({ supabase,
+    apiClient: okClient([{ id: 'x', nome: 'C', celular: 'C', situacaocadastropessoa_titulo: 'EM ATENDIMENTO' }], { detalhes: {} }) });
+  await svc.syncTenant('t1');
+  const upd = state.updated.find((u) => u.table === 'leads');
+  expect(upd.payload.status).toBe('Interação');       // o status ainda é atualizado
+  expect('property_code' in upd.payload).toBe(false); // mas o código não é sobrescrito com null
 });
