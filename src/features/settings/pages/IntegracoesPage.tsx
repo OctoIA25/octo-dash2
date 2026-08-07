@@ -114,6 +114,7 @@ import {
 import { ApiIntegrationTab } from '@/components/integrations/ApiIntegrationTab';
 import { WhatsAppIntegrationTab } from '@/features/chat/components/WhatsAppIntegrationTab';
 import { KenloSyncStatusCard } from '@/features/settings/components/KenloSyncStatusCard';
+import { MetaLeadAdsCard } from '@/features/settings/components/MetaLeadAdsCard';
 
 type ActiveTab = 'integrations' | 'api' | 'xml' | 'whatsapp';
 
@@ -1921,43 +1922,8 @@ export const IntegracoesPage: React.FC = () => {
                 </form>
               </div>
 
-              {/* Card Facebook Leads (placeholder visual) */}
-              <div className="bg-white dark:bg-slate-900 rounded-xl border-2 border-gray-200 dark:border-slate-800 p-3 w-full relative transition-all">
-                <div className="absolute right-3 top-3 px-2 py-1 rounded-full text-[10px] font-semibold flex items-center gap-1 border bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400 border-gray-200 dark:border-slate-800">
-                  <XCircle className="w-3.5 h-3.5" />
-                  Desativado
-                </div>
-
-                <div className="flex flex-col items-center text-center pt-1">
-                  <div className="w-12 h-12 rounded-lg overflow-hidden ring-2 ring-black/5 bg-gray-50 dark:bg-slate-950 flex items-center justify-center">
-                    <img
-                      src="https://i.ibb.co/1fyQKkQM/OIP.webp"
-                      alt="Facebook Leads"
-                      className="w-full h-full object-cover"
-                      draggable={false}
-                    />
-                  </div>
-                  <h3 className="font-semibold text-gray-900 dark:text-slate-100 text-sm mt-2">Facebook Leads</h3>
-                  <p className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">Integração com formulários do Meta</p>
-                </div>
-
-                <form className="mt-4 space-y-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">E-mail</label>
-                    <input type="email" placeholder="seu@email.com" className="w-full px-3 py-2 border border-gray-200 dark:border-slate-800 rounded-lg text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder-gray-400 outline-none" disabled />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">Senha</label>
-                    <div className="relative flex items-center">
-                      <input type="password" placeholder="••••••••" className="w-full px-3 py-2 border border-gray-200 dark:border-slate-800 rounded-lg text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder-gray-400 outline-none pr-10" disabled />
-                      <button type="button" className="absolute right-2.5" style={{ color: '#000000' }} disabled><Eye className="w-4 h-4" /></button>
-                    </div>
-                  </div>
-                  <div className="pt-1">
-                    <button type="button" disabled className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium opacity-50 cursor-not-allowed flex items-center justify-center gap-2">Conectar<ArrowRight className="w-4 h-4" /></button>
-                  </div>
-                </form>
-              </div>
+              {/* Facebook e Instagram Lead Ads — integração real (substitui o placeholder) */}
+              {tenantId && <MetaLeadAdsCard tenantId={tenantId} />}
 
               {/* Card Google Ads (placeholder visual) */}
               <div className="bg-white dark:bg-slate-900 rounded-xl border-2 border-gray-200 dark:border-slate-800 p-3 w-full relative transition-all">
