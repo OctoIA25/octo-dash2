@@ -109,7 +109,13 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.use(express.json({ limit: '50mb' }));
+// verify: guarda os bytes crus do corpo. O X-Hub-Signature-256 da Meta é HMAC
+// sobre os bytes EXATOS — re-serializar o objeto já parseado muda espaçamento e
+// ordem de chaves, e a assinatura nunca mais confere.
+app.use(express.json({
+  limit: '50mb',
+  verify: (req, _res, buf) => { req.rawBody = buf; },
+}));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // 🖼️ Pipeline de marca d'água (upload de master → fila → derivados versionados → CDN).
@@ -4772,6 +4778,14 @@ const c2sResolver = createC2sConfigResolver({ supabase });
 const c2sApiClient = createC2sApiClient({ resolver: c2sResolver });
 const c2sRunner = makeC2sRunner(supabase, { resolver: c2sResolver, apiClient: c2sApiClient });
 registerContact2SaleRoutes(app, supabase, { resolver: c2sResolver, apiClient: c2sApiClient, runner: c2sRunner });
+
+// Meta Lead Ads — fonte de lead direta, para tenants sem CRM intermediário.
+// NÃO entra na exclusividade Kenlo XOR C2S: é fonte, não CRM.
+import { registerMetaLeadgenRoutes, startMetaLeadgenScheduler } from './metaLeadgen/index.js';
+registerMetaLeadgenRoutes(app, supabase);
+if (process.env.META_LEADGEN_PROCESSOR === '1') {
+  startMetaLeadgenScheduler(supabase);
+}
 
 import { registerAnthropicRoutes } from './anthropic/routes.js';
 import { startAnthropicScheduler } from './anthropic/scheduler.js';

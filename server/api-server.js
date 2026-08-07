@@ -31,7 +31,11 @@ const corsOptions = {
 
 // Middleware
 app.use(cors(corsOptions));
-app.use(express.json());
+// verify: ver comentário em proxy-production.js — necessário para validar a
+// assinatura do webhook da Meta.
+app.use(express.json({
+  verify: (req, _res, buf) => { req.rawBody = buf; },
+}));
 
 // Supabase Client
 const supabaseUrl = process.env.VITE_SUPABASE_URL;
@@ -4101,6 +4105,10 @@ const c2sResolver = createC2sConfigResolver({ supabase });
 const c2sApiClient = createC2sApiClient({ resolver: c2sResolver });
 const c2sRunner = makeC2sRunner(supabase, { resolver: c2sResolver, apiClient: c2sApiClient });
 registerContact2SaleRoutes(app, supabase, { resolver: c2sResolver, apiClient: c2sApiClient, runner: c2sRunner });
+
+// Meta Lead Ads — registrar ANTES do 404 catch-all.
+import { registerMetaLeadgenRoutes } from './metaLeadgen/index.js';
+registerMetaLeadgenRoutes(app, supabase);
 
 import { registerAnthropicRoutes } from './anthropic/routes.js';
 import { ingestMaxUsage } from './anthropic/ingest.js';
