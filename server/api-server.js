@@ -8,6 +8,7 @@ import express from 'express';
 import cors from 'cors';
 import { createClient } from '@supabase/supabase-js';
 import { createWatermarkRouter } from './watermark/routes.js';
+import { countLeadsPerBroker } from './brokerLeadStats.js';
 import { createWorker } from './watermark/worker.js';
 import { createZapConfigResolver, registerZapRoutes } from './zap/index.js';
 
@@ -2746,30 +2747,16 @@ app.get('/api/v1/brokers', validateApiKey, async (req, res) => {
       });
     }
 
-    // 4. Contar leads atribuídos a cada corretor
+    // 4. Contar leads atribuídos a cada corretor (contagem no banco — ver brokerLeadStats.js)
+    let countsUnavailable = false;
     if (brokerMap.size > 0) {
-      let leadsQuery = supabase
-        .from(LEADS_TABLE)
-        .select('attended_by_name, corretor_id');
-      
-      if (effectiveTenantId) leadsQuery = leadsQuery.eq('tenant_id', effectiveTenantId);
-      
-      const { data: leads } = await leadsQuery;
-      
-      (leads || []).forEach(lead => {
-        // Por corretor_id
-        if (lead.corretor_id && brokerMap.has(lead.corretor_id)) {
-          brokerMap.get(lead.corretor_id).leads_count++;
-        } else if (lead.attended_by_name) {
-          // Por nome
-          for (const [key, broker] of brokerMap) {
-            if (broker.name?.toLowerCase() === lead.attended_by_name?.toLowerCase()) {
-              broker.leads_count++;
-              break;
-            }
-          }
-        }
-      });
+      const lista = Array.from(brokerMap.values());
+      const { ok, counts } = await countLeadsPerBroker(supabase, effectiveTenantId, lista);
+      countsUnavailable = !ok;
+      for (const broker of lista) {
+        // Falhou a contagem → `null` (desconhecido), nunca 0. Ver nota no módulo.
+        broker.leads_count = ok ? (counts.get(broker.id) ?? 0) : null;
+      }
     }
 
     const brokers = Array.from(brokerMap.values());
@@ -2778,6 +2765,7 @@ app.get('/api/v1/brokers', validateApiKey, async (req, res) => {
       success: true,
       data: brokers,
       count: brokers.length,
+      ...(countsUnavailable ? { leads_count_unavailable: true } : {}),
       source: 'tenant_brokers_and_memberships'
     });
   } catch (error) {

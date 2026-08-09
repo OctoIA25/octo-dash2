@@ -2047,17 +2047,18 @@ export const ApiDocsPage: React.FC = () => {
     "phone": "11999991111",
     "creci": "123456-F",
     "active": true,
-    "stats": {
+    "statistics": {
       "total_leads": 45,
-      "leads_by_stage": {
-        "1": 5,
-        "2": 8,
-        "3": 12,
-        "4": 10,
-        "5": 6,
-        "9": 4
+      "by_stage": {
+        "new": 12,
+        "contacted": 18,
+        "visit_done": 6,
+        "closed_won": 4,
+        "closed_lost": 5
       },
-      "conversion_rate": 8.9
+      "by_temperature": { "cold": 30, "warm": 11, "hot": 4 },
+      "conversions": 4,
+      "truncated": false
     }
   }
 }`}

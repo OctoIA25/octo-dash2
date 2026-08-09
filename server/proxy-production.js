@@ -34,6 +34,7 @@ import { createWebhookDispatcher } from './webhookDispatch.js';
 import { computeNextAttempt, MAX_WEBHOOK_ATTEMPTS } from './webhookRetry.js';
 import { getDeletedTenantIds } from './utils/tenantSoftDelete.js';
 import { createLeadAssignment } from './leadAssignment.js';
+import { countLeadsPerBroker, fetchBrokerLeadStats } from './brokerLeadStats.js';
 
 // Timeout do fetch de webhooks de saída (evita que um endpoint lento trave o loop de polling).
 const WEBHOOK_FETCH_TIMEOUT_MS = 10000;
@@ -3523,35 +3524,27 @@ app.get('/api/v1/brokers', validateApiKey, async (req, res) => {
       });
     }
 
-    // Contar leads atribuídos a cada corretor
+    // Contar leads atribuídos a cada corretor (contagem no banco — ver brokerLeadStats.js)
+    let countsUnavailable = false;
     if (brokers.length > 0) {
-      let leadsQuery = supabase
-        .from('kenlo_leads')
-        .select('attended_by_name, corretor_id');
-      
-      if (effectiveTenantId) leadsQuery = leadsQuery.eq('tenant_id', effectiveTenantId);
-      
-      const { data: leads } = await leadsQuery;
-      
-      (leads || []).forEach(lead => {
-        // Por corretor_id
-        let found = brokers.find(b => b.id === lead.corretor_id || b.auth_user_id === lead.corretor_id);
-        
-        // Fallback: por nome
-        if (!found && lead.attended_by_name) {
-          found = brokers.find(b => b.name?.toLowerCase() === lead.attended_by_name?.toLowerCase());
-        }
-        
-        if (found) {
-          found.leads_count++;
-        }
-      });
+      const { ok, counts } = await countLeadsPerBroker(supabase, effectiveTenantId, brokers);
+      countsUnavailable = !ok;
+      for (const broker of brokers) {
+        // Falhou a contagem → `null` (desconhecido), nunca 0. Zero é uma afirmação
+        // sobre o corretor e devolvê-lo aqui seria responder sucesso para uma
+        // operação que não aconteceu.
+        broker.leads_count = ok ? (counts.get(broker.id) ?? 0) : null;
+      }
     }
 
     res.json({
       success: true,
       data: brokers,
       count: brokers.length,
+      // A lista de corretores é válida mesmo quando a contagem falha — por isso 200
+      // e não 500. Mas o cliente precisa saber que `leads_count` veio null por erro,
+      // e não porque os corretores não atendem ninguém.
+      ...(countsUnavailable ? { leads_count_unavailable: true } : {}),
       source: 'acessos_permissoes'
     });
   } catch (error) {
@@ -3666,40 +3659,8 @@ app.get('/api/v1/brokers/:id', validateApiKey, async (req, res) => {
     const { data: assignments } = await assignQuery;
     broker.property_codes = (assignments || []).map(a => a.codigo_imovel);
 
-    // Buscar leads atribuídos
-    let leadsQuery = supabase
-      .from('kenlo_leads')
-      .select('id, etapa_funil, temperatura, created_at');
-    
-    if (broker.id) {
-      leadsQuery = leadsQuery.or(`corretor_id.eq.${broker.id},attended_by_name.ilike.${broker.name}`);
-    } else {
-      leadsQuery = leadsQuery.ilike('attended_by_name', broker.name);
-    }
-    
-    if (effectiveTenantId) leadsQuery = leadsQuery.eq('tenant_id', effectiveTenantId);
-    
-    const { data: leads } = await leadsQuery;
-    
-    // Calcular estatísticas
-    const stats = {
-      total_leads: (leads || []).length,
-      by_stage: {},
-      by_temperature: { cold: 0, warm: 0, hot: 0 },
-      conversions: 0
-    };
-    
-    (leads || []).forEach(lead => {
-      const stage = lead.etapa_funil || 1;
-      stats.by_stage[stage] = (stats.by_stage[stage] || 0) + 1;
-      
-      const temp = lead.temperatura || 'cold';
-      if (stats.by_temperature[temp] !== undefined) {
-        stats.by_temperature[temp]++;
-      }
-      
-      if (stage === 9) stats.conversions++;
-    });
+    // Estatísticas dos leads atribuídos (paginado, colunas reais — ver brokerLeadStats.js)
+    const stats = await fetchBrokerLeadStats(supabase, effectiveTenantId, broker);
 
     res.json({
       success: true,
