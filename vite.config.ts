@@ -141,9 +141,12 @@ export default defineConfig(({ mode }) => ({
     // Excluímos node_modules (em qualquer nível, incl. server/node_modules), dist e
     // supabase. NÃO excluímos "server" inteiro: os testes de envio/ambiente vivem em
     // server/recommendations (os arquivos de runtime não são *.test.*, logo não entram).
-    // "e2e/**" fica de fora: são testes do PLAYWRIGHT (rodam via `npm run e2e`), não
+    // "**/e2e/**" fica de fora: são testes do PLAYWRIGHT (rodam via `npm run e2e`), não
     // do vitest — incluí-los aqui quebraria (import de @playwright/test não resolvido).
-    exclude: ["**/node_modules/**", "**/dist/**", "supabase/**", "e2e/**"],
+    // O glob precisa do "**/" na frente: "e2e/**" só casa com o e2e/ da raiz, e worktrees
+    // do Claude Code em .claude/ carregam uma cópia inteira do repo (e2e e testes juntos).
+    // ".claude/**" cobre o resto dessa cópia — sem ele a suíte roda duas vezes.
+    exclude: ["**/node_modules/**", "**/dist/**", "supabase/**", "**/e2e/**", ".claude/**"],
     // alias "@/" é herdado de resolve.alias acima
   },
 }));
