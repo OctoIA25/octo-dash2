@@ -173,52 +173,58 @@ export interface MetricasIndividuaisVendas {
 
 // Funções para buscar dados reais
 
+// Amostra do tempo de resposta: os leads respondidos MAIS RECENTES. A média de
+// tempo de primeira resposta não tem como sair de uma COUNT, e o PostgREST corta
+// em 1000 de qualquer jeito — então a janela é explícita e recente, em vez de um
+// pedaço arbitrário do começo da tabela.
+const AMOSTRA_TEMPO_RESPOSTA = 1000;
+
 export async function buscarKPIsGerais(tenantId: string): Promise<KPIsGerais> {
-  const { data: leads, error: leadsError } = await supabase
-    .from('leads')
-    .select('*')
-    .eq('tenant_id', tenantId);
-
-  if (leadsError) throw leadsError;
-
-  const totalLeadsRecebidos = leads?.length || 0;
-  const totalLeadsInteragidos = leads?.filter(l => l.first_interaction_at).length || 0;
-  const totalLeadsConvertidos = leads?.filter(l =>
-    l.etapa_atual?.includes('Venda') ||
-    l.etapa_atual?.includes('Concluído') ||
-    l.etapa_atual?.includes('Negócio Fechado')
-  ).length || 0;
-
-  // Calcular tempo médio de primeira interação
-  const leadsComInteracao = leads?.filter(l => l.first_interaction_at) || [];
-  const temposInteracao = leadsComInteracao.map(l => {
-    if (l.created_at && l.first_interaction_at) {
-      const diff = new Date(l.first_interaction_at).getTime() - new Date(l.created_at).getTime();
-      return Math.floor(diff / (1000 * 60)); // minutos
-    }
-    return 0;
-  }).filter(t => t > 0);
-
-  const mediaTempoPrimeiraInteracao = temposInteracao.length > 0
-    ? Math.round(temposInteracao.reduce((a, b) => a + b, 0) / temposInteracao.length)
-    : 0;
-
-  // Calcular média de interações por dia (últimos 30 dias)
   const trintaDiasAtras = new Date();
   trintaDiasAtras.setDate(trintaDiasAtras.getDate() - 30);
 
-  const leadsUltimos30Dias = leads?.filter(l =>
-    new Date(l.created_at) >= trintaDiasAtras
-  ).length || 0;
+  const doTenant = () => supabase.from('leads').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId);
 
-  const mediaInteracaoDia = Math.round(leadsUltimos30Dias / 30);
+  // As cinco leituras são independentes → uma rodada só.
+  // Antes isto era um `select('*')` de TODOS os leads com os filtros feitos em JS,
+  // sobre duas colunas que não existem na tabela (`first_interaction_at` e
+  // `etapa_atual`): o filtro nunca casava e três destes KPIs eram zero fixo. As
+  // colunas reais são `first_response_at` e, para conversão, `final_sale_value`.
+  const [recebidos, interagidos, convertidos, ultimos30, amostraResposta] = await Promise.all([
+    doTenant(),
+    doTenant().not('first_response_at', 'is', null),
+    doTenant().gt('final_sale_value', 0),
+    doTenant().gte('created_at', trintaDiasAtras.toISOString()),
+    supabase
+      .from('leads')
+      .select('created_at, first_response_at')
+      .eq('tenant_id', tenantId)
+      .not('first_response_at', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(AMOSTRA_TEMPO_RESPOSTA),
+  ]);
+
+  const primeiroErro = [recebidos, interagidos, convertidos, ultimos30, amostraResposta].find(r => r.error)?.error;
+  if (primeiroErro) throw primeiroErro;
+
+  const temposResposta = (amostraResposta.data || [])
+    .map(l => {
+      if (!l.created_at || !l.first_response_at) return 0;
+      const diff = new Date(l.first_response_at).getTime() - new Date(l.created_at).getTime();
+      return Math.floor(diff / (1000 * 60)); // minutos
+    })
+    .filter(t => t > 0);
+
+  const mediaTempoPrimeiraInteracao = temposResposta.length > 0
+    ? Math.round(temposResposta.reduce((a, b) => a + b, 0) / temposResposta.length)
+    : 0;
 
   return {
-    totalLeadsRecebidos,
-    totalLeadsInteragidos,
-    mediaInteracaoDia,
+    totalLeadsRecebidos: recebidos.count ?? 0,
+    totalLeadsInteragidos: interagidos.count ?? 0,
+    mediaInteracaoDia: Math.round((ultimos30.count ?? 0) / 30),
     mediaTempoPrimeiraInteracao,
-    totalLeadsConvertidos
+    totalLeadsConvertidos: convertidos.count ?? 0,
   };
 }
 
@@ -288,9 +294,13 @@ export async function buscarValorTotal(
 export async function buscarVendasAssinadas(
   tenantId: string,
 ) {
-  const { data, error } = await supabase
+  // Contagem no banco, não `.length` das linhas: o PostgREST corta o resultado em
+  // db-max-rows (1000 neste projeto, verificado) SEM erro — contar no cliente dá o
+  // número errado assim que o tenant passa desse volume. Mesmo padrão de
+  // buscarTotalLeadsMensal/buscarImoveisAtivos, e não traz nenhuma linha.
+  const { count, error } = await supabase
     .from('leads' as any)
-    .select('created_at, final_sale_value, status')
+    .select('id', { count: 'exact', head: true })
     .eq('tenant_id', tenantId)
     .not('assigned_agent_id', 'is', null)
     .not('final_sale_value', 'is', null)
@@ -301,16 +311,17 @@ export async function buscarVendasAssinadas(
     return 0;
   }
 
-  // Retornar o número de vendas assinadas (leads com valor > 0)
-  return (data || []).length;
+  return count ?? 0;
 }
 
 export async function buscarVendasCriadas(
   tenantId: string,
 ) {
-  const { data, error } = await supabase
+  // Contagem no banco (ver nota em buscarVendasAssinadas): `.length` das linhas
+  // silenciosamente empaca em 1000.
+  const { count, error } = await supabase
     .from('leads' as any)
-    .select('created_at, final_sale_value, status')
+    .select('id', { count: 'exact', head: true })
     .eq('tenant_id', tenantId)
     .is('archived_at', null);
 
@@ -319,8 +330,7 @@ export async function buscarVendasCriadas(
     return 0;
   }
 
-  // Retornar o número de vendas criadas (total de leads)
-  return (data || []).length;
+  return count ?? 0;
 }
 
 export async function buscarRankingCorretores(
