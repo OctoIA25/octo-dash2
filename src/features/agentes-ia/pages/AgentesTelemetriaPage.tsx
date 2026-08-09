@@ -241,13 +241,13 @@ export const AgentesTelemetriaPage = () => {
     enabled,
   });
 
-  if (!canView) return <Navigate to="/agentes-ia/agente-marketing" replace />;
-
   const summary = summaryQ.data;
-  const tokens = summary?.tokens ?? null;
-  const latency = summary?.latency ?? null;
-  const models = summary?.by_model ?? [];
+
   // Acumula modelos vistos nas opções do select (fonte não-filtrada por model).
+  // ANTES do early return de `canView`: hook depois de return condicional muda a
+  // contagem de hooks entre renders. `canView` deriva do role, que é reavaliado com
+  // a página montada (reloadUser no visibilitychange, troca de "visualizar como") —
+  // quando ele vira, o React derruba a tela com "Rendered more hooks than expected".
   useEffect(() => {
     if (!summary || summary.by_model.length === 0) return;
     setModelOptions((prev) => {
@@ -256,6 +256,12 @@ export const AgentesTelemetriaPage = () => {
       return merged.size === prev.length ? prev : Array.from(merged).sort();
     });
   }, [summary]);
+
+  if (!canView) return <Navigate to="/agentes-ia/agente-marketing" replace />;
+
+  const tokens = summary?.tokens ?? null;
+  const latency = summary?.latency ?? null;
+  const models = summary?.by_model ?? [];
   const errorRate = summary ? fmtRate(summary.errors, summary.events) : '—';
   const windowLabel = WINDOW_OPTIONS.find((w) => w.key === windowKey)?.label ?? '';
 
