@@ -214,6 +214,9 @@ interface ImovelLocal {
   tour_virtual?: string | null;
   area_comum?: string[] | null;
   area_privativa?: string[] | null;
+  publicar_site?: boolean | null;
+  destaque?: boolean | null;
+  super_destaque?: boolean | null;
   status_aprovacao?: 'aprovado' | 'nao_aprovado' | 'aguardando';
 }
 
@@ -241,6 +244,10 @@ const buildEditDataFromLocal = (local: ImovelLocal) => {
     valor_iptu: local.valor_iptu ? String(local.valor_iptu) : '',
     titulo: local.titulo || '',
     descricao: local.descricao || '',
+    // Linhas antigas (anteriores à coluna) vêm com publicar_site true por default.
+    anunciar: (local.publicar_site ? 'sim' : 'nao') as 'sim' | 'nao',
+    destaque: (local.destaque ? 'sim' : 'nao') as 'sim' | 'nao',
+    super_destaque: (local.super_destaque ? 'sim' : 'nao') as 'sim' | 'nao',
     fotos: normalizeFotos(local.fotos),
     caracteristicas: [
       ...(Array.isArray(local.area_privativa) ? local.area_privativa : []),

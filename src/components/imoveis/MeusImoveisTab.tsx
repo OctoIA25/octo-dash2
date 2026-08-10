@@ -81,6 +81,9 @@ interface ImovelLocal {
   link_video?: string | null;
   tour_virtual?: string | null;
   salas?: number | null;
+  publicar_site?: boolean | null;
+  destaque?: boolean | null;
+  super_destaque?: boolean | null;
   created_at: string;
   status_aprovacao?: 'aprovado' | 'nao_aprovado' | 'aguardando';
   aprovado_por?: string;
@@ -403,6 +406,10 @@ export const MeusImoveisTab = ({ allImoveis, onViewDetails, onPropertyCreated }:
       valor_iptu: local.valor_iptu ? String(local.valor_iptu) : '',
       titulo: local.titulo || '',
       descricao: local.descricao || '',
+      // Linhas antigas (anteriores à coluna) vêm com publicar_site true por default.
+      anunciar: (local.publicar_site ? 'sim' : 'nao') as 'sim' | 'nao',
+      destaque: (local.destaque ? 'sim' : 'nao') as 'sim' | 'nao',
+      super_destaque: (local.super_destaque ? 'sim' : 'nao') as 'sim' | 'nao',
       fotos: normalizeFotos(local.fotos),
       caracteristicas: [
         ...(Array.isArray(local.area_privativa) ? local.area_privativa : []),

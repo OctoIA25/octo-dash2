@@ -985,6 +985,12 @@ const getZapListingEligibility = (imovel) => {
     reasons.push('missing_codigo_imovel');
   }
 
+  // "Anunciar = Não" no formulário. `=== false` de propósito: linha antiga sem
+  // a coluna carregada não deve sumir do feed por omissão.
+  if (imovel.publicar_site === false) {
+    reasons.push('nao_anunciado');
+  }
+
   if (transactionType === 'For Sale' && salePrice === null) {
     reasons.push('missing_sale_price');
   }
@@ -1258,6 +1264,7 @@ const getZapFeedListings = async (tenantId, { includeAllStatuses = false } = {})
       tour_virtual,
       criado_por,
       status_aprovacao,
+      publicar_site,
       updated_at
     `)
     .eq('tenant_id', tenantId)
@@ -1331,6 +1338,7 @@ const getZapFeedDebugInfo = async (tenantId) => {
       criado_por,
       fotos,
       status_aprovacao,
+      publicar_site,
       updated_at
     `)
     .eq('tenant_id', tenantId)
