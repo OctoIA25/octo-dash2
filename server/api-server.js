@@ -380,10 +380,16 @@ const normalizeZapPhotoUrl = (photo) => {
   return null;
 };
 
+// A capa (`isCapa` no JSONB) vai para a primeira posição: o VRSync marca a foto
+// de destaque com primary="true" no primeiro Item, e a ZAP exibe as demais na
+// ordem em que são enviadas. Sort estável → sem capa, a ordem original se mantém.
 const extractZapPhotoUrls = (photos) => {
   const rawPhotos = Array.isArray(photos) ? photos : [];
+  const isCapa = (p) => (p?.isCapa ? 1 : 0);
   const seen = new Set();
-  return rawPhotos
+
+  return [...rawPhotos]
+    .sort((a, b) => isCapa(b) - isCapa(a))
     .map(normalizeZapPhotoUrl)
     .filter((url) => url && /^https?:\/\//i.test(url))
     .filter((url) => {
@@ -496,7 +502,7 @@ const buildZapListingXml = (imovel, cfg = getZapFeedConfig()) => {
   const videoUrl = normalizeYouTubeUrl(imovel.link_video);
   const tourUrl = normalizeFeedText(imovel.tour_virtual);
   const mediaItems = [
-    ...photos.map((url, index) => `      <Item medium="image" caption="img${index + 1}">${xmlEscape(url)}</Item>`),
+    ...photos.map((url, index) => `      <Item medium="image"${index === 0 ? ' primary="true"' : ''} caption="img${index + 1}">${xmlEscape(url)}</Item>`),
     videoUrl ? `      <Item medium="video" caption="video">${xmlEscape(videoUrl)}</Item>` : null,
     /^https?:\/\//i.test(tourUrl) ? `      <Item medium="virtual_tour" caption="tour">${xmlEscape(tourUrl)}</Item>` : null
   ].filter(Boolean);
