@@ -61,6 +61,59 @@ async function uploadRaw(blob: Blob, ext: string, tenantSeg: string, codigoSeg: 
   return supabase.storage.from(BUCKET).getPublicUrl(path).data?.publicUrl ?? null;
 }
 
+// Espelha SIZES.portal em server/watermark/config.js: o pipeline real nunca
+// produz um derivado maior que esse bounding box. Sem o limite aqui, uma foto
+// de câmera/drone (8000x6000) viraria um canvas RGBA de ~192MB neste caminho
+// de fallback, que já está degradado.
+const MAX_DIMENSION = 1280;
+
+/**
+ * Escala width/height para caber num bounding box de maxDim x maxDim mantendo
+ * a proporção, sem nunca ampliar — mesma semântica do `fit: inside,
+ * withoutEnlargement: true` do pipeline real (server/watermark/watermarkEngine.js).
+ * Extraída à parte para poder testar a conta sem depender de canvas/DOM.
+ */
+export const scaleToFit = (width: number, height: number, maxDim: number): { width: number; height: number } => {
+  const scale = Math.min(1, maxDim / Math.max(width, height));
+  return { width: Math.round(width * scale), height: Math.round(height * scale) };
+};
+
+/**
+ * Converte para JPEG antes do upload cru. O feed da ZAP só aceita JPG, e este é
+ * o único caminho que ainda poderia publicar png/webp/gif. Fundo branco porque
+ * JPEG não tem alpha — sem isso, transparência vira preto. Redimensiona para
+ * caber em MAX_DIMENSION (sem ampliar) para não gerar canvases gigantes com
+ * fotos de câmera/drone.
+ * Se a conversão falhar (canvas indisponível), devolve o blob original: subir a
+ * foto no formato errado é melhor que perder a foto.
+ */
+export async function toJpegBlob(blob: Blob): Promise<{ blob: Blob; ext: string }> {
+  if (EXT_BY_MIME[blob.type] === 'jpg') return { blob, ext: 'jpg' };
+  let bitmap: ImageBitmap | null = null;
+  try {
+    bitmap = await createImageBitmap(blob);
+    const { width, height } = scaleToFit(bitmap.width, bitmap.height, MAX_DIMENSION);
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('canvas 2d indisponível');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    const jpeg = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, 'image/jpeg', 0.9),
+    );
+    if (!jpeg) throw new Error('toBlob devolveu null');
+    return { blob: jpeg, ext: 'jpg' };
+  } catch (e) {
+    console.warn(`⚠️ Conversão para JPEG falhou, subindo formato original: ${(e as Error).message}`);
+    return { blob, ext: EXT_BY_MIME[blob.type] ?? 'jpg' };
+  } finally {
+    bitmap?.close();
+  }
+}
+
 /**
  * Faz upload das fotos que ainda estão em data URL (base64). Cada foto nova passa
  * pelo PIPELINE DE MARCA D'ÁGUA; a URL persistida aponta para o derivado com marca
@@ -93,7 +146,10 @@ export async function uploadImoveisFotos({
         blob: parsed.blob,
         tenantId,
         propertyId: codigoImovel,
-        rawUpload: () => uploadRaw(parsed.blob, parsed.ext, tenantSeg, codigoSeg),
+        rawUpload: async () => {
+          const jpeg = await toJpegBlob(parsed.blob);
+          return uploadRaw(jpeg.blob, jpeg.ext, tenantSeg, codigoSeg);
+        },
       });
       return url ? { ...foto, url, id } : foto;
     }),

@@ -16,7 +16,7 @@ import multer from 'multer';
 import { createWatermarkService } from './service.js';
 import { getDeletedTenantIds } from '../utils/tenantSoftDelete.js';
 import { createWorker } from './worker.js';
-import { SIZES, WATERMARK_POSITIONS } from './config.js';
+import { SIZES, WATERMARK_POSITIONS, formatFor } from './config.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -133,14 +133,28 @@ export function createWatermarkRouter(supabase) {
   // para a CDN — que serve todos os acessos seguintes (compute pago uma vez).
   router.get('/photos/:id/:size', async (req, res) => {
     try {
-      if (!SIZES[req.params.size]) return res.status(400).json({ error: `tamanho inválido: ${req.params.size}` });
+      // A URL publicada nos feeds termina em `.jpg` porque importadores de portal
+      // (Grupo OLX) olham a extensão. Ela é decorativa: o formato real vem do
+      // perfil em SIZES, e o 302 aponta para o arquivo com a extensão de verdade.
+      // Só aceitamos a extensão quando ela bate com o formato real do perfil —
+      // senão a URL prometeria um formato (ex.: card.jpg) e entregaria outro
+      // (card sai em WebP), o que vira armadilha para o próximo integrador.
+      const extMatch = req.params.size.match(/^(.+)\.(jpe?g|webp)$/i);
+      const sizeName = extMatch ? extMatch[1] : req.params.size;
+      if (!SIZES[sizeName]) return res.status(400).json({ error: `tamanho inválido: ${req.params.size}` });
+      if (extMatch) {
+        const requestedExt = /^jpe?g$/i.test(extMatch[2]) ? 'jpg' : 'webp';
+        if (requestedExt !== formatFor(sizeName).ext) {
+          return res.status(400).json({ error: `tamanho inválido: ${req.params.size}` });
+        }
+      }
 
       // ?redirect=0 (ou ?format=json) → devolve { url } em vez de redirecionar.
       // Usado no save do imóvel para capturar a URL absoluta da CDN sem baixar bytes.
       const wantsJson = req.query.redirect === '0' || req.query.format === 'json';
 
       // Gera (ou reaproveita) o derivado da versão atual — implementação única.
-      const { url } = await service.ensureDerivative(req.params.id, req.params.size);
+      const { url } = await service.ensureDerivative(req.params.id, sizeName);
 
       if (wantsJson) return res.json({ url });
       // Redirect curto-cacheável: o alvo (CDN) é imutável, mas o derivado servido

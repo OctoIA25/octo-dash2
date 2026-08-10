@@ -16,8 +16,10 @@ async function authHeader(): Promise<Record<string, string>> {
 }
 
 /**
- * Sobe o MASTER e devolve a URL ESTÁVEL do endpoint:
- * `<origin>/api/v1/watermark/photos/:id/portal`. Essa URL sempre resolve para a
+ * Sobe o MASTER e devolve a URL ESTÁVEL do endpoint, com `.jpg` no final:
+ * `<origin>/api/v1/watermark/photos/:id/portal.jpg`. A extensão é decorativa
+ * (importador do Grupo OLX só aceita JPG e olha o fim da URL) — continua
+ * sendo o endpoint, não a CDN, e por isso essa URL sempre resolve para a
  * variante ATUAL (marcada ou — se o admin desligar a marca — limpa) e para a
  * versão atual do logo. É o que permite o TOGGLE da marca surtir efeito sem
  * reescrever nada. Absoluta (domínio do app) para funcionar nos feeds.
@@ -41,8 +43,11 @@ export async function uploadViaWatermarkPipeline(
   // Pré-gera o derivado (warm-up) para o primeiro acesso/feed já ser rápido.
   await fetch(`${WM_BASE}/photos/${id}/${WM_SIZE}?redirect=0`).catch(() => {});
 
+  // `.jpg` no fim da URL: o importador do Grupo OLX só aceita JPG e olha a
+  // extensão. Continua sendo o endpoint (302 dinâmico), então o toggle da marca
+  // segue funcionando — a extensão é ignorada pela rota.
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
-  return { url: `${origin}${WM_BASE}/photos/${id}/${WM_SIZE}`, id };
+  return { url: `${origin}${WM_BASE}/photos/${id}/${WM_SIZE}.jpg`, id };
 }
 
 /**

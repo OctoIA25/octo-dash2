@@ -29,15 +29,17 @@ const APPLY = !!getArg('apply', false);
 // URL gravada no JSONB:
 //   cdn      → URL direta da CDN do derivado (funciona sem o app; toggle NÃO surte
 //              efeito porque não passa pelo endpoint). Bom para desbloquear antes do deploy.
-//   endpoint → URL do app (/api/v1/watermark/photos/:id/portal): sobrevive a troca de
-//              logo e ao TOGGLE da marca. Requer o app deployado. Precisa de --appUrl.
+//   endpoint → URL do app (/api/v1/watermark/photos/:id/portal.jpg): sobrevive a
+//              troca de logo e ao TOGGLE da marca. Requer o app deployado. Precisa
+//              de --appUrl. O `.jpg` é decorativo (a rota ignora e resolve pelo
+//              perfil real) — só existe pra satisfazer o importador do Grupo OLX.
 const URL_MODE = String(getArg('urlMode', 'cdn'));
 const APP_URL = String(getArg('appUrl', '') || '').replace(/\/$/, '');
 if (URL_MODE === 'endpoint' && !APP_URL) {
   console.error('❌ --urlMode endpoint requer --appUrl https://seu-dominio');
   process.exit(1);
 }
-const urlFor = (id, cdnUrl) => (URL_MODE === 'endpoint' ? `${APP_URL}/api/v1/watermark/photos/${id}/portal` : cdnUrl);
+const urlFor = (id, cdnUrl) => (URL_MODE === 'endpoint' ? `${APP_URL}/api/v1/watermark/photos/${id}/portal.jpg` : cdnUrl);
 
 const env = Object.fromEntries(
   readFileSync('../.env', 'utf8').split('\n').filter((l) => l.includes('=')).map((l) => {
