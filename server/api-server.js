@@ -979,7 +979,12 @@ const normalizeZapLeadPayload = (payload) => {
   const lead = body.lead || body.data?.lead || body.payload?.lead || {};
   const customer = body.customer || body.client || body.contact || lead.customer || lead.client || {};
   const listing = body.listing || body.property || body.imovel || lead.listing || lead.property || {};
-  const zapLeadId = pickNestedText(body, ['id', 'leadId', 'lead_id', 'lead.id', 'data.id', 'payload.id']);
+  // originLeadId é como o Grupo OLX manda o ID do lead — sem ela o external_id
+  // caía num fallback aleatório e a dedup por source_lead_id nunca casava.
+  const zapLeadId = pickNestedText(body, [
+    'id', 'leadId', 'lead_id', 'lead.id', 'data.id', 'payload.id',
+    'originLeadId', 'origin_lead_id', 'extraData.originLeadId',
+  ]);
   // Mesma lista do proxy-production: o Grupo OLX manda o imóvel em
   // clientListingId/originListingId, não em listing/listingId.
   const propertyCode = pickFirstNonEmpty(

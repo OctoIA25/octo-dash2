@@ -1541,6 +1541,12 @@ const normalizeZapLeadPayload = (payload) => {
   const customer = body.customer || body.client || body.contact || lead.customer || lead.client || lead.contact || {};
   const listing = body.listing || body.property || body.imovel || lead.listing || lead.property || lead.imovel || {};
   const transactionHints = getZapTransactionHints(body);
+  // originLeadId é como o Grupo OLX manda o ID do lead — nenhuma das chaves
+  // genéricas abaixo existe no payload dele. Sem ela o external_id caía no
+  // fallback aleatório (`zap_im_veis_<ts>_<rand>`) e a checagem de duplicata
+  // por source_lead_id nunca casava: reenvio do mesmo lead = lead duplicado.
+  // Vem depois das genéricas (mesma precedência do propertyCode logo abaixo:
+  // um ID explícito no body vence o do portal).
   const zapLeadId = pickNestedText(body, [
     'id',
     'leadId',
@@ -1551,6 +1557,9 @@ const normalizeZapLeadPayload = (payload) => {
     'data.leadId',
     'payload.id',
     'payload.leadId',
+    'originLeadId',
+    'origin_lead_id',
+    'extraData.originLeadId',
   ]);
   // clientListingId é o ID do anúncio como ELE foi publicado (o nosso, no feed
   // VRSync); originListingId é o ID interno do portal. É assim que o Grupo OLX
