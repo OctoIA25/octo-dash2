@@ -847,8 +847,10 @@ const mapLeadToDB = (lead) => {
   if (lead.source !== undefined) mapped.portal = lead.source;
   if (lead.portal !== undefined) mapped.portal = lead.portal;
   
-  // Tenant e IDs
-  if (lead.tenant_id !== undefined) mapped.tenant_id = lead.tenant_id;
+  // IDs
+  // tenant_id NÃO é mapeado de propósito: o tenant de destino vem SEMPRE de
+  // req.tenantId (validateApiKey). Aceitá-lo do corpo deixava a key do tenant A
+  // criar lead no tenant B e, nos handlers de update, MOVER um lead de tenant.
   if (lead.external_id !== undefined) mapped.external_id = lead.external_id;
   
   // Timestamp
@@ -1621,7 +1623,8 @@ app.post('/api/v1/integrations/zapimoveis/notify-update', validateZapFeedAccess,
 app.post('/api/v1/integrations/zapimoveis/webhook', validateZapFeedAccess, async (req, res) => {
   try {
     const normalized = normalizeZapLeadPayload(req.body);
-    const tenantId = req.tenantId || normalized.tenant_id;
+    // Tenant vem do secret/API Key (validateZapFeedAccess), nunca do payload do portal.
+    const tenantId = req.tenantId;
     const now = new Date().toISOString();
     const propertyCode = normalized.property_code || normalized.interest_reference || null;
     const sourceLeadId = normalized.external_id || `zap-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -1738,13 +1741,10 @@ app.post('/api/v1/leads', validateApiKey, async (req, res) => {
   try {
     const leadData = mapLeadToDB(req.body);
     const { auto_assign = true, broker_id, broker_phone, raw_data, is_exclusive, exclusivo, imovel_exclusivo } = req.body;
-    const tenantId = req.tenantId || leadData.tenant_id;
-    
-    // Definir tenant_id
-    if (tenantId && !leadData.tenant_id) {
-      leadData.tenant_id = tenantId;
-    }
-    
+    // Tenant da API Key, sempre — o corpo não escolhe o destino do lead.
+    const tenantId = req.tenantId;
+    leadData.tenant_id = req.tenantId;
+
     // Definir timestamp se não fornecido
     if (!leadData.lead_timestamp) {
       leadData.lead_timestamp = new Date().toISOString();
@@ -2277,6 +2277,8 @@ app.post('/api/v1/leads/batch', validateApiKey, async (req, res) => {
 
     const leadsToInsert = leads.map(lead => {
       const mapped = mapLeadToDB(lead);
+      // Sem isto o lead nasce com tenant_id NULL — órfão, invisível na aplicação.
+      mapped.tenant_id = req.tenantId;
       // Definir timestamp se não fornecido
       if (!mapped.lead_timestamp) {
         mapped.lead_timestamp = new Date().toISOString();
@@ -2362,9 +2364,7 @@ app.post('/api/v1/leads/upsert', validateApiKey, async (req, res) => {
       const mapped = mapLeadToDB({ phone, ...leadData });
       // Escopo por tenant da API Key: garante que o lead criado pertence ao tenant
       // (mesmo idioma do POST /leads), evitando linhas órfãs e duplicatas em upserts futuros.
-      if (req.tenantId && !mapped.tenant_id) {
-        mapped.tenant_id = req.tenantId;
-      }
+      mapped.tenant_id = req.tenantId;
       if (!mapped.lead_timestamp) {
         mapped.lead_timestamp = new Date().toISOString();
       }
@@ -2499,11 +2499,9 @@ app.get('/api/v1/roleta', validateApiKey, async (req, res) => {
 app.post('/api/v1/leads/roleta', validateApiKey, async (req, res) => {
   try {
     const leadData = mapLeadToDB(req.body);
-    const tenantId = req.tenantId || leadData.tenant_id;
-
-    if (tenantId && !leadData.tenant_id) {
-      leadData.tenant_id = tenantId;
-    }
+    // Tenant da API Key, sempre — o corpo não escolhe o destino do lead.
+    const tenantId = req.tenantId;
+    leadData.tenant_id = req.tenantId;
 
     if (!leadData.lead_timestamp) {
       leadData.lead_timestamp = new Date().toISOString();

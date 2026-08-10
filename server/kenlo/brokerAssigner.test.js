@@ -46,4 +46,45 @@ describe('brokerAssigner', () => {
     await assigner.assign('t2', [{ interest_reference: 'IM-1' }]);
     expect(byCode).toHaveBeenCalledTimes(2); // cache limpo → novo lookup
   });
+
+  // O engine roda os tenants em PARALELO (crmSync/engine.js: Promise.allSettled sobre
+  // runTenantCycle) com UMA instância de assigner (kenloScheduler). Sem tenant na chave,
+  // o código de imóvel de um tenant devolve o corretor de outro.
+  it('NÃO vaza corretor entre tenants quando a chave do cache colide', async () => {
+    const byCode = vi.fn(async (tenantId) => ({ id: `broker-${tenantId}`, nome: `Corretor ${tenantId}` }));
+    const assigner = createBrokerAssigner({ getCorretorByPropertyCode: byCode, findCorretorInSystem: vi.fn() });
+
+    // Mesmo código de imóvel ("AP100") existe nos dois tenants — colisão realista.
+    await assigner.assign('tenant-A', [{ interest_reference: 'AP100' }]);
+    const [leadB] = await assigner.assign('tenant-B', [{ interest_reference: 'AP100' }]);
+
+    expect(leadB.attended_by_id).toBe('broker-tenant-B');
+  });
+
+  it('NÃO vaza corretor por nome entre tenants', async () => {
+    const byName = vi.fn(async (tenantId) => ({ id: `user-${tenantId}`, nome: 'João Silva' }));
+    const assigner = createBrokerAssigner({ getCorretorByPropertyCode: vi.fn().mockResolvedValue(null), findCorretorInSystem: byName });
+
+    await assigner.assign('tenant-A', [{ attended_by_name: 'João Silva' }]);
+    const [leadB] = await assigner.assign('tenant-B', [{ attended_by_name: 'João Silva' }]);
+
+    expect(leadB.attended_by_id).toBe('user-tenant-B');
+  });
+
+  it('tenants intercalados (sync concorrente) mantêm cada lead no seu corretor', async () => {
+    // Simula o interleaving real: cada lookup cede o event loop, como uma query.
+    const byCode = vi.fn(async (tenantId) => {
+      await new Promise((r) => setTimeout(r, 0));
+      return { id: `broker-${tenantId}`, nome: `Corretor ${tenantId}` };
+    });
+    const assigner = createBrokerAssigner({ getCorretorByPropertyCode: byCode, findCorretorInSystem: vi.fn() });
+
+    const [a, b] = await Promise.all([
+      assigner.assign('tenant-A', [{ interest_reference: 'AP100' }]),
+      assigner.assign('tenant-B', [{ interest_reference: 'AP100' }]),
+    ]);
+
+    expect(a[0].attended_by_id).toBe('broker-tenant-A');
+    expect(b[0].attended_by_id).toBe('broker-tenant-B');
+  });
 });

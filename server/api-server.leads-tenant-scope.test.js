@@ -64,3 +64,56 @@ describe('C1 — isolamento de tenant nos endpoints de lead (api-server)', () =>
     expect(body.includes('mapped.tenant_id = req.tenantId')).toBe(true);
   });
 });
+
+/**
+ * C2 — o TENANT DE DESTINO do lead nunca pode vir do corpo da requisição.
+ *
+ * `mapLeadToDB` copiava `lead.tenant_id` do body para a linha gravada. Como o
+ * corpo é do cliente, isso deixava a key do tenant A:
+ *   - CRIAR lead direto no tenant B (POST /leads, /leads/roleta, /leads/upsert),
+ *   - MOVER um lead seu para o tenant B (PUT/PATCH /leads/:id — o WHERE filtra
+ *     por req.tenantId, mas o SET levava o tenant_id do body).
+ * E o /leads/batch nem sequer estampava tenant: sem tenant_id no corpo, o lead
+ * nascia órfão (tenant_id NULL, invisível para toda a aplicação).
+ *
+ * O tenant vem SEMPRE de req.tenantId (validateApiKey).
+ */
+describe('C2 — tenant de destino do lead não vem do corpo da requisição', () => {
+  it('mapLeadToDB NÃO copia tenant_id do payload', () => {
+    const start = source.indexOf('const mapLeadToDB = (lead) => {');
+    expect(start, 'mapLeadToDB não encontrado').toBeGreaterThan(-1);
+    const body = source.slice(start, source.indexOf('\n};', start));
+
+    expect(
+      /mapped\.tenant_id\s*=\s*lead\.tenant_id/.test(body),
+      'mapLeadToDB copia tenant_id do body — permite criar/mover lead para outro tenant'
+    ).toBe(false);
+  });
+
+  // Todo handler que INSERE lead deve carimbar o tenant da API Key.
+  it.each([
+    ['post', '/api/v1/leads'],
+    ['post', '/api/v1/leads/batch'],
+    ['post', '/api/v1/leads/upsert'],
+    ['post', '/api/v1/leads/roleta'],
+  ])('%s %s estampa req.tenantId na linha inserida', (method, route) => {
+    const body = extractHandler(method, route);
+    expect(
+      /tenant_id\s*=\s*req\.tenantId/.test(body) || /tenant_id:\s*req\.tenantId/.test(body),
+      `${method} ${route} não estampa req.tenantId no insert`
+    ).toBe(true);
+  });
+
+  // O tenant não pode ser reescrito por um update: nem via body, nem via fallback.
+  it.each([
+    ['put', '/api/v1/leads/:id'],
+    ['patch', '/api/v1/leads/:id'],
+  ])('%s %s não reescreve tenant_id do lead', (method, route) => {
+    const body = extractHandler(method, route);
+    const beforeUpdate = body.slice(0, body.indexOf('.update('));
+    expect(
+      /tenant_id/.test(beforeUpdate),
+      `${method} ${route} monta tenant_id no payload de update — moveria o lead de tenant`
+    ).toBe(false);
+  });
+});
