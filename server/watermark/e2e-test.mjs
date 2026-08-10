@@ -63,17 +63,19 @@ try {
   const meta = await sharp(out).metadata();
   log('6) derivado:', meta.format, meta.width + 'x' + meta.height, (out.length / 1024).toFixed(1) + 'KB');
 
-  // salva pra inspeção visual
+  // salva pra inspeção visual (extensão real do derivado — portal sai em JPEG)
   const { writeFileSync } = await import('fs');
-  writeFileSync('/tmp/e2e-derivado.webp', out);
-  log('   derivado salvo em /tmp/e2e-derivado.webp');
+  const previewPath = `/tmp/e2e-derivado.${meta.format}`;
+  writeFileSync(previewPath, out);
+  log('   derivado salvo em ' + previewPath);
 
   // 5) verifica a marca: a foto de teste é cor sólida, então qualquer
   // espalhamento de luminância (max-min) prova que a marca branca foi composta.
+  // O gate de sucesso é a MARCA, não o codec — formato é só informativo (linha 64).
   const g = (await sharp(out).greyscale().stats()).channels[0];
   const spread = g.max - g.min;
   log('7) luminância min/max=' + g.min + '/' + g.max + ' (espalhamento=' + spread + '; >30 = marca branca presente)');
-  if (meta.format === 'webp' && spread > 30) {
+  if (spread > 30) {
     log('\n✅✅ PONTA A PONTA OK: upload → fila → worker → derivado com marca na CDN.');
   } else {
     log('\n⚠️  derivado gerado, mas a marca ficou fraca/indetectável na amostra.');

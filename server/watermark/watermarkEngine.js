@@ -65,17 +65,27 @@ export async function buildLogoWatermark(logoBuffer) {
 }
 
 /**
+ * Codifica no formato do perfil. JPEG não tem canal alpha: `flatten` põe fundo
+ * branco antes de codificar, senão foto com transparência sai com fundo preto.
+ */
+function encode(pipeline, size) {
+  return size.format === 'jpeg'
+    ? pipeline.flatten({ background: '#ffffff' }).jpeg({ quality: size.quality })
+    : pipeline.webp({ quality: size.quality });
+}
+
+/**
  * Aplica a marca d'água (logo colorido) translúcida sobre o master, na posição
  * configurada.
  *
  * @param {Buffer} masterBuffer  original sem marca
  * @param {Buffer} logoBuffer    logo RGBA colorido (saída de buildLogoWatermark)
  * @param {object} opts
- * @param {{width:number,height:number,quality:number,watermark?:boolean}} opts.size
+ * @param {{width:number,height:number,quality:number,watermark?:boolean,format?:string}} opts.size
  * @param {number} opts.opacity  0..1
  * @param {number} opts.scale    fração da largura ocupada pelo logo
  * @param {'center'|'top-left'|'top-right'|'bottom-left'|'bottom-right'} [opts.position]
- * @returns {Promise<Buffer>} WebP final
+ * @returns {Promise<Buffer>} imagem final — JPEG se size.format === 'jpeg', WebP nos demais casos
  */
 export async function composeWatermark(masterBuffer, logoBuffer, { size, opacity, scale, position = 'center' }) {
   // 1. Normaliza orientação (EXIF) e redimensiona dentro do bounding box.
@@ -90,7 +100,7 @@ export async function composeWatermark(masterBuffer, logoBuffer, { size, opacity
 
   // thumb (ou perfil marcado com watermark:false) sai sem marca.
   if (size.watermark === false) {
-    return sharp(baseBuf).webp({ quality: size.quality }).toBuffer();
+    return encode(sharp(baseBuf), size).toBuffer();
   }
 
   const baseMeta = await sharp(baseBuf).metadata();
@@ -110,15 +120,15 @@ export async function composeWatermark(masterBuffer, logoBuffer, { size, opacity
   // 2b. Logo COLORIDO translúcido (mantém as cores originais).
   const logo = await scaledLogo(logoBuffer, boxW, boxH, clamp01(opacity));
 
-  // 3. Compõe sombra + logo na posição escolhida e exporta WebP.
+  // 3. Compõe sombra + logo na posição escolhida e codifica no formato do perfil.
   const anchor = await placement(logo, baseW, baseH, position);
-  return sharp(baseBuf)
-    .composite([
+  return encode(
+    sharp(baseBuf).composite([
       { input: shadow, ...anchor },
       { input: logo, ...anchor },
-    ])
-    .webp({ quality: size.quality })
-    .toBuffer();
+    ]),
+    size,
+  ).toBuffer();
 }
 
 /**

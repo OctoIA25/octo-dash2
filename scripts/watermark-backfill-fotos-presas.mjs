@@ -2,7 +2,7 @@
  * 🩹 BACKFILL: cura fotos "marcadas presas" (a marca d'água continua aparecendo
  * mesmo com o liga/desliga DESLIGADO).
  *
- * Contexto: o reprocessamento gera o derivado LIMPO (clean_{size}.webp) e troca a
+ * Contexto: o reprocessamento gera o derivado LIMPO (clean_{size}.webp|.jpg) e troca a
  * URL no JSONB `fotos`. Em casos raros o arquivo limpo é gerado mas a URL da foto
  * não é atualizada — a foto fica apontando para o derivado MARCADO (wm_v…).
  *
@@ -35,17 +35,18 @@ const getUrl = (f) => {
   return typeof v === 'string' ? v : null;
 };
 const imageIdFromUrl = (u) => {
-  const m = u && u.match(/\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/[^/]+\.webp/i);
+  const m = u && u.match(/\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/[^/]+\.(?:webp|jpg)/i);
   return m ? m[1] : null;
 };
-const sizeFromUrl = (u) => { const m = u.match(/_([a-z]+)\.webp/i); return m ? m[1] : 'portal'; };
-// Troca só o NOME do arquivo (wm_v…_{size}.webp → clean_{size}.webp), mantendo o
-// mesmo prefixo público e diretório. Sem mexer em query string (URLs públicas).
-const toCleanUrl = (u) => u.replace(/\/wm_v\d+(?:_o\d+)?(?:_s\d+)?_([a-z]+)\.webp/i, '/clean_$1.webp');
+const sizeFromUrl = (u) => { const m = u.match(/_([a-z]+)\.(?:webp|jpg)/i); return m ? m[1] : 'portal'; };
+// Troca só o NOME do arquivo (wm_v…_{size}.EXT → clean_{size}.EXT), mantendo o
+// mesmo prefixo público, diretório E extensão (portal é .jpg; card/thumb são .webp).
+// Sem mexer em query string (URLs públicas).
+const toCleanUrl = (u) => u.replace(/\/wm_v\d+(?:_o\d+)?(?:_s\d+)?_([a-z]+)\.(webp|jpg)/i, '/clean_$1.$2');
 
 async function cleanExists(cleanUrl) {
   const rel = cleanUrl.split(`/${BUCKET}/`).pop().split('?')[0];
-  const dir = rel.replace(/[^/]+\.webp$/, '');
+  const dir = rel.replace(/[^/]+\.(?:webp|jpg)$/, '');
   const name = rel.slice(dir.length);
   const { data, error } = await supabase.storage.from(BUCKET).list(dir, { search: name, limit: 1 });
   return !error && (data || []).some((x) => x.name === name);

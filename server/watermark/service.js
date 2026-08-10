@@ -12,7 +12,7 @@
 import crypto from 'crypto';
 import { buildLogoWatermark, composeWatermark } from './watermarkEngine.js';
 import { createStorageRepo, masterKey, derivedKey, cleanKey } from './storageRepo.js';
-import { SIZES, WATERMARK_DEFAULTS, WATERMARK_POSITIONS } from './config.js';
+import { SIZES, WATERMARK_DEFAULTS, WATERMARK_POSITIONS, formatFor } from './config.js';
 
 export function createWatermarkService(supabase) {
   const storage = createStorageRepo(supabase);
@@ -313,9 +313,10 @@ export function createWatermarkService(supabase) {
     const ref = { tenantId: photo.tenant_id, propertyId: photo.property_id, imageId: photo.id };
 
     // A chave codifica a VARIANTE (marcado vs limpo) E os parâmetros (versão do
-    // logo + opacidade + escala + posição). Qualquer mudança → chave nova → regenera
-    // e troca a URL, sem servir o arquivo antigo cacheado na CDN. O toggle decide em
-    // tempo de serviço; os demais parâmetros refletem ao reapontar (repointTenantPhotos).
+    // logo + opacidade + escala + posição + formato/extensão do perfil). Qualquer
+    // mudança → chave nova → regenera e troca a URL, sem servir o arquivo antigo
+    // cacheado na CDN. O toggle decide em tempo de serviço; os demais parâmetros
+    // refletem ao reapontar (repointTenantPhotos).
     const expectedKey = enabled ? derivedKey(ref, version, sizeName, opacity, scale, position) : cleanKey(ref, sizeName);
 
     // Idempotência pelo banco: o derivado ATIVO já é o esperado? Serve direto.
@@ -331,7 +332,7 @@ export function createWatermarkService(supabase) {
       scale,
       position,
     });
-    await storage.putDerivative(expectedKey, out);
+    await storage.putDerivative(expectedKey, out, formatFor(sizeName).contentType);
 
     // Merge ATÔMICO no banco (jsonb concat via RPC) — evita lost-update do mapa
     // derivatives quando duas requisições concorrentes geram tamanhos diferentes.

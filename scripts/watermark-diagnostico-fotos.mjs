@@ -6,8 +6,8 @@
  *
  *   estavel   → /api/v1/watermark/photos/{id}/{size}  (resolve marca em tempo de
  *               serviço; o liga/desliga já funciona — só precisa refresh)
- *   marcada   → .../{imageId}/wm_v{ver}_o{o}_s{s}_{size}.webp  (CONGELADA com marca)
- *   limpa     → .../{imageId}/clean_{size}.webp                (CONGELADA sem marca)
+ *   marcada   → .../{imageId}/wm_v{ver}_o{o}_s{s}_{size}.webp|.jpg  (CONGELADA com marca)
+ *   limpa     → .../{imageId}/clean_{size}.webp|.jpg                (CONGELADA sem marca)
  *   crua      → bucket imoveis-fotos (upload de fallback, nunca teve marca)
  *   outra     → http(s) externa / legado / data url
  *
@@ -37,9 +37,9 @@ function getUrl(f) {
   return typeof v === 'string' ? v : null;
 }
 
-/** imageId (=property_photos.id) embutido no caminho da CDN: .../{uuid}/arquivo.webp */
+/** imageId (=property_photos.id) embutido no caminho da CDN: .../{uuid}/arquivo.webp|.jpg */
 function imageIdFromUrl(u) {
-  const m = u && u.match(/\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/[^/]+\.webp/i);
+  const m = u && u.match(/\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/[^/]+\.(?:webp|jpg)/i);
   return m ? m[1] : null;
 }
 
@@ -48,7 +48,7 @@ function classify(f) {
   const hasId = typeof f === 'object' && f !== null && !!f.id;
   if (/\/api\/v1\/watermark\/photos\//.test(u)) return { tipo: 'estavel', hasId };
   if (/\/wm_v\d+_/.test(u)) return { tipo: 'marcada', hasId };
-  if (/\/clean_[a-z]+\.webp/i.test(u)) return { tipo: 'limpa', hasId };
+  if (/\/clean_[a-z]+\.(?:webp|jpg)/i.test(u)) return { tipo: 'limpa', hasId };
   if (/\/imoveis-fotos\//.test(u)) return { tipo: 'crua', hasId };
   return { tipo: 'outra', hasId };
 }

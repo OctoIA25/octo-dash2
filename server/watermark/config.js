@@ -17,10 +17,25 @@ export const BUCKETS = {
  * sem upscale). A marca d'água é dimensionada relativa à largura final.
  */
 export const SIZES = {
-  portal: { width: 1280, height: 1280, quality: 82 },
+  // portal alimenta o feed VRSync, e o Grupo OLX só importa JPG.
+  portal: { width: 1280, height: 1280, quality: 82, format: 'jpeg' },
   card: { width: 640, height: 640, quality: 80 },
   thumb: { width: 240, height: 240, quality: 70, watermark: false }, // thumb sem marca: ilegível e desnecessária
 };
+
+/**
+ * Formato do derivado. A extensão entra na CHAVE do arquivo, então trocar o
+ * formato de um perfil invalida só os derivados daquele perfil — mesmo
+ * mecanismo já usado por logo_version.
+ */
+const FORMATS = {
+  webp: { ext: 'webp', contentType: 'image/webp' },
+  jpeg: { ext: 'jpg', contentType: 'image/jpeg' },
+};
+
+export function formatFor(sizeName) {
+  return FORMATS[SIZES[sizeName]?.format] || FORMATS.webp;
+}
 
 /** Tamanhos pré-gerados no processamento assíncrono. */
 export const DEFAULT_SIZES = ['portal', 'card', 'thumb'];

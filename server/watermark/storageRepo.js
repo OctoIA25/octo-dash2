@@ -3,14 +3,14 @@
  *
  * Esquema de chaves (o coração da invalidação em massa):
  *   master   tenants/{tenantId}/properties/{propertyId}/{imageId}/original.bin   (IMUTÁVEL)
- *   derivado tenants/{tenantId}/properties/{propertyId}/{imageId}/wm_v{ver}_{size}.webp
+ *   derivado tenants/{tenantId}/properties/{propertyId}/{imageId}/wm_v{ver}_{size}.{ext}
  *   máscara  logos/{tenantId}/mask_v{ver}.png
  *
  * Como `ver` (logo_version) entra na chave do derivado, trocar o logo muda a
  * chave que o CRM pede — os derivados antigos viram órfãos (limpos por lifecycle)
  * e os novos são gerados sob demanda/em lote. Nenhum arquivo é "editado".
  */
-import { BUCKETS } from './config.js';
+import { BUCKETS, formatFor } from './config.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Defesa em profundidade contra path traversal/colisão cross-tenant: tenantId e
@@ -40,13 +40,13 @@ export function derivedKey(ref, logoVersion, size, opacity = 0.35, scale = 0.3, 
   const o = Math.round(Math.min(1, Math.max(0, opacity)) * 100);
   const s = Math.round(Math.min(1, Math.max(0, scale)) * 100);
   const p = POSITION_CODES[position] ? `_p${POSITION_CODES[position]}` : '';
-  return `tenants/${tenantId}/properties/${prop}/${imageId}/wm_v${logoVersion}_o${o}_s${s}${p}_${size}.webp`;
+  return `tenants/${tenantId}/properties/${prop}/${imageId}/wm_v${logoVersion}_o${o}_s${s}${p}_${size}.${formatFor(size).ext}`;
 }
 
 /** Derivado SEM marca (apenas redimensionado) — servido quando a marca está desligada. */
 export function cleanKey(ref, size) {
   const { tenantId, prop, imageId } = safeSegments(ref);
-  return `tenants/${tenantId}/properties/${prop}/${imageId}/clean_${size}.webp`;
+  return `tenants/${tenantId}/properties/${prop}/${imageId}/clean_${size}.${formatFor(size).ext}`;
 }
 
 export function logoMaskKey(tenantId, logoVersion) {
@@ -81,10 +81,10 @@ export function createStorageRepo(supabase) {
     return Buffer.from(await data.arrayBuffer());
   }
 
-  async function putDerivative(key, buffer) {
+  async function putDerivative(key, buffer, contentType) {
     const { error } = await supabase.storage
       .from(BUCKETS.derived)
-      .upload(key, buffer, { contentType: 'image/webp', upsert: true, cacheControl: '31536000' });
+      .upload(key, buffer, { contentType, upsert: true, cacheControl: '31536000' });
     if (error) throw new Error(`putDerivative: ${error.message}`);
     return key;
   }
