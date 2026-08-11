@@ -5,3 +5,4 @@
 export { createZapConfigResolver } from './zapConfigResolver.js';
 export { registerZapRoutes } from './routes.js';
 export { computeSecretLookup, generateFeedSecret } from './secretLookup.js';
+export { extractZapPhotoUrls } from './feedPhotos.js';

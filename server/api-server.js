@@ -10,7 +10,7 @@ import { createClient } from '@supabase/supabase-js';
 import { createWatermarkRouter } from './watermark/routes.js';
 import { countLeadsPerBroker } from './brokerLeadStats.js';
 import { createWorker } from './watermark/worker.js';
-import { createZapConfigResolver, registerZapRoutes } from './zap/index.js';
+import { createZapConfigResolver, registerZapRoutes, extractZapPhotoUrls } from './zap/index.js';
 
 const app = express();
 const PORT = process.env.API_PORT || 3001;
@@ -369,35 +369,6 @@ const mapZapPropertyType = (imovel) => {
 const mapZapUsageType = (propertyType) => {
   if (propertyType.startsWith('Commercial /')) return 'Commercial';
   return 'Residential';
-};
-
-const normalizeZapPhotoUrl = (photo) => {
-  if (!photo) return null;
-  if (typeof photo === 'string') return photo.trim();
-  if (typeof photo === 'object') {
-    return String(photo.url || photo.src || photo.preview || photo.publicUrl || '').trim() || null;
-  }
-  return null;
-};
-
-// A capa (`isCapa` no JSONB) vai para a primeira posição: o VRSync marca a foto
-// de destaque com primary="true" no primeiro Item, e a ZAP exibe as demais na
-// ordem em que são enviadas. Sort estável → sem capa, a ordem original se mantém.
-const extractZapPhotoUrls = (photos) => {
-  const rawPhotos = Array.isArray(photos) ? photos : [];
-  const isCapa = (p) => (p?.isCapa ? 1 : 0);
-  const seen = new Set();
-
-  return [...rawPhotos]
-    .sort((a, b) => isCapa(b) - isCapa(a))
-    .map(normalizeZapPhotoUrl)
-    .filter((url) => url && /^https?:\/\//i.test(url))
-    .filter((url) => {
-      if (seen.has(url)) return false;
-      seen.add(url);
-      return true;
-    })
-    .slice(0, 30);
 };
 
 const getConfiguredDetailBaseUrl = (cfg = getZapFeedConfig()) => {
