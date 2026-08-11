@@ -38,7 +38,10 @@ export function createWebhookDispatcher({ supabase, fetchImpl, assertSafeHttpUrl
         headers: {
           'Content-Type': 'application/json',
           'X-OctoDash-Event': event,
-          'X-OctoDash-Signature': signature
+          'X-OctoDash-Signature': signature,
+          // Receptores que não validam HMAC (ex.: Lia) comparam o secret cru.
+          // ponytail: valor em claro — os endpoints http:// já expõem o payload; migrar p/ https resolve os dois.
+          'x-webhook-secret': webhook.secret
         },
         body,
         redirect: 'manual',

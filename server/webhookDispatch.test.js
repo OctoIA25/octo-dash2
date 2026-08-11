@@ -101,6 +101,23 @@ describe('createWebhookDispatcher', () => {
     expect(options.signal).toBeInstanceOf(AbortSignal);
   });
 
+  // A Lia compara o secret cru; sem este header ela devolve 401 e o lead nunca chega.
+  it('manda o secret cru em x-webhook-secret, além da assinatura HMAC', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => 'OK' });
+    const dispatcher = createWebhookDispatcher({
+      supabase: makeSupabase({ webhooks: ONE_WEBHOOK }),
+      fetchImpl,
+      assertSafeHttpUrl: makeSafeUrl(),
+      fetchTimeoutMs: 5000,
+      summarizeError: String
+    });
+
+    await dispatcher('tenant-1', 'lead.created', {});
+    const [, options] = fetchImpl.mock.calls[0];
+    expect(options.headers['x-webhook-secret']).toBe('segredo');
+    expect(options.headers['X-OctoDash-Signature']).toMatch(/^sha256=/);
+  });
+
   it('falha: retorna responseStatus e responseBody mesmo em erro HTTP', async () => {
     const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status: 404, text: async () => 'not found' });
     const dispatcher = createWebhookDispatcher({
