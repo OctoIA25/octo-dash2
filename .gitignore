@@ -21,6 +21,7 @@ dist-ssr
 *.local
 .vite/
 .cache/
+coverage/
 
 # Browser profiles (CONTAINS LOGINS/COOKIES — NEVER COMMIT)
 .chromium-profile/
