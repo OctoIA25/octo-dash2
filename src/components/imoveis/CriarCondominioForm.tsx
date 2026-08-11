@@ -6,6 +6,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
+import { useCaptadores } from '@/features/imoveis/hooks/useCaptadores';
 import { buscarCep, formatarCepExibicao, validarCep } from '@/services/viaCepService';
 import { supabase } from '@/lib/supabaseClient';
 import { FotosUploader } from './FotosUploader';
@@ -132,6 +133,8 @@ interface CondominioFormData {
   status_comercial: string;
   construtora: string;
   incorporadora: string;
+  /** user_id do captador. '' = sem captador. */
+  captador_id: string;
   ano_construcao: string;
   imobiliaria_exclusiva: string;
   num_blocos_torres: string;
@@ -250,6 +253,7 @@ const initialFormData: CondominioFormData = {
   status_comercial: '',
   construtora: '',
   incorporadora: '',
+  captador_id: '',
   ano_construcao: '',
   imobiliaria_exclusiva: '',
   num_blocos_torres: '',
@@ -380,7 +384,9 @@ export const CriarCondominioForm = ({
 }: CriarCondominioFormProps) => {
   const { user } = useAuth();
   const tenantId = user?.tenantId;
-  
+  const { data: captadores = [] } = useCaptadores(tenantId);
+  const isManager = ['admin', 'owner'].includes(user?.systemRole?.toLowerCase() || '');
+
   const [formData, setFormData] = useState<CondominioFormData>(initialFormData);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -676,6 +682,7 @@ export const CriarCondominioForm = ({
         status_comercial: formData.status_comercial || null,
         construtora: formData.construtora || null,
         incorporadora: formData.incorporadora || null,
+        captador_id: formData.captador_id || null,
         ano_construcao: formData.ano_construcao ? parseInt(formData.ano_construcao) : null,
         imobiliaria_exclusiva: formData.imobiliaria_exclusiva || null,
         num_blocos_torres: formData.num_blocos_torres ? parseInt(formData.num_blocos_torres) : null,
@@ -1078,6 +1085,29 @@ export const CriarCondominioForm = ({
                 <div className="space-y-2">
                   <Label>Incorporadora</Label>
                   <Input placeholder="Nome da incorporadora" value={formData.incorporadora} onChange={(e) => handleInputChange('incorporadora', e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Corretor Captador</Label>
+                  <Select
+                    value={formData.captador_id || 'sem'}
+                    onValueChange={(value) => handleInputChange('captador_id', value === 'sem' ? '' : value)}
+                    disabled={!isManager}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Sem captador" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="sem">Sem captador</SelectItem>
+                      {captadores.map((c) => (
+                        <SelectItem key={c.user_id} value={c.user_id}>{c.nome}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {!isManager && (
+                    <p className="text-xs text-text-secondary">
+                      Somente diretoria ou administrador pode alterar o captador.
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label>Ano de Construção</Label>

@@ -17,6 +17,16 @@ export interface Imovel {
   corretor_numero?: string;
   corretor_email?: string;
   corretor_foto?: string;
+  /** Captador atribuído manualmente (imoveis_locais / condominios). */
+  captador_id?: string | null;
+  /**
+   * true quando corretor_nome exibido é o mesmo corretor de
+   * corretor_email/corretor_foto/corretor_numero (todos vindos do XML).
+   * false quando corretor_nome veio de captador_id ou imoveis_corretores —
+   * nesse caso os campos de contato abaixo ainda são de OUTRA pessoa (o
+   * corretor do XML) e não devem ser exibidos junto do nome.
+   */
+  corretorContatoDaXml?: boolean;
   valor_venda: number;
   valor_locacao: number;
   finalidade: 'venda' | 'locacao' | 'venda_locacao';

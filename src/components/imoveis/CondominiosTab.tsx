@@ -8,6 +8,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabaseClient';
 import { getFotoCapaUrl } from './fotos-helpers';
 import { useRegisterNovoActions } from '@/contexts/NovoActionsContext';
+import { useCaptadores, mapCaptadoresPorId } from '@/features/imoveis/hooks/useCaptadores';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -86,6 +87,7 @@ export interface Condominio {
   status_comercial: string | null;
   construtora: string | null;
   incorporadora: string | null;
+  captador_id: string | null;
   ano_construcao: number | null;
   num_blocos_torres: number | null;
   data_entrega: string | null;
@@ -160,6 +162,9 @@ export const CondominiosTab = () => {
   const [condominios, setCondominios] = useState<Condominio[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const { data: captadoresLista = [] } = useCaptadores(tenantId);
+  const mapaCaptadores = useMemo(() => mapCaptadoresPorId(captadoresLista), [captadoresLista]);
 
   // Filtros
   const [searchTerm, setSearchTerm] = useState('');
@@ -244,6 +249,7 @@ export const CondominiosTab = () => {
     status_comercial: cond.status_comercial || '',
     construtora: cond.construtora || '',
     incorporadora: cond.incorporadora || '',
+    captador_id: cond.captador_id || '',
     ano_construcao: cond.ano_construcao ? String(cond.ano_construcao) : '',
     imobiliaria_exclusiva: (cond as any).imobiliaria_exclusiva || '',
     num_blocos_torres: cond.num_blocos_torres ? String(cond.num_blocos_torres) : '',
@@ -909,6 +915,14 @@ export const CondominiosTab = () => {
                         <span className="truncate">{cond.construtora}</span>
                       </div>
                     )}
+
+                    {/* Captador */}
+                    <div className="flex items-center gap-2 text-sm text-text-secondary">
+                      <span>🤝</span>
+                      <span className="truncate">
+                        {(cond.captador_id && mapaCaptadores[cond.captador_id]) || 'Sem captador'}
+                      </span>
+                    </div>
 
                     {/* Badges extras */}
                     <div className="flex flex-wrap gap-1 pt-2 border-t border-border/50">

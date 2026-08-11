@@ -17,6 +17,8 @@ import { CriarImovelForm } from '@/components/imoveis/CriarImovelForm';
 import { ImovelDetalhesModal } from '@/components/imoveis/ImovelDetalhesModal';
 import { normalizeFotos } from '@/components/imoveis/fotos-helpers';
 import { Imovel } from '../services/kenloService';
+import { resolverCaptador, matchCaptadorFilter, CAPTADOR_FILTRO_TODOS, CAPTADOR_FILTRO_SEM } from '../utils/captador';
+import { useCaptadores, mapCaptadoresPorId } from '../hooks/useCaptadores';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/hooks/useAuth';
 import { Input } from '@/components/ui/input';
@@ -218,6 +220,7 @@ interface ImovelLocal {
   destaque?: boolean | null;
   super_destaque?: boolean | null;
   status_aprovacao?: 'aprovado' | 'nao_aprovado' | 'aguardando';
+  captador_id?: string | null;
 }
 
 // Converte o registro local (imoveis_locais) no formato de initialData esperado
@@ -258,12 +261,16 @@ const buildEditDataFromLocal = (local: ImovelLocal) => {
     tour_virtual: local.tour_virtual || '',
     salas: local.salas ? String(local.salas) : '',
     status_aprovacao: local.status_aprovacao,
+    captador_id: local.captador_id || '',
   };
 };
 
 export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
   const { user } = useAuth();
   const tenantId = user?.tenantId;
+
+  const { data: captadoresLista = [] } = useCaptadores(tenantId);
+  const mapaCaptadores = useMemo(() => mapCaptadoresPorId(captadoresLista), [captadoresLista]);
 
   // Tab ativo vem do query string (?tab=catalogo|meus-imoveis|condominios)
   // — controlado pelas tabs do NovoHeader (PageTabs)
@@ -317,7 +324,6 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
   const [customFilters, setCustomFilters] = useState<CustomFilter[]>([]);
   const [filterSelectorKey, setFilterSelectorKey] = useState(0);
 
-  const [corretores, setCorretores] = useState<string[]>([]);
   const [corretorPorCodigo, setCorretorPorCodigo] = useState<Record<string, string>>({});
 
   const TIPOS_COMISSAO = [
@@ -393,6 +399,7 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
       banheiro: local.banheiros || 0,
       salas: 0,
       descricao: local.descricao || '',
+      captador_id: local.captador_id ?? null,
       fotos: Array.isArray(local.fotos) ? normalizeFotos(local.fotos).map((foto) => foto.url) : [],
       videos: [],
       area_comum: [],
@@ -421,21 +428,47 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
     const baseComFotosLocais = imoveisXml.map((imovel) => {
       const codigo = imovel.referencia?.trim().toUpperCase();
       const local = codigo ? localPorCodigo.get(codigo) : undefined;
-      return local && local.fotos.length > 0
-        ? { ...imovel, fotos: local.fotos }
-        : imovel;
+      if (!local) return imovel;
+      return {
+        ...imovel,
+        ...(local.fotos.length > 0 ? { fotos: local.fotos } : {}),
+        captador_id: local.captador_id,
+      };
     });
 
     return [...baseComFotosLocais, ...locaisSemDuplicata].map((imovel) => {
-      const codigo = imovel.referencia?.trim().toUpperCase();
-      const corretorNome = codigo ? corretorPorCodigo[codigo] : undefined;
-
+      const codigoNormalizado = imovel.referencia?.trim().toUpperCase();
+      // As duas fontes com prioridade sobre o nome do XML (mesma ordem de
+      // resolverCaptador). Se nenhuma delas resolveu, o nome exibido é o do
+      // XML e os campos de contato (foto/email/numero), que já são do
+      // corretor do XML, pertencem à mesma pessoa.
+      const temCaptadorManual = Boolean(imovel.captador_id && mapaCaptadores[imovel.captador_id]);
+      const temCorretorPorCodigo = Boolean(codigoNormalizado && corretorPorCodigo[codigoNormalizado]);
       return {
         ...imovel,
-        corretor_nome: corretorNome
+        // resolverCaptador preserva o corretor_nome vindo do XML quando não há
+        // captador_id nem linha em imoveis_corretores. O merge antigo sobrescrevia
+        // incondicionalmente e apagava o nome em tenants sem imoveis_corretores.
+        corretor_nome: resolverCaptador({
+          captadorId: imovel.captador_id,
+          captadoresPorId: mapaCaptadores,
+          corretorPorCodigo,
+          codigo: imovel.referencia,
+          corretorNomeXml: imovel.corretor_nome,
+        }) ?? undefined,
+        corretorContatoDaXml: !temCaptadorManual && !temCorretorPorCodigo,
       };
     });
-  }, [imoveisXml, imoveisLocais, convertLocalToImovel, corretorPorCodigo]);
+  }, [imoveisXml, imoveisLocais, convertLocalToImovel, corretorPorCodigo, mapaCaptadores]);
+
+  // Lista do filtro derivada dos imóveis já resolvidos (inclui captadores
+  // atribuídos manualmente, que não têm linha em imoveis_corretores).
+  const corretores = useMemo(
+    () =>
+      [...new Set(imoveis.map((i) => i.corretor_nome).filter((n): n is string => Boolean(n)))]
+        .sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    [imoveis],
+  );
 
   // Métricas precisam considerar também os imóveis cadastrados localmente
   const metrics = useMemo(() => {
@@ -501,11 +534,7 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
           .filter((item): item is [string, string] => Boolean(item))
       );
 
-      const nomes = [...new Set(Object.values(mapa))]
-        .sort((a, b) => a.localeCompare(b, 'pt-BR'));
-
       setCorretorPorCodigo(mapa);
-      setCorretores(nomes);
     } catch (err) {
       console.error('Erro ao carregar corretores:', err);
     }
@@ -652,8 +681,8 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
       matchesNumericFilter(i.garagem || 0, garagemFilter)
     );
 
-    if (corretorFilter !== 'todos') {
-      filtered = filtered.filter((i) => (i.corretor_nome || 'Sem corretor') === corretorFilter);
+    if (corretorFilter !== CAPTADOR_FILTRO_TODOS) {
+      filtered = filtered.filter((i) => matchCaptadorFilter(i.corretor_nome ?? null, corretorFilter));
     }
 
     if (acomodacaoFilter !== 'todos') {
@@ -1062,6 +1091,7 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="todos">Todos os Corretores</SelectItem>
+                <SelectItem value={CAPTADOR_FILTRO_SEM}>Sem captador</SelectItem>
                 {corretores.map((corretor) => (
                   <SelectItem key={corretor} value={corretor}>
                     {corretor}
@@ -1351,7 +1381,7 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
               )}
               {corretorFilter !== 'todos' && (
                 <Badge variant="secondary">
-                  Corretor: {corretorFilter}
+                  Corretor: {corretorFilter === CAPTADOR_FILTRO_SEM ? 'Sem captador' : corretorFilter}
                   <X className="h-3 w-3 ml-1 cursor-pointer" onClick={() => setCorretorFilter('todos')} />
                 </Badge>
               )}

@@ -89,6 +89,7 @@ interface ImovelLocal {
   aprovado_por?: string;
   aprovado_em?: string;
   motivo_aprovacao?: string;
+  captador_id?: string | null;
 }
 
 interface AprovacaoDialog {
@@ -420,6 +421,7 @@ export const MeusImoveisTab = ({ allImoveis, onViewDetails, onPropertyCreated }:
       tour_virtual: local.tour_virtual || '',
       salas: local.salas ? String(local.salas) : '',
       status_aprovacao: local.status_aprovacao,
+      captador_id: local.captador_id || '',
     };
   };
 

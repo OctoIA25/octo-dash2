@@ -313,6 +313,12 @@ export const ImovelCard = ({ imovel, onViewDetails, onDelete, canDelete }: Imove
             </AlertDialog>
           )}
         </div>
+
+        <div className="pt-2 border-t border-border/50">
+          <span className="text-xs text-text-secondary">
+            Captador: {imovel.corretor_nome || 'Sem captador'}
+          </span>
+        </div>
       </CardContent>
     </Card>
   );

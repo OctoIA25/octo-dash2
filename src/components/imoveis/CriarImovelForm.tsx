@@ -6,6 +6,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
+import { useCaptadores } from '@/features/imoveis/hooks/useCaptadores';
 import { buscarCep, formatarCepExibicao, validarCep } from '@/services/viaCepService';
 import { supabase } from '@/lib/supabaseClient';
 import { uploadImoveisFotos } from '@/lib/uploadImoveisFotos';
@@ -153,7 +154,8 @@ interface ImovelFormData {
   
   // Comissões e Condições
   tipo_comissao: string;
-  corretor_captador: string;
+  /** user_id do captador. '' = sem captador. */
+  captador_id: string;
   captou_pretensao: 'venda_locacao' | 'somente_venda' | 'somente_locacao' | '';
   condicao_comercial: string;
   
@@ -216,7 +218,7 @@ const initialFormData: ImovelFormData = {
   fotos: [],
   placa_local: 'nao',
   tipo_comissao: '',
-  corretor_captador: '',
+  captador_id: '',
   captou_pretensao: '',
   condicao_comercial: '',
   codigo_iptu: '',
@@ -472,7 +474,9 @@ export const CriarImovelForm = ({
 }: CriarImovelFormProps) => {
   const { user, tenantId: authTenantId } = useAuth();
   const tenantId = authTenantId || user?.tenantId;
-  
+  const { data: captadores = [] } = useCaptadores(tenantId);
+  const isManager = ['admin', 'owner'].includes(user?.systemRole?.toLowerCase() || '');
+
   const [formData, setFormData] = useState<ImovelFormData>(initialFormData);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<'idle' | 'success' | 'error'>('idle');
@@ -1067,6 +1071,12 @@ export const CriarImovelForm = ({
       proprietario_telefone: formData.proprietario_celular || formData.proprietario_tel_residencial || null,
       proprietario_email: formData.proprietario_email || null,
       criado_por: user?.id || null,
+      // captador_id só entra no payload para diretoria/admin. Upsert vira
+      // INSERT ... ON CONFLICT DO UPDATE: colunas ausentes do payload mantêm
+      // o valor já salvo. Omitir aqui é o que faz um corretor conseguir
+      // salvar outros campos sem precisar (nem poder) tocar no captador —
+      // ver tg_guard_captador, cujo ramo de UPDATE nunca dispara nesse upsert.
+      ...(isManager ? { captador_id: formData.captador_id || null } : {}),
       status_aprovacao: isEdit ? editStatusAprovacao || 'aguardando' : 'aguardando',
     };
 
@@ -1076,7 +1086,10 @@ export const CriarImovelForm = ({
       .upsert(imovelLocal, { onConflict: 'tenant_id,codigo_imovel' });
 
     if (error) {
-      console.error('❌ Erro ao salvar imóvel local:', error.message);
+      console.error('❌ Erro ao salvar imóvel local:', error.message, error.code, error.details);
+      if (error.code === '42501') {
+        throw new Error('Somente diretoria ou administrador pode definir o captador do imóvel.');
+      }
       throw error;
     }
     
@@ -1967,11 +1980,26 @@ export const CriarImovelForm = ({
                 </div>
                 <div className="space-y-2">
                   <Label>Corretor Captador</Label>
-                  <Input
-                    placeholder="Nome do corretor"
-                    value={formData.corretor_captador}
-                    onChange={(e) => handleInputChange('corretor_captador', e.target.value)}
-                  />
+                  <Select
+                    value={formData.captador_id || 'sem'}
+                    onValueChange={(value) => handleInputChange('captador_id', value === 'sem' ? '' : value)}
+                    disabled={!isManager}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Sem captador" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="sem">Sem captador</SelectItem>
+                      {captadores.map((c) => (
+                        <SelectItem key={c.user_id} value={c.user_id}>{c.nome}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {!isManager && (
+                    <p className="text-xs text-text-secondary">
+                      Somente diretoria ou administrador pode alterar o captador.
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label>Captou qual Pretensão?</Label>

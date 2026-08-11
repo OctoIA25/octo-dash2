@@ -285,37 +285,41 @@ export const ImovelDetalhesModal = ({
             )}
           </div>
 
-          {/* Corretor */}
-          {(imovel.corretor_nome || imovel.corretor_email || imovel.corretor_numero) && (
-            <div className="rounded-xl border border-border bg-card/40 p-4">
-              <SectionTitle>Corretor responsável</SectionTitle>
-              <div className="flex items-center gap-3">
-                <Avatar className="h-12 w-12 rounded-xl">
+          {/* Captador — sempre visível: "Sem captador" é informação, não ausência dela.
+              corretor_foto/email/numero só são do MESMO corretor exibido em corretor_nome
+              quando o nome veio do XML (corretorContatoDaXml). Quando o nome veio de uma
+              atribuição manual (captador_id), esses campos ainda pertencem ao corretor do
+              XML e não devem aparecer junto de outro nome. */}
+          <div className="rounded-xl border border-border bg-card/40 p-4">
+            <SectionTitle>Captador</SectionTitle>
+            <div className="flex items-center gap-3">
+              <Avatar className="h-12 w-12 rounded-xl">
+                {imovel.corretorContatoDaXml && (
                   <AvatarImage src={imovel.corretor_foto} alt={imovel.corretor_nome || 'Corretor'} />
-                  <AvatarFallback className="rounded-xl bg-primary/10 text-primary font-semibold">
-                    {(imovel.corretor_nome || '?').charAt(0).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="min-w-0 space-y-1">
-                  <p className="text-sm font-semibold text-text-primary truncate">
-                    {imovel.corretor_nome || 'Não informado'}
+                )}
+                <AvatarFallback className="rounded-xl bg-primary/10 text-primary font-semibold">
+                  {(imovel.corretor_nome || '?').charAt(0).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0 space-y-1">
+                <p className="text-sm font-semibold text-text-primary truncate">
+                  {imovel.corretor_nome || 'Sem captador'}
+                </p>
+                {imovel.corretorContatoDaXml && imovel.corretor_email && (
+                  <p className="flex items-center gap-1.5 text-xs text-text-secondary truncate">
+                    <Mail className="h-3.5 w-3.5 flex-shrink-0" />
+                    {imovel.corretor_email}
                   </p>
-                  {imovel.corretor_email && (
-                    <p className="flex items-center gap-1.5 text-xs text-text-secondary truncate">
-                      <Mail className="h-3.5 w-3.5 flex-shrink-0" />
-                      {imovel.corretor_email}
-                    </p>
-                  )}
-                  {imovel.corretor_numero && (
-                    <p className="flex items-center gap-1.5 text-xs text-text-secondary truncate">
-                      <Phone className="h-3.5 w-3.5 flex-shrink-0" />
-                      {imovel.corretor_numero}
-                    </p>
-                  )}
-                </div>
+                )}
+                {imovel.corretorContatoDaXml && imovel.corretor_numero && (
+                  <p className="flex items-center gap-1.5 text-xs text-text-secondary truncate">
+                    <Phone className="h-3.5 w-3.5 flex-shrink-0" />
+                    {imovel.corretor_numero}
+                  </p>
+                )}
               </div>
             </div>
-          )}
+          </div>
 
           {/* Descrição */}
           {imovel.descricao && (
