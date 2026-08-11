@@ -682,7 +682,12 @@ export const CriarCondominioForm = ({
         status_comercial: formData.status_comercial || null,
         construtora: formData.construtora || null,
         incorporadora: formData.incorporadora || null,
-        captador_id: formData.captador_id || null,
+        // captador_id só entra no payload para diretoria/admin — mesma regra do
+        // CriarImovelForm. Omitir para os demais é o que evita que o corretor
+        // reenvie um valor obsoleto (admin trocou o captador com o form aberto)
+        // e leve 42501 do tg_guard_captador no save inteiro: fora do UPDATE, a
+        // coluna mantém o valor do banco e o trigger passa.
+        ...(isManager ? { captador_id: formData.captador_id || null } : {}),
         ano_construcao: formData.ano_construcao ? parseInt(formData.ano_construcao) : null,
         imobiliaria_exclusiva: formData.imobiliaria_exclusiva || null,
         num_blocos_torres: formData.num_blocos_torres ? parseInt(formData.num_blocos_torres) : null,

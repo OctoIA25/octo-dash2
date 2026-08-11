@@ -1072,10 +1072,12 @@ export const CriarImovelForm = ({
       proprietario_email: formData.proprietario_email || null,
       criado_por: user?.id || null,
       // captador_id só entra no payload para diretoria/admin. Upsert vira
-      // INSERT ... ON CONFLICT DO UPDATE: colunas ausentes do payload mantêm
-      // o valor já salvo. Omitir aqui é o que faz um corretor conseguir
-      // salvar outros campos sem precisar (nem poder) tocar no captador —
-      // ver tg_guard_captador, cujo ramo de UPDATE nunca dispara nesse upsert.
+      // INSERT ... ON CONFLICT DO UPDATE: colunas ausentes do payload ficam
+      // fora do SET e mantêm o valor já salvo. Omitir aqui é o que faz um
+      // corretor conseguir salvar outros campos sem precisar (nem poder) tocar
+      // no captador: o BEFORE UPDATE do tg_guard_captador dispara normalmente,
+      // mas NEW.captador_id continua igual a OLD e o `IS NOT DISTINCT FROM`
+      // libera antes da checagem de role.
       ...(isManager ? { captador_id: formData.captador_id || null } : {}),
       status_aprovacao: isEdit ? editStatusAprovacao || 'aguardando' : 'aguardando',
     };
