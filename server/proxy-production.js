@@ -1643,6 +1643,16 @@ const normalizeZapLeadPayload = (payload) => {
   };
 };
 
+/**
+ * Tipo de atuação exigido pelo lead. Com `lancamento_id` é lead de lançamento
+ * (distribuído por roleta); sem ele é imóvel pronto, que tem captador e só cai
+ * na roleta como fallback.
+ *
+ * ponytail: derivado do body, sem coluna nova em leads — o valor já persiste
+ * dentro de custom_fields.raw_data.
+ */
+const atuacaoFromBody = (body) => (body?.lancamento_id ? 'lancamentos' : 'prontos');
+
 const createIncomingLead = async ({ tenantId, body, source = 'API' }) => {
   const {
     name, phone, email, portal, message, comments,
@@ -1724,7 +1734,9 @@ const createIncomingLead = async ({ tenantId, body, source = 'API' }) => {
 
   const resolveAssignment = async () => {
     if (!explicitBroker && auto_assign !== false) {
-      const { broker, method } = await resolveBrokerForLead(propertyCode, tenantId, raw_data, lookupCache);
+      const { broker, method } = await resolveBrokerForLead(
+        propertyCode, tenantId, raw_data, lookupCache, { atuacao: atuacaoFromBody(body) },
+      );
       if (broker) {
         assignedBroker = broker.name;
         assignedBrokerId = broker.id || broker.auth_user_id || null;
@@ -2145,7 +2157,9 @@ app.post('/api/v1/leads', validateApiKey, async (req, res) => {
     // Atribuição automática se não veio corretor explícito
     const resolveAssignment = async () => {
       if (!explicitBroker && auto_assign !== false) {
-        const { broker, method } = await resolveBrokerForLead(propertyCode, req.tenantId, raw_data, lookupCache);
+        const { broker, method } = await resolveBrokerForLead(
+          propertyCode, req.tenantId, raw_data, lookupCache, { atuacao: atuacaoFromBody(req.body) },
+        );
         if (broker) {
           assignedBroker = broker.name;
           assignedBrokerId = broker.id || broker.auth_user_id || null;
@@ -2836,7 +2850,9 @@ app.get('/api/v1/roleta', validateApiKey, async (req, res) => {
     }
 
     // Calcular quem é o próximo (sem avançar o índice — apenas leitura)
-    const state = tenantRoletaState.get(tenantId);
+    // A chave do estado ganhou o sufixo do pool; este endpoint reporta o pool
+    // genérico (sem filtro de atuação), que é o que a rota /leads/roleta usa.
+    const state = tenantRoletaState.get(`${tenantId}:all`);
     const lastIndex = state ? state.lastIndex : -1;
     const nextIndex = brokerList.length > 0 ? (lastIndex + 1) % brokerList.length : null;
     const nextBroker = nextIndex !== null ? brokerList[nextIndex] : null;
@@ -3123,7 +3139,11 @@ app.post('/api/v1/leads/roleta', validateApiKey, async (req, res) => {
     })();
 
     // Distribuição FORÇADA via roleta (ignora imóvel/pipeline)
-    const broker = await getNextBrokerFromRoleta(req.tenantId);
+    // Sem lancamento_id esta rota continua sendo a "força roleta" genérica
+    // (chatbots, landing pages) — pool inteiro, como sempre foi. Só o lead de
+    // lançamento restringe o pool.
+    const atuacao = req.body?.lancamento_id ? 'lancamentos' : undefined;
+    const broker = await getNextBrokerFromRoleta(req.tenantId, undefined, { atuacao });
 
     if (!broker) {
       return res.status(422).json({
