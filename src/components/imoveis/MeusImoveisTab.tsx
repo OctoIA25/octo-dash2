@@ -11,6 +11,7 @@ import { Imovel } from '@/features/imoveis/services/kenloService';
 import { ImovelCard } from './ImovelCard';
 import { CriarImovelForm } from './CriarImovelForm';
 import { normalizeFotos, type FotoInput } from './fotos-helpers';
+import { convertLocalToImovel } from '@/features/imoveis/utils/convertLocalToImovel';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -353,36 +354,6 @@ export const MeusImoveisTab = ({ allImoveis, onViewDetails, onPropertyCreated }:
         {text}
       </Badge>
     );
-  };
-
-  // Converter imóvel local para formato Imovel (compatível com ImovelCard)
-  const convertLocalToImovel = (local: ImovelLocal): Imovel => {
-    return {
-      referencia: local.codigo_imovel,
-      titulo: local.titulo || `${local.tipo || 'Imóvel'} - ${local.bairro || 'Sem bairro'}`,
-      tipo: local.tipo || 'Outro',
-      tipoSimplificado: (local.tipo_simplificado as Imovel['tipoSimplificado']) || 'outro',
-      bairro: local.bairro || 'Sem bairro',
-      cidade: local.cidade || 'Sem cidade',
-      estado: local.estado || 'SP',
-      valor_venda: local.valor_venda || 0,
-      valor_locacao: local.valor_locacao || 0,
-      finalidade: (local.finalidade as Imovel['finalidade']) || 'venda',
-      valor_iptu: local.valor_iptu || 0,
-      valor_condominio: local.valor_condominio || 0,
-      area_total: local.area_total || 0,
-      area_util: local.area_util || 0,
-      quartos: local.quartos || 0,
-      suites: local.suites || 0,
-      garagem: local.vagas || 0,
-      banheiro: local.banheiros || 0,
-      salas: 0,
-      descricao: local.descricao || '',
-      fotos: Array.isArray(local.fotos) ? normalizeFotos(local.fotos).map((foto) => foto.url) : [],
-      videos: [],
-      area_comum: [],
-      area_privativa: [],
-    };
   };
 
   const buildEditDataFromLocal = (local: ImovelLocal) => {

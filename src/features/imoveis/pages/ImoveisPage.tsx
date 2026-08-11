@@ -18,6 +18,7 @@ import { ImovelDetalhesModal } from '@/components/imoveis/ImovelDetalhesModal';
 import { normalizeFotos } from '@/components/imoveis/fotos-helpers';
 import { Imovel } from '../services/kenloService';
 import { resolverCaptador, matchCaptadorFilter, CAPTADOR_FILTRO_TODOS, CAPTADOR_FILTRO_SEM } from '../utils/captador';
+import { convertLocalToImovel } from '../utils/convertLocalToImovel';
 import { useCaptadores, mapCaptadoresPorId } from '../hooks/useCaptadores';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/hooks/useAuth';
@@ -376,37 +377,6 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
     }
   }, [tenantId]);
 
-  // Converter imóvel local para formato Imovel
-  const convertLocalToImovel = useCallback((local: ImovelLocal): Imovel => {
-    return {
-      referencia: local.codigo_imovel,
-      titulo: local.titulo || `${local.tipo || 'Imóvel'} - ${local.bairro || 'Sem bairro'}`,
-      tipo: local.tipo || 'Outro',
-      tipoSimplificado: (local.tipo_simplificado as Imovel['tipoSimplificado']) || 'outro',
-      bairro: local.bairro || 'Sem bairro',
-      cidade: local.cidade || 'Sem cidade',
-      estado: local.estado || 'SP',
-      valor_venda: local.valor_venda || 0,
-      valor_locacao: local.valor_locacao || 0,
-      finalidade: (local.finalidade as Imovel['finalidade']) || 'venda',
-      valor_iptu: local.valor_iptu || 0,
-      valor_condominio: local.valor_condominio || 0,
-      area_total: local.area_total || 0,
-      area_util: local.area_util || 0,
-      quartos: local.quartos || 0,
-      suites: local.suites || 0,
-      garagem: local.vagas || 0,
-      banheiro: local.banheiros || 0,
-      salas: 0,
-      descricao: local.descricao || '',
-      captador_id: local.captador_id ?? null,
-      fotos: Array.isArray(local.fotos) ? normalizeFotos(local.fotos).map((foto) => foto.url) : [],
-      videos: [],
-      area_comum: [],
-      area_privativa: [],
-    };
-  }, []);
-
   // Combinar imóveis XML + Locais
   const imoveis = useMemo(() => {
     const imoveisLocaisConvertidos = imoveisLocais.map(convertLocalToImovel);
@@ -459,7 +429,7 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
         corretorContatoDaXml: !temCaptadorManual && !temCorretorPorCodigo,
       };
     });
-  }, [imoveisXml, imoveisLocais, convertLocalToImovel, corretorPorCodigo, mapaCaptadores]);
+  }, [imoveisXml, imoveisLocais, corretorPorCodigo, mapaCaptadores]);
 
   // Lista do filtro derivada dos imóveis já resolvidos (inclui captadores
   // atribuídos manualmente, que não têm linha em imoveis_corretores).
