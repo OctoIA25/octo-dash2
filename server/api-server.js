@@ -2505,8 +2505,14 @@ app.get('/api/v1/roleta', validateApiKey, async (req, res) => {
     }
 
     // Calcular quem é o próximo (sem avançar o índice — apenas leitura).
-    // Chave `:all` = pool sem filtro de atuação, que é o que este endpoint lista.
-    const state = tenantRoletaState.get(`${tenantId}:all`);
+    // O round-robin tem um índice por pool de atuação: `?atuacao=lancamentos`
+    // ou `?atuacao=prontos` consultam o pool correspondente, e qualquer outro
+    // valor (ou nenhum) cai no pool genérico — fail-open, parâmetro estranho
+    // nunca derruba a consulta.
+    const pool = req.query?.atuacao === 'lancamentos' || req.query?.atuacao === 'prontos'
+      ? req.query.atuacao
+      : 'all';
+    const state = tenantRoletaState.get(`${tenantId}:${pool}`);
     const lastIndex = state ? state.lastIndex : -1;
     const nextIndex = brokerList.length > 0 ? (lastIndex + 1) % brokerList.length : null;
     const nextBroker = nextIndex !== null ? brokerList[nextIndex] : null;
@@ -2522,6 +2528,7 @@ app.get('/api/v1/roleta', validateApiKey, async (req, res) => {
       data: {
         total: brokerList.length,
         source,
+        pool, // a qual fila de round-robin o next_broker/is_next se refere
         next_broker: nextBroker
           ? { position: nextBroker.position, name: nextBroker.name, broker_id: nextBroker.broker_id, phone: nextBroker.phone, email: nextBroker.email }
           : null,
