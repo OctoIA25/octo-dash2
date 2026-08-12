@@ -564,6 +564,58 @@ describe('atuação do corretor na roleta', () => {
     expect(countQueries('tenant_memberships', individual)).toBe(0);
   });
 
+  // O filtro de atuação estreita o pool ANTES do filtro de limite. Se todo o
+  // pool estreitado estiver ocupado, desistir ali devolveria null (422 e lead
+  // NÃO criado em /leads/roleta) num cenário em que, antes desta feature, havia
+  // corretor livre. O fail-open reavalia o pool inteiro antes de desistir.
+  describe('pool estreitado + limite (fail-open)', () => {
+    const pausado = (n, atuacao) => ({
+      user_id: uuid(n),
+      permissions: { atuacao, lead_limit: { receives_auto_leads: false } },
+    });
+
+    it('todo o pool de atuação no limite → reavalia o pool inteiro e atribui', async () => {
+      const { la, countQueries } = setup({
+        participantes: [participante(1, 'Ana'), participante(2, 'Bia'), participante(3, 'Caio')],
+        memberships: [pausado(1, 'lancamentos'), membership(2, 'prontos'), membership(3, 'prontos')],
+        limitConfig: limitConfigOn(),
+      });
+
+      const pick = await la.getNextBrokerFromRoleta(TENANT, undefined, { atuacao: 'lancamentos' });
+
+      // Antes do fail-open: pool [Ana] → Ana pausada → null (lead perdido).
+      expect(pick?.name).toBe('Bia');
+
+      // A 2ª passada é de graça: memberships já vieram no batch do filtro de
+      // atuação e as checagens de limite ficam memoizadas por corretor.
+      const batch = (q) => q.filters.some((f) => f.op === 'in' && f.col === 'user_id');
+      expect(countQueries('tenant_memberships', batch)).toBe(1);
+      expect(countQueries('tenant_memberships', (q) => q.filters.some((f) => f.op === 'eq' && f.col === 'user_id'))).toBe(0);
+    });
+
+    it('pool COMPLETO no limite → continua retornando null', async () => {
+      const { la } = setup({
+        participantes: [participante(1, 'Ana'), participante(2, 'Bia')],
+        memberships: [pausado(1, 'lancamentos'), pausado(2, 'prontos')],
+        limitConfig: limitConfigOn(),
+      });
+
+      expect(await la.getNextBrokerFromRoleta(TENANT, undefined, { atuacao: 'lancamentos' })).toBeNull();
+    });
+
+    it('sem atuacao o pool nunca é estreitado — nada muda', async () => {
+      const { la, countQueries } = setup({
+        participantes: [participante(1, 'Ana'), participante(2, 'Bia')],
+        memberships: [pausado(1, 'lancamentos'), membership(2, 'prontos')],
+        limitConfig: limitConfigOn(),
+      });
+
+      // Ana pausada, Bia livre: mesma escolha e mesmas queries de sempre.
+      expect((await la.getNextBrokerFromRoleta(TENANT)).name).toBe('Bia');
+      expect(countQueries('leads')).toBe(2); // só Bia foi às contagens
+    });
+  });
+
   it('resolveBrokerForLead repassa a atuacao para a roleta', async () => {
     const { la } = setup({
       participantes: [participante(1, 'Ana'), participante(2, 'Bia')],
