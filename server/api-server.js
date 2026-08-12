@@ -1423,11 +1423,21 @@ const filtrarPorAtuacao = async (tenantId, brokerList, atuacao) => {
 
   const porUserId = new Map((data || []).map(m => [String(m.user_id).toLowerCase(), m.permissions?.atuacao]));
 
+  const TIPOS = ['lancamentos', 'prontos', 'alugados'];
   const matching = brokerList.filter(b => {
     const brokerId = b.id || b.auth_user_id;
     const valor = brokerId ? porUserId.get(String(brokerId).toLowerCase()) : undefined;
-    const a = valor === 'lancamentos' || valor === 'prontos' ? valor : 'ambos';
-    return a === 'ambos' || a === atuacao;
+    // Multi-seleção (array) com legado string: 'prontos' era "tudo que não é
+    // lançamento" → prontos+alugados; ausente/vazio/lixo → todas (fail-open).
+    const atuacoes = valor === 'lancamentos' ? ['lancamentos']
+      : valor === 'prontos' ? ['prontos', 'alugados']
+      : Array.isArray(valor) && valor.some(t => TIPOS.includes(t)) ? valor
+      : TIPOS;
+    // Pool 'prontos' aceita prontos OU alugados — nada classifica lead de
+    // aluguel ainda; quando houver sinal, o pool 'alugados' nasce separado.
+    return atuacao === 'lancamentos'
+      ? atuacoes.includes('lancamentos')
+      : atuacoes.includes('prontos') || atuacoes.includes('alugados');
   });
 
   if (matching.length === 0) {

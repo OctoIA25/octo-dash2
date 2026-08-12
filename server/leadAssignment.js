@@ -402,13 +402,33 @@ export function createLeadAssignment({ supabase }) {
   };
 
   /**
-   * Atuação do corretor: só 'lancamentos' e 'prontos' restringem. Ausente,
-   * desconhecida ou sem membership → 'ambos'. Dado estranho no JSONB não pode
-   * tirar corretor da roleta.
+   * Atuações do corretor (multi-seleção): array com qualquer combinação de
+   * 'lancamentos' | 'prontos' | 'alugados'. Formato legado (string) ainda no
+   * banco: 'lancamentos' → só lançamentos; 'prontos' → prontos+alugados (era
+   * "tudo que não é lançamento"); 'ambos' → todas. Ausente, vazio ou lixo no
+   * JSONB → todas — dado estranho não pode tirar corretor da roleta. Mesma
+   * regra em api-server.js e src/types/permissions.ts.
    */
-  const atuacaoOf = (membership) => {
+  const ATUACAO_TIPOS = ['lancamentos', 'prontos', 'alugados'];
+  const atuacoesOf = (membership) => {
     const value = membership?.permissions?.atuacao;
-    return value === 'lancamentos' || value === 'prontos' ? value : 'ambos';
+    if (value === 'lancamentos') return ['lancamentos'];
+    if (value === 'prontos') return ['prontos', 'alugados'];
+    if (Array.isArray(value)) {
+      const validos = ATUACAO_TIPOS.filter(t => value.includes(t));
+      if (validos.length > 0) return validos;
+    }
+    return ATUACAO_TIPOS;
+  };
+
+  // Pool 'lancamentos' exige a marca; pool 'prontos' aceita prontos OU alugados —
+  // ponytail: nada classifica lead de aluguel ainda (sem sinal venda/locação);
+  // quando houver, o pool 'alugados' ganha vida própria.
+  const atendePool = (membership, pool) => {
+    const atuacoes = atuacoesOf(membership);
+    return pool === 'lancamentos'
+      ? atuacoes.includes('lancamentos')
+      : atuacoes.includes('prontos') || atuacoes.includes('alugados');
   };
 
   /**
@@ -498,10 +518,7 @@ export function createLeadAssignment({ supabase }) {
           })
         );
 
-        const matching = brokerList.filter((b, i) => {
-          const a = atuacaoOf(memberships[i]);
-          return a === 'ambos' || a === atuacao;
-        });
+        const matching = brokerList.filter((b, i) => atendePool(memberships[i], atuacao));
 
         if (matching.length === 0) {
           // ponytail: fail-open — lead misroteado é ruim, lead perdido é pior.

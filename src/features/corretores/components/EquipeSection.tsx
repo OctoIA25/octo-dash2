@@ -24,7 +24,13 @@ import { useAuth } from "@/hooks/useAuth";
 import { fetchTenantMembers, createTenantMember, updateMemberRole, removeTenantMember, updateMemberPermissions, updateMemberLeader, deleteMemberCompletely, adminUpdateMemberPassword, adminUpdateMemberEmail, type TenantMember } from '../services/tenantMembersService';
 import { fetchTeams, setTeamLeader, type Team } from '../services/teamsManagementService';
 import { useLateralDrawer } from '@/hooks/useLateralDrawer';
-import { SidebarPermission } from '@/types/permissions';
+import { SidebarPermission, ATUACAO_TIPOS, ATUACAO_LABELS, atuacoesDe, type AtuacaoTipo } from '@/types/permissions';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   fetchLeadLimitConfig,
   saveLeadLimitConfig,
@@ -75,19 +81,18 @@ const CORES_AVATAR = [
   'bg-pink-600',
 ];
 
-type Atuacao = 'lancamentos' | 'prontos' | 'ambos';
+// Resumo para o gatilho do dropdown e para o badge do card.
+const atuacaoResumo = (atuacoes: AtuacaoTipo[]): string =>
+  atuacoes.length === ATUACAO_TIPOS.length
+    ? 'Todos'
+    : atuacoes.map((t) => ATUACAO_LABELS[t]).join(' + ');
 
-const ATUACOES: { value: Atuacao; label: string }[] = [
-  { value: 'ambos', label: 'Ambos' },
-  { value: 'lancamentos', label: 'Lançamentos' },
-  { value: 'prontos', label: 'Imóveis prontos' },
-];
-
-// Ausente ou desconhecida = 'ambos' — mesma regra do servidor.
-const atuacaoDe = (permissions?: Record<string, unknown>): Atuacao => {
-  const value = permissions?.atuacao;
-  return value === 'lancamentos' || value === 'prontos' ? value : 'ambos';
-};
+// Nunca deixa zerar: sem nenhuma marca o corretor não receberia lead algum —
+// o vazio não existe aqui (e no banco, vazio normaliza para "todos").
+const toggleAtuacao = (lista: AtuacaoTipo[], tipo: AtuacaoTipo): AtuacaoTipo[] =>
+  lista.includes(tipo)
+    ? (lista.length > 1 ? lista.filter((t) => t !== tipo) : lista)
+    : ATUACAO_TIPOS.filter((t) => t === tipo || lista.includes(t));
 
 export const EquipeSection = ({ leads }: EquipeSectionProps) => {
   const { tenantId, tenantCode, user: currentUser } = useAuth() as any;
@@ -110,7 +115,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
   const [newMemberEmail, setNewMemberEmail] = useState('');
   const [newMemberPassword, setNewMemberPassword] = useState('');
   const [newMemberCreci, setNewMemberCreci] = useState('');
-  const [newMemberAtuacao, setNewMemberAtuacao] = useState<Atuacao>('ambos');
+  const [newMemberAtuacao, setNewMemberAtuacao] = useState<AtuacaoTipo[]>([...ATUACAO_TIPOS]);
   const [newMemberPhoto, setNewMemberPhoto] = useState<string>('');
   const newMemberPhotoInputRef = useRef<HTMLInputElement>(null);
   const [newMemberRole, setNewMemberRole] = useState<'admin' | 'corretor' | 'team_leader'>('corretor');
@@ -143,7 +148,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
   const [editSpecialPermissions, setEditSpecialPermissions] = useState<Record<string, boolean>>({ can_manage_roleta: false });
   const [editMemberPhoto, setEditMemberPhoto] = useState<string>('');
   const [editMemberCreci, setEditMemberCreci] = useState<string>('');
-  const [editAtuacao, setEditAtuacao] = useState<Atuacao>('ambos');
+  const [editAtuacao, setEditAtuacao] = useState<AtuacaoTipo[]>([...ATUACAO_TIPOS]);
   const editMemberPhotoInputRef = useRef<HTMLInputElement>(null);
   const [isSavingPermissions, setIsSavingPermissions] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -360,7 +365,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
         setNewMemberEmail('');
         setNewMemberPassword('');
         setNewMemberCreci('');
-        setNewMemberAtuacao('ambos');
+        setNewMemberAtuacao([...ATUACAO_TIPOS]);
         setNewMemberPhoto('');
         setNewMemberRole('corretor');
         setNewMemberTeam('');
@@ -467,7 +472,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
     const currentPhoto = (currentPerms as any).photo as string | undefined;
     setEditMemberPhoto(currentPhoto || '');
     setEditMemberCreci(member.creci || '');
-    setEditAtuacao(atuacaoDe(member.permissions));
+    setEditAtuacao(atuacoesDe(member.permissions));
     
     // Definir permissões de abas baseado nas sidebar_permissions salvas ou padrão por role
     const defaultPerms: Record<string, boolean> = {
@@ -1163,9 +1168,9 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                       >
                         {roleLabel}
                       </span>
-                      {atuacaoDe(tenantMember?.permissions) !== 'ambos' && (
+                      {atuacoesDe(tenantMember?.permissions).length < ATUACAO_TIPOS.length && (
                         <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300">
-                          {atuacaoDe(tenantMember?.permissions) === 'lancamentos' ? 'Lançamentos' : 'Prontos'}
+                          {atuacaoResumo(atuacoesDe(tenantMember?.permissions))}
                         </span>
                       )}
                       {/* Limit indicators */}
@@ -1522,18 +1527,28 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                 <Building2 className="h-4 w-4 text-gray-500 dark:text-slate-400" />
                 Atuação
               </Label>
-              <Select value={newMemberAtuacao} onValueChange={(v) => setNewMemberAtuacao(v as Atuacao)}>
-                <SelectTrigger className="h-10">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ATUACOES.map((a) => (
-                    <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button type="button" variant="outline" className="h-10 w-full justify-between font-normal">
+                    <span className="truncate">{atuacaoResumo(newMemberAtuacao)}</span>
+                    <ChevronDown className="h-4 w-4 opacity-50" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-56 z-[100000]">
+                  {ATUACAO_TIPOS.map((tipo) => (
+                    <DropdownMenuCheckboxItem
+                      key={tipo}
+                      checked={newMemberAtuacao.includes(tipo)}
+                      onCheckedChange={() => setNewMemberAtuacao((prev) => toggleAtuacao(prev, tipo))}
+                      onSelect={(e) => e.preventDefault()}
+                    >
+                      {ATUACAO_LABELS[tipo]}
+                    </DropdownMenuCheckboxItem>
                   ))}
-                </SelectContent>
-              </Select>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <p className="text-xs text-gray-500 dark:text-slate-400">
-                Define de quais leads este corretor participa na roleta.
+                Marque uma ou mais. Define quais leads o corretor vê no Bolsão e recebe na roleta.
               </p>
             </div>
 
@@ -1675,7 +1690,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
             setEditingMember(null);
             setEditMemberPhoto('');
             setEditMemberCreci('');
-            setEditAtuacao('ambos');
+            setEditAtuacao([...ATUACAO_TIPOS]);
             setShowDeleteConfirm(false);
           }}
           style={{ position: 'fixed', top: 56, left: 0, right: 0, bottom: 0, zIndex: 99998 }}
@@ -1704,7 +1719,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                   setEditingMember(null);
                   setEditMemberPhoto('');
                   setEditMemberCreci('');
-                  setEditAtuacao('ambos');
+                  setEditAtuacao([...ATUACAO_TIPOS]);
                   setShowDeleteConfirm(false);
                 }}
                 className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors"
@@ -1963,18 +1978,28 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                 <Building2 className="h-4 w-4 text-gray-500 dark:text-slate-400" />
                 Atuação
               </Label>
-              <Select value={editAtuacao} onValueChange={(v) => setEditAtuacao(v as Atuacao)}>
-                <SelectTrigger className="h-10">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ATUACOES.map((a) => (
-                    <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button type="button" variant="outline" disabled={isSavingPermissions} className="h-10 w-full justify-between font-normal">
+                    <span className="truncate">{atuacaoResumo(editAtuacao)}</span>
+                    <ChevronDown className="h-4 w-4 opacity-50" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-56 z-[100000]">
+                  {ATUACAO_TIPOS.map((tipo) => (
+                    <DropdownMenuCheckboxItem
+                      key={tipo}
+                      checked={editAtuacao.includes(tipo)}
+                      onCheckedChange={() => setEditAtuacao((prev) => toggleAtuacao(prev, tipo))}
+                      onSelect={(e) => e.preventDefault()}
+                    >
+                      {ATUACAO_LABELS[tipo]}
+                    </DropdownMenuCheckboxItem>
                   ))}
-                </SelectContent>
-              </Select>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <p className="text-xs text-gray-500 dark:text-slate-400">
-                Define de quais leads este corretor participa na roleta.
+                Marque uma ou mais. Define quais leads o corretor vê no Bolsão e recebe na roleta.
               </p>
             </div>
             {/* Permissões de Abas Principais */}

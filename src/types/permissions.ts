@@ -82,6 +82,39 @@ export interface PermissionsConfig {
   defaultCorretorPermissions: MenuPermission[];
 }
 
+// ========== ATUAÇÃO DO CORRETOR (lançamentos / prontos / alugados) ==========
+
+// Guardada em tenant_memberships.permissions.atuacao (JSONB). Formato atual:
+// array multi-seleção. Formato legado (2026-08-11/12, ainda no banco): string
+// 'lancamentos' | 'prontos' | 'ambos'.
+export type AtuacaoTipo = 'lancamentos' | 'prontos' | 'alugados';
+
+export const ATUACAO_TIPOS: readonly AtuacaoTipo[] = ['lancamentos', 'prontos', 'alugados'];
+
+export const ATUACAO_LABELS: Record<AtuacaoTipo, string> = {
+  lancamentos: 'Lançamentos',
+  prontos: 'Imóveis prontos',
+  alugados: 'Alugados',
+};
+
+/**
+ * Normaliza `permissions.atuacao` para a lista de tipos que o corretor atende.
+ * Fail-open: ausente, vazio ou lixo = todos — dado estranho no JSONB não pode
+ * esconder lead nem tirar corretor da roleta. Legado: 'prontos' era "tudo que
+ * não é lançamento", então expande para prontos+alugados. Mesma regra existe
+ * no servidor (leadAssignment.js / api-server.js) — ao mexer aqui, mexa lá.
+ */
+export const atuacoesDe = (permissions?: Record<string, unknown> | null): AtuacaoTipo[] => {
+  const valor = permissions?.atuacao;
+  if (valor === 'lancamentos') return ['lancamentos'];
+  if (valor === 'prontos') return ['prontos', 'alugados'];
+  if (Array.isArray(valor)) {
+    const validos = ATUACAO_TIPOS.filter((t) => valor.includes(t));
+    if (validos.length > 0) return validos;
+  }
+  return [...ATUACAO_TIPOS];
+};
+
 // ========== PERMISSÕES DE SIDEBAR POR TIPO DE USUÁRIO ==========
 
 // Owner: Acesso total a tudo

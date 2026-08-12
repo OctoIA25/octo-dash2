@@ -538,6 +538,41 @@ describe('atuação do corretor na roleta', () => {
     expect(pick.name).toBe('Ana');
   });
 
+  it('formato novo (array): multi-seleção restringe por pool', async () => {
+    const { la } = setup({
+      participantes: [participante(1, 'Ana'), participante(2, 'Bia'), participante(3, 'Caio')],
+      memberships: [
+        membership(1, ['lancamentos']),
+        membership(2, ['prontos', 'alugados']),
+        membership(3, ['lancamentos', 'prontos', 'alugados']),
+      ],
+    });
+
+    expect((await la.getNextBrokerFromRoleta(TENANT, undefined, { atuacao: 'lancamentos' })).name).toBe('Ana');
+    expect((await la.getNextBrokerFromRoleta(TENANT, undefined, { atuacao: 'lancamentos' })).name).toBe('Caio');
+    expect((await la.getNextBrokerFromRoleta(TENANT, undefined, { atuacao: 'prontos' })).name).toBe('Bia');
+  });
+
+  it('só alugados entra no pool de prontos (lead de aluguel ainda não é classificado) e fica fora de lançamentos', async () => {
+    const { la } = setup({
+      participantes: [participante(1, 'Ana'), participante(2, 'Bia')],
+      memberships: [membership(1, ['alugados']), membership(2, ['lancamentos'])],
+    });
+
+    expect((await la.getNextBrokerFromRoleta(TENANT, undefined, { atuacao: 'prontos' })).name).toBe('Ana');
+    expect((await la.getNextBrokerFromRoleta(TENANT, undefined, { atuacao: 'lancamentos' })).name).toBe('Bia');
+  });
+
+  it('array vazio ou só de lixo conta como todas as atuações', async () => {
+    const { la } = setup({
+      participantes: [participante(1, 'Ana'), participante(2, 'Bia')],
+      memberships: [membership(1, []), membership(2, ['zzz'])],
+    });
+
+    expect((await la.getNextBrokerFromRoleta(TENANT, undefined, { atuacao: 'lancamentos' })).name).toBe('Ana');
+    expect((await la.getNextBrokerFromRoleta(TENANT, undefined, { atuacao: 'lancamentos' })).name).toBe('Bia');
+  });
+
   it('round-robin é independente por pool', async () => {
     const { la } = setup({
       participantes: [participante(1, 'Ana'), participante(2, 'Bia'), participante(3, 'Caio')],
