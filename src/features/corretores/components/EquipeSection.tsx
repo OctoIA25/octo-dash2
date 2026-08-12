@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { Search, ChevronDown, Users, UserPlus, Shield, User, Loader2, Trash2, Mail, Lock, Unlock, Camera, AlertTriangle, CheckCircle, Settings, Info, Ban, X, IdCard } from 'lucide-react';
+import { Search, ChevronDown, Users, UserPlus, Shield, User, Loader2, Trash2, Mail, Lock, Unlock, Camera, AlertTriangle, CheckCircle, Settings, Info, Ban, X, IdCard, Building2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import {
@@ -75,6 +75,20 @@ const CORES_AVATAR = [
   'bg-pink-600',
 ];
 
+type Atuacao = 'lancamentos' | 'prontos' | 'ambos';
+
+const ATUACOES: { value: Atuacao; label: string }[] = [
+  { value: 'ambos', label: 'Ambos' },
+  { value: 'lancamentos', label: 'Lançamentos' },
+  { value: 'prontos', label: 'Imóveis prontos' },
+];
+
+// Ausente ou desconhecida = 'ambos' — mesma regra do servidor.
+const atuacaoDe = (permissions?: Record<string, unknown>): Atuacao => {
+  const value = permissions?.atuacao;
+  return value === 'lancamentos' || value === 'prontos' ? value : 'ambos';
+};
+
 export const EquipeSection = ({ leads }: EquipeSectionProps) => {
   const { tenantId, tenantCode, user: currentUser } = useAuth() as any;
   const isCurrentUserAdmin = currentUser?.systemRole === 'admin' || currentUser?.systemRole === 'owner';
@@ -96,6 +110,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
   const [newMemberEmail, setNewMemberEmail] = useState('');
   const [newMemberPassword, setNewMemberPassword] = useState('');
   const [newMemberCreci, setNewMemberCreci] = useState('');
+  const [newMemberAtuacao, setNewMemberAtuacao] = useState<Atuacao>('ambos');
   const [newMemberPhoto, setNewMemberPhoto] = useState<string>('');
   const newMemberPhotoInputRef = useRef<HTMLInputElement>(null);
   const [newMemberRole, setNewMemberRole] = useState<'admin' | 'corretor' | 'team_leader'>('corretor');
@@ -128,6 +143,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
   const [editSpecialPermissions, setEditSpecialPermissions] = useState<Record<string, boolean>>({ can_manage_roleta: false });
   const [editMemberPhoto, setEditMemberPhoto] = useState<string>('');
   const [editMemberCreci, setEditMemberCreci] = useState<string>('');
+  const [editAtuacao, setEditAtuacao] = useState<Atuacao>('ambos');
   const editMemberPhotoInputRef = useRef<HTMLInputElement>(null);
   const [isSavingPermissions, setIsSavingPermissions] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -322,7 +338,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
         role: newMemberRole,
         name: `${newMemberName} ${newMemberSurname}`.trim() || undefined,
         team: newMemberTeam || undefined,
-        permissions: { ...permissions, photo: newMemberPhoto || null } as any,
+        permissions: { ...permissions, photo: newMemberPhoto || null, atuacao: newMemberAtuacao } as any,
         sidebarPermissions: sidebarPerms as any,
         creci: newMemberCreci.trim() || undefined,
       };
@@ -344,6 +360,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
         setNewMemberEmail('');
         setNewMemberPassword('');
         setNewMemberCreci('');
+        setNewMemberAtuacao('ambos');
         setNewMemberPhoto('');
         setNewMemberRole('corretor');
         setNewMemberTeam('');
@@ -450,6 +467,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
     const currentPhoto = (currentPerms as any).photo as string | undefined;
     setEditMemberPhoto(currentPhoto || '');
     setEditMemberCreci(member.creci || '');
+    setEditAtuacao(atuacaoDe(member.permissions));
     
     // Definir permissões de abas baseado nas sidebar_permissions salvas ou padrão por role
     const defaultPerms: Record<string, boolean> = {
@@ -531,6 +549,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
         can_manage_roleta: editSpecialPermissions.can_manage_roleta,
         team: editingMember.team || null,
         lead_limit: Object.keys(editBrokerOverride).length > 0 ? editBrokerOverride : undefined,
+        atuacao: editAtuacao,
       };
       
       const result = await updateMemberPermissions(editingMember.id, newPermissions, editMemberCreci.trim() || null);
@@ -1144,6 +1163,11 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                       >
                         {roleLabel}
                       </span>
+                      {atuacaoDe(tenantMember?.permissions) !== 'ambos' && (
+                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300">
+                          {atuacaoDe(tenantMember?.permissions) === 'lancamentos' ? 'Lançamentos' : 'Prontos'}
+                        </span>
+                      )}
                       {/* Limit indicators */}
                       {isPaused && !isExempt && (
                         <Ban className="h-3 w-3 text-slate-400" aria-label="Pausado" />
@@ -1492,6 +1516,27 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
               />
             </div>
 
+            {/* Atuação */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <Building2 className="h-4 w-4 text-gray-500 dark:text-slate-400" />
+                Atuação
+              </Label>
+              <Select value={newMemberAtuacao} onValueChange={(v) => setNewMemberAtuacao(v as Atuacao)}>
+                <SelectTrigger className="h-10">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ATUACOES.map((a) => (
+                    <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-500 dark:text-slate-400">
+                Define de quais leads este corretor participa na roleta.
+              </p>
+            </div>
+
             {/* Permissões Granulares - Accordion Harmônico */}
             <div className="border border-gray-200 dark:border-slate-800 rounded-lg overflow-hidden">
               <button
@@ -1630,6 +1675,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
             setEditingMember(null);
             setEditMemberPhoto('');
             setEditMemberCreci('');
+            setEditAtuacao('ambos');
             setShowDeleteConfirm(false);
           }}
           style={{ position: 'fixed', top: 56, left: 0, right: 0, bottom: 0, zIndex: 99998 }}
@@ -1658,6 +1704,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                   setEditingMember(null);
                   setEditMemberPhoto('');
                   setEditMemberCreci('');
+                  setEditAtuacao('ambos');
                   setShowDeleteConfirm(false);
                 }}
                 className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors"
@@ -1909,6 +1956,26 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                 disabled={isSavingPermissions}
                 className="h-10"
               />
+            </div>
+            {/* Atuação */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <Building2 className="h-4 w-4 text-gray-500 dark:text-slate-400" />
+                Atuação
+              </Label>
+              <Select value={editAtuacao} onValueChange={(v) => setEditAtuacao(v as Atuacao)}>
+                <SelectTrigger className="h-10">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ATUACOES.map((a) => (
+                    <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-500 dark:text-slate-400">
+                Define de quais leads este corretor participa na roleta.
+              </p>
             </div>
             {/* Permissões de Abas Principais */}
             <div className="space-y-3">
