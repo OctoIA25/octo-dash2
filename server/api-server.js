@@ -1403,7 +1403,11 @@ const resolveBrokerForLead = async (leadData, tenantId, rawData = null, { atuaca
 
 const UUID_RE_ATUACAO = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const atuacaoFromBody = (body) => (body?.lancamento_id ? 'lancamentos' : 'prontos');
+// Aceita o id na raiz e repetido dentro de `raw_data` (as duas posições do
+// contrato com a Lia) — só na raiz, um payload com o id aninhado viraria
+// 'prontos' em silêncio.
+const atuacaoFromBody = (body) =>
+  (body?.lancamento_id || body?.raw_data?.lancamento_id ? 'lancamentos' : 'prontos');
 
 /**
  * ponytail: cópia do filtro de server/leadAssignment.js. Este arquivo tem a
