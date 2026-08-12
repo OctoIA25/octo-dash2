@@ -48,6 +48,7 @@ import {
   calcularMetricasCorretores,
   CorretorMetrica
 } from '../services/bolsaoService';
+import { filtrarPorAtuacao, opcoesFiltroBolsao } from '../utils/classificarLead';
 import { useToast } from '@/hooks/use-toast';
 import { fetchLeadLimitConfig, checkBrokerEligibility, BrokerLeadLimitOverride } from '@/features/corretores/services/tenantLeadLimitService';
 import { 
@@ -151,6 +152,20 @@ const BolsaoSectionContent = (props: BolsaoSectionProps) => {
   }, [setSearchParams]);
   const [leads, setLeads] = useState<BolsaoLead[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // O que ESTE usuário pode ver. Corretor marcado como Lançamentos não recebe
+  // lead de imóvel pronto na fila, e vice-versa; `indefinido` aparece para todos.
+  // Admin, owner e team_leader não são filtrados — quem gerencia vê o que está parado.
+  const leadsVisiveis = useMemo(
+    () => filtrarPorAtuacao(
+      leads,
+      opcoesFiltroBolsao({
+        isCorretor,
+        permissions: user?.permissions as Record<string, unknown> | undefined,
+      }),
+    ),
+    [leads, isCorretor, user?.permissions],
+  );
   const [assumindoLead, setAssumindoLead] = useState<number | null>(null);
   const [confirmandoLead, setConfirmandoLead] = useState<number | null>(null);
   const [tabelaExiste, setTabelaExiste] = useState(true);
@@ -2139,7 +2154,7 @@ const BolsaoSectionContent = (props: BolsaoSectionProps) => {
               </p>
             </CardContent>
           </Card>
-        ) : leads.length === 0 ? (
+        ) : leadsVisiveis.length === 0 ? (
           <Card>
             <CardContent className="p-16 text-center">
               <CheckCircle className="h-20 w-20 text-emerald-500 mx-auto mb-6" />
@@ -2154,7 +2169,7 @@ const BolsaoSectionContent = (props: BolsaoSectionProps) => {
             </CardContent>
           </Card>
         ) : (
-          renderLeadsMiniCards(leads)
+          renderLeadsMiniCards(leadsVisiveis)
         )}
         </>
         )}
