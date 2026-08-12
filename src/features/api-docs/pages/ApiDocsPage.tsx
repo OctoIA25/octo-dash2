@@ -1637,6 +1637,7 @@ export const ApiDocsPage: React.FC = () => {
                 ['property_value', 'number', false, 'Valor do imóvel'],
                 ['business_type', 'int', false, 'Tipo de negócio (1-4)'],
                 ['comments', 'string', false, 'Observações adicionais'],
+                ['lancamento_id', 'uuid', false, 'ID do empreendimento (lançamento). Com ele, a distribuição fica restrita aos corretores marcados como Lançamentos (ou Ambos). Sem ele, o lead é tratado como imóvel pronto.'],
               ].map(([field, type, req, desc], idx) => (
                 <tr key={idx}>
                   <td className="py-2 px-3 font-mono text-purple-400">{field}</td>
@@ -2186,9 +2187,37 @@ export const ApiDocsPage: React.FC = () => {
 
       <InfoCard icon={RefreshCw} title="Como funciona a Roleta" variant="info">
         A roleta distribui leads em modo round-robin: cada novo lead é enviado ao próximo corretor da fila.
+        Existe uma fila por tipo de atuação — lançamentos, imóveis prontos e a genérica —, então use
+        <code className="bg-gray-700 px-1 rounded">?atuacao=</code> para consultar a que interessa.
         O GET desta rota apenas <strong>consulta</strong> o estado atual — não avança a fila.
         Configure os participantes em <strong>Configurações &gt; Roleta</strong> no CRM.
       </InfoCard>
+
+      <div className="bg-gray-800 rounded-xl p-5 border border-gray-700">
+        <h3 className="font-semibold text-white mb-4">Parâmetros de Query (Opcionais)</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-700">
+                <th className="text-left py-2 px-3 font-medium text-gray-400">Parâmetro</th>
+                <th className="text-left py-2 px-3 font-medium text-gray-400">Tipo</th>
+                <th className="text-left py-2 px-3 font-medium text-gray-400">Descrição</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-700/50">
+              {[
+                ['atuacao', 'string', 'Fila consultada: lancamentos ou prontos. Cada tipo de lead tem seu próprio rodízio — leads de lançamento avançam a fila lancamentos, leads de imóvel pronto avançam a fila prontos. Sem o parâmetro (ou com valor desconhecido), responde a fila genérica.'],
+              ].map(([param, type, desc], idx) => (
+                <tr key={idx}>
+                  <td className="py-2 px-3 font-mono text-purple-400">{param}</td>
+                  <td className="py-2 px-3 text-gray-500">{type}</td>
+                  <td className="py-2 px-3 text-gray-300">{desc}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
       <div className="bg-gray-800 rounded-xl p-5 border border-gray-700">
         <h3 className="font-semibold text-white mb-4">Exemplo de Requisição</h3>
@@ -2197,7 +2226,11 @@ export const ApiDocsPage: React.FC = () => {
           language="curl"
           code={`curl -X GET "${FULL_API_URL}/roleta" \\
   -H "Authorization: Bearer octo_sk_your_api_key" \\
-  -H "Content-Type: application/json"`}
+  -H "Content-Type: application/json"
+
+# Fila dos leads de imóvel pronto
+curl -X GET "${FULL_API_URL}/roleta?atuacao=prontos" \\
+  -H "Authorization: Bearer octo_sk_your_api_key"`}
           copiedCode={copiedCode}
           onCopy={copyCode}
         />
@@ -2214,6 +2247,7 @@ export const ApiDocsPage: React.FC = () => {
   "data": {
     "total": 3,
     "source": "roleta_participantes",
+    "pool": "all",
     "next_broker": {
       "position": 1,
       "name": "Ana Costa",
@@ -2272,6 +2306,7 @@ export const ApiDocsPage: React.FC = () => {
               {[
                 ['data.total', 'number', 'Total de corretores na roleta'],
                 ['data.source', 'string', 'Fonte: roleta_participantes ou tenant_memberships'],
+                ['data.pool', 'string', 'Fila a que next_broker e is_next se referem: all (genérica), lancamentos ou prontos — segue o parâmetro atuacao'],
                 ['data.next_broker', 'object', 'Dados do próximo corretor a receber lead'],
                 ['data.next_broker.position', 'number', 'Posição na fila (1 = primeiro)'],
                 ['data.next_broker.is_next', 'boolean', 'true = será o próximo na fila'],
@@ -2328,6 +2363,7 @@ export const ApiDocsPage: React.FC = () => {
                 ['temperature', 'string', 'Não', 'cold / warm / hot'],
                 ['comments', 'string', 'Não', 'Mensagem ou observação'],
                 ['property_code', 'string', 'Não', 'Código do imóvel de interesse (informativo)'],
+                ['lancamento_id', 'uuid', 'Não', 'ID do empreendimento (lançamento). Com ele, a roleta distribui só entre corretores marcados como Lançamentos (ou Ambos). Sem ele, usa o pool inteiro.'],
               ].map(([field, type, req, desc], idx) => (
                 <tr key={idx}>
                   <td className="py-2 px-3 font-mono text-purple-400">{field}</td>

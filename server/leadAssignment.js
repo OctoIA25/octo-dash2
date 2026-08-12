@@ -369,12 +369,55 @@ export function createLeadAssignment({ supabase }) {
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
   /**
+   * Pré-carrega os memberships da lista em 1 query batch (.in) no lugar de 1
+   * query por corretor, memoizando em `cache` na mesma chave que
+   * getBrokerMembership usa. Chamar duas vezes na mesma requisição não gera
+   * query nova — a segunda encontra tudo em cache.
+   *
+   * IDs não-UUID ficam null direto: é o mesmo resultado do .eq() individual
+   * antigo, que falhava e retornava null.
+   */
+  const preloadMemberships = async (tenantId, brokerList, cache) => {
+    const pendingIds = [...new Set(
+      brokerList.map(b => b.id || b.auth_user_id).filter(Boolean)
+    )].filter(id => !cache.has(`membership:${id}`));
+
+    const uuidIds = pendingIds.filter(id => UUID_RE.test(String(id)));
+    pendingIds
+      .filter(id => !UUID_RE.test(String(id)))
+      .forEach(id => cache.set(`membership:${id}`, Promise.resolve(null)));
+
+    if (uuidIds.length === 0) return;
+
+    const { data: memberships } = await supabase
+      .from('tenant_memberships')
+      .select('user_id, permissions')
+      .eq('tenant_id', tenantId)
+      .in('user_id', uuidIds);
+
+    // Chaves em minúsculas: o PostgREST serializa uuid canônico minúsculo,
+    // e o .eq() antigo casava UUIDs em qualquer caixa via cast do Postgres.
+    const byUserId = new Map((memberships || []).map(m => [String(m.user_id).toLowerCase(), { permissions: m.permissions }]));
+    uuidIds.forEach(id => cache.set(`membership:${id}`, Promise.resolve(byUserId.get(String(id).toLowerCase()) ?? null)));
+  };
+
+  /**
+   * Atuação do corretor: só 'lancamentos' e 'prontos' restringem. Ausente,
+   * desconhecida ou sem membership → 'ambos'. Dado estranho no JSONB não pode
+   * tirar corretor da roleta.
+   */
+  const atuacaoOf = (membership) => {
+    const value = membership?.permissions?.atuacao;
+    return value === 'lancamentos' || value === 'prontos' ? value : 'ambos';
+  };
+
+  /**
    * Roleta racional de corretores (Multi-tenant)
    * Fonte primária: roleta_participantes (corretores selecionados pelo admin)
    * Fallback 1: Acessos e Permissões (tenant_memberships + tenant_brokers)
    * Fallback 2: imoveis_corretores (para compatibilidade)
    */
-  const getNextBrokerFromRoleta = async (tenantId, cache = createLeadLookupCache()) => {
+  const getNextBrokerFromRoleta = async (tenantId, cache = createLeadLookupCache(), { atuacao } = {}) => {
     try {
       let brokerList = [];
 
@@ -437,45 +480,69 @@ export function createLeadAssignment({ supabase }) {
         return null;
       }
 
-      // Filtrar corretores bloqueados por limite de leads
-      if (limitCfg?.lead_limit_enabled) {
-        // Pré-carregar overrides de membership em 1 query batch (.in) no lugar
-        // de 1 query por corretor. IDs não-UUID ficam null direto — mesmo
-        // resultado do .eq() individual antigo, que falhava e retornava null.
-        const pendingIds = [...new Set(
-          brokerList.map(b => b.id || b.auth_user_id).filter(Boolean)
-        )].filter(id => !cache.has(`membership:${id}`));
+      // Pool completo, antes de qualquer estreitamento. O filtro de limite volta
+      // para cá quando o pool de atuação inteiro está travado — sem isso, um
+      // pool menor transformaria "corretor ocupado" em lead perdido.
+      const poolCompleto = brokerList;
+      let poolEstreitado = false;
 
-        const uuidIds = pendingIds.filter(id => UUID_RE.test(String(id)));
-        pendingIds
-          .filter(id => !UUID_RE.test(String(id)))
-          .forEach(id => cache.set(`membership:${id}`, Promise.resolve(null)));
+      // Filtro de atuação: lead de lançamento não cai em corretor que só faz
+      // imóvel pronto, e vice-versa. Sem `atuacao`, a roleta é a de sempre.
+      if (atuacao === 'lancamentos' || atuacao === 'prontos') {
+        await preloadMemberships(tenantId, brokerList, cache);
 
-        if (uuidIds.length > 0) {
-          const { data: memberships } = await supabase
-            .from('tenant_memberships')
-            .select('user_id, permissions')
-            .eq('tenant_id', tenantId)
-            .in('user_id', uuidIds);
-
-          // Chaves em minúsculas: o PostgREST serializa uuid canônico minúsculo,
-          // e o .eq() antigo casava UUIDs em qualquer caixa via cast do Postgres.
-          const byUserId = new Map((memberships || []).map(m => [String(m.user_id).toLowerCase(), { permissions: m.permissions }]));
-          uuidIds.forEach(id => cache.set(`membership:${id}`, Promise.resolve(byUserId.get(String(id).toLowerCase()) ?? null)));
-        }
-
-        // Checagens em paralelo (antes: loop serializado, ~4 queries por corretor).
-        // Promise.all preserva a ordem — a lista elegível sai na MESMA ordem do
-        // loop antigo, então o round-robin não muda.
-        const checks = await Promise.all(
-          brokerList.map(b => checkBrokerLeadLimitForTenant(tenantId, b.id || b.auth_user_id, cache))
+        const memberships = await Promise.all(
+          brokerList.map(b => {
+            const brokerId = b.id || b.auth_user_id;
+            return brokerId ? getBrokerMembership(tenantId, brokerId, cache) : null;
+          })
         );
 
-        const eligibleList = brokerList.filter((b, i) => {
-          if (checks[i].eligible) return true;
-          console.log(`⚠️ Roleta: ${b.name} ignorado — ${checks[i].reason}`);
-          return false;
+        const matching = brokerList.filter((b, i) => {
+          const a = atuacaoOf(memberships[i]);
+          return a === 'ambos' || a === atuacao;
         });
+
+        if (matching.length === 0) {
+          // ponytail: fail-open — lead misroteado é ruim, lead perdido é pior.
+          console.log(`⚠️ Roleta: nenhum corretor de ${atuacao} entre ${brokerList.length} — usando o pool inteiro`);
+        } else {
+          brokerList = matching;
+          poolEstreitado = true;
+          console.log(`🎰 Roleta ${atuacao}: ${brokerList.length} corretor(es)`);
+        }
+      }
+
+      // Filtrar corretores bloqueados por limite de leads
+      if (limitCfg?.lead_limit_enabled) {
+        const filtrarElegiveis = async (lista) => {
+          await preloadMemberships(tenantId, lista, cache);
+
+          // Checagens em paralelo (antes: loop serializado, ~4 queries por corretor).
+          // Promise.all preserva a ordem — a lista elegível sai na MESMA ordem do
+          // loop antigo, então o round-robin não muda.
+          const checks = await Promise.all(
+            lista.map(b => checkBrokerLeadLimitForTenant(tenantId, b.id || b.auth_user_id, cache))
+          );
+
+          return lista.filter((b, i) => {
+            if (checks[i].eligible) return true;
+            console.log(`⚠️ Roleta: ${b.name} ignorado — ${checks[i].reason}`);
+            return false;
+          });
+        };
+
+        let eligibleList = await filtrarElegiveis(brokerList);
+
+        // Fail-open: o filtro de atuação não pode transformar "os poucos do pool
+        // estreitado estão ocupados" em lead perdido. Reavalia o pool inteiro
+        // antes de desistir — memberships e checagens de limite já feitas saem
+        // do cache da requisição, então a 2ª passada não gera query nova.
+        if (eligibleList.length === 0 && poolEstreitado) {
+          console.log(`⚠️ Roleta: todo o pool ${atuacao} no limite — reavaliando o pool inteiro`);
+          brokerList = poolCompleto;
+          eligibleList = await filtrarElegiveis(poolCompleto);
+        }
 
         if (eligibleList.length === 0) {
           console.log('⚠️ Roleta: todos os corretores estão no limite de leads');
@@ -485,12 +552,15 @@ export function createLeadAssignment({ supabase }) {
         console.log(`🎰 Roleta após filtro de limite: ${brokerList.length} corretor(es) elegível(is)`);
       }
 
-      // Estado da roleta por tenant (round-robin)
-      if (!tenantRoletaState.has(tenantId)) {
-        tenantRoletaState.set(tenantId, { lastIndex: -1 });
+      // Estado da roleta por tenant E por pool (round-robin). Um índice único
+      // para pools de tamanhos diferentes faria o rodízio repetir e pular
+      // corretores ao alternar entre lançamento e pronto.
+      const stateKey = `${tenantId}:${atuacao || 'all'}`;
+      if (!tenantRoletaState.has(stateKey)) {
+        tenantRoletaState.set(stateKey, { lastIndex: -1 });
       }
 
-      const state = tenantRoletaState.get(tenantId);
+      const state = tenantRoletaState.get(stateKey);
       const nextIndex = (state.lastIndex + 1) % brokerList.length;
       state.lastIndex = nextIndex;
 
@@ -514,7 +584,7 @@ export function createLeadAssignment({ supabase }) {
    * 3. imoveis_corretores (Meus Imóveis) - busca corretor responsável no ACL
    * 4. Roleta (fallback) - distribui entre corretores do ACL
    */
-  const resolveBrokerForLead = async (propertyCode, tenantId, rawData = null, cache = createLeadLookupCache()) => {
+  const resolveBrokerForLead = async (propertyCode, tenantId, rawData = null, cache = createLeadLookupCache(), { atuacao } = {}) => {
     let broker = null;
     let method = null;
 
@@ -637,7 +707,7 @@ export function createLeadAssignment({ supabase }) {
 
     // 3. ROLETA - nenhum corretor responsável encontrado
     console.log(`⚙️ Código ${propertyCode || 'N/A'} sem corretor responsável, usando roleta...`);
-    const roletaBroker = await getNextBrokerFromRoleta(tenantId, cache);
+    const roletaBroker = await getNextBrokerFromRoleta(tenantId, cache, { atuacao });
 
     if (roletaBroker) {
       broker = roletaBroker;

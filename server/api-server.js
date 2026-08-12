@@ -1313,7 +1313,7 @@ const normalizePhone = (phone) => {
  * 3. imoveis_corretores (Meus Imóveis - atribuição manual)
  * 4. Roleta (fallback)
  */
-const resolveBrokerForLead = async (leadData, tenantId, rawData = null) => {
+const resolveBrokerForLead = async (leadData, tenantId, rawData = null, { atuacao } = {}) => {
   let broker = null;
   let method = null;
   
@@ -1377,7 +1377,7 @@ const resolveBrokerForLead = async (leadData, tenantId, rawData = null) => {
   
   // 3. Nenhum corretor encontrado - usar ROLETA
   console.log(`⚙️ Nenhum corretor encontrado para código ${propertyCode}, usando roleta...`);
-  const roletaBroker = await getNextBrokerFromRoleta(tenantId);
+  const roletaBroker = await getNextBrokerFromRoleta(tenantId, { atuacao });
   
   if (roletaBroker) {
     broker = roletaBroker;
@@ -1391,13 +1391,60 @@ const resolveBrokerForLead = async (leadData, tenantId, rawData = null) => {
   return { broker: null, method: null };
 };
 
+const UUID_RE_ATUACAO = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Aceita o id na raiz e repetido dentro de `raw_data` (as duas posições do
+// contrato com a Lia) — só na raiz, um payload com o id aninhado viraria
+// 'prontos' em silêncio.
+const atuacaoFromBody = (body) =>
+  (body?.lancamento_id || body?.raw_data?.lancamento_id ? 'lancamentos' : 'prontos');
+
+/**
+ * ponytail: cópia do filtro de server/leadAssignment.js. Este arquivo tem a
+ * própria versão (já divergente) da roleta e não importa o módulo. Unificar os
+ * dois deleta ~250 linhas duplicadas e é a correção de raiz, mas muda os
+ * fallbacks do dev — ficou fora do escopo. Ao mexer aqui, mexa lá também.
+ *
+ * Fail-open em três pontos: sem id utilizável, sem membership e sem ninguém do
+ * tipo pedido, o corretor/pool continua elegível.
+ */
+const filtrarPorAtuacao = async (tenantId, brokerList, atuacao) => {
+  if (atuacao !== 'lancamentos' && atuacao !== 'prontos') return brokerList;
+
+  const ids = [...new Set(brokerList.map(b => b.id || b.auth_user_id).filter(Boolean))]
+    .filter(id => UUID_RE_ATUACAO.test(String(id)));
+  if (ids.length === 0) return brokerList;
+
+  const { data } = await supabase
+    .from('tenant_memberships')
+    .select('user_id, permissions')
+    .eq('tenant_id', tenantId)
+    .in('user_id', ids);
+
+  const porUserId = new Map((data || []).map(m => [String(m.user_id).toLowerCase(), m.permissions?.atuacao]));
+
+  const matching = brokerList.filter(b => {
+    const brokerId = b.id || b.auth_user_id;
+    const valor = brokerId ? porUserId.get(String(brokerId).toLowerCase()) : undefined;
+    const a = valor === 'lancamentos' || valor === 'prontos' ? valor : 'ambos';
+    return a === 'ambos' || a === atuacao;
+  });
+
+  if (matching.length === 0) {
+    console.log(`⚠️ Roleta: nenhum corretor de ${atuacao} entre ${brokerList.length} — usando o pool inteiro`);
+    return brokerList;
+  }
+  console.log(`🎰 Roleta ${atuacao}: ${matching.length} corretor(es)`);
+  return matching;
+};
+
 /**
  * Obtém próximo corretor da roleta para o tenant (Multi-tenant)
  * Fonte primária: roleta_participantes (corretores selecionados pelo admin)
  * Fallback 1: tenant_memberships (todos os corretores do tenant)
  * Fallback 2: imoveis_corretores (para compatibilidade)
  */
-const getNextBrokerFromRoleta = async (tenantId) => {
+const getNextBrokerFromRoleta = async (tenantId, { atuacao } = {}) => {
   try {
     let brokerList = [];
     
@@ -1475,13 +1522,16 @@ const getNextBrokerFromRoleta = async (tenantId) => {
       console.log('⚠️ Nenhum corretor disponível para roleta');
       return null;
     }
-    
-    // Estado da roleta por tenant (round-robin)
-    if (!tenantRoletaState.has(tenantId)) {
-      tenantRoletaState.set(tenantId, { lastIndex: -1 });
+
+    brokerList = await filtrarPorAtuacao(tenantId, brokerList, atuacao);
+
+    // Estado da roleta por tenant E por pool (round-robin)
+    const stateKey = `${tenantId}:${atuacao || 'all'}`;
+    if (!tenantRoletaState.has(stateKey)) {
+      tenantRoletaState.set(stateKey, { lastIndex: -1 });
     }
-    
-    const state = tenantRoletaState.get(tenantId);
+
+    const state = tenantRoletaState.get(stateKey);
     const nextIndex = (state.lastIndex + 1) % brokerList.length;
     state.lastIndex = nextIndex;
     
@@ -1651,7 +1701,7 @@ app.post('/api/v1/integrations/zapimoveis/webhook', validateZapFeedAccess, async
       interest_reference: normalizedPropertyCode,
       raw_data: normalized.raw_data,
     };
-    const { broker, method } = await resolveBrokerForLead(assignmentLeadData, tenantId, normalized.raw_data);
+    const { broker, method } = await resolveBrokerForLead(assignmentLeadData, tenantId, normalized.raw_data, { atuacao: atuacaoFromBody(req.body) });
     const crmLeadData = {
       tenant_id: tenantId,
       name: normalized.name || 'Lead sem nome',
@@ -1800,7 +1850,7 @@ app.post('/api/v1/leads', validateApiKey, async (req, res) => {
       
       // Se não encontrou por ID/phone explícito, usar pipeline completo
       if (!assignedBroker && tenantId) {
-        const { broker, method } = await resolveBrokerForLead(leadData, tenantId, raw_data || leadData.raw_data);
+        const { broker, method } = await resolveBrokerForLead(leadData, tenantId, raw_data || leadData.raw_data, { atuacao: atuacaoFromBody(req.body) });
         
         if (broker) {
           leadData.attended_by_name = broker.name;
@@ -2446,8 +2496,15 @@ app.get('/api/v1/roleta', validateApiKey, async (req, res) => {
       }
     }
 
-    // Calcular quem é o próximo (sem avançar o índice — apenas leitura)
-    const state = tenantRoletaState.get(tenantId);
+    // Calcular quem é o próximo (sem avançar o índice — apenas leitura).
+    // O round-robin tem um índice por pool de atuação: `?atuacao=lancamentos`
+    // ou `?atuacao=prontos` consultam o pool correspondente, e qualquer outro
+    // valor (ou nenhum) cai no pool genérico — fail-open, parâmetro estranho
+    // nunca derruba a consulta.
+    const pool = req.query?.atuacao === 'lancamentos' || req.query?.atuacao === 'prontos'
+      ? req.query.atuacao
+      : 'all';
+    const state = tenantRoletaState.get(`${tenantId}:${pool}`);
     const lastIndex = state ? state.lastIndex : -1;
     const nextIndex = brokerList.length > 0 ? (lastIndex + 1) % brokerList.length : null;
     const nextBroker = nextIndex !== null ? brokerList[nextIndex] : null;
@@ -2463,6 +2520,7 @@ app.get('/api/v1/roleta', validateApiKey, async (req, res) => {
       data: {
         total: brokerList.length,
         source,
+        pool, // a qual fila de round-robin o next_broker/is_next se refere
         next_broker: nextBroker
           ? { position: nextBroker.position, name: nextBroker.name, broker_id: nextBroker.broker_id, phone: nextBroker.phone, email: nextBroker.email }
           : null,
@@ -2506,7 +2564,7 @@ app.post('/api/v1/leads/roleta', validateApiKey, async (req, res) => {
     }
 
     // Distribuição FORÇADA via roleta (ignora imóvel/pipeline)
-    const broker = await getNextBrokerFromRoleta(tenantId);
+    const broker = await getNextBrokerFromRoleta(tenantId, { atuacao: req.body?.lancamento_id ? 'lancamentos' : undefined });
 
     if (!broker) {
       return res.status(422).json({
