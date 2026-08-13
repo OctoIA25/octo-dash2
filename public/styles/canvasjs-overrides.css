@@ -58,13 +58,11 @@ div[class*="canvasjs"] a,
   opacity: 0 !important;
 }
 
-/* Ocultar elementos de texto pequenos que podem ser créditos */
-svg g text[font-size="11"]:last-child,
-svg g:last-child text[font-size="11"] {
-  display: none !important;
-  visibility: hidden !important;
-  opacity: 0 !important;
-}
+/* REMOVIDA a regra `svg g text[font-size="11"]` que escondia "textos pequenos
+   que podem ser créditos": ela era um chute e acertava os rótulos de eixo do
+   Recharts (tick={{ fontSize: 11 }}), que o React renderiza como o atributo
+   font-size="11". Medido: 13/13 ticks com display:none em /estudo-mercado/metricas.
+   As marcas d'água do CanvasJS são <a> e já estão cobertas pelas regras acima. */
 
 /* Aplicar a todos os containers de gráficos CanvasJS */
 div[id*="chartContainer"] a,
