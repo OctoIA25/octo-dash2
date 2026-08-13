@@ -1,8 +1,13 @@
 <!doctype html>
-<html lang="en">
+<html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- A UI é 100% pt-BR. Com lang="en" o Chrome oferecia "Traduzir esta página",
+         e o Google Tradutor troca os nós de texto por <font> — o que quebra o
+         React com "removeChild: node is not a child of this node" em qualquer
+         tela com renderização condicional (ex.: cadastro de imóvel). -->
+    <meta name="google" content="notranslate" />
     <title>OctoDash - CRM Imobiliário</title>
     <meta name="description" content="Dashboard CRM Imobiliário com métricas, funil de vendas e gestão de leads" />
     <meta name="author" content="Dinamo Aceleradora" />
@@ -39,9 +44,6 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-    
-    <!-- External JavaScript for page functionality -->
-    <script src="/scripts/index-scripts.js"></script>
   </body>
 </html>
   
