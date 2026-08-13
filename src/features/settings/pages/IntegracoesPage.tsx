@@ -1074,7 +1074,7 @@ export const IntegracoesPage: React.FC = () => {
                             Sincroniza automaticamente os imóveis do XML para cada corretor cadastrado.
                           </p>
                           <p className="text-xs text-green-700 mt-1">
-                            Cada corretor verá seus imóveis na aba "Meus Imóveis" baseado no email/telefone/nome.
+                            Cada corretor verá seus imóveis na aba "Prontos" baseado no email/telefone/nome.
                           </p>
                         </div>
                         <button
@@ -1137,7 +1137,7 @@ export const IntegracoesPage: React.FC = () => {
                                 </p>
                               )}
                               <p className="text-xs text-green-700 mt-1">
-                                Cada corretor agora pode ver seus imóveis na aba "Meus Imóveis".
+                                Cada corretor agora pode ver seus imóveis na aba "Prontos".
                               </p>
                             </>
                           ) : (

@@ -310,7 +310,7 @@ export const syncMeusImoveisAssignmentsFromXml = async (
     }
 
     if (!data?.ok) {
-      return { ok: false, error: data?.error || 'Falha ao sincronizar Meus Imóveis' };
+      return { ok: false, error: data?.error || 'Falha ao sincronizar a aba "Prontos"' };
     }
 
     return { ok: true, summary: data?.summary };

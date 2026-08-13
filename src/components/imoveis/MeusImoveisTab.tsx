@@ -15,6 +15,13 @@ import { convertLocalToImovel } from '@/features/imoveis/utils/convertLocalToImo
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { OctoDashLoader } from '@/components/ui/OctoDashLoader';
 import { syncImoveisForCorretor, SyncResult, DiagnosticoAtribuicao } from '@/features/imoveis/services/xmlSyncService';
 import { 
@@ -120,6 +127,7 @@ export const MeusImoveisTab = ({ allImoveis, onViewDetails, onPropertyCreated }:
   const [error, setError] = useState<string | null>(null);
   
   const [searchTerm, setSearchTerm] = useState('');
+  const [finalidadeFilter, setFinalidadeFilter] = useState<'todos' | 'venda' | 'locacao'>('todos');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [newPropertyCode, setNewPropertyCode] = useState('');
   const [addStatus, setAddStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
@@ -466,7 +474,7 @@ export const MeusImoveisTab = ({ allImoveis, onViewDetails, onPropertyCreated }:
   };
 
   // Filtrar imóveis que o corretor é responsável (XML + Locais)
-  const meusImoveis = useMemo(() => {
+  const imoveisBase = useMemo(() => {
     const isOwner = systemRole?.toLowerCase() === 'owner';
     const meusCodigos = new Set(assignments.map(a => a.property_code.toUpperCase()));
 
@@ -489,20 +497,30 @@ export const MeusImoveisTab = ({ allImoveis, onViewDetails, onPropertyCreated }:
     );
     
     // Combinar: XML primeiro, depois locais (que não duplicam)
-    let combined = [...imoveisXml, ...imoveisLocaisSemDuplicata];
-    
-    // Aplicar busca
+    return [...imoveisXml, ...imoveisLocaisSemDuplicata];
+  }, [allImoveis, assignments, imoveisLocais, systemRole]);
+
+  const meusImoveis = useMemo(() => {
+    let filtered = imoveisBase;
+
+    // Finalidade: 'venda_locacao' conta nos dois lados (mesma regra da ImoveisPage)
+    if (finalidadeFilter === 'venda') {
+      filtered = filtered.filter(i => i.finalidade === 'venda' || i.finalidade === 'venda_locacao');
+    } else if (finalidadeFilter === 'locacao') {
+      filtered = filtered.filter(i => i.finalidade === 'locacao' || i.finalidade === 'venda_locacao');
+    }
+
     if (searchTerm) {
       const search = searchTerm.toLowerCase();
-      combined = combined.filter(i => 
+      filtered = filtered.filter(i =>
         i.titulo?.toLowerCase().includes(search) ||
         i.referencia?.toLowerCase().includes(search) ||
         i.bairro?.toLowerCase().includes(search)
       );
     }
-    
-    return combined;
-  }, [allImoveis, assignments, imoveisLocais, searchTerm, systemRole]);
+
+    return filtered;
+  }, [imoveisBase, finalidadeFilter, searchTerm]);
 
   // Adicionar código de imóvel
   const handleAddProperty = async () => {
@@ -655,7 +673,7 @@ export const MeusImoveisTab = ({ allImoveis, onViewDetails, onPropertyCreated }:
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-semibold text-text-primary">Meus Imóveis</h2>
+          <h2 className="text-xl font-semibold text-text-primary">Prontos</h2>
           <p className="text-text-secondary text-sm">
             {assignments.length} código{assignments.length !== 1 ? 's' : ''} atribuído{assignments.length !== 1 ? 's' : ''} a você
           </p>
@@ -844,16 +862,28 @@ export const MeusImoveisTab = ({ allImoveis, onViewDetails, onPropertyCreated }:
         </div>
       )}
 
-      {/* Busca nos imóveis */}
-      {meusImoveis.length > 0 && (
-        <div className="relative max-w-md">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-text-secondary" />
-          <Input
-            placeholder="Buscar nos meus imóveis..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10"
-          />
+      {/* Busca e filtros nos imóveis */}
+      {imoveisBase.length > 0 && (
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-text-secondary" />
+            <Input
+              placeholder="Buscar nos meus imóveis..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+          <Select value={finalidadeFilter} onValueChange={(v) => setFinalidadeFilter(v as typeof finalidadeFilter)}>
+            <SelectTrigger className="w-full sm:w-56">
+              <SelectValue placeholder="Finalidade" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todas as Finalidades</SelectItem>
+              <SelectItem value="venda">🏷️ Venda</SelectItem>
+              <SelectItem value="locacao">🔑 Locação</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       )}
 
@@ -861,7 +891,11 @@ export const MeusImoveisTab = ({ allImoveis, onViewDetails, onPropertyCreated }:
       {meusImoveis.length === 0 ? (
         <div className="text-center py-16">
           <Home className="h-16 w-16 text-text-secondary mx-auto mb-4 opacity-50" />
-          {assignments.length === 0 ? (
+          {imoveisBase.length > 0 ? (
+            <p className="text-text-secondary mb-2">
+              Nenhum imóvel corresponde aos filtros aplicados
+            </p>
+          ) : assignments.length === 0 ? (
             <>
               <p className="text-text-secondary mb-2">Você ainda não tem imóveis atribuídos</p>
               <p className="text-text-secondary text-sm mb-4">
