@@ -64,6 +64,7 @@ interface ImovelLocal {
   bairro: string | null;
   cidade: string | null;
   estado: string | null;
+  cep?: string | null;
   area_total: number;
   area_util: number;
   quartos: number;
@@ -364,6 +365,8 @@ export const MeusImoveisTab = ({ allImoveis, onViewDetails, onPropertyCreated }:
       bairro: local.bairro || '',
       cidade: local.cidade || '',
       estado: local.estado || 'SP',
+      // Sem isto o upsert de edição gravaria cep: null e apagaria o CEP existente
+      cep: local.cep || '',
       logradouro: local.logradouro || '',
       numero: local.numero || '',
       area_total: local.area_total ? String(local.area_total) : '',

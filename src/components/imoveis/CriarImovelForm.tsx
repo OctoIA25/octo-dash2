@@ -847,6 +847,14 @@ export const CriarImovelForm = ({
       return;
     }
 
+    // CEP é obrigatório: os feeds de portais (ZAP/OLX) rejeitam imóvel sem CEP
+    if (!validarCep(formData.cep)) {
+      setOpenSections(prev => ({ ...prev, localizacao: true }));
+      setSubmitStatus('error');
+      setSubmitMessage('Informe o CEP do imóvel (8 dígitos). É obrigatório para publicar nos portais.');
+      return;
+    }
+
     // Validar link de vídeo: se preenchido, precisa ser um YouTube válido
     if (formData.link_video.trim() && !normalizeYouTubeUrl(formData.link_video)) {
       setSubmitStatus('error');
@@ -1124,7 +1132,7 @@ export const CriarImovelForm = ({
             Novo Imóvel
           </DialogTitle>
           <p className="text-sm text-text-secondary mt-1">
-            Cadastre um novo imóvel. Apenas o código é obrigatório.
+            Cadastre um novo imóvel. Tipo e CEP são obrigatórios (o código é gerado automaticamente).
           </p>
         </DialogHeader>
 
@@ -1414,7 +1422,7 @@ export const CriarImovelForm = ({
                 </div>
                 <div className="space-y-2">
                   <Label className="flex items-center gap-2">
-                    CEP
+                    CEP <span className="text-red-500">*</span>
                     {isBuscandoCep && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
                     {cepStatus === 'success' && <CheckCircle className="h-3 w-3 text-green-500" />}
                     {cepStatus === 'not_found' && <AlertCircle className="h-3 w-3 text-yellow-500" />}
