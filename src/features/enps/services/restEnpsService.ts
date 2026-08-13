@@ -27,7 +27,7 @@ export const restEnpsService: EnpsService = {
         participacao: json.participacao ?? { sent: 0, responded: 0, pending: 0, rate: 0 },
         ranking: json.ranking ?? [], distribuicao: json.distribuicao ?? { insufficient: true },
         comentarios: json.comentarios ?? { insufficient: true }, individual: json.individual,
-        scope: json.scope ?? { locked: false, teamId: null, teamName: null, teams: [] },
+        scope: json.scope ?? { locked: false, teamId: null, teamName: null, teams: [], corretores: [], corretorId: null },
       };
     } finally { clearTimeout(timeout); }
   },

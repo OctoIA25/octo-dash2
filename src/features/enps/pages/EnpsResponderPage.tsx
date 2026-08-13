@@ -1,8 +1,8 @@
 /**
  * Página de resposta do eNPS (in-app, autenticada). Deep-link /enps/responder?cycle=<id>.
- * Form pequeno em state local (spec §7). Duas escalas NPS 0–10, textarea opcional
- * e um opt-in SELF-ONLY (permite que o CORRETOR veja a própria evolução; NÃO
- * expõe a nota identificada à gestão).
+ * Form pequeno em state local (spec §7). Duas escalas NPS 0–10 IDENTIFICADAS + um
+ * texto livre ANÔNIMO (o servidor grava esse campo em outra tabela, sem vínculo com
+ * o autor). A copy tem que dizer exatamente isso — é o que o corretor está aceitando.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -10,7 +10,6 @@ import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { getEnpsService } from '../hooks/useEnps';
 import type { EnpsResponderContext, EnpsQuestion } from '../types';
@@ -52,7 +51,6 @@ export function EnpsResponderPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [notas, setNotas] = useState<Notas>({});
   const [comentario, setComentario] = useState('');
-  const [optIn, setOptIn] = useState(false);
   const [sending, setSending] = useState(false);
   const [done, setDone] = useState(false);
 
@@ -82,7 +80,7 @@ export function EnpsResponderPage() {
     if (texto) answers.q_comentario = texto;
     setSending(true);
     try {
-      await getEnpsService().submitResponse({ cycle_id: ctx.cycle.id, answers, allow_individual: optIn });
+      await getEnpsService().submitResponse({ cycle_id: ctx.cycle.id, answers });
       // Invalida a pendência para o banner da dash sumir na hora (senão fica até
       // o staleTime de 5min expirar). Prefixo ['enps','pending'] cobre qualquer tenantId.
       queryClient.invalidateQueries({ queryKey: ['enps', 'pending'] });
@@ -104,7 +102,7 @@ export function EnpsResponderPage() {
   return (
     <div className="mx-auto max-w-xl p-6">
       <h1 className="text-[20px] font-bold text-slate-900 dark:text-slate-100">Pesquisa de satisfação (eNPS)</h1>
-      <p className="mt-1 text-[13px] text-slate-500 dark:text-slate-400">Suas respostas são anônimas. Leva menos de 1 minuto.</p>
+      <p className="mt-1 text-[13px] text-slate-500 dark:text-slate-400">Suas notas ficam identificadas para a gestão. Só o campo de texto é anônimo. Leva menos de 1 minuto.</p>
       <div className="mt-6 space-y-6">
         <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
           <p className="text-[14px] font-medium text-slate-900 dark:text-slate-100 mb-3">{empresaQ?.label ?? 'O quanto você recomendaria esta imobiliária para outro corretor trabalhar?'}</p>
@@ -118,14 +116,11 @@ export function EnpsResponderPage() {
             <div className="mt-1.5 flex justify-between text-[11px] text-slate-400"><span>0 — nada provável</span><span>10 — extremamente provável</span></div>
           </section>
         )}
-        <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
-          <label htmlFor="enps-coment" className="text-[14px] font-medium text-slate-900 dark:text-slate-100">{comentarioQ?.label ?? 'Gostaria de deixar alguma sugestão, melhoria ou comentário?'}</label>
-          <Textarea id="enps-coment" className="mt-2" rows={3} value={comentario} onChange={(e) => setComentario(e.target.value)} placeholder="Opcional" />
+        <section className="rounded-xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50/50 dark:bg-emerald-950/20 p-4">
+          <label htmlFor="enps-coment" className="text-[14px] font-medium text-slate-900 dark:text-slate-100">{comentarioQ?.label ?? 'Como está sendo sua experiência na equipe? Deixe sugestões ou críticas'}</label>
+          <p className="mt-1 text-[12.5px] text-emerald-800 dark:text-emerald-300">Este campo é <strong>anônimo</strong>: fica guardado separado das suas notas, sem ligação com o seu nome.</p>
+          <Textarea id="enps-coment" className="mt-2 bg-white dark:bg-slate-900" rows={3} value={comentario} onChange={(e) => setComentario(e.target.value)} placeholder="Opcional" />
         </section>
-        <label className="flex items-start gap-2.5 cursor-pointer">
-          <Checkbox checked={optIn} onCheckedChange={(v) => setOptIn(v === true)} className="mt-0.5" />
-          <span className="text-[12.5px] text-slate-600 dark:text-slate-400">Permitir que <strong>eu</strong> acompanhe minha evolução ao longo do tempo. Suas respostas continuam <strong>não identificadas</strong> para a gestão.</span>
-        </label>
         <Button onClick={handleSubmit} disabled={!canSubmit} className="w-full">{sending ? 'Enviando…' : 'Enviar resposta'}</Button>
       </div>
     </div>

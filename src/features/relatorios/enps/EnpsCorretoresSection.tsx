@@ -1,7 +1,9 @@
 /**
  * Seção "eNPS de Corretores" da aba Relatórios (autocontida; via ?tab=enps).
- * Burra por design: consome useEnps e renderiza. 7 painéis; DOIS eNPS distintos;
- * painéis atrás do N-mínimo mostram "respostas insuficientes" (gate real é do servidor).
+ * Burra por design: consome useEnps e renderiza. 7 painéis; DOIS eNPS distintos.
+ * Filtros de equipe e de CORRETOR (as respostas são identificadas); quem pode
+ * filtrar e o recorte efetivo quem decide é o servidor (scope).
+ * Só os comentários continuam anônimos — e só eles têm N-mínimo (gate do servidor).
  * Gráfico: Bar + LabelList + label custom, SEM <YAxis> (Recharts 3). NUNCA usar as
  * classes de CSS global que sabotam gráficos.
  */
@@ -13,7 +15,12 @@ import { useEnps } from '@/features/enps/hooks/useEnps';
 import { isInsufficient } from '@/features/enps/types';
 import type { EnpsScoreBlock, EnpsEvolucaoPoint } from '@/features/enps/types';
 
-const INSUFFICIENT_MSG = 'Respostas insuficientes para exibir com segurança (anonimato).';
+const EMPTY_MSG = 'Sem respostas neste período.';
+/** Comentários são o único bloco anônimo — só saem com massa de respostas na equipe. */
+const COMENTARIOS_GATE_MSG = 'Comentários só aparecem com um número mínimo de respostas na equipe (para preservar o anonimato de quem escreveu).';
+
+const SELECT_CLASS = 'rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-[13px] text-slate-700 dark:text-slate-200';
+const FILTER_LABEL_CLASS = 'text-[11px] font-semibold text-slate-500 uppercase tracking-wider';
 
 /** eNPS vem 0–10 com uma casa decimal (server/enps/calc.js). Exibe em pt-BR. */
 const fmtScore = (n: number) => n.toFixed(1).replace('.', ',');
@@ -91,7 +98,8 @@ function DistBars({ title, buckets }: { title: string; buckets: { label: string;
 
 export function EnpsCorretoresSection({ tenantId: _tenantId }: { tenantId?: string }) {
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
-  const { data, isLoading, isError, refetch, tenantReady } = useEnps({ team: selectedTeam });
+  const [selectedCorretor, setSelectedCorretor] = useState<string | null>(null);
+  const { data, isLoading, isError, refetch, tenantReady } = useEnps({ team: selectedTeam, corretor: selectedCorretor });
 
   // Sem tenant real (owner sem impersonation, Área de Teste) não há o que buscar —
   // é estado vazio, não falha de carregamento.
@@ -133,38 +141,54 @@ export function EnpsCorretoresSection({ tenantId: _tenantId }: { tenantId?: stri
   return (
     <div className="space-y-8">
       {scope && (
-        scope.locked ? (
-          scope.teamName && (
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+          {scope.locked ? (
+            scope.teamName && (
+              <div className="flex items-center gap-2">
+                <span className={FILTER_LABEL_CLASS}>Equipe</span>
+                <span className="inline-flex items-center rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-1 text-[12.5px] font-semibold text-slate-700 dark:text-slate-200">{scope.teamName}</span>
+              </div>
+            )
+          ) : scope.teams.length > 0 ? (
             <div className="flex items-center gap-2">
-              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Equipe</span>
-              <span className="inline-flex items-center rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-1 text-[12.5px] font-semibold text-slate-700 dark:text-slate-200">{scope.teamName}</span>
+              <label htmlFor="enps-team" className={FILTER_LABEL_CLASS}>Equipe</label>
+              <select
+                id="enps-team"
+                value={selectedTeam ?? ''}
+                onChange={(e) => { setSelectedTeam(e.target.value || null); setSelectedCorretor(null); }}
+                className={SELECT_CLASS}
+              >
+                <option value="">Todas as equipes</option>
+                {scope.teams.map((t) => (<option key={t.id} value={t.id}>{t.name}</option>))}
+              </select>
             </div>
-          )
-        ) : scope.teams.length > 0 ? (
-          <div className="flex items-center gap-2">
-            <label htmlFor="enps-team" className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Equipe</label>
-            <select
-              id="enps-team"
-              value={selectedTeam ?? ''}
-              onChange={(e) => setSelectedTeam(e.target.value || null)}
-              className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-[13px] text-slate-700 dark:text-slate-200"
-            >
-              <option value="">Todas as equipes</option>
-              {scope.teams.map((t) => (<option key={t.id} value={t.id}>{t.name}</option>))}
-            </select>
-          </div>
-        ) : null
+          ) : null}
+          {scope.corretores.length > 0 && (
+            <div className="flex items-center gap-2">
+              <label htmlFor="enps-corretor" className={FILTER_LABEL_CLASS}>Corretor</label>
+              <select
+                id="enps-corretor"
+                value={selectedCorretor ?? ''}
+                onChange={(e) => setSelectedCorretor(e.target.value || null)}
+                className={SELECT_CLASS}
+              >
+                <option value="">Todos os corretores</option>
+                {scope.corretores.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
+              </select>
+            </div>
+          )}
+        </div>
       )}
       <section>
         <h2 className="text-[15px] font-bold text-slate-900 dark:text-slate-100 mb-3">eNPS Geral</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <span className="sr-only">eNPS Empresa</span>
-            {empresaOk ? (<><KpiHeroCard card={scoreToCard('enps-empresa', 'eNPS Empresa', geral.empresa as EnpsScoreBlock, deltaEmpresa)} valueColor="text-blue-700 dark:text-blue-400" borderColor="border-l-blue-400" /><ScoreBreakdown block={geral.empresa as EnpsScoreBlock} /></>) : (<div><p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">eNPS Empresa</p><Empty>{INSUFFICIENT_MSG}</Empty></div>)}
+            {empresaOk ? (<><KpiHeroCard card={scoreToCard('enps-empresa', 'eNPS Empresa', geral.empresa as EnpsScoreBlock, deltaEmpresa)} valueColor="text-blue-700 dark:text-blue-400" borderColor="border-l-blue-400" /><ScoreBreakdown block={geral.empresa as EnpsScoreBlock} /></>) : (<div><p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">eNPS Empresa</p><Empty>{EMPTY_MSG}</Empty></div>)}
           </div>
           <div>
             <span className="sr-only">eNPS Gestor</span>
-            {gestorOk ? (<><KpiHeroCard card={scoreToCard('enps-gestor', 'eNPS Gestor', geral.gestor as EnpsScoreBlock, deltaGestor)} valueColor="text-emerald-700 dark:text-emerald-400" borderColor="border-l-emerald-400" /><ScoreBreakdown block={geral.gestor as EnpsScoreBlock} /></>) : (<div><p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">eNPS Gestor</p><Empty>{INSUFFICIENT_MSG}</Empty></div>)}
+            {gestorOk ? (<><KpiHeroCard card={scoreToCard('enps-gestor', 'eNPS Gestor', geral.gestor as EnpsScoreBlock, deltaGestor)} valueColor="text-emerald-700 dark:text-emerald-400" borderColor="border-l-emerald-400" /><ScoreBreakdown block={geral.gestor as EnpsScoreBlock} /></>) : (<div><p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">eNPS Gestor</p><Empty>{EMPTY_MSG}</Empty></div>)}
           </div>
         </div>
       </section>
@@ -181,7 +205,7 @@ export function EnpsCorretoresSection({ tenantId: _tenantId }: { tenantId?: stri
 
       <section>
         <SectionTitle>Ranking de Gestores</SectionTitle>
-        {ranking.length === 0 ? (<Empty>Nenhum gestor com respostas suficientes para ranquear neste período.</Empty>) : (
+        {ranking.length === 0 ? (<Empty>Nenhum gestor avaliado neste período.</Empty>) : (
           <div className="overflow-auto rounded-xl border border-slate-200 dark:border-slate-800">
             <table className="w-full min-w-[420px] text-sm">
               <thead className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800"><tr className="text-xs"><th className="text-left py-2.5 pl-3 pr-3 font-semibold text-slate-600 dark:text-slate-400">#</th><th className="text-left py-2.5 px-3 font-semibold text-slate-600 dark:text-slate-400">Gestor</th><th className="text-right py-2.5 px-3 font-semibold text-slate-600 dark:text-slate-400">eNPS</th><th className="text-right py-2.5 pr-3 font-semibold text-slate-600 dark:text-slate-400">Respostas</th></tr></thead>
@@ -208,15 +232,18 @@ export function EnpsCorretoresSection({ tenantId: _tenantId }: { tenantId?: stri
       )}
 
       <section>
-        <SectionTitle>Comentários</SectionTitle>
-        {isInsufficient(comentarios) ? (<Empty>{INSUFFICIENT_MSG}</Empty>) : comentarios.length === 0 ? (<Empty>Nenhum comentário neste período.</Empty>) : (
+        <SectionTitle>Comentários (anônimos)</SectionTitle>
+        {selectedCorretor && (
+          <p className="mb-2 text-[12px] text-slate-500 dark:text-slate-400">Os comentários não são filtrados por corretor — eles são anônimos e não têm autor registrado.</p>
+        )}
+        {isInsufficient(comentarios) ? (<Empty>{COMENTARIOS_GATE_MSG}</Empty>) : comentarios.length === 0 ? (<Empty>Nenhum comentário neste período.</Empty>) : (
           <ul className="space-y-2">{comentarios.map((c, i) => (<li key={i} className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 text-[13px] text-slate-700 dark:text-slate-300">“{c.text}”</li>))}</ul>
         )}
       </section>
 
       <section>
         <SectionTitle>Distribuição das notas</SectionTitle>
-        {isInsufficient(distribuicao) ? (<Empty>{INSUFFICIENT_MSG}</Empty>) : (
+        {isInsufficient(distribuicao) ? (<Empty>{EMPTY_MSG}</Empty>) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><DistBars title="Empresa" buckets={distribuicao.empresa} /><DistBars title="Gestor" buckets={distribuicao.gestor} /></div>
         )}
       </section>

@@ -39,16 +39,14 @@ export interface EnpsAnswers {
   q_comentario?: string;
 }
 
-/** Payload de `POST /api/v1/enps/responses`. */
+/**
+ * Payload de `POST /api/v1/enps/responses`. As NOTAS são identificadas; o
+ * servidor separa `q_comentario` para uma tabela anônima (survey_comments) —
+ * o texto livre é a única informação sem vínculo com o autor.
+ */
 export interface EnpsSubmitInput {
   cycle_id: string;
   answers: EnpsAnswers;
-  /**
-   * Opt-in SELF-ONLY: permite que o próprio corretor acompanhe sua evolução
-   * ao longo do tempo. As respostas continuam não identificadas para a
-   * gestão independentemente deste valor (ver copy em EnpsResponderPage).
-   */
-  allow_individual: boolean;
 }
 
 /**
@@ -73,11 +71,16 @@ export interface EnpsParticipacao { sent: number; responded: number; pending: nu
 export interface EnpsIndividual { evolucao: EnpsEvolucaoPoint[]; comentarios: EnpsComentario[] }
 
 export interface EnpsScopeTeam { id: string; name: string; color: string }
+export interface EnpsScopeCorretor { id: string; name: string }
 export interface EnpsScope {
   locked: boolean;
   teamId: string | null;
   teamName: string | null;
   teams: EnpsScopeTeam[];
+  /** Corretores filtráveis pelo requisitante (vazio p/ quem não é gestão). */
+  corretores: EnpsScopeCorretor[];
+  /** Corretor efetivamente aplicado pelo servidor (id inválido vira null). */
+  corretorId: string | null;
 }
 
 export interface EnpsOverview {

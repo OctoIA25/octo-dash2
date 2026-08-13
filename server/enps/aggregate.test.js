@@ -8,7 +8,7 @@ function makeRes() {
 // brokers/profiles alimentam a resolução de leaderName no ranking (loadLeaderNames).
 // role: linha de tenant_memberships p/ o lookup de resolveTeamScope (default: sem role, sem filtro).
 // teams: linhas de `teams` p/ resolveTeamScope (owner/admin: dropdown; team_leader: travado).
-function makeSupabase({ responses = [], cycle = { id: 'cyc1', status: 'open' }, dispatches = [], members = [], brokers = [], profiles = [], role = null, teams = [] } = {}) {
+function makeSupabase({ responses = [], cycle = { id: 'cyc1', status: 'open' }, dispatches = [], members = [], brokers = [], profiles = [], role = null, teams = [], comments = [] } = {}) {
   return {
     from(table) {
       if (table === 'tenant_memberships') {
@@ -24,12 +24,17 @@ function makeSupabase({ responses = [], cycle = { id: 'cyc1', status: 'open' }, 
           } };
         } }) };
       }
-      if (table === 'teams') return { select: () => ({ eq: async () => ({ data: teams, error: null }) }) };
+      // .eq() encadeável e thenable: admin usa 1 eq (tenant), team_leader usa 2 (tenant + líder).
+      if (table === 'teams') {
+        const chain = { eq: () => chain, then: (r) => Promise.resolve({ data: teams, error: null }).then(r) };
+        return { select: () => chain };
+      }
       if (table === 'survey_cycles') {
         return { select: () => ({ eq: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: cycle, error: null }) }) }) }) }) };
       }
       if (table === 'survey_responses') return { select: () => ({ eq: async () => ({ data: responses, error: null }) }) };
       if (table === 'survey_dispatches') return { select: () => ({ eq: async () => ({ data: dispatches, error: null }) }) };
+      if (table === 'survey_comments') return { select: () => ({ eq: async () => ({ data: comments, error: null }) }) };
       if (table === 'tenant_brokers') return { select: () => ({ eq: () => ({ in: async () => ({ data: brokers, error: null }) }) }) };
       if (table === 'user_profiles') return { select: () => ({ in: async () => ({ data: profiles, error: null }) }) };
       throw new Error(`tabela inesperada: ${table}`);
@@ -37,21 +42,29 @@ function makeSupabase({ responses = [], cycle = { id: 'cyc1', status: 'open' }, 
   };
 }
 const req = (query = {}) => ({ userId: 'u1', userEmail: 'c@imob.com', query: { period: '2026-03-01', ...query } });
-const rows = (n, { empresa = 9, gestor = 9, leader = null } = {}) =>
-  Array.from({ length: n }, () => ({ enps_empresa: empresa, enps_gestor: gestor, subject_leader_user_id: leader, answers: {} }));
+const rows = (n, { empresa = 9, gestor = 9, leader = null, respondent = null } = {}) =>
+  Array.from({ length: n }, () => ({ enps_empresa: empresa, enps_gestor: gestor, subject_leader_user_id: leader, respondent_user_id: respondent }));
 // deps injetável p/ loadEnpsSurvey (resolve survey_id sem tocar 'surveys')
 const deps = { loadEnpsSurvey: async () => ({ id: 'srv-enps' }) };
 
-describe('agregação eNPS — N-mínimo global', () => {
-  it('menos de N respostas: TODO bloco derivado devolve insufficient', async () => {
-    const supabase = makeSupabase({ responses: rows(3) });
+describe('agregação eNPS — N-mínimo (só comentários)', () => {
+  // Respostas viraram identificadas: o gate sobrou só para o texto livre anônimo.
+  it('menos de N respostas: scores saem, comentários ficam retidos', async () => {
+    const supabase = makeSupabase({ responses: rows(3), comments: [{ text: 'c', subject_leader_user_id: null }] });
     const res = makeRes();
     await makeAggregateHandler(supabase, deps)(req(), res);
     expect(res.statusCode).toBe(200);
-    expect(res.body.geral.empresa).toEqual({ insufficient: true });
-    expect(res.body.geral.gestor).toEqual({ insufficient: true });
-    expect(res.body.distribuicao).toEqual({ insufficient: true });
+    expect(res.body.geral.empresa.enps).toBe(10);
+    expect(res.body.distribuicao).not.toEqual({ insufficient: true });
     expect(res.body.comentarios).toEqual({ insufficient: true });
+  });
+
+  it('zero respostas: score e distribuição não têm o que exibir', async () => {
+    const supabase = makeSupabase({ responses: [] });
+    const res = makeRes();
+    await makeAggregateHandler(supabase, deps)(req(), res);
+    expect(res.body.geral.empresa).toEqual({ insufficient: true });
+    expect(res.body.distribuicao).toEqual({ insufficient: true });
   });
 
   it('participação SEMPRE sai (contagem) mesmo abaixo de N', async () => {
@@ -84,34 +97,91 @@ describe('agregação eNPS — distribuição (ambos os scores)', () => {
   });
 });
 
-describe('agregação eNPS — comentários', () => {
-  it('N suficiente: array de {text}, não {items,count}', async () => {
+describe('agregação eNPS — comentários (tabela anônima)', () => {
+  it('N suficiente: array de {text} vindo de survey_comments', async () => {
     const supabase = makeSupabase({
-      responses: Array.from({ length: 5 }, (_, i) => ({ enps_empresa: 9, enps_gestor: 9, subject_leader_user_id: null, answers: { q_comentario: `c${i}` } })),
+      responses: rows(5),
+      comments: Array.from({ length: 3 }, (_, i) => ({ text: `c${i}`, subject_leader_user_id: null })),
     });
     const res = makeRes();
     await makeAggregateHandler(supabase, deps)(req(), res);
     expect(Array.isArray(res.body.comentarios)).toBe(true);
     expect(res.body.comentarios).toContainEqual({ text: 'c0' });
-    expect(res.body.comentarios).toHaveLength(5);
+    expect(res.body.comentarios).toHaveLength(3);
   });
 });
 
 describe('agregação eNPS — ranking', () => {
-  it('exclui NULL e exige N≥5 + time mínimo; leaderName resolvido (tenant_brokers → user_profiles)', async () => {
+  it('exclui NULL leader; leaderName resolvido (tenant_brokers → user_profiles)', async () => {
     const supabase = makeSupabase({
-      responses: [...rows(5, { gestor: 10, leader: 'g1' }), ...rows(5, { gestor: 3, leader: 'g2' }), ...rows(4, { leader: null })],
+      responses: [...rows(5, { gestor: 10, leader: 'g1' }), ...rows(2, { gestor: 3, leader: 'g2' }), ...rows(4, { leader: null })],
       members: [...Array.from({ length: 6 }, () => ({ leader_user_id: 'g1' })), ...Array.from({ length: 2 }, () => ({ leader_user_id: 'g2' }))],
       brokers: [{ auth_user_id: 'g1', name: 'Gestor Um' }],
     });
     const res = makeRes();
     await makeAggregateHandler(supabase, deps)(req(), res);
     const leaders = res.body.ranking.map((r) => r.leaderUserId);
-    expect(leaders).toContain('g1');
-    expect(leaders).not.toContain('g2');
+    expect(leaders).toEqual(['g1', 'g2']);   // sem gate de N: g2 entra, ordenado por eNPS
     expect(leaders).not.toContain(null);
-    const g1Row = res.body.ranking.find((r) => r.leaderUserId === 'g1');
-    expect(g1Row.leaderName).toBe('Gestor Um');
+    expect(res.body.ranking.find((r) => r.leaderUserId === 'g1').leaderName).toBe('Gestor Um');
+  });
+});
+
+describe('agregação eNPS — filtro por corretor (?corretor=)', () => {
+  const base = {
+    role: 'admin',
+    responses: [...rows(3, { empresa: 10, respondent: 'c1' }), ...rows(3, { empresa: 0, respondent: 'c2' })],
+    members: [{ user_id: 'c1', leader_user_id: 'lead-red' }, { user_id: 'c2', leader_user_id: 'lead-blue' }],
+    brokers: [{ auth_user_id: 'c1', name: 'Ana' }, { auth_user_id: 'c2', name: 'Bruno' }],
+  };
+
+  it('admin: recorta as notas no corretor pedido e devolve o dropdown', async () => {
+    const res = makeRes();
+    await makeAggregateHandler(makeSupabase(base), deps)(req({ corretor: 'c1' }), res);
+    expect(res.body.scope.corretorId).toBe('c1');
+    expect(res.body.scope.corretores).toEqual([{ id: 'c1', name: 'Ana' }, { id: 'c2', name: 'Bruno' }]);
+    expect(res.body.geral.empresa.count).toBe(3);
+    expect(res.body.geral.empresa.enps).toBe(10);
+  });
+
+  it('id de corretor fora do tenant/escopo é ignorado (não vaza, não quebra)', async () => {
+    const res = makeRes();
+    await makeAggregateHandler(makeSupabase(base), deps)(req({ corretor: 'c-de-outro-tenant' }), res);
+    expect(res.body.scope.corretorId).toBeNull();
+    expect(res.body.geral.empresa.count).toBe(6);
+  });
+
+  it('corretor comum não recebe dropdown nem consegue filtrar colega', async () => {
+    const res = makeRes();
+    await makeAggregateHandler(makeSupabase({ ...base, role: 'corretor' }), deps)(req({ corretor: 'c1' }), res);
+    expect(res.body.scope.corretores).toEqual([]);
+    expect(res.body.scope.corretorId).toBeNull();
+    expect(res.body.geral.empresa.count).toBe(6);
+  });
+
+  it('team_leader: dropdown só com os corretores da própria equipe', async () => {
+    const supabase = makeSupabase({
+      ...base,
+      role: 'team_leader',
+      teams: [{ id: 'te-red', name: 'Vermelha', color: 'red', leader_user_id: 'lead-red' }],
+    });
+    const res = makeRes();
+    await makeAggregateHandler(supabase, deps)(req(), res);
+    expect(res.body.scope.corretores).toEqual([{ id: 'c1', name: 'Ana' }]);
+  });
+
+  // O gate do texto livre olha a EQUIPE, não o recorte por pessoa — senão filtrar
+  // um corretor esconderia comentários que ele nem escreveu.
+  it('comentários não são recortados pelo corretor filtrado', async () => {
+    const supabase = makeSupabase({
+      ...base,
+      responses: [...rows(5, { respondent: 'c1' }), ...rows(1, { respondent: 'c2' })],
+      comments: [{ text: 'time bom', subject_leader_user_id: null }],
+    });
+    const res = makeRes();
+    await makeAggregateHandler(supabase, deps)(req({ corretor: 'c2' }), res);
+    expect(res.body.geral.empresa.count).toBe(1);
+    expect(res.body.comentarios).toEqual([{ text: 'time bom' }]);
   });
 });
 

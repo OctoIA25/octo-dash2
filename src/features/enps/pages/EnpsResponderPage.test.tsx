@@ -55,13 +55,13 @@ describe('EnpsResponderPage', () => {
     await waitFor(() => expect(screen.getByText('Recomendaria seu gestor?')).toBeInTheDocument());
   });
 
-  it('submete sem q_gestor e allow_individual=false quando sem líder', async () => {
+  it('submete sem q_gestor quando o corretor não tem líder', async () => {
     const submit = mockService({ hasLeader: false });
     renderAt('cyc-1');
     await waitFor(() => screen.getByText('Recomendaria a imobiliária?'));
     fireEvent.click(screen.getByRole('button', { name: 'Nota 9 para q_empresa' }));
     fireEvent.click(screen.getByRole('button', { name: /enviar resposta/i }));
-    await waitFor(() => expect(submit).toHaveBeenCalledWith({ cycle_id: 'cyc-1', answers: { q_empresa: 9 }, allow_individual: false }));
+    await waitFor(() => expect(submit).toHaveBeenCalledWith({ cycle_id: 'cyc-1', answers: { q_empresa: 9 } }));
   });
 
   it('inclui q_gestor quando há líder e nota escolhida', async () => {
@@ -71,7 +71,7 @@ describe('EnpsResponderPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Nota 10 para q_empresa' }));
     fireEvent.click(screen.getByRole('button', { name: 'Nota 7 para q_gestor' }));
     fireEvent.click(screen.getByRole('button', { name: /enviar resposta/i }));
-    await waitFor(() => expect(submit).toHaveBeenCalledWith({ cycle_id: 'cyc-1', answers: { q_empresa: 10, q_gestor: 7 }, allow_individual: false }));
+    await waitFor(() => expect(submit).toHaveBeenCalledWith({ cycle_id: 'cyc-1', answers: { q_empresa: 10, q_gestor: 7 } }));
   });
 
   it('curto-circuita quando já respondido', async () => {

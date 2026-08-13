@@ -32,8 +32,9 @@ export function buildContent({ survey, cycle }) {
   const title = survey.title || 'Pesquisa de satisfação (eNPS)';
   return {
     subject: title,
-    html: `<p>Olá! Responda em 1 minuto: <a href="${link}">${title}</a>.</p><p>Sua resposta é anônima.</p>`,
-    text: `${title}: ${link} (resposta anônima)`,
+    // A copy tem que bater com o que o banco faz: notas identificadas, texto livre anônimo.
+    html: `<p>Olá! Responda em 1 minuto: <a href="${link}">${title}</a>.</p><p>As notas ficam identificadas; o campo de comentário é anônimo.</p>`,
+    text: `${title}: ${link} (notas identificadas; comentário anônimo)`,
   };
 }
 

@@ -4,10 +4,12 @@ import { makeSubmitHandler } from './submitHandler.js';
 function makeRes() {
   return { statusCode: 0, body: null, status(c) { this.statusCode = c; return this; }, json(b) { this.body = b; return this; } };
 }
-function makeSupabase({ dispatch, claimRows = [{ id: 'd1' }], membership = { leader_user_id: 'g1' }, onInsert } = {}) {
+function makeSupabase({ dispatch, claimRows = [{ id: 'd1' }], membership = { leader_user_id: 'g1' }, onInsert, commentError = null } = {}) {
   const inserted = [];
+  const comments = [];
   return {
     inserted,
+    comments,
     from(table) {
       if (table === 'survey_dispatches') {
         return {
@@ -20,6 +22,9 @@ function makeSupabase({ dispatch, claimRows = [{ id: 'd1' }], membership = { lea
       }
       if (table === 'survey_responses') {
         return { insert: (row) => { inserted.push(row); onInsert?.(row); return { select: () => ({ single: async () => ({ data: { id: 'r1' }, error: null }) }) }; } };
+      }
+      if (table === 'survey_comments') {
+        return { insert: async (row) => { comments.push(row); return { error: commentError }; } };
       }
       throw new Error(`tabela inesperada: ${table}`);
     },
@@ -39,20 +44,43 @@ describe('submit eNPS — anti-IDOR + atômico', () => {
     expect(supabase.inserted).toHaveLength(0);
   });
 
-  it('anônimo: grava respondent_user_id NULL e tenant do DISPATCH (não do body)', async () => {
+  it('nota é IDENTIFICADA e usa o tenant do DISPATCH (não do body)', async () => {
     const supabase = makeSupabase({ dispatch: dispatchOf() });
     const res = makeRes();
     await makeSubmitHandler(supabase)(baseReq({ tenant_id: 'tenant-HACK' }), res);
     expect(res.statusCode).toBe(200);
-    expect(supabase.inserted[0]).toMatchObject({ tenant_id: 'tenant-A', cycle_id: 'cyc1', respondent_user_id: null, subject_leader_user_id: 'g1' });
+    expect(supabase.inserted[0]).toMatchObject({ tenant_id: 'tenant-A', cycle_id: 'cyc1', respondent_user_id: 'u1', subject_leader_user_id: 'g1' });
     expect(supabase.inserted[0].answers).toMatchObject({ q_empresa: 9, q_gestor: 8 });
   });
 
-  it('com allow_individual=true: respondent_user_id = jwt.uid (self-only)', async () => {
+  // O CONTRATO da mudança de privacidade: o texto livre não pode viajar junto do
+  // respondent_user_id — se voltar para answers, ele deixa de ser anônimo.
+  it('comentário vai p/ survey_comments SEM autor e some de answers', async () => {
     const supabase = makeSupabase({ dispatch: dispatchOf() });
     const res = makeRes();
-    await makeSubmitHandler(supabase)(baseReq({ allow_individual: true }), res);
-    expect(supabase.inserted[0].respondent_user_id).toBe('u1');
+    await makeSubmitHandler(supabase)(baseReq(), res);
+    expect(supabase.inserted[0].answers).not.toHaveProperty('q_comentario');
+    expect(supabase.comments).toHaveLength(1);
+    expect(supabase.comments[0]).toEqual({ tenant_id: 'tenant-A', cycle_id: 'cyc1', subject_leader_user_id: 'g1', text: 'ok' });
+    expect(supabase.comments[0]).not.toHaveProperty('respondent_user_id');
+  });
+
+  it('comentário vazio não vira linha', async () => {
+    const supabase = makeSupabase({ dispatch: dispatchOf() });
+    const res = makeRes();
+    await makeSubmitHandler(supabase)(baseReq({ answers: { q_empresa: 9, q_comentario: '   ' } }), res);
+    expect(res.statusCode).toBe(200);
+    expect(supabase.comments).toHaveLength(0);
+  });
+
+  // Sem transação no PostgREST: falhar aqui só faria o corretor perder TAMBÉM as
+  // notas (o dispatch já foi consumido) — a resposta segue 200.
+  it('falha ao gravar o comentário não derruba a submissão', async () => {
+    const supabase = makeSupabase({ dispatch: dispatchOf(), commentError: { message: 'boom' } });
+    const res = makeRes();
+    await makeSubmitHandler(supabase)(baseReq(), res);
+    expect(res.statusCode).toBe(200);
+    expect(supabase.inserted).toHaveLength(1);
   });
 
   it('2ª submissão: UPDATE afeta 0 linhas → 409, sem 2ª resposta', async () => {

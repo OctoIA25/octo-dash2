@@ -9,11 +9,15 @@
  * Atomicidade (anti duplo-submit): o UPDATE condicional has_responded false→true
  * serializa dois submits no row-lock; a resposta só é inserida se afetou 1 linha.
  *
- * Anonimato: respondent_user_id = allow_individual ? jwt.uid : NULL (self-only).
+ * Privacidade (migration 20260812): a RESPOSTA é identificada (respondent_user_id =
+ * jwt.uid, sempre) — é o que habilita o filtro por corretor. O COMENTÁRIO é a única
+ * informação anônima e por isso vai para OUTRA tabela (survey_comments), sem
+ * respondent_user_id: na mesma linha da nota ele seria atribuível.
  * tenant_id vem SEMPRE da linha do dispatch, nunca do body.
  */
 const DISPATCHES = 'survey_dispatches';
 const RESPONSES = 'survey_responses';
+const COMMENTS = 'survey_comments';
 const NPS_KEYS = ['q_empresa', 'q_gestor'];
 
 function validateAnswers(answers) {
@@ -32,7 +36,7 @@ export function makeSubmitHandler(supabase) {
   return async function submitHandler(req, res) {
     try {
       const userId = req.userId;
-      const { cycle_id: cycleId, answers, allow_individual: allowIndividual } = req.body || {};
+      const { cycle_id: cycleId, answers } = req.body || {};
       if (!cycleId) return res.status(400).json({ ok: false, error: 'missing_cycle_id' });
       const answersError = validateAnswers(answers);
       if (answersError) return res.status(400).json({ ok: false, error: answersError });
@@ -66,16 +70,31 @@ export function makeSubmitHandler(supabase) {
         return res.status(409).json({ ok: false, error: 'already_responded' });
       }
 
-      // 3. Insere a resposta. respondent_user_id só com opt-in (self-only).
+      // 3. Insere a resposta IDENTIFICADA — SEM o comentário (ele vai anônimo, no passo 4).
+      const { q_comentario: comentario, ...notas } = answers;
       const { error: iErr } = await supabase
         .from(RESPONSES)
         .insert({
-          tenant_id: tenantId, cycle_id: cycleId, answers,
+          tenant_id: tenantId, cycle_id: cycleId, answers: notas,
           subject_leader_user_id: answers.q_gestor != null ? (membership?.leader_user_id ?? null) : null,
-          respondent_user_id: allowIndividual ? userId : null,
+          respondent_user_id: userId,
         })
         .select('id').single();
       if (iErr) { console.error('[enps] falha ao inserir resposta:', iErr); throw iErr; }
+
+      // 4. Comentário anônimo: linha própria, sem nenhuma coluna que aponte para o autor.
+      const texto = typeof comentario === 'string' ? comentario.trim() : '';
+      if (texto) {
+        const { error: cErr } = await supabase.from(COMMENTS).insert({
+          tenant_id: tenantId, cycle_id: cycleId,
+          subject_leader_user_id: membership?.leader_user_id ?? null,
+          text: texto,
+        });
+        // ponytail: best-effort — o PostgREST não dá transação e o dispatch já foi
+        // consumido no passo 2, então falhar aqui só empurraria o corretor para um
+        // 409 na retentativa (perdendo TAMBÉM as notas). Loga e segue.
+        if (cErr) console.error('[enps] falha ao gravar comentário anônimo:', cErr);
+      }
 
       return res.status(200).json({ ok: true });
     } catch (err) {

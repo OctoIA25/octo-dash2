@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeAll } from 'vitest';
 import { EnpsCorretoresSection } from './EnpsCorretoresSection';
 import type { EnpsOverview } from '@/features/enps/types';
@@ -29,7 +29,7 @@ function baseResult() {
     ranking: [{ leaderUserId: 'l1', leaderName: 'Ana', enps: 7.5, count: 6 }],
     distribuicao: { empresa: [{ label: 'Promotores', count: 6 }], gestor: [{ label: 'Promotores', count: 5 }] },
     comentarios: [{ text: 'Ótimo ambiente' }],
-    scope: { locked: false, teamId: null, teamName: null, teams: [] },
+    scope: { locked: false, teamId: null, teamName: null, teams: [], corretores: [], corretorId: null },
   } as unknown as EnpsOverview;
   return { data, isLoading: false, isError: false, refetch: vi.fn(), period: data.period, tenantReady: true };
 }
@@ -55,18 +55,26 @@ describe('EnpsCorretoresSection', () => {
     expect(screen.getAllByText(/10 respostas/i).length).toBeGreaterThanOrEqual(1);
   });
 
-  it('mostra "respostas insuficientes" quando o bloco geral vem insufficient', () => {
+  it('mostra "sem respostas" quando o bloco geral vem insufficient', () => {
     const data = { ...baseResult().data, geral: { empresa: { insufficient: true }, gestor: { insufficient: true } } } as unknown as EnpsOverview;
     hookState.current = makeState({ data });
     render(<EnpsCorretoresSection tenantId="t1" />);
-    expect(screen.getAllByText(/respostas insuficientes/i).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(/sem respostas neste período/i).length).toBeGreaterThanOrEqual(1);
+  });
+
+  // O gate sobrou só p/ o texto livre — a mensagem tem que falar de anonimato, não de "dados".
+  it('comentários retidos explicam o anonimato', () => {
+    const data = { ...baseResult().data, comentarios: { insufficient: true } } as unknown as EnpsOverview;
+    hookState.current = makeState({ data });
+    render(<EnpsCorretoresSection tenantId="t1" />);
+    expect(screen.getByText(/anonimato de quem escreveu/i)).toBeInTheDocument();
   });
 
   it('mostra empty state no ranking quando vazio', () => {
     const data = { ...baseResult().data, ranking: [] } as unknown as EnpsOverview;
     hookState.current = makeState({ data });
     render(<EnpsCorretoresSection tenantId="t1" />);
-    expect(screen.getByText(/nenhum gestor com respostas suficientes/i)).toBeInTheDocument();
+    expect(screen.getByText(/nenhum gestor avaliado/i)).toBeInTheDocument();
   });
 
   it('mostra skeleton enquanto carrega', () => {
@@ -76,7 +84,7 @@ describe('EnpsCorretoresSection', () => {
   });
 
   it('mostra dropdown de equipes para admin (scope.locked=false)', () => {
-    const data = { ...baseResult().data, scope: { locked: false, teamId: null, teamName: null, teams: [{ id: 'te-red', name: 'Vermelha', color: 'red' }] } } as unknown as EnpsOverview;
+    const data = { ...baseResult().data, scope: { locked: false, teamId: null, teamName: null, teams: [{ id: 'te-red', name: 'Vermelha', color: 'red' }], corretores: [], corretorId: null } } as unknown as EnpsOverview;
     hookState.current = makeState({ data });
     render(<EnpsCorretoresSection tenantId="t1" />);
     expect(screen.getByRole('combobox')).toBeInTheDocument();
@@ -84,8 +92,31 @@ describe('EnpsCorretoresSection', () => {
     expect(screen.getByText(/todas as equipes/i)).toBeInTheDocument();
   });
 
+  it('mostra dropdown de corretores quando o servidor manda a lista', () => {
+    const data = { ...baseResult().data, scope: { locked: false, teamId: null, teamName: null, teams: [], corretores: [{ id: 'c1', name: 'Bruno' }], corretorId: null } } as unknown as EnpsOverview;
+    hookState.current = makeState({ data });
+    render(<EnpsCorretoresSection tenantId="t1" />);
+    expect(screen.getByLabelText(/corretor/i)).toBeInTheDocument();
+    expect(screen.getByText('Bruno')).toBeInTheDocument();
+    expect(screen.getByText(/todos os corretores/i)).toBeInTheDocument();
+  });
+
+  it('sem lista de corretores (corretor comum) não há filtro por pessoa', () => {
+    hookState.current = makeState();
+    render(<EnpsCorretoresSection tenantId="t1" />);
+    expect(screen.queryByLabelText(/corretor/i)).toBeNull();
+  });
+
+  it('ao filtrar um corretor, avisa que os comentários não são filtrados', () => {
+    const data = { ...baseResult().data, scope: { locked: false, teamId: null, teamName: null, teams: [], corretores: [{ id: 'c1', name: 'Bruno' }], corretorId: null } } as unknown as EnpsOverview;
+    hookState.current = makeState({ data });
+    render(<EnpsCorretoresSection tenantId="t1" />);
+    fireEvent.change(screen.getByLabelText(/corretor/i), { target: { value: 'c1' } });
+    expect(screen.getByText(/não são filtrados por corretor/i)).toBeInTheDocument();
+  });
+
   it('mostra chip travado (sem dropdown) para team_leader', () => {
-    const data = { ...baseResult().data, scope: { locked: true, teamId: 'te-red', teamName: 'Vermelha', teams: [] } } as unknown as EnpsOverview;
+    const data = { ...baseResult().data, scope: { locked: true, teamId: 'te-red', teamName: 'Vermelha', teams: [], corretores: [], corretorId: null } } as unknown as EnpsOverview;
     hookState.current = makeState({ data });
     render(<EnpsCorretoresSection tenantId="t1" />);
     expect(screen.queryByRole('combobox')).toBeNull();
