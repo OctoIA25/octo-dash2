@@ -38,7 +38,7 @@ import octoLogo from '@/assets/octodash-logo.png';
 interface SubItem {
   id: string;
   label: string;
-  icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
+  icon: React.ComponentType<{ className?: string; strokeWidth?: number | string }>;
   route: string;
   /**
    * Permissão própria do sub-item. Quando definida, o sub-item só aparece se o
@@ -51,7 +51,7 @@ interface SubItem {
 interface SidebarItem {
   id: string;
   label: string;
-  icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
+  icon: React.ComponentType<{ className?: string; strokeWidth?: number | string }>;
   route: string;
   permission: SidebarPermission;
   subItems?: SubItem[];
@@ -85,7 +85,17 @@ const GROUPS: SidebarGroup[] = [
           { id: 'cliente-proprietario', label: 'Cliente Proprietário', icon: Building2, route: '/metricas/cliente-proprietario' },
         ],
       },
-      { id: 'imoveis', label: 'Imóveis', icon: Building2, route: '/imoveis', permission: 'imoveis' },
+      {
+        id: 'imoveis',
+        label: 'Imóveis',
+        icon: Building2,
+        route: '/imoveis',
+        permission: 'imoveis',
+        subItems: [
+          { id: 'imoveis-catalogo', label: 'Catálogo', icon: Home, route: '/imoveis?tab=catalogo' },
+          { id: 'mapa-imoveis', label: 'Mapa de Imóveis', icon: MapPin, route: '/imoveis?tab=mapa-imoveis' },
+        ],
+      },
       { id: 'metas', label: 'Metas', icon: Target, route: '/metas', permission: 'metas' },
     ],
   },
