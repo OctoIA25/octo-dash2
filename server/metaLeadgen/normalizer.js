@@ -9,7 +9,11 @@
  * Meta são mapeados, o resto é preservado. Formulário novo com pergunta nova
  * não quebra a integração.
  */
-const STANDARD = new Set(['full_name', 'email', 'phone_number']);
+// Duas chaves para telefone porque a Meta usa as duas: a documentação diz
+// `phone_number`, mas os formulários da Japi Lançamentos emitem `phone` (visto
+// em lead real de produção). Aceitar só uma deixa o telefone vazio — e sem
+// telefone a Lia não dispara, que é o ponto do fluxo.
+const STANDARD = new Set(['full_name', 'email', 'phone_number', 'phone']);
 
 // Standard fields always scalar (first value only): name/email/phone are single-value by nature.
 function firstValue(v) {
@@ -38,7 +42,7 @@ export function normalizeLeadgen(lead = {}, ctx = {}) {
   return {
     name: firstValue(allFields.full_name),
     email: firstValue(allFields.email),
-    phone: firstValue(allFields.phone_number),
+    phone: firstValue(allFields.phone_number ?? allFields.phone),
     // `portal`, não `source`: a rota faz `source: portal || 'API'`. Mandar
     // `source` seria silenciosamente ignorado e todo lead viraria origem "API".
     portal: lead.platform === 'ig' ? 'Instagram' : 'Facebook',

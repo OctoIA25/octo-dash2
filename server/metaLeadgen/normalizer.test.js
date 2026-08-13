@@ -160,4 +160,39 @@ describe('normalizeLeadgen', () => {
     const p = normalizeLeadgen(lead({ id: 'do-graph' }), { ...CTX, leadgenId: 'do-evento' });
     expect(p.raw_data.meta.leadgen_id).toBe('do-evento');
   });
+
+  // field_data real da Página Imobiliária Japi Lançamentos (942752912259386):
+  // a chave é `phone`, não o `phone_number` da documentação. Lia com telefone
+  // vazio foi o sintoma.
+  describe('telefone com a chave `phone`', () => {
+    const comPhone = lead({
+      field_data: [
+        { name: 'full_name', values: ['Ronaldo Souza'] },
+        { name: 'phone', values: ['+5511999998888'] },
+        { name: 'email', values: ['ronaldo@exemplo.com'] },
+      ],
+    });
+
+    it('mapeia para phone', () => {
+      expect(normalizeLeadgen(comPhone, CTX).phone).toBe('+5511999998888');
+    });
+
+    it('não vaza para message como se fosse pergunta customizada', () => {
+      expect(normalizeLeadgen(comPhone, CTX).message).toBeNull();
+    });
+
+    it('phone_number continua funcionando', () => {
+      expect(normalizeLeadgen(lead(), CTX).phone).toBe('+5511999998888');
+    });
+
+    it('phone_number vence quando os dois vêm', () => {
+      const ambos = lead({
+        field_data: [
+          { name: 'phone_number', values: ['+5511111111111'] },
+          { name: 'phone', values: ['+5522222222222'] },
+        ],
+      });
+      expect(normalizeLeadgen(ambos, CTX).phone).toBe('+5511111111111');
+    });
+  });
 });
