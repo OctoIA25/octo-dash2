@@ -985,6 +985,14 @@ const getZapListingEligibility = (imovel) => {
     reasons.push('missing_codigo_imovel');
   }
 
+  // O VRSync exige CEP: sem ele a ZAP recusa o anúncio inteiro ("CEP vazio" no
+  // painel) e do nosso lado não aparecia nada — o feed emitia <Location> sem
+  // <PostalCode> e a falha só existia lá. Melhor sair do feed com motivo visível
+  // no /debug do que ser recusado silenciosamente no portal.
+  if (!normalizeFeedText(imovel.cep)) {
+    reasons.push('missing_cep');
+  }
+
   // "Anunciar = Não" no formulário. `=== false` de propósito: linha antiga sem
   // a coluna carregada não deve sumir do feed por omissão.
   if (imovel.publicar_site === false) {
