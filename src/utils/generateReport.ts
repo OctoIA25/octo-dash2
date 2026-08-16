@@ -26,6 +26,8 @@ interface ReportData {
   nomeCliente: string;
   enderecoImovel: string;
   observacoes: string;
+  /** Nome da imobiliária (tenant) exibido no cabeçalho do relatório. */
+  tenantNome?: string;
   mediaPorM2: number;
   valorBase: number;
   valorMercado: number;
@@ -47,6 +49,9 @@ const formatCurrency = (value: number): string => {
     maximumFractionDigits: 0,
   }).format(value);
 };
+
+const escapeHtml = (value: string): string =>
+  value.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string));
 
 const getDataAtual = (): string => {
   return new Intl.DateTimeFormat('pt-BR', {
@@ -154,7 +159,6 @@ export function generateReport(data: ReportData, options?: { skipDownload?: bool
     .header{background:var(--bg-primary);border-bottom:1px solid var(--border-light);padding:1rem 0}
     .header-content{max-width:1200px;margin:0 auto;padding:0 2rem;display:flex;align-items:center;justify-content:space-between}
     .logo{display:flex;align-items:center;gap:.5rem;font-weight:600;font-size:1.1rem}
-    .logo img{height:40px;width:auto}
     .container{max-width:1200px;margin:0 auto;padding:0 2rem}
     .page-title-section{background:var(--bg-secondary);padding:3rem 0;text-align:center;border-bottom:1px solid var(--border-light)}
     .page-title{font-size:2.5rem;font-weight:700;margin-bottom:.5rem}
@@ -208,10 +212,7 @@ export function generateReport(data: ReportData, options?: { skipDownload?: bool
 <body>
   <header class="header">
     <div class="header-content">
-      <div class="logo">
-        <img src="https://i.ibb.co/qLX974Kp/Gemini-Generated-Image-wa2p93wa2p93wa2p.png" alt="Imobiliária Japi" />
-        Imobiliária Japi
-      </div>
+      <div class="logo">${escapeHtml(data.tenantNome || 'Avaliação Imobiliária')}</div>
       <nav style="display:flex;gap:2rem;">
         <a href="#resumo" style="color:var(--text-secondary);text-decoration:none;font-weight:500;">Resumo</a>
         <a href="#comparaveis" style="color:var(--text-secondary);text-decoration:none;font-weight:500;">Comparáveis</a>

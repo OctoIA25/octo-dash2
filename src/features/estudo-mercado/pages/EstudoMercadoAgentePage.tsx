@@ -7,7 +7,7 @@
  * 2. Ao selecionar, abre tela split: Preview (esquerda) + Edição acordeão (direita)
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuthContext } from '@/contexts/AuthContext';
 import {
   listarEstudos,
@@ -186,6 +186,54 @@ export const EstudoMercadoAgentePage = () => {
     setLoading(false);
   };
 
+  // HTML do relatório sempre regerado a partir do estado atual. O `relatorio_html`
+  // salvo pode ser antigo (ex.: gerado com o cabeçalho fixo de outra imobiliária);
+  // só serve de fallback quando não há amostra válida para regerar.
+  const relatorioHtml = useMemo(() => {
+    if (!estudo) return '';
+    const temAmostraValida = amostras.some(a => a.valor_total > 0 && a.metragem > 0);
+    if (!temAmostraValida) return estudo.relatorio_html || '';
+
+    const mediaPorM2 = amostras.length > 0
+      ? amostras.reduce((sum, a) => sum + (a.metragem > 0 ? a.valor_total / a.metragem : 0), 0) / (amostras.filter(a => a.metragem > 0).length || 1)
+      : estudo.media_por_m2;
+    const valorBase = mediaPorM2 * metragemImovel;
+    const valorMercado = valorBase * (1 + correcaoMercado / 100);
+    const valorExclusividade = valorMercado * (1 + margemExclusividade / 100);
+
+    return generateReport({
+      amostras: amostras.map(a => ({
+        link: a.link || '',
+        valorTotal: a.valor_total,
+        metragem: a.metragem,
+        estado: a.estado || '',
+        cidade: a.cidade || '',
+        bairro: a.bairro || '',
+        condominio: a.condominio || '',
+        rua: a.rua || '',
+        imagem: a.imagem_url || undefined,
+        imagemZapImoveis: a.imagem_zap_imoveis || undefined,
+        diferenciais: a.diferenciais || undefined,
+        tipo: a.tipo || undefined,
+      })),
+      metragemImovel,
+      correcaoMercado,
+      margemExclusividade,
+      nomeCliente,
+      enderecoImovel,
+      observacoes,
+      tenantNome: user?.tenantName,
+      mediaPorM2,
+      valorBase,
+      valorMercado,
+      valorExclusividade,
+      corretorNome,
+      corretorEmail: estudo.corretor_email || '',
+      corretorTelefone: telefoneCliente,
+    }, { skipDownload: true });
+  }, [estudo, amostras, metragemImovel, correcaoMercado, margemExclusividade,
+      nomeCliente, enderecoImovel, observacoes, corretorNome, telefoneCliente, user?.tenantName]);
+
   // Salvar alterações
   const handleSave = async () => {
     if (!estudo || !tenantId) return;
@@ -216,7 +264,7 @@ export const EstudoMercadoAgentePage = () => {
       valorMercado,
       valorExclusividade,
       valorFinal: valorExclusividade > 0 ? valorExclusividade : valorMercado,
-      relatorioHtml: estudo.relatorio_html,
+      relatorioHtml,
       status: estudo.status,
       amostras: amostras.map((a, i) => ({
         ordem: i + 1,
@@ -246,48 +294,9 @@ export const EstudoMercadoAgentePage = () => {
 
   // Baixar relatório com alterações
   const handleDownload = () => {
-    if (!estudo) return;
+    if (!relatorioHtml) return;
 
-    const mediaPorM2 = amostras.length > 0
-      ? amostras.reduce((sum, a) => sum + (a.metragem > 0 ? a.valor_total / a.metragem : 0), 0) / (amostras.filter(a => a.metragem > 0).length || 1)
-      : estudo.media_por_m2;
-    const valorBase = mediaPorM2 * metragemImovel;
-    const valorMercado = valorBase * (1 + correcaoMercado / 100);
-    const valorExclusividade = valorMercado * (1 + margemExclusividade / 100);
-
-    const html = generateReport({
-      amostras: amostras.map(a => ({
-        link: a.link || '',
-        valorTotal: a.valor_total,
-        metragem: a.metragem,
-        estado: a.estado || '',
-        cidade: a.cidade || '',
-        bairro: a.bairro || '',
-        condominio: a.condominio || '',
-        rua: a.rua || '',
-        imagem: a.imagem_url || undefined,
-        imagemZapImoveis: a.imagem_zap_imoveis || undefined,
-        diferenciais: a.diferenciais || undefined,
-        tipo: a.tipo || undefined,
-      })),
-      metragemImovel,
-      correcaoMercado,
-      margemExclusividade,
-      nomeCliente,
-      enderecoImovel,
-      observacoes,
-      mediaPorM2,
-      valorBase,
-      valorMercado,
-      valorExclusividade,
-      corretorNome,
-      corretorEmail: estudo.corretor_email || '',
-      corretorTelefone: telefoneCliente,
-    }, { skipDownload: true });
-
-    if (!html) return;
-
-    const blob = new Blob([html], { type: 'text/html' });
+    const blob = new Blob([relatorioHtml], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -694,10 +703,10 @@ export const EstudoMercadoAgentePage = () => {
             <p className="text-xs font-bold text-gray-500 dark:text-slate-400 uppercase tracking-wider">Pré-visualização</p>
           </div>
           <div className="flex-1 overflow-hidden">
-            {estudo?.relatorio_html ? (
+            {relatorioHtml ? (
               <iframe
                 ref={iframeRef}
-                srcDoc={estudo.relatorio_html}
+                srcDoc={relatorioHtml}
                 className="w-full h-full border-0"
                 title="Preview do relatório"
                 sandbox="allow-same-origin"

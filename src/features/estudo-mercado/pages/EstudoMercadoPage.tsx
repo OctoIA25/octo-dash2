@@ -1212,6 +1212,7 @@ export const EstudoMercadoPage = () => {
                   nomeCliente: dadosCliente.nomeCliente,
                   enderecoImovel: dadosCliente.enderecoImovel,
                   observacoes: dadosCliente.observacoes,
+                  tenantNome: user?.tenantName,
                   mediaPorM2: calculos.mediaPorM2,
                   valorBase: calculos.valorBase,
                   valorMercado: calculos.valorMercado,
