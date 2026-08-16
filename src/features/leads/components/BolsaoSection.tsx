@@ -1800,7 +1800,7 @@ const BolsaoSectionContent = (props: BolsaoSectionProps) => {
                       {lead.atendido ? '✅ Sim' : '❌ Não'}
             </Badge>
                   </td>
-                  
+
                   {/* Código Imóvel */}
                   <td className="px-4 py-4">
                     {lead.codigo ? (

@@ -32,6 +32,10 @@ export interface BolsaoLead {
   Foto: string | null;                // 🆕 URL da foto do lead
   portal: string | null;              // 🆕 Portal de origem (OLX, ZAP, etc)
   is_exclusive?: boolean | null;
+  classification?: string | null;
+  /** Já vêm do select('*'); faltavam na interface. Necessários para escrever na tabela FONTE. */
+  source_lead_id?: string | null;
+  source_kenlo_id?: string | null;
 }
 
 const BOLSAO_TABLE = 'bolsao'; // Nome da tabela (sem acento)

@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Phone, Building2, Clock, User, Maximize2, CheckCircle, Loader2, MessageCircle, Hand } from 'lucide-react';
 import { BolsaoLead } from '@/features/leads/services/bolsaoService';
+import { ClassificacaoBadge } from '@/features/leads/components/ClassificacaoBadge';
 
 interface LeadMiniCardProps {
   lead: BolsaoLead;
@@ -132,7 +133,12 @@ export const LeadMiniCard = ({
               <h3 className="font-bold text-base text-foreground truncate mb-1">
                 {lead.nomedolead || 'Lead sem nome'}
               </h3>
-              
+
+              {/* Classificação */}
+              <div className="mb-1">
+                <ClassificacaoBadge tipo={lead.classification} />
+              </div>
+
               {/* Número do Lead */}
               {lead.lead && (
                 <div className="flex items-center gap-1 mb-1">

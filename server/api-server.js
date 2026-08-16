@@ -11,6 +11,7 @@ import { createWatermarkRouter } from './watermark/routes.js';
 import { countLeadsPerBroker } from './brokerLeadStats.js';
 import { createWorker } from './watermark/worker.js';
 import { createZapConfigResolver, registerZapRoutes, extractZapPhotoUrls } from './zap/index.js';
+import { handleClassificationPatch } from './leadClassification.js';
 
 const app = express();
 const PORT = process.env.API_PORT || 3001;
@@ -2156,6 +2157,11 @@ app.patch('/api/v1/leads/:id/temperature', validateApiKey, async (req, res) => {
     });
   }
 });
+
+// PATCH /api/v1/leads/:id/classification - Classificar lead (contrato da Lia)
+// Handler compartilhado em leadClassification.js — ver lá para o porquê.
+app.patch('/api/v1/leads/:id/classification', validateApiKey, (req, res) =>
+  handleClassificationPatch(req, res, supabase));
 
 // PATCH /api/v1/leads/:id/agent - Atribuir corretor
 app.patch('/api/v1/leads/:id/agent', validateApiKey, async (req, res) => {

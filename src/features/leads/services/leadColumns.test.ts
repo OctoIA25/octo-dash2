@@ -7,7 +7,7 @@ import { KENLO_LEAD_COLUMNS_FOR_METRICS, LEADS_COLUMNS_FOR_METRICS } from './lea
  * Risco protegido: como a leitura deixou de ser `select('*')`, se a projeção divergir das colunas
  * que `kenloLeadToCRMLead` lê, o campo faltante volta como `undefined` SILENCIOSAMENTE (sem erro).
  *
- * A lista abaixo é a fonte da verdade explícita: exatamente as 17 colunas que o mapper consome
+ * A lista abaixo é a fonte da verdade explícita: exatamente as 18 colunas que o mapper consome
  * (verificadas 1:1 contra kenloLeadToCRMLead). Se o mapper passar a ler uma coluna nova, este teste
  * quebra até que a coluna seja adicionada aqui E na constante — forçando os dois a andarem juntos.
  */
@@ -29,6 +29,7 @@ const EXPECTED_KENLO_COLUMNS = [
   'created_at',
   'updated_at',
   'first_response_at',
+  'classification',
 ];
 
 const parseColumns = (projection: string): string[] =>
@@ -81,6 +82,7 @@ const EXPECTED_LEADS_COLUMNS = [
   'final_sale_value',
   'lead_type',
   'created_at',
+  'classification',
 ];
 
 describe('LEADS_COLUMNS_FOR_METRICS', () => {

@@ -492,6 +492,32 @@ const N8N_WORKFLOW_JSON = {
     {
       "parameters": {
         "method": "PATCH",
+        "url": "https://octodash.octoia.org/api/v1/leads/{{$json.lead_id}}/classification",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer octo_sk_your_api_key" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "classification", "value": "locacao" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "leads-change-classification",
+      "name": "PATCH Classificar Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 680]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
         "url": "https://octodash.octoia.org/api/v1/leads/{{$json.lead_id}}/agent",
         "authentication": "none",
         "sendHeaders": true,
@@ -1760,6 +1786,7 @@ export const ApiDocsPage: React.FC = () => {
             { method: 'PATCH', path: '/leads/:id/stage', desc: 'Alterar etapa do funil', body: '{"stage": 4}' },
             { method: 'PATCH', path: '/leads/:id/temperature', desc: 'Alterar temperatura', body: '{"temperature": 3}' },
             { method: 'PATCH', path: '/leads/:id/broker', desc: 'Atribuir corretor', body: '{"broker_id": "uuid"}' },
+            { method: 'PATCH', path: '/leads/:id/classification', desc: 'Classificar lead', body: '{"classification": "locacao"}' },
           ].map((endpoint, idx) => (
             <div key={idx} className="flex items-center gap-4 p-3 bg-gray-900/50 rounded-lg">
               <MethodBadge method={endpoint.method} />
@@ -1769,6 +1796,17 @@ export const ApiDocsPage: React.FC = () => {
           ))}
         </div>
       </div>
+
+      <InfoCard icon={Tag} title="Classificação do lead" variant="info">
+        Valores aceitos: <code className="text-xs bg-gray-900/50 px-1 rounded">lancamento</code>,{' '}
+        <code className="text-xs bg-gray-900/50 px-1 rounded">pronto</code>,{' '}
+        <code className="text-xs bg-gray-900/50 px-1 rounded">locacao</code> ou{' '}
+        <code className="text-xs bg-gray-900/50 px-1 rounded">indefinido</code>. Sinônimos também são aceitos
+        (ex.: "lançamento", "prontos", "aluguel", "alugados", "rent") e resolvidos automaticamente para um
+        dos quatro valores acima.<br/>
+        A origem da classificação é definida pela própria API Key — enviar um campo <code className="text-xs bg-gray-900/50 px-1 rounded">source</code> no
+        corpo da requisição não tem nenhum efeito.
+      </InfoCard>
     </div>
   );
 

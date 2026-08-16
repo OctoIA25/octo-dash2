@@ -30,6 +30,7 @@ import {
   SelectSeparator,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { ClassificacaoBadge } from "./ClassificacaoBadge";
 
 // 📋 Consulte context.md para: estrutura do Supabase, campos de leads, cores de status
 interface LeadsTableProps {
@@ -409,6 +410,7 @@ export const LeadsTable = ({ leads, newLeadsCount = 0, showGetAllButton = false,
               <th className="text-center py-5 px-5 text-gray-300 text-sm font-bold tracking-wider uppercase">Tipo</th>
               <th className="text-center py-5 px-5 text-gray-300 text-sm font-bold tracking-wider uppercase">Temperatura</th>
               <th className="text-center py-5 px-5 text-gray-300 text-sm font-bold tracking-wider uppercase">Finalidade</th>
+              <th className="text-center py-5 px-5 text-gray-300 text-sm font-bold tracking-wider uppercase">Classificação</th>
               <th className="text-center py-5 px-5 text-gray-300 text-sm font-bold tracking-wider uppercase">Imóvel</th>
               <th className="text-right py-5 px-6 text-gray-300 text-sm font-bold tracking-wider uppercase">Valor</th>
               <th className="text-center py-5 px-5 text-gray-300 text-sm font-bold tracking-wider uppercase">Visita</th>
@@ -480,7 +482,14 @@ export const LeadsTable = ({ leads, newLeadsCount = 0, showGetAllButton = false,
                       {getTipoBadge(lead.tipo_negocio)}
                     </div>
                   </td>
-                  
+
+                  {/* Classificação */}
+                  <td className="py-4 px-4 text-center">
+                    <div className="flex justify-center">
+                      <ClassificacaoBadge tipo={lead.classification} />
+                    </div>
+                  </td>
+
                   {/* Imóvel */}
                   <td className="py-4 px-4 text-center">
                     {getValidPropertyCode(lead.codigo_imovel) ? (

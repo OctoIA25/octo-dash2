@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { useDebounce } from '../hooks/useDebounce';
 import { LeadDetailsModal } from './LeadDetailsModal';
+import { ClassificacaoBadge } from './ClassificacaoBadge';
 import {
   Select,
   SelectContent,
@@ -419,6 +420,7 @@ export const KanbanCardContent = memo(({ lead, onClick, mostrarCorretor, isOverl
               {lead.temperature}
             </Badge>
           )}
+          <ClassificacaoBadge tipo={lead.classification} className="text-[9px] px-1 py-0 h-4" />
           {dataFmt && (
             <span className="text-[10px] text-slate-500 dark:text-slate-400 tabular-nums">
               {dataFmt}

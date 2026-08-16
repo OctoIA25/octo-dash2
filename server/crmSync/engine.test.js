@@ -6,7 +6,17 @@
  * real) — aqui só o que é do contrato.
  */
 import { describe, it, expect, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import { createCrmSyncEngine } from './engine.js';
+
+// O ambiente de teste deste projeto é jsdom (vite.config.ts), que substitui o
+// URL global por uma implementação própria: `new URL(rel, import.meta.url)`
+// resolve contra o location fake do jsdom (http://localhost:.../) em vez do
+// file:// real, e o readFileSync rejeita o resultado. Mesmo desvio de
+// leadClassificationTriggers.test.js: sair pelo fileURLToPath (Node, não jsdom).
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function stubProvider({ pages, commitPage }) {
   return {
@@ -90,5 +100,22 @@ describe('crmSync engine — contrato commitPage', () => {
     });
     const stats = await engine.syncTenant({ tenant_id: 't1' }, { syncMode: 'LIVE' });
     expect(stats.saved).toBe(1);
+  });
+});
+
+describe('classificação é coluna LOCAL — o sync não pode encostar', () => {
+  it('a linha de UPDATE é só chave de conflito + patch do provider', () => {
+    const src = readFileSync(path.join(__dirname, './engine.js'), 'utf8');
+    // Se isto mudar para espalhar `prev` ou `row`, classification (e temperature,
+    // e archived_at) passam a ser reescritas a cada sync.
+    expect(src).toMatch(/updates\.push\(\{ tenant_id: tenantId, external_id: prev\.external_id, \.\.\.patch \}\)/);
+    expect(src).not.toMatch(/updates\.push\(\{[^}]*\.\.\.prev/);
+  });
+
+  it('nenhum normalizer emite classification — ela só nasce no trigger', () => {
+    for (const f of ['../kenlo/leadNormalizer.js', '../contact2sale/c2sNormalizer.js']) {
+      const src = readFileSync(path.join(__dirname, f), 'utf8');
+      expect(src).not.toContain('classification');
+    }
   });
 });

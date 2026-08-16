@@ -14,13 +14,17 @@
 /**
  * Colunas de `kenlo_leads` lidas por `kenloLeadToCRMLead` (leadsMetricsService).
  *
- * São exatamente as 17 colunas distintas que o mapper consome. Manter em sincronia com o mapper —
+ * São exatamente as 18 colunas distintas que o mapper consome. Manter em sincronia com o mapper —
  * o teste `leadColumns.test.ts` falha se divergirem.
+ *
+ * `classification` NÃO é "por via das dúvidas": consumidor real é `LeadsTable.tsx:489`
+ * (`<ClassificacaoBadge tipo={lead.classification} />`), alimentado por `ProcessedLead.classification`,
+ * que `crmLeadToProcessedLead` só consegue preencher se o mapper abaixo ler a coluna.
  */
 export const KENLO_LEAD_COLUMNS_FOR_METRICS =
   'id, tenant_id, client_name, client_phone, client_email, portal, external_id, ' +
   'stage, temperature, interest_reference, interest_is_rent, interest_is_sale, ' +
-  'attended_by_name, message, created_at, updated_at, first_response_at';
+  'attended_by_name, message, created_at, updated_at, first_response_at, classification';
 
 /**
  * Colunas de `public.leads` (schema do CRM) lidas pelos consumidores de `fetchLeadsForMetrics`:
@@ -31,8 +35,11 @@ export const KENLO_LEAD_COLUMNS_FOR_METRICS =
  * Cada coluna existe em `public.leads` (verificado contra a projeção já em produção em
  * leadsService.ts e a migration 20260204_add_lead_type_to_leads). O teste falha se divergir dos
  * consumidores.
+ *
+ * `classification` (migration 20260815_add_lead_classification) NÃO é "por via das dúvidas": mesmo
+ * consumidor real do bloco acima, `LeadsTable.tsx:489`, via `crmLeadToProcessedLead`.
  */
 export const LEADS_COLUMNS_FOR_METRICS =
   'id, name, phone, source, source_lead_id, status, temperature, property_code, ' +
   'property_value, property_type, assigned_agent_id, assigned_agent_name, comments, ' +
-  'visit_date, closing_date, final_sale_value, lead_type, created_at';
+  'visit_date, closing_date, final_sale_value, lead_type, created_at, classification';

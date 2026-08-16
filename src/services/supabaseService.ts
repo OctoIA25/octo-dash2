@@ -105,6 +105,7 @@ interface KenloLeadRow {
   is_exclusive: boolean | null;
   archived_at: string | null;
   archive_reason: string | null;
+  classification: string | null;
 }
 
 interface CRMLeadRow {
@@ -127,10 +128,11 @@ interface CRMLeadRow {
   archived_at: string | null;
   archive_reason: string | null;
   created_at: string | null;
+  classification: string | null;
 }
 
 const KENLO_LEADS_COLUMNS =
-  'id,external_id,client_name,client_phone,client_email,lead_timestamp,created_at,portal,message,interest_reference,interest_type,interest_is_sale,interest_is_rent,attended_by_name,stage,temperature,is_exclusive,archived_at,archive_reason';
+  'id,external_id,client_name,client_phone,client_email,lead_timestamp,created_at,portal,message,interest_reference,interest_type,interest_is_sale,interest_is_rent,attended_by_name,stage,temperature,is_exclusive,archived_at,archive_reason,classification';
 
 // Nº de páginas buscadas em paralelo por vez. Manter baixo: cada página é uma query
 // com sort+offset no Postgres e isso roda POR USUÁRIO — com 6, a soma das abas
@@ -181,7 +183,7 @@ async function fetchCRMLeads(tenantId: string): Promise<CRMLeadRow[]> {
   const { data, error } = await supabase
     .from('leads')
     .select(
-      'id,source_lead_id,name,phone,email,source,status,temperature,property_code,property_value,property_type,assigned_agent_name,comments,visit_date,closing_date,final_sale_value,archived_at,archive_reason,created_at'
+      'id,source_lead_id,name,phone,email,source,status,temperature,property_code,property_value,property_type,assigned_agent_name,comments,visit_date,closing_date,final_sale_value,archived_at,archive_reason,created_at,classification'
     )
     .eq('tenant_id', tenantId);
   if (error) throw new Error(error.message);
@@ -234,6 +236,8 @@ function mapKenloToProcessed(row: KenloLeadRow, id: number, override?: CRMLeadRo
     Preferencias_lead: '',
     Imovel_visitado: '',
     Conversa: row.message ?? '',
+    // CRM (leads) tem prioridade sobre o Kenlo bruto, mesmo padrão dos demais campos acima.
+    classification: override?.classification ?? row.classification ?? null,
   };
 }
 
@@ -260,6 +264,7 @@ function mapCRMToProcessed(row: CRMLeadRow, id: number): ProcessedLead {
     Preferencias_lead: '',
     Imovel_visitado: '',
     Conversa: '',
+    classification: row.classification ?? null,
   };
 }
 

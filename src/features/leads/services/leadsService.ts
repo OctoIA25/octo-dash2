@@ -60,6 +60,11 @@ export interface CRMLead {
   created_at: string;
   updated_at: string;
   first_response_at?: string | null;
+  /**
+   * Opcional: só presente quando a projeção do SELECT inclui a coluna (nem toda
+   * leitura de CRMLead traz — ex.: leadsMetricsService não projeta este campo).
+   */
+  classification?: string | null;
 }
 
 /**
@@ -89,6 +94,11 @@ export interface KanbanLead {
   temperature: string | null;
   property_value: number | null;
   comments: string | null;
+  // Classificação (lancamento/pronto/locacao/indefinido) — vem pronta do banco
+  classification: string | null;
+  /** Origem real da linha — o modal escreve na tabela FONTE, nunca no espelho. */
+  source_lead_id: string | null;
+  source_kenlo_id: string | null;
   // Arquivamento
   archived_at: string | null;
   archive_reason: string | null;
@@ -114,9 +124,9 @@ const LEADS_TABLE = 'leads';
 // trazia campos gordos (em kenlo_leads, o raw_data JSONB = payload Kenlo inteiro por
 // lead) que o Kanban nunca lê e que dominavam o tempo de download.
 const LEADS_KANBAN_COLUMNS =
-  'id,created_at,updated_at,assigned_at,closing_date,property_code,property_value,assigned_agent_name,name,phone,email,source,status,temperature,comments,archived_at,archive_reason,lead_type,is_exclusive,participa_bolsao';
+  'id,created_at,updated_at,assigned_at,closing_date,property_code,property_value,assigned_agent_name,name,phone,email,source,status,temperature,comments,archived_at,archive_reason,lead_type,is_exclusive,participa_bolsao,classification';
 const KENLO_KANBAN_COLUMNS =
-  'id,client_name,client_phone,client_email,message,interest_reference,attended_by_name,is_exclusive,interest_type,interest_is_sale,interest_is_rent,stage,temperature,portal,lead_timestamp,archived_at,archive_reason,updated_at,created_at,tenant_id';
+  'id,client_name,client_phone,client_email,message,interest_reference,attended_by_name,is_exclusive,interest_type,interest_is_sale,interest_is_rent,stage,temperature,portal,lead_timestamp,archived_at,archive_reason,updated_at,created_at,tenant_id,classification';
 
 const KENLO_PAGE_SIZE = 1000;
 // Manter baixo: cada página é sort+offset no Postgres, por usuário — 6 em paralelo
@@ -227,6 +237,9 @@ export function mapKenloToKanbanLead(kl: Record<string, unknown>): KanbanLead {
     temperature: KENLO_TEMP_MAP[(kl.temperature as string) || 'cold'] || 'Frio',
     property_value: null,
     comments: (kl.message as string) || null,
+    classification: (kl.classification as string | null) ?? null,
+    source_lead_id: null,
+    source_kenlo_id: kl.id as string,
     archived_at: (kl.archived_at as string) || null,
     archive_reason: (kl.archive_reason as string) || null,
     // kenlo_leads vem sempre de portais → sempre interessado
@@ -360,6 +373,9 @@ export function mapToKanbanLead(lead: CRMLead): KanbanLead {
     temperature: lead.temperature,
     property_value: lead.property_value,
     comments: lead.comments,
+    classification: lead.classification ?? null,
+    source_lead_id: lead.id,
+    source_kenlo_id: null,
     archived_at: lead.archived_at,
     archive_reason: lead.archive_reason,
     lead_type: (lead.lead_type as LeadType) ?? LEAD_TYPE_INTERESSADO,
@@ -445,7 +461,7 @@ export async function fetchLeadsDoCorretorPorNome(
     // 1) leads (CRM)
     let crmQuery = supabase
       .from(LEADS_TABLE)
-      .select('id,tenant_id,name,phone,email,source,source_lead_id,status,temperature,property_id,property_code,property_value,property_type,assigned_agent_id,assigned_agent_name,comments,tags,custom_fields,visit_date,closing_date,final_sale_value,lead_type,is_exclusive,participa_bolsao,assigned_at,created_at,updated_at')
+      .select('id,tenant_id,name,phone,email,source,source_lead_id,status,temperature,property_id,property_code,property_value,property_type,assigned_agent_id,assigned_agent_name,comments,tags,custom_fields,visit_date,closing_date,final_sale_value,lead_type,is_exclusive,participa_bolsao,assigned_at,created_at,updated_at,classification')
       .ilike('assigned_agent_name', nomeCorretor)
       .is('archived_at', null)
       .order('created_at', { ascending: false });

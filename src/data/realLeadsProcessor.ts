@@ -322,6 +322,8 @@ export interface ProcessedLead {
   Preferencias_lead: string;
   Imovel_visitado: string;
   Conversa: string;
+  /** lancamento|pronto|locacao|indefinido. Opcional: nem toda fonte de ProcessedLead projeta esta coluna. */
+  classification?: string | null;
 }
 
 /**

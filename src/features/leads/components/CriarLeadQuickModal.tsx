@@ -6,9 +6,10 @@
 
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Plus, Save, User as UserIcon, Phone, Mail, Home, Loader2, Thermometer, Inbox } from 'lucide-react';
+import { X, Plus, Save, User as UserIcon, Phone, Mail, Home, Loader2, Thermometer, Inbox, Tag } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { leadsEventEmitter } from '@/lib/leadsEventEmitter';
+import { CLASSIFICACAO_ESTILOS, CLASSIFICACAO_ORDEM } from './ClassificacaoBadge';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthContext } from '@/contexts/AuthContext';
 import {
@@ -38,6 +39,8 @@ interface LeadForm {
   message: string;
   temperature: string;
   participa_bolsao: boolean;
+  /** Só editável em modo edição — no INSERT o trigger sobrescreve. */
+  classification: string;
 }
 
 const EMPTY_FORM: LeadForm = {
@@ -47,7 +50,8 @@ const EMPTY_FORM: LeadForm = {
   interest_reference: '',
   message: '',
   temperature: 'Frio',
-  participa_bolsao: true
+  participa_bolsao: true,
+  classification: 'indefinido',
 };
 
 const TEMPERATURES = ['Quente', 'Morno', 'Frio'];
@@ -60,6 +64,7 @@ const leadToForm = (lead: KanbanLead): LeadForm => ({
   message: lead.comments ?? '',
   temperature: lead.temperature ?? 'Frio',
   participa_bolsao: (lead as { participa_bolsao?: boolean }).participa_bolsao ?? true,
+  classification: lead.classification ?? 'indefinido',
 });
 
 export const CriarLeadQuickModal = ({
@@ -138,6 +143,10 @@ export const CriarLeadQuickModal = ({
           comments: form.message.trim() || null,
           temperature: form.temperature,
           participa_bolsao: form.participa_bolsao,
+          // A ORIGEM NÃO VAI DAQUI: o trigger tg_classification_source_guard carimba
+          // 'dashboard' sozinho. Mandar classification_source do cliente seria o
+          // buraco que esta feature existe para fechar.
+          classification: form.classification,
           updated_at: new Date().toISOString(),
         };
 
@@ -158,6 +167,7 @@ export const CriarLeadQuickModal = ({
             message: form.message.trim() || null,
             temperature:
               form.temperature === 'Quente' ? 'hot' : form.temperature === 'Morno' ? 'warm' : 'cold',
+            classification: form.classification,
             updated_at: new Date().toISOString(),
           };
           const { error: kenloError } = await supabase
@@ -341,6 +351,40 @@ export const CriarLeadQuickModal = ({
                 </div>
               </div>
             </div>
+
+            {/* Classificação — SÓ em edição.
+                No INSERT o trigger `tg_*_classificar` sobrescreve `classification`
+                incondicionalmente e carimba 'automatic', então um controle na criação
+                deixaria o usuário escolher algo que o banco descarta em silêncio.
+                A origem também não sai daqui: quem carimba é o trigger. */}
+            {isEditMode && (
+              <div className="mt-4">
+                <label className="flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
+                  <Tag className="w-4 h-4 text-slate-400" />
+                  Classificação
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {CLASSIFICACAO_ORDEM.map((tipo) => {
+                    const active = form.classification === tipo;
+                    return (
+                      <button
+                        key={tipo}
+                        type="button"
+                        onClick={() => setForm((f) => ({ ...f, classification: tipo }))}
+                        disabled={!canEdit}
+                        className={`flex-1 min-w-[6.5rem] py-2 text-xs font-semibold rounded-lg border transition-all disabled:opacity-60 disabled:cursor-not-allowed ${
+                          active
+                            ? CLASSIFICACAO_ESTILOS[tipo].className
+                            : 'bg-white dark:bg-slate-900 border-slate-200 text-slate-500 dark:border-slate-700'
+                        }`}
+                      >
+                        {CLASSIFICACAO_ESTILOS[tipo].label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Seção: Observação */}
             <SectionTitle>Observação</SectionTitle>

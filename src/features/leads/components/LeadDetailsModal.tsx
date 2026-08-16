@@ -17,6 +17,13 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { 
   Phone, 
@@ -41,9 +48,11 @@ import {
   Flag,
   ClipboardList,
   Archive,
-  Sparkles
+  Sparkles,
+  Tag
 } from 'lucide-react';
 import { BolsaoLead } from '../services/bolsaoService';
+import { ClassificacaoBadge, CLASSIFICACAO_ESTILOS, CLASSIFICACAO_ORDEM } from './ClassificacaoBadge';
 import { EnviarRecomendacoesModal } from '@/features/recommendations/components/EnviarRecomendacoesModal';
 import { bolsaoLeadToRecommendationInput } from '@/features/recommendations/adapters';
 import { Imovel, fetchImovelByCodigo } from '@/features/imoveis/services/kenloService';
@@ -103,7 +112,14 @@ export const LeadDetailsModal = ({
   const [imovel, setImovel] = useState<Imovel | null>(null);
   const [carregandoImovel, setCarregandoImovel] = useState(false);
   const [recomendacoesOpen, setRecomendacoesOpen] = useState(false);
-  
+
+  // Classificação do lead — estado local otimista. O espelho (bolsao) é atualizado
+  // pelo trigger tr_*_classification_to_bolsao; a listagem pega no próximo carregarLeads.
+  const [classificacao, setClassificacao] = useState<string>(lead?.classification ?? 'indefinido');
+  useEffect(() => {
+    setClassificacao(lead?.classification ?? 'indefinido');
+  }, [lead?.id, lead?.classification]);
+
   // Estados para atividades
   const [criarAtividadeOpen, setCriarAtividadeOpen] = useState(false);
   const [atividades, setAtividades] = useState<Atividade[]>([]);
@@ -545,6 +561,66 @@ export const LeadDetailsModal = ({
               <p className={`text-lg font-bold ${urgencia.texto}`}>
                 {tempo}
               </p>
+            </div>
+
+            {/* Classificação */}
+            <div className="bg-muted/50 p-4 rounded-lg">
+              <div className="flex items-center gap-2 mb-2">
+                <Tag className="h-5 w-5 text-violet-500" />
+                <span className="font-bold text-sm text-muted-foreground">Classificação</span>
+              </div>
+              <div className="flex items-center gap-3 flex-wrap">
+                <ClassificacaoBadge tipo={classificacao} />
+                <Select
+                  value={classificacao}
+                  onValueChange={async (valor) => {
+                    if (!lead || !tenantId || tenantId === 'owner') return;
+                    const anterior = classificacao;
+                    setClassificacao(valor);                       // otimista
+                    // A linha do bolsão é espelho: a escrita vai na FONTE, pelo id de origem.
+                    const [tabela, coluna] = lead.source_kenlo_id
+                      ? ['kenlo_leads', lead.source_kenlo_id]
+                      : ['leads', lead.source_lead_id];
+                    if (!coluna) {
+                      toast({
+                        title: 'Lead sem origem',
+                        description: 'Linha antiga do bolsão, anterior ao espelhamento.',
+                        variant: 'destructive',
+                      });
+                      setClassificacao(anterior);
+                      return;
+                    }
+                    const { error } = await supabase
+                      .from(tabela)
+                      .update({ classification: valor })           // source é carimbado por trigger
+                      .eq('id', coluna)
+                      .eq('tenant_id', tenantId)
+                      // .select().single() é o guard: um UPDATE que não casa nenhuma linha
+                      // (ex.: coluna aponta pra tabela errada) devolve sucesso silencioso sem
+                      // isto — 0 linhas afetadas não é erro pro Postgres/PostgREST. Com
+                      // .single(), 0 (ou >1) linhas vira `error`, cai no catch abaixo.
+                      .select()
+                      .single();
+                    if (error) {
+                      setClassificacao(anterior);                  // desfaz o otimismo
+                      toast({ title: 'Erro ao classificar', description: error.message, variant: 'destructive' });
+                    }
+                  }}
+                >
+                  <SelectTrigger className="w-48" data-testid="select-classificacao">
+                    <SelectValue placeholder="Classificação" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {/* Rótulos vêm do vocabulário compartilhado — não repetir aqui,
+                        senão vira uma cópia que diverge do CHECK do banco em silêncio. */}
+                    {CLASSIFICACAO_ORDEM.map((tipo) => (
+                      <SelectItem key={tipo} value={tipo}>
+                        {CLASSIFICACAO_ESTILOS[tipo].label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
 

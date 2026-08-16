@@ -77,6 +77,7 @@ function kenloLeadToCRMLead(kenloLead: Record<string, unknown>): CRMLead {
     created_at: (kenloLead.created_at as string) || new Date().toISOString(),
     updated_at: (kenloLead.updated_at as string) || new Date().toISOString(),
     first_response_at: (kenloLead.first_response_at as string) || null,
+    classification: (kenloLead.classification as string | null) ?? null,
   };
 }
 
@@ -552,7 +553,10 @@ export function crmLeadToProcessedLead(crmLead: Partial<CRMLead>, index: number 
     Imovel_visitado: crmLead.visit_date ? 'Sim' : 'Não',
     observacoes: crmLead.comments || '',
     Preferencias_lead: '',
-    Conversa: ''
+    Conversa: '',
+    // Consumida por LeadsTable.tsx:489 (<ClassificacaoBadge tipo={lead.classification} />).
+    // Só chega preenchida se a projeção do SELECT incluir a coluna — ver leadColumns.ts.
+    classification: crmLead.classification ?? null
   };
 }
 

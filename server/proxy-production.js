@@ -35,6 +35,7 @@ import { computeNextAttempt, MAX_WEBHOOK_ATTEMPTS } from './webhookRetry.js';
 import { getDeletedTenantIds } from './utils/tenantSoftDelete.js';
 import { createLeadAssignment } from './leadAssignment.js';
 import { countLeadsPerBroker, fetchBrokerLeadStats } from './brokerLeadStats.js';
+import { handleClassificationPatch } from './leadClassification.js';
 
 // Timeout do fetch de webhooks de saída (evita que um endpoint lento trave o loop de polling).
 const WEBHOOK_FETCH_TIMEOUT_MS = 10000;
@@ -3897,6 +3898,11 @@ app.patch('/api/v1/leads/:id/temperature', validateApiKey, async (req, res) => {
     });
   }
 });
+
+// PATCH /api/v1/leads/:id/classification - Classificar lead (contrato da Lia)
+// Handler compartilhado em leadClassification.js — ver lá para o porquê.
+app.patch('/api/v1/leads/:id/classification', validateApiKey, (req, res) =>
+  handleClassificationPatch(req, res, supabase));
 
 // ============================================
 // API v1 - AI KANBAN (endpoint unificado p/ agentes de IA)
