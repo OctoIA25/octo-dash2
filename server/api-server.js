@@ -4104,7 +4104,7 @@ registerScrapeRoute(app, supabase);
 // WHATSAPP - Chat (Meta Cloud API)
 // ============================================
 import { registerWhatsappRoutes } from './whatsapp/index.js';
-registerWhatsappRoutes(app, supabase);
+registerWhatsappRoutes(app, supabase, { validateApiKey });
 
 // ============================================
 // RECOMENDAÇÕES DE IMÓVEIS — envio por e-mail + histórico

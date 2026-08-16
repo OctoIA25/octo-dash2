@@ -88,12 +88,22 @@ export async function getWhatsappConfig(tenantId: string): Promise<WhatsappConfi
   return (data as unknown as WhatsappConfig) ?? null;
 }
 
+/** Conversa existe no tenant mas não é visível para este usuário (RLS 20260816). */
+export const CONVERSA_NAO_ATRIBUIDA = 'CONVERSA_NAO_ATRIBUIDA';
+
 export async function getOrCreateConversation(params: {
   tenantId: string;
   contactPhone: string;
   contactName?: string;
+  /**
+   * Dono da conversa. Obrigatório na criação manual: a RLS só deixa o corretor
+   * ver (e criar) conversas no próprio nome — sem isto ele criaria uma conversa
+   * invisível para ele mesmo. A Lia sobrescreve depois via
+   * POST /api/v1/whatsapp/conversations/assign.
+   */
+  assignedUserId?: string | null;
 }): Promise<WhatsappConversation> {
-  const { tenantId, contactName } = params;
+  const { tenantId, contactName, assignedUserId } = params;
   const contactPhone = normalizePhone(params.contactPhone);
 
   const findExisting = async () => {
@@ -119,6 +129,7 @@ export async function getOrCreateConversation(params: {
       tenant_id: tenantId,
       contact_phone: contactPhone,
       contact_name: contactName ?? null,
+      assigned_user_id: assignedUserId ?? null,
     })
     .select('*')
     .single();
@@ -129,6 +140,12 @@ export async function getOrCreateConversation(params: {
     if (error.code === '23505') {
       const winner = await findExisting();
       if (winner) return winner;
+      // A conversa existe mas a RLS não a devolve: é de outro corretor, ou a
+      // Lia ainda não atribuiu (só admin/owner enxergam nesse intervalo).
+      throw Object.assign(
+        new Error('Esta conversa é de outro corretor ou ainda não foi atribuída a você.'),
+        { code: CONVERSA_NAO_ATRIBUIDA },
+      );
     }
     throw error;
   }

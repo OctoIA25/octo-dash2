@@ -16,12 +16,17 @@ import { TemplatePicker } from '../components/TemplatePicker';
 import { WhatsAppIntegrationTab } from '../components/WhatsAppIntegrationTab';
 import { useChatConversations } from '../hooks/useChatConversations';
 import { useChatMessages } from '../hooks/useChatMessages';
-import { getOrCreateConversation, getWhatsappConfig, normalizePhone } from '../services/chatService';
+import {
+  CONVERSA_NAO_ATRIBUIDA,
+  getOrCreateConversation,
+  getWhatsappConfig,
+  normalizePhone,
+} from '../services/chatService';
 import { sendTemplateMessage, sendTextMessage } from '../services/whatsappService';
 import type { WhatsappConfig, WhatsappConversation } from '../types';
 
 export const ChatPage = () => {
-  const { tenantId, isAdmin, isOwner } = useAuthContext();
+  const { tenantId, isAdmin, isOwner, user } = useAuthContext();
   const canConfigure = isAdmin || isOwner;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [config, setConfig] = useState<WhatsappConfig | null>(null);
@@ -54,7 +59,12 @@ export const ChatPage = () => {
       return;
     }
     const contactName = searchParams.get('name')?.trim() || undefined;
-    getOrCreateConversation({ tenantId, contactPhone: phone, contactName })
+    getOrCreateConversation({
+      tenantId,
+      contactPhone: phone,
+      contactName,
+      assignedUserId: user?.id,
+    })
       .then((conv) => {
         setDeepLinkConversation(conv);
         setSelectedId(conv.id);
@@ -64,9 +74,13 @@ export const ChatPage = () => {
       })
       .catch((err) => {
         console.error('[chat] deep-link: erro ao abrir conversa:', err);
-        setDeepLinkError('Não foi possível abrir a conversa deste lead. Recarregue a página para tentar novamente.');
+        setDeepLinkError(
+          err?.code === CONVERSA_NAO_ATRIBUIDA
+            ? err.message
+            : 'Não foi possível abrir a conversa deste lead. Recarregue a página para tentar novamente.',
+        );
       });
-  }, [searchParams, setSearchParams, tenantId, refreshConversations]);
+  }, [searchParams, setSearchParams, tenantId, user?.id, refreshConversations]);
 
   const reloadConfig = useCallback(async () => {
     if (!tenantId || tenantId === 'owner') return;
@@ -145,6 +159,7 @@ export const ChatPage = () => {
         tenantId,
         contactPhone: phone,
         contactName: newChatName.trim() || undefined,
+        assignedUserId: user?.id,
       });
       setSelectedId(conv.id);
       setNewChatOpen(false);

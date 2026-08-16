@@ -4744,9 +4744,11 @@ registerCommunicationRoutes(app, supabase);
 import { registerAgentTelemetryRoutes } from './agent-telemetry/routes.js';
 registerAgentTelemetryRoutes(app, supabase);
 
-// WhatsApp Cloud API (envio + templates). Sem isto, /api/v1/whatsapp/* dá 404 em prod.
+// WhatsApp Cloud API (envio + templates + atribuição da conversa pela Lia).
+// Sem isto, /api/v1/whatsapp/* dá 404 em prod. validateApiKey habilita a rota
+// /conversations/assign (auth por tenant_api_key, igual às rotas /api/v1/leads).
 import { registerWhatsappRoutes } from './whatsapp/index.js';
-registerWhatsappRoutes(app, supabase);
+registerWhatsappRoutes(app, supabase, { validateApiKey });
 
 // ============================================
 // SANTA ÂNGELA — integração multi-tenant (config cifrada por tenant)

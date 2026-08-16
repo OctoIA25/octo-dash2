@@ -5,16 +5,38 @@
  * nas tabelas whatsapp_conversations / whatsapp_messages do Supabase.
  *
  * Endpoints:
- *   POST /api/v1/whatsapp/send       — envio de texto OU template (JWT Supabase)
- *   GET  /api/v1/whatsapp/templates  — lista templates aprovados do tenant
+ *   POST /api/v1/whatsapp/send                  — envio de texto OU template (JWT Supabase)
+ *   GET  /api/v1/whatsapp/templates             — lista templates aprovados do tenant
+ *   POST /api/v1/whatsapp/conversations/assign  — Lia define o corretor dono (API key)
  */
+
+import { normalizePhone as canonicalPhone } from '../utils/phone.js';
 
 const META_GRAPH_VERSION = process.env.META_GRAPH_VERSION || 'v21.0';
 const PLATFORM_OWNER_EMAIL = 'octo.inteligenciaimobiliaria@gmail.com';
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function normalizePhone(value) {
   if (!value) return '';
   return String(value).replace(/\D+/g, '');
+}
+
+/**
+ * Formas equivalentes do mesmo número que podem estar gravadas em
+ * whatsapp_conversations — wa_id da Meta às vezes vem sem o 9º dígito e
+ * conversas antigas podem estar sem DDI ou em E.164 com '+'. Mesma lista de
+ * src/features/chat/services/chatService.ts e do trigger da 20260702.
+ */
+function phoneVariants(value) {
+  const canonical = canonicalPhone(value, { withCountryCode: true });
+  if (!canonical) return [];
+  let forms = [canonical];
+  if (/^55\d{2}9\d{8}$/.test(canonical)) {
+    const semDdi = canonical.slice(2);
+    const semNove = `${semDdi.slice(0, 2)}${semDdi.slice(3)}`;
+    forms = [canonical, `55${semNove}`, semDdi, semNove];
+  }
+  return [...forms, ...forms.map((f) => `+${f}`)];
 }
 
 function isPlatformOwner(email) {
@@ -284,8 +306,91 @@ export function registerWhatsappRoutes(app, supabase, options = {}) {
     }
   });
 
+  // -----------------------------------------------------------------------
+  // POST /api/v1/whatsapp/conversations/assign — define o corretor dono
+  //
+  // Chamado pela Lia quando o lead é atribuído. É o que torna a conversa
+  // visível para o corretor: enquanto assigned_user_id é NULL, a RLS da
+  // 20260816 só mostra a conversa (e o telefone) para admin/owner.
+  //
+  // body: { phone: '5511988887777', userId: '<uuid>' }  ou  { conversationId, userId }
+  // Auth: tenant_api_key (validateApiKey injeta req.tenantId) — mesmo padrão
+  // das rotas /api/v1/leads. Sem o middleware, a rota não é registrada.
+  //
+  // Idempotente: reatribuir é sobrescrever.
+  // -----------------------------------------------------------------------
+  if (options.validateApiKey) {
+    app.post('/api/v1/whatsapp/conversations/assign', options.validateApiKey, async (req, res) => {
+      const { phone, conversationId, userId } = req.body || {};
+      const tenantId = req.tenantId;
+
+      if (!userId || !UUID_RE.test(String(userId))) {
+        return res.status(400).json({ error: 'invalid_user_id' });
+      }
+      if (!phone && !conversationId) {
+        return res.status(400).json({ error: 'missing_phone_or_conversation_id' });
+      }
+
+      try {
+        // O corretor precisa ser membro DESTE tenant — a API key identifica o
+        // tenant, mas o userId vem de fora e não pode apontar para outro.
+        const { data: member, error: memberErr } = await supabase
+          .from('tenant_memberships')
+          .select('user_id')
+          .eq('tenant_id', tenantId)
+          .eq('user_id', userId)
+          .maybeSingle();
+        if (memberErr) throw memberErr;
+        if (!member) return res.status(400).json({ error: 'user_not_in_tenant' });
+
+        let query = supabase
+          .from('whatsapp_conversations')
+          .select('id, assigned_user_id')
+          .eq('tenant_id', tenantId);
+
+        if (conversationId) {
+          query = query.eq('id', conversationId);
+        } else {
+          const variants = phoneVariants(phone);
+          if (variants.length === 0) return res.status(400).json({ error: 'invalid_phone' });
+          // Havendo mais de uma forma do mesmo número, atribuir a conversa COM
+          // histórico (inbound real) — nunca uma casca vazia criada depois.
+          query = query
+            .in('contact_phone', variants)
+            .order('last_message_at', { ascending: false, nullsFirst: false })
+            .order('created_at', { ascending: true })
+            .limit(1);
+        }
+
+        const { data: found, error: findErr } = await query;
+        if (findErr) throw findErr;
+        const conv = found?.[0];
+        if (!conv) return res.status(404).json({ error: 'conversation_not_found' });
+
+        const { error: updErr } = await supabase
+          .from('whatsapp_conversations')
+          .update({ assigned_user_id: userId })
+          .eq('id', conv.id);
+        if (updErr) throw updErr;
+
+        return res.json({
+          ok: true,
+          conversationId: conv.id,
+          assignedUserId: userId,
+          previousAssignedUserId: conv.assigned_user_id ?? null,
+        });
+      } catch (err) {
+        console.error('[whatsapp] erro em /conversations/assign:', err);
+        return res.status(500).json({ error: 'internal_error' });
+      }
+    });
+  }
+
   if (options.verbose !== false) {
     console.log('   ├─ 📱 POST /api/v1/whatsapp/send                          → Envia texto/template WhatsApp');
-    console.log('   └─ 📱 GET  /api/v1/whatsapp/templates?tenantId=...        → Lista templates aprovados');
+    console.log(`   ${options.validateApiKey ? '├' : '└'}─ 📱 GET  /api/v1/whatsapp/templates?tenantId=...        → Lista templates aprovados`);
+    if (options.validateApiKey) {
+      console.log('   └─ 📱 POST /api/v1/whatsapp/conversations/assign          → Lia atribui a conversa ao corretor');
+    }
   }
 }
