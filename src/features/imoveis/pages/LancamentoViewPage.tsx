@@ -26,6 +26,7 @@ import { FotosUploader, type Foto } from '@/components/imoveis/FotosUploader';
 interface Lancamento {
   id: string;
   tenant_id: string;
+  updated_at: string | null;
   nome: string;
   descricao: string | null;
   endereco_plantao: string | null;
@@ -330,6 +331,17 @@ export const LancamentoViewPage = () => {
     );
   }
 
+  // Mesma data que a API entrega para a Lia dizer "dados atualizados em ...":
+  // o último save do lançamento, em DD/MM (fuso de Brasília).
+  const ultimaAtualizacao = savedAt ?? (lancamento.updated_at ? new Date(lancamento.updated_at) : null);
+  const dataAtualizacao = ultimaAtualizacao && !Number.isNaN(ultimaAtualizacao.getTime())
+    ? ultimaAtualizacao.toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        timeZone: 'America/Sao_Paulo',
+      })
+    : null;
+
   return (
     <div className="min-h-screen p-6 space-y-6">
       <div className="flex items-center justify-between gap-4">
@@ -529,13 +541,17 @@ export const LancamentoViewPage = () => {
             />
           </div>
           <div className="space-y-1.5">
-            <label htmlFor="lanc-preco" className="text-sm font-medium text-text-primary">Preço (texto)</label>
+            <label htmlFor="lanc-preco" className="text-sm font-medium text-text-primary">Valor mínimo</label>
             <Input
               id="lanc-preco"
               placeholder="Ex: Consultar valor / a partir de R$ 500 mil"
               value={precoTexto}
               onChange={(e) => setPrecoTexto(e.target.value)}
             />
+            <p className="text-xs text-text-secondary">
+              Ao informar este valor, a Lia avisa que ele pode variar conforme o imóvel escolhido
+              {dataAtualizacao ? ` e cita "dados atualizados em ${dataAtualizacao}"` : ''}.
+            </p>
           </div>
           <div className="space-y-1.5 sm:col-span-2">
             <label htmlFor="lanc-specs" className="text-sm font-medium text-text-primary">Specs</label>

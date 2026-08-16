@@ -12,6 +12,7 @@ import { countLeadsPerBroker } from './brokerLeadStats.js';
 import { createWorker } from './watermark/worker.js';
 import { createZapConfigResolver, registerZapRoutes, extractZapPhotoUrls } from './zap/index.js';
 import { handleClassificationPatch } from './leadClassification.js';
+import { avisoValorLancamento } from './lancamentoValor.js';
 
 const app = express();
 const PORT = process.env.API_PORT || 3001;
@@ -3956,6 +3957,11 @@ const mapLancamentoFromDB = (row) => ({
   // nesse caso a Lia deve dizer que o corretor entrará em contato para
   // informar o endereço e combinar a melhor data.
   endereco_plantao: row.endereco_plantao || null,
+  // Valor mínimo ("a partir de R$ ..."), não o preço da unidade. Sempre que
+  // informar o valor, a Lia deve repetir `aviso_valor` junto — é o texto pronto
+  // com a ressalva e a data dos dados. null = valor não cadastrado.
+  valor_minimo: row.preco_texto || null,
+  aviso_valor: avisoValorLancamento(row.preco_texto, row.updated_at),
   // Landing page do empreendimento. null = não cadastrado; a Lia não oferece link.
   site_url: row.site_url || null,
   book_pdf_url: row.book_pdf || null,
@@ -3982,7 +3988,7 @@ app.get('/api/v1/lancamentos', validateApiKey, async (req, res) => {
 
     let query = supabase
       .from('lancamentos')
-      .select('id, nome, descricao, endereco_plantao, site_url, book_pdf, book_pdf_filename, fotos, created_at, updated_at', { count: 'exact' })
+      .select('id, nome, descricao, endereco_plantao, preco_texto, site_url, book_pdf, book_pdf_filename, fotos, created_at, updated_at', { count: 'exact' })
       .eq('tenant_id', req.tenantId)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
@@ -4014,6 +4020,8 @@ app.get('/api/v1/lancamentos', validateApiKey, async (req, res) => {
         capa_url: capa?.url || null,
         total_fotos: fotos.length,
         tem_book: !!row.book_pdf,
+        valor_minimo: row.preco_texto || null,
+        aviso_valor: avisoValorLancamento(row.preco_texto, row.updated_at),
         updated_at: row.updated_at,
       };
     });
