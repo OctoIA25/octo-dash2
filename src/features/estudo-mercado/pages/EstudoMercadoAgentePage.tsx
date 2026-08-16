@@ -21,6 +21,12 @@ import {
 } from '../services/estudoMercadoService';
 import { generateReport } from '@/utils/generateReport';
 import {
+  PORTAIS_SUPORTADOS,
+  PORTAIS_NOMES,
+  portalDoLink,
+  AVISO_PORTAL_NAO_SUPORTADO,
+} from '../portais';
+import {
   ArrowLeft,
   ChevronDown,
   ChevronUp,
@@ -299,9 +305,8 @@ export const EstudoMercadoAgentePage = () => {
       return;
     }
 
-    // Verificar se é link do Imóvel Web
-    if (link.toLowerCase().includes('imovelweb')) {
-      alert('Links do Imóvel Web estão em manutenção no preenchimento automático. Por favor, preencha os dados manualmente ou utilize links de outros portais.');
+    if (!portalDoLink(link)) {
+      alert(AVISO_PORTAL_NAO_SUPORTADO);
       return;
     }
 
@@ -405,8 +410,8 @@ export const EstudoMercadoAgentePage = () => {
       alert('Insira um link válido antes de enviar');
       return;
     }
-    if (link.toLowerCase().includes('imovelweb')) {
-      alert('Links do Imóvel Web estão em manutenção. Use links de outros portais.');
+    if (!portalDoLink(link)) {
+      alert(AVISO_PORTAL_NAO_SUPORTADO);
       return;
     }
 
@@ -765,6 +770,22 @@ export const EstudoMercadoAgentePage = () => {
             icon={<Star className="w-5 h-5 text-yellow-500" />}
             badge={`${amostras.length} propriedades`}
           >
+            <div className="flex items-center gap-2 mb-3 text-xs text-gray-500 dark:text-slate-400">
+              <span>Pesquisar no</span>
+              {PORTAIS_SUPORTADOS.map((portal) => (
+                <a
+                  key={portal.dominio}
+                  href={portal.buscaUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 px-1.5 py-0.5 rounded-md font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition-colors"
+                  title={`Abrir busca de imóveis no ${portal.nome} em uma nova aba`}
+                >
+                  {portal.nome}
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              ))}
+            </div>
             {amostras.length === 0 ? (
               <p className="text-sm text-gray-400 dark:text-slate-500 text-center py-3">Nenhuma amostra cadastrada</p>
             ) : (
@@ -859,7 +880,7 @@ export const EstudoMercadoAgentePage = () => {
                                 handleFetchAmostraData(idx, amostra.link);
                               }
                             }}
-                            placeholder="Cole o link do imóvel aqui..."
+                            placeholder={`Cole o link (${PORTAIS_NOMES})`}
                             className="flex-1 h-8 px-3 text-xs text-gray-700 dark:text-slate-300 placeholder-gray-400 dark:placeholder-slate-500 border border-gray-200 dark:border-slate-800 rounded-lg bg-white dark:bg-slate-900 outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-all min-w-0"
                           />
                           <button

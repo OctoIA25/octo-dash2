@@ -38,6 +38,12 @@ import {
   type SalvarEstudoPayload,
   type AmostraPayload,
 } from '../services/estudoMercadoService';
+import {
+  PORTAIS_SUPORTADOS,
+  PORTAIS_NOMES,
+  portalDoLink,
+  AVISO_PORTAL_NAO_SUPORTADO,
+} from '../portais';
 import { supabase } from '@/lib/supabaseClient';
 
 // ============================================================================
@@ -312,6 +318,12 @@ export const EstudoMercadoPage = () => {
 
   const enqueueLink = useCallback((id: string, link: string) => {
     if (!link || !link.trim()) return;
+    // Ponto único de entrada da fila (colar, Enter e botão passam por aqui):
+    // barra portal não suportado antes de gastar uma requisição de scraping.
+    if (!portalDoLink(link)) {
+      toast.warning(AVISO_PORTAL_NAO_SUPORTADO);
+      return;
+    }
     // Substituir item existente na fila ou adicionar novo
     const idx = queueRef.current.findIndex(q => q.id === id);
     if (idx >= 0) {
@@ -615,6 +627,21 @@ export const EstudoMercadoPage = () => {
                     )}
                     <span>Preenchimento automático</span>
                   </button>
+                  <span className="w-px h-3 bg-slate-200 mx-1" />
+                  <span className="text-slate-400 dark:text-slate-500">Pesquisar no</span>
+                  {PORTAIS_SUPORTADOS.map((portal) => (
+                    <a
+                      key={portal.dominio}
+                      href={portal.buscaUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 px-1.5 py-0.5 rounded-md font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition-colors"
+                      title={`Abrir busca de imóveis no ${portal.nome} em uma nova aba`}
+                    >
+                      {portal.nome}
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  ))}
                 </div>
 
                 <button
@@ -738,7 +765,7 @@ export const EstudoMercadoPage = () => {
                                   enqueueLink(amostra.id, amostra.link);
                                 }
                               }}
-                              placeholder={queueIds.has(amostra.id) ? '⏳ Aguardando na fila...' : 'Cole o link aqui (envia automático)'}
+                              placeholder={queueIds.has(amostra.id) ? '⏳ Aguardando na fila...' : `Cole o link (${PORTAIS_NOMES})`}
                               className="w-full min-w-[130px] text-sm text-slate-700 dark:text-slate-300 placeholder-gray-400 bg-transparent border-0 outline-none focus:ring-0 p-0"
                               disabled={amostra.isLoading}
                             />
