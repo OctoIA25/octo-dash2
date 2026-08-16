@@ -51,6 +51,63 @@ export function opcoesFiltroBolsao({
   return { ativo: isCorretor && !atendeTudo, atuacoes };
 }
 
+/**
+ * Seções do Bolsão, na ordem de exibição. São as mesmas quatro classificações —
+ * o Bolsão não tem vocabulário próprio, só rótulos comerciais.
+ * `indefinido` por último: é a sobra (inclui `classification = null`).
+ */
+export const SECOES_BOLSAO: ReadonlyArray<{ tipo: TipoLead; titulo: string }> = [
+  { tipo: 'lancamento', titulo: 'Venda de Lançamentos' },
+  { tipo: 'pronto', titulo: 'Venda de Prontos' },
+  { tipo: 'locacao', titulo: 'Locação' },
+  { tipo: 'indefinido', titulo: 'Sem classificação' },
+];
+
+/**
+ * Agrupa as linhas nas seções acima. Quem já passou por `filtrarPorAtuacao` só
+ * tem grupo cheio no que a atuação dele permite ver — a UI renderiza apenas os
+ * grupos não vazios, então o corretor de prontos nunca vê a seção de lançamentos.
+ * Classificação nula ou desconhecida cai em `indefinido` (mesma direção fail-open).
+ */
+export function agruparPorSecao<T extends LinhaClassificavel>(
+  linhas: ReadonlyArray<T>,
+): Record<TipoLead, T[]> {
+  const grupos: Record<TipoLead, T[]> = { lancamento: [], pronto: [], locacao: [], indefinido: [] };
+  for (const linha of linhas) {
+    const tipo = linha.classification as TipoLead;
+    (grupos[tipo] ?? grupos.indefinido).push(linha);
+  }
+  return grupos;
+}
+
+export interface LinhaComImovel {
+  /** Referência do imóvel — na prática, o nome do condomínio em vários portais. */
+  codigo?: string | null;
+}
+
+/**
+ * Quem enxerga qual imóvel o lead procurou. Com o condomínio à mostra, o Bolsão
+ * vira garimpo (corretor só pega lead de empreendimento de luxo) em vez de fila
+ * por ordem de chegada. Owner, admin e team_leader continuam vendo — são eles
+ * que precisam auditar o que está parado.
+ */
+export const podeVerImovelBolsao = (
+  { isAdmin, systemRole }: { isAdmin: boolean; systemRole?: string | null },
+): boolean => isAdmin || systemRole === 'team_leader';
+
+/**
+ * Apaga a referência do imóvel das linhas quando o usuário não pode vê-la.
+ * Feito na LISTA, não em cada componente: card, modal de detalhes e formulário
+ * de atividade leem todos o mesmo `codigo`, então esconder na origem cobre os
+ * três de uma vez — e qualquer tela nova que apareça depois.
+ */
+export function ocultarImovelDoBolsao<T extends LinhaComImovel>(
+  linhas: ReadonlyArray<T>,
+  podeVer: boolean,
+): T[] {
+  return podeVer ? [...linhas] : linhas.map((linha) => ({ ...linha, codigo: null }));
+}
+
 export function filtrarPorAtuacao<T extends LinhaClassificavel>(
   linhas: ReadonlyArray<T>,
   opts: {

@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  agruparPorSecao,
   atuacoesDe,
   filtrarPorAtuacao,
+  ocultarImovelDoBolsao,
   opcoesFiltroBolsao,
+  podeVerImovelBolsao,
+  SECOES_BOLSAO,
   type LinhaClassificavel,
 } from './classificarLead';
 
@@ -94,5 +98,58 @@ describe('opcoesFiltroBolsao', () => {
     expect(opcoesFiltroBolsao({ isCorretor: true, permissions: { atuacao: ['lancamentos'] } }).ativo).toBe(true);
     expect(opcoesFiltroBolsao({ isCorretor: true, permissions: null }).ativo).toBe(false);
     expect(opcoesFiltroBolsao({ isCorretor: false, permissions: { atuacao: ['lancamentos'] } }).ativo).toBe(false);
+  });
+});
+
+describe('agruparPorSecao', () => {
+  it('separa nas três seções comerciais + a sobra', () => {
+    const grupos = agruparPorSecao([
+      { classification: 'lancamento' },
+      { classification: 'pronto' },
+      { classification: 'locacao' },
+      { classification: 'indefinido' },
+    ]);
+    expect(grupos.lancamento).toHaveLength(1);
+    expect(grupos.pronto).toHaveLength(1);
+    expect(grupos.locacao).toHaveLength(1);
+    expect(grupos.indefinido).toHaveLength(1);
+  });
+
+  it('null e valor desconhecido caem em indefinido — nada some', () => {
+    const grupos = agruparPorSecao([{ classification: null }, { classification: 'valor_novo' }]);
+    expect(grupos.indefinido).toHaveLength(2);
+  });
+
+  it('corretor de prontos fica sem grupo de lançamento — a seção não é renderizada', () => {
+    const visiveis = filtrarPorAtuacao(
+      [{ classification: 'lancamento' }, { classification: 'pronto' }],
+      { ativo: true, atuacoes: ['prontos'] },
+    );
+    const grupos = agruparPorSecao(visiveis);
+    expect(grupos.lancamento).toHaveLength(0);
+    expect(grupos.pronto).toHaveLength(1);
+  });
+
+  it('SECOES_BOLSAO cobre todas as chaves do agrupamento', () => {
+    const chaves = Object.keys(agruparPorSecao([])).sort();
+    expect(SECOES_BOLSAO.map((s) => s.tipo).sort()).toEqual(chaves);
+  });
+});
+
+describe('sigilo do imóvel no Bolsão', () => {
+  it('gestão vê o imóvel; corretor não', () => {
+    expect(podeVerImovelBolsao({ isAdmin: true, systemRole: 'admin' })).toBe(true);
+    expect(podeVerImovelBolsao({ isAdmin: false, systemRole: 'team_leader' })).toBe(true);
+    expect(podeVerImovelBolsao({ isAdmin: false, systemRole: 'corretor' })).toBe(false);
+    expect(podeVerImovelBolsao({ isAdmin: false, systemRole: null })).toBe(false);
+  });
+
+  it('apaga o código quando não pode ver, sem mexer no resto da linha', () => {
+    const linhas = [{ id: 1, codigo: 'RESIDENCIAL VISTA LUXO', classification: 'pronto' }];
+    expect(ocultarImovelDoBolsao(linhas, false)).toEqual([
+      { id: 1, codigo: null, classification: 'pronto' },
+    ]);
+    expect(ocultarImovelDoBolsao(linhas, true)).toEqual(linhas);
+    expect(linhas[0].codigo).toBe('RESIDENCIAL VISTA LUXO'); // não muta a origem
   });
 });

@@ -48,7 +48,14 @@ import {
   calcularMetricasCorretores,
   CorretorMetrica
 } from '../services/bolsaoService';
-import { filtrarPorAtuacao, opcoesFiltroBolsao } from '../utils/classificarLead';
+import {
+  agruparPorSecao,
+  filtrarPorAtuacao,
+  ocultarImovelDoBolsao,
+  opcoesFiltroBolsao,
+  podeVerImovelBolsao,
+  SECOES_BOLSAO,
+} from '../utils/classificarLead';
 import { useToast } from '@/hooks/use-toast';
 import { fetchLeadLimitConfig, checkBrokerEligibility, BrokerLeadLimitOverride } from '@/features/corretores/services/tenantLeadLimitService';
 import { 
@@ -153,18 +160,27 @@ const BolsaoSectionContent = (props: BolsaoSectionProps) => {
   const [leads, setLeads] = useState<BolsaoLead[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Corretor não vê qual imóvel/condomínio o lead procurou — senão a fila vira
+  // garimpo de empreendimento de luxo. Owner, admin e team_leader veem.
+  const podeVerImovel = podeVerImovelBolsao({ isAdmin, systemRole: user?.systemRole });
+
   // O que ESTE usuário pode ver. Corretor marcado como Lançamentos não recebe
   // lead de imóvel pronto na fila, e vice-versa; `indefinido` aparece para todos.
   // Admin, owner e team_leader não são filtrados — quem gerencia vê o que está parado.
+  // O sigilo do imóvel é aplicado AQUI, na lista: card, modal de detalhes e
+  // formulário de atividade leem todos o mesmo `codigo`.
   const leadsVisiveis = useMemo(
-    () => filtrarPorAtuacao(
-      leads,
-      opcoesFiltroBolsao({
-        isCorretor,
-        permissions: user?.permissions as Record<string, unknown> | undefined,
-      }),
+    () => ocultarImovelDoBolsao(
+      filtrarPorAtuacao(
+        leads,
+        opcoesFiltroBolsao({
+          isCorretor,
+          permissions: user?.permissions as Record<string, unknown> | undefined,
+        }),
+      ),
+      podeVerImovel,
     ),
-    [leads, isCorretor, user?.permissions],
+    [leads, isCorretor, user?.permissions, podeVerImovel],
   );
   const [assumindoLead, setAssumindoLead] = useState<number | null>(null);
   const [confirmandoLead, setConfirmandoLead] = useState<number | null>(null);
@@ -1294,7 +1310,10 @@ const BolsaoSectionContent = (props: BolsaoSectionProps) => {
   // 🆕 Renderizar mini cards de leads
   const renderLeadsMiniCards = (leadsToRender: BolsaoLead[]) => {
     const leadsFiltrados = filtrarLeads(leadsToRender);
-    
+    // Venda de Lançamentos / Venda de Prontos / Locação. Só grupo com lead vira
+    // seção — o corretor de prontos já chega aqui sem lead de lançamento.
+    const grupos = agruparPorSecao(leadsFiltrados);
+
     return (
       <>
         {/* Barra de Filtros */}
@@ -1376,8 +1395,18 @@ const BolsaoSectionContent = (props: BolsaoSectionProps) => {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {leadsFiltrados.map((lead) => (
+          <div className="space-y-8">
+            {SECOES_BOLSAO.map(({ tipo, titulo }) => {
+              const leadsDaSecao = grupos[tipo];
+              if (leadsDaSecao.length === 0) return null;
+              return (
+                <section key={tipo} className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-bold text-foreground">{titulo}</h3>
+                    <Badge variant="outline" className="text-xs">{leadsDaSecao.length}</Badge>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {leadsDaSecao.map((lead) => (
               <LeadMiniCard
                 key={lead.id}
                 lead={lead}
@@ -1478,6 +1507,10 @@ const BolsaoSectionContent = (props: BolsaoSectionProps) => {
                 mostrarBotaoAssumir={true}
               />
             ))}
+                  </div>
+                </section>
+              );
+            })}
           </div>
         )}
       </>
@@ -2246,6 +2279,10 @@ const BolsaoSectionContent = (props: BolsaoSectionProps) => {
         isAdmin={isAdmin}
         isCorretor={isCorretor}
         currentCorretor={user?.name || ''}
+        // Lead do Bolsão ainda não é de ninguém: recomendar antes de assumir fura
+        // a fila, e a lista automática (bairro + faixa de preço) devolveria a pista
+        // do imóvel que o Bolsão esconde. Volta a aparecer em Meus Leads.
+        mostrarRecomendacoes={false}
       />
 
       <Dialog open={modalTempoBolsaoAberto} onOpenChange={setModalTempoBolsaoAberto}>

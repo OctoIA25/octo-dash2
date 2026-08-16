@@ -89,6 +89,12 @@ interface LeadDetailsModalProps {
   currentCorretor: string;
   onAtualizarStatusLead?: (leadId: number, novoStatus: string) => Promise<void>;
   onArquivarLead?: (lead: BolsaoLead) => void;
+  /**
+   * Recomendações só fazem sentido com o lead já na carteira: elas são montadas
+   * a partir do imóvel de interesse, que o Bolsão esconde de quem ainda não
+   * assumiu. Falso no Bolsão, verdadeiro em Meus Leads.
+   */
+  mostrarRecomendacoes?: boolean;
 }
 
 export const LeadDetailsModal = ({
@@ -103,7 +109,8 @@ export const LeadDetailsModal = ({
   isCorretor,
   currentCorretor,
   onAtualizarStatusLead,
-  onArquivarLead
+  onArquivarLead,
+  mostrarRecomendacoes = true
 }: LeadDetailsModalProps) => {
   const { user, tenantId } = useAuth();
   const { toast } = useToast();
@@ -933,7 +940,7 @@ export const LeadDetailsModal = ({
               </Button>
             )}
 
-            {lead && (
+            {lead && mostrarRecomendacoes && (
               <Button
                 onClick={() => setRecomendacoesOpen(true)}
                 variant="outline"
@@ -1191,7 +1198,7 @@ export const LeadDetailsModal = ({
       </Dialog>
 
       {/* Modal de Envio de Recomendações */}
-      {lead && (
+      {lead && mostrarRecomendacoes && (
         <EnviarRecomendacoesModal
           lead={bolsaoLeadToRecommendationInput(lead)}
           isOpen={recomendacoesOpen}
