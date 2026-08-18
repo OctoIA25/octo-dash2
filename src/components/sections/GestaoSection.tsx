@@ -9,7 +9,7 @@ import { useMemo, useState } from 'react';
 import { 
   DashboardSubSection, 
   LeadsSubSection, 
-  ProprietariosSubSection, 
+  ProprietariosSubSection,
   ClienteInteressadoSubSection, 
   ClienteProprietarioSubSection 
 } from '@/shared/types';

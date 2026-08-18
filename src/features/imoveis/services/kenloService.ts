@@ -20,6 +20,12 @@ export interface Imovel {
   /** Captador atribuído manualmente (imoveis_locais / condominios). */
   captador_id?: string | null;
   /**
+   * Último ajuste no cadastro local (`imoveis_locais.updated_at`). Ausente em
+   * imóvel que só existe no XML do Kenlo — daí a regra de desatualizado não se
+   * aplicar a ele (ver utils/desatualizado.ts).
+   */
+  updated_at?: string | null;
+  /**
    * true quando corretor_nome exibido é o mesmo corretor de
    * corretor_email/corretor_foto/corretor_numero (todos vindos do XML).
    * false quando corretor_nome veio de captador_id ou imoveis_corretores —

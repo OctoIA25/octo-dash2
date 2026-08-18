@@ -14,11 +14,21 @@ interface OpenConversationLinkProps {
  * das Observações do lead. Não renderiza nada sem telefone válido ou sem a
  * permissão 'chat' (mesmo gating da sidebar/rota).
  */
-export function OpenConversationLink({ phone, contactName, className }: OpenConversationLinkProps) {
+/**
+ * Caminho do chat para este telefone, ou null quando não há telefone válido ou
+ * o usuário não tem a permissão 'chat'. Quem precisa decidir o layout ANTES de
+ * renderizar (um campo inteiro no modal, p.ex.) usa o hook; quem só quer o link
+ * usa o componente abaixo.
+ */
+export function useChatPath(phone: string | null | undefined, contactName?: string | null) {
   const { user } = useAuthContext();
-  const path = (user?.sidebarPermissions ?? []).includes('chat')
+  return (user?.sidebarPermissions ?? []).includes('chat')
     ? chatPathForPhone(phone, contactName)
     : null;
+}
+
+export function OpenConversationLink({ phone, contactName, className }: OpenConversationLinkProps) {
+  const path = useChatPath(phone, contactName);
   if (!path) return null;
   return (
     <Link
