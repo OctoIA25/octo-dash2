@@ -11,6 +11,8 @@ import { DiscSection } from '@/features/personalidade/components/DiscSection';
 import { MbtiSection } from '@/features/personalidade/components/MbtiSection';
 import { EneagramaSection } from '@/features/personalidade/components/EneagramaSection';
 import { DesenvolvimentoSection } from '@/features/personalidade/components/DesenvolvimentoSection';
+import { ValidadeTestesBadge } from '@/features/personalidade/components/ValidadeTestesBadge';
+import { RelatoriosElaine } from '@/features/agentes-ia/components/RelatoriosElaine';
 
 interface CorretorPainelProps {
   corretorId: number | null;
@@ -43,10 +45,15 @@ export function CorretorPainel({ corretorId, corretorNome, onClose }: CorretorPa
           </p>
         ) : (
           <div className="space-y-8">
+            <ValidadeTestesBadge
+              datas={[perfil.disc?.data_teste, perfil.eneagrama?.data_teste, perfil.mbti?.data_teste]}
+              pessoa="terceiro"
+            />
             {perfil.disc && <DiscSection disc={perfil.disc} />}
             {perfil.mbti && <MbtiSection mbti={perfil.mbti} />}
             {perfil.eneagrama && <EneagramaSection eneagrama={perfil.eneagrama} />}
             {perfil.eneagrama && <DesenvolvimentoSection eneagrama={perfil.eneagrama} />}
+            <RelatoriosElaine subjectCorretorId={corretorId} />
           </div>
         )}
       </SheetContent>

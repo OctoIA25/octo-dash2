@@ -14,11 +14,14 @@ import { DiscSection } from './components/DiscSection';
 import { MbtiSection } from './components/MbtiSection';
 import { EneagramaSection } from './components/EneagramaSection';
 import { DesenvolvimentoSection } from './components/DesenvolvimentoSection';
+import { ValidadeTestesBadge } from './components/ValidadeTestesBadge';
+import { RelatoriosElaine } from '@/features/agentes-ia/components/RelatoriosElaine';
 
 export function PerfilCompleto() {
   const { user } = useAuth();
   const { loading, perfil, vazio } = usePerfilCompleto();
   const nome = user?.name ?? 'Você';
+  const datasTestes = [perfil.disc?.data_teste, perfil.eneagrama?.data_teste, perfil.mbti?.data_teste];
 
   if (loading) {
     return (
@@ -51,10 +54,12 @@ export function PerfilCompleto() {
     <div className="min-h-screen p-6 sm:p-10" style={{ backgroundColor: 'hsl(var(--bg-primary))' }}>
       <div className="max-w-4xl mx-auto space-y-10">
         <PerfilHero nome={nome} perfil={perfil} />
+        <ValidadeTestesBadge datas={datasTestes} />
         {perfil.disc && <DiscSection disc={perfil.disc} />}
         {perfil.mbti && <MbtiSection mbti={perfil.mbti} />}
         {perfil.eneagrama && <EneagramaSection eneagrama={perfil.eneagrama} />}
         {perfil.eneagrama && <DesenvolvimentoSection eneagrama={perfil.eneagrama} />}
+        <RelatoriosElaine subjectEmail={user?.email ?? null} />
       </div>
     </div>
   );

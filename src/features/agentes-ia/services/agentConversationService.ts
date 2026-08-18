@@ -232,3 +232,81 @@ export const listTenantUsersWithConversations = async (
     (a.user_name || a.user_email || '').localeCompare(b.user_name || b.user_email || '')
   );
 };
+
+// ---------------------------------------------------------------------------
+// Relatórios da Elaine
+//
+// Um relatório é a resposta da Elaine gerada a partir de uma especialidade
+// sobre um corretor identificado (metadata.is_report). Diferente da conversa,
+// ele é visível para os DOIS lados: quem gerou (normalmente o gestor) e o
+// corretor analisado — este último via a política de RLS que casa
+// metadata->>'subject_email' com o e-mail do JWT.
+// ---------------------------------------------------------------------------
+
+export interface AgentReport {
+  id: string;
+  /** Data em que o relatório foi gerado. */
+  createdAt: string;
+  /** Texto do relatório (Markdown, como a Elaine devolveu). */
+  content: string;
+  /** Especialidade que originou o relatório (ex.: 'gestao-liderados'). */
+  especialidade: string | null;
+  /** Nome do corretor analisado. */
+  subjectNome: string | null;
+  /** Nome de quem pediu o relatório. */
+  geradoPor: string | null;
+}
+
+const MAX_REPORTS = 50;
+
+const toReport = (row: {
+  id: string;
+  created_at: string;
+  content: string;
+  metadata: Record<string, unknown> | null;
+}): AgentReport => {
+  const meta = row.metadata ?? {};
+  const texto = (chave: string): string | null => {
+    const valor = meta[chave];
+    return typeof valor === 'string' && valor.trim() ? valor : null;
+  };
+  return {
+    id: row.id,
+    createdAt: row.created_at,
+    content: row.content,
+    especialidade: texto('especialidade'),
+    subjectNome: texto('corretor_nome'),
+    geradoPor: texto('gerado_por'),
+  };
+};
+
+/**
+ * Lista os relatórios da Elaine sobre um corretor, do mais recente ao mais antigo.
+ * Informe o id numérico (tela do gestor) OU o e-mail (tela do próprio corretor).
+ */
+export const listElaineReports = async (params: {
+  subjectCorretorId?: number | null;
+  subjectEmail?: string | null;
+}): Promise<AgentReport[]> => {
+  let query = supabase
+    .from('agent_messages')
+    .select('id, created_at, content, metadata')
+    .filter('metadata->>is_report', 'eq', 'true')
+    .order('created_at', { ascending: false })
+    .limit(MAX_REPORTS);
+
+  if (params.subjectCorretorId) {
+    query = query.filter('metadata->>subject_corretor_id', 'eq', String(params.subjectCorretorId));
+  } else if (params.subjectEmail) {
+    query = query.filter('metadata->>subject_email', 'eq', params.subjectEmail.trim().toLowerCase());
+  } else {
+    return [];
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    console.error('❌ Erro ao listar relatórios da Elaine:', error.code, error.message, error.details);
+    return [];
+  }
+  return (data ?? []).map((row) => toReport(row as never));
+};

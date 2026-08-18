@@ -113,6 +113,7 @@ export const ElaineChat = ({
   selectedCorretorMBTI,
   onClearCorretorMBTI,
   especialidadePrompt,
+  selectedEspecialidade,
   selectedCorretorGestaoLiderados,
   activeConversationId = null,
   persistedMessages,
@@ -312,6 +313,10 @@ export const ElaineChat = ({
       // Preparar dados comportamentais do corretor selecionado
       const dadosComportamentais: DadosComportamentais = {};
       let corretorNomeResolvido: string | undefined;
+      // Sujeito do relatório: de QUEM é o perfil analisado. É o que permite ao
+      // corretor enxergar depois o relatório que o gestor gerou sobre ele.
+      let subjectCorretorId: number | null = null;
+      let subjectEmail: string | null = null;
       
       // 🔥 SE FOR CORRETOR, BUSCAR SEUS PRÓPRIOS DADOS DO BANCO
       if (user?.role === 'corretor') {
@@ -349,6 +354,8 @@ export const ElaineChat = ({
           if (corretorData && corretorData.length > 0) {
             const corretor = corretorData[0];
             corretorNomeResolvido = corretor.nm_corretor || user.name;
+            subjectCorretorId = corretor.id ?? null;
+            subjectEmail = user.email?.toLowerCase() ?? null;
             if (corretor.mbti_tipo) {
             }
             
@@ -421,7 +428,7 @@ export const ElaineChat = ({
             
             // Buscar ID do corretor pelo nome
             const corretorResponse = await fetch(
-              `${config.url}/rest/v1/Corretores?nm_corretor=eq.${encodeURIComponent(selectedCorretorGestaoLiderados)}&select=id,disc_tipo_principal,disc_percentual_d,disc_percentual_i,disc_percentual_s,disc_percentual_c,eneagrama_tipo_principal,eneagrama_score_tipo_1,eneagrama_score_tipo_2,eneagrama_score_tipo_3,eneagrama_score_tipo_4,eneagrama_score_tipo_5,eneagrama_score_tipo_6,eneagrama_score_tipo_7,eneagrama_score_tipo_8,eneagrama_score_tipo_9,mbti_tipo,mbti_percent_energy,mbti_percent_mind,mbti_percent_nature,mbti_percent_tactics,mbti_percent_identity`,
+              `${config.url}/rest/v1/Corretores?nm_corretor=eq.${encodeURIComponent(selectedCorretorGestaoLiderados)}&select=id,email,disc_tipo_principal,disc_percentual_d,disc_percentual_i,disc_percentual_s,disc_percentual_c,eneagrama_tipo_principal,eneagrama_score_tipo_1,eneagrama_score_tipo_2,eneagrama_score_tipo_3,eneagrama_score_tipo_4,eneagrama_score_tipo_5,eneagrama_score_tipo_6,eneagrama_score_tipo_7,eneagrama_score_tipo_8,eneagrama_score_tipo_9,mbti_tipo,mbti_percent_energy,mbti_percent_mind,mbti_percent_nature,mbti_percent_tactics,mbti_percent_identity`,
               {
                 method: 'GET',
                 headers: headers
@@ -432,6 +439,8 @@ export const ElaineChat = ({
               const corretorData = await corretorResponse.json();
               if (corretorData && corretorData.length > 0) {
                 const corretor = corretorData[0];
+                subjectCorretorId = corretor.id ?? null;
+                subjectEmail = corretor.email?.toLowerCase() ?? null;
                 
                 // Adicionar DISC se existir
                 if (corretor.disc_tipo_principal) {
@@ -613,12 +622,29 @@ export const ElaineChat = ({
       setMessages(prev => [...prev, agentResponse]);
 
       if (conversationId && addMessage) {
+        // Relatório = resposta gerada a partir de uma especialidade sobre um
+        // corretor identificado. Só essas ficam visíveis para o corretor
+        // analisado (RLS por metadata.subject_email) — o resto da conversa do
+        // gestor continua privado.
+        const isReport = !!selectedEspecialidade && !!subjectCorretorId && !!subjectEmail;
+        const snapshot = Object.keys(dadosComportamentais).length > 0
+          ? { behavioral_snapshot: dadosComportamentais, corretor_nome: corretorNome ?? null, tipo_mbti: tipoMBTI ?? null }
+          : null;
+        const reportMeta = isReport
+          ? {
+              is_report: true,
+              especialidade: selectedEspecialidade,
+              subject_corretor_id: subjectCorretorId,
+              subject_email: subjectEmail,
+              corretor_nome: corretorNome ?? null,
+              gerado_por: user?.name ?? null,
+            }
+          : null;
+
         await addMessage(conversationId, {
           role: 'agent',
           content: responseText,
-          metadata: Object.keys(dadosComportamentais).length > 0
-            ? { behavioral_snapshot: dadosComportamentais, corretor_nome: corretorNome ?? null, tipo_mbti: tipoMBTI ?? null }
-            : undefined,
+          metadata: snapshot || reportMeta ? { ...(snapshot ?? {}), ...(reportMeta ?? {}) } : undefined,
         });
       }
 
