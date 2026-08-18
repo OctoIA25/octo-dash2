@@ -93,7 +93,7 @@ export const saveXmlConfigToSupabase = async (
  */
 export const fetchXmlConfigFromSupabase = async (
   tenantId: string
-): Promise<{ config: { xml_url: string; imoveis_count: number; backup_data: Imovel[] | null; backup_at: string | null } | null; error?: string }> => {
+): Promise<{ config: { xml_url: string | null; imoveis_count: number; backup_data: Imovel[] | null; backup_at: string | null } | null; error?: string }> => {
   try {
     const { data, error } = await supabase
       .from('tenant_xml_config')
@@ -113,6 +113,61 @@ export const fetchXmlConfigFromSupabase = async (
       error: error instanceof Error ? error.message : 'Erro desconhecido' 
     };
   }
+};
+
+/**
+ * Extrai o `mid` de um link do Google My Maps. Aceita o mid puro também,
+ * porque é isso que a pessoa cola metade das vezes.
+ */
+export const parseMyMapsMid = (input: string): string => {
+  const trimmed = input.trim();
+  return trimmed.match(/[?&]mid=([^&\s]+)/)?.[1] ?? trimmed;
+};
+
+/**
+ * Busca o mid do mapa curado (Google My Maps) do tenant.
+ * Select enxuto de propósito: `backup_data` na mesma tabela pesa megabytes.
+ */
+export const fetchMyMapsMid = async (tenantId: string): Promise<string | null> => {
+  if (!tenantId) return null;
+
+  const { data, error } = await supabase
+    .from('tenant_xml_config')
+    .select('my_maps_mid')
+    .eq('tenant_id', tenantId)
+    .maybeSingle();
+
+  if (error) {
+    console.error('❌ Erro ao buscar mid do mapa curado:', error.code, error.message, error.details);
+    return null;
+  }
+
+  return data?.my_maps_mid || null;
+};
+
+/**
+ * Salva o mid do mapa curado. String vazia limpa a configuração.
+ */
+export const saveMyMapsMid = async (
+  tenantId: string,
+  mid: string
+): Promise<{ success: boolean; error?: string }> => {
+  const { error } = await supabase
+    .from('tenant_xml_config')
+    .upsert({
+      tenant_id: tenantId,
+      my_maps_mid: mid.trim() || null,
+      updated_at: new Date().toISOString(),
+    }, {
+      onConflict: 'tenant_id'
+    });
+
+  if (error) {
+    console.error('❌ Erro ao salvar mid do mapa curado:', error.code, error.message, error.details);
+    return { success: false, error: error.message };
+  }
+
+  return { success: true };
 };
 
 /**

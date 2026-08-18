@@ -75,7 +75,7 @@ const LEAD_SOURCES = [
 
 type SourceImage = { [sourceId: number]: string };
 import { useAuth } from "@/hooks/useAuth";
-import { previewTenantCorretoresFromImoveis, getTenantCorretores, getTenantXmlUrl, setTenantXmlUrl, syncTenantImoveisFromXml, loadXmlDataFromSupabase, saveXmlConfigToSupabase } from '@/features/imoveis/services/imoveisXmlService';
+import { previewTenantCorretoresFromImoveis, getTenantCorretores, getTenantXmlUrl, setTenantXmlUrl, syncTenantImoveisFromXml, loadXmlDataFromSupabase, saveXmlConfigToSupabase, fetchMyMapsMid, saveMyMapsMid, parseMyMapsMid } from '@/features/imoveis/services/imoveisXmlService';
 import { syncImoveisForAllCorretores } from '@/features/imoveis/services/xmlSyncService';
 import { supabase } from '@/lib/supabaseClient';
 import { 
@@ -136,6 +136,9 @@ export const IntegracoesPage: React.FC = () => {
   const [xmlStatus, setXmlStatus] = useState<'idle' | 'saved' | 'synced' | 'error'>('idle');
   const [xmlErrorMessage, setXmlErrorMessage] = useState('');
   const [xmlCorretoresPreview, setXmlCorretoresPreview] = useState<ReturnType<typeof previewTenantCorretoresFromImoveis>>([]);
+  const [myMapsInput, setMyMapsInput] = useState('');
+  const [myMapsStatus, setMyMapsStatus] = useState<'idle' | 'saved' | 'error'>('idle');
+  const [myMapsError, setMyMapsError] = useState('');
   const [isCreatingAccess, setIsCreatingAccess] = useState(false);
   const [isSyncingAllBrokers, setIsSyncingAllBrokers] = useState(false);
   const [syncAllBrokersResult, setSyncAllBrokersResult] = useState<{ ok: boolean; summary?: any; error?: string } | null>(null);
@@ -341,6 +344,11 @@ export const IntegracoesPage: React.FC = () => {
     };
     
     loadXmlData();
+  }, [tenantId]);
+
+  useEffect(() => {
+    if (!tenantId) return;
+    fetchMyMapsMid(tenantId).then((mid) => setMyMapsInput(mid ?? ''));
   }, [tenantId]);
 
   useEffect(() => {
@@ -909,6 +917,52 @@ export const IntegracoesPage: React.FC = () => {
                   >
                     {isSyncingXml ? 'Sincronizando...' : 'Sincronizar'}
                   </button>
+                </div>
+
+                <div className="mt-6 pt-5 border-t border-gray-200 dark:border-slate-800">
+                  <p className="text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
+                    Mapa curado (Google My Maps) — opcional
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      value={myMapsInput}
+                      onChange={(e) => {
+                        setMyMapsInput(e.target.value);
+                        if (myMapsStatus !== 'idle') setMyMapsStatus('idle');
+                      }}
+                      placeholder="Cole o link do seu mapa ou só o mid"
+                      className="flex-1 px-3 py-2 border border-gray-200 dark:border-slate-800 rounded-lg text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!tenantId) return;
+                        const mid = parseMyMapsMid(myMapsInput);
+                        const { success, error } = await saveMyMapsMid(tenantId, mid);
+                        if (success) {
+                          setMyMapsInput(mid);
+                          setMyMapsStatus('saved');
+                        } else {
+                          setMyMapsError(error ?? '');
+                          setMyMapsStatus('error');
+                        }
+                      }}
+                      className="px-4 py-2 border border-gray-200 dark:border-slate-800 rounded-lg bg-white dark:bg-slate-900 hover:bg-gray-50 dark:hover:bg-slate-800/60 transition-colors text-sm font-medium text-gray-900 dark:text-slate-100"
+                      disabled={!tenantId}
+                    >
+                      Salvar
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-slate-400 mt-2">
+                    Aparece como a aba "Curado" no Mapa de Imóveis. O mapa precisa estar compartilhado
+                    como "qualquer pessoa com o link", senão os corretores veem um aviso de permissão.
+                    Deixe em branco para esconder a aba.
+                  </p>
+                  {myMapsStatus === 'saved' ? (
+                    <p className="text-xs text-green-700 mt-2">Mapa curado salvo.</p>
+                  ) : myMapsStatus === 'error' ? (
+                    <p className="text-xs text-red-600 mt-2">Erro ao salvar: {myMapsError || 'tente novamente.'}</p>
+                  ) : null}
                 </div>
 
                 {xmlStatus === 'saved' ? (

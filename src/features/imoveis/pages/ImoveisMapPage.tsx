@@ -20,6 +20,7 @@ import {
   batchSaveGeoResults,
   batchSavePending,
 } from '../services/geocodingService';
+import { fetchMyMapsMid } from '../services/imoveisXmlService';
 import type { Imovel } from '../services/kenloService';
 import type { GeoCoords } from '../services/geocodingService';
 import { ImoveisMapHeaderFilters } from '../components/ImoveisMapHeaderFilters';
@@ -136,6 +137,11 @@ function ImovelMarker({ imovel, coords }: { imovel: Imovel; coords: GeoCoords })
 // Centro padrão (São Paulo)
 const DEFAULT_CENTER: [number, number] = [-23.55, -46.633];
 
+// Mapa curado no Google My Maps (regiões/pins desenhados à mão pela imobiliária).
+// O mid vem de tenant_xml_config.my_maps_mid — cada imobiliária tem o seu, e sem
+// mid cadastrado o alternador nem aparece. Exige o mapa compartilhado como
+// "qualquer pessoa com o link".
+
 export default function ImoveisMapPage() {
   const { imoveis, isLoading } = useImoveisData();
   const { tenantId } = useAuth();
@@ -145,6 +151,8 @@ export default function ImoveisMapPage() {
   const tipoFiltro = searchParams.get('tipo') ?? 'todos';
   const finalidadeFiltro = searchParams.get('finalidade') ?? 'todas';
 
+  const [modo, setModo] = useState<'imoveis' | 'curado'>('imoveis');
+  const [myMapsMid, setMyMapsMid] = useState<string | null>(null);
   const [coordsByRef, setCoordsByRef] = useState<Map<string, GeoCoords>>(new Map());
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [isGeocoding, setIsGeocoding] = useState(false);
@@ -167,6 +175,12 @@ export default function ImoveisMapPage() {
       }
       setDbLoaded(true); // libera o geocoding apenas após o BD ser consultado
     });
+  }, [tenantId]);
+
+  // Mapa curado do tenant (opcional)
+  useEffect(() => {
+    if (!tenantId) return;
+    fetchMyMapsMid(tenantId).then(setMyMapsMid);
   }, [tenantId]);
 
   // Filtragem antes de geocodificar (otimização)
@@ -290,17 +304,50 @@ export default function ImoveisMapPage() {
   }, [markers]);
 
   const totalPendentes = imoveisFiltrados.length - markers.length;
+  const mostrandoCurado = modo === 'curado' && Boolean(myMapsMid);
 
   return (
     <div className="w-full h-[calc(100vh-56px)] flex flex-col">
       {/* Barra de filtros do mapa (no corpo, para não cobrir as abas do header) */}
-      <div className="shrink-0 flex items-center border-b border-slate-200 bg-white px-4 py-2 dark:border-slate-800 dark:bg-slate-900">
-        <ImoveisMapHeaderFilters />
+      <div className="shrink-0 flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-2 dark:border-slate-800 dark:bg-slate-900">
+        {!mostrandoCurado ? (
+          <ImoveisMapHeaderFilters />
+        ) : (
+          <span className="flex-1 text-[13px] font-semibold text-slate-900 dark:text-slate-100">
+            Mapa curado
+          </span>
+        )}
+
+        {myMapsMid && (
+        <div className="shrink-0 flex rounded-lg border border-slate-200 p-0.5 dark:border-slate-700">
+          {(['imoveis', 'curado'] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setModo(m)}
+              className={`px-2.5 py-1 text-[12px] rounded-md transition-colors ${
+                modo === m
+                  ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
+                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
+              }`}
+            >
+              {m === 'imoveis' ? 'Imóveis' : 'Curado'}
+            </button>
+          ))}
+        </div>
+        )}
       </div>
 
       {/* Mapa */}
       <div className="flex-1 relative bg-slate-100 dark:bg-slate-950">
-        {isLoading ? (
+        {mostrandoCurado ? (
+          <iframe
+            title="Mapa curado"
+            src={`https://www.google.com/maps/d/embed?mid=${encodeURIComponent(myMapsMid)}&ehbc=2E312F`}
+            style={{ height: '100%', width: '100%', border: 0 }}
+            allowFullScreen
+          />
+        ) : isLoading ? (
           <div className="absolute inset-0 flex items-center justify-center text-slate-500">
             <Loader2 className="h-5 w-5 animate-spin mr-2" />
             Carregando imóveis…
@@ -323,13 +370,15 @@ export default function ImoveisMapPage() {
         )}
 
         {/* Badge de progresso não-bloqueante */}
-        {isGeocoding && (
+        {!mostrandoCurado && isGeocoding && (
           <div className="absolute top-3 right-3 z-[1001] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow px-3 py-1.5 flex items-center gap-2 text-[11px] text-slate-600 dark:text-slate-300">
             <Loader2 className="h-3 w-3 animate-spin text-blue-600 shrink-0" />
             Localizando {progress.current}/{progress.total}…
           </div>
         )}
 
+        {!mostrandoCurado && (
+          <>
         {/* Legenda */}
         <div className="absolute bottom-4 left-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-lg p-3 text-[11px] z-[1000]">
           <div className="font-semibold text-slate-700 dark:text-slate-300 mb-2">Legenda</div>
@@ -347,6 +396,8 @@ export default function ImoveisMapPage() {
           {markers.length} de {imoveisFiltrados.length} imóveis no mapa
           {isGeocoding && <span className="ml-1 text-blue-600 dark:text-blue-400">· processando…</span>}
         </div>
+          </>
+        )}
       </div>
     </div>
   );
