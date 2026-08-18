@@ -96,6 +96,8 @@ export interface KanbanLead {
   comments: string | null;
   // Classificação (lancamento/pronto/locacao/indefinido) — vem pronta do banco
   classification: string | null;
+  /** Etiquetas do lead. Só a tabela `leads` tem a coluna; kenlo_leads vem sempre null. */
+  tags: string[] | null;
   /** Origem real da linha — o modal escreve na tabela FONTE, nunca no espelho. */
   source_lead_id: string | null;
   source_kenlo_id: string | null;
@@ -124,7 +126,7 @@ const LEADS_TABLE = 'leads';
 // trazia campos gordos (em kenlo_leads, o raw_data JSONB = payload Kenlo inteiro por
 // lead) que o Kanban nunca lê e que dominavam o tempo de download.
 const LEADS_KANBAN_COLUMNS =
-  'id,created_at,updated_at,assigned_at,closing_date,property_code,property_value,assigned_agent_name,name,phone,email,source,status,temperature,comments,archived_at,archive_reason,lead_type,is_exclusive,participa_bolsao,classification';
+  'id,created_at,updated_at,assigned_at,closing_date,property_code,property_value,assigned_agent_name,name,phone,email,source,status,temperature,comments,archived_at,archive_reason,lead_type,is_exclusive,participa_bolsao,classification,tags';
 const KENLO_KANBAN_COLUMNS =
   'id,client_name,client_phone,client_email,message,interest_reference,attended_by_name,is_exclusive,interest_type,interest_is_sale,interest_is_rent,stage,temperature,portal,lead_timestamp,archived_at,archive_reason,updated_at,created_at,tenant_id,classification';
 
@@ -238,6 +240,8 @@ export function mapKenloToKanbanLead(kl: Record<string, unknown>): KanbanLead {
     property_value: null,
     comments: (kl.message as string) || null,
     classification: (kl.classification as string | null) ?? null,
+    // kenlo_leads não tem coluna `tags` — nada a mapear.
+    tags: null,
     source_lead_id: null,
     source_kenlo_id: kl.id as string,
     archived_at: (kl.archived_at as string) || null,
@@ -374,6 +378,7 @@ export function mapToKanbanLead(lead: CRMLead): KanbanLead {
     property_value: lead.property_value,
     comments: lead.comments,
     classification: lead.classification ?? null,
+    tags: lead.tags ?? null,
     source_lead_id: lead.id,
     source_kenlo_id: null,
     archived_at: lead.archived_at,

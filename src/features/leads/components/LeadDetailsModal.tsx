@@ -25,6 +25,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import { Link } from 'react-router-dom';
+import { useChatPath } from '@/features/chat/components/OpenConversationLink';
 import { 
   Phone, 
   Building2, 
@@ -49,7 +51,8 @@ import {
   ClipboardList,
   Archive,
   Sparkles,
-  Tag
+  Tag,
+  MessageSquare
 } from 'lucide-react';
 import { BolsaoLead } from '../services/bolsaoService';
 import { ClassificacaoBadge, CLASSIFICACAO_ESTILOS, CLASSIFICACAO_ORDEM } from './ClassificacaoBadge';
@@ -373,6 +376,8 @@ export const LeadDetailsModal = ({
     }
   }, [isOpen, lead?.codigo]);
   
+  const chatPath = useChatPath(lead?.lead, lead?.nomedolead);
+
   if (!lead) return null;
   
   // A foto já vem no campo lead.Foto do Supabase
@@ -533,6 +538,24 @@ export const LeadDetailsModal = ({
               <p className="text-lg font-bold text-foreground">
                 {formatarTelefone(lead.lead)}
               </p>
+            </div>
+
+            {/* Conversa WhatsApp — deep-link para o chat da Lia com este lead. */}
+            <div className="bg-muted/50 p-4 rounded-lg">
+              <div className="flex items-center gap-2 mb-2">
+                <MessageSquare className="h-5 w-5 text-emerald-500" />
+                <span className="font-bold text-sm text-muted-foreground">Conversa WhatsApp</span>
+              </div>
+              {chatPath ? (
+                <Link
+                  to={chatPath}
+                  className="text-lg font-bold text-emerald-600 dark:text-emerald-400 hover:underline"
+                >
+                  Abrir conversa
+                </Link>
+              ) : (
+                <p className="text-sm text-muted-foreground">Sem conversa disponível</p>
+              )}
             </div>
 
             {/* Código do Imóvel */}

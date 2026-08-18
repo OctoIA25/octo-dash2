@@ -70,6 +70,7 @@ import {
 } from '../services/leadsService';
 import { syncProposalStageFromLead } from '../services/proposalsService';
 import { leadStatusToPropostaStage } from '../utils/stageBridge';
+import { leadCasaBusca } from '../utils/buscaLead';
 import {
   fetchTenantBolsaoConfig,
   type TenantBolsaoConfig,
@@ -654,6 +655,7 @@ export const MeusLeadsAtribuidosSection = ({
   const [dataFim, setDataFim] = useState('');
   const [filtroTemperatura, setFiltroTemperatura] = useState<string>('todos');
   const [filtroTipo, setFiltroTipo] = useState<string>('todos');
+  const [busca, setBusca] = useState('');
   
   // Estados para scroll horizontal
   const kanbanContainerRef = useRef<HTMLDivElement>(null);
@@ -665,6 +667,7 @@ export const MeusLeadsAtribuidosSection = ({
   
   const debouncedDataInicio = useDebounce(dataInicio, 300)
   const debouncedDataFim = useDebounce(dataFim, 300)
+  const debouncedBusca = useDebounce(busca, 300)
 
   // Bolsão: config do tenant + clock que tica a cada 30s para alimentar o countdown
   const [bolsaoConfig, setBolsaoConfig] = useState<TenantBolsaoConfig | null>(null);
@@ -991,6 +994,8 @@ export const MeusLeadsAtribuidosSection = ({
     return lead ? getLeadStatus(lead, kanbanColumns) : null;
   }, [findLeadById, kanbanColumns]);
 
+  const termoBusca = debouncedBusca.trim().toLowerCase();
+
   // Aplicar filtros nos leads (memoizado)
   const leadsFiltrados = useMemo(() => meusLeads.filter(lead => {
     const leadRecord = lead as unknown as Record<string, unknown>;
@@ -1016,8 +1021,10 @@ export const MeusLeadsAtribuidosSection = ({
       if (filtroTipo === 'locacao' && tipo !== 'locação' && tipo !== 'locacao') return false;
     }
 
+    if (!leadCasaBusca(lead, termoBusca)) return false;
+
     return true;
-  }), [meusLeads, filtroPeriodo, debouncedDataInicio, debouncedDataFim, filtroTemperatura, filtroTipo]);
+  }), [meusLeads, filtroPeriodo, debouncedDataInicio, debouncedDataFim, filtroTemperatura, filtroTipo, termoBusca]);
 
   // Agrupar leads filtrados por etapa do funil (memoizado)
   const leadsAgrupados = useMemo(() => {
@@ -1110,7 +1117,7 @@ const handleDragEnd = useCallback(async (event: DragEndEvent) => {
   // Lead ativo sendo arrastado
   const activeLead = activeId ? meusLeads.find(l => l.id === activeId) : null;
 
-  const temFiltroAtivo = filtroPeriodo !== 'todos' || filtroTemperatura !== 'todos' || filtroTipo !== 'todos';
+  const temFiltroAtivo = filtroPeriodo !== 'todos' || filtroTemperatura !== 'todos' || filtroTipo !== 'todos' || busca.trim() !== '';
 
   return (
     <div className="flex flex-col h-full" style={{ backgroundColor: 'var(--bg-primary)' }}>
@@ -1137,6 +1144,14 @@ const handleDragEnd = useCallback(async (event: DragEndEvent) => {
         <div className="h-5 w-px" style={{ backgroundColor: 'var(--border)' }} />
 
         {/* Filtros compactos */}
+        <Input
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          placeholder="Buscar por nome, telefone, e-mail ou tag"
+          aria-label="Buscar leads"
+          className="h-8 text-xs w-[260px]"
+        />
+
         <Select value={filtroPeriodo} onValueChange={(value) => setFiltroPeriodo(value as 'todos' | 'personalizado')}>
           <SelectTrigger className="h-8 text-xs w-[150px]">
             <SelectValue placeholder="Período" />
@@ -1197,6 +1212,7 @@ const handleDragEnd = useCallback(async (event: DragEndEvent) => {
               setDataFim('');
               setFiltroTemperatura('todos');
               setFiltroTipo('todos');
+              setBusca('');
             }}
             className="h-8 text-xs"
           >
@@ -1313,6 +1329,7 @@ const handleDragEnd = useCallback(async (event: DragEndEvent) => {
                       setFiltroPeriodo('todos');
                       setFiltroTemperatura('todos');
                       setFiltroTipo('todos');
+                      setBusca('');
                     }}
                   >
                     <RotateCcw className="h-4 w-4 mr-2" />

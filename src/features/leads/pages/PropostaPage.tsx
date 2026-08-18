@@ -108,6 +108,14 @@ import {
   GENERAL_CONDITIONS,
   type CcvDocumentInput,
 } from '@/features/leads/utils/proposalDocuments';
+import {
+  DEFAULT_COMMISSION_PERCENT,
+  formatPercent,
+  isFullyAllocated,
+  parsePercentInput,
+  splitCommission,
+  sumParticipations,
+} from '@/features/leads/utils/commissionSplit';
 import { DocumentPreviewDialog } from '@/features/leads/components/DocumentPreviewDialog';
 import { PdfPreviewDialog } from '@/features/leads/components/PdfPreviewDialog';
 import { ImoveisComboBox } from '@/components/ui/imovel-combobox';
@@ -2024,6 +2032,9 @@ export const PropostaPage = ({
       transactionDraft: { ...previous.transactionDraft, [key]: value },
     }));
   }, []);
+  // Mesma regra da proposta já criada: o % manda e o R$ é derivado.
+  const draftCommissionRate = parsePercentInput(getDraftTx('commissionPercent', DEFAULT_COMMISSION_PERCENT));
+  const draftCommission = parseCurrencyInput(draftForm.valor) * draftCommissionRate;
   const toggleDraftIncludedItem = useCallback((label: string) => {
     setDraftForm((previous) => {
       const current = (previous.transactionDraft.includedInPriceItems || '')
@@ -2354,7 +2365,12 @@ export const PropostaPage = ({
     ? [selectedDetail.endereco.logradouro, selectedDetail.endereco.numero, selectedDetail.endereco.complemento].filter(Boolean).join(', ')
     : selectedProposal?.imovelRef || 'Imóvel sem identificação';
   const selectedSellerName = selectedDetail?.vendedores.find((party) => party.nomeCompleto.trim())?.nomeCompleto.trim() || 'A definir';
-  const selectedCommission = selectedProposal ? selectedProposal.valor * 0.055 : 0;
+  // Comissão total = valor do negócio × % do formulário (5,5% é só o padrão de
+  // partida). O % é a fonte da verdade; o R$ é sempre derivado dele.
+  const selectedCommissionRate = parsePercentInput(
+    selectedDetail?.transactionForm?.commissionPercent ?? DEFAULT_COMMISSION_PERCENT,
+  );
+  const selectedCommission = selectedProposal ? selectedProposal.valor * selectedCommissionRate : 0;
 
   // Entrada única do CCV: o download (generateCcvDraft) e o preview consomem o
   // mesmo objeto, garantindo que a pré-visualização seja idêntica ao arquivo.
@@ -2405,11 +2421,11 @@ export const PropostaPage = ({
       compradores: draftForm.compradores,
       vendedores: draftForm.vendedores,
       valor,
-      comissao: valor * 0.055,
+      comissao: draftCommission,
       formaPagamento: draftForm.comFinanciamento ? 'Com financiamento' : 'Sem financiamento',
       condicoesEspecificas: draftForm.condicoesEspecificas,
     };
-  }, [draftForm]);
+  }, [draftForm, draftCommission]);
 
   const draftCcvPreview = useMemo(
     () => (draftCcvPreviewOpen ? buildCcvDocumentSafe(draftCcvInput) : { document: null, error: null }),
@@ -2441,6 +2457,16 @@ export const PropostaPage = ({
     .map((item) => item.trim())
     .filter(Boolean);
   const getTransactionFormValue = (key: string, fallback = '') => transactionForm[key] ?? fallback;
+
+  // Divisão da comissão: a participação de cada comissionado é o que se edita;
+  // o R$ de cada um sai dela. Sem ninguém informado, o principal leva 100%.
+  const commissionParticipations = commissionedPeople.map((_, index) =>
+    parsePercentInput(getTransactionFormValue(`commissioned.${index}.participation`, index === 0 ? '100%' : '0%')),
+  );
+  const commissionShares = splitCommission(selectedCommission, commissionParticipations);
+  const commissionParticipationSum = sumParticipations(commissionParticipations);
+  const commissionFullyAllocated = isFullyAllocated(commissionParticipationSum);
+
   const activeDealSubstageId = getTransactionFormValue('activeDealSubstageId');
   const activeDealSubstageLabel = getTransactionFormValue('activeDealSubstageLabel');
   const isFinanciado = Boolean(selectedDetail?.pagamento.comFinanciamento);
@@ -4015,7 +4041,7 @@ export const PropostaPage = ({
                         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                           <InfoTile label="Código do Imóvel" value={selectedProposal.imovelRef || 'Sem código'} icon={Building2} />
                           <InfoTile label="Valor do Negócio" value={formatCurrencyWithCents(selectedProposal.valor)} icon={DollarSign} />
-                          <InfoTile label="Comissão Geral" value={formatCurrencyWithCents(selectedCommission)} detail="Estimativa de 5,5%" icon={WalletCards} />
+                          <InfoTile label="Comissão Geral" value={formatCurrencyWithCents(selectedCommission)} detail={`${formatPercent(selectedCommissionRate)} do valor do negócio`} icon={WalletCards} />
                           <InfoTile label="Subida Negócio" value={formatDate(selectedProposal.criadaEm)} icon={CalendarDays} />
                         </div>
 
@@ -4327,8 +4353,8 @@ export const PropostaPage = ({
 
                         <div className="grid gap-3 sm:grid-cols-4">
                           <TransactionField label="Valor da Transação" value={selectedDetail.pagamento.valor} onChange={(value) => updatePayment(selectedProposal, { valor: value })} />
-                          <TransactionField label="Comissão R$" value={getTransactionFormValue('commissionAmount', formatCurrencyWithCents(selectedCommission))} onChange={(value) => updateTransactionForm(selectedProposal, 'commissionAmount', value)} />
-                          <TransactionField label="Comissão %" value={getTransactionFormValue('commissionPercent', '5,5%')} onChange={(value) => updateTransactionForm(selectedProposal, 'commissionPercent', value)} />
+                          <InfoTile label="Comissão R$" value={formatCurrencyWithCents(selectedCommission)} detail={`${formatCurrencyWithCents(selectedProposal.valor)} × ${formatPercent(selectedCommissionRate)}`} />
+                          <TransactionField label="Comissão %" value={getTransactionFormValue('commissionPercent', DEFAULT_COMMISSION_PERCENT)} onChange={(value) => updateTransactionForm(selectedProposal, 'commissionPercent', value)} />
                           <TransactionField label="Forma de pagamento" value={selectedDetail.pagamento.formaPagamento} onChange={(value) => updatePayment(selectedProposal, { formaPagamento: value })} />
                         </div>
 
@@ -4711,10 +4737,24 @@ export const PropostaPage = ({
                                 <TransactionField label="Nome Completo" value={getTransactionFormValue(`commissioned.${index}.name`, index === 0 ? selectedProposal.corretor || label : label)} onChange={(value) => updateTransactionForm(selectedProposal, `commissioned.${index}.name`, value)} />
                                 <TransactionField label="CPF/CNPJ" value={getTransactionFormValue(`commissioned.${index}.document`)} onChange={(value) => updateTransactionForm(selectedProposal, `commissioned.${index}.document`, value)} placeholder="Documento" />
                                 <TransactionField label="CRECI" value={getTransactionFormValue(`commissioned.${index}.creci`)} onChange={(value) => updateTransactionForm(selectedProposal, `commissioned.${index}.creci`, value)} placeholder="CRECI" />
-                                <TransactionField label="Comissão" value={getTransactionFormValue(`commissioned.${index}.commission`, index === 0 ? formatCurrencyWithCents(selectedCommission) : '')} onChange={(value) => updateTransactionForm(selectedProposal, `commissioned.${index}.commission`, value)} />
+                                <InfoTile label="Comissão" value={formatCurrencyWithCents(commissionShares[index]?.amount ?? 0)} />
                                 {showCommissionPercent ? <TransactionField label="Participação" value={getTransactionFormValue(`commissioned.${index}.participation`, index === 0 ? '100%' : '0%')} onChange={(value) => updateTransactionForm(selectedProposal, `commissioned.${index}.participation`, value)} /> : <InfoTile label="Participação" value="Oculta" />}
                               </div>
                             ))}
+                          </div>
+
+                          <div className={cn(
+                            'mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg px-3 py-2 text-xs font-semibold',
+                            commissionFullyAllocated
+                              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
+                              : 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300',
+                          )}>
+                            <span>Participações somam {formatPercent(commissionParticipationSum)}</span>
+                            <span>
+                              {commissionFullyAllocated
+                                ? `${formatCurrencyWithCents(selectedCommission)} distribuídos`
+                                : `${formatCurrencyWithCents(Math.abs(selectedCommission * (1 - commissionParticipationSum)))} ${commissionParticipationSum > 1 ? 'além da comissão' : 'sem comissionado'}`}
+                            </span>
                           </div>
                         </div>
 
@@ -5978,17 +6018,13 @@ export const PropostaPage = ({
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
                     <div className="grid gap-1.5">
                       <label className="text-[12px] font-medium text-slate-600 dark:text-slate-300">Comissão R$</label>
-                      <Input
-                        value={getDraftTx('commissionAmount')}
-                        onChange={(event) => setDraftTx('commissionAmount', event.target.value)}
-                        onBlur={(event) => setDraftTx('commissionAmount', formatCurrencyField(event.target.value))}
-                        placeholder="R$ 0,00"
-                        className="h-9 text-[13px]"
-                      />
+                      <div className="flex h-9 items-center rounded-md border border-slate-200 bg-slate-50 px-3 text-[13px] font-semibold text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100">
+                        {formatCurrencyWithCents(draftCommission)}
+                      </div>
                     </div>
                     <div className="grid gap-1.5">
                       <label className="text-[12px] font-medium text-slate-600 dark:text-slate-300">Comissão %</label>
-                      <Input value={getDraftTx('commissionPercent', '5,5%')} onChange={(event) => setDraftTx('commissionPercent', event.target.value)} placeholder="5,5%" className="h-9 text-[13px]" />
+                      <Input value={getDraftTx('commissionPercent', DEFAULT_COMMISSION_PERCENT)} onChange={(event) => setDraftTx('commissionPercent', event.target.value)} placeholder={DEFAULT_COMMISSION_PERCENT} className="h-9 text-[13px]" />
                     </div>
                   </div>
 
