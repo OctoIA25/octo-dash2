@@ -166,7 +166,7 @@ export function createWatermarkService(supabase) {
         while (true) {
           const { data: rows, error } = await supabase
             .from(table)
-            .select('id, fotos')
+            .select('id, fotos, updated_at')
             .eq('tenant_id', tenantId)
             .not('fotos', 'is', null)
             .range(from, from + page - 1);
@@ -190,7 +190,15 @@ export function createWatermarkService(supabase) {
 
             const changed = results.some((r) => r.changed);
             if (changed) {
-              await supabase.from(table).update({ fotos: results.map((r) => r.fo) }).eq('id', row.id);
+              // Reenvia updated_at para o trigger não contar reprocessamento de
+              // marca d'água como ajuste do corretor (regra do imóvel
+              // desatualizado). Só imoveis_locais respeita o valor enviado;
+              // condominios tem trigger incondicional e lancamentos não tem
+              // nenhum — nas duas o efeito é o mesmo de antes.
+              await supabase
+                .from(table)
+                .update({ fotos: results.map((r) => r.fo), ...(row.updated_at ? { updated_at: row.updated_at } : {}) })
+                .eq('id', row.id);
             }
             done += results.filter((r) => r.counted).length;
             // Grava progresso por linha (não por foto) — evita tempestade de writes.

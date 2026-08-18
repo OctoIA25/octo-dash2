@@ -64,7 +64,7 @@ for (const table of tables) {
   if (photoCount >= MAX_PHOTOS) break;
   let from = 0; const page = 200;
   while (photoCount < MAX_PHOTOS) {
-    let q = sb.from(table).select(`id, ${propIdField[table]}, fotos`).not('fotos', 'is', null).range(from, from + page - 1);
+    let q = sb.from(table).select(`id, ${propIdField[table]}, fotos, updated_at`).not('fotos', 'is', null).range(from, from + page - 1);
     if (TENANT) q = q.eq('tenant_id', TENANT);
     const { data: rows, error } = await q;
     if (error) { console.error(`❌ ${table}:`, error.message); break; }
@@ -121,7 +121,12 @@ for (const table of tables) {
       if (changed) {
         recordsChanged++;
         if (APPLY) {
-          const { error: uErr } = await sb.from(table).update({ fotos: novas }).eq('id', row.id);
+          // Reenvia updated_at pelo mesmo motivo do service.js: backfill de marca
+          // d'água não é ajuste do corretor (regra do imóvel desatualizado).
+          const { error: uErr } = await sb
+            .from(table)
+            .update({ fotos: novas, ...(row.updated_at ? { updated_at: row.updated_at } : {}) })
+            .eq('id', row.id);
           if (uErr) console.error(`  ❌ update ${table}/${row.id}: ${uErr.message}`);
         }
       }

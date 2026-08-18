@@ -9,9 +9,9 @@
  *   1. buildLogoWatermark(logo)  → executada UMA vez por troca de logo.
  *   2. composeWatermark(master, logo, opts) → por imagem/tamanho.
  *
- * A marca usa a FORMA do logo pintada de branco, translúcida e na posição
- * configurada (centro por padrão), com uma sombra difusa fraca atrás para
- * continuar legível também em fundos claros.
+ * A marca preserva as CORES originais do logo, translúcida e na posição
+ * configurada (centro por padrão), com um halo escuro atrás para continuar
+ * legível em fundos claros e escuros.
  */
 import sharp from 'sharp';
 
@@ -112,16 +112,13 @@ export async function composeWatermark(masterBuffer, logoBuffer, { size, opacity
   const boxW = Math.max(32, Math.round(baseW * scale)); 
   const boxH = Math.max(32, Math.round(baseH * scale));
 
-  // 2a. SOMBRA difusa atrás da marca — só o suficiente para o branco não sumir
-  // em fotos claras (parede/cama brancas). Fraca e MUITO borrada de propósito:
-  // um clone preto nítido atrás do logo é o que deixava a marca com cara de suja.
-  const shadowOpacity = clamp01(opacity) * 0.5;
-  const shadow = await tintedShape(logoBuffer, boxW, boxH, [0, 0, 0], shadowOpacity, Math.max(3, boxW * 0.06));
+  // 2a. SOMBRA/HALO escuro borrado atrás da marca — torna o logo legível mesmo
+  // sobre fotos claras (paredes/cama brancas); sem ela, cores claras somem.
+  const shadowOpacity = Math.min(0.85, clamp01(opacity) * 1.1);
+  const shadow = await tintedShape(logoBuffer, boxW, boxH, [0, 0, 0], shadowOpacity, Math.max(2, boxW * 0.02));
 
-  // 2b. Logo em BRANCO sólido translúcido (só a forma do logo; cores originais
-  // escuras ficavam ilegíveis sobre foto). ponytail: branco fixo — se algum dia
-  // precisar de marca colorida, vira uma coluna watermark_color no tenant.
-  const logo = await tintedShape(logoBuffer, boxW, boxH, [255, 255, 255], clamp01(opacity), 0);
+  // 2b. Logo COLORIDO translúcido (mantém as cores originais).
+  const logo = await scaledLogo(logoBuffer, boxW, boxH, clamp01(opacity));
 
   // 3. Compõe sombra + logo na posição escolhida e codifica no formato do perfil.
   const anchor = await placement(logo, baseW, baseH, position);
@@ -153,6 +150,23 @@ async function placement(logoPng, baseW, baseH, position) {
     left: Math.max(0, Math.min(x, baseW - w)),
     top: Math.max(0, Math.min(y, baseH - h)),
   };
+}
+
+/** Logo colorido redimensionado p/ caber na caixa, com opacidade global. */
+async function scaledLogo(logoBuffer, boxW, boxH, opacity) {
+  return sharp(logoBuffer)
+    .resize({ width: boxW, height: boxH, fit: 'inside' })
+    .ensureAlpha()
+    .composite([
+      {
+        input: Buffer.from([255, 255, 255, Math.round(255 * clamp01(opacity))]),
+        raw: { width: 1, height: 1, channels: 4 },
+        tile: true,
+        blend: 'dest-in',
+      },
+    ])
+    .png()
+    .toBuffer();
 }
 
 /**

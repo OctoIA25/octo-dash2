@@ -81,25 +81,6 @@ describe('composeWatermark', () => {
     expect(isWebp(out)).toBe(true);
   });
 
-  it('a marca CLAREIA a foto, mesmo com logo escuro', async () => {
-    // Logo azul-escuro sobre fundo cinza-escuro: se a marca preservasse as cores
-    // originais (ou levasse o halo preto antigo), o miolo sairia mais ESCURO.
-    const logoEscuro = await sharp({
-      create: { width: 40, height: 40, channels: 4, background: { r: 20, g: 30, b: 70, alpha: 1 } },
-    }).png().toBuffer();
-    const fundo = await sharp({ create: { width: 400, height: 400, channels: 3, background: '#3a3a3a' } })
-      .png().toBuffer();
-
-    const out = await composeWatermark(fundo, logoEscuro, {
-      size: { width: 400, height: 400, quality: 90, format: 'jpeg' }, opacity: 0.35, scale: 0.3,
-    });
-
-    // stats() ignora o pipeline (mede a ENTRADA), então lê-se o pixel central cru.
-    const { data, info } = await sharp(out).raw().toBuffer({ resolveWithObject: true });
-    const centro = data[(200 * info.width + 200) * info.channels];
-    expect(centro).toBeGreaterThan(0x3a + 40);
-  });
-
   it('foto com transparência não vira fundo preto no JPEG', async () => {
     const transparente = await sharp({
       create: { width: 60, height: 40, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 0 } },
