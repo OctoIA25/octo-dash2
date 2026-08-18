@@ -20,9 +20,11 @@ import {
   Key,
   ExternalLink,
   Image as ImageIcon,
-  Trash2
+  Trash2,
+  AlertTriangle
 } from 'lucide-react';
 import { Imovel } from '@/features/imoveis/services/kenloService';
+import { isDesatualizado, DIAS_SEM_AJUSTE_DESATUALIZADO } from '@/features/imoveis/utils/desatualizado';
 import { useState } from 'react';
 import {
   AlertDialog,
@@ -159,6 +161,19 @@ export const ImovelCard = ({ imovel, onViewDetails, onDelete, canDelete }: Imove
             <span className="ml-1 capitalize">{imovel.tipoSimplificado}</span>
           </Badge>
         </div>
+
+        {/* Desatualizado: mais de 3 meses sem ajuste no cadastro */}
+        {isDesatualizado(imovel.updated_at) && (
+          <div className="absolute bottom-2 left-2">
+            <Badge
+              className="bg-amber-500/20 text-amber-500 border-amber-500/30"
+              title={`Sem ajuste há mais de ${DIAS_SEM_AJUSTE_DESATUALIZADO} dias`}
+            >
+              <AlertTriangle className="h-3 w-3 mr-1" />
+              Desatualizado
+            </Badge>
+          </div>
+        )}
 
         {/* Quantidade de Fotos */}
         {imovel.fotos.length > 0 && (

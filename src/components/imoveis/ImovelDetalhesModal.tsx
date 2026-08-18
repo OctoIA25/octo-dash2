@@ -37,10 +37,8 @@ import {
 import type { Imovel } from '@/features/imoveis/services/kenloService';
 import { useAuth } from '@/hooks/useAuth';
 import { getFotoCapaUrl, getFotoUrl, type FotoInput } from './fotos-helpers';
-
-// Roles com permissão de edição: diretoria (owner) e administrador (admin).
-// O captador (corretor responsável pelo imóvel) é verificado pelo e-mail.
-const ROLES_EDIT = ['owner', 'admin'];
+import { ImovelHistorico } from './ImovelHistorico';
+import { podeEditarImovel } from '@/features/imoveis/utils/podeEditarImovel';
 
 interface ImovelDetalhesModalProps {
   imovel: Imovel | null;
@@ -48,11 +46,14 @@ interface ImovelDetalhesModalProps {
   onOpenChange: (open: boolean) => void;
   /**
    * Quando true, o imóvel possui registro local editável. O botão "Editar" só
-   * aparece se, além disso, o usuário for diretoria (owner), administrador ou
-   * o captador (corretor responsável pelo imóvel).
+   * aparece se, além disso, o usuário for diretoria (owner), administrador,
+   * o captador (corretor responsável) ou quem cadastrou o imóvel.
    */
   canEdit?: boolean;
   onEditar?: () => void;
+  obsInterna?: string | null;
+  /** `imoveis_locais.criado_por` — corretor que cadastrou o imóvel. */
+  criadoPor?: string | null;
 }
 
 const formatCurrency = (value: number) => {
@@ -147,23 +148,22 @@ export const ImovelDetalhesModal = ({
   onOpenChange,
   canEdit = false,
   onEditar,
+  obsInterna,
+  criadoPor,
 }: ImovelDetalhesModalProps) => {
   const { user, isOwner } = useAuth();
 
   if (!imovel) return null;
 
-  // Captador: corretor responsável pelo imóvel (comparação por e-mail)
-  const isCaptador = Boolean(
-    user?.email &&
-      imovel.corretor_email &&
-      user.email.toLowerCase() === imovel.corretor_email.toLowerCase()
-  );
-
-  // Edição permitida apenas para diretoria (owner), administrador ou captador,
-  // e somente quando o imóvel possui registro local editável (canEdit).
-  const podeEditar =
-    canEdit &&
-    (Boolean(isOwner) || ROLES_EDIT.includes(String(user?.systemRole || '')) || isCaptador);
+  const podeEditar = podeEditarImovel({
+    temRegistroLocal: canEdit,
+    isPlatformOwner: isOwner,
+    systemRole: user?.systemRole,
+    userId: user?.id,
+    userEmail: user?.email,
+    captadorEmail: imovel.corretor_email,
+    criadoPor,
+  });
 
   const fotos = (imovel.fotos || []) as FotoInput[];
   const capa = getFotoCapaUrl(fotos);
@@ -331,6 +331,23 @@ export const ImovelDetalhesModal = ({
             </div>
           )}
 
+          {obsInterna && (
+            <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+              <SectionTitle>Observação Interna</SectionTitle>
+              <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-line">
+                {obsInterna}
+              </p>
+            </div>
+          )}
+
+          {/* Histórico — só imóveis com registro local são auditados pelo trigger */}
+          {canEdit && (
+            <div>
+              <SectionTitle>Histórico de alterações</SectionTitle>
+              <ImovelHistorico tenantId={user?.tenantId} codigoImovel={imovel.referencia} />
+            </div>
+          )}
+
           {/* Fotos */}
           {imovel.fotos && imovel.fotos.length > 0 && (
             <div>
@@ -388,6 +405,7 @@ export const ImovelDetalhesModal = ({
               </div>
             </div>
           )}
+
         </div>
 
         {/* Ações */}

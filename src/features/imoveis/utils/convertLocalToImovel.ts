@@ -37,6 +37,8 @@ export interface ImovelLocalConvertivel {
   descricao: string | null;
   fotos: FotoInput[];
   captador_id?: string | null;
+  /** Último ajuste no cadastro — base da regra de imóvel desatualizado. */
+  updated_at?: string | null;
 }
 
 export const convertLocalToImovel = (local: ImovelLocalConvertivel): Imovel => ({
@@ -61,6 +63,7 @@ export const convertLocalToImovel = (local: ImovelLocalConvertivel): Imovel => (
   salas: 0,
   descricao: local.descricao || '',
   captador_id: local.captador_id ?? null,
+  updated_at: local.updated_at ?? null,
   fotos: Array.isArray(local.fotos) ? normalizeFotos(local.fotos).map((foto) => foto.url) : [],
   videos: [],
   area_comum: [],

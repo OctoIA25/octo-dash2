@@ -99,6 +99,8 @@ interface ImovelLocal {
   aprovado_em?: string;
   motivo_aprovacao?: string;
   captador_id?: string | null;
+  obs_interna?: string | null;
+  updated_at?: string | null;
 }
 
 interface AprovacaoDialog {
@@ -404,6 +406,7 @@ export const MeusImoveisTab = ({ allImoveis, onViewDetails, onPropertyCreated }:
       salas: local.salas ? String(local.salas) : '',
       status_aprovacao: local.status_aprovacao,
       captador_id: local.captador_id || '',
+      obs_interna: local.obs_interna || '',
     };
   };
 

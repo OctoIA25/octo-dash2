@@ -12,6 +12,9 @@ import { supabase } from '@/lib/supabaseClient';
 import { uploadImoveisFotos } from '@/lib/uploadImoveisFotos';
 import { normalizeFotos } from './fotos-helpers';
 import { FotosUploader } from './FotosUploader';
+import { PropertyCompleteness } from './PropertyCompleteness';
+import { isHttpUrl, normalizeYouTubeUrl } from '@/features/imoveis/utils/mediaUrls';
+import type { CompletenessSection } from '@/features/imoveis/utils/propertyCompleteness';
 import { ProprietarioAutocomplete } from './ProprietarioAutocomplete';
 import { ImovelDuplicadoDialog } from './ImovelDuplicadoDialog';
 import {
@@ -70,7 +73,8 @@ import {
   Dumbbell,
   Wrench,
   Shield,
-  Sparkles
+  Sparkles,
+  Lock
 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { sendMessageToAgent } from '@/features/agentes-ia/services/agentWebhookService';
@@ -172,6 +176,8 @@ interface ImovelFormData {
   // Características / Amenidades
   caracteristicas: string[];
   aceita_troca: string;
+
+  obs_interna: string;
 }
 
 const initialFormData: ImovelFormData = {
@@ -231,6 +237,7 @@ const initialFormData: ImovelFormData = {
   obs_documentacao: '',
   caracteristicas: [],
   aceita_troca: 'nao',
+  obs_interna: ''
 };
 
 const TIPOS_RESIDENCIAL = [
@@ -411,43 +418,6 @@ const CARACTERISTICAS_IMOVEL = {
       'Sistema de alarme',
       'Vigia'
     ]
-  }
-};
-
-// Extrai o ID de um vídeo do YouTube a partir das URLs mais comuns.
-// Aceita só YouTube; retorna null para qualquer outra coisa.
-const extractYouTubeId = (url: string): string | null => {
-  const s = (url || '').trim();
-  if (!s) return null;
-  const patterns = [
-    /(?:youtube\.com\/watch\?(?:.*&)?v=)([A-Za-z0-9_-]{11})/,
-    /(?:youtu\.be\/)([A-Za-z0-9_-]{11})/,
-    /(?:youtube\.com\/embed\/)([A-Za-z0-9_-]{11})/,
-    /(?:youtube\.com\/shorts\/)([A-Za-z0-9_-]{11})/,
-    /(?:youtube\.com\/v\/)([A-Za-z0-9_-]{11})/,
-  ];
-  for (const re of patterns) {
-    const m = s.match(re);
-    if (m) return m[1];
-  }
-  return null;
-};
-
-// Normaliza para a URL canônica de watch; null se não for YouTube válido.
-const normalizeYouTubeUrl = (url: string): string | null => {
-  const id = extractYouTubeId(url);
-  return id ? `https://www.youtube.com/watch?v=${id}` : null;
-};
-
-// Tour virtual aceita qualquer provedor — valida só que seja URL http(s).
-const isHttpUrl = (url: string): boolean => {
-  const s = (url || '').trim();
-  if (!s) return false;
-  try {
-    const parsed = new URL(s);
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
-  } catch {
-    return false;
   }
 };
 
@@ -651,6 +621,15 @@ export const CriarImovelForm = ({
 
   const toggleSection = (section: keyof typeof openSections) => {
     setOpenSections(prev => ({ ...prev, [section]: !prev[section] }));
+  };
+
+  // Clique num card do completômetro: abre a seção e rola até ela.
+  // O scroll espera o próximo frame porque o conteúdo só existe depois de abrir.
+  const focusSection = (section: CompletenessSection) => {
+    setOpenSections(prev => ({ ...prev, [section]: true }));
+    requestAnimationFrame(() => {
+      document.getElementById(`secao-${section}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   };
 
   const handleInputChange = (field: keyof ImovelFormData, value: string) => {
@@ -1079,6 +1058,7 @@ export const CriarImovelForm = ({
       proprietario_telefone: formData.proprietario_celular || formData.proprietario_tel_residencial || null,
       proprietario_email: formData.proprietario_email || null,
       criado_por: user?.id || null,
+      obs_interna: formData.obs_interna || null,
       // captador_id só entra no payload para diretoria/admin. Upsert vira
       // INSERT ... ON CONFLICT DO UPDATE: colunas ausentes do payload ficam
       // fora do SET e mantêm o valor já salvo. Omitir aqui é o que faz um
@@ -1173,6 +1153,9 @@ export const CriarImovelForm = ({
             </p>
           </div>
 
+          {/* Completude do imóvel — calculada localmente a partir do formulário */}
+          <PropertyCompleteness property={formData} onFocusSection={focusSection} />
+
           {/* Status de Submissão */}
           {submitMessage && (
             <div className={`flex items-center gap-2 p-3 rounded-lg ${
@@ -1190,7 +1173,7 @@ export const CriarImovelForm = ({
           )}
 
           {/* Seção: Proprietário */}
-          <Collapsible open={openSections.proprietario} onOpenChange={() => toggleSection('proprietario')}>
+          <Collapsible id="secao-proprietario" open={openSections.proprietario} onOpenChange={() => toggleSection('proprietario')}>
             <CollapsibleTrigger className="flex items-center justify-between w-full p-3 bg-card rounded-lg border hover:bg-accent/50 transition-colors">
               <div className="flex items-center gap-2">
                 <User className="h-5 w-5 text-blue-500" />
@@ -1307,7 +1290,7 @@ export const CriarImovelForm = ({
           </Collapsible>
 
           {/* Seção: Estrutura */}
-          <Collapsible open={openSections.estrutura} onOpenChange={() => toggleSection('estrutura')}>
+          <Collapsible id="secao-estrutura" open={openSections.estrutura} onOpenChange={() => toggleSection('estrutura')}>
             <CollapsibleTrigger className="flex items-center justify-between w-full p-3 bg-card rounded-lg border hover:bg-accent/50 transition-colors">
               <div className="flex items-center gap-2">
                 <Building2 className="h-5 w-5 text-purple-500" />
@@ -1372,7 +1355,7 @@ export const CriarImovelForm = ({
           </Collapsible>
 
           {/* Seção: Localização */}
-          <Collapsible open={openSections.localizacao} onOpenChange={() => toggleSection('localizacao')}>
+          <Collapsible id="secao-localizacao" open={openSections.localizacao} onOpenChange={() => toggleSection('localizacao')}>
             <CollapsibleTrigger className="flex items-center justify-between w-full p-3 bg-card rounded-lg border hover:bg-accent/50 transition-colors">
               <div className="flex items-center gap-2">
                 <MapPin className="h-5 w-5 text-red-500" />
@@ -1551,7 +1534,7 @@ export const CriarImovelForm = ({
           </Collapsible>
 
           {/* Seção: Características */}
-          <Collapsible open={openSections.caracteristicas} onOpenChange={() => toggleSection('caracteristicas')}>
+          <Collapsible id="secao-caracteristicas" open={openSections.caracteristicas} onOpenChange={() => toggleSection('caracteristicas')}>
             <CollapsibleTrigger className="flex items-center justify-between w-full p-3 bg-card rounded-lg border hover:bg-accent/50 transition-colors">
               <div className="flex items-center gap-2">
                 <LayoutGrid className="h-5 w-5 text-orange-500" />
@@ -1676,7 +1659,7 @@ export const CriarImovelForm = ({
           </Collapsible>
 
           {/* Seção: Valores */}
-          <Collapsible open={openSections.valores} onOpenChange={() => toggleSection('valores')}>
+          <Collapsible id="secao-valores" open={openSections.valores} onOpenChange={() => toggleSection('valores')}>
             <CollapsibleTrigger className="flex items-center justify-between w-full p-3 bg-card rounded-lg border hover:bg-accent/50 transition-colors">
               <div className="flex items-center gap-2">
                 <DollarSign className="h-5 w-5 text-green-500" />
@@ -1750,7 +1733,7 @@ export const CriarImovelForm = ({
           </Collapsible>
 
           {/* Seção: Publicação na Web */}
-          <Collapsible open={openSections.publicacao} onOpenChange={() => toggleSection('publicacao')}>
+          <Collapsible id="secao-publicacao" open={openSections.publicacao} onOpenChange={() => toggleSection('publicacao')}>
             <CollapsibleTrigger className="flex items-center justify-between w-full p-3 bg-card rounded-lg border hover:bg-accent/50 transition-colors">
               <div className="flex items-center gap-2">
                 <FileText className="h-5 w-5 text-cyan-500" />
@@ -1861,7 +1844,7 @@ export const CriarImovelForm = ({
           </Collapsible>
 
           {/* Seção: Mídia */}
-          <Collapsible open={openSections.midia} onOpenChange={() => toggleSection('midia')}>
+          <Collapsible id="secao-midia" open={openSections.midia} onOpenChange={() => toggleSection('midia')}>
             <CollapsibleTrigger className="flex items-center justify-between w-full p-3 bg-card rounded-lg border hover:bg-accent/50 transition-colors">
               <div className="flex items-center gap-2">
                 <ImageIcon className="h-5 w-5 text-pink-500" />
@@ -2248,6 +2231,23 @@ export const CriarImovelForm = ({
                     rows={3}
                   />
                 </div>
+                
+                <div className="space-y-2 md:col-span-2 lg:col-span-4">
+                  <Label className="flex items-center gap-2">
+                    <Lock className="h-4 w-4 text-amber-500" />
+                    Observação Interna
+                    <Badge variant="outline" className="text-[10px] px-1 bg-amber-500/10 text-amber-600 border-amber-500/30">
+                      Somente equipe interna
+                    </Badge>
+                  </Label>
+                  <Textarea
+                    placeholder="Observações internas sobre o imóvel (não visível para clientes)..."
+                    value={formData.obs_interna}
+                    onChange={(e) => handleInputChange('obs_interna', e.target.value)}
+                    rows={3}
+                  />
+                </div>
+
               </div>
             </CollapsibleContent>
           </Collapsible>

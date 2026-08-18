@@ -19,6 +19,7 @@ import { normalizeFotos } from '@/components/imoveis/fotos-helpers';
 import { Imovel } from '../services/kenloService';
 import { resolverCaptador, matchCaptadorFilter, CAPTADOR_FILTRO_TODOS, CAPTADOR_FILTRO_SEM } from '../utils/captador';
 import { convertLocalToImovel } from '../utils/convertLocalToImovel';
+import { isDesatualizado } from '../utils/desatualizado';
 import { useCaptadores, mapCaptadoresPorId } from '../hooks/useCaptadores';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/hooks/useAuth';
@@ -223,6 +224,9 @@ interface ImovelLocal {
   super_destaque?: boolean | null;
   status_aprovacao?: 'aprovado' | 'nao_aprovado' | 'aguardando';
   captador_id?: string | null;
+  obs_interna?: string | null;
+  criado_por?: string | null;
+  updated_at?: string | null;
 }
 
 // Converte o registro local (imoveis_locais) no formato de initialData esperado
@@ -266,6 +270,7 @@ const buildEditDataFromLocal = (local: ImovelLocal) => {
     salas: local.salas ? String(local.salas) : '',
     status_aprovacao: local.status_aprovacao,
     captador_id: local.captador_id || '',
+    obs_interna: local.obs_interna || '',
   };
 };
 
@@ -325,6 +330,7 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
   const [tipoComissaoFilter, setTipoComissaoFilter] = useState<string>('todos');
   const [financiamentoFilter, setFinanciamentoFilter] = useState<string>('todos');
   const [destaqueFilter, setDestaqueFilter] = useState<string>('todos');
+  const [desatualizadoFilter, setDesatualizadoFilter] = useState<string>('todos');
   const [customFilters, setCustomFilters] = useState<CustomFilter[]>([]);
   const [filterSelectorKey, setFilterSelectorKey] = useState(0);
 
@@ -406,6 +412,9 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
         ...imovel,
         ...(local.fotos.length > 0 ? { fotos: local.fotos } : {}),
         captador_id: local.captador_id,
+        // O ajuste acontece no cadastro local, mesmo quando o imóvel também vem
+        // do XML — sem isso o duplicado nunca seria avaliado como desatualizado.
+        updated_at: local.updated_at,
       };
     });
 
@@ -699,6 +708,12 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
       );
     }
 
+    if (desatualizadoFilter !== 'todos') {
+      filtered = filtered.filter((i) =>
+        desatualizadoFilter === 'sim' ? isDesatualizado(i.updated_at) : !isDesatualizado(i.updated_at)
+      );
+    }
+
     if (customFilters.length > 0) {
       filtered = filtered.filter(imovel =>
         customFilters.every(cf => {
@@ -772,8 +787,15 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
     tipoComissaoFilter,
     financiamentoFilter,
     destaqueFilter,
+    desatualizadoFilter,
     customFilters
   ]);
+
+  // Contador do filtro: quantos imóveis passaram de 3 meses sem ajuste.
+  const totalDesatualizados = useMemo(
+    () => imoveis.filter((i) => isDesatualizado(i.updated_at)).length,
+    [imoveis],
+  );
 
   // Limpar filtros
   const limparFiltros = () => {
@@ -799,6 +821,7 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
     setTipoComissaoFilter('todos');
     setFinanciamentoFilter('todos');
     setDestaqueFilter('todos');
+    setDesatualizadoFilter('todos');
     setCustomFilters([]);
     setFilterSelectorKey(prev => prev + 1);
   };
@@ -839,6 +862,7 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
     tipoComissaoFilter !== 'todos' ||
     financiamentoFilter !== 'todos' ||
     destaqueFilter !== 'todos' ||
+    desatualizadoFilter !== 'todos' ||
     customFilters.some(cf => !!cf.value);
 
   // Handler para visualizar detalhes
@@ -1220,6 +1244,17 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
                 <SelectItem value="nao">Sem destaque</SelectItem>
               </SelectContent>
             </Select>
+
+            <Select value={desatualizadoFilter} onValueChange={setDesatualizadoFilter}>
+              <SelectTrigger>
+                <SelectValue placeholder="Atualização" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Atualização</SelectItem>
+                <SelectItem value="sim">Desatualizados ({totalDesatualizados})</SelectItem>
+                <SelectItem value="nao">Em dia</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="border-t border-border pt-4">
@@ -1448,6 +1483,12 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
                   <X className="h-3 w-3 ml-1 cursor-pointer" onClick={() => setDestaqueFilter('todos')} />
                 </Badge>
               )}
+              {desatualizadoFilter !== 'todos' && (
+                <Badge variant="secondary">
+                  {desatualizadoFilter === 'sim' ? 'Desatualizados' : 'Em dia'}
+                  <X className="h-3 w-3 ml-1 cursor-pointer" onClick={() => setDesatualizadoFilter('todos')} />
+                </Badge>
+              )}
               {customFilters.filter(cf => !!cf.value).map(cf => {
                 const fieldDef = CUSTOM_FILTER_FIELDS.find(f => f.key === cf.field);
                 const isSimNao = fieldDef?.type === 'feature' || fieldDef?.type === 'boolean';
@@ -1530,6 +1571,8 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
         onOpenChange={(o) => { if (!o) closeDetails(); }}
         canEdit={Boolean(findImovelLocal(selectedImovel?.referencia))}
         onEditar={handleEditarSelecionado}
+        obsInterna={findImovelLocal(selectedImovel?.referencia)?.obs_interna}
+        criadoPor={findImovelLocal(selectedImovel?.referencia)?.criado_por}
       />
     </div>
   );
