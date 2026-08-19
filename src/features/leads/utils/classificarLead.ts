@@ -27,8 +27,52 @@ const VISIVEL_POR_ATUACAO: Record<AtuacaoTipo, TipoLead> = {
   alugados: 'locacao',
 };
 
+/**
+ * O que chega do banco na coluna `classification`. Desde a migration
+ * 20260818 é `text[]` (um lead pode ser Lançamento E Locação), mas string
+ * única continua no tipo: é o que devolvem as linhas ainda não migradas e os
+ * payloads antigos da Lia. Todo consumidor lê por `classificacoesDe`.
+ */
+export type ValorClassificacao = string | string[] | null | undefined;
+
 export interface LinhaClassificavel {
-  classification?: string | null;
+  classification?: ValorClassificacao;
+}
+
+/** Ordem canônica de gravação e exibição — a mesma de `SECOES_BOLSAO`. */
+const ORDEM_CANONICA: readonly string[] = ['lancamento', 'pronto', 'locacao', 'indefinido'];
+
+/**
+ * Normaliza o valor cru em lista. Vazio (null, `[]`, string em branco) vira
+ * `['indefinido']`: nenhum lead fica sem badge nem some de uma seção.
+ * Valor desconhecido por este build é PRESERVADO — quem filtra depende disso
+ * para continuar fail-open.
+ */
+export function classificacoesDe(valor: ValorClassificacao): string[] {
+  const bruto = Array.isArray(valor) ? valor : [valor];
+  const limpo = [...new Set(bruto.filter((v): v is string => typeof v === 'string' && v !== ''))];
+  return limpo.length > 0 ? limpo : ['indefinido'];
+}
+
+/**
+ * Liga/desliga uma classificação, devolvendo o array pronto para gravar.
+ *
+ * Duas regras, ambas do usuário: combinações são livres (Lançamento + Locação
+ * é caso real), e 'indefinido' é exclusiva — é a AUSÊNCIA de classificação, e
+ * desmarcar tudo volta para ela. A ordem canônica não é cosmética: o guard e o
+ * espelho do bolsão comparam `NEW.classification IS DISTINCT FROM OLD`, e
+ * arrays com a mesma marcação em ordens diferentes disparariam os dois à toa.
+ */
+export function toggleClassificacao(atual: ValorClassificacao, tipo: string): string[] {
+  const marcadas = new Set(classificacoesDe(atual));
+  if (tipo === 'indefinido') return ['indefinido'];
+
+  marcadas.delete('indefinido');
+  if (marcadas.has(tipo)) marcadas.delete(tipo);
+  else marcadas.add(tipo);
+
+  if (marcadas.size === 0) return ['indefinido'];
+  return [...marcadas].sort((a, b) => ORDEM_CANONICA.indexOf(a) - ORDEM_CANONICA.indexOf(b));
 }
 
 /**
@@ -68,14 +112,23 @@ export const SECOES_BOLSAO: ReadonlyArray<{ tipo: TipoLead; titulo: string }> = 
  * tem grupo cheio no que a atuação dele permite ver — a UI renderiza apenas os
  * grupos não vazios, então o corretor de prontos nunca vê a seção de lançamentos.
  * Classificação nula ou desconhecida cai em `indefinido` (mesma direção fail-open).
+ *
+ * Lead com duas classificações aparece nas DUAS seções (decisão do Victor,
+ * 18/ago/2026): é o que faz o corretor de locação enxergar no Bolsão dele o
+ * lead marcado como Lançamento + Locação. Consequência aceita: a soma das
+ * contagens por seção passa a ser maior que o total de leads.
  */
 export function agruparPorSecao<T extends LinhaClassificavel>(
   linhas: ReadonlyArray<T>,
 ): Record<TipoLead, T[]> {
   const grupos: Record<TipoLead, T[]> = { lancamento: [], pronto: [], locacao: [], indefinido: [] };
   for (const linha of linhas) {
-    const tipo = linha.classification as TipoLead;
-    (grupos[tipo] ?? grupos.indefinido).push(linha);
+    const tipos = classificacoesDe(linha.classification);
+    const conhecidos = tipos.filter((t) => t in grupos);
+    // Só valores desconhecidos deste build: cai na sobra em vez de sumir.
+    for (const tipo of conhecidos.length > 0 ? conhecidos : ['indefinido']) {
+      grupos[tipo as TipoLead].push(linha);
+    }
   }
   return grupos;
 }
@@ -122,10 +175,13 @@ export function filtrarPorAtuacao<T extends LinhaClassificavel>(
   const visiveis = new Set<string>(['indefinido']);
   for (const atuacao of opts.atuacoes) visiveis.add(VISIVEL_POR_ATUACAO[atuacao]);
 
-  return linhas.filter((linha) => {
-    // Não classificado, ou valor que este build não conhece: mostra. Fail-open.
-    if (!linha.classification) return true;
-    if (!ATUACAO_TIPOS.some((t) => VISIVEL_POR_ATUACAO[t] === linha.classification)) return true;
-    return visiveis.has(linha.classification);
-  });
+  // Basta UMA classificação visível: o lead marcado como Lançamento + Locação
+  // é do corretor de lançamentos E do de locação, não de nenhum dos dois.
+  return linhas.filter((linha) =>
+    classificacoesDe(linha.classification).some((tipo) => {
+      // Valor que este build não conhece: mostra. Fail-open.
+      if (!ATUACAO_TIPOS.some((t) => VISIVEL_POR_ATUACAO[t] === tipo)) return true;
+      return visiveis.has(tipo);
+    }),
+  );
 }

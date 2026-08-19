@@ -85,16 +85,54 @@ describe('Classificação no CriarLeadQuickModal', () => {
   it('grava a classificação escolhida e NUNCA manda classification_source', async () => {
     render(<CriarLeadQuickModal {...props} editingLead={LEAD} />);
 
+    fireEvent.click(screen.getByRole('button', { name: 'Sem classificação' })); // zera o 'pronto' do lead
     fireEvent.click(screen.getByRole('button', { name: 'Locação' }));
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
 
     await waitFor(() => expect(updates.length).toBeGreaterThan(0));
 
     const leadsUpdate = updates.find((u) => u.tabela === 'leads');
-    expect(leadsUpdate?.payload.classification).toBe('locacao');
+    expect(leadsUpdate?.payload.classification).toEqual(['locacao']);
     // a origem é do trigger, nunca do cliente
     for (const u of updates) {
       expect(u.payload).not.toHaveProperty('classification_source');
     }
+  });
+});
+
+/**
+ * Multi-classificação (migration 20260818): marcar Locação num lead que já é
+ * Pronto ACUMULA, não substitui — foi o pedido do Victor (18/ago/2026).
+ */
+describe('Classificação multi-valor', () => {
+  it('marcar uma segunda classificação acumula em vez de substituir', async () => {
+    render(<CriarLeadQuickModal {...props} editingLead={LEAD} />);   // LEAD já é 'pronto'
+
+    fireEvent.click(screen.getByRole('button', { name: 'Locação' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+    await waitFor(() => expect(updates.length).toBeGreaterThan(0));
+    expect(updates.find((u) => u.tabela === 'leads')?.payload.classification)
+      .toEqual(['pronto', 'locacao']);   // ordem canônica, não ordem de clique
+  });
+
+  it('clicar de novo desmarca — o botão é liga/desliga', async () => {
+    render(<CriarLeadQuickModal {...props} editingLead={LEAD} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Locação' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Locação' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+    await waitFor(() => expect(updates.length).toBeGreaterThan(0));
+    expect(updates.find((u) => u.tabela === 'leads')?.payload.classification)
+      .toEqual(['pronto']);
+  });
+
+  it("desmarcar tudo cai em 'Sem classificação' — nunca array vazio (CHECK do banco)", async () => {
+    render(<CriarLeadQuickModal {...props} editingLead={LEAD} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pronto' }));  // era a única marcada
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+    await waitFor(() => expect(updates.length).toBeGreaterThan(0));
+    expect(updates.find((u) => u.tabela === 'leads')?.payload.classification)
+      .toEqual(['indefinido']);
   });
 });

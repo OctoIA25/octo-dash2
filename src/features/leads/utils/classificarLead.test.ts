@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   agruparPorSecao,
+  classificacoesDe,
+  toggleClassificacao,
   atuacoesDe,
   filtrarPorAtuacao,
   ocultarImovelDoBolsao,
@@ -151,5 +153,65 @@ describe('sigilo do imóvel no Bolsão', () => {
     ]);
     expect(ocultarImovelDoBolsao(linhas, true)).toEqual(linhas);
     expect(linhas[0].codigo).toBe('RESIDENCIAL VISTA LUXO'); // não muta a origem
+  });
+});
+
+/**
+ * Multi-classificação (migration 20260818). A decisão de negócio: lead marcado
+ * com dois valores aparece nas DUAS seções do Bolsão e conta para as duas
+ * atuações — foi o que destravou o caso "Lançamento que também é Locação".
+ */
+describe('classificacoesDe', () => {
+  it('array, string e vazio caem todos em lista — nada some', () => {
+    expect(classificacoesDe(['lancamento', 'locacao'])).toEqual(['lancamento', 'locacao']);
+    expect(classificacoesDe('pronto')).toEqual(['pronto']);
+    expect(classificacoesDe(null)).toEqual(['indefinido']);
+    expect(classificacoesDe([])).toEqual(['indefinido']);
+    expect(classificacoesDe('')).toEqual(['indefinido']);
+  });
+
+  it('duplicata some; valor desconhecido deste build é preservado (fail-open)', () => {
+    expect(classificacoesDe(['pronto', 'pronto'])).toEqual(['pronto']);
+    expect(classificacoesDe(['valor_novo'])).toEqual(['valor_novo']);
+  });
+});
+
+describe('toggleClassificacao', () => {
+  it('acumula e desmarca, sempre em ordem canônica', () => {
+    expect(toggleClassificacao(['pronto'], 'locacao')).toEqual(['pronto', 'locacao']);
+    expect(toggleClassificacao(['locacao'], 'lancamento')).toEqual(['lancamento', 'locacao']);
+    expect(toggleClassificacao(['pronto', 'locacao'], 'pronto')).toEqual(['locacao']);
+  });
+
+  it("'indefinido' é exclusiva nos dois sentidos", () => {
+    expect(toggleClassificacao(['pronto', 'locacao'], 'indefinido')).toEqual(['indefinido']);
+    expect(toggleClassificacao(['indefinido'], 'pronto')).toEqual(['pronto']);
+  });
+
+  it('desmarcar a última volta para indefinido — nunca array vazio (CHECK do banco)', () => {
+    expect(toggleClassificacao(['pronto'], 'pronto')).toEqual(['indefinido']);
+  });
+});
+
+describe('multi-classificação no Bolsão', () => {
+  const MULTI = [{ classification: ['lancamento', 'locacao'] }];
+
+  it('o lead entra nas duas seções', () => {
+    const grupos = agruparPorSecao(MULTI);
+    expect(grupos.lancamento).toHaveLength(1);
+    expect(grupos.locacao).toHaveLength(1);
+    expect(grupos.pronto).toHaveLength(0);
+    expect(grupos.indefinido).toHaveLength(0);
+  });
+
+  it('basta UMA classificação visível para o corretor ver o lead', () => {
+    for (const atuacao of ['lancamentos', 'alugados'] as const) {
+      expect(filtrarPorAtuacao(MULTI, { ativo: true, atuacoes: [atuacao] })).toHaveLength(1);
+    }
+    expect(filtrarPorAtuacao(MULTI, { ativo: true, atuacoes: ['prontos'] })).toHaveLength(0);
+  });
+
+  it('só valores desconhecidos caem na sobra em vez de sumir', () => {
+    expect(agruparPorSecao([{ classification: ['valor_novo'] }]).indefinido).toHaveLength(1);
   });
 });

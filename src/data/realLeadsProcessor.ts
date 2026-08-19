@@ -2,6 +2,7 @@
 // Dados coletados diretamente do banco PostgreSQL
 
 import { normalizeDate } from '../utils/dateUtils';
+import type { ValorClassificacao } from '@/features/leads/utils/classificarLead';
 
 // Dados brutos do Supabase (coletados anteriormente)
 const rawGoogleSheetsData = [
@@ -323,7 +324,7 @@ export interface ProcessedLead {
   Imovel_visitado: string;
   Conversa: string;
   /** lancamento|pronto|locacao|indefinido. Opcional: nem toda fonte de ProcessedLead projeta esta coluna. */
-  classification?: string | null;
+  classification?: ValorClassificacao;
 }
 
 /**

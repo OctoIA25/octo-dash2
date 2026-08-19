@@ -16,6 +16,7 @@ import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { normalizeDate } from '@/utils/dateUtils';
 import { normalizeCodigoImovel } from '@/utils/codigoImovelUtils';
 import { supabase } from '@/lib/supabaseClient';
+import type { ValorClassificacao } from '@/features/leads/utils/classificarLead';
 
 const DEBUG_LOGS = import.meta.env?.VITE_DEBUG_LOGS === 'true';
 let warnedSupabaseRemoved = false;
@@ -105,7 +106,7 @@ interface KenloLeadRow {
   is_exclusive: boolean | null;
   archived_at: string | null;
   archive_reason: string | null;
-  classification: string | null;
+  classification: ValorClassificacao;
 }
 
 interface CRMLeadRow {
@@ -128,7 +129,7 @@ interface CRMLeadRow {
   archived_at: string | null;
   archive_reason: string | null;
   created_at: string | null;
-  classification: string | null;
+  classification: ValorClassificacao;
 }
 
 const KENLO_LEADS_COLUMNS =

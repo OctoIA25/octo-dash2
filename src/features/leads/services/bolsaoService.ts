@@ -8,6 +8,7 @@
 import { supabase } from '@/lib/supabaseClient';
 import { fetchTenantBolsaoConfig } from './tenantBolsaoConfigService';
 import { redistributeLeadToTeamQueue } from '@/features/corretores/services/teamQueueService';
+import type { ValorClassificacao } from '@/features/leads/utils/classificarLead';
 
 /**
  * Interface para leads do Bolsão (estrutura real do Supabase)
@@ -32,7 +33,7 @@ export interface BolsaoLead {
   Foto: string | null;                // 🆕 URL da foto do lead
   portal: string | null;              // 🆕 Portal de origem (OLX, ZAP, etc)
   is_exclusive?: boolean | null;
-  classification?: string | null;
+  classification?: ValorClassificacao;
   /** Já vêm do select('*'); faltavam na interface. Necessários para escrever na tabela FONTE. */
   source_lead_id?: string | null;
   source_kenlo_id?: string | null;

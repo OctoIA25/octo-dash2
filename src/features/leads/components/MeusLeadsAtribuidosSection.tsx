@@ -17,7 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { useDebounce } from '../hooks/useDebounce';
 import { LeadDetailsModal } from './LeadDetailsModal';
-import { ClassificacaoBadge } from './ClassificacaoBadge';
+import { ClassificacaoDots } from './ClassificacaoBadge';
 import {
   Select,
   SelectContent,
@@ -395,7 +395,7 @@ export const KanbanCardContent = memo(({ lead, onClick, mostrarCorretor, isOverl
       </div>
 
       {/* Footer: corretor atribuído + badge + data */}
-      <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800 gap-2">
+      <div className="flex flex-wrap items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800 gap-y-1 gap-x-2">
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
           {corretorResponsavel ? (
             <>
@@ -415,13 +415,16 @@ export const KanbanCardContent = memo(({ lead, onClick, mostrarCorretor, isOverl
             </span>
           )}
         </div>
-        <div className="flex items-center gap-1 shrink-0">
+        {/* `flex-wrap` e não `shrink-0`: a classificação virou multi-valor
+            (migration 20260818) e duas badges numa coluna estreita de Kanban
+            estouravam a linha. Com uma badge só o layout é o mesmo de antes. */}
+        <div className="flex items-center justify-end gap-1 flex-wrap min-w-0">
           {lead.temperature && (
             <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 capitalize border-slate-200 dark:border-slate-700">
               {lead.temperature}
             </Badge>
           )}
-          <ClassificacaoBadge tipo={lead.classification} className="text-[9px] px-1 py-0 h-4" />
+          <ClassificacaoDots tipo={lead.classification} />
           {dataFmt && (
             <span className="text-[10px] text-slate-500 dark:text-slate-400 tabular-nums">
               {dataFmt}

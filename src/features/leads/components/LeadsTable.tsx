@@ -485,7 +485,7 @@ export const LeadsTable = ({ leads, newLeadsCount = 0, showGetAllButton = false,
 
                   {/* Classificação */}
                   <td className="py-4 px-4 text-center">
-                    <div className="flex justify-center">
+                    <div className="flex justify-center flex-wrap gap-1">
                       <ClassificacaoBadge tipo={lead.classification} />
                     </div>
                   </td>

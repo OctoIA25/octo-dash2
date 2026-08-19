@@ -15,7 +15,7 @@ import { test, expect, type Page } from '@playwright/test';
  *    cujo espelhamento já tenha `source_lead_id`/`source_kenlo_id` — uma
  *    linha antiga (pré-espelhamento) faz o Select reverter a escolha
  *    (ver o guard "Lead sem origem" em LeadDetailsModal.tsx) e o teste falha
- *    no `toHaveText`, o que nesse caso é dado ruim, não bug de teste.
+ *    no assert de `aria-pressed`, o que nesse caso é dado ruim, não bug de teste.
  */
 async function login(page: Page, email: string, password: string) {
   await page.goto('/');
@@ -44,12 +44,13 @@ test.describe('Classificação de lead', () => {
     // "Meus Leads" (Kanban) tem rota própria. Admin/owner vê TODOS os leads em
     // andamento do tenant (fetchTodosLeadsCRM), não só os atribuídos a si —
     // por isso não depende de o usuário de teste ter carteira própria. Cada
-    // card do Kanban traz a ClassificacaoBadge no rodapé
-    // (MeusLeadsAtribuidosSection.tsx:423, dentro de KanbanCardContent).
+    // card do Kanban traz a classificação no rodapé, como PONTO colorido
+    // (ClassificacaoDots) e não como rótulo escrito: por isso o localizador é
+    // por role/aria-label, não por texto visível.
     await page.goto('/meus-leads');
     await page.waitForLoadState('networkidle');
 
-    await expect(page.getByText(ROTULOS).first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('img', { name: ROTULOS }).first()).toBeVisible({ timeout: 30_000 });
   });
 
   test('classificar pelo modal atualiza a badge', async ({ page }) => {
@@ -59,8 +60,8 @@ test.describe('Classificação de lead', () => {
     // irmã de "meus-leads" nas mesmas <Routes> sem prefixo) — ao contrário do
     // que se poderia supor de o componente receber `leads` via prop. Os cards
     // desta tela (LeadMiniCard) já mostram a ClassificacaoBadge, em modo leitura
-    // (LeadMiniCard.tsx:139) — mas o Select para MUDAR a classificação só existe
-    // dentro do LeadDetailsModal, por isso este teste (que precisa do Select) usa
+    // (LeadMiniCard.tsx:139) — mas os botões para MUDAR a classificação só existem
+    // dentro do LeadDetailsModal, por isso este teste (que precisa deles) usa
     // o Bolsão em vez de Meus Leads: em
     // MeusLeadsAtribuidosSection.tsx o clique no card abre outro modal
     // (CriarLeadQuickModal, via setEditingLead) — o LeadDetailsModal ali é
@@ -81,15 +82,27 @@ test.describe('Classificação de lead', () => {
     await expect(primeiroNome).toBeVisible({ timeout: 30_000 });
     await primeiroNome.click();
 
-    const seletor = page.getByTestId('select-classificacao');
-    await expect(seletor).toBeVisible({ timeout: 15_000 });
+    // Botões de marcar/desmarcar (não mais um Select): desde a migration
+    // 20260818 o lead pode carregar mais de uma classificação ao mesmo tempo.
+    const controle = page.getByTestId('classificacao-controle');
+    await expect(controle).toBeVisible({ timeout: 15_000 });
 
-    // Escolhe um valor DIFERENTE do atual, senão o assert passa sem provar nada.
-    const atual = (await seletor.textContent())?.trim();
-    const alvo = atual === 'Locação' ? 'Lançamento' : 'Locação';
-    await seletor.click();
-    await page.getByRole('option', { name: alvo }).click();
+    // Alvo = um valor que AINDA NÃO está marcado, senão o clique desmarca e o
+    // assert passa sem provar que a escrita chegou ao banco.
+    const locacao = controle.getByRole('button', { name: 'Locação' });
+    const lancamento = controle.getByRole('button', { name: 'Lançamento' });
+    const alvo = (await locacao.getAttribute('aria-pressed')) === 'true' ? lancamento : locacao;
 
-    await expect(seletor).toHaveText(alvo, { timeout: 15_000 });
+    await alvo.click();
+    await expect(alvo).toHaveAttribute('aria-pressed', 'true', { timeout: 15_000 });
+
+    // Reabrir prova que a marcação PERSISTIU: o estado local é otimista e
+    // reverteria sozinho se o UPDATE tivesse falhado.
+    const rotulo = (await alvo.textContent())?.trim();
+    await page.keyboard.press('Escape');
+    await primeiroNome.click();
+    await expect(
+      page.getByTestId('classificacao-controle').getByRole('button', { name: rotulo! }),
+    ).toHaveAttribute('aria-pressed', 'true', { timeout: 15_000 });
   });
 });

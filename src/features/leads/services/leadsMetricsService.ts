@@ -14,6 +14,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { CRMLead, LeadType, LEAD_TYPE_INTERESSADO, LEAD_TYPE_PROPRIETARIO } from './leadsService';
 import { ProcessedLead, canonicalizeOrigemLeads } from '@/data/realLeadsProcessor';
 import { KENLO_LEAD_COLUMNS_FOR_METRICS, LEADS_COLUMNS_FOR_METRICS } from './leadColumns';
+import type { ValorClassificacao } from '@/features/leads/utils/classificarLead';
 
 const TEST_TENANT_ID = 'tenant-area-de-teste';
 
@@ -77,7 +78,7 @@ function kenloLeadToCRMLead(kenloLead: Record<string, unknown>): CRMLead {
     created_at: (kenloLead.created_at as string) || new Date().toISOString(),
     updated_at: (kenloLead.updated_at as string) || new Date().toISOString(),
     first_response_at: (kenloLead.first_response_at as string) || null,
-    classification: (kenloLead.classification as string | null) ?? null,
+    classification: (kenloLead.classification as ValorClassificacao) ?? null,
   };
 }
 

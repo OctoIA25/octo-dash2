@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Phone, Building2, Clock, User, Maximize2, CheckCircle, Loader2, MessageCircle, Hand } from 'lucide-react';
 import { BolsaoLead } from '@/features/leads/services/bolsaoService';
-import { ClassificacaoBadge } from '@/features/leads/components/ClassificacaoBadge';
+import { ClassificacaoDots } from '@/features/leads/components/ClassificacaoBadge';
 
 interface LeadMiniCardProps {
   lead: BolsaoLead;
@@ -134,9 +134,11 @@ export const LeadMiniCard = ({
                 {lead.nomedolead || 'Lead sem nome'}
               </h3>
 
-              {/* Classificação */}
+              {/* Classificação — pontos coloridos, não rótulos: o card é
+                  estreito e a seção do Bolsão já diz a classificação por extenso
+                  no título. O rótulo continua no tooltip e no modal. */}
               <div className="mb-1">
-                <ClassificacaoBadge tipo={lead.classification} />
+                <ClassificacaoDots tipo={lead.classification} />
               </div>
 
               {/* Número do Lead */}

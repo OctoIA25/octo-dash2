@@ -9,6 +9,7 @@
 
 import { supabase } from '@/lib/supabaseClient';
 import { leadsEventEmitter } from '@/lib/leadsEventEmitter';
+import type { ValorClassificacao } from '@/features/leads/utils/classificarLead';
 
 /**
  * Interface para leads do CRM/Kanban
@@ -64,7 +65,7 @@ export interface CRMLead {
    * Opcional: só presente quando a projeção do SELECT inclui a coluna (nem toda
    * leitura de CRMLead traz — ex.: leadsMetricsService não projeta este campo).
    */
-  classification?: string | null;
+  classification?: ValorClassificacao;
 }
 
 /**
@@ -95,7 +96,7 @@ export interface KanbanLead {
   property_value: number | null;
   comments: string | null;
   // Classificação (lancamento/pronto/locacao/indefinido) — vem pronta do banco
-  classification: string | null;
+  classification: ValorClassificacao;
   /** Etiquetas do lead. Só a tabela `leads` tem a coluna; kenlo_leads vem sempre null. */
   tags: string[] | null;
   /** Origem real da linha — o modal escreve na tabela FONTE, nunca no espelho. */
@@ -239,7 +240,7 @@ export function mapKenloToKanbanLead(kl: Record<string, unknown>): KanbanLead {
     temperature: KENLO_TEMP_MAP[(kl.temperature as string) || 'cold'] || 'Frio',
     property_value: null,
     comments: (kl.message as string) || null,
-    classification: (kl.classification as string | null) ?? null,
+    classification: (kl.classification as ValorClassificacao) ?? null,
     // kenlo_leads não tem coluna `tags` — nada a mapear.
     tags: null,
     source_lead_id: null,

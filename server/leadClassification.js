@@ -25,16 +25,42 @@ const normalizar = (v) =>
   String(v ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/\s+/g, ' ').trim();
 
+/** Ordem canônica de gravação — a mesma do front e do Bolsão. Ver ORDEM_CANONICA. */
+const ordenar = (valores) =>
+  [...valores].sort((a, b) => CLASSIFICACOES.indexOf(a) - CLASSIFICACOES.indexOf(b));
+
+/**
+ * Aceita `"locacao"` OU `["lancamento", "locacao"]` — a coluna virou text[] na
+ * 20260818, mas o contrato antigo da Lia manda string e continua valendo.
+ * Devolve sempre ARRAY normalizado: sem duplicata, em ordem canônica, e com
+ * 'indefinido' exclusiva (é a ausência de classificação, não uma a mais).
+ * Um valor inválido no meio da lista REPROVA a requisição inteira: gravar o
+ * resto em silêncio deixaria a Lia achando que marcou o que não marcou.
+ */
 export function resolveClassification(input) {
   // `!input` cobre undefined/null/'' num só teste (classification nunca é 0/false).
   if (!input) {
     return { ok: false, error: 'classification é obrigatório' };
   }
-  const value = SINONIMOS[normalizar(input)];
-  if (!value) {
-    return { ok: false, error: `classification inválida: "${input}". Use ${CLASSIFICACOES.join(', ')}` };
+  const entradas = Array.isArray(input) ? input : [input];
+  if (entradas.length === 0) {
+    return { ok: false, error: 'classification é obrigatório' };
   }
-  return { ok: true, value };
+
+  const valores = [];
+  for (const entrada of entradas) {
+    const value = SINONIMOS[normalizar(entrada)];
+    if (!value) {
+      return {
+        ok: false,
+        error: `classification inválida: "${entrada}". Use ${CLASSIFICACOES.join(', ')}`,
+      };
+    }
+    if (!valores.includes(value)) valores.push(value);
+  }
+
+  const reais = valores.filter((v) => v !== 'indefinido');
+  return { ok: true, value: reais.length > 0 ? ordenar(reais) : ['indefinido'] };
 }
 
 /**
@@ -84,7 +110,13 @@ export async function applyClassification(supabase, { tenantId, leadId, classifi
     console.error(`❌ [leadClassification] UPDATE falhou em ${tabela}:`, error);
     return { ok: false, status: 500, error: error.message };
   }
-  return { ok: true, tabela, from: atual.classification ?? 'indefinido', to: classification };
+  return {
+    ok: true,
+    tabela,
+    // Linha antiga (pré-20260818) ainda pode vir como string: normaliza o log.
+    from: atual.classification == null ? ['indefinido'] : [atual.classification].flat(),
+    to: classification,
+  };
 }
 
 /**
@@ -133,7 +165,7 @@ export async function handleClassificationPatch(req, res, supabase) {
 
     console.log(
       `🏷️  Classificação: lead ${req.params.id} (${result.tabela}) ` +
-      `${result.from} → ${result.to} [lia] tenant=${req.tenantId}`
+      `${result.from.join('+')} → ${result.to.join('+')} [lia] tenant=${req.tenantId}`
     );
 
     res.json({

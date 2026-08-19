@@ -4,18 +4,42 @@ import { resolveClassification, applyClassification, handleClassificationPatch, 
 describe('resolveClassification', () => {
   it('aceita os quatro valores canônicos', () => {
     for (const v of CLASSIFICACOES) {
-      expect(resolveClassification(v)).toEqual({ ok: true, value: v });
+      expect(resolveClassification(v)).toEqual({ ok: true, value: [v] });
     }
   });
 
   it('aceita sinônimos de negócio, com acento e caixa livres', () => {
-    expect(resolveClassification('Lançamento').value).toBe('lancamento');
-    expect(resolveClassification('LANCAMENTOS').value).toBe('lancamento');
-    expect(resolveClassification('Locação').value).toBe('locacao');
-    expect(resolveClassification('aluguel').value).toBe('locacao');
-    expect(resolveClassification('  Alugados ').value).toBe('locacao');
-    expect(resolveClassification('rent').value).toBe('locacao');
-    expect(resolveClassification('prontos').value).toBe('pronto');
+    expect(resolveClassification('Lançamento').value).toEqual(['lancamento']);
+    expect(resolveClassification('LANCAMENTOS').value).toEqual(['lancamento']);
+    expect(resolveClassification('Locação').value).toEqual(['locacao']);
+    expect(resolveClassification('aluguel').value).toEqual(['locacao']);
+    expect(resolveClassification('  Alugados ').value).toEqual(['locacao']);
+    expect(resolveClassification('rent').value).toEqual(['locacao']);
+    expect(resolveClassification('prontos').value).toEqual(['pronto']);
+  });
+
+  // A coluna virou text[] (20260818): o lead pode ser Lançamento E Locação.
+  it('aceita lista e normaliza — ordem canônica, sem duplicata', () => {
+    expect(resolveClassification(['locacao', 'lancamento']).value)
+      .toEqual(['lancamento', 'locacao']);
+    expect(resolveClassification(['aluguel', 'Locação', 'rent']).value).toEqual(['locacao']);
+    expect(resolveClassification(['lancamentos', 'prontos', 'aluguel']).value)
+      .toEqual(['lancamento', 'pronto', 'locacao']);
+  });
+
+  it("'indefinido' é exclusiva — é ausência de classificação, não uma a mais", () => {
+    expect(resolveClassification(['pronto', 'indefinido']).value).toEqual(['pronto']);
+    expect(resolveClassification(['indefinido']).value).toEqual(['indefinido']);
+  });
+
+  it('um valor inválido reprova a lista inteira — nada é gravado pela metade', () => {
+    const r = resolveClassification(['pronto', 'venda']);
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain('venda');
+  });
+
+  it('lista vazia é o mesmo que não mandar nada', () => {
+    expect(resolveClassification([]).ok).toBe(false);
   });
 
   it('recusa valor inventado e diz quais valem', () => {
@@ -65,20 +89,20 @@ function fakeSupabase(linhas, erro) {
 }
 
 describe('applyClassification', () => {
-  const base = { tenantId: 'T1', leadId: 'L1', classification: 'locacao', source: 'lia' };
+  const base = { tenantId: 'T1', leadId: 'L1', classification: ['locacao'], source: 'lia' };
 
   it('grava em leads quando o lead mora lá, e reporta a transição', async () => {
     const sb = fakeSupabase({ leads: { id: 'L1', classification: 'pronto' } });
     const r = await applyClassification(sb, base);
-    expect(r).toMatchObject({ ok: true, tabela: 'leads', from: 'pronto', to: 'locacao' });
-    expect(sb.updates[0].patch).toMatchObject({ classification: 'locacao', classification_source: 'lia' });
+    expect(r).toMatchObject({ ok: true, tabela: 'leads', from: ['pronto'], to: ['locacao'] });
+    expect(sb.updates[0].patch).toMatchObject({ classification: ['locacao'], classification_source: 'lia' });
   });
 
   it('cai para kenlo_leads quando não está em leads', async () => {
     const sb = fakeSupabase({ kenlo_leads: { id: 'L1', classification: null } });
     const r = await applyClassification(sb, base);
     expect(r).toMatchObject({ ok: true, tabela: 'kenlo_leads' });
-    expect(r.from).toBe('indefinido'); // NULL lê-se como indefinido
+    expect(r.from).toEqual(['indefinido']); // NULL lê-se como indefinido
   });
 
   it('lead inexistente (ou de outro tenant) devolve 404, não 403', async () => {
@@ -157,6 +181,6 @@ describe('handleClassificationPatch', () => {
 
     await handleClassificationPatch(req, res, sb);
 
-    expect(sb.updates[0].patch.classification).toBe('locacao');
+    expect(sb.updates[0].patch.classification).toEqual(['locacao']);
   });
 });

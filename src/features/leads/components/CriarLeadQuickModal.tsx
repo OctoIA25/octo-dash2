@@ -10,6 +10,7 @@ import { X, Plus, Save, User as UserIcon, Phone, Mail, Home, Loader2, Thermomete
 import { supabase } from '@/lib/supabaseClient';
 import { leadsEventEmitter } from '@/lib/leadsEventEmitter';
 import { CLASSIFICACAO_ESTILOS, CLASSIFICACAO_ORDEM } from './ClassificacaoBadge';
+import { classificacoesDe, toggleClassificacao } from '../utils/classificarLead';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthContext } from '@/contexts/AuthContext';
 import {
@@ -39,8 +40,8 @@ interface LeadForm {
   message: string;
   temperature: string;
   participa_bolsao: boolean;
-  /** Só editável em modo edição — no INSERT o trigger sobrescreve. */
-  classification: string;
+  /** Só editável em modo edição — no INSERT o trigger sobrescreve. Multi-valor. */
+  classification: string[];
 }
 
 const EMPTY_FORM: LeadForm = {
@@ -51,7 +52,7 @@ const EMPTY_FORM: LeadForm = {
   message: '',
   temperature: 'Frio',
   participa_bolsao: true,
-  classification: 'indefinido',
+  classification: ['indefinido'],
 };
 
 const TEMPERATURES = ['Quente', 'Morno', 'Frio'];
@@ -64,7 +65,7 @@ const leadToForm = (lead: KanbanLead): LeadForm => ({
   message: lead.comments ?? '',
   temperature: lead.temperature ?? 'Frio',
   participa_bolsao: (lead as { participa_bolsao?: boolean }).participa_bolsao ?? true,
-  classification: lead.classification ?? 'indefinido',
+  classification: classificacoesDe(lead.classification),
 });
 
 export const CriarLeadQuickModal = ({
@@ -362,15 +363,19 @@ export const CriarLeadQuickModal = ({
                 <label className="flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
                   <Tag className="w-4 h-4 text-slate-400" />
                   Classificação
+                  <span className="font-normal text-slate-400">(pode marcar mais de uma)</span>
                 </label>
                 <div className="flex flex-wrap gap-2">
                   {CLASSIFICACAO_ORDEM.map((tipo) => {
-                    const active = form.classification === tipo;
+                    const active = form.classification.includes(tipo);
                     return (
                       <button
                         key={tipo}
                         type="button"
-                        onClick={() => setForm((f) => ({ ...f, classification: tipo }))}
+                        onClick={() =>
+                          setForm((f) => ({ ...f, classification: toggleClassificacao(f.classification, tipo) }))
+                        }
+                        aria-pressed={active}
                         disabled={!canEdit}
                         className={`flex-1 min-w-[6.5rem] py-2 text-xs font-semibold rounded-lg border transition-all disabled:opacity-60 disabled:cursor-not-allowed ${
                           active

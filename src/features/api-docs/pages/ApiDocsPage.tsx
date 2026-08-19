@@ -1786,7 +1786,7 @@ export const ApiDocsPage: React.FC = () => {
             { method: 'PATCH', path: '/leads/:id/stage', desc: 'Alterar etapa do funil', body: '{"stage": 4}' },
             { method: 'PATCH', path: '/leads/:id/temperature', desc: 'Alterar temperatura', body: '{"temperature": 3}' },
             { method: 'PATCH', path: '/leads/:id/broker', desc: 'Atribuir corretor', body: '{"broker_id": "uuid"}' },
-            { method: 'PATCH', path: '/leads/:id/classification', desc: 'Classificar lead', body: '{"classification": "locacao"}' },
+            { method: 'PATCH', path: '/leads/:id/classification', desc: 'Classificar lead (1 valor ou lista)', body: '{"classification": ["lancamento", "locacao"]}' },
           ].map((endpoint, idx) => (
             <div key={idx} className="flex items-center gap-4 p-3 bg-gray-900/50 rounded-lg">
               <MethodBadge method={endpoint.method} />
