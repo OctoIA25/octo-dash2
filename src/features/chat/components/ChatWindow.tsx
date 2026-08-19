@@ -1,4 +1,6 @@
 import { useEffect, useRef } from 'react';
+import { format, isSameDay, isToday, isYesterday } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 import { FileText, MessageCircle } from 'lucide-react';
 import type { WhatsappConversation, WhatsappMessage } from '../types';
 import { MessageBubble } from './MessageBubble';
@@ -6,6 +8,29 @@ import { MessageInput, type ComposeMedia } from './MessageInput';
 import { PendingBubble } from './messages/PendingBubble';
 import { LightboxProvider } from './lightbox/LightboxProvider';
 import { useMediaSend } from '../hooks/useMediaSend';
+
+/** Data da mensagem: o WhatsApp usa o horário do provedor quando existe. */
+function messageDate(m: WhatsappMessage): Date {
+  return new Date(m.wa_timestamp ?? m.created_at);
+}
+
+/** Agrupa mensagens consecutivas do mesmo dia (a lista já vem em ordem cronológica). */
+export function groupByDay(messages: WhatsappMessage[]): { date: Date; items: WhatsappMessage[] }[] {
+  const groups: { date: Date; items: WhatsappMessage[] }[] = [];
+  for (const m of messages) {
+    const date = messageDate(m);
+    const last = groups[groups.length - 1];
+    if (last && isSameDay(last.date, date)) last.items.push(m);
+    else groups.push({ date, items: [m] });
+  }
+  return groups;
+}
+
+export function dayLabel(date: Date): string {
+  if (isToday(date)) return 'Hoje';
+  if (isYesterday(date)) return 'Ontem';
+  return format(date, "d 'de' MMMM 'de' yyyy", { locale: ptBR });
+}
 
 interface Props {
   conversation: WhatsappConversation | null;
@@ -89,8 +114,19 @@ export function ChatWindow({
             {loading && messages.length === 0 && (
               <div className="text-center text-xs text-gray-500">Carregando mensagens...</div>
             )}
-            {messages.map((m) => (
-              <MessageBubble key={m.id} message={m} />
+            {groupByDay(messages).map((group) => (
+              // Sticky por grupo: cada pílula sai da tela junto com o próprio dia,
+              // em vez de todas empilharem no topo do scroll.
+              <div key={group.items[0].id} className="flex flex-col gap-2">
+                <div className="sticky top-0 z-10 flex justify-center py-1">
+                  <span className="rounded-md bg-white/90 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-gray-500 shadow-sm backdrop-blur dark:bg-gray-800/90 dark:text-gray-300">
+                    {dayLabel(group.date)}
+                  </span>
+                </div>
+                {group.items.map((m) => (
+                  <MessageBubble key={m.id} message={m} />
+                ))}
+              </div>
             ))}
             {conversationPending.map((p) => (
               <PendingBubble key={p.tempId} pending={p} onRetry={retry} onCancel={cancel} />
