@@ -19,7 +19,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { Link } from 'react-router-dom';
-import { useChatPath } from '@/features/chat/components/OpenConversationLink';
+import { useChatPath, ConversationLinkField } from '@/features/chat/components/OpenConversationLink';
 import { 
   Phone, 
   Building2, 
@@ -49,6 +49,7 @@ import {
 } from 'lucide-react';
 import { BolsaoLead } from '../services/bolsaoService';
 import { CLASSIFICACAO_ESTILOS, CLASSIFICACAO_ORDEM } from './ClassificacaoBadge';
+import { PreferenciasEditor, preferenciasDe } from './PreferenciasLead';
 import { classificacoesDe, toggleClassificacao } from '../utils/classificarLead';
 import { EnviarRecomendacoesModal } from '@/features/recommendations/components/EnviarRecomendacoesModal';
 import { bolsaoLeadToRecommendationInput } from '@/features/recommendations/adapters';
@@ -158,6 +159,47 @@ export const LeadDetailsModal = ({
     if (error) {
       setClassificacao(anterior);                    // desfaz o otimismo
       toast({ title: 'Erro ao classificar', description: error.message, variant: 'destructive' });
+    }
+  };
+
+  // Preferências do lead (o que o cliente procura) — mesmo desenho otimista da
+  // classificação. Eixo diferente: aqui é texto livre e não decide nada.
+  const [preferencias, setPreferencias] = useState<string[]>(preferenciasDe(lead?.preferences));
+  useEffect(() => {
+    setPreferencias(preferenciasDe(lead?.preferences));
+  }, [lead?.id, lead?.preferences]);
+
+  /** Grava o conjunto inteiro na tabela FONTE, pelo id de origem. */
+  const salvarPreferencias = async (valores: string[]) => {
+    if (!lead || !tenantId || tenantId === 'owner') return;
+    const anterior = preferencias;
+    setPreferencias(valores);                        // otimista
+    const [tabela, coluna] = lead.source_kenlo_id
+      ? ['kenlo_leads', lead.source_kenlo_id]
+      : ['leads', lead.source_lead_id];
+    if (!coluna) {
+      toast({
+        title: 'Lead sem origem',
+        description: 'Linha antiga do bolsão, anterior ao espelhamento.',
+        variant: 'destructive',
+      });
+      setPreferencias(anterior);
+      return;
+    }
+    const { error } = await supabase
+      .from(tabela)
+      // Array vazio vira NULL: o CHECK da 20260819 recusa `{}` de propósito —
+      // "sem preferência" tem uma representação só.
+      .update({ preferences: valores.length ? valores : null })
+      .eq('id', coluna)
+      .eq('tenant_id', tenantId)
+      // Mesmo guard do salvarClassificacao: sem .single(), UPDATE que não casa
+      // nenhuma linha devolve sucesso silencioso.
+      .select()
+      .single();
+    if (error) {
+      setPreferencias(anterior);                     // desfaz o otimismo
+      toast({ title: 'Erro ao salvar preferências', description: error.message, variant: 'destructive' });
     }
   };
 
@@ -538,6 +580,13 @@ export const LeadDetailsModal = ({
               <DialogDescription className="flex flex-col gap-1 mt-1">
                 <span>Lead #{lead.id}</span>
               </DialogDescription>
+              {/* Link da conversa aqui em cima, com a identificação do lead: é o
+                  que se copia para mandar a alguém, não um dado a consultar. */}
+              <ConversationLinkField
+                phone={lead.lead}
+                contactName={lead.nomedolead}
+                className="mt-2"
+              />
             </div>
           </div>
         </DialogHeader>
@@ -654,6 +703,15 @@ export const LeadDetailsModal = ({
                   );
                 })}
               </div>
+            </div>
+
+            {/* Preferências — o que o cliente procura */}
+            <div className="bg-muted/50 p-4 rounded-lg">
+              <div className="flex items-center gap-2 mb-2">
+                <Tag className="h-5 w-5 text-sky-500" />
+                <span className="font-bold text-sm text-muted-foreground">Preferências</span>
+              </div>
+              <PreferenciasEditor valor={preferencias} onChange={salvarPreferencias} />
             </div>
           </div>
 

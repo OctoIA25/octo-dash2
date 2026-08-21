@@ -18,6 +18,7 @@ import { Input } from '@/components/ui/input';
 import { useDebounce } from '../hooks/useDebounce';
 import { LeadDetailsModal } from './LeadDetailsModal';
 import { ClassificacaoDots } from './ClassificacaoBadge';
+import { PreferenciasBadges } from './PreferenciasLead';
 import {
   Select,
   SelectContent,
@@ -392,6 +393,10 @@ export const KanbanCardContent = memo(({ lead, onClick, mostrarCorretor, isOverl
             <OpenConversationLink phone={telefone} contactName={lead.nomedolead} />
           </div>
         )}
+        {/* Preferências: linha própria, não no rodapé — os termos vêm por
+            extenso ('Apartamento Garden') e disputariam espaço com corretor,
+            temperatura e data numa coluna de Kanban. */}
+        <PreferenciasBadges preferencias={lead.preferences} className="pt-0.5 flex-wrap" />
       </div>
 
       {/* Footer: corretor atribuído + badge + data */}
@@ -1150,7 +1155,7 @@ const handleDragEnd = useCallback(async (event: DragEndEvent) => {
         <Input
           value={busca}
           onChange={(e) => setBusca(e.target.value)}
-          placeholder="Buscar por nome, telefone, e-mail ou tag"
+          placeholder="Buscar por nome, telefone, e-mail, tag ou badge (apartamento, lançamento...)"
           aria-label="Buscar leads"
           className="h-8 text-xs w-[260px]"
         />

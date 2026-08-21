@@ -34,6 +34,13 @@ export interface BolsaoLead {
   portal: string | null;              // 🆕 Portal de origem (OLX, ZAP, etc)
   is_exclusive?: boolean | null;
   classification?: ValorClassificacao;
+  /**
+   * Preferências do lead. A tabela `bolsao` NÃO tem a coluna — só as fontes
+   * (`leads`/`kenlo_leads`) — então aqui vem `undefined` e o editor abre vazio.
+   * ponytail: se o Bolsão precisar exibir, é ADD COLUMN + trigger de espelho
+   * copiado de `tg_leads_classification_to_bolsao`.
+   */
+  preferences?: string[] | null;
   /** Já vêm do select('*'); faltavam na interface. Necessários para escrever na tabela FONTE. */
   source_lead_id?: string | null;
   source_kenlo_id?: string | null;

@@ -47,6 +47,7 @@ export interface CRMLead {
   assigned_agent_name: string | null;
   comments: string | null;
   tags: string[] | null;
+  preferences: string[] | null;
   custom_fields: Record<string, any> | null;
   visit_date: string | null;
   closing_date: string | null;
@@ -99,6 +100,8 @@ export interface KanbanLead {
   classification: ValorClassificacao;
   /** Etiquetas do lead. Só a tabela `leads` tem a coluna; kenlo_leads vem sempre null. */
   tags: string[] | null;
+  /** O que o cliente procura (Apartamento, Sala Comercial...). Marcação manual do corretor. */
+  preferences: string[] | null;
   /** Origem real da linha — o modal escreve na tabela FONTE, nunca no espelho. */
   source_lead_id: string | null;
   source_kenlo_id: string | null;
@@ -127,9 +130,9 @@ const LEADS_TABLE = 'leads';
 // trazia campos gordos (em kenlo_leads, o raw_data JSONB = payload Kenlo inteiro por
 // lead) que o Kanban nunca lê e que dominavam o tempo de download.
 const LEADS_KANBAN_COLUMNS =
-  'id,created_at,updated_at,assigned_at,closing_date,property_code,property_value,assigned_agent_name,name,phone,email,source,status,temperature,comments,archived_at,archive_reason,lead_type,is_exclusive,participa_bolsao,classification,tags';
+  'id,created_at,updated_at,assigned_at,closing_date,property_code,property_value,assigned_agent_name,name,phone,email,source,status,temperature,comments,archived_at,archive_reason,lead_type,is_exclusive,participa_bolsao,classification,tags,preferences';
 const KENLO_KANBAN_COLUMNS =
-  'id,client_name,client_phone,client_email,message,interest_reference,attended_by_name,is_exclusive,interest_type,interest_is_sale,interest_is_rent,stage,temperature,portal,lead_timestamp,archived_at,archive_reason,updated_at,created_at,tenant_id,classification';
+  'id,client_name,client_phone,client_email,message,interest_reference,attended_by_name,is_exclusive,interest_type,interest_is_sale,interest_is_rent,stage,temperature,portal,lead_timestamp,archived_at,archive_reason,updated_at,created_at,tenant_id,classification,preferences';
 
 const KENLO_PAGE_SIZE = 1000;
 // Manter baixo: cada página é sort+offset no Postgres, por usuário — 6 em paralelo
@@ -243,6 +246,7 @@ export function mapKenloToKanbanLead(kl: Record<string, unknown>): KanbanLead {
     classification: (kl.classification as ValorClassificacao) ?? null,
     // kenlo_leads não tem coluna `tags` — nada a mapear.
     tags: null,
+    preferences: (kl.preferences as string[]) ?? null,
     source_lead_id: null,
     source_kenlo_id: kl.id as string,
     archived_at: (kl.archived_at as string) || null,
@@ -380,6 +384,7 @@ export function mapToKanbanLead(lead: CRMLead): KanbanLead {
     comments: lead.comments,
     classification: lead.classification ?? null,
     tags: lead.tags ?? null,
+    preferences: lead.preferences ?? null,
     source_lead_id: lead.id,
     source_kenlo_id: null,
     archived_at: lead.archived_at,
@@ -467,7 +472,7 @@ export async function fetchLeadsDoCorretorPorNome(
     // 1) leads (CRM)
     let crmQuery = supabase
       .from(LEADS_TABLE)
-      .select('id,tenant_id,name,phone,email,source,source_lead_id,status,temperature,property_id,property_code,property_value,property_type,assigned_agent_id,assigned_agent_name,comments,tags,custom_fields,visit_date,closing_date,final_sale_value,lead_type,is_exclusive,participa_bolsao,assigned_at,created_at,updated_at,classification')
+      .select('id,tenant_id,name,phone,email,source,source_lead_id,status,temperature,property_id,property_code,property_value,property_type,assigned_agent_id,assigned_agent_name,comments,tags,custom_fields,visit_date,closing_date,final_sale_value,lead_type,is_exclusive,participa_bolsao,assigned_at,created_at,updated_at,classification,preferences')
       .ilike('assigned_agent_name', nomeCorretor)
       .is('archived_at', null)
       .order('created_at', { ascending: false });
