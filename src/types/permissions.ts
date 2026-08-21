@@ -216,3 +216,46 @@ export const MENU_ICONS: Record<MenuPermission, string> = {
   'excel': 'FileSpreadsheet'
 };
 
+
+// ========== PERMISSÕES NÃO EDITÁVEIS NO MODAL DE EQUIPE ==========
+
+/**
+ * Abas que o modal de Equipe (EquipeSection) expõe como checkbox.
+ *
+ * O salvamento reconstrói `permissions.sidebar_permissions` a partir desses
+ * checkboxes — então TODA aba fora desta lista era apagada a cada salvamento.
+ * Foi assim que 'chat' (WhatsApp) sumiu de 88 membros: nunca teve checkbox.
+ * Ao adicionar uma aba nova ao menu, ou ela ganha checkbox e entra aqui, ou
+ * fica fora e passa a seguir o padrão do cargo (`sidebarPermissionsDoCargo`).
+ */
+export const SIDEBAR_PERMISSIONS_EDITAVEIS: SidebarPermission[] = [
+  'leads', 'notificacoes', 'metricas', 'juridico', 'estudo-mercado', 'recrutamento',
+  'gestao-equipe', 'imoveis', 'agentes-ia', 'integracoes', 'central-leads', 'relatorios', 'excel',
+];
+
+export const sidebarPermissionsDoCargo = (role: string): SidebarPermission[] => {
+  switch (role) {
+    case 'owner': return [...OWNER_SIDEBAR_PERMISSIONS];
+    case 'admin': return [...ADMIN_SIDEBAR_PERMISSIONS];
+    case 'team_leader': return [...TEAM_LEADER_SIDEBAR_PERMISSIONS];
+    case 'corretor':
+    default: return [...CORRETOR_SIDEBAR_PERMISSIONS];
+  }
+};
+
+/**
+ * Completa a lista salva com as abas que o editor não gerencia, usando o padrão
+ * do cargo. Aplicado na leitura (AuthContext/useAuth) e na escrita
+ * (EquipeSection) — na leitura porque cura sozinho as linhas já gravadas sem
+ * 'chat', sem precisar reabrir cada membro. O tenant continua sendo o gate
+ * final: `allowed_features` ainda pode esconder a aba.
+ */
+export const comPermissoesNaoEditaveis = (
+  salvas: SidebarPermission[],
+  role: string,
+): SidebarPermission[] => {
+  const naoEditaveis = sidebarPermissionsDoCargo(role).filter(
+    (p) => !SIDEBAR_PERMISSIONS_EDITAVEIS.includes(p),
+  );
+  return [...new Set([...salvas, ...naoEditaveis])];
+};

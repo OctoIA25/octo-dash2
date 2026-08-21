@@ -15,7 +15,8 @@ import {
   CORRETOR_SIDEBAR_PERMISSIONS,
   OWNER_SIDEBAR_PERMISSIONS,
   TEAM_LEADER_SIDEBAR_PERMISSIONS,
-  TeamColor
+  TeamColor,
+  comPermissoesNaoEditaveis,
 } from '@/types/permissions';
 import { isOwnerEmail } from '@/lib/ownerEmails';
 
@@ -85,7 +86,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
 
     if (permissions?.sidebar_permissions && Array.isArray(permissions.sidebar_permissions)) {
-      return permissions.sidebar_permissions;
+      return comPermissoesNaoEditaveis(permissions.sidebar_permissions, role);
     }
 
     switch (role) {

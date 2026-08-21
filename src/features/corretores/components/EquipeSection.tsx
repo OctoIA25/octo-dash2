@@ -24,7 +24,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { fetchTenantMembers, createTenantMember, updateMemberRole, removeTenantMember, updateMemberPermissions, updateMemberLeader, deleteMemberCompletely, adminUpdateMemberPassword, adminUpdateMemberEmail, type TenantMember } from '../services/tenantMembersService';
 import { fetchTeams, setTeamLeader, type Team } from '../services/teamsManagementService';
 import { useLateralDrawer } from '@/hooks/useLateralDrawer';
-import { SidebarPermission, ATUACAO_TIPOS, ATUACAO_LABELS, atuacoesDe, type AtuacaoTipo } from '@/types/permissions';
+import { SidebarPermission, ATUACAO_TIPOS, ATUACAO_LABELS, atuacoesDe, comPermissoesNaoEditaveis, type AtuacaoTipo } from '@/types/permissions';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -332,10 +332,12 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
 
     setIsCreatingMember(true);
     try {
-      // Converter permissões em array de sidebar permissions
-      const sidebarPerms = Object.entries(permissions)
-        .filter(([_, value]) => value)
-        .map(([key]) => key);
+      // Converter permissões em array de sidebar permissions (ver nota em
+      // handleSavePermissions sobre as abas sem checkbox).
+      const sidebarPerms = comPermissoesNaoEditaveis(
+        Object.entries(permissions).filter(([_, value]) => value).map(([key]) => key) as SidebarPermission[],
+        newMemberRole,
+      );
       
       const memberData = {
         email: newMemberEmail,
@@ -541,10 +543,13 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
     
     setIsSavingPermissions(true);
     try {
-      // Converter permissões em array de sidebar_permissions
-      const sidebarPerms = Object.entries(editPermissions)
-        .filter(([_, value]) => value)
-        .map(([key]) => key);
+      // Converter permissões em array de sidebar_permissions. As abas sem checkbox
+      // (WhatsApp, Comunicação, Metas...) não podem ser deduzidas daqui — sem
+      // comPermissoesNaoEditaveis, cada salvamento as apagava do membro.
+      const sidebarPerms = comPermissoesNaoEditaveis(
+        Object.entries(editPermissions).filter(([_, value]) => value).map(([key]) => key) as SidebarPermission[],
+        editRole,
+      );
       
       const newPermissions = {
         ...editingMember.permissions,

@@ -25,6 +25,7 @@ const ALL_TENANT_FEATURES: { id: SidebarPermission; label: string; description: 
   { id: 'imoveis', label: 'Imóveis', description: 'Gestão de imóveis' },
   { id: 'agentes-ia', label: 'Agentes de IA', description: 'Agentes inteligentes e automações' },
   //{ id: 'octo-chat', label: 'Octo Chat', description: 'Assistente de chat inteligente' },
+  { id: 'chat', label: 'WhatsApp', description: 'Conversas do WhatsApp oficial' },
   { id: 'integracoes', label: 'Integrações', description: 'Conectar fontes de leads' },
   { id: 'central-leads', label: 'Central de Leads', description: 'Leads das integrações' },
   { id: 'atividades', label: 'Atividades', description: 'Atividades e tarefas' },

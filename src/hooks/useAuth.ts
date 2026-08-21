@@ -16,7 +16,8 @@ import {
   OWNER_SIDEBAR_PERMISSIONS,
   ADMIN_SIDEBAR_PERMISSIONS,
   CORRETOR_SIDEBAR_PERMISSIONS,
-  TEAM_LEADER_SIDEBAR_PERMISSIONS
+  TEAM_LEADER_SIDEBAR_PERMISSIONS,
+  comPermissoesNaoEditaveis,
 } from '@/types/permissions';
 import { isOwnerEmail } from '@/lib/ownerEmails';
 
@@ -114,7 +115,7 @@ function getSidebarPermissions(
   
   // Se tem permissões customizadas salvas, usar elas
   if (customPermissions?.sidebar_permissions && Array.isArray(customPermissions.sidebar_permissions)) {
-    return customPermissions.sidebar_permissions as SidebarPermission[];
+    return comPermissoesNaoEditaveis(customPermissions.sidebar_permissions as SidebarPermission[], role);
   }
   
   // Senão, usar permissões padrão baseado no role
