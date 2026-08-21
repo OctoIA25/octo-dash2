@@ -12,6 +12,7 @@ import { GestaoSectionWithMetrics } from '@/components/sections/GestaoSectionWit
 import { MetricasSubSection, ClienteInteressadoSubSection, ClienteProprietarioSubSection } from '@/components/FixedSidebar';
 
 import { BolsaoSection } from '@/features/leads/components/BolsaoSection';
+import { ForecastSection } from '@/features/forecast/components/ForecastSection';
 
 interface MetricasPageProps {
   onRefresh?: () => void;
@@ -130,6 +131,13 @@ export const MetricasPage = ({ onRefresh, isRefreshing }: MetricasPageProps) => 
     return (
       <BolsaoSection />
     );
+  }
+
+  // Forecast não passa por GestaoSectionWithMetrics — é tela própria. Por isso a
+  // checagem é no parâmetro cru: incluir 'forecast' em ClienteInteressadoSubSection
+  // alargaria o tipo que aquele componente aceita, em cascata, sem ganho nenhum.
+  if (activeSubsection === 'cliente-interessado' && subsubsection === 'forecast') {
+    return <ForecastSection />;
   }
 
   return (

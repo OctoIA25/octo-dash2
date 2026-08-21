@@ -95,6 +95,7 @@ const TAB_CONFIGS: TabConfig[] = [
       { id: 'geral', label: 'Visão Geral', icon: BarChart3, href: '/metricas/cliente-interessado/geral' },
       { id: 'pre-atendimento', label: 'Pré-Atendimento', icon: Headphones, href: '/metricas/cliente-interessado/pre-atendimento' },
       { id: 'atendimento', label: 'Atendimento', icon: Phone, href: '/metricas/cliente-interessado/atendimento' },
+      { id: 'forecast', label: 'Forecast', icon: TrendingUp, href: '/metricas/cliente-interessado/forecast' },
     ],
   },
   {
