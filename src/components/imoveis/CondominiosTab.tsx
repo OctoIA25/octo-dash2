@@ -818,15 +818,6 @@ export const CondominiosTab = () => {
                       </div>
                     )}
                     
-                    {/* Badge de Tipo */}
-                    {cond.tipo && (
-                      <div className="absolute top-2 left-2">
-                        <Badge className="bg-purple-500/90 text-white border-0 text-xs">
-                          {cond.tipo}
-                        </Badge>
-                      </div>
-                    )}
-
                     {/* Badge de Status */}
                     {cond.status && (
                       <div className="absolute top-2 right-2">

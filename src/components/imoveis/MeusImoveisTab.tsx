@@ -99,6 +99,10 @@ interface ImovelLocal {
   aprovado_em?: string;
   motivo_aprovacao?: string;
   captador_id?: string | null;
+  chave_status?: string | null;
+  chave_local?: string | null;
+  chave_com?: string | null;
+  chave_retirada_em?: string | null;
   obs_interna?: string | null;
   updated_at?: string | null;
 }
@@ -407,6 +411,10 @@ export const MeusImoveisTab = ({ allImoveis, onViewDetails, onPropertyCreated }:
       status_aprovacao: local.status_aprovacao,
       captador_id: local.captador_id || '',
       obs_interna: local.obs_interna || '',
+    chave_status: local.chave_status || '',
+    chave_local: local.chave_local || '',
+    chave_com: local.chave_com || '',
+    chave_retirada_em: local.chave_retirada_em || '',
     };
   };
 

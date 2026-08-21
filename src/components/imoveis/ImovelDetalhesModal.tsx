@@ -37,7 +37,6 @@ import {
 import type { Imovel } from '@/features/imoveis/services/kenloService';
 import { useAuth } from '@/hooks/useAuth';
 import { getFotoCapaUrl, getFotoUrl, type FotoInput } from './fotos-helpers';
-import { ImovelHistorico } from './ImovelHistorico';
 import { podeEditarImovel } from '@/features/imoveis/utils/podeEditarImovel';
 
 interface ImovelDetalhesModalProps {
@@ -340,13 +339,7 @@ export const ImovelDetalhesModal = ({
             </div>
           )}
 
-          {/* Histórico — só imóveis com registro local são auditados pelo trigger */}
-          {canEdit && (
-            <div>
-              <SectionTitle>Histórico de alterações</SectionTitle>
-              <ImovelHistorico tenantId={user?.tenantId} codigoImovel={imovel.referencia} />
-            </div>
-          )}
+          {/* Histórico de alterações mora na aba "Histórico" do formulário de edição. */}
 
           {/* Fotos */}
           {imovel.fotos && imovel.fotos.length > 0 && (

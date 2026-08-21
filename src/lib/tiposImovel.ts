@@ -60,4 +60,6 @@ export const TODOS_TIPOS_IMOVEL: string[] = [...new Set([
 export const PREFERENCIAS_PADRAO = [
   'Apartamento', 'Casa', 'Sobrado', 'Cobertura', 'Terreno',
   'Sala Comercial', 'Loja', 'Galpão', 'Chácara',
+  // Estágio do imóvel — não são tipos, então ficam fora de TODOS_TIPOS_IMOVEL.
+  'Imóvel Pronto', 'Lançamento',
 ];

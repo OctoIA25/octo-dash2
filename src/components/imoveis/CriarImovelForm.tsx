@@ -17,6 +17,7 @@ import { isHttpUrl, normalizeYouTubeUrl } from '@/features/imoveis/utils/mediaUr
 import type { CompletenessSection } from '@/features/imoveis/utils/propertyCompleteness';
 import { ProprietarioAutocomplete } from './ProprietarioAutocomplete';
 import { ImovelDuplicadoDialog } from './ImovelDuplicadoDialog';
+import { ImovelHistorico } from './ImovelHistorico';
 import {
   verificarImovelDuplicado,
   type ImovelDuplicadoMatch,
@@ -45,6 +46,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   User,
   Building2,
@@ -74,10 +76,16 @@ import {
   Wrench,
   Shield,
   Sparkles,
-  Lock
+  Lock,
+  History,
+  KeyRound
 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { sendMessageToAgent } from '@/features/agentes-ia/services/agentWebhookService';
+import {
+  TIPOS_RESIDENCIAL, TIPOS_COMERCIAL, TIPOS_INDUSTRIAL,
+  TIPOS_RURAL, TIPOS_TEMPORADA, TIPOS_CORPORATIVA,
+} from '@/lib/tiposImovel';
 
 interface CondominioOption {
   id: string;
@@ -178,6 +186,15 @@ interface ImovelFormData {
   aceita_troca: string;
 
   obs_interna: string;
+
+  // Chaves
+  /** '' = não informado. Demais valores: imobiliaria | portaria | proprietario | nao_temos. */
+  chave_status: string;
+  chave_local: string;
+  /** user_id de quem está com a chave. '' = a chave está no lugar dela. */
+  chave_com: string;
+  /** Só leitura: quem carimba é o trigger tg_imoveis_locais_chave. */
+  chave_retirada_em: string;
 }
 
 const initialFormData: ImovelFormData = {
@@ -237,37 +254,12 @@ const initialFormData: ImovelFormData = {
   obs_documentacao: '',
   caracteristicas: [],
   aceita_troca: 'nao',
-  obs_interna: ''
+  obs_interna: '',
+  chave_status: '',
+  chave_local: '',
+  chave_com: '',
+  chave_retirada_em: ''
 };
-
-const TIPOS_RESIDENCIAL = [
-  'Apartamento', 'Apartamento Duplex', 'Apartamento Garden', 'Apartamento Triplex',
-  'Casa', 'Sobrado', 'Cobertura', 'Flat', 'Kitnet', 'Loft', 'Penthouse',
-  'Studio', 'Village', 'Terreno', 'Chácara', 'Sítio'
-];
-
-const TIPOS_COMERCIAL = [
-  'Sala Comercial', 'Loja', 'Galpão', 'Prédio Comercial', 'Ponto Comercial',
-  'Box/Garagem', 'Terreno Comercial'
-];
-
-const TIPOS_INDUSTRIAL = [
-  'Galpão Industrial', 'Área Industrial', 'Terreno Industrial'
-];
-
-const TIPOS_RURAL = [
-  'Chácara', 'Sítio', 'Fazenda', 'Rancho', 'Área Rural'
-];
-
-const TIPOS_TEMPORADA = [
-  'Casa de Praia', 'Casa de Campo', 'Apartamento Temporada', 'Flat Temporada',
-  'Chalé', 'Pousada'
-];
-
-const TIPOS_CORPORATIVA = [
-  'Escritório', 'Sala Corporativa', 'Andar Corporativo', 'Prédio Corporativo',
-  'Coworking'
-];
 
 const MIDIAS_ORIGEM = [
   'Facebook Ads', 'Facebook', 'Google', 'Instagram', 'E-mail MKT',
@@ -560,9 +552,8 @@ export const CriarImovelForm = ({
       // Próximo número
       const proximoNumero = maxNumero + 1;
       
-      // Formatar com 3 dígitos (ou 4 se > 999)
-      const digitos = proximoNumero > 999 ? 4 : 3;
-      const novoCodigo = `${prefixo}${proximoNumero.toString().padStart(digitos, '0')}`;
+      // Formatar com 4 dígitos (ou mais, se estourar 9999)
+      const novoCodigo = `${prefixo}${proximoNumero.toString().padStart(4, '0')}`;
       
       setCodigoGerado(novoCodigo);
     } catch (err) {
@@ -617,6 +608,7 @@ export const CriarImovelForm = ({
     comissoes: false,
     confidencial: false,
     amenidades: false,
+    chaves: false,
   });
 
   const toggleSection = (section: keyof typeof openSections) => {
@@ -1059,6 +1051,11 @@ export const CriarImovelForm = ({
       proprietario_email: formData.proprietario_email || null,
       criado_por: user?.id || null,
       obs_interna: formData.obs_interna || null,
+      chave_status: formData.chave_status || null,
+      chave_local: formData.chave_local || null,
+      // chave_retirada_em fica de fora de propósito: o trigger carimba a data
+      // quando esta coluna muda.
+      chave_com: formData.chave_com || null,
       // captador_id só entra no payload para diretoria/admin. Upsert vira
       // INSERT ... ON CONFLICT DO UPDATE: colunas ausentes do payload ficam
       // fora do SET e mantêm o valor já salvo. Omitir aqui é o que faz um
@@ -1116,7 +1113,19 @@ export const CriarImovelForm = ({
           </p>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
+        <Tabs defaultValue="dados" className="py-4">
+          {/* Histórico só existe na edição: imóvel ainda não salvo não tem log. */}
+          {isEdit && (
+            <TabsList>
+              <TabsTrigger value="dados">Dados</TabsTrigger>
+              <TabsTrigger value="historico">
+                <History className="h-4 w-4 mr-1.5" />
+                Histórico
+              </TabsTrigger>
+            </TabsList>
+          )}
+
+          <TabsContent value="dados" className="space-y-4">
           {/* Código do Imóvel - GERADO AUTOMATICAMENTE */}
           <div className="bg-gradient-to-r from-primary/5 to-primary/10 rounded-lg p-4 border border-primary/20">
             <div className="flex items-center gap-2 mb-3">
@@ -2131,6 +2140,83 @@ export const CriarImovelForm = ({
             </CollapsibleContent>
           </Collapsible>
 
+          {/* Seção: Chaves */}
+          <Collapsible open={openSections.chaves} onOpenChange={() => toggleSection('chaves')}>
+            <CollapsibleTrigger className="flex items-center justify-between w-full p-3 bg-card rounded-lg border hover:bg-accent/50 transition-colors">
+              <div className="flex items-center gap-2">
+                <KeyRound className="h-5 w-5 text-amber-500" />
+                <span className="font-medium">Chaves</span>
+              </div>
+              {openSections.chaves ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </CollapsibleTrigger>
+            <CollapsibleContent className="pt-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-card/50 rounded-lg border">
+                <div className="space-y-2">
+                  <Label>Onde fica a chave</Label>
+                  <Select
+                    value={formData.chave_status || 'nao_informado'}
+                    onValueChange={(value) =>
+                      handleInputChange('chave_status', value === 'nao_informado' ? '' : value)
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Não informado" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="nao_informado">Não informado</SelectItem>
+                      <SelectItem value="imobiliaria">Na imobiliária</SelectItem>
+                      <SelectItem value="portaria">Na portaria</SelectItem>
+                      <SelectItem value="proprietario">Com o proprietário</SelectItem>
+                      <SelectItem value="nao_temos">Não temos a chave</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Etiqueta / local</Label>
+                  <Input
+                    placeholder="Ex.: gaveta 2, tag A-14"
+                    value={formData.chave_local}
+                    onChange={(e) => handleInputChange('chave_local', e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Está com</Label>
+                  <Select
+                    value={formData.chave_com || 'ninguem'}
+                    onValueChange={(value) =>
+                      handleInputChange('chave_com', value === 'ninguem' ? '' : value)
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="No lugar dela" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ninguem">No lugar dela</SelectItem>
+                      {captadores.map((c) => (
+                        <SelectItem key={c.user_id} value={c.user_id}>
+                          {c.nome}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {/* Data carimbada pelo banco; some sozinha quando a chave volta. */}
+                  {formData.chave_com && formData.chave_retirada_em && (
+                    <p className="text-xs text-muted-foreground">
+                      Retirada em{' '}
+                      {new Date(formData.chave_retirada_em).toLocaleString('pt-BR', {
+                        dateStyle: 'short',
+                        timeStyle: 'short',
+                      })}
+                    </p>
+                  )}
+                </div>
+                <p className="md:col-span-3 text-xs text-muted-foreground">
+                  Cada troca de "Está com" fica registrada no histórico do imóvel, com autor e data.
+                </p>
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+
           {/* Seção: Confidencial / Documentação */}
           <Collapsible open={openSections.confidencial} onOpenChange={() => toggleSection('confidencial')}>
             <CollapsibleTrigger className="flex items-center justify-between w-full p-3 bg-card rounded-lg border hover:bg-accent/50 transition-colors">
@@ -2251,7 +2337,14 @@ export const CriarImovelForm = ({
               </div>
             </CollapsibleContent>
           </Collapsible>
-        </div>
+          </TabsContent>
+
+          {isEdit && (
+            <TabsContent value="historico">
+              <ImovelHistorico tenantId={tenantId} codigoImovel={codigoGerado} />
+            </TabsContent>
+          )}
+        </Tabs>
 
         {/* Botões de Ação */}
         <div className="flex items-center justify-end gap-3 pt-4 border-t">

@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { leadsEventEmitter } from '@/lib/leadsEventEmitter';
 import { CLASSIFICACAO_ESTILOS, CLASSIFICACAO_ORDEM } from './ClassificacaoBadge';
 import { classificacoesDe, toggleClassificacao } from '../utils/classificarLead';
+import { PreferenciasEditor, preferenciasDe } from './PreferenciasLead';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { ConversationLinkField, useChatPath } from '@/features/chat/components/OpenConversationLink';
@@ -43,6 +44,8 @@ interface LeadForm {
   participa_bolsao: boolean;
   /** Só editável em modo edição — no INSERT o trigger sobrescreve. Multi-valor. */
   classification: string[];
+  /** O que o cliente procura (Apartamento, Lançamento...). Marcação humana. */
+  preferences: string[];
 }
 
 const EMPTY_FORM: LeadForm = {
@@ -54,6 +57,7 @@ const EMPTY_FORM: LeadForm = {
   temperature: 'Frio',
   participa_bolsao: true,
   classification: ['indefinido'],
+  preferences: [],
 };
 
 const TEMPERATURES = ['Quente', 'Morno', 'Frio'];
@@ -67,6 +71,7 @@ const leadToForm = (lead: KanbanLead): LeadForm => ({
   temperature: lead.temperature ?? 'Frio',
   participa_bolsao: (lead as { participa_bolsao?: boolean }).participa_bolsao ?? true,
   classification: classificacoesDe(lead.classification),
+  preferences: preferenciasDe(lead.preferences),
 });
 
 export const CriarLeadQuickModal = ({
@@ -156,6 +161,8 @@ export const CriarLeadQuickModal = ({
           // 'dashboard' sozinho. Mandar classification_source do cliente seria o
           // buraco que esta feature existe para fechar.
           classification: form.classification,
+          // CHECK da 20260819 exige 1..10 termos ou NULL — vazio vira NULL.
+          preferences: form.preferences.length ? form.preferences : null,
           updated_at: new Date().toISOString(),
         };
 
@@ -177,6 +184,7 @@ export const CriarLeadQuickModal = ({
             temperature:
               form.temperature === 'Quente' ? 'hot' : form.temperature === 'Morno' ? 'warm' : 'cold',
             classification: form.classification,
+            preferences: form.preferences.length ? form.preferences : null,
             updated_at: new Date().toISOString(),
           };
           const { error: kenloError } = await supabase
@@ -412,6 +420,24 @@ export const CriarLeadQuickModal = ({
                     );
                   })}
                 </div>
+              </div>
+            )}
+
+            {/* Preferências — o que o cliente procura. Só em edição, junto da
+                Classificação: na criação o corretor ainda está digitando os
+                dados básicos e o editor de chips viraria ruído. */}
+            {isEditMode && (
+              <div className="mt-4">
+                <label className="flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
+                  <Tag className="w-4 h-4 text-slate-400" />
+                  Preferências
+                  <span className="font-normal text-slate-400">(o que o cliente procura)</span>
+                </label>
+                <PreferenciasEditor
+                  valor={form.preferences}
+                  onChange={(novo) => setForm((f) => ({ ...f, preferences: novo }))}
+                  disabled={!canEdit}
+                />
               </div>
             )}
 

@@ -224,6 +224,10 @@ interface ImovelLocal {
   super_destaque?: boolean | null;
   status_aprovacao?: 'aprovado' | 'nao_aprovado' | 'aguardando';
   captador_id?: string | null;
+  chave_status?: string | null;
+  chave_local?: string | null;
+  chave_com?: string | null;
+  chave_retirada_em?: string | null;
   obs_interna?: string | null;
   criado_por?: string | null;
   updated_at?: string | null;
@@ -271,6 +275,10 @@ const buildEditDataFromLocal = (local: ImovelLocal) => {
     status_aprovacao: local.status_aprovacao,
     captador_id: local.captador_id || '',
     obs_interna: local.obs_interna || '',
+  chave_status: local.chave_status || '',
+  chave_local: local.chave_local || '',
+  chave_com: local.chave_com || '',
+  chave_retirada_em: local.chave_retirada_em || '',
   };
 };
 

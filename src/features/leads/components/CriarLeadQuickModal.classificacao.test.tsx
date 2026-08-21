@@ -78,7 +78,8 @@ describe('Classificação no CriarLeadQuickModal', () => {
     render(<CriarLeadQuickModal {...props} editingLead={LEAD} />);
     expect(screen.getByText('Classificação')).toBeInTheDocument();
     for (const label of ['Lançamento', 'Pronto', 'Locação', 'Sem classificação']) {
-      expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
+      // getAll: 'Lançamento' também existe como botão de preferência padrão.
+      expect(screen.getAllByRole('button', { name: label }).length).toBeGreaterThan(0);
     }
   });
 
@@ -134,5 +135,34 @@ describe('Classificação multi-valor', () => {
     await waitFor(() => expect(updates.length).toBeGreaterThan(0));
     expect(updates.find((u) => u.tabela === 'leads')?.payload.classification)
       .toEqual(['indefinido']);
+  });
+});
+
+/**
+ * Preferências do lead no mesmo modal (pedido do Victor, 21/ago/2026): marcar
+ * o que o cliente procura (Apartamento, Lançamento...) direto na edição.
+ */
+describe('Preferências no CriarLeadQuickModal', () => {
+  it('NÃO aparece em modo criação', () => {
+    render(<CriarLeadQuickModal {...props} />);
+    expect(screen.queryByText('Preferências')).not.toBeInTheDocument();
+  });
+
+  it('grava o termo marcado; sem nenhum, manda NULL (CHECK 1..10 do banco)', async () => {
+    render(<CriarLeadQuickModal {...props} editingLead={LEAD} />);
+    expect(screen.getByText('Preferências')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Apartamento' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+    await waitFor(() => expect(updates.length).toBeGreaterThan(0));
+    expect(updates.find((u) => u.tabela === 'leads')?.payload.preferences)
+      .toEqual(['Apartamento']);
+
+    // sem preferências → NULL, nunca []
+    updates.length = 0;
+    render(<CriarLeadQuickModal {...props} editingLead={LEAD} />);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Salvar' })[1]);
+    await waitFor(() => expect(updates.length).toBeGreaterThan(0));
+    expect(updates.find((u) => u.tabela === 'leads')?.payload.preferences).toBeNull();
   });
 });

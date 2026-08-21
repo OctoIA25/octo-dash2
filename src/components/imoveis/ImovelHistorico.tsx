@@ -69,13 +69,37 @@ const ROTULOS: Record<string, string> = {
   tipo_simplificado: 'Categoria',
   area_comum: 'Área comum',
   area_privativa: 'Área privativa',
+  chave_status: 'Chave',
+  chave_local: 'Local da chave',
+  chave_com: 'Chave com',
+  chave_retirada_em: 'Chave retirada em',
+};
+
+/** Colunas que guardam user_id — o diff mostra o nome, não o UUID. */
+const CAMPOS_PESSOA = new Set(['chave_com', 'captador_id', 'aprovado_por']);
+
+const CAMPOS_DATA = new Set(['chave_retirada_em', 'aprovado_em']);
+
+const CHAVE_STATUS: Record<string, string> = {
+  imobiliaria: 'Na imobiliária',
+  portaria: 'Na portaria',
+  proprietario: 'Com o proprietário',
+  nao_temos: 'Não temos a chave',
 };
 
 export const rotuloCampo = (campo: string): string =>
   ROTULOS[campo] || campo.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
 
-export const formatarValor = (campo: string, valor: unknown): string => {
+export const formatarValor = (
+  campo: string,
+  valor: unknown,
+  nomePorId: Record<string, string> = {}
+): string => {
   if (valor === null || valor === undefined || valor === '') return 'vazio';
+  // Mesmo fallback do autor da linha: sem nome no mapa, "Usuário" diz mais que um UUID.
+  if (CAMPOS_PESSOA.has(campo)) return nomePorId[String(valor)] || 'Usuário';
+  if (CAMPOS_DATA.has(campo)) return formatarData(String(valor));
+  if (campo === 'chave_status') return CHAVE_STATUS[String(valor)] || String(valor);
   if (typeof valor === 'boolean') return valor ? 'Sim' : 'Não';
   if (Array.isArray(valor)) return valor.length > 0 ? valor.join(', ') : 'vazio';
   if (typeof valor === 'number') {
@@ -157,7 +181,7 @@ export const ImovelHistorico = ({ tenantId, codigoImovel }: ImovelHistoricoProps
                 {campos.map(([campo, { de, para }]) => (
                   <li key={campo} className="text-xs text-text-secondary">
                     <span className="text-text-primary">{rotuloCampo(campo)}:</span>{' '}
-                    {formatarValor(campo, de)} → {formatarValor(campo, para)}
+                    {formatarValor(campo, de, nomePorId)} → {formatarValor(campo, para, nomePorId)}
                   </li>
                 ))}
               </ul>
