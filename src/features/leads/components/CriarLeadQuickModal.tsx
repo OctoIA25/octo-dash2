@@ -6,13 +6,14 @@
 
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Plus, Save, User as UserIcon, Phone, Mail, Home, Loader2, Thermometer, Inbox, Tag } from 'lucide-react';
+import { X, Plus, Save, User as UserIcon, Phone, Mail, Home, Loader2, Thermometer, Inbox, Tag, MessageSquare } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { leadsEventEmitter } from '@/lib/leadsEventEmitter';
 import { CLASSIFICACAO_ESTILOS, CLASSIFICACAO_ORDEM } from './ClassificacaoBadge';
 import { classificacoesDe, toggleClassificacao } from '../utils/classificarLead';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthContext } from '@/contexts/AuthContext';
+import { ConversationLinkField, useChatPath } from '@/features/chat/components/OpenConversationLink';
 import {
   LEAD_TYPE_INTERESSADO,
   LEAD_TYPE_PROPRIETARIO,
@@ -87,6 +88,13 @@ export const CriarLeadQuickModal = ({
   // em modo somente leitura.
   const { isGestao } = useAuthContext();
   const canEdit = isGestao;
+
+  // Sem telefone válido ou sem permissão 'chat' o campo não renderiza — a
+  // seção inteira sai junto, senão sobraria um rótulo órfão.
+  const chatPath = useChatPath(
+    editingLead?.lead ?? editingLead?.numerocorretor,
+    editingLead?.nomedolead,
+  );
 
   // Hidrata o form sempre que o lead muda ou o modal abre.
   useEffect(() => {
@@ -306,6 +314,22 @@ export const CriarLeadQuickModal = ({
                   disabled={!canEdit}
                 />
               </div>
+
+              {/* Link da conversa — só na edição, e do telefone JÁ SALVO
+                  (`editingLead`, não `form.phone`): enquanto o corretor digita
+                  um número novo o link apontaria para uma conversa inexistente. */}
+              {isEditMode && chatPath && (
+                <div>
+                  <label className="flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
+                    <MessageSquare className="w-4 h-4 text-slate-400" />
+                    Link da conversa
+                  </label>
+                  <ConversationLinkField
+                    phone={editingLead?.lead ?? editingLead?.numerocorretor}
+                    contactName={editingLead?.nomedolead}
+                  />
+                </div>
+              )}
             </div>
 
             {/* Seção: Interesse */}
