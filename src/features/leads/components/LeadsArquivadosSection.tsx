@@ -44,6 +44,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
+import { leadCasaBusca } from '../utils/buscaLead';
 
 // ──────────────────────────────────────────────
 // Helpers
@@ -204,17 +205,11 @@ export const LeadsArquivadosSection = () => {
   useEffect(() => { carregar(); }, [carregar]);
 
   // ── Filtro de busca ──────────────────────────
-  const leadsFiltrados = leads.filter((l) => {
-    if (!busca.trim()) return true;
-    const termo = busca.toLowerCase();
-    return (
-      (l.nomedolead || '').toLowerCase().includes(termo) ||
-      (l.lead || '').includes(termo) ||
-      (l.email || '').toLowerCase().includes(termo) ||
-      (l.corretor_responsavel || '').toLowerCase().includes(termo) ||
-      (l.archive_reason || '').toLowerCase().includes(termo)
-    );
-  });
+  // Mesma regra do Kanban (nome/telefone/e-mail/tag/badges) + o que só existe
+  // aqui: quem atendia e por que foi arquivado.
+  const leadsFiltrados = leads.filter((l) =>
+    leadCasaBusca(l, busca, [l.corretor_responsavel, l.archive_reason]),
+  );
 
   // ── Desarquivar ──────────────────────────────
   const handleDesarquivar = async (lead: KanbanLead) => {
@@ -282,7 +277,7 @@ export const LeadsArquivadosSection = () => {
         <div className="relative max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-slate-500" />
           <Input
-            placeholder="Buscar por nome, telefone, e-mail..."
+            placeholder="Buscar por nome, telefone, e-mail, badge ou motivo..."
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
             className="pl-9 h-9"
