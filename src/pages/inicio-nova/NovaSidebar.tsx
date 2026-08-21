@@ -29,6 +29,7 @@ import {
   Scale,
   LayoutGrid,
   Target,
+  Calculator,
 } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { TenantSwitcher } from '@/components/TenantSwitcher';
@@ -83,6 +84,7 @@ const GROUPS: SidebarGroup[] = [
           { id: 'bolsao', label: 'Bolsão', icon: Inbox, route: '/bolsao' },
           { id: 'cliente-interessado', label: 'Funil Cliente Interessado', icon: Users, route: '/metricas/cliente-interessado' },
           { id: 'cliente-proprietario', label: 'Cliente Proprietário', icon: Building2, route: '/metricas/cliente-proprietario' },
+          { id: 'comissionamento', label: 'Comissionamento', icon: Calculator, route: '/metricas/comissionamento' },
         ],
       },
       {

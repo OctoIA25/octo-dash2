@@ -88,6 +88,7 @@ const LeadsPage = lazyWithRetry(() => import('@/features/leads/pages/LeadsPage')
 ));
 const MeusLeadsPage = lazyWithRetry(() => import('@/features/leads/pages/MeusLeadsPage').then(m => ({ default: m.MeusLeadsPage })));
 const MetricasPage = lazyWithRetry(() => import('@/features/metricas/pages/MetricasPage').then(m => ({ default: m.MetricasPage })));
+const ComissionamentoPage = lazyWithRetry(() => import('@/features/comissionamento/pages/ComissionamentoPage').then(m => ({ default: m.ComissionamentoPage })));
 const ClienteInteressadoPage = lazyWithRetry(() => import('@/features/leads/pages/ClienteInteressadoPage').then(m => ({ default: m.ClienteInteressadoPage })));
 const ClienteProprietarioPage = lazyWithRetry(() => import('@/features/leads/pages/ClienteProprietarioPage').then(m => ({ default: m.ClienteProprietarioPage })));
 const EquipePage = lazyWithRetry(() => import('@/features/corretores/pages/EquipePage').then(m => ({ default: m.EquipePage })));
@@ -264,6 +265,11 @@ const DashboardLayout = () => {
           <Route
             path="metricas/proposta"
             element={<Navigate to="/juridico/proposta" replace />}
+          />
+
+          <Route
+            path="metricas/comissionamento"
+            element={canAccess('metricas') ? <ComissionamentoPage /> : <Navigate to={defaultAllowedRoute} replace />}
           />
 
           <Route
