@@ -10,7 +10,8 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Phone, Building2, Clock, User, Maximize2, CheckCircle, Loader2, MessageCircle, Hand } from 'lucide-react';
 import { BolsaoLead } from '@/features/leads/services/bolsaoService';
-import { ClassificacaoDots } from '@/features/leads/components/ClassificacaoBadge';
+import { ClassificacaoDots, CLASSIFICACAO_ESTILOS } from '@/features/leads/components/ClassificacaoBadge';
+import { classificacoesDe, type TipoLead } from '@/features/leads/utils/classificarLead';
 
 interface LeadMiniCardProps {
   lead: BolsaoLead;
@@ -83,6 +84,16 @@ export const LeadMiniCard = ({
         return { label: '❓ Desconhecido', cor: 'bg-gray-500' };
     }
   };
+
+  // Em leads de lançamento, `codigo` espelha property_code da origem, que
+  // carrega o NOME do empreendimento (ex.: 'RESERVA CASTANHEIRA'), não código
+  // de unidade — não exibir; cai no fallback de finalidade.
+  const tipos = classificacoesDe(lead.classification);
+  const codigoImovel = tipos.includes('lancamento') ? null : lead.codigo;
+  const finalidade = tipos
+    .filter((v) => v !== 'indefinido')
+    .map((v) => CLASSIFICACAO_ESTILOS[v as TipoLead]?.label ?? v)
+    .join(' · ');
 
   const tempo = calcularTempo(lead.created_at);
   const urgencia = calcularUrgencia(lead.created_at);
@@ -161,11 +172,11 @@ export const LeadMiniCard = ({
 
           {/* Informações principais */}
           <div className="space-y-2 pt-3 border-t">
-            {/* Código do Imóvel */}
+            {/* Código do Imóvel — sem código, mostra a finalidade (Lançamento, Pronto...) */}
             <div className="flex items-center gap-2 text-sm">
               <Building2 className="h-4 w-4 text-purple-500 flex-shrink-0" />
               <span className="text-muted-foreground truncate">
-                {lead.codigo || 'Sem código'}
+                {codigoImovel || finalidade || 'Sem código'}
               </span>
             </div>
 

@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { MessageSquare, Copy } from 'lucide-react';
+import { MessageSquare, Copy, ExternalLink } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -97,6 +97,19 @@ export function ConversationLinkField({
         aria-label="Copiar link da conversa"
       >
         <Copy className={compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} />
+      </Button>
+      <Button
+        asChild
+        variant="outline"
+        size="icon"
+        className={`shrink-0 ${compact ? 'h-6 w-6' : 'h-8 w-8'}`}
+        title="Abrir conversa em nova aba"
+      >
+        {/* ponytail: <a target="_blank"> em vez de <Link>; o campo existe para
+            abrir/colar a URL fora do dashboard, então abre em aba nova. */}
+        <a href={url} target="_blank" rel="noopener noreferrer" aria-label="Abrir conversa em nova aba">
+          <ExternalLink className={compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} />
+        </a>
       </Button>
     </div>
   );
