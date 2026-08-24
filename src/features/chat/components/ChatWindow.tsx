@@ -2,7 +2,12 @@ import { useEffect, useRef } from 'react';
 import { format, isSameDay, isToday, isYesterday } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { FileText, MessageCircle } from 'lucide-react';
-import type { WhatsappConversation, WhatsappMessage } from '../types';
+import {
+  WHATSAPP_CATEGORIES,
+  type WhatsappCategory,
+  type WhatsappConversation,
+  type WhatsappMessage,
+} from '../types';
 import { MessageBubble } from './MessageBubble';
 import { MessageInput, type ComposeMedia } from './MessageInput';
 import { PendingBubble } from './messages/PendingBubble';
@@ -39,6 +44,7 @@ interface Props {
   tenantId: string | null;
   onSendText: (text: string) => Promise<void> | void;
   onOpenTemplate?: () => void;
+  onChangeCategory?: (category: WhatsappCategory | null) => void;
   disabled?: boolean;
 }
 
@@ -49,6 +55,7 @@ export function ChatWindow({
   tenantId,
   onSendText,
   onOpenTemplate,
+  onChangeCategory,
   disabled,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -95,6 +102,24 @@ export function ChatWindow({
             <div className="truncate text-sm font-medium">{displayName}</div>
             <div className="truncate text-xs text-gray-500">{conversation.contact_phone}</div>
           </div>
+          {onChangeCategory && (
+            // <select> nativo: quatro opções fixas não justificam um dropdown
+            // próprio, e o nativo já vem com teclado e leitor de tela.
+            <select
+              value={conversation.category ?? ''}
+              onChange={(e) => onChangeCategory((e.target.value || null) as WhatsappCategory | null)}
+              title="Categoria do contato"
+              aria-label="Categoria do contato"
+              className="flex-none rounded-md border border-gray-200 bg-transparent px-2 py-1.5 text-xs font-medium dark:border-slate-700"
+            >
+              <option value="">Sem categoria</option>
+              {WHATSAPP_CATEGORIES.map((c) => (
+                <option key={c.value} value={c.value}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          )}
           {onOpenTemplate && (
             <button
               type="button"

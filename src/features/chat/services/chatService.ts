@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabaseClient';
 import type {
+  WhatsappCategory,
   WhatsappConfig,
   WhatsappConversation,
   WhatsappMessage,
@@ -73,6 +74,43 @@ export async function markConversationRead(conversationId: string): Promise<void
   const { error } = await supabase
     .from('whatsapp_conversations')
     .update({ unread_count: 0 })
+    .eq('id', conversationId);
+  if (error) throw error;
+}
+
+/**
+ * Categoria que a tela mostra: a gravada à mão vence sempre; na ausência dela,
+ * telefone de corretor cadastrado no tenant vira 'corretor' automaticamente
+ * (ver useCorretorPhones). Derivar em vez de gravar mantém uma fonte só — o
+ * corretor cadastrado hoje já aparece nas conversas antigas dele, sem backfill.
+ */
+export function categoriaEfetiva(
+  conversation: Pick<WhatsappConversation, 'category' | 'contact_phone'>,
+  corretorPhones: ReadonlySet<string>,
+): WhatsappCategory | null {
+  if (conversation.category) return conversation.category;
+  return corretorPhones.has(normalizePhone(conversation.contact_phone)) ? 'corretor' : null;
+}
+
+/** Aplica `categoriaEfetiva` na lista — o resto da tela lê só `category`. */
+export function comCategoriaEfetiva<T extends WhatsappConversation>(
+  conversations: ReadonlyArray<T>,
+  corretorPhones: ReadonlySet<string>,
+): T[] {
+  return conversations.map((c) => ({ ...c, category: categoriaEfetiva(c, corretorPhones) }));
+}
+
+/**
+ * Define (ou limpa, com null) a categoria do contato. A RLS de escrita
+ * (20260816) já garante que só o dono da conversa — ou admin/owner — altera.
+ */
+export async function setConversationCategory(
+  conversationId: string,
+  category: WhatsappCategory | null,
+): Promise<void> {
+  const { error } = await supabase
+    .from('whatsapp_conversations')
+    .update({ category })
     .eq('id', conversationId);
   if (error) throw error;
 }

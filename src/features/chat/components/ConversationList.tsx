@@ -1,12 +1,41 @@
 import { useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
-import type { WhatsappConversation } from '../types';
+import { WHATSAPP_CATEGORIES, categoryLabel, type WhatsappConversation } from '../types';
 
 interface Props {
   conversations: WhatsappConversation[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   loading?: boolean;
+}
+
+/** 'todas' = sem filtro; 'sem' = conversas ainda não categorizadas. */
+export type FiltroCategoria = 'todas' | 'sem' | (typeof WHATSAPP_CATEGORIES)[number]['value'];
+
+const FILTROS: ReadonlyArray<{ value: FiltroCategoria; label: string }> = [
+  { value: 'todas', label: 'Todas' },
+  ...WHATSAPP_CATEGORIES,
+  { value: 'sem', label: 'Sem categoria' },
+];
+
+/**
+ * Busca por nome/telefone + recorte por categoria. Pura e exportada por ser a
+ * única regra da tela que pode ESCONDER uma conversa — por isso tem teste.
+ */
+export function filtrarConversas(
+  conversations: ReadonlyArray<WhatsappConversation>,
+  query: string,
+  categoria: FiltroCategoria,
+): WhatsappConversation[] {
+  const q = query.trim().toLowerCase();
+  return conversations.filter((c) => {
+    if (categoria === 'sem' ? c.category != null : categoria !== 'todas' && c.category !== categoria) {
+      return false;
+    }
+    if (!q) return true;
+    const name = (c.contact_name ?? c.contact_profile_name ?? '').toLowerCase();
+    return name.includes(q) || c.contact_phone.toLowerCase().includes(q);
+  });
 }
 
 function formatTime(iso: string | null): string {
@@ -33,15 +62,12 @@ function initials(name: string | null, phone: string): string {
 
 export function ConversationList({ conversations, selectedId, onSelect, loading }: Props) {
   const [query, setQuery] = useState('');
+  const [categoria, setCategoria] = useState<FiltroCategoria>('todas');
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return conversations;
-    return conversations.filter((c) => {
-      const name = (c.contact_name ?? c.contact_profile_name ?? '').toLowerCase();
-      return name.includes(q) || c.contact_phone.toLowerCase().includes(q);
-    });
-  }, [conversations, query]);
+  const filtered = useMemo(
+    () => filtrarConversas(conversations, query, categoria),
+    [conversations, query, categoria],
+  );
 
   return (
     <div className="flex h-full flex-col border-r" style={{ borderColor: 'var(--border-color, #e5e7eb)' }}>
@@ -55,6 +81,22 @@ export function ConversationList({ conversations, selectedId, onSelect, loading 
             className="w-full rounded-md border bg-transparent pl-9 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
             style={{ borderColor: 'var(--border-color, #e5e7eb)' }}
           />
+        </div>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {FILTROS.map((f) => (
+            <button
+              key={f.value}
+              type="button"
+              onClick={() => setCategoria(f.value)}
+              className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                categoria === f.value
+                  ? 'border-emerald-500 bg-emerald-500 text-white'
+                  : 'border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -91,6 +133,11 @@ export function ConversationList({ conversations, selectedId, onSelect, loading 
                       <span className="truncate text-xs text-gray-500">
                         {c.last_message_preview ?? '—'}
                       </span>
+                      {c.category && (
+                        <span className="flex-none rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:bg-slate-800 dark:text-slate-300">
+                          {categoryLabel(c.category)}
+                        </span>
+                      )}
                       {c.unread_count > 0 && (
                         <span className="ml-2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-emerald-500 px-1.5 text-xs font-medium text-white">
                           {c.unread_count}

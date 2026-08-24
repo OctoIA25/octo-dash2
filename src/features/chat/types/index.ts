@@ -19,6 +19,24 @@ export type WhatsappMessageStatus =
   | 'failed'
   | 'received';
 
+/**
+ * Categoria do contato — quem é a pessoa do outro lado da conversa.
+ * NÃO é `leads.classification` (lancamento/pronto/locacao), que diz o tipo de
+ * negócio. Valores espelham o CHECK da migration 20260823.
+ */
+export type WhatsappCategory = 'comprador' | 'vendedor' | 'locacao' | 'corretor';
+
+/** Rótulos e ordem de exibição — fonte única para filtro, badge e seletor. */
+export const WHATSAPP_CATEGORIES: ReadonlyArray<{ value: WhatsappCategory; label: string }> = [
+  { value: 'comprador', label: 'Comprador' },
+  { value: 'vendedor', label: 'Cliente vendedor' },
+  { value: 'locacao', label: 'Locação' },
+  { value: 'corretor', label: 'Corretor' },
+];
+
+export const categoryLabel = (value: string | null | undefined): string =>
+  WHATSAPP_CATEGORIES.find((c) => c.value === value)?.label ?? 'Sem categoria';
+
 export interface WhatsappConversation {
   id: string;
   tenant_id: string;
@@ -30,6 +48,8 @@ export interface WhatsappConversation {
   unread_count: number;
   assigned_user_id: string | null;
   lead_id: string | null;
+  /** null = ainda não categorizada. Valor desconhecido é preservado (fail-open). */
+  category: WhatsappCategory | null;
   archived_at: string | null;
   created_at: string;
   updated_at: string;

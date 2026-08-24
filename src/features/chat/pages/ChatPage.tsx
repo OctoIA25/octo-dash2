@@ -15,15 +15,19 @@ import { ChatWindow } from '../components/ChatWindow';
 import { TemplatePicker } from '../components/TemplatePicker';
 import { WhatsAppIntegrationTab } from '../components/WhatsAppIntegrationTab';
 import { useChatConversations } from '../hooks/useChatConversations';
+import { useCorretorPhones } from '../hooks/useCorretorPhones';
 import { useChatMessages } from '../hooks/useChatMessages';
 import {
   CONVERSA_NAO_ATRIBUIDA,
+  categoriaEfetiva,
+  comCategoriaEfetiva,
   getOrCreateConversation,
   getWhatsappConfig,
   normalizePhone,
+  setConversationCategory,
 } from '../services/chatService';
 import { sendTemplateMessage, sendTextMessage } from '../services/whatsappService';
-import type { WhatsappConfig, WhatsappConversation } from '../types';
+import type { WhatsappCategory, WhatsappConfig, WhatsappConversation } from '../types';
 
 export const ChatPage = () => {
   const { tenantId, isAdmin, isOwner, user } = useAuthContext();
@@ -39,7 +43,13 @@ export const ChatPage = () => {
   const [newChatError, setNewChatError] = useState<string | null>(null);
   const [templateOpen, setTemplateOpen] = useState(false);
 
-  const { conversations, loading: loadingConversations, refresh: refreshConversations } = useChatConversations(tenantId);
+  const { conversations: conversasBrutas, loading: loadingConversations, refresh: refreshConversations } = useChatConversations(tenantId);
+  // Conversa com número de corretor cadastrado já chega categorizada.
+  const corretorPhones = useCorretorPhones(tenantId);
+  const conversations = useMemo(
+    () => comCategoriaEfetiva(conversasBrutas, corretorPhones),
+    [conversasBrutas, corretorPhones],
+  );
   const { messages, loading: loadingMessages } = useChatMessages(selectedId);
   const [searchParams, setSearchParams] = useSearchParams();
   const [deepLinkError, setDeepLinkError] = useState<string | null>(null);
@@ -104,12 +114,16 @@ export const ChatPage = () => {
     }
   }, [setupOpen, reloadConfig]);
 
-  const selectedConversation = useMemo(
-    () =>
-      conversations.find((c) => c.id === selectedId) ??
-      (deepLinkConversation?.id === selectedId ? deepLinkConversation : null),
-    [conversations, selectedId, deepLinkConversation],
-  );
+  const selectedConversation = useMemo(() => {
+    const daLista = conversations.find((c) => c.id === selectedId);
+    if (daLista) return daLista;
+    // A cópia do deep-link não passa pela lista — derivar a categoria também aqui.
+    if (deepLinkConversation?.id !== selectedId) return null;
+    return {
+      ...deepLinkConversation,
+      category: categoriaEfetiva(deepLinkConversation, corretorPhones),
+    };
+  }, [conversations, selectedId, deepLinkConversation, corretorPhones]);
 
   const handleSend = async (text: string) => {
     if (!selectedConversation) return;
@@ -121,6 +135,21 @@ export const ChatPage = () => {
     if (!result.ok) {
       console.error('[chat] falha ao enviar mensagem:', result.error);
       alert(`Falha ao enviar: ${result.error ?? 'erro desconhecido'}`);
+    }
+  };
+
+  const handleChangeCategory = async (category: WhatsappCategory | null) => {
+    if (!selectedConversation) return;
+    const { id } = selectedConversation;
+    try {
+      await setConversationCategory(id, category);
+      // O realtime já traz a linha nova para a lista; a cópia do deep-link não
+      // passa por lá, então é atualizada aqui para o seletor não voltar sozinho.
+      setDeepLinkConversation((prev) => (prev?.id === id ? { ...prev, category } : prev));
+      void refreshConversations();
+    } catch (err) {
+      console.error('[chat] falha ao salvar categoria:', err);
+      alert('Não foi possível salvar a categoria desta conversa.');
     }
   };
 
@@ -247,6 +276,7 @@ export const ChatPage = () => {
           tenantId={tenantId}
           onSendText={handleSend}
           onOpenTemplate={() => setTemplateOpen(true)}
+          onChangeCategory={handleChangeCategory}
           disabled={!config?.is_active}
         />
       </div>

@@ -5,7 +5,14 @@
  * três implementações precisam produzir a MESMA chave para o mesmo número.
  */
 import { describe, it, expect } from 'vitest';
-import { chatPathForPhone, normalizePhone, phoneVariants } from './chatService';
+import {
+  categoriaEfetiva,
+  chatPathForPhone,
+  comCategoriaEfetiva,
+  normalizePhone,
+  phoneVariants,
+} from './chatService';
+import type { WhatsappConversation } from '../types';
 
 describe('normalizePhone (canônico: DDI 55 + DDD + 9 dígitos)', () => {
   it('remove formatação e prefixa DDI em número BR de 11 dígitos', () => {
@@ -74,5 +81,39 @@ describe('chatPathForPhone', () => {
     expect(chatPathForPhone('')).toBeNull();
     expect(chatPathForPhone(null)).toBeNull();
     expect(chatPathForPhone(undefined)).toBeNull();
+  });
+});
+
+describe('categoriaEfetiva (corretor cadastrado x marcação manual)', () => {
+  const conversa = (over: Partial<WhatsappConversation>) =>
+    ({ category: null, contact_phone: '5511911112222', ...over }) as WhatsappConversation;
+  const corretores = new Set(['5511988887777']);
+
+  it('telefone de corretor cadastrado vira corretor sem ninguém marcar', () => {
+    expect(categoriaEfetiva(conversa({ contact_phone: '5511988887777' }), corretores)).toBe('corretor');
+  });
+
+  it('reconhece o corretor mesmo com o telefone gravado em outro formato', () => {
+    // Conversa antiga sem o 9º dígito / sem DDI — mesma pessoa.
+    expect(categoriaEfetiva(conversa({ contact_phone: '551188887777' }), corretores)).toBe('corretor');
+    expect(categoriaEfetiva(conversa({ contact_phone: '1188887777' }), corretores)).toBe('corretor');
+  });
+
+  it('marcação manual vence a automática (parceiro de fora, contato reclassificado)', () => {
+    expect(
+      categoriaEfetiva(conversa({ contact_phone: '5511988887777', category: 'comprador' }), corretores),
+    ).toBe('comprador');
+    expect(categoriaEfetiva(conversa({ category: 'corretor' }), new Set())).toBe('corretor');
+  });
+
+  it('número que não é de corretor e não foi marcado fica sem categoria', () => {
+    expect(categoriaEfetiva(conversa({}), corretores)).toBeNull();
+  });
+
+  it('comCategoriaEfetiva não altera os originais', () => {
+    const lista = [conversa({ id: 'c1', contact_phone: '5511988887777' } as Partial<WhatsappConversation>)];
+    const resultado = comCategoriaEfetiva(lista, corretores);
+    expect(resultado[0].category).toBe('corretor');
+    expect(lista[0].category).toBeNull();
   });
 });
