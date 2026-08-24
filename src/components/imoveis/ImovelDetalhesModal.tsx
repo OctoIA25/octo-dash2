@@ -5,7 +5,7 @@
  * "Editar" para abrir o formulário de edição.
  */
 
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -25,11 +25,10 @@ import {
   Bath,
   Car,
   Home,
-  Building2,
-  LandPlot,
   Ruler,
   ExternalLink,
   Pencil,
+  History,
   Image as ImageIcon,
   Mail,
   Phone,
@@ -38,6 +37,7 @@ import type { Imovel } from '@/features/imoveis/services/kenloService';
 import { useAuth } from '@/hooks/useAuth';
 import { getFotoCapaUrl, getFotoUrl, type FotoInput } from './fotos-helpers';
 import { podeEditarImovel } from '@/features/imoveis/utils/podeEditarImovel';
+import { ImovelHistorico } from './ImovelHistorico';
 
 interface ImovelDetalhesModalProps {
   imovel: Imovel | null;
@@ -63,36 +63,6 @@ const formatCurrency = (value: number) => {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(value);
-};
-
-const getTipoIcon = (tipo: Imovel['tipoSimplificado']) => {
-  switch (tipo) {
-    case 'casa':
-      return <Home className="h-3.5 w-3.5" />;
-    case 'apartamento':
-      return <Building2 className="h-3.5 w-3.5" />;
-    case 'terreno':
-      return <LandPlot className="h-3.5 w-3.5" />;
-    default:
-      return <Home className="h-3.5 w-3.5" />;
-  }
-};
-
-const getTipoBadgeColor = (tipo: Imovel['tipoSimplificado']) => {
-  switch (tipo) {
-    case 'casa':
-      return 'bg-green-500/10 text-green-500 border-green-500/20';
-    case 'apartamento':
-      return 'bg-purple-500/10 text-purple-500 border-purple-500/20';
-    case 'terreno':
-      return 'bg-orange-500/10 text-orange-500 border-orange-500/20';
-    case 'comercial':
-      return 'bg-cyan-500/10 text-cyan-500 border-cyan-500/20';
-    case 'rural':
-      return 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20';
-    default:
-      return 'bg-gray-500/10 text-gray-500 border-gray-500/20';
-  }
 };
 
 const StatTile = ({
@@ -150,7 +120,8 @@ export const ImovelDetalhesModal = ({
   obsInterna,
   criadoPor,
 }: ImovelDetalhesModalProps) => {
-  const { user, isOwner } = useAuth();
+  const { user, isOwner, tenantId: authTenantId } = useAuth();
+  const [mostrarLogs, setMostrarLogs] = useState(false);
 
   if (!imovel) return null;
 
@@ -194,12 +165,6 @@ export const ImovelDetalhesModal = ({
 
           <div className="absolute top-3 left-3">
             <Badge className="bg-black/70 text-white border-0 font-mono">{imovel.referencia}</Badge>
-          </div>
-          <div className="absolute top-3 right-12">
-            <Badge className={getTipoBadgeColor(imovel.tipoSimplificado)}>
-              {getTipoIcon(imovel.tipoSimplificado)}
-              <span className="ml-1 capitalize">{imovel.tipoSimplificado}</span>
-            </Badge>
           </div>
           {imovel.fotos && imovel.fotos.length > 0 && (
             <div className="absolute bottom-3 right-3">
@@ -339,8 +304,6 @@ export const ImovelDetalhesModal = ({
             </div>
           )}
 
-          {/* Histórico de alterações mora na aba "Histórico" do formulário de edição. */}
-
           {/* Fotos */}
           {imovel.fotos && imovel.fotos.length > 0 && (
             <div>
@@ -399,6 +362,17 @@ export const ImovelDetalhesModal = ({
             </div>
           )}
 
+          {/* Logs de alterações — só existem para imóveis com registro local. */}
+          {canEdit && mostrarLogs && (
+            <div>
+              <SectionTitle>Logs de alterações</SectionTitle>
+              <ImovelHistorico
+                tenantId={authTenantId || user?.tenantId}
+                codigoImovel={imovel.referencia}
+              />
+            </div>
+          )}
+
         </div>
 
         {/* Ações */}
@@ -406,6 +380,12 @@ export const ImovelDetalhesModal = ({
           <DialogClose asChild>
             <Button variant="outline">Fechar</Button>
           </DialogClose>
+          {canEdit && (
+            <Button variant="outline" onClick={() => setMostrarLogs((v) => !v)}>
+              <History className="h-4 w-4 mr-2" />
+              {mostrarLogs ? 'Ocultar logs' : 'Logs de alterações'}
+            </Button>
+          )}
           {podeEditar && (
             <Button onClick={onEditar}>
               <Pencil className="h-4 w-4 mr-2" />

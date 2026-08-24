@@ -8,10 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { getFotoCapaUrl } from './fotos-helpers';
 import { 
-  Home, 
-  Building2, 
-  LandPlot, 
-  MapPin, 
+  MapPin,
   Bed, 
   Bath, 
   Car, 
@@ -57,36 +54,6 @@ export const ImovelCard = ({ imovel, onViewDetails, onDelete, canDelete }: Imove
       minimumFractionDigits: 0,
       maximumFractionDigits: 0
     }).format(value);
-  };
-
-  const getTipoIcon = () => {
-    switch (imovel.tipoSimplificado) {
-      case 'casa':
-        return <Home className="h-4 w-4" />;
-      case 'apartamento':
-        return <Building2 className="h-4 w-4" />;
-      case 'terreno':
-        return <LandPlot className="h-4 w-4" />;
-      default:
-        return <Home className="h-4 w-4" />;
-    }
-  };
-
-  const getTipoBadgeColor = () => {
-    switch (imovel.tipoSimplificado) {
-      case 'casa':
-        return 'bg-green-500/10 text-green-500 border-green-500/20';
-      case 'apartamento':
-        return 'bg-purple-500/10 text-purple-500 border-purple-500/20';
-      case 'terreno':
-        return 'bg-orange-500/10 text-orange-500 border-orange-500/20';
-      case 'comercial':
-        return 'bg-cyan-500/10 text-cyan-500 border-cyan-500/20';
-      case 'rural':
-        return 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20';
-      default:
-        return 'bg-gray-500/10 text-gray-500 border-gray-500/20';
-    }
   };
 
   const getFinalidadeBadge = () => {
@@ -153,27 +120,6 @@ export const ImovelCard = ({ imovel, onViewDetails, onDelete, canDelete }: Imove
             {imovel.referencia}
           </Badge>
         </div>
-
-        {/* Badge de Tipo */}
-        <div className="absolute top-2 right-2">
-          <Badge className={getTipoBadgeColor()}>
-            {getTipoIcon()}
-            <span className="ml-1 capitalize">{imovel.tipoSimplificado}</span>
-          </Badge>
-        </div>
-
-        {/* Desatualizado: mais de 3 meses sem ajuste no cadastro */}
-        {isDesatualizado(imovel.updated_at) && (
-          <div className="absolute bottom-2 left-2">
-            <Badge
-              className="bg-amber-500/20 text-amber-500 border-amber-500/30"
-              title={`Sem ajuste há mais de ${DIAS_SEM_AJUSTE_DESATUALIZADO} dias`}
-            >
-              <AlertTriangle className="h-3 w-3 mr-1" />
-              Desatualizado
-            </Badge>
-          </div>
-        )}
 
         {/* Quantidade de Fotos */}
         {imovel.fotos.length > 0 && (
@@ -272,8 +218,19 @@ export const ImovelCard = ({ imovel, onViewDetails, onDelete, canDelete }: Imove
         )}
 
         {/* Badges de Finalidade */}
-        <div className="flex items-center gap-2 pt-2 border-t" style={{ borderColor: 'var(--border-color)' }}>
+        <div className="flex flex-wrap items-center gap-2 pt-2 border-t" style={{ borderColor: 'var(--border-color)' }}>
           {getFinalidadeBadge()}
+
+          {/* Desatualizado: mais de 3 meses sem ajuste no cadastro */}
+          {isDesatualizado(imovel.updated_at) && (
+            <Badge
+              className="bg-amber-500/20 text-amber-500 border-amber-500/30"
+              title={`Sem ajuste há mais de ${DIAS_SEM_AJUSTE_DESATUALIZADO} dias`}
+            >
+              <AlertTriangle className="h-3 w-3 mr-1" />
+              Desatualizado
+            </Badge>
+          )}
         </div>
 
         {/* Botões de Ação */}
