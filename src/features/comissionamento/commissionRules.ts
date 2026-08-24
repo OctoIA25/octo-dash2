@@ -73,6 +73,8 @@ export type Papel = 'corretor' | 'lider' | 'lotus' | 'parceiro';
 export interface LinhaComissao {
   parte: string;
   papel: Papel;
+  /** Nível da pessoa — é dele que sai o %. Lotus e parceiro não têm. */
+  nivel?: Nivel;
   ponta: string;
   /** % aplicado sobre o valor da ponta. */
   percentual: number;
@@ -138,12 +140,20 @@ function distribuirPonta(
   }
 
   const linhas: LinhaComissao[] = [
-    { parte: corretor.nome, papel: 'corretor', ponta, percentual: pctCorretor, valor: (valor * pctCorretor) / 100 },
+    {
+      parte: corretor.nome,
+      papel: 'corretor',
+      nivel: corretor.nivel,
+      ponta,
+      percentual: pctCorretor,
+      valor: (valor * pctCorretor) / 100,
+    },
   ];
   if (!proprioLider) {
     linhas.push({
       parte: lider!.nome,
       papel: 'lider',
+      nivel: lider!.nivel,
       ponta,
       percentual: teto - pctCorretor,
       valor: (valor * (teto - pctCorretor)) / 100,
@@ -289,8 +299,10 @@ function conferirFechamento(resultado: ResultadoComissao): ResultadoComissao {
 }
 
 /** Consolida as linhas por parte — é o que a tela mostra como "quem recebe quanto". */
-export function totaisPorParte(resultado: ResultadoComissao): { parte: string; papel: Papel; valor: number }[] {
-  const acumulado = new Map<string, { parte: string; papel: Papel; valor: number }>();
+export function totaisPorParte(
+  resultado: ResultadoComissao,
+): { parte: string; papel: Papel; nivel?: Nivel; valor: number }[] {
+  const acumulado = new Map<string, { parte: string; papel: Papel; nivel?: Nivel; valor: number }>();
   for (const linha of resultado.linhas) {
     // Uma pessoa pode aparecer como corretor numa ponta e como líder na outra:
     // agrupa pelo nome e mantém o papel mais "alto" que ela exerceu.
@@ -298,8 +310,9 @@ export function totaisPorParte(resultado: ResultadoComissao): { parte: string; p
     if (atual) {
       atual.valor += linha.valor;
       if (atual.papel === 'lider' && linha.papel === 'corretor') atual.papel = 'corretor';
+      atual.nivel ??= linha.nivel;
     } else {
-      acumulado.set(linha.parte, { parte: linha.parte, papel: linha.papel, valor: linha.valor });
+      acumulado.set(linha.parte, { parte: linha.parte, papel: linha.papel, nivel: linha.nivel, valor: linha.valor });
     }
   }
   return [...acumulado.values()].sort((a, b) => b.valor - a.valor);

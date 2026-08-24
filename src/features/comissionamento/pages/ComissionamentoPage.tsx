@@ -16,6 +16,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { useAuth } from '@/hooks/useAuth';
+import { useCaptadores } from '@/features/imoveis/hooks/useCaptadores';
 import {
   NIVEIS,
   calcularComissao,
@@ -102,6 +104,52 @@ const toOperacao = (draft: OperacaoDraft): Operacao => ({
 
 const CARD = 'rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4';
 
+const SEM_PESSOA = '__sem__';
+
+/**
+ * Corretor / Líder Direto vêm da equipe do tenant (mesma fonte do captador de
+ * imóveis: RPC get_tenant_members + nome de tenant_brokers). React Query
+ * deduplica — as 4 instâncias do formulário compartilham uma busca só.
+ *
+ * ponytail: cai para texto livre quando a lista vem vazia (sem tenant, RPC
+ * fora do ar) — dropdown sem opção travaria a calculadora.
+ */
+function PessoaSelect({
+  value,
+  onChange,
+  vazioLabel,
+}: {
+  value: string;
+  onChange: (nome: string) => void;
+  vazioLabel: string;
+}) {
+  const { user } = useAuth();
+  const { data: membros = [] } = useCaptadores(user?.tenantId);
+
+  const nomes = useMemo(() => {
+    const lista = membros.map((m) => m.nome).filter(Boolean);
+    // Nome já escolhido que sumiu da equipe continua selecionável.
+    if (value && !lista.includes(value)) lista.push(value);
+    return Array.from(new Set(lista));
+  }, [membros, value]);
+
+  if (nomes.length === 0) {
+    return <Input value={value} onChange={(e) => onChange(e.target.value)} placeholder={vazioLabel} />;
+  }
+
+  return (
+    <Select value={value || SEM_PESSOA} onValueChange={(v) => onChange(v === SEM_PESSOA ? '' : v)}>
+      <SelectTrigger><SelectValue /></SelectTrigger>
+      <SelectContent>
+        <SelectItem value={SEM_PESSOA}>{vazioLabel}</SelectItem>
+        {nomes.map((nome) => (
+          <SelectItem key={nome} value={nome}>{nome}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 function CorretorFields({
   titulo,
   value,
@@ -117,10 +165,10 @@ function CorretorFields({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <div>
           <Label className="text-[11.5px] text-slate-500">Corretor</Label>
-          <Input
+          <PessoaSelect
             value={value.nome}
-            onChange={(e) => onChange({ nome: e.target.value })}
-            placeholder="Deixe vazio se a ponta é da casa"
+            onChange={(nome) => onChange({ nome })}
+            vazioLabel="Ponta da casa (sem corretor)"
           />
         </div>
         <div>
@@ -136,10 +184,10 @@ function CorretorFields({
         </div>
         <div>
           <Label className="text-[11.5px] text-slate-500">Líder Direto</Label>
-          <Input
+          <PessoaSelect
             value={value.liderNome}
-            onChange={(e) => onChange({ liderNome: e.target.value })}
-            placeholder="Vazio: Sênior/Coordenador é o próprio líder"
+            onChange={(liderNome) => onChange({ liderNome })}
+            vazioLabel="Sem líder (o próprio é o líder)"
           />
         </div>
         <div>
@@ -359,7 +407,10 @@ export function ComissionamentoPage() {
                     <div key={linha.parte} className="flex items-baseline justify-between gap-3">
                       <span className="text-[12.5px] text-slate-700 dark:text-slate-200 truncate">
                         {linha.parte}
-                        <span className="text-[11px] text-slate-400 ml-1.5">{PAPEL_LABEL[linha.papel]}</span>
+                        <span className="text-[11px] text-slate-400 ml-1.5">
+                          {PAPEL_LABEL[linha.papel]}
+                          {linha.nivel ? ` · ${NIVEIS[linha.nivel].label}` : ''}
+                        </span>
                       </span>
                       <span className="text-[12.5px] font-semibold text-slate-900 dark:text-slate-100 tabular-nums shrink-0">
                         {formatMoeda(linha.valor)}
@@ -373,7 +424,7 @@ export function ComissionamentoPage() {
                   {resultado.linhas.map((linha, i) => (
                     <div key={`${linha.ponta}-${linha.parte}-${i}`} className="flex items-baseline justify-between gap-3">
                       <span className="text-[11.5px] text-slate-500 dark:text-slate-400 truncate">
-                        {linha.ponta} · {linha.parte} ({linha.percentual}%)
+                        {linha.ponta} · {linha.parte} ({linha.nivel ? `${NIVEIS[linha.nivel].label}, ` : ''}{linha.percentual}%)
                       </span>
                       <span className="text-[11.5px] text-slate-600 dark:text-slate-300 tabular-nums shrink-0">
                         {formatMoeda(linha.valor)}
