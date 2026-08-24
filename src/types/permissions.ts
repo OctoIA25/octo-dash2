@@ -227,10 +227,13 @@ export const MENU_ICONS: Record<MenuPermission, string> = {
  * Foi assim que 'chat' (WhatsApp) sumiu de 88 membros: nunca teve checkbox.
  * Ao adicionar uma aba nova ao menu, ou ela ganha checkbox e entra aqui, ou
  * fica fora e passa a seguir o padrão do cargo (`sidebarPermissionsDoCargo`).
+ *
+ * Ao MOVER uma aba para cá, as listas já gravadas sem ela deixam de ser curadas
+ * na leitura — precisa de backfill (ver migration 20260822_backfill_chat_sidebar).
  */
 export const SIDEBAR_PERMISSIONS_EDITAVEIS: SidebarPermission[] = [
   'leads', 'notificacoes', 'metricas', 'juridico', 'estudo-mercado', 'recrutamento',
-  'gestao-equipe', 'imoveis', 'agentes-ia', 'integracoes', 'central-leads', 'relatorios', 'excel',
+  'gestao-equipe', 'imoveis', 'agentes-ia', 'chat', 'integracoes', 'central-leads', 'relatorios', 'excel',
 ];
 
 export const sidebarPermissionsDoCargo = (role: string): SidebarPermission[] => {

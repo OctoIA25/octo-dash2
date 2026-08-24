@@ -134,6 +134,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
     imoveis: true,
     'agentes-ia': false, // Bloqueado por padrão para corretores
     'octo-chat': true,
+    chat: true,
     integracoes: false, // Bloqueado por padrão para corretores
     'central-leads': false, // Bloqueado por padrão para corretores
     relatorios: false, // Bloqueado por padrão para corretores
@@ -271,6 +272,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
         imoveis: true,
         'agentes-ia': true,
         'octo-chat': true,
+        chat: true,
         integracoes: true,
         'central-leads': true,
         relatorios: true,
@@ -288,6 +290,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
         imoveis: true,
         'agentes-ia': false,
         'octo-chat': true,
+        chat: true,
         integracoes: false,
         'central-leads': false,
         relatorios: false,
@@ -305,6 +308,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
         imoveis: true,
         'agentes-ia': false,  // ❌ Bloqueado
         'octo-chat': true,
+        chat: true,
         integracoes: false,   // ❌ Bloqueado
         'central-leads': false, // ❌ Bloqueado
         relatorios: false,     // ❌ Bloqueado
@@ -488,6 +492,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
       imoveis: true,
       'agentes-ia': member.role === 'admin',
       'octo-chat': true,
+        chat: true,
       integracoes: member.role === 'admin',
       'central-leads': member.role === 'admin',
       relatorios: member.role === 'admin',
@@ -1595,7 +1600,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                       { id: 'gestao-equipe', label: 'Gestão de Equipe', icon: '👥' },
                       { id: 'imoveis', label: 'Imóveis', icon: '🏢' },
                       { id: 'agentes-ia', label: 'Agentes de IA', icon: '🤖', restricted: true },
-                      //{ id: 'octo-chat', label: 'Octo Chat', icon: '💬' },
+                      { id: 'chat', label: 'WhatsApp', icon: '💬' },
                       { id: 'integracoes', label: 'Integrações', icon: '🔌', restricted: true },
                       { id: 'central-leads', label: 'Central Leads', icon: '📥', restricted: true },
                       { id: 'relatorios', label: 'Relatórios', icon: '📄', restricted: true },
@@ -2024,7 +2029,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                   { id: 'gestao-equipe', label: 'Gestão de Equipe', icon: '👥', restricted: true },
                   { id: 'imoveis', label: 'Imóveis', icon: '🏢' },
                   { id: 'agentes-ia', label: 'Agentes de IA', icon: '🤖', restricted: true },
-                  //{ id: 'octo-chat', label: 'Octo Chat', icon: '💬' },
+                  { id: 'chat', label: 'WhatsApp', icon: '💬' },
                   { id: 'integracoes', label: 'Integrações', icon: '🔌', restricted: true },
                   { id: 'central-leads', label: 'Central Leads', icon: '📥', restricted: true },
                   { id: 'relatorios', label: 'Relatórios', icon: '📄', restricted: true },
