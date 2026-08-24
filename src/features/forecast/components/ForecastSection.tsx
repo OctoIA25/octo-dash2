@@ -12,9 +12,8 @@ import { Button } from '@/components/ui/button';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { fetchForecast, updateForecast, type ForecastPatch } from '../services/forecastService';
-import { somarForecast, type ForecastRow } from '../utils/forecastRow';
-import { moedaCompacta } from '../utils/format';
-import { ForecastFunnel } from './ForecastFunnel';
+import { type ForecastRow } from '../utils/forecastRow';
+import { ForecastTable } from './ForecastTable';
 
 export function ForecastSection() {
   const { tenantId } = useAuthContext();
@@ -77,8 +76,6 @@ export function ForecastSection() {
   const handleSave = (proposalId: string, patch: ForecastPatch) =>
     salvar.mutate({ proposalId, patch });
 
-  const totalGeral = somarForecast(rows);
-
   return (
     <div className="flex h-full w-full flex-col gap-4 p-4 md:p-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
@@ -92,24 +89,11 @@ export function ForecastSection() {
           </p>
         </div>
 
-        <div className="flex items-center gap-4">
-          {rows.length > 0 && (
-            <div className="text-right">
-              <p className="text-lg font-semibold tabular-nums leading-tight">
-                {moedaCompacta(totalGeral.valor)}
-              </p>
-              <p className="text-[12px] text-muted-foreground">
-                {rows.length} {rows.length === 1 ? 'negócio' : 'negócios'} ·{' '}
-                {moedaCompacta(totalGeral.comissao)} em comissão
-              </p>
-            </div>
-          )}
-
-          <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
-            <RefreshCw className={`mr-2 h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-            Atualizar
-          </Button>
-        </div>
+        {/* Os totais vivem no rodapé da planilha, sob as colunas que somam. */}
+        <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
+          <RefreshCw className={`mr-2 h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+          Atualizar
+        </Button>
       </header>
 
       {isLoading ? (
@@ -133,7 +117,7 @@ export function ForecastSection() {
           ele aparece aqui.
         </div>
       ) : (
-        <ForecastFunnel rows={rows} onSave={handleSave} />
+        <ForecastTable rows={rows} onSave={handleSave} />
       )}
     </div>
   );

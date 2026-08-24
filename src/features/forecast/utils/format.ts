@@ -15,22 +15,15 @@ export const moeda = (valor: number): string =>
     maximumFractionDigits: 0,
   }).format(valor || 0);
 
-/**
- * R$ 2,4 mi — para o cabeçalho da coluna, que é estreito. Abaixo de 1 milhão
- * volta ao formato cheio: "R$ 800 mil" é mais difícil de ler que "R$ 800.000".
- */
-export const moedaCompacta = (valor: number): string =>
-  new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-    notation: (valor || 0) >= 1_000_000 ? 'compact' : 'standard',
-    maximumFractionDigits: (valor || 0) >= 1_000_000 ? 2 : 0,
-  }).format(valor || 0);
-
-/** ISO → dd/mm. Data ausente vira travessão, não string vazia. */
-export const dataCurta = (iso: string | null): string => {
+/** ISO → dd/mm/aaaa. Data ausente vira travessão, não string vazia. */
+export const dataBR = (iso: string | null): string => {
   if (!iso) return '—';
+
+  // 'YYYY-MM-DD' seria lido como meia-noite UTC e voltaria um dia em BRT.
+  const soData = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (soData) return `${soData[3]}/${soData[2]}/${soData[1]}`;
+
   const data = new Date(iso);
   if (Number.isNaN(data.getTime())) return '—';
-  return data.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+  return data.toLocaleDateString('pt-BR');
 };
