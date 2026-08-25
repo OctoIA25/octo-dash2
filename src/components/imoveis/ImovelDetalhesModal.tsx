@@ -53,6 +53,12 @@ interface ImovelDetalhesModalProps {
   obsInterna?: string | null;
   /** `imoveis_locais.criado_por` — corretor que cadastrou o imóvel. */
   criadoPor?: string | null;
+  /** `imoveis_locais.captador_id` — atribuição manual (owner/admin). */
+  captadorId?: string | null;
+  /** user_ids da equipe do gestor logado (inclui ele). Só relevante p/ team_leader. */
+  equipeUserIds?: string[] | null;
+  /** e-mails da equipe do gestor logado (inclui ele). Só relevante p/ team_leader. */
+  equipeEmails?: string[] | null;
 }
 
 const formatCurrency = (value: number) => {
@@ -119,6 +125,9 @@ export const ImovelDetalhesModal = ({
   onEditar,
   obsInterna,
   criadoPor,
+  captadorId,
+  equipeUserIds,
+  equipeEmails,
 }: ImovelDetalhesModalProps) => {
   const { user, isOwner, tenantId: authTenantId } = useAuth();
   const [mostrarLogs, setMostrarLogs] = useState(false);
@@ -132,7 +141,10 @@ export const ImovelDetalhesModal = ({
     userId: user?.id,
     userEmail: user?.email,
     captadorEmail: imovel.corretor_email,
+    captadorId,
     criadoPor,
+    equipeUserIds,
+    equipeEmails,
   });
 
   const fotos = (imovel.fotos || []) as FotoInput[];

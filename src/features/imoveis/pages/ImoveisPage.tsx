@@ -315,6 +315,12 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
   // Estado para imóveis locais
   const [imoveisLocais, setImoveisLocais] = useState<ImovelLocal[]>([]);
 
+  // Equipe do gestor logado (user_ids + e-mails, incluindo ele mesmo). Define
+  // quais imóveis um team_leader pode editar. Vazio para os demais papéis — o
+  // gate cai no próprio usuário. Ver podeEditarImovel.
+  const [equipeUserIds, setEquipeUserIds] = useState<string[]>([]);
+  const [equipeEmails, setEquipeEmails] = useState<string[]>([]);
+
   // Estados de filtro
   const [searchTerm, setSearchTerm] = useState('');
   const [referenciaFilter, setReferenciaFilter] = useState('');
@@ -584,6 +590,29 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
     localStorage.setItem('selectedSection', 'imoveis');
     void reloadCatalogoBanco();
   }, [reloadCatalogoBanco]);
+
+  // Carregar a equipe do gestor: corretores cujo leader_user_id aponta pra ele
+  // (elo canônico de equipe — mesmo usado por fila/roleta/eNPS), mais ele mesmo.
+  useEffect(() => {
+    if (!tenantId || !user?.id || user.systemRole !== 'team_leader') {
+      setEquipeUserIds([]);
+      setEquipeEmails([]);
+      return;
+    }
+    let ativo = true;
+    (async () => {
+      const { data, error } = await supabase
+        .from('tenant_memberships')
+        .select('user_id, email')
+        .eq('tenant_id', tenantId)
+        .eq('leader_user_id', user.id);
+      if (!ativo || error) return;
+      const membros = (data || []) as { user_id: string | null; email: string | null }[];
+      setEquipeUserIds([user.id, ...membros.map((m) => m.user_id).filter(Boolean) as string[]]);
+      setEquipeEmails([user.email, ...membros.map((m) => m.email).filter(Boolean) as string[]]);
+    })();
+    return () => { ativo = false; };
+  }, [tenantId, user?.id, user?.email, user?.systemRole]);
 
   // Filtrar imóveis
   const imoveisFiltrados = useMemo(() => {
@@ -1581,6 +1610,9 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
         onEditar={handleEditarSelecionado}
         obsInterna={findImovelLocal(selectedImovel?.referencia)?.obs_interna}
         criadoPor={findImovelLocal(selectedImovel?.referencia)?.criado_por}
+        captadorId={findImovelLocal(selectedImovel?.referencia)?.captador_id}
+        equipeUserIds={equipeUserIds}
+        equipeEmails={equipeEmails}
       />
     </div>
   );
