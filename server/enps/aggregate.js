@@ -61,7 +61,8 @@ export async function resolveTeamScope(supabase, req, tenantId) {
   if (role === 'team_leader') {
     const { data: led, error } = await supabase
       .from('teams').select('id, name, color, leader_user_id')
-      .eq('tenant_id', tenantId).eq('leader_user_id', req.userId);
+      .eq('tenant_id', tenantId)
+      .or(`leader_user_id.eq.${req.userId},leader_user_ids.cs.{${req.userId}}`);
     if (error) throw error;
     const rows = led || [];
     const targetLeaderIds = [...new Set(rows.map((t) => t.leader_user_id).filter(Boolean))];

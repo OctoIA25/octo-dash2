@@ -68,7 +68,7 @@ export const EquipesManagerSection = () => {
   const [formName, setFormName] = useState('');
   const [formColor, setFormColor] = useState('azul');
   const [formDescription, setFormDescription] = useState('');
-  const [formLeaderId, setFormLeaderId] = useState<string>('__none__');
+  const [formLeaderIds, setFormLeaderIds] = useState<string[]>([]);
   const [isSaving, setIsSaving] = useState(false);
 
   // Drawer: gerenciar membros da equipe selecionada
@@ -155,7 +155,7 @@ export const EquipesManagerSection = () => {
     setFormName('');
     setFormColor('azul');
     setFormDescription('');
-    setFormLeaderId('__none__');
+    setFormLeaderIds([]);
     setTeamModal({ open: true, mode: 'create' });
   };
 
@@ -163,7 +163,7 @@ export const EquipesManagerSection = () => {
     setFormName(team.name);
     setFormColor(team.color);
     setFormDescription(team.description ?? '');
-    setFormLeaderId(team.leader_user_id ?? '__none__');
+    setFormLeaderIds(team.leader_user_ids ?? (team.leader_user_id ? [team.leader_user_id] : []));
     setTeamModal({ open: true, mode: 'edit', team });
   };
 
@@ -171,8 +171,7 @@ export const EquipesManagerSection = () => {
     if (!formName.trim() || !tenantId) return;
     setIsSaving(true);
     try {
-      const leaderId = formLeaderId === '__none__' ? null : formLeaderId;
-      const payload = { name: formName.trim(), color: formColor, description: formDescription.trim() || null, leader_user_id: leaderId };
+      const payload = { name: formName.trim(), color: formColor, description: formDescription.trim() || null, leader_user_ids: formLeaderIds };
 
       if (teamModal.mode === 'create') {
         const result = await createTeam(tenantId, payload as any);
@@ -192,7 +191,16 @@ export const EquipesManagerSection = () => {
         toast.success('Equipe atualizada!');
         // Atualizar selectedTeam se aberto
         if (selectedTeam?.id === teamModal.team.id) {
-          setSelectedTeam((prev) => prev ? { ...prev, ...payload, leader_name: leaderId ? allMembers.find(m => m.user_id === leaderId)?.email ?? null : null } : prev);
+          const leaderNames = formLeaderIds.map(
+            (id) => allMembers.find((m) => m.user_id === id)?.email ?? id
+          );
+          setSelectedTeam((prev) => prev ? {
+            ...prev,
+            ...payload,
+            leader_user_id: formLeaderIds[0] ?? null,
+            leader_name: leaderNames[0] ?? null,
+            leader_names: leaderNames,
+          } : prev);
         }
       }
 
@@ -484,12 +492,12 @@ export const EquipesManagerSection = () => {
                     <p className="text-xs text-gray-500 dark:text-slate-400 mb-3 line-clamp-2">{team.description}</p>
                   )}
 
-                  {/* Líder */}
+                  {/* Gestores */}
                   <div className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-slate-400 mb-3">
-                    <Crown className="h-3.5 w-3.5 text-amber-500" />
-                    <span className="font-medium">
-                      {team.leader_name ?? team.leader_email ?? (
-                        <span className="text-gray-400 dark:text-slate-500 italic">Sem líder</span>
+                    <Crown className="h-3.5 w-3.5 text-amber-500 flex-shrink-0" />
+                    <span className="font-medium truncate">
+                      {team.leader_names?.length ? team.leader_names.join(', ') : (
+                        <span className="text-gray-400 dark:text-slate-500 italic">Sem gestor</span>
                       )}
                     </span>
                   </div>
@@ -553,17 +561,17 @@ export const EquipesManagerSection = () => {
                 </div>
               </div>
 
-              {/* Info do líder */}
+              {/* Info dos gestores */}
               <div className="flex items-center gap-2 text-sm">
                 <Crown className="h-4 w-4 text-amber-500 flex-shrink-0" />
                 <span className="text-gray-700 dark:text-slate-300 font-medium">
-                  {selectedTeam.leader_name ?? selectedTeam.leader_email ?? (
-                    <span className="text-gray-400 dark:text-slate-500 italic text-sm">Sem líder atribuído</span>
+                  {selectedTeam.leader_names?.length ? selectedTeam.leader_names.join(', ') : (
+                    <span className="text-gray-400 dark:text-slate-500 italic text-sm">Sem gestor atribuído</span>
                   )}
                 </span>
-                {(selectedTeam.leader_name || selectedTeam.leader_email) && (
+                {!!selectedTeam.leader_names?.length && (
                   <span className="text-xs bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded-full border border-amber-200 dark:border-amber-900">
-                    Team Leader
+                    {selectedTeam.leader_names.length > 1 ? `${selectedTeam.leader_names.length} gestores` : 'Team Leader'}
                   </span>
                 )}
               </div>
@@ -779,33 +787,48 @@ export const EquipesManagerSection = () => {
               />
             </div>
 
-            {/* Líder (opcional) */}
+            {/* Gestores (opcional, múltiplos) */}
             <div className="space-y-1.5">
               <Label className="flex items-center gap-1.5">
                 <Crown className="h-3.5 w-3.5 text-amber-500" />
-                Líder de Equipe <span className="text-xs font-normal text-gray-400">(opcional)</span>
+                Gestores da Equipe <span className="text-xs font-normal text-gray-400">(opcional, pode selecionar vários)</span>
               </Label>
-              <Select value={formLeaderId} onValueChange={setFormLeaderId}>
-                <SelectTrigger className="h-10">
-                  <SelectValue placeholder="Sem líder definido" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">Sem líder definido</SelectItem>
+              {teamLeaders.length > 0 && (
+                <div className="space-y-1.5 max-h-48 overflow-y-auto rounded-md border border-gray-200 dark:border-slate-800 p-2 bg-white dark:bg-slate-950">
                   {teamLeaders.map((leader) => (
-                    <SelectItem key={leader.user_id} value={leader.user_id}>
-                      {leader.email}
-                    </SelectItem>
+                    <label
+                      key={leader.user_id}
+                      className="flex items-center gap-2 text-sm px-2 py-1.5 rounded hover:bg-gray-50 dark:hover:bg-slate-900 cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={formLeaderIds.includes(leader.user_id)}
+                        disabled={isSaving}
+                        onChange={(e) => {
+                          setFormLeaderIds((prev) =>
+                            e.target.checked
+                              ? [...prev, leader.user_id]
+                              : prev.filter((id) => id !== leader.user_id)
+                          );
+                        }}
+                        className="h-4 w-4 rounded border-gray-300 text-[#1a5276] focus:ring-[#1a5276]"
+                      />
+                      <span className="flex-1 truncate">{leader.email}</span>
+                      {formLeaderIds[0] === leader.user_id && (
+                        <span className="text-[10px] text-amber-600">principal</span>
+                      )}
+                    </label>
                   ))}
-                </SelectContent>
-              </Select>
-              {formLeaderId !== '__none__' && (
+                </div>
+              )}
+              {formLeaderIds.length > 0 && (
                 <p className="text-xs text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-950/40 border border-green-200 dark:border-green-900 rounded px-2 py-1">
                   ✅ Fila por equipe será ativada — leads expirados redistribuídos automaticamente nesta equipe.
                 </p>
               )}
               {teamLeaders.length === 0 && (
                 <p className="text-xs text-gray-600 dark:text-slate-400 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded px-2 py-1">
-                  💡 Você pode criar a equipe agora e atribuir um líder depois em "Acessos e Permissões".
+                  💡 Você pode criar a equipe agora e atribuir gestores depois em "Acessos e Permissões".
                 </p>
               )}
             </div>

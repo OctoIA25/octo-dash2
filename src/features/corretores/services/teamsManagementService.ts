@@ -26,12 +26,17 @@ export interface Team {
   name: string;
   color: string;
   description: string | null;
+  /** Gestor primário (= leader_user_ids[0]). Mantido por compat (fila, eNPS, bolsão). */
   leader_user_id: string | null;
+  /** Todos os gestores da equipe. O primeiro é o primário. */
+  leader_user_ids: string[];
   created_at: string;
   updated_at: string;
   // derivados (enriquecidos no fetch)
   leader_name?: string | null;
   leader_email?: string | null;
+  /** Nomes de todos os gestores, na ordem de leader_user_ids. */
+  leader_names?: string[];
   member_count?: number;
 }
 
@@ -50,14 +55,24 @@ export interface CreateTeamData {
   name: string;
   color: string;
   description?: string;
-  leader_user_id?: string | null;
+  /** Gestores da equipe; o primeiro vira o primário (leader_user_id). */
+  leader_user_ids?: string[];
 }
 
 export interface UpdateTeamData {
   name?: string;
   color?: string;
   description?: string;
-  leader_user_id?: string | null;
+  /** Gestores da equipe; o primeiro vira o primário (leader_user_id). */
+  leader_user_ids?: string[];
+}
+
+/** Deriva o par de colunas persistidas a partir da lista de gestores. */
+function leaderColumns(leaderUserIds: string[]) {
+  return {
+    leader_user_ids: leaderUserIds,
+    leader_user_id: leaderUserIds[0] ?? null,
+  };
 }
 
 export interface TeamServiceResult {
@@ -81,9 +96,11 @@ export async function fetchTeams(tenantId: string): Promise<Team[]> {
   if (error || !teams) return [];
 
   // Buscar nomes dos líderes e contagem de membros em paralelo
-  const leaderIds = (teams as Team[])
-    .map((t) => t.leader_user_id)
-    .filter(Boolean) as string[];
+  const leaderIds = [
+    ...new Set(
+      (teams as Team[]).flatMap((t) => [t.leader_user_id, ...(t.leader_user_ids ?? [])])
+    ),
+  ].filter(Boolean) as string[];
 
   const [leaderProfiles, memberCounts] = await Promise.all([
     leaderIds.length > 0
@@ -105,11 +122,21 @@ export async function fetchTeams(tenantId: string): Promise<Team[]> {
   });
 
   return (teams as Team[]).map((t) => {
-    const leader = t.leader_user_id ? (profileMap.get(t.leader_user_id) as any) : null;
+    const ids = t.leader_user_ids?.length
+      ? t.leader_user_ids
+      : t.leader_user_id
+        ? [t.leader_user_id]
+        : [];
+    const leader = ids[0] ? (profileMap.get(ids[0]) as any) : null;
     return {
       ...t,
+      leader_user_ids: ids,
       leader_name: leader?.full_name ?? null,
       leader_email: leader?.email ?? null,
+      leader_names: ids.map((id) => {
+        const p = profileMap.get(id) as any;
+        return p?.full_name || p?.email || id;
+      }),
       member_count: countMap.get(t.id) || 0,
     };
   });
@@ -194,9 +221,10 @@ export async function createTeam(
   tenantId: string,
   data: CreateTeamData
 ): Promise<TeamServiceResult> {
+  const { leader_user_ids = [], ...rest } = data;
   const { data: team, error } = await supabase
     .from('teams' as any)
-    .insert({ tenant_id: tenantId, ...data })
+    .insert({ tenant_id: tenantId, ...rest, ...leaderColumns(leader_user_ids) })
     .select()
     .single();
 
@@ -208,18 +236,24 @@ export async function updateTeam(
   teamId: string,
   data: UpdateTeamData
 ): Promise<TeamServiceResult> {
+  const { leader_user_ids, ...rest } = data;
+  const payload = leader_user_ids !== undefined
+    ? { ...rest, ...leaderColumns(leader_user_ids) }
+    : rest;
+
   const { error } = await supabase
     .from('teams' as any)
-    .update(data)
+    .update(payload)
     .eq('id', teamId);
 
   if (error) return { success: false, error: error.message };
 
-  // Se o líder mudou, atualizar leader_user_id em todos os membros da equipe
-  if ('leader_user_id' in data) {
+  // Se os gestores mudaram, sincronizar o primário nos membros da equipe
+  // (tenant_memberships.leader_user_id alimenta fila por equipe/roleta e eNPS)
+  if (leader_user_ids !== undefined) {
     const { error: memberError } = await supabase
       .from('tenant_memberships')
-      .update({ leader_user_id: data.leader_user_id ?? null } as any)
+      .update({ leader_user_id: leader_user_ids[0] ?? null } as any)
       .eq('team_id' as any, teamId)
       .neq('role', 'team_leader'); // não sobrescrever o próprio líder
 
@@ -326,11 +360,30 @@ export async function removeMemberFromTeam(membershipId: string): Promise<TeamSe
 }
 
 /**
- * Define o líder de uma equipe e sincroniza todos os membros.
+ * Adiciona ou remove um gestor da equipe, sincronizando o primário nos membros.
  */
-export async function setTeamLeader(
+export async function toggleTeamLeader(
   teamId: string,
-  leaderUserId: string | null
+  leaderUserId: string,
+  action: 'add' | 'remove'
 ): Promise<TeamServiceResult> {
-  return updateTeam(teamId, { leader_user_id: leaderUserId });
+  const { data: team, error } = await supabase
+    .from('teams' as any)
+    .select('leader_user_id, leader_user_ids')
+    .eq('id', teamId)
+    .maybeSingle();
+
+  if (error || !team) return { success: false, error: 'Equipe não encontrada' };
+
+  const current: string[] = (team as any).leader_user_ids?.length
+    ? (team as any).leader_user_ids
+    : (team as any).leader_user_id
+      ? [(team as any).leader_user_id]
+      : [];
+
+  const next = action === 'add'
+    ? current.includes(leaderUserId) ? current : [...current, leaderUserId]
+    : current.filter((id) => id !== leaderUserId);
+
+  return updateTeam(teamId, { leader_user_ids: next });
 }

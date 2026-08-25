@@ -199,10 +199,10 @@ export const BolsaoTeamsPanel = ({ tenantId, isAdmin, teamQueueEnabled }: Bolsao
                   <div className="min-w-0 flex-1">
                     <p className="text-[14px] font-semibold text-slate-900 dark:text-slate-100 truncate">{team.name}</p>
                     <div className="flex items-center gap-3 mt-0.5">
-                      {team.leader_name && (
-                        <span className="inline-flex items-center gap-1 text-[11.5px] text-slate-500 dark:text-slate-400">
-                          <Crown className="w-3 h-3 text-amber-500" />
-                          {team.leader_name}
+                      {!!team.leader_names?.length && (
+                        <span className="inline-flex items-center gap-1 text-[11.5px] text-slate-500 dark:text-slate-400 truncate">
+                          <Crown className="w-3 h-3 text-amber-500 flex-shrink-0" />
+                          {team.leader_names.join(', ')}
                         </span>
                       )}
                       <span className="inline-flex items-center gap-1 text-[11.5px] text-slate-500 dark:text-slate-400">

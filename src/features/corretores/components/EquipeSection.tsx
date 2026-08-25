@@ -22,7 +22,7 @@ import { toast } from 'sonner';
 import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { useAuth } from "@/hooks/useAuth";
 import { fetchTenantMembers, createTenantMember, updateMemberRole, removeTenantMember, updateMemberPermissions, updateMemberLeader, deleteMemberCompletely, adminUpdateMemberPassword, adminUpdateMemberEmail, type TenantMember } from '../services/tenantMembersService';
-import { fetchTeams, setTeamLeader, type Team } from '../services/teamsManagementService';
+import { fetchTeams, toggleTeamLeader, type Team } from '../services/teamsManagementService';
 import { useLateralDrawer } from '@/hooks/useLateralDrawer';
 import { SidebarPermission, ATUACAO_TIPOS, ATUACAO_LABELS, atuacoesDe, comPermissoesNaoEditaveis, type AtuacaoTipo } from '@/types/permissions';
 import {
@@ -467,7 +467,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
     setEditingMember(member);
     setEditLeaderId(member.leader_user_id ?? null);
     setEditRole(member.role === 'owner' ? 'admin' : (member.role as 'admin' | 'corretor' | 'team_leader'));
-    const ledTeamIds = teams.filter((t) => t.leader_user_id === member.user_id).map((t) => t.id);
+    const ledTeamIds = teams.filter((t) => t.leader_user_ids.includes(member.user_id)).map((t) => t.id);
     setEditLeadsTeamIds(ledTeamIds);
     setCredentialsEmail(member.email || '');
     setCredentialsNewPassword('');
@@ -593,21 +593,21 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
       }
 
       // Sincronizar equipes que este membro lidera
-      const currentlyLed = teams.filter((t) => t.leader_user_id === editingMember.user_id).map((t) => t.id);
+      const currentlyLed = teams.filter((t) => t.leader_user_ids.includes(editingMember.user_id)).map((t) => t.id);
       const shouldLead = editRole === 'team_leader' ? editLeadsTeamIds : [];
 
       const toAdd = shouldLead.filter((id) => !currentlyLed.includes(id));
       const toRemove = currentlyLed.filter((id) => !shouldLead.includes(id));
 
       for (const teamId of toRemove) {
-        const r = await setTeamLeader(teamId, null);
+        const r = await toggleTeamLeader(teamId, editingMember.user_id, 'remove');
         if (!r.success) {
           toast.error(r.error || 'Erro ao remover liderança de equipe');
           return;
         }
       }
       for (const teamId of toAdd) {
-        const r = await setTeamLeader(teamId, editingMember.user_id);
+        const r = await toggleTeamLeader(teamId, editingMember.user_id, 'add');
         if (!r.success) {
           toast.error(r.error || 'Erro ao atribuir liderança de equipe');
           return;
@@ -1775,7 +1775,9 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                     <div className="space-y-1.5 max-h-48 overflow-y-auto rounded-md border border-gray-200 dark:border-slate-800 p-2 bg-white dark:bg-slate-950">
                       {teams.map((t) => {
                         const checked = editLeadsTeamIds.includes(t.id);
-                        const isLedByOther = !!t.leader_user_id && t.leader_user_id !== editingMember?.user_id;
+                        const otherLeaders = (t.leader_names ?? []).filter(
+                          (_, i) => t.leader_user_ids[i] !== editingMember?.user_id
+                        );
                         return (
                           <label
                             key={t.id}
@@ -1795,9 +1797,9 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                               className="h-4 w-4 rounded border-gray-300 text-[#1a5276] focus:ring-[#1a5276]"
                             />
                             <span className="flex-1 truncate">{t.name}</span>
-                            {isLedByOther && (
-                              <span className="text-[10px] text-amber-600">
-                                (líder atual: {t.leader_name ?? t.leader_email ?? 'outro'} — será substituído)
+                            {otherLeaders.length > 0 && (
+                              <span className="text-[10px] text-gray-500 dark:text-slate-400">
+                                (também gestor{otherLeaders.length > 1 ? 'es' : ''}: {otherLeaders.join(', ')})
                               </span>
                             )}
                           </label>

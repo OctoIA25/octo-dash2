@@ -83,7 +83,7 @@ export const AdminTaskManager = () => {
           .from('teams')
           .select('id')
           .eq('tenant_id', user.tenantId)
-          .eq('leader_user_id', user.id);
+          .or(`leader_user_id.eq.${user.id},leader_user_ids.cs.{${user.id}}`);
         ledTeamIds = (ledTeams || []).map((t: any) => t.id);
         if (ledTeamIds.length === 0) {
           if (!cancelled) setCorretoresComEmails([]);
