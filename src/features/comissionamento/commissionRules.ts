@@ -20,12 +20,16 @@ export type Nivel = 'estagiario' | 'junior' | 'pleno' | 'senior' | 'coordenador'
 
 /** Tabela §2 (v1.4): % que o corretor leva sobre a própria ponta. */
 export const NIVEIS: Record<Nivel, { label: string; percentual: number }> = {
-  estagiario: { label: 'Estagiário', percentual: 40 },
+  estagiario: { label: 'Estagiário', percentual: 30 },
   junior: { label: 'Junior', percentual: 40 },
   pleno: { label: 'Pleno', percentual: 45 },
   senior: { label: 'Sênior', percentual: 50 },
   coordenador: { label: 'Coordenador', percentual: 60 },
 };
+
+/** Valida um valor externo (ex.: permissions.nivel_comissao do banco) como Nivel. */
+export const nivelValido = (v: unknown): Nivel | null =>
+  typeof v === 'string' && v in NIVEIS ? (v as Nivel) : null;
 
 /** D062: só Sênior e Coordenador podem ficar sem Líder Direto — são líderes de si mesmos. */
 const NIVEIS_PROPRIO_LIDER: Nivel[] = ['senior', 'coordenador'];
