@@ -4840,6 +4840,14 @@ if (process.env.ENPS_SCHEDULER === '1') {
   startEnpsScheduler(supabase, { runner: enpsRunner });
 }
 
+// REPORT espelho no Google Sheets (docs/superpowers/specs/2026-08-28-report-espelho-drive.md).
+// Scheduler flag-gated (REPORT_MIRROR_SCHEDULER=1) — sem rotas HTTP, só o cron.
+import { startReportMirrorScheduler } from './reportMirror/index.js';
+if (process.env.REPORT_MIRROR_SCHEDULER === '1') {
+  startReportMirrorScheduler(supabase)
+    .catch((e) => console.error('[reportMirror] scheduler não iniciou:', e?.message));
+}
+
 // 404 para rotas da API não encontradas
 app.use('/api/v1/*', (req, res) => {
   res.status(404).json({
