@@ -185,6 +185,7 @@ const TAB_CONFIGS: TabConfig[] = [
       { id: 'meus-imoveis', label: 'Prontos', icon: User, href: '/imoveis?tab=meus-imoveis', isQuery: true },
       { id: 'condominios', label: 'Condomínios', icon: Building2, href: '/imoveis?tab=condominios', isQuery: true },
       { id: 'lancamentos', label: 'Lançamentos', icon: Sparkles, href: '/imoveis?tab=lancamentos', isQuery: true },
+      { id: 'construtoras', label: 'Construtoras', icon: Building2, href: '/imoveis?tab=construtoras', isQuery: true },
       { id: 'mapa-imoveis', label: 'Mapa de Imóveis', icon: MapPin, href: '/imoveis?tab=mapa-imoveis', isQuery: true },
     ],
   },

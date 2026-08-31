@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Sparkles, Trash2, FileText, Image as ImageIcon } from 'lucide-react';
+import { Plus, Sparkles, Trash2, FileText, Image as ImageIcon, Clock } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
@@ -195,7 +195,7 @@ export function LancamentosTab() {
                 </div>
                 <div className="p-3">
                   <h3 className="font-semibold text-text-primary truncate">{l.nome}</h3>
-                  <div className="mt-2 flex items-center gap-3 text-xs text-text-secondary">
+                  <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-text-secondary">
                     <span className="inline-flex items-center gap-1">
                       <ImageIcon className="h-3.5 w-3.5" />
                       {l.fotos?.length ?? 0} foto(s)
@@ -204,6 +204,15 @@ export function LancamentosTab() {
                       <FileText className="h-3.5 w-3.5" />
                       {l.book_pdf ? 'Book' : 'Sem book'}
                     </span>
+                    {l.updated_at && (
+                      <span
+                        className="inline-flex items-center gap-1"
+                        title={`Última atualização: ${new Date(l.updated_at).toLocaleString('pt-BR')}`}
+                      >
+                        <Clock className="h-3.5 w-3.5" />
+                        {new Date(l.updated_at).toLocaleDateString('pt-BR')}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>

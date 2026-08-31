@@ -224,7 +224,7 @@ export const ImovelCard = ({ imovel, onViewDetails, onDelete, canDelete }: Imove
           {/* Desatualizado: mais de 3 meses sem ajuste no cadastro */}
           {isDesatualizado(imovel.updated_at) && (
             <Badge
-              className="bg-amber-500/20 text-amber-500 border-amber-500/30"
+              className="bg-red-500/20 text-red-500 border-red-500/30"
               title={`Sem ajuste há mais de ${DIAS_SEM_AJUSTE_DESATUALIZADO} dias`}
             >
               <AlertTriangle className="h-3 w-3 mr-1" />

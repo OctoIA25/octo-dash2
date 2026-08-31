@@ -13,6 +13,7 @@ import { ImovelCard } from '@/components/imoveis/ImovelCard';
 import { MeusImoveisTab } from '@/components/imoveis/MeusImoveisTab';
 import { CondominiosTab } from '@/components/imoveis/CondominiosTab';
 import { LancamentosTab } from '@/components/imoveis/LancamentosTab';
+import { ConstrutorasTab } from '@/components/imoveis/ConstrutorasTab';
 import { CriarImovelForm } from '@/components/imoveis/CriarImovelForm';
 import { ImovelDetalhesModal } from '@/components/imoveis/ImovelDetalhesModal';
 import { normalizeFotos } from '@/components/imoveis/fotos-helpers';
@@ -1016,6 +1017,10 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
 
         <TabsContent value="lancamentos">
           <LancamentosTab />
+        </TabsContent>
+
+        <TabsContent value="construtoras">
+          <ConstrutorasTab />
         </TabsContent>
 
         <TabsContent value="catalogo">
