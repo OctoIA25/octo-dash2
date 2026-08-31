@@ -12,6 +12,7 @@ import { LogoutConfirmModal } from '@/components/LogoutConfirmModal';
 import { useHeaderSlot } from '@/contexts/HeaderSlotContext';
 import { useNovoActions } from '@/contexts/NovoActionsContext';
 import { ViewAsSelector } from '@/components/ViewAsSelector';
+import { useNotifications } from '@/contexts/NotificationsContext';
 
 function getInitials(name: string): string {
   return (
@@ -25,7 +26,8 @@ function getInitials(name: string): string {
 }
 
 export function NovoHeader() {
-  const { user } = useAuthContext();
+  const { user, tenantId } = useAuthContext();
+  const { unreadCount, loadNotifications } = useNotifications();
   const { currentTheme, changeTheme } = useTheme();
   const isDark = currentTheme === 'escuro';
   const { slot } = useHeaderSlot();
@@ -36,6 +38,13 @@ export function NovoHeader() {
   const [novoOpen, setNovoOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
   const novoRef = useRef<HTMLDivElement>(null);
+
+  // Carrega as notificações no mount para o badge do sino (também ativa o realtime do contexto)
+  useEffect(() => {
+    if (tenantId && tenantId !== 'owner' && user?.id) {
+      loadNotifications(tenantId, user.id);
+    }
+  }, [tenantId, user?.id, loadNotifications]);
 
   const { actions: novoActions } = useNovoActions();
   const hasSingleAction = novoActions.length === 1;
@@ -167,10 +176,17 @@ export function NovoHeader() {
 
         <button
           type="button"
+          onClick={() => navigate('/notificacoes')}
+          aria-label={unreadCount > 0 ? `Notificações (${unreadCount} não lidas)` : 'Notificações'}
+          title="Notificações"
           className="relative w-9 h-9 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center transition-colors"
         >
           <Bell className="w-[18px] h-[18px] text-slate-600 dark:text-slate-300" strokeWidth={2} />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white dark:ring-slate-900" />
+          {unreadCount > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-rose-500 ring-2 ring-white dark:ring-slate-900 text-white text-[10px] font-semibold flex items-center justify-center leading-none">
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
+          )}
         </button>
 
         {/* Só renderiza para owner/admin — ver ViewAsContext.canViewAsOthers. */}

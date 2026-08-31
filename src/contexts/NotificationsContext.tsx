@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useMemo, useState, ReactNode, useCallback } from 'react';
+import React, { createContext, useContext, useMemo, useState, ReactNode, useCallback, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
 import {
   fetchNotificationsForUser,
   markNotificationAsRead as apiMarkAsRead,
@@ -104,6 +105,44 @@ export const NotificationsProvider = ({ children }: { children: ReactNode }) => 
       setLoading(false);
     }
   }, []);
+
+  // Realtime: novas notificações do usuário aparecem no sininho sem F5.
+  // Mesmo padrão de useChatConversations (postgres_changes + removeChannel).
+  useEffect(() => {
+    if (!currentTenantId || !currentUserId || currentTenantId === 'owner') return;
+    const channel = supabase
+      .channel(`notifications_${currentTenantId}_${currentUserId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${currentUserId}`,
+        },
+        (payload) => {
+          const row = payload.new as {
+            id: string;
+            tenant_id: string;
+            title: string;
+            body?: string | null;
+            created_at: string;
+            read_at: string | null;
+            type?: string;
+            link_type?: string | null;
+            link_id?: string | null;
+          };
+          if (row.tenant_id !== currentTenantId) return;
+          setNotifications((prev) =>
+            prev.some((n) => n.id === row.id) ? prev : [mapRowToItem(row), ...prev]
+          );
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentTenantId, currentUserId]);
 
   const markAsRead = useCallback((id: string) => {
     setNotifications((prev) =>

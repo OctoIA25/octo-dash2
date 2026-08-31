@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useNotifications } from '@/contexts/NotificationsContext';
@@ -9,9 +9,7 @@ export const NotificacoesPage = () => {
   const { user, tenantId } = useAuth();
   const {
     notifications,
-    unreadCount,
     loadNotifications,
-    addTestNotification,
     addNotification,
     markAllAsRead,
     markAsRead,
@@ -25,73 +23,6 @@ export const NotificacoesPage = () => {
       loadNotifications(tenantId, user.id);
     }
   }, [tenantId, user?.id, loadNotifications]);
-
-  useEffect(() => {
-    if (!tenantId || !user?.id) return;
-    const key = `octodash:notifs-seed:${tenantId}:${user.id}`;
-
-    const hasPendencia = notifications.some((n) => n.title === 'Pendência de resposta (24h)');
-    const hasBloqueio = notifications.some((n) => n.title === 'Bloqueio do bolsão');
-    try {
-      const already = localStorage.getItem(key);
-      if (already === 'true' && hasPendencia && hasBloqueio) return;
-    } catch {
-      // ignore
-    }
-
-    try {
-      // Setar antes para evitar duplicação caso o efeito rode novamente durante o async.
-      localStorage.setItem(key, 'true');
-    } catch {
-      // ignore
-    }
-
-    (async () => {
-      if (!hasPendencia) {
-        await addNotification({
-          tenant_id: tenantId,
-          user_id: user.id,
-          title: 'Pendência de resposta (24h)',
-          body: 'Você ainda não respondeu a situação do Lead CA0001, você tem 24h para responder ou será bloqueado da área de bolsão',
-          type: 'warning',
-          link_type: 'lead',
-          link_id: 'CA0001',
-          metadata: { leadCode: 'CA0001', reason: 'pending_lead_response', deadlineHours: 24 },
-        });
-      }
-
-      if (!hasBloqueio) {
-        await addNotification({
-          tenant_id: tenantId,
-          user_id: user.id,
-          title: 'Bloqueio do bolsão',
-          body: 'Você foi bloqueado da área de bolsão, resolva sua pendência o mais rápido o possível',
-          type: 'blocked',
-          link_type: 'bolsao',
-          link_id: null as any,
-          metadata: { reason: 'bolsao_blocked' },
-        });
-      }
-    })();
-  }, [tenantId, user?.id, addNotification, notifications]);
-
-  const visibleNotifications = useMemo(() => {
-    const keepOnlyOneTitles = new Set(['Pendência de resposta (24h)', 'Bloqueio do bolsão']);
-    const seen = new Set<string>();
-
-    return notifications.filter((n) => {
-      if (!keepOnlyOneTitles.has(n.title)) return true;
-      if (seen.has(n.title)) return false;
-      seen.add(n.title);
-      return true;
-    });
-  }, [notifications]);
-
-  const handleAddTest = () => {
-    if (tenantId && user?.id) {
-      addTestNotification(tenantId, user.id);
-    }
-  };
 
   const handleCreateNotification = async (data: {
     title: string;
@@ -156,7 +87,7 @@ export const NotificacoesPage = () => {
             </p>
           ) : (
             <div className="space-y-3">
-              {visibleNotifications.map((n) => (
+              {notifications.map((n) => (
                 <div
                   key={n.id}
                   className="rounded-lg border p-3 flex items-start justify-between gap-4"
