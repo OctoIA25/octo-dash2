@@ -68,6 +68,7 @@ import {
   type CommercialSalesFinanceSummary,
 } from '@/features/metricas/services/commercialSalesService';
 import { FinanceiroTab } from '../components/FinanceiroTab';
+import { MarketingSiteTab } from '../components/MarketingSiteTab';
 import { ExportReportDialog, buildReportModel, fromChartJs, type ReportSource } from '../export';
 import { useLeadSourceCosts } from '../hooks/useLeadSourceCosts';
 import { buildFinanceiroResumo, origemKey } from '../utils/buildFinanceiroResumo';
@@ -223,6 +224,15 @@ export const RelatoriosPage = () => {
   const _tab = searchParams.get('tab');
   const activeSubArea: 'marketing' | 'metricas' | 'metricas-individuais' | 'imoveis' | 'financeiro' | 'excel' | 'enps' =
     _tab === 'metricas' || _tab === 'imoveis' || _tab === 'metricas-individuais' || _tab === 'excel' || _tab === 'financeiro' || _tab === 'enps' ? _tab : 'marketing';
+
+  // Sub-visão do Marketing: 'geral' (conteúdo atual) | 'site' (Google Analytics).
+  // Não há setSearchParams neste arquivo (só o getter de useSearchParams), então seguimos o
+  // padrão já usado abaixo (activeMetricasSubArea): estado local + window.history.replaceState.
+  const initialMktView = useMemo(
+    () => (searchParams.get('view') === 'site' ? 'site' : 'geral'),
+    [searchParams],
+  );
+  const [mktView, setMktView] = useState<'geral' | 'site'>(initialMktView);
 
   const initialMetricasSubArea = useMemo(() => {
     const fromQuery = searchParams.get('metricasSubArea');
@@ -1722,8 +1732,36 @@ export const RelatoriosPage = () => {
         </div>
       )}
       <div ref={exportRef}>
-      {/* SEÇÃO MARKETING */}
+      {/* SEÇÃO MARKETING — toggle Geral | Site */}
       {activeSubArea === 'marketing' && (
+        <div className="mb-4 inline-flex rounded-lg border border-gray-200 dark:border-slate-700 p-0.5 bg-gray-50 dark:bg-slate-800">
+          {([['geral', 'Geral'], ['site', 'Site']] as const).map(([value, label]) => (
+            <button
+              key={value}
+              onClick={() => {
+                setMktView(value);
+                const params = new URLSearchParams(searchParams);
+                if (value === 'site') {
+                  params.set('view', 'site');
+                } else {
+                  params.delete('view');
+                }
+                window.history.replaceState(null, '', `?${params.toString()}`);
+              }}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                mktView === value
+                  ? 'bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 shadow-sm'
+                  : 'text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+      {activeSubArea === 'marketing' && mktView === 'site' && <MarketingSiteTab />}
+      {/* SEÇÃO MARKETING */}
+      {activeSubArea === 'marketing' && mktView === 'geral' && (
         <>
       {/* KPIs Cards */}
       <div data-export-layout="kpis" className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">

@@ -4768,6 +4768,10 @@ import { registerSantaAngelaRoutes, startSantaAngelaScheduler, makeSantaAngelaRu
 const santaAngelaRunner = makeSantaAngelaRunner(supabase);
 registerSantaAngelaRoutes(app, supabase, { runner: santaAngelaRunner });
 
+// 🌐 Integração Google Analytics (GA4) — Relatórios > Marketing > Site
+import { registerGaRoutes } from './googleAnalytics/index.js';
+registerGaRoutes(app, supabase);
+
 // Polling automático (default 60s). Flag-gated para rodar em UM processo, igual
 // ao scheduler do Kenlo. O sync alimenta o time de IA em quase tempo real.
 if (process.env.SANTA_ANGELA_SYNC_SCHEDULER === '1') {

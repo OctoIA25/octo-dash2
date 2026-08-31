@@ -4156,6 +4156,10 @@ registerAgentTelemetryRoutes(app, supabase);
 import { registerSantaAngelaRoutes } from './santaAngela/index.js';
 registerSantaAngelaRoutes(app, supabase);
 
+// 🌐 Integração Google Analytics (GA4) — Relatórios > Marketing > Site
+import { registerGaRoutes } from './googleAnalytics/index.js';
+registerGaRoutes(app, supabase);
+
 // Rotas owner/admin da config ZAP por tenant — mesmo resolver do feed (save invalida cache).
 registerZapRoutes(app, supabase, { resolver: zapConfigResolver });
 
