@@ -96,10 +96,24 @@ describe('atuacoesDe', () => {
 });
 
 describe('opcoesFiltroBolsao', () => {
-  it('só corretor com atuação restritiva é filtrado', () => {
+  it('corretor com atuação restritiva é filtrado; sem restrição, não', () => {
     expect(opcoesFiltroBolsao({ isCorretor: true, permissions: { atuacao: ['lancamentos'] } }).ativo).toBe(true);
     expect(opcoesFiltroBolsao({ isCorretor: true, permissions: null }).ativo).toBe(false);
-    expect(opcoesFiltroBolsao({ isCorretor: false, permissions: { atuacao: ['lancamentos'] } }).ativo).toBe(false);
+  });
+
+  it('gestor (team_leader) é filtrado pela própria atuação; admin/owner não', () => {
+    expect(opcoesFiltroBolsao({
+      isCorretor: false, systemRole: 'team_leader', permissions: { atuacao: ['lancamentos'] },
+    }).ativo).toBe(true);
+    expect(opcoesFiltroBolsao({
+      isCorretor: false, systemRole: 'team_leader', permissions: null,
+    }).ativo).toBe(false); // sem marcação, fail-open: vê tudo
+    expect(opcoesFiltroBolsao({
+      isCorretor: false, systemRole: 'admin', permissions: { atuacao: ['lancamentos'] },
+    }).ativo).toBe(false);
+    expect(opcoesFiltroBolsao({
+      isCorretor: false, systemRole: 'owner', permissions: { atuacao: ['lancamentos'] },
+    }).ativo).toBe(false);
   });
 });
 

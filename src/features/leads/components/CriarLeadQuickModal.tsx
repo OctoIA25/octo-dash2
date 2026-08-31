@@ -6,12 +6,13 @@
 
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Plus, Save, User as UserIcon, Phone, Mail, Home, Loader2, Thermometer, Inbox, Tag, MessageSquare } from 'lucide-react';
+import { X, Plus, Save, User as UserIcon, Phone, Mail, Home, Loader2, Thermometer, Inbox, Tag, MessageSquare, IdCard, Archive } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { leadsEventEmitter } from '@/lib/leadsEventEmitter';
 import { CLASSIFICACAO_ESTILOS, CLASSIFICACAO_ORDEM } from './ClassificacaoBadge';
 import { classificacoesDe, toggleClassificacao } from '../utils/classificarLead';
 import { PreferenciasEditor, preferenciasDe } from './PreferenciasLead';
+import { LeadDocumentos } from './LeadDocumentos';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { ConversationLinkField, useChatPath } from '@/features/chat/components/OpenConversationLink';
@@ -32,6 +33,8 @@ interface CriarLeadQuickModalProps {
   stageHint?: string;
   /** 1 = Interessado (default), 2 = Proprietário. Controla qual lead_type gravar. */
   leadType?: LeadType;
+  /** Mostra "Arquivar" no rodapé (só em modo edição). O pai abre o dialog de motivo. */
+  onArquivar?: (lead: KanbanLead) => void;
 }
 
 interface LeadForm {
@@ -46,6 +49,8 @@ interface LeadForm {
   classification: string[];
   /** O que o cliente procura (Apartamento, Lançamento...). Marcação humana. */
   preferences: string[];
+  /** Só existe/edita a partir da etapa de Propostas (seção Documentação). */
+  cpf: string;
 }
 
 const EMPTY_FORM: LeadForm = {
@@ -58,9 +63,28 @@ const EMPTY_FORM: LeadForm = {
   participa_bolsao: true,
   classification: ['indefinido'],
   preferences: [],
+  cpf: '',
 };
 
 const TEMPERATURES = ['Quente', 'Morno', 'Frio'];
+
+/** Máscara leve 000.000.000-00 — só dígitos, sem validar dígito verificador
+    (mesmo contrato do CPF livre da PropostaPage). */
+const formatCpf = (value: string) => {
+  const d = value.replace(/\D/g, '').slice(0, 11);
+  return d
+    .replace(/(\d{3})(\d)/, '$1.$2')
+    .replace(/(\d{3})\.(\d{3})(\d)/, '$1.$2.$3')
+    .replace(/\.(\d{3})(\d{1,2})$/, '.$1-$2');
+};
+
+/**
+ * Etapas em que a seção Documentação aparece: Propostas em diante.
+ * `KanbanLead.status` já vem como slug — Interessado: proposta-criada/enviada/
+ * assinada; Proprietário: propostas-respondidas e feitura-contrato.
+ */
+const reachedPropostaStage = (status: string | null | undefined) =>
+  Boolean(status && (status.startsWith('proposta') || status === 'feitura-contrato'));
 
 const leadToForm = (lead: KanbanLead): LeadForm => ({
   name: lead.nomedolead ?? '',
@@ -72,6 +96,9 @@ const leadToForm = (lead: KanbanLead): LeadForm => ({
   participa_bolsao: (lead as { participa_bolsao?: boolean }).participa_bolsao ?? true,
   classification: classificacoesDe(lead.classification),
   preferences: preferenciasDe(lead.preferences),
+  // cpf não vem no select do Kanban (coluna nova, fora do hot path) — é
+  // hidratado por query própria quando a seção Documentação está visível.
+  cpf: '',
 });
 
 export const CriarLeadQuickModal = ({
@@ -81,9 +108,12 @@ export const CriarLeadQuickModal = ({
   editingLead,
   stageHint,
   leadType = LEAD_TYPE_INTERESSADO,
+  onArquivar,
 }: CriarLeadQuickModalProps) => {
   const isEditMode = Boolean(editingLead);
   const isProprietario = leadType === LEAD_TYPE_PROPRIETARIO;
+  // Documentação (CPF + upload) só a partir da etapa de Propostas.
+  const showDocumentacao = isEditMode && reachedPropostaStage(editingLead?.status);
   const [form, setForm] = useState<LeadForm>(EMPTY_FORM);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -110,6 +140,34 @@ export const CriarLeadQuickModal = ({
       setForm(EMPTY_FORM);
     }
     setError(null);
+  }, [isOpen, editingLead]);
+
+  // Hidrata o CPF da tabela-fonte (mesma ordem do UPDATE: leads → kenlo_leads).
+  // Fora do select do Kanban de propósito: coluna nova no hot path derrubaria a
+  // lista inteira se a migration ainda não tiver sido aplicada (42703 → vazio).
+  useEffect(() => {
+    if (!isOpen || !editingLead || !reachedPropostaStage(editingLead.status)) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from('leads')
+        .select('cpf')
+        .eq('id', editingLead.id)
+        .maybeSingle();
+      let cpf = (data?.cpf as string | null) ?? null;
+      if (!data) {
+        const { data: kenlo } = await supabase
+          .from('kenlo_leads')
+          .select('cpf')
+          .eq('id', editingLead.id)
+          .maybeSingle();
+        cpf = (kenlo?.cpf as string | null) ?? null;
+      }
+      if (!cancelled && cpf) setForm((f) => ({ ...f, cpf: formatCpf(cpf) }));
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [isOpen, editingLead]);
 
   if (!isOpen) return null;
@@ -163,6 +221,9 @@ export const CriarLeadQuickModal = ({
           classification: form.classification,
           // CHECK da 20260819 exige 1..10 termos ou NULL — vazio vira NULL.
           preferences: form.preferences.length ? form.preferences : null,
+          // cpf só entra quando a seção Documentação está visível — para leads em
+          // etapas anteriores o campo nem existe na tela e o valor salvo é preservado.
+          ...(showDocumentacao ? { cpf: form.cpf.trim() || null } : {}),
           updated_at: new Date().toISOString(),
         };
 
@@ -185,6 +246,7 @@ export const CriarLeadQuickModal = ({
               form.temperature === 'Quente' ? 'hot' : form.temperature === 'Morno' ? 'warm' : 'cold',
             classification: form.classification,
             preferences: form.preferences.length ? form.preferences : null,
+            ...(showDocumentacao ? { cpf: form.cpf.trim() || null } : {}),
             updated_at: new Date().toISOString(),
           };
           const { error: kenloError } = await supabase
@@ -441,6 +503,32 @@ export const CriarLeadQuickModal = ({
               </div>
             )}
 
+            {/* Seção: Documentação — só a partir da etapa de Propostas. Antes
+                disso não faz sentido pedir CPF/documentos e a seção sumiria e
+                voltaria conforme o lead anda no funil. */}
+            {showDocumentacao && (
+              <div className="mt-5 mb-5">
+                <SectionTitle>Documentação</SectionTitle>
+                <div className="space-y-3">
+                  <Field
+                    icon={<IdCard className="w-4 h-4 text-slate-400" />}
+                    label="CPF"
+                    type="text"
+                    placeholder="000.000.000-00"
+                    value={form.cpf}
+                    onChange={(v) => setForm((f) => ({ ...f, cpf: formatCpf(v) }))}
+                    mono
+                    disabled={!canEdit}
+                  />
+                  <LeadDocumentos
+                    tenantId={tenantId}
+                    leadId={editingLead!.id}
+                    canEdit={canEdit}
+                  />
+                </div>
+              </div>
+            )}
+
             {/* Seção: Observação */}
             <SectionTitle>Observação</SectionTitle>
             <textarea
@@ -498,7 +586,20 @@ export const CriarLeadQuickModal = ({
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
+          <div className="flex items-center justify-between gap-2 px-5 py-3 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
+            <div>
+              {isEditMode && canEdit && onArquivar && editingLead && (
+                <button
+                  onClick={() => onArquivar(editingLead)}
+                  disabled={isSubmitting}
+                  className="px-3 py-2 text-sm font-medium text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950/40 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  <Archive className="w-4 h-4" />
+                  Arquivar
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
             <button
               onClick={handleClose}
               disabled={isSubmitting}
@@ -522,6 +623,7 @@ export const CriarLeadQuickModal = ({
                   : (isEditMode ? 'Salvar' : `Criar ${typeLabel}`)}
               </button>
             )}
+            </div>
           </div>
         </div>
       </div>

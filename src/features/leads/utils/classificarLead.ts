@@ -79,20 +79,25 @@ export function toggleClassificacao(atual: ValorClassificacao, tipo: string): st
  * Monta as opções de `filtrarPorAtuacao` a partir de quem está logado.
  *
  * Existe separado do componente para que a decisão "quem é filtrado" tenha
- * teste: só `role = 'corretor'` é filtrado, e só quando a atuação dele
- * restringe alguma coisa. Admin, owner e team_leader veem o Bolsão inteiro —
- * quem gerencia precisa enxergar o que está parado.
+ * teste: corretor E gestor (team_leader) são filtrados pela própria atuação —
+ * o gestor de Lançamentos vê no Bolsão os leads das especialidades dele, como
+ * a tela de Equipe promete ("define quais leads vê no Bolsão"). Só quando a
+ * atuação restringe alguma coisa: sem marcação, fail-open, vê tudo.
+ * Admin e owner seguem sem filtro — auditam o tenant inteiro.
  */
 export function opcoesFiltroBolsao({
   isCorretor,
+  systemRole,
   permissions,
 }: {
   isCorretor: boolean;
+  systemRole?: string | null;
   permissions?: Record<string, unknown> | null;
 }): { ativo: boolean; atuacoes: AtuacaoTipo[] } {
   const atuacoes = atuacoesDe(permissions);
   const atendeTudo = ATUACAO_TIPOS.every((t) => atuacoes.includes(t));
-  return { ativo: isCorretor && !atendeTudo, atuacoes };
+  const filtravel = isCorretor || systemRole === 'team_leader';
+  return { ativo: filtravel && !atendeTudo, atuacoes };
 }
 
 /**
@@ -164,7 +169,7 @@ export function ocultarImovelDoBolsao<T extends LinhaComImovel>(
 export function filtrarPorAtuacao<T extends LinhaClassificavel>(
   linhas: ReadonlyArray<T>,
   opts: {
-    /** false para admin/owner/team_leader: veem o Bolsão inteiro. */
+    /** false para admin/owner: veem o Bolsão inteiro. */
     ativo: boolean;
     atuacoes: ReadonlyArray<AtuacaoTipo>;
   },

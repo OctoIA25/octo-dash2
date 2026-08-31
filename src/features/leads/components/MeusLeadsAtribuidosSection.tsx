@@ -18,6 +18,7 @@ import { Input } from '@/components/ui/input';
 import { useDebounce } from '../hooks/useDebounce';
 import { LeadDetailsModal } from './LeadDetailsModal';
 import { ClassificacaoDots } from './ClassificacaoBadge';
+import { filtrarPorAtuacao, opcoesFiltroBolsao } from '../utils/classificarLead';
 import { PreferenciasBadges } from './PreferenciasLead';
 import {
   Select,
@@ -794,12 +795,24 @@ export const MeusLeadsAtribuidosSection = ({
       return;
     }
 
-    // Se for Admin, busca TODOS os leads em andamento
-    if (isAdmin) {
+    // Gestão (admin/owner) E gestor (team_leader) buscam TODOS os leads do
+    // tenant. O teste é por `systemRole`, não pelo isAdmin do hook: em
+    // hooks/useAuth team_leader mapeia para 'corretor' (diverge do
+    // AuthContext), então o gestor caía no ramo "leads pelo meu nome" — ele
+    // não atende lead nenhum e o kanban vinha VAZIO.
+    if (isAdmin || user?.systemRole === 'team_leader') {
       try {
         setLoading(true);
         const data = await fetchTodosLeadsCRM(tenantId || undefined, leadType);
-        setMeusLeads(data);
+        // Gestor (team_leader) vê o kanban recortado pela PRÓPRIA atuação —
+        // mesmo filtro do Bolsão: quantos leads da especialidade dele existem e
+        // quem são. Fail-open (sem atuação marcada → vê tudo; `indefinido`
+        // aparece para todos). Admin e owner seguem com o tenant inteiro.
+        setMeusLeads(filtrarPorAtuacao(data, opcoesFiltroBolsao({
+          isCorretor: false,
+          systemRole: user?.systemRole,
+          permissions: user?.permissions as Record<string, unknown> | undefined,
+        })));
       } catch (error) {
         console.error('Erro ao carregar todos os leads (admin):', error);
         toast({
@@ -856,7 +869,7 @@ export const MeusLeadsAtribuidosSection = ({
     } finally {
       setLoading(false);
     }
-  }, [authLoading, isAdmin, scope.id, scope.name, scope.email, toast, tenantId, leadType]);
+  }, [authLoading, isAdmin, scope.id, scope.name, scope.email, toast, tenantId, leadType, user?.systemRole, user?.permissions]);
 
   // Carregar ao montar - buscar sempre que o componente montar (busca userId da sessão)
   useEffect(() => {
@@ -1410,6 +1423,12 @@ const handleDragEnd = useCallback(async (event: DragEndEvent) => {
         tenantId={tenantId}
         editingLead={editingLead}
         leadType={leadType}
+        onArquivar={(lead) => {
+          setLeadParaArquivar(lead);
+          setMotivoArquivamento('');
+          setMotivoPredefinido('sem_interesse');
+          setEditingLead(null);
+        }}
       />
 
       <LeadDetailsModal

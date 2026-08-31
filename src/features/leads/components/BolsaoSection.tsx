@@ -164,9 +164,9 @@ const BolsaoSectionContent = (props: BolsaoSectionProps) => {
   // garimpo de empreendimento de luxo. Owner, admin e team_leader veem.
   const podeVerImovel = podeVerImovelBolsao({ isAdmin, systemRole: user?.systemRole });
 
-  // O que ESTE usuário pode ver. Corretor marcado como Lançamentos não recebe
-  // lead de imóvel pronto na fila, e vice-versa; `indefinido` aparece para todos.
-  // Admin, owner e team_leader não são filtrados — quem gerencia vê o que está parado.
+  // O que ESTE usuário pode ver. Corretor ou gestor (team_leader) marcado como
+  // Lançamentos não vê lead de imóvel pronto na fila, e vice-versa; `indefinido`
+  // aparece para todos. Admin e owner não são filtrados — auditam o tenant inteiro.
   // O sigilo do imóvel é aplicado AQUI, na lista: card, modal de detalhes e
   // formulário de atividade leem todos o mesmo `codigo`.
   const leadsVisiveis = useMemo(
@@ -175,12 +175,13 @@ const BolsaoSectionContent = (props: BolsaoSectionProps) => {
         leads,
         opcoesFiltroBolsao({
           isCorretor,
+          systemRole: user?.systemRole,
           permissions: user?.permissions as Record<string, unknown> | undefined,
         }),
       ),
       podeVerImovel,
     ),
-    [leads, isCorretor, user?.permissions, podeVerImovel],
+    [leads, isCorretor, user?.systemRole, user?.permissions, podeVerImovel],
   );
   const [assumindoLead, setAssumindoLead] = useState<number | null>(null);
   const [confirmandoLead, setConfirmandoLead] = useState<number | null>(null);

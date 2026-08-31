@@ -49,6 +49,16 @@ export interface BolsaoLead {
 const BOLSAO_TABLE = 'bolsao'; // Nome da tabela (sem acento)
 
 /**
+ * Torna um valor seguro para ir dentro de um filtro PostgREST (.or()/.and()).
+ * Envolve em aspas duplas e escapa `"` e `\`, transformando vírgula/ponto/
+ * parênteses em texto literal em vez de sintaxe de filtro. NÃO remove
+ * caracteres — o nome original é preservado.
+ */
+export function pgrstLiteral(value: string): string {
+  return `"${String(value ?? '').replace(/(["\\])/g, '\\$1')}"`;
+}
+
+/**
  * Busca leads disponíveis no Bolsão
  * Leads disponíveis são aqueles com status "bolsao" (expirados sem atendimento)
  */
@@ -105,11 +115,15 @@ export async function fetchTodosLeadsBolsao(tenantId: string): Promise<BolsaoLea
  */
 export async function fetchLeadsDoCorretor(nomeCorretor: string): Promise<BolsaoLead[]> {
   try {
-    
+    // O nome vai cru dentro de um filtro .or() do PostgREST, onde vírgula, ponto
+    // e parênteses são SINTAXE. Sem tratar, um nome como `x,corretor.not.is.null`
+    // injeta cláusulas extras e alarga o OR. pgrstLiteral envolve o valor em
+    // aspas (escapando " e \), tornando-o um literal — não removemos nada.
+    const alvo = pgrstLiteral(nomeCorretor);
     const { data, error } = await supabase
       .from(BOLSAO_TABLE)
       .select('*')
-      .or(`corretor_responsavel.eq.${nomeCorretor},corretor.eq.${nomeCorretor}`)
+      .or(`corretor_responsavel.eq.${alvo},corretor.eq.${alvo}`)
       .neq('status', 'bolsao')
       .order('created_at', { ascending: false });
     
