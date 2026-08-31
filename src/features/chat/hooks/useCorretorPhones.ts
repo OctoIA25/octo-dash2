@@ -1,32 +1,44 @@
 /**
- * Telefones dos corretores já cadastrados na dash, em forma canônica.
+ * Telefones dos corretores em forma canônica, para o filtro/categoria
+ * "Corretores" do chat.
  *
- * Serve para a conversa com um corretor da equipe aparecer categorizada sem
- * ninguém marcar nada: quem já está no cadastro não precisa ser etiquetado de
- * novo. A categoria gravada à mão continua vencendo (ver `categoriaEfetiva`),
- * que é o que permite marcar como Corretor um parceiro de FORA da imobiliária.
+ * Fonte ÚNICA: `tenant_memberships.permissions.whatsapp_phones` — os números
+ * definidos por membro no Gerenciador de Permissões (EquipeSection). Só conta
+ * quem foi setado lá; o telefone de cadastro em `tenant_brokers` deixou de
+ * valer para esta categoria (decisão de produto: o admin escolhe explicitamente
+ * quais números são "de corretor"). A categoria gravada à mão continua vencendo
+ * (ver `categoriaEfetiva`), o que permite marcar como Corretor um parceiro de
+ * fora da imobiliária.
  *
- * Fonte: `tenant_brokers` — mesma tabela de contato que server/enps/roster.js
- * usa como primária. O fallback `user_profiles` de lá NÃO é replicado aqui: no
- * cliente ele esbarraria na RLS de perfis de terceiros. Sem telefone, a
- * conversa apenas não ganha a categoria automática.
- *
- * ponytail: sem filtro por status e sem cruzar com tenant_memberships — o
- * objetivo é reconhecer QUEM é o número, e um corretor inativo (ou herdado de
- * outra base, como os 70 da Japi) continua sendo corretor. Se um dia isso
- * incomodar, é um .eq('status', 'active') — ou um merge por auth_user_id com
- * os membros reais, como faz useCaptadores.
+ * A seleção usa o caminho JSON (`permissions->whatsapp_phones`) para não
+ * trafegar o JSONB inteiro — `permissions.photo` pode ser um data-URI de até
+ * 2MB por membro.
  */
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { normalizePhone } from '../services/chatService';
 
+/** Achata as linhas de membership num Set de telefones canônicos. */
+export function phonesFromMemberships(rows: ReadonlyArray<{ phones: unknown }>): Set<string> {
+  const phones = new Set<string>();
+  for (const row of rows) {
+    if (!Array.isArray(row.phones)) continue;
+    for (const raw of row.phones) {
+      if (typeof raw !== 'string') continue;
+      const phone = normalizePhone(raw);
+      if (phone.length >= 10) phones.add(phone);
+    }
+  }
+  return phones;
+}
+
 export async function fetchCorretorPhones(tenantId: string): Promise<Set<string>> {
   const { data, error } = await supabase
-    .from('tenant_brokers')
-    .select('phone')
-    .eq('tenant_id', tenantId);
+    .from('tenant_memberships')
+    .select('phones:permissions->whatsapp_phones')
+    .eq('tenant_id', tenantId)
+    .not('permissions->whatsapp_phones', 'is', null);
 
   if (error) {
     // Falha aqui só custa a categoria automática — nunca esconde conversa.
@@ -34,12 +46,7 @@ export async function fetchCorretorPhones(tenantId: string): Promise<Set<string>
     return new Set();
   }
 
-  const phones = new Set<string>();
-  for (const row of (data ?? []) as { phone: string | null }[]) {
-    const phone = normalizePhone(row.phone);
-    if (phone.length >= 10) phones.add(phone);
-  }
-  return phones;
+  return phonesFromMemberships((data ?? []) as unknown as { phones: unknown }[]);
 }
 
 export function useCorretorPhones(tenantId: string | undefined): Set<string> {

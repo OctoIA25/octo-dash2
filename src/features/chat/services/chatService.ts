@@ -80,9 +80,9 @@ export async function markConversationRead(conversationId: string): Promise<void
 
 /**
  * Categoria que a tela mostra: a gravada à mão vence sempre; na ausência dela,
- * telefone de corretor cadastrado no tenant vira 'corretor' automaticamente
+ * número definido no Gerenciador de Permissões vira 'corretor' automaticamente
  * (ver useCorretorPhones). Derivar em vez de gravar mantém uma fonte só — o
- * corretor cadastrado hoje já aparece nas conversas antigas dele, sem backfill.
+ * número setado hoje já aparece nas conversas antigas dele, sem backfill.
  */
 export function categoriaEfetiva(
   conversation: Pick<WhatsappConversation, 'category' | 'contact_phone'>,

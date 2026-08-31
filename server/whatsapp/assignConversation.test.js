@@ -187,3 +187,40 @@ describe('migração 20260816 — visibilidade das conversas', () => {
     expect(sql).toMatch(/CREATE INDEX IF NOT EXISTS idx_whatsapp_conversations_tenant_assigned[\s\S]*\(tenant_id, assigned_user_id\)/);
   });
 });
+
+const sqlGestor = readFileSync(
+  path.join(__dirname, '../../supabase/migrations/20260826_whatsapp_gestor_atuacao_visibility.sql'),
+  'utf8',
+);
+
+describe('migração 20260826 — gestor vê as conversas da própria especialidade', () => {
+  it('troca a assinatura da função (as policies antigas dependeriam dela)', () => {
+    expect(sqlGestor).toContain('DROP FUNCTION IF EXISTS public.can_read_whatsapp_conversation(UUID, UUID)');
+    expect(sqlGestor).toMatch(
+      /CREATE OR REPLACE FUNCTION public\.can_read_whatsapp_conversation\(\s*p_tenant_id\s+UUID,\s*p_assigned_user_id\s+UUID,\s*p_lead_id\s+UUID,\s*p_lead_source_table\s+TEXT\s*\)/,
+    );
+  });
+
+  it('braço novo é só para team_leader e casa classificação do lead com a atuação', () => {
+    expect(sqlGestor).toContain("tm.role = 'team_leader'");
+    expect(sqlGestor).toMatch(/&& public\.classificacoes_da_atuacao\(tm\.permissions\)/);
+    // lead de cada tabela é buscado no MESMO tenant da conversa
+    expect(sqlGestor).toMatch(/FROM public\.leads l\s+WHERE l\.id = p_lead_id AND l\.tenant_id = p_tenant_id/);
+    expect(sqlGestor).toMatch(/FROM public\.kenlo_leads k\s+WHERE k\.id = p_lead_id AND k\.tenant_id = p_tenant_id/);
+  });
+
+  it('mapeamento é FAIL-CLOSED (sem atuacao = nenhuma visibilidade extra)', () => {
+    // diferente do atuacoesDe do front, o ELSE devolve conjunto vazio
+    expect(sqlGestor).toMatch(/ELSE '\{\}'::text\[\]/);
+    // e a migration prova isso no banco real
+    expect(sqlGestor).toMatch(/ASSERT public\.classificacoes_da_atuacao\('\{\}'::jsonb\) = '\{\}'::text\[\]/);
+  });
+
+  it('policies de conversas passam o vínculo com o lead; as de mensagens seguem herdando', () => {
+    const comLead = sqlGestor.match(
+      /public\.can_read_whatsapp_conversation\(tenant_id, assigned_user_id, lead_id, lead_source_table\)/g,
+    );
+    expect(comLead).toHaveLength(3); // SELECT USING + write USING + write WITH CHECK
+    expect(sqlGestor).not.toMatch(/ON public\.whatsapp_messages/); // regra continua num lugar só
+  });
+});
