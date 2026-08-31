@@ -26,6 +26,7 @@ import { cn } from '@/lib/utils';
 import { useTenantBrokerPhotos } from '../hooks/useTenantBrokerPhotos';
 import { JURIDICO_KANBAN_COLUMNS, getProposalColumn } from '../utils/kanbanColumns';
 import { JuridicoKanbanCard } from '../components/JuridicoKanbanCard';
+import { TermoComissaoDialog } from '../components/TermoComissaoDialog';
 
 type ViewMode = 'kanban' | 'lista';
 type FinancingFilter = 'todos' | 'com' | 'sem';
@@ -94,6 +95,11 @@ export function VisaoGeralPage() {
   const openProposal = (proposalId: string) => {
     setOpenedProposalId(proposalId);
   };
+  const [termoProposalId, setTermoProposalId] = useState<string | null>(null);
+  const termoProposal = useMemo(
+    () => proposals.find((p) => p.id === termoProposalId) || null,
+    [proposals, termoProposalId],
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('kanban');
   const [financingFilter, setFinancingFilter] = useState<FinancingFilter>('todos');
@@ -273,6 +279,7 @@ export function VisaoGeralPage() {
                         proposal={proposal}
                         brokerPhoto={getPhoto({ userId: proposal.agent_user_id, name: proposal.agent_name })}
                         onClick={() => openProposal(proposal.id)}
+                        onGenerateTermo={() => setTermoProposalId(proposal.id)}
                       />
                     ))
                   )}
@@ -283,6 +290,16 @@ export function VisaoGeralPage() {
         </div>
       ) : (
         <ListView proposals={filtered} getPhoto={getPhoto} onOpen={openProposal} />
+      )}
+
+      {termoProposal && (
+        <TermoComissaoDialog
+          proposal={termoProposal}
+          open
+          onOpenChange={(open) => {
+            if (!open) setTermoProposalId(null);
+          }}
+        />
       )}
 
       {openedProposalId && (

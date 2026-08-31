@@ -1,5 +1,6 @@
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import { FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { SavedProposal } from '@/features/leads/services/proposalsService';
 
@@ -7,6 +8,7 @@ interface JuridicoKanbanCardProps {
   proposal: SavedProposal;
   brokerPhoto?: string;
   onClick?: () => void;
+  onGenerateTermo?: () => void;
 }
 
 const formatCurrencyWithCents = (value: number) =>
@@ -40,7 +42,7 @@ const parseAmount = (value: number | string | null | undefined) => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
-export function JuridicoKanbanCard({ proposal, brokerPhoto, onClick }: JuridicoKanbanCardProps) {
+export function JuridicoKanbanCard({ proposal, brokerPhoto, onClick, onGenerateTermo }: JuridicoKanbanCardProps) {
   const buyer = proposal.parties.find((party) => party.party_type === 'comprador');
   const clientName = buyer?.full_name?.trim() || 'Cliente pendente';
   const brokerName = proposal.agent_name?.trim() || 'A definir';
@@ -81,9 +83,33 @@ export function JuridicoKanbanCard({ proposal, brokerPhoto, onClick }: JuridicoK
             <span className="font-medium text-slate-600 dark:text-slate-300">{propertyRef}</span>
             {address ? ` ${address}` : ''}
           </p>
-          <p className="mt-1.5 truncate text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
-            {brokerName}
-          </p>
+          <div className="mt-1.5 flex items-center justify-between gap-2">
+            <p className="truncate text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
+              {brokerName}
+            </p>
+            {onGenerateTermo && (
+              // span pois o card já é um <button> (button aninhado é HTML inválido)
+              <span
+                role="button"
+                tabIndex={0}
+                title="Gerar termo de comissão"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onGenerateTermo();
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onGenerateTermo();
+                  }
+                }}
+                className="shrink-0 rounded-md p-1 text-slate-400 opacity-0 transition-opacity hover:bg-slate-100 hover:text-slate-600 group-hover:opacity-100 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+              >
+                <FileText className="h-3.5 w-3.5" />
+              </span>
+            )}
+          </div>
         </div>
       </div>
     </button>
