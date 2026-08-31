@@ -44,6 +44,8 @@ export interface ForecastLeadRow {
 
 export interface ForecastRow {
   proposalId: string;
+  /** Lead espelhado, ou null em proposta avulsa. O seletor de "colocar lead" usa para não oferecer quem já está na planilha. */
+  leadId: string | null;
   /** Etapa do funil (`proposals.stage_id`) — define a coluna do card. */
   stageId: string;
   corretor: string;
@@ -112,6 +114,7 @@ export function toForecastRow(
 
   return {
     proposalId: proposta.id,
+    leadId: proposta.lead_id,
     stageId: proposta.stage_id,
     corretor: texto(proposta.agent_name),
     lead: nomeDoLead(proposta, lead),

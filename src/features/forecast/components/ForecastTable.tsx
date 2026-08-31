@@ -11,6 +11,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { X } from 'lucide-react';
 import { etapaDoForecast } from '../utils/etapas';
 import { moeda, dataBR } from '../utils/format';
 import { somarForecast, type ForecastRow } from '../utils/forecastRow';
@@ -72,9 +73,11 @@ function CelulaEditavel({
 interface ForecastTableProps {
   rows: ForecastRow[];
   onSave: (proposalId: string, patch: ForecastPatch) => void;
+  /** Tira a linha da planilha (reversível — não arquiva o lead). */
+  onRemove: (proposalId: string) => void;
 }
 
-export function ForecastTable({ rows, onSave }: ForecastTableProps) {
+export function ForecastTable({ rows, onSave, onRemove }: ForecastTableProps) {
   const totais = somarForecast(rows);
 
   return (
@@ -94,6 +97,7 @@ export function ForecastTable({ rows, onSave }: ForecastTableProps) {
               'Data de atendimento',
               'Previsão de fechamento',
               'Posição atual',
+              '', // coluna do botão de tirar do forecast
             ].map((titulo) => (
               <th
                 key={titulo}
@@ -193,6 +197,20 @@ export function ForecastTable({ rows, onSave }: ForecastTableProps) {
                     />
                   </div>
                 </td>
+
+                <td className={`${CELULA} w-9 text-center`}>
+                  <button
+                    type="button"
+                    aria-label={`Tirar ${quem} do forecast`}
+                    title="Tirar do forecast"
+                    onClick={() => onRemove(row.proposalId)}
+                    className="rounded p-1 text-slate-300 transition-colors hover:bg-slate-100
+                               hover:text-slate-600 dark:text-slate-600 dark:hover:bg-slate-800
+                               dark:hover:text-slate-300"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </td>
               </tr>
             );
           })}
@@ -213,7 +231,7 @@ export function ForecastTable({ rows, onSave }: ForecastTableProps) {
             >
               {moeda(totais.comissao)}
             </td>
-            <td className={CELULA} colSpan={4} />
+            <td className={CELULA} colSpan={5} />
           </tr>
         </tfoot>
       </table>

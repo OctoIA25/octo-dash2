@@ -6,14 +6,36 @@
  * não daqui.
  */
 
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, Loader2, RefreshCw, TrendingUp } from 'lucide-react';
+import { AlertCircle, Loader2, Plus, RefreshCw, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { fetchForecast, updateForecast, type ForecastPatch } from '../services/forecastService';
-import { type ForecastRow } from '../utils/forecastRow';
+import {
+  addLeadToForecast,
+  fetchForecast,
+  removeFromForecast,
+  updateForecast,
+  type ForecastPatch,
+  type LeadParaForecast,
+} from '../services/forecastService';
+import { somarForecast, type ForecastRow } from '../utils/forecastRow';
+import { moeda } from '../utils/format';
+import { AdicionarLeadDialog } from './AdicionarLeadDialog';
 import { ForecastTable } from './ForecastTable';
+
+/** Box de resumo do topo. Os mesmos números do rodapé, na altura dos olhos. */
+function BoxResumo({ titulo, valor }: { titulo: string; valor: string }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{titulo}</p>
+      <p className="mt-1 text-2xl font-semibold tabular-nums tracking-tight text-slate-900 dark:text-slate-100">
+        {valor}
+      </p>
+    </div>
+  );
+}
 
 export function ForecastSection() {
   const { tenantId } = useAuthContext();
@@ -76,6 +98,51 @@ export function ForecastSection() {
   const handleSave = (proposalId: string, patch: ForecastPatch) =>
     salvar.mutate({ proposalId, patch });
 
+  const [dialogAberto, setDialogAberto] = useState(false);
+
+  const tirar = useMutation({
+    mutationFn: removeFromForecast,
+    // Otimista: a linha sai na hora; volta se o banco recusar.
+    onMutate: async (proposalId: string) => {
+      await queryClient.cancelQueries({ queryKey });
+      const anterior = queryClient.getQueryData<ForecastRow[]>(queryKey);
+      queryClient.setQueryData<ForecastRow[]>(queryKey, (atual) =>
+        (atual ?? []).filter((row) => row.proposalId !== proposalId),
+      );
+      return { anterior };
+    },
+    onError: (err, _id, context) => {
+      if (context?.anterior) queryClient.setQueryData(queryKey, context.anterior);
+      toast({
+        title: 'Não foi possível tirar o lead',
+        description: err instanceof Error ? err.message : 'Erro desconhecido.',
+        variant: 'destructive',
+      });
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey }),
+  });
+
+  const colocar = useMutation({
+    mutationFn: (lead: LeadParaForecast) => addLeadToForecast(tenantId as string, lead),
+    onSuccess: (_data, lead) => {
+      setDialogAberto(false);
+      toast({ title: `${lead.name || 'Lead'} colocado no forecast.` });
+      queryClient.invalidateQueries({ queryKey });
+    },
+    onError: (err) => {
+      toast({
+        title: 'Não foi possível colocar o lead',
+        description: err instanceof Error ? err.message : 'Erro desconhecido.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const totais = somarForecast(rows);
+  const leadIdsNoForecast = new Set(
+    rows.map((row) => row.leadId).filter((id): id is string => !!id),
+  );
+
   return (
     <div className="flex h-full w-full flex-col gap-4 p-4 md:p-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
@@ -89,12 +156,25 @@ export function ForecastSection() {
           </p>
         </div>
 
-        {/* Os totais vivem no rodapé da planilha, sob as colunas que somam. */}
-        <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
-          <RefreshCw className={`mr-2 h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-          Atualizar
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+            Atualizar
+          </Button>
+          <Button size="sm" onClick={() => setDialogAberto(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Colocar lead
+          </Button>
+        </div>
       </header>
+
+      {!isLoading && !error && (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <BoxResumo titulo="Valor Geral de Venda" valor={moeda(totais.valor)} />
+          <BoxResumo titulo="Valor Geral de Comissionamento" valor={moeda(totais.comissao)} />
+          <BoxResumo titulo="Número de Prospects" valor={rows.length.toLocaleString('pt-BR')} />
+        </div>
+      )}
 
       {isLoading ? (
         <div className="flex flex-1 items-center justify-center gap-2 text-muted-foreground">
@@ -113,12 +193,20 @@ export function ForecastSection() {
         </div>
       ) : rows.length === 0 ? (
         <div className="flex flex-1 items-center justify-center p-12 text-center text-sm text-muted-foreground">
-          Nenhum negócio nas fases finais do funil ainda. Assim que um lead entrar em negociação,
-          ele aparece aqui.
+          Nenhum negócio nas fases finais do funil ainda. Quando um lead entrar em negociação ele
+          aparece aqui — ou use “Colocar lead” para adicionar um manualmente.
         </div>
       ) : (
-        <ForecastTable rows={rows} onSave={handleSave} />
+        <ForecastTable rows={rows} onSave={handleSave} onRemove={(id) => tirar.mutate(id)} />
       )}
+
+      <AdicionarLeadDialog
+        open={dialogAberto}
+        onOpenChange={setDialogAberto}
+        leadIdsNoForecast={leadIdsNoForecast}
+        onAdd={(lead) => colocar.mutate(lead)}
+        adicionando={colocar.isPending}
+      />
     </div>
   );
 }

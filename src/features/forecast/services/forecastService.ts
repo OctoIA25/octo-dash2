@@ -79,6 +79,8 @@ export async function fetchForecast(tenantId: string): Promise<ForecastRow[]> {
     .select(PROPOSAL_COLUMNS)
     .eq('tenant_id', tenantId)
     .neq('stage_id', 'arquivado')
+    // Tiradas da planilha pelo corretor/gestor (20260825_proposals_forecast_oculto).
+    .eq('forecast_oculto', false)
     .order('updated_at', { ascending: false })
     .limit(MAX_LINHAS);
 
@@ -126,4 +128,114 @@ export async function updateForecast(proposalId: string, patch: ForecastPatch): 
   // usuário — senão o campo volta ao valor antigo no próximo refetch e ninguém
   // entende por quê.
   if (error) throw erroSupabase('falha ao salvar campo do forecast', error);
+}
+
+// ---------------------------------------------------------------------------
+// Colocar / tirar leads da planilha (20260825_proposals_forecast_oculto).
+// ---------------------------------------------------------------------------
+
+/** Lead candidato a entrar no forecast — o que o seletor mostra e o INSERT usa. */
+export interface LeadParaForecast {
+  id: string;
+  name: string | null;
+  phone: string | null;
+  property_code: string | null;
+  property_value: number | string | null;
+  final_sale_value: number | string | null;
+  assigned_agent_name: string | null;
+}
+
+/**
+ * Busca leads ativos pelo nome, para o seletor de "colocar no forecast".
+ * `apenasDoCorretor` repete no front o recorte que o corretor já tem no CRM —
+ * o RLS de `leads` não recorta por usuário (limitação conhecida), então sem
+ * este filtro o seletor ofereceria leads de colegas.
+ */
+export async function searchLeadsParaForecast(
+  tenantId: string,
+  termo: string,
+  apenasDoCorretor: string | null,
+): Promise<LeadParaForecast[]> {
+  let query = supabase
+    .from('leads')
+    .select('id, name, phone, property_code, property_value, final_sale_value, assigned_agent_name')
+    .eq('tenant_id', tenantId)
+    .is('archived_at', null)
+    .ilike('name', `%${termo.trim()}%`)
+    .order('updated_at', { ascending: false })
+    .limit(20);
+
+  if (apenasDoCorretor) query = query.eq('assigned_agent_id', apenasDoCorretor);
+
+  const { data, error } = await query;
+  if (error) throw erroSupabase('falha ao buscar leads para o forecast', error);
+  return (data || []) as LeadParaForecast[];
+}
+
+/**
+ * Coloca um lead no forecast.
+ *
+ * Se o lead já tem proposta-espelho, basta desocultá-la (e, se ela estava
+ * 'arquivado' de um arquivamento antigo, volta para 'negociacao' — senão o
+ * clique "funciona" e a linha não aparece). Se não tem, cria a proposta com o
+ * mesmo shape que `tg_mirror_lead_to_proposal` criaria quando o lead virasse
+ * negócio: o trigger encontra a linha depois (source='crm') e passa a governar
+ * a etapa normalmente.
+ */
+export async function addLeadToForecast(tenantId: string, lead: LeadParaForecast): Promise<void> {
+  const { data: existente, error: erroBusca } = await supabase
+    .from('proposals')
+    .select('id, stage_id, forecast_oculto')
+    .eq('tenant_id', tenantId)
+    .eq('lead_id', lead.id)
+    .maybeSingle();
+
+  if (erroBusca) throw erroSupabase('falha ao verificar proposta do lead', erroBusca);
+
+  if (existente) {
+    const patch: Record<string, unknown> = { forecast_oculto: false };
+    if (existente.stage_id === 'arquivado') patch.stage_id = 'negociacao';
+
+    const { data, error } = await supabase
+      .from('proposals')
+      .update(patch)
+      .eq('id', existente.id)
+      .select('id');
+
+    if (error) throw erroSupabase('falha ao recolocar lead no forecast', error);
+    // RLS pode negar o UPDATE sem erro (0 linhas). Sem este throw o usuário
+    // clica, nada acontece e ninguém sabe por quê.
+    if (!data?.length) throw new Error('Sem permissão para colocar este lead no forecast.');
+    return;
+  }
+
+  const valor = Number(lead.final_sale_value) || Number(lead.property_value) || 0;
+  const { error } = await supabase.from('proposals').insert({
+    tenant_id: tenantId,
+    lead_id: lead.id,
+    source: 'crm',
+    property_reference: lead.property_code || '',
+    agent_name: lead.assigned_agent_name || '',
+    status: 'Negociação',
+    stage_id: 'negociacao',
+    value: valor,
+  });
+
+  if (error) {
+    // Corrida: alguém criou a proposta no mesmo instante — o lead já está lá.
+    if ((error as { code?: string }).code === '23505') return;
+    throw erroSupabase('falha ao colocar lead no forecast', error);
+  }
+}
+
+/** Tira a linha da planilha. Reversível — não arquiva o lead nem apaga a proposta. */
+export async function removeFromForecast(proposalId: string): Promise<void> {
+  const { data, error } = await supabase
+    .from('proposals')
+    .update({ forecast_oculto: true })
+    .eq('id', proposalId)
+    .select('id');
+
+  if (error) throw erroSupabase('falha ao tirar lead do forecast', error);
+  if (!data?.length) throw new Error('Sem permissão para tirar este lead do forecast.');
 }
