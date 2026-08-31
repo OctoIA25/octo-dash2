@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { Search, ChevronDown, Users, UserPlus, Shield, User, Loader2, Trash2, Mail, Lock, Unlock, Camera, AlertTriangle, CheckCircle, Settings, Info, Ban, X, IdCard, Building2 } from 'lucide-react';
+import { Search, ChevronDown, Users, UserPlus, Shield, User, Loader2, Trash2, Mail, Lock, Unlock, Camera, AlertTriangle, CheckCircle, Settings, Info, Ban, X, IdCard, Building2, Phone } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import {
@@ -25,6 +25,7 @@ import { fetchTenantMembers, createTenantMember, updateMemberRole, removeTenantM
 import { fetchTeams, toggleTeamLeader, type Team } from '../services/teamsManagementService';
 import { useLateralDrawer } from '@/hooks/useLateralDrawer';
 import { SidebarPermission, ATUACAO_TIPOS, ATUACAO_LABELS, atuacoesDe, comPermissoesNaoEditaveis, type AtuacaoTipo } from '@/types/permissions';
+import { NIVEIS, nivelValido, type Nivel } from '@/features/comissionamento/commissionRules';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -44,6 +45,9 @@ import {
   type BrokerLeadCounts,
   type BrokerStatus,
 } from '../services/tenantLeadLimitService';
+
+/** Sentinela do Select de nível — Radix não aceita item com value vazio. */
+const NIVEL_NAO_DEFINIDO = '__nao_definido__';
 
 interface EquipeSectionProps {
   leads: ProcessedLead[];
@@ -149,6 +153,8 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
   const [editSpecialPermissions, setEditSpecialPermissions] = useState<Record<string, boolean>>({ can_manage_roleta: false });
   const [editMemberPhoto, setEditMemberPhoto] = useState<string>('');
   const [editMemberCreci, setEditMemberCreci] = useState<string>('');
+  const [editNivelComissao, setEditNivelComissao] = useState<Nivel | ''>('');
+  const [editMemberWhatsapp, setEditMemberWhatsapp] = useState<string>('');
   const [editAtuacao, setEditAtuacao] = useState<AtuacaoTipo[]>([...ATUACAO_TIPOS]);
   const editMemberPhotoInputRef = useRef<HTMLInputElement>(null);
   const [isSavingPermissions, setIsSavingPermissions] = useState(false);
@@ -478,6 +484,9 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
     const currentPhoto = (currentPerms as any).photo as string | undefined;
     setEditMemberPhoto(currentPhoto || '');
     setEditMemberCreci(member.creci || '');
+    setEditNivelComissao(nivelValido((currentPerms as any).nivel_comissao) ?? '');
+    const whatsappPhones = (currentPerms as any).whatsapp_phones;
+    setEditMemberWhatsapp(Array.isArray(whatsappPhones) ? whatsappPhones.join(', ') : '');
     setEditAtuacao(atuacoesDe(member.permissions));
     
     // Definir permissões de abas baseado nas sidebar_permissions salvas ou padrão por role
@@ -545,7 +554,21 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
   // Salvar permissões editadas
   const handleSavePermissions = async () => {
     if (!editingMember) return;
-    
+
+    // Guardados como digitados; a normalização acontece na leitura (useCorretorPhones).
+    // Obrigatório, e cada número precisa de DDD+celular (10+ dígitos) — abaixo
+    // disso o filtro do chat descartaria o número em silêncio.
+    const whatsappPhones = editMemberWhatsapp.split(/[,;\n]/).map((p) => p.trim()).filter(Boolean);
+    if (whatsappPhones.length === 0) {
+      toast.error('Informe pelo menos um número de WhatsApp.');
+      return;
+    }
+    const numeroInvalido = whatsappPhones.find((p) => p.replace(/\D/g, '').length < 10);
+    if (numeroInvalido) {
+      toast.error(`Número de WhatsApp incompleto: "${numeroInvalido}". Use DDD + número.`);
+      return;
+    }
+
     setIsSavingPermissions(true);
     try {
       // Converter permissões em array de sidebar_permissions. As abas sem checkbox
@@ -559,9 +582,11 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
       const newPermissions = {
         ...editingMember.permissions,
         photo: editMemberPhoto || null,
+        whatsapp_phones: whatsappPhones,
         sidebar_permissions: sidebarPerms,
         sub_permissions: editSubPermissions,
         can_manage_roleta: editSpecialPermissions.can_manage_roleta,
+        nivel_comissao: editNivelComissao || null,
         team: editingMember.team || null,
         lead_limit: Object.keys(editBrokerOverride).length > 0 ? editBrokerOverride : undefined,
         atuacao: editAtuacao,
@@ -1983,6 +2008,48 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                 disabled={isSavingPermissions}
                 className="h-10"
               />
+            </div>
+            {/* Nível de comissionamento */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <IdCard className="h-4 w-4 text-gray-500 dark:text-slate-400" />
+                Nível de comissionamento
+              </Label>
+              <Select
+                value={editNivelComissao || NIVEL_NAO_DEFINIDO}
+                onValueChange={(v) => setEditNivelComissao(v === NIVEL_NAO_DEFINIDO ? '' : (v as Nivel))}
+                disabled={isSavingPermissions}
+              >
+                <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
+                <SelectContent className="z-[100000]">
+                  <SelectItem value={NIVEL_NAO_DEFINIDO}>Não definido</SelectItem>
+                  {(Object.keys(NIVEIS) as Nivel[]).map((id) => (
+                    <SelectItem key={id} value={id}>{`${NIVEIS[id].label} — ${NIVEIS[id].percentual}%`}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-500 dark:text-slate-400">
+                Preenche automaticamente o nível ao selecionar este membro na calculadora de Comissionamento.
+              </p>
+            </div>
+            {/* Números de WhatsApp (obrigatório) */}
+            <div className="space-y-2">
+              <Label htmlFor="edit-whatsapp" className="flex items-center gap-2">
+                <Phone className="h-4 w-4 text-gray-500 dark:text-slate-400" />
+                Números de WhatsApp <span className="text-red-500">*</span>
+              </Label>
+              <Input
+                id="edit-whatsapp"
+                type="text"
+                placeholder="Ex: (11) 99999-8888, (11) 97777-6666"
+                value={editMemberWhatsapp}
+                onChange={(e) => setEditMemberWhatsapp(e.target.value)}
+                disabled={isSavingPermissions}
+                className="h-10"
+              />
+              <p className="text-xs text-gray-500 dark:text-slate-400">
+                Separe mais de um número por vírgula. Apenas os números definidos aqui contam no filtro "Corretores" do WhatsApp.
+              </p>
             </div>
             {/* Atuação */}
             <div className="space-y-2">

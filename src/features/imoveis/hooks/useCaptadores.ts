@@ -11,10 +11,13 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabaseClient';
 import { fetchTenantMembers } from '@/features/corretores/services/tenantMembersService';
+import { nivelValido, type Nivel } from '@/features/comissionamento/commissionRules';
 
 export interface Captador {
   user_id: string;
   nome: string;
+  /** Nível de comissionamento (permissions.nivel_comissao, Gestão de Equipe). */
+  nivel?: Nivel;
 }
 
 /** Vira o mapa user_id → nome que resolverCaptador consome. */
@@ -47,7 +50,10 @@ export async function fetchCaptadores(tenantId: string): Promise<Captador[]> {
   }
 
   return membros
-    .map((m) => ({ user_id: m.user_id, nome: nomePorUserId[m.user_id] || m.email }))
+    .map((m) => {
+      const nivel = nivelValido(m.permissions?.nivel_comissao);
+      return { user_id: m.user_id, nome: nomePorUserId[m.user_id] || m.email, ...(nivel ? { nivel } : {}) };
+    })
     .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
 }
 
