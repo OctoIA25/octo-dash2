@@ -1,5 +1,5 @@
 /**
- * Comissionamento — calculadora das Regras de Comissão Lotus v1.4.
+ * Comissionamento — calculadora das Regras de Comissão Lotus v1.5.
  * Rota: /metricas/comissionamento (área Comercial).
  *
  * A tela é só entrada e leitura: toda a regra vive em `commissionRules.ts`.
@@ -24,6 +24,7 @@ import {
   totaisPorParte,
   type Corretor,
   type Entrada,
+  type IndicacaoTipo,
   type Nivel,
   type Operacao,
   type Papel,
@@ -44,6 +45,7 @@ const PAPEL_LABEL: Record<Papel, string> = {
   lider: 'Líder Direto',
   lotus: 'Casa',
   parceiro: 'Parceiro externo',
+  indicador: 'Indicador',
 };
 
 /** Rascunho de um corretor no formulário. Nome vazio = ponta sem corretor. */
@@ -64,6 +66,9 @@ interface OperacaoDraft {
   parceiroTipo: 'imobiliaria' | 'corretor_autonomo';
   contratoFormal: boolean;
   pontaDaLotus: 'captacao' | 'intermediacao';
+  temIndicacao: boolean;
+  indicadorNome: string;
+  indicacaoTipo: IndicacaoTipo;
 }
 
 const corretorVazio = (): CorretorDraft => ({ nome: '', nivel: 'junior', liderNome: '', liderNivel: 'coordenador' });
@@ -78,6 +83,9 @@ const operacaoVazia = (): OperacaoDraft => ({
   parceiroTipo: 'imobiliaria',
   contratoFormal: true,
   pontaDaLotus: 'captacao',
+  temIndicacao: false,
+  indicadorNome: '',
+  indicacaoTipo: 'cliente_comprador',
 });
 
 const toCorretor = (draft: CorretorDraft): Corretor | null => {
@@ -100,6 +108,14 @@ const toOperacao = (draft: OperacaoDraft): Operacao => ({
     ? { tipo: draft.parceiroTipo, nome: draft.parceiroNome.trim() || undefined, contratoFormal: draft.contratoFormal }
     : null,
   pontaDaLotus: draft.pontaDaLotus,
+  indicacao:
+    draft.temIndicacao && draft.indicadorNome.trim()
+      ? {
+          indicador: draft.indicadorNome.trim(),
+          // Lançamento só tem Intermediação — indicação ali é sempre de comprador.
+          tipo: draft.tipo === 'lancamento' ? 'cliente_comprador' : draft.indicacaoTipo,
+        }
+      : null,
 });
 
 const CARD = 'rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4';
@@ -111,6 +127,10 @@ const SEM_PESSOA = '__sem__';
  * imóveis: RPC get_tenant_members + nome de tenant_brokers). React Query
  * deduplica — as 4 instâncias do formulário compartilham uma busca só.
  *
+ * Ao escolher alguém, o nível configurado em Gestão de Equipe (permissions.
+ * nivel_comissao) vem junto e pré-preenche o select de nível — que segue
+ * editável, porque o §3.7 usa o nível vigente na DATA DO FECHAMENTO.
+ *
  * ponytail: cai para texto livre quando a lista vem vazia (sem tenant, RPC
  * fora do ar) — dropdown sem opção travaria a calculadora.
  */
@@ -120,7 +140,7 @@ function PessoaSelect({
   vazioLabel,
 }: {
   value: string;
-  onChange: (nome: string) => void;
+  onChange: (nome: string, nivel?: Nivel) => void;
   vazioLabel: string;
 }) {
   const { user } = useAuth();
@@ -137,8 +157,10 @@ function PessoaSelect({
     return <Input value={value} onChange={(e) => onChange(e.target.value)} placeholder={vazioLabel} />;
   }
 
+  const selecionar = (nome: string) => onChange(nome, membros.find((m) => m.nome === nome)?.nivel);
+
   return (
-    <Select value={value || SEM_PESSOA} onValueChange={(v) => onChange(v === SEM_PESSOA ? '' : v)}>
+    <Select value={value || SEM_PESSOA} onValueChange={(v) => selecionar(v === SEM_PESSOA ? '' : v)}>
       <SelectTrigger><SelectValue /></SelectTrigger>
       <SelectContent>
         <SelectItem value={SEM_PESSOA}>{vazioLabel}</SelectItem>
@@ -167,7 +189,7 @@ function CorretorFields({
           <Label className="text-[11.5px] text-slate-500">Corretor</Label>
           <PessoaSelect
             value={value.nome}
-            onChange={(nome) => onChange({ nome })}
+            onChange={(nome, nivel) => onChange({ nome, ...(nivel ? { nivel } : {}) })}
             vazioLabel="Ponta da casa (sem corretor)"
           />
         </div>
@@ -186,7 +208,7 @@ function CorretorFields({
           <Label className="text-[11.5px] text-slate-500">Líder Direto</Label>
           <PessoaSelect
             value={value.liderNome}
-            onChange={(liderNome) => onChange({ liderNome })}
+            onChange={(liderNome, nivel) => onChange({ liderNome, ...(nivel ? { liderNivel: nivel } : {}) })}
             vazioLabel="Sem líder (o próprio é o líder)"
           />
         </div>
@@ -276,6 +298,41 @@ function OperacaoForm({
 
       <div className="border-t border-slate-100 dark:border-slate-800 pt-3 space-y-3">
         <label className="flex items-center gap-2 cursor-pointer">
+          <Switch checked={value.temIndicacao} onCheckedChange={(v) => onChange({ temIndicacao: v })} />
+          <span className="text-[12.5px] font-semibold text-slate-700 dark:text-slate-200">Houve indicação entre corretores</span>
+        </label>
+
+        {value.temIndicacao && (
+          <div className="space-y-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <Label className="text-[11.5px] text-slate-500">Indicador</Label>
+                <PessoaSelect
+                  value={value.indicadorNome}
+                  onChange={(indicadorNome) => onChange({ indicadorNome })}
+                  vazioLabel="Quem indicou o cliente"
+                />
+              </div>
+              {value.tipo === 'revenda' && (
+                <div>
+                  <Label className="text-[11.5px] text-slate-500">O que foi indicado</Label>
+                  <Select value={value.indicacaoTipo} onValueChange={(v) => onChange({ indicacaoTipo: v as IndicacaoTipo })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="cliente_comprador">Cliente comprador — ponta de Intermediação</SelectItem>
+                      <SelectItem value="cliente_vendedor">Cliente vendedor — ponta de Captação</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+            <p className="text-[11.5px] text-slate-500 dark:text-slate-400">
+              O indicador recebe 10% da ponta indicada, descontados do corretor que atendeu. Líder Direto e casa não são afetados.
+            </p>
+          </div>
+        )}
+
+        <label className="flex items-center gap-2 cursor-pointer">
           <Switch checked={value.temParceria} onCheckedChange={(v) => onChange({ temParceria: v })} />
           <span className="text-[12.5px] font-semibold text-slate-700 dark:text-slate-200">Parceria com outra imobiliária / corretor</span>
         </label>
@@ -347,7 +404,7 @@ export function ComissionamentoPage() {
               Comissionamento
             </h1>
             <p className="text-[12.5px] text-slate-500 dark:text-slate-400 mt-0.5">
-              Divisão da comissão por ponta, nível de carreira e Líder Direto — Regras de Comissão v1.4.
+              Divisão da comissão por ponta, nível de carreira e Líder Direto — Regras de Comissão v1.5.
             </p>
           </div>
         </div>
@@ -404,7 +461,9 @@ export function ComissionamentoPage() {
 
                 <div className="space-y-1.5">
                   {consolidado.map((linha) => (
-                    <div key={linha.parte} className="flex items-baseline justify-between gap-3">
+                    // parte+papel: com indicação, a mesma pessoa pode ter linha de
+                    // corretor E de indicador (naturezas de pagamento distintas, §3.8).
+                    <div key={`${linha.parte}-${linha.papel}`} className="flex items-baseline justify-between gap-3">
                       <span className="text-[12.5px] text-slate-700 dark:text-slate-200 truncate">
                         {linha.parte}
                         <span className="text-[11px] text-slate-400 ml-1.5">

@@ -172,3 +172,124 @@ describe('calcularComissao — bloqueios e escalação', () => {
     expect(recebe(r, 'Lotus')).toBe(7000);
   });
 });
+
+describe('§3.8 — Cenário H, indicação entre corretores (v1.5)', () => {
+  const gabriele = { nome: 'Gabriele', nivel: 'coordenador' as const };
+
+  it('exemplo da spec: 10 p.p. saem só do corretor; líder e Lotus intactos', () => {
+    // Revenda R$ 100.000 → ponta de Intermediação = R$ 50.000.
+    // Humberto captou E indicou o comprador (caso canônico: captador pode
+    // indicar comprador atendido por outro corretor).
+    const r = calcularComissao({
+      tipo: 'revenda',
+      comissaoTotal: 100000,
+      captacao: { nome: 'Humberto', nivel: 'pleno', liderDireto: gabriele },
+      intermediacao: { nome: 'Lara', nivel: 'pleno', liderDireto: gabriele },
+      indicacao: { indicador: 'Humberto', tipo: 'cliente_comprador' },
+    });
+    expect(r.bloqueio).toBeNull();
+    expect(r.cenario).toContain('H');
+    expect(recebe(r, 'Lara')).toBe(17500); // (45% − 10%) × 50.000
+    expect(recebe(r, 'Gabriele')).toBe(15000); // 7.500 por ponta, igual sem indicação
+    expect(recebe(r, 'Lotus')).toBe(40000); // igual sem indicação
+
+    // A linha de indicador é separada da de corretor, mesmo sendo a mesma pessoa.
+    const humberto = totaisPorParte(r).filter((t) => t.parte === 'Humberto');
+    expect(humberto.find((t) => t.papel === 'corretor')?.valor).toBe(22500); // captação, 45% × 50.000
+    expect(humberto.find((t) => t.papel === 'indicador')?.valor).toBe(5000); // 10% × 50.000
+  });
+
+  it('líder complementa sobre o % NOMINAL do corretor (não o descontado)', () => {
+    const sem = calcularComissao({
+      tipo: 'lancamento',
+      comissaoTotal: 50000,
+      intermediacao: { nome: 'Lara', nivel: 'pleno', liderDireto: gabriele },
+    });
+    const com = calcularComissao({
+      tipo: 'lancamento',
+      comissaoTotal: 50000,
+      intermediacao: { nome: 'Lara', nivel: 'pleno', liderDireto: gabriele },
+      indicacao: { indicador: 'Humberto', tipo: 'cliente_comprador' },
+    });
+    expect(com.bloqueio).toBeNull();
+    expect(recebe(com, 'Gabriele')).toBe(recebe(sem, 'Gabriele'));
+    expect(recebe(com, 'Lotus')).toBe(recebe(sem, 'Lotus'));
+    expect(recebe(com, 'Lara')).toBe(recebe(sem, 'Lara') - 5000);
+    expect(recebe(com, 'Humberto')).toBe(5000);
+  });
+
+  it('cliente_vendedor desconta a ponta de Captação', () => {
+    const r = calcularComissao({
+      tipo: 'revenda',
+      comissaoTotal: 10000,
+      captacao: { nome: 'Erick', nivel: 'pleno', liderDireto: andre },
+      intermediacao: andre,
+      indicacao: { indicador: 'Zeca', tipo: 'cliente_vendedor' },
+    });
+    expect(r.bloqueio).toBeNull();
+    expect(recebe(r, 'Erick')).toBe(1750); // (45% − 10%) × 5.000
+    expect(recebe(r, 'Zeca')).toBe(500);
+  });
+
+  it('autoindicação bloqueia (L003): indicador atende a ponta indicada', () => {
+    const r = calcularComissao({
+      tipo: 'revenda',
+      comissaoTotal: 10000,
+      captacao: andre,
+      intermediacao: { nome: 'Lara', nivel: 'pleno', liderDireto: gabriele },
+      indicacao: { indicador: 'Lara', tipo: 'cliente_comprador' },
+    });
+    expect(r.bloqueio?.codigo).toBe('L003');
+    expect(r.linhas).toHaveLength(0);
+  });
+
+  it('captador como indicador de comprador NÃO é autoindicação', () => {
+    const r = calcularComissao({
+      tipo: 'revenda',
+      comissaoTotal: 10000,
+      captacao: andre,
+      intermediacao: { nome: 'Lara', nivel: 'pleno', liderDireto: gabriele },
+      indicacao: { indicador: 'Andre', tipo: 'cliente_comprador' },
+    });
+    expect(r.bloqueio).toBeNull();
+  });
+
+  it('cliente_vendedor em lançamento bloqueia (não há ponta de Captação)', () => {
+    const r = calcularComissao({
+      tipo: 'lancamento',
+      comissaoTotal: 10000,
+      intermediacao: andre,
+      indicacao: { indicador: 'Zeca', tipo: 'cliente_vendedor' },
+    });
+    expect(r.bloqueio?.codigo).toBe('L003');
+  });
+
+  it('parceria: os 10 p.p. saem da parte Lotus da ponta, nunca do parceiro nem do corretor da casa', () => {
+    // Exemplo 3.a + indicação: Imob X e Andre recebem o mesmo de sempre.
+    const r = calcularComissao({
+      tipo: 'lancamento',
+      comissaoTotal: 100000,
+      intermediacao: andre,
+      parceiro: { tipo: 'imobiliaria', nome: 'Imob X', contratoFormal: true },
+      indicacao: { indicador: 'Zeca', tipo: 'cliente_comprador' },
+    });
+    expect(r.bloqueio).toBeNull();
+    expect(recebe(r, 'Imob X')).toBe(50000);
+    expect(recebe(r, 'Andre')).toBe(30000);
+    expect(recebe(r, 'Zeca')).toBe(5000); // 10% × 50.000 (ponta Lotus)
+    expect(recebe(r, 'Lotus')).toBe(15000); // 20.000 − 5.000
+  });
+
+  it('fechamento continua em 100% com indicação', () => {
+    const r = calcularComissao({
+      tipo: 'revenda',
+      comissaoTotal: 33333.33,
+      captacao: { nome: 'Humberto', nivel: 'junior', liderDireto: gabriele },
+      intermediacao: { nome: 'Lara', nivel: 'estagiario', liderDireto: gabriele },
+      indicacao: { indicador: 'Humberto', tipo: 'cliente_comprador' },
+    });
+    expect(r.bloqueio).toBeNull();
+    const soma = r.linhas.reduce((acc, l) => acc + l.valor, 0);
+    expect(soma).toBeCloseTo(33333.33, 2);
+  });
+});

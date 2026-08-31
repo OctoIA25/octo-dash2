@@ -1,11 +1,17 @@
 /**
- * Regras de Comissão Lotus v1.4 — motor de cálculo.
+ * Regras de Comissão Lotus v1.5 — motor de cálculo.
  *
  * A comissão total é dividida em "pontas" (captação e intermediação). Cada
  * ponta é um bolso independente: o corretor leva o % do seu nível, o Líder
  * Direto leva o complemento até o % do nível dele (teto), e o que sobra fica
  * com a Lotus. A soma de tudo fecha 100% da comissão total — se não fechar,
  * o cálculo é bloqueado e escalado (L007).
+ *
+ * Indicação (§3.8, Cenário H): quem indicou recebe 10 p.p. da ponta indicada,
+ * descontados EXCLUSIVAMENTE do corretor que atendeu — Líder Direto e Lotus
+ * recebem o mesmo com ou sem indicação. Aplicada como ÚLTIMO passo sobre o
+ * split padrão: o complemento do líder usa o % NOMINAL do corretor (aplicar
+ * antes faria o líder ganhar mais e o fechamento de 100% não acusaria nada).
  *
  * Casos atípicos não são decididos aqui: o motor devolve `bloqueio` com o
  * código de escalação (L003 atípico / L007 anomalia) e nenhuma linha de
@@ -51,6 +57,18 @@ export interface Parceiro {
   contratoFormal: boolean;
 }
 
+/** §3.8: `cliente_vendedor` indica a ponta de Captação; `cliente_comprador`, a de Intermediação. */
+export type IndicacaoTipo = 'cliente_vendedor' | 'cliente_comprador';
+
+export interface Indicacao {
+  /** Nome do corretor que indicou. Pode ser de qualquer squad (a indicação atravessa squads). */
+  indicador: string;
+  tipo: IndicacaoTipo;
+}
+
+/** Transferência da indicação: 10 pontos percentuais da ponta indicada (§3.8). */
+export const INDICACAO_PP = 10;
+
 export interface Operacao {
   tipo: 'revenda' | 'lancamento';
   comissaoTotal: number;
@@ -60,6 +78,8 @@ export interface Operacao {
   parceiro?: Parceiro | null;
   /** Revenda + parceria (3.5.a): qual das duas pontas ficou com a Lotus. */
   pontaDaLotus?: 'captacao' | 'intermediacao';
+  /** Indicação entre corretores (§3.8) — no máximo uma por operação, sem cadeia. */
+  indicacao?: Indicacao | null;
 }
 
 export interface Permuta {
@@ -72,7 +92,7 @@ export interface Permuta {
 
 export type Entrada = Operacao | Permuta;
 
-export type Papel = 'corretor' | 'lider' | 'lotus' | 'parceiro';
+export type Papel = 'corretor' | 'lider' | 'lotus' | 'parceiro' | 'indicador';
 
 export interface LinhaComissao {
   parte: string;
@@ -221,8 +241,79 @@ function definirPontas(
   };
 }
 
+/**
+ * Transferência da indicação (§3.8), aplicada sobre as linhas já distribuídas
+ * da ponta indicada — assim o complemento do líder fica calculado sobre o %
+ * NOMINAL do corretor, como a spec exige.
+ *
+ * Quem paga os 10 p.p.:
+ *   • operação sem parceria → exclusivamente o corretor que atendeu a ponta;
+ *   • operação com parceria → a parte LOTUS da ponta (nunca o parceiro, e a
+ *     spec diz "parte Lotus" — o corretor da casa não é descontado).
+ * Ponta indicada sem corretor e sem parceria não tem regra na spec → escala
+ * broker (L003), no padrão do motor para caso atípico.
+ */
+function aplicarIndicacao(
+  linhasPonta: LinhaComissao[],
+  indicacao: Indicacao,
+  corretor: Corretor | null,
+  temParceiro: boolean,
+  valorPonta: number,
+  ponta: string,
+): { bloqueio: Bloqueio } | { bloqueio?: undefined } {
+  const mesmaPessoa = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+  // Autoindicação: o indicador é quem atende a ponta indicada (§3.8 v1.5).
+  // Vale mesmo em parceria, onde o desconto sai da Lotus — a indicação em si é inválida.
+  if (corretor && mesmaPessoa(indicacao.indicador, corretor.nome)) {
+    return {
+      bloqueio: bloqueio(
+        'L003',
+        `Autoindicação: ${corretor.nome} atende a ponta indicada e não pode ser o próprio indicador. ` +
+          '(O captador PODE indicar comprador atendido por outro corretor — aí o indicador é outro campo.)',
+      ),
+    };
+  }
+
+  const pagador = temParceiro
+    ? linhasPonta.find((l) => l.papel === 'lotus')
+    : linhasPonta.find((l) => l.papel === 'corretor');
+
+  if (!pagador) {
+    return {
+      bloqueio: bloqueio(
+        'L003',
+        `Indicação de ${indicacao.indicador} sobre a ponta "${ponta}" sem corretor que a atenda — ` +
+          'a spec só define o desconto sobre o corretor (ou sobre a parte Lotus, em parceria). Validar com o broker.',
+      ),
+    };
+  }
+
+  if (pagador.percentual < INDICACAO_PP) {
+    return {
+      bloqueio: bloqueio(
+        'L007',
+        `${pagador.parte} tem ${pagador.percentual}% na ponta "${ponta}" — menos que os ${INDICACAO_PP} p.p. da indicação.`,
+      ),
+    };
+  }
+
+  const valorIndicacao = (valorPonta * INDICACAO_PP) / 100;
+  pagador.percentual -= INDICACAO_PP;
+  pagador.valor -= valorIndicacao;
+  linhasPonta.push({
+    parte: indicacao.indicador,
+    papel: 'indicador',
+    ponta,
+    percentual: INDICACAO_PP,
+    valor: valorIndicacao,
+  });
+  return {};
+}
+
 /** Cenário aplicado, para registro no audit log (§7). */
 function identificarCenario(op: Operacao): string {
+  if (op.indicacao) return 'H — indicação entre corretores';
   if (op.parceiro) return 'E — parceria externa';
   const cap = op.captacao;
   const int = op.intermediacao;
@@ -239,6 +330,13 @@ function calcularOperacao(op: Operacao, prefixo = ''): ResultadoComissao {
   const divisao = definirPontas(op);
   if (divisao.bloqueio) return { total, cenario, linhas: [], bloqueio: divisao.bloqueio };
 
+  const indicacao = op.indicacao ?? null;
+  // cliente_vendedor → Captação; cliente_comprador → Intermediação. O prefixo
+  // casa também com as pontas de parceria ("Intermediação — Lotus" etc.);
+  // a ponta do parceiro nunca paga (§3.8).
+  const pontaIndicada = indicacao ? (indicacao.tipo === 'cliente_vendedor' ? 'Captação' : 'Intermediação') : null;
+  let indicacaoAplicada = false;
+
   const linhas: LinhaComissao[] = [];
   for (const ponta of divisao.pontas) {
     const valorPonta = (total * ponta.percentual) / 100;
@@ -253,7 +351,26 @@ function calcularOperacao(op: Operacao, prefixo = ''): ResultadoComissao {
     if (distribuida.bloqueio) {
       return { total, cenario: op.parceiro ? cenario : 'C — corretor sem Líder Direto', linhas: [], bloqueio: distribuida.bloqueio };
     }
+
+    if (pontaIndicada && ponta.nome.startsWith(pontaIndicada)) {
+      const ajuste = aplicarIndicacao(distribuida.linhas, indicacao!, ponta.corretor ?? null, !!op.parceiro, valorPonta, nome);
+      if (ajuste.bloqueio) return { total, cenario, linhas: [], bloqueio: ajuste.bloqueio };
+      indicacaoAplicada = true;
+    }
     linhas.push(...distribuida.linhas);
+  }
+
+  if (indicacao && !indicacaoAplicada) {
+    return {
+      total,
+      cenario,
+      linhas: [],
+      bloqueio: bloqueio(
+        'L003',
+        `Indicação de ${indicacao.indicador} sobre a ponta de ${pontaIndicada}, mas a operação não tem essa ponta ` +
+          '(lançamento não tem Captação) ou ela ficou inteira com o parceiro externo. Validar com o broker.',
+      ),
+    };
   }
 
   return { total, cenario, linhas, bloqueio: null };
@@ -310,13 +427,16 @@ export function totaisPorParte(
   for (const linha of resultado.linhas) {
     // Uma pessoa pode aparecer como corretor numa ponta e como líder na outra:
     // agrupa pelo nome e mantém o papel mais "alto" que ela exerceu.
-    const atual = acumulado.get(linha.parte);
+    // EXCEÇÃO (§3.8): a linha de indicador fica separada mesmo que a pessoa já
+    // apareça como corretor em outra ponta — a folha distingue as naturezas.
+    const chave = linha.papel === 'indicador' ? `${linha.parte} indicador` : linha.parte;
+    const atual = acumulado.get(chave);
     if (atual) {
       atual.valor += linha.valor;
       if (atual.papel === 'lider' && linha.papel === 'corretor') atual.papel = 'corretor';
       atual.nivel ??= linha.nivel;
     } else {
-      acumulado.set(linha.parte, { parte: linha.parte, papel: linha.papel, nivel: linha.nivel, valor: linha.valor });
+      acumulado.set(chave, { parte: linha.parte, papel: linha.papel, nivel: linha.nivel, valor: linha.valor });
     }
   }
   return [...acumulado.values()].sort((a, b) => b.valor - a.valor);
