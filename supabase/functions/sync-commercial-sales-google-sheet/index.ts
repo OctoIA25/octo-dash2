@@ -1,7 +1,9 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 
-const DEFAULT_SPREADSHEET_ID = "1kxCtpZ04tDig_x7m_4QOIqDNWv-AIbLA";
+// Planilha OPERACIONAL da equipe (a cópia antiga 1kxCtpZ04tDig_x7m_4QOIqDNWv-AIbLA
+// parou de ser atualizada e ficou para trás em ago/2026).
+const DEFAULT_SPREADSHEET_ID = "1y_M-keBtpSnAp1syrfj_FzwUj5Q-hUEL";
 const DEFAULT_SHEET_GID = "292051209";
 
 const corsHeaders = {
@@ -252,9 +254,14 @@ function buildColumnMap(headers: string[]) {
     repasse50: findColumn(headers, ["50%"], 16),
     teamLeader: findColumn(headers, ["Team Leader"], 17),
     indicacao: findColumn(headers, ["Indicação", "Indicacao"], 18),
-    valorImovel: findColumn(headers, ["Valor do imóvel", "Valor do imovel"], 20),
-    comissaoTotalVenda: findColumn(headers, ["Comiss. total da venda", "Comiss total da venda"], 21),
-    valorContaJapi: findColumn(headers, ["FICA Conta Japi"], 22),
+    // A planilha operacional (1y_M...) não tem "Valor do imóvel" nem
+    // "Comiss. total da venda" (eram colunas derivadas da cópia antiga).
+    // Segundo candidato cobre a operacional; fallback -1 (célula inexistente →
+    // 0/null) em vez de índice fixo, que naquele layout cai em coluna de DATA
+    // e vira lixo numérico (ex.: "22/01/2026" → 22012026).
+    valorImovel: findColumn(headers, ["Valor do imóvel", "Valor do imovel", "Total Unidade"], -1),
+    comissaoTotalVenda: findColumn(headers, ["Comiss. total da venda", "Comiss total da venda", "Comissão Total"], -1),
+    valorContaJapi: findColumn(headers, ["FICA Conta Japi"], -1),
     dataAssinatura: findColumn(headers, ["Data de Assinatura"], 23),
     dataRecebimento: findColumn(headers, ["Data de recebimento"], 24),
   };
