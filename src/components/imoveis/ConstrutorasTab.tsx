@@ -5,6 +5,9 @@
  */
 
 import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabaseClient';
+import { useAuth } from '@/hooks/useAuth';
 import { ExternalLink, FileText, Image as ImageIcon, RefreshCw, Search, Youtube } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -94,13 +97,56 @@ export function ConstrutorasTab() {
   const [tipoFilter, setTipoFilter] = useState('todos');
   const [selecionado, setSelecionado] = useState<EmpreendimentoCatalogo | null>(null);
 
-  const construtoras = useMemo(
-    () =>
-      [...new Set(catalogo.map((e) => e.construtora).filter(Boolean))].sort((a, b) =>
-        a.localeCompare(b, 'pt-BR'),
-      ),
-    [catalogo],
-  );
+  const { user } = useAuth();
+  const tenantId = user?.tenantId;
+
+  // Lançamentos do tenant (aba Lançamentos), para linkar o item do catálogo
+  // à página /imoveis/lancamentos/:id pelo nome.
+  const { data: lancamentos = [] } = useQuery({
+    queryKey: ['lancamentos-nomes', tenantId],
+    enabled: Boolean(tenantId),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('lancamentos')
+        .select('id, nome')
+        .eq('tenant_id', tenantId);
+      if (error) throw error;
+      return (data ?? []) as { id: string; nome: string }[];
+    },
+  });
+
+  const lancamentoIdPorNome = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const l of lancamentos) map.set(l.nome.trim().toLowerCase(), l.id);
+    return map;
+  }, [lancamentos]);
+
+  // Clique na linha: se o empreendimento existe na aba Lançamentos, abre a
+  // página dele em nova guia; senão, mostra o modal com os dados da planilha.
+  const abrirLancamento = (e: EmpreendimentoCatalogo) => {
+    const id = lancamentoIdPorNome.get(e.empreendimento.trim().toLowerCase());
+    if (id) window.open(`/imoveis/lancamentos/${id}`, '_blank', 'noopener');
+    else setSelecionado(e);
+  };
+
+  // Um card por construtora: nome, nº de lançamentos e cidades de atuação.
+  const construtoras = useMemo(() => {
+    const porNome = new Map<string, { total: number; cidades: Set<string> }>();
+    for (const e of catalogo) {
+      if (!e.construtora) continue;
+      const atual = porNome.get(e.construtora) ?? { total: 0, cidades: new Set<string>() };
+      atual.total += 1;
+      if (e.cidade) atual.cidades.add(e.cidade);
+      porNome.set(e.construtora, atual);
+    }
+    return [...porNome.entries()]
+      .map(([nome, { total, cidades }]) => ({
+        nome,
+        total,
+        cidades: [...cidades].sort((a, b) => a.localeCompare(b, 'pt-BR')),
+      }))
+      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  }, [catalogo]);
 
   const tipos = useMemo(
     () =>
@@ -158,18 +204,6 @@ export function ConstrutorasTab() {
             />
           </div>
 
-          <Select value={construtoraFilter} onValueChange={setConstrutoraFilter}>
-            <SelectTrigger className="w-full lg:w-[220px]">
-              <SelectValue placeholder="Construtora" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="todas">Todas as construtoras</SelectItem>
-              {construtoras.map((c) => (
-                <SelectItem key={c} value={c}>{c}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
           <Select value={tipoFilter} onValueChange={setTipoFilter}>
             <SelectTrigger className="w-full lg:w-[220px]">
               <SelectValue placeholder="Tipo" />
@@ -186,6 +220,36 @@ export function ConstrutorasTab() {
             {filtrados.length} de {catalogo.length}
           </Badge>
         </div>
+
+      </div>
+
+      {/* Um card por construtora: clicar filtra a tabela; clicar de novo desmarca. */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+        {construtoras.map(({ nome, total, cidades }) => {
+          const ativa = construtoraFilter === nome;
+          return (
+            <button
+              key={nome}
+              type="button"
+              onClick={() => setConstrutoraFilter(ativa ? 'todas' : nome)}
+              className={`rounded-xl border p-4 text-left transition-colors ${
+                ativa
+                  ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                  : 'border-border bg-card/60 hover:bg-muted/60'
+              }`}
+            >
+              <p className="font-medium text-text-primary truncate" title={nome}>{nome}</p>
+              <p className="text-xs text-text-secondary mt-1">
+                {total} {total === 1 ? 'lançamento' : 'lançamentos'}
+              </p>
+              {cidades.length > 0 && (
+                <p className="text-xs text-text-secondary truncate" title={cidades.join(', ')}>
+                  {cidades.join(', ')}
+                </p>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       <div className="rounded-xl border border-border bg-card/60 overflow-x-auto">
@@ -207,7 +271,7 @@ export function ConstrutorasTab() {
               <TableRow
                 key={`${e.construtora}-${e.empreendimento}-${i}`}
                 className="cursor-pointer"
-                onClick={() => setSelecionado(e)}
+                onClick={() => abrirLancamento(e)}
               >
                 <TableCell className="whitespace-nowrap">{e.construtora || '-'}</TableCell>
                 <TableCell className="font-medium text-text-primary">{e.empreendimento}</TableCell>
