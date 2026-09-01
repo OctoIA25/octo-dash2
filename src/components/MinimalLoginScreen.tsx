@@ -208,8 +208,8 @@ export const MinimalLoginScreen = () => {
 
         {/* Footer */}
         <div className="flex items-center justify-end gap-6 text-xs text-gray-400 pt-8">
-          <a href="#" className="hover:text-gray-600">Termos</a>
-          <a href="#" className="hover:text-gray-600">Privacidade</a>
+          <a href="/termos-de-servico.html" className="hover:text-gray-600">Termos</a>
+          <a href="/politica-de-privacidade.html" className="hover:text-gray-600">Privacidade</a>
           <a href="#" className="hover:text-gray-600">Ajuda</a>
         </div>
       </div>
