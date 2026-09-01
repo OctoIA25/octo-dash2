@@ -17,7 +17,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { useAuth } from '@/hooks/useAuth';
-import { useCaptadores } from '@/features/imoveis/hooks/useCaptadores';
+import { useCaptadores, type Captador } from '@/features/imoveis/hooks/useCaptadores';
 import {
   NIVEIS,
   calcularComissao,
@@ -140,7 +140,7 @@ function PessoaSelect({
   vazioLabel,
 }: {
   value: string;
-  onChange: (nome: string, nivel?: Nivel) => void;
+  onChange: (nome: string, membro?: Captador) => void;
   vazioLabel: string;
 }) {
   const { user } = useAuth();
@@ -157,7 +157,7 @@ function PessoaSelect({
     return <Input value={value} onChange={(e) => onChange(e.target.value)} placeholder={vazioLabel} />;
   }
 
-  const selecionar = (nome: string) => onChange(nome, membros.find((m) => m.nome === nome)?.nivel);
+  const selecionar = (nome: string) => onChange(nome, membros.find((m) => m.nome === nome));
 
   return (
     <Select value={value || SEM_PESSOA} onValueChange={(v) => selecionar(v === SEM_PESSOA ? '' : v)}>
@@ -189,7 +189,19 @@ function CorretorFields({
           <Label className="text-[11.5px] text-slate-500">Corretor</Label>
           <PessoaSelect
             value={value.nome}
-            onChange={(nome, nivel) => onChange({ nome, ...(nivel ? { nivel } : {}) })}
+            onChange={(nome, membro) =>
+              onChange({
+                nome,
+                ...(membro?.nivel ? { nivel: membro.nivel } : {}),
+                // Líder Direto da Gestão de Equipe vem junto (segue editável).
+                ...(membro
+                  ? {
+                      liderNome: membro.lider?.nome ?? '',
+                      ...(membro.lider?.nivel ? { liderNivel: membro.lider.nivel } : {}),
+                    }
+                  : {}),
+              })
+            }
             vazioLabel="Ponta da casa (sem corretor)"
           />
         </div>
@@ -208,7 +220,7 @@ function CorretorFields({
           <Label className="text-[11.5px] text-slate-500">Líder Direto</Label>
           <PessoaSelect
             value={value.liderNome}
-            onChange={(liderNome, nivel) => onChange({ liderNome, ...(nivel ? { liderNivel: nivel } : {}) })}
+            onChange={(liderNome, membro) => onChange({ liderNome, ...(membro?.nivel ? { liderNivel: membro.nivel } : {}) })}
             vazioLabel="Sem líder (o próprio é o líder)"
           />
         </div>

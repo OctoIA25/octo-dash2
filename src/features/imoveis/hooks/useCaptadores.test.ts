@@ -16,8 +16,8 @@ const mockBrokers = (result: { data?: unknown[]; error?: { message: string } }) 
   selectMock.mockReturnValue({ eq: () => ({ in: async () => result }) });
 };
 
-const membro = (user_id: string, email: string) =>
-  ({ user_id, email, id: user_id, tenant_id: 't1', role: 'corretor', created_at: '' }) as never;
+const membro = (user_id: string, email: string, extra: Record<string, unknown> = {}) =>
+  ({ user_id, email, id: user_id, tenant_id: 't1', role: 'corretor', created_at: '', ...extra }) as never;
 
 describe('fetchCaptadores', () => {
   beforeEach(() => vi.clearAllMocks());
@@ -60,6 +60,32 @@ describe('fetchCaptadores', () => {
     mockBrokers({ data: [{ auth_user_id: 'u1', name: 'Ática' }, { auth_user_id: 'u2', name: 'Alberto' }] });
 
     expect((await fetchCaptadores('t1')).map((c) => c.nome)).toEqual(['Alberto', 'Ática']);
+  });
+
+  it('resolve o líder direto (leader_user_id) em nome e nível', async () => {
+    vi.mocked(fetchTenantMembers).mockResolvedValue([
+      membro('u1', 'ana@x.com', { leader_user_id: 'u2' }),
+      membro('u2', 'bia@x.com', { permissions: { nivel_comissao: 'coordenador' } }),
+    ]);
+    mockBrokers({ data: [{ auth_user_id: 'u1', name: 'Ana' }, { auth_user_id: 'u2', name: 'Bia' }] });
+
+    expect(await fetchCaptadores('t1')).toEqual([
+      { user_id: 'u1', nome: 'Ana', lider: { nome: 'Bia', nivel: 'coordenador' } },
+      { user_id: 'u2', nome: 'Bia', nivel: 'coordenador' },
+    ]);
+  });
+
+  it('ignora líder apontando para si mesmo ou fora da equipe', async () => {
+    vi.mocked(fetchTenantMembers).mockResolvedValue([
+      membro('u1', 'ana@x.com', { leader_user_id: 'u1' }),
+      membro('u2', 'bia@x.com', { leader_user_id: 'u-fora' }),
+    ]);
+    mockBrokers({ data: [] });
+
+    expect(await fetchCaptadores('t1')).toEqual([
+      { user_id: 'u1', nome: 'ana@x.com' },
+      { user_id: 'u2', nome: 'bia@x.com' },
+    ]);
   });
 
   it('tenant sem membros não consulta tenant_brokers', async () => {

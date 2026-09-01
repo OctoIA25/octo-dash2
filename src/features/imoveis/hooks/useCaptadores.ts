@@ -18,6 +18,8 @@ export interface Captador {
   nome: string;
   /** Nível de comissionamento (permissions.nivel_comissao, Gestão de Equipe). */
   nivel?: Nivel;
+  /** Líder Direto (tenant_memberships.leader_user_id), já resolvido em nome/nível. */
+  lider?: { nome: string; nivel?: Nivel };
 }
 
 /** Vira o mapa user_id → nome que resolverCaptador consome. */
@@ -49,10 +51,23 @@ export async function fetchCaptadores(tenantId: string): Promise<Captador[]> {
     });
   }
 
-  return membros
-    .map((m) => {
-      const nivel = nivelValido(m.permissions?.nivel_comissao);
-      return { user_id: m.user_id, nome: nomePorUserId[m.user_id] || m.email, ...(nivel ? { nivel } : {}) };
+  const base = membros.map((m) => ({
+    user_id: m.user_id,
+    nome: nomePorUserId[m.user_id] || m.email,
+    nivel: nivelValido(m.permissions?.nivel_comissao),
+    leaderId: m.leader_user_id ?? null,
+  }));
+  const porId = new Map(base.map((b) => [b.user_id, b]));
+
+  return base
+    .map(({ leaderId, ...c }) => {
+      const lider = leaderId && leaderId !== c.user_id ? porId.get(leaderId) : undefined;
+      return {
+        user_id: c.user_id,
+        nome: c.nome,
+        ...(c.nivel ? { nivel: c.nivel } : {}),
+        ...(lider ? { lider: { nome: lider.nome, ...(lider.nivel ? { nivel: lider.nivel } : {}) } } : {}),
+      };
     })
     .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
 }
