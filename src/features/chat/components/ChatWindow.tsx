@@ -45,6 +45,8 @@ interface Props {
   onSendText: (text: string) => Promise<void> | void;
   onOpenTemplate?: () => void;
   onChangeCategory?: (category: WhatsappCategory | null) => void;
+  /** Clique no nome do contato — abre o modal de lead (mesmo de Meus Leads). */
+  onOpenLead?: () => void;
   disabled?: boolean;
 }
 
@@ -56,6 +58,7 @@ export function ChatWindow({
   onSendText,
   onOpenTemplate,
   onChangeCategory,
+  onOpenLead,
   disabled,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -99,7 +102,18 @@ export function ChatWindow({
             {displayName.slice(0, 2).toUpperCase()}
           </div>
           <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-medium">{displayName}</div>
+            {onOpenLead ? (
+              <button
+                type="button"
+                onClick={onOpenLead}
+                title="Ver dados do lead"
+                className="block max-w-full truncate text-sm font-medium hover:underline"
+              >
+                {displayName}
+              </button>
+            ) : (
+              <div className="truncate text-sm font-medium">{displayName}</div>
+            )}
             <div className="truncate text-xs text-gray-500">{conversation.contact_phone}</div>
           </div>
           {onChangeCategory && (

@@ -801,6 +801,67 @@ export async function desarquivarLeadCRM(
 }
 
 /**
+ * Resolve o lead de uma conversa do WhatsApp para abrir o modal do Kanban.
+ * Ordem: por id (leads → kenlo_leads, mesmo padrão do CriarLeadQuickModal) e,
+ * sem lead_id (conversa criada por deep-link/nova conversa, onde só o trigger
+ * do banco preenche), por telefone nas variantes equivalentes (com/sem DDI e
+ * 9º dígito) — a mais recente vence.
+ */
+export async function fetchKanbanLeadDaConversa(
+  tenantId: string,
+  leadId: string | null,
+  phoneVariants: string[],
+): Promise<KanbanLead | null> {
+  try {
+    if (leadId) {
+      const { data: crm } = await supabase
+        .from(LEADS_TABLE)
+        .select(LEADS_KANBAN_COLUMNS)
+        .eq('id', leadId)
+        .eq('tenant_id', tenantId)
+        .maybeSingle();
+      if (crm) return mapToKanbanLead(crm as unknown as CRMLead);
+
+      const { data: kenlo } = await supabase
+        .from('kenlo_leads')
+        .select(KENLO_KANBAN_COLUMNS)
+        .eq('id', leadId)
+        .eq('tenant_id', tenantId)
+        .maybeSingle();
+      if (kenlo) return mapKenloToKanbanLead(kenlo as Record<string, unknown>);
+    }
+
+    if (phoneVariants.length > 0) {
+      const [crmResult, kenloResult] = await Promise.all([
+        supabase
+          .from(LEADS_TABLE)
+          .select(LEADS_KANBAN_COLUMNS)
+          .eq('tenant_id', tenantId)
+          .in('phone', phoneVariants)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from('kenlo_leads')
+          .select(KENLO_KANBAN_COLUMNS)
+          .eq('tenant_id', tenantId)
+          .in('client_phone', phoneVariants)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      ]);
+      if (crmResult.data) return mapToKanbanLead(crmResult.data as unknown as CRMLead);
+      if (kenloResult.data) return mapKenloToKanbanLead(kenloResult.data as Record<string, unknown>);
+    }
+
+    return null;
+  } catch (error) {
+    console.error('❌ Erro ao buscar lead da conversa:', error);
+    return null;
+  }
+}
+
+/**
  * Busca métricas do funil para um corretor
  */
 export async function fetchMetricasFunilCorretor(userId: string): Promise<Record<string, number>> {

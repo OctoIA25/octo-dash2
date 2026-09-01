@@ -24,8 +24,11 @@ import {
   getOrCreateConversation,
   getWhatsappConfig,
   normalizePhone,
+  phoneVariants,
   setConversationCategory,
 } from '../services/chatService';
+import { CriarLeadQuickModal } from '@/features/leads/components/CriarLeadQuickModal';
+import { fetchKanbanLeadDaConversa, type KanbanLead } from '@/features/leads/services/leadsService';
 import { sendTemplateMessage, sendTextMessage } from '../services/whatsappService';
 import type { WhatsappCategory, WhatsappConfig, WhatsappConversation } from '../types';
 
@@ -42,6 +45,9 @@ export const ChatPage = () => {
   const [newChatLoading, setNewChatLoading] = useState(false);
   const [newChatError, setNewChatError] = useState<string | null>(null);
   const [templateOpen, setTemplateOpen] = useState(false);
+  // Lead da conversa aberta — clicar no nome do contato abre o mesmo modal de Meus Leads.
+  const [leadModal, setLeadModal] = useState<KanbanLead | null>(null);
+  const [leadLoading, setLeadLoading] = useState(false);
 
   const { conversations: conversasBrutas, loading: loadingConversations, refresh: refreshConversations } = useChatConversations(tenantId);
   // Conversa com número de corretor cadastrado já chega categorizada.
@@ -150,6 +156,22 @@ export const ChatPage = () => {
     } catch (err) {
       console.error('[chat] falha ao salvar categoria:', err);
       alert('Não foi possível salvar a categoria desta conversa.');
+    }
+  };
+
+  const handleOpenLead = async () => {
+    if (!selectedConversation || !tenantId || tenantId === 'owner' || leadLoading) return;
+    setLeadLoading(true);
+    try {
+      const lead = await fetchKanbanLeadDaConversa(
+        tenantId,
+        selectedConversation.lead_id,
+        phoneVariants(selectedConversation.contact_phone),
+      );
+      if (lead) setLeadModal(lead);
+      else alert('Nenhum lead encontrado para este contato.');
+    } finally {
+      setLeadLoading(false);
     }
   };
 
@@ -277,9 +299,18 @@ export const ChatPage = () => {
           onSendText={handleSend}
           onOpenTemplate={() => setTemplateOpen(true)}
           onChangeCategory={handleChangeCategory}
+          onOpenLead={handleOpenLead}
           disabled={!config?.is_active}
         />
       </div>
+
+      <CriarLeadQuickModal
+        isOpen={leadModal !== null}
+        onClose={() => setLeadModal(null)}
+        tenantId={tenantId}
+        editingLead={leadModal}
+        leadType={leadModal?.lead_type}
+      />
 
       <TemplatePicker
         open={templateOpen}
