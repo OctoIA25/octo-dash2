@@ -655,7 +655,7 @@ export const MeusLeadsAtribuidosSection = ({
   const [modalAberto, setModalAberto] = useState(false);
   const [leadParaArquivar, setLeadParaArquivar] = useState<KanbanLead | null>(null);
   const [motivoArquivamento, setMotivoArquivamento] = useState('');
-  const [motivoPredefinido, setMotivoPredefinido] = useState<string>('sem_interesse');
+  const [motivoPredefinido, setMotivoPredefinido] = useState<string>('ja_fechou_outro');
   const [arquivando, setArquivando] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   // Estados dos filtros
@@ -1516,7 +1516,6 @@ const handleDragEnd = useCallback(async (event: DragEndEvent) => {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="sem_interesse">Sem interesse</SelectItem>
                     <SelectItem value="ja_fechou_outro">Já fechou com outro</SelectItem>
                     <SelectItem value="contato_errado">Contato errado / inválido</SelectItem>
                     <SelectItem value="fora_perfil">Fora do perfil</SelectItem>
@@ -1544,13 +1543,12 @@ const handleDragEnd = useCallback(async (event: DragEndEvent) => {
             <DialogFooter>
               <Button variant="outline" onClick={() => setLeadParaArquivar(null)}>Cancelar</Button>
               <Button
-                disabled={arquivando}
+                disabled={arquivando || (motivoPredefinido === 'outro' && !motivoArquivamento.trim())}
                 onClick={async () => {
                   if (!leadParaArquivar) return;
                   setArquivando(true);
                   try {
                     const MOTIVO_LABELS: Record<string, string> = {
-                      sem_interesse: 'Sem interesse',
                       ja_fechou_outro: 'Já fechou com outro',
                       contato_errado: 'Contato errado / inválido',
                       fora_perfil: 'Fora do perfil',
