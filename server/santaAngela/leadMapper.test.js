@@ -40,3 +40,30 @@ it('mapSantaAngelaToLead status default = Novos Leads', () => {
   const lead = mapSantaAngelaToLead({ id: 'x2', nome: 'Y' }, 't');
   expect(lead.status).toBe('Novos Leads');
 });
+
+it('situação "PROPOSTA" sem qualificador vira status válido na constraint (não "Proposta")', () => {
+  // Regressão 02/09: 'Proposta' não passa em leads_status_check → o INSERT
+  // falhava e o lead era perdido em todo ciclo. Dois leads reais ficaram
+  // fora do dash por meses por causa disso.
+  const lead = mapSantaAngelaToLead({ id: 'p', nome: 'X', situacaocadastropessoa_titulo: 'PROPOSTA' }, 't1');
+  expect(lead.status).toBe('Proposta Enviada');
+  expect(lead.status).not.toBe('Proposta');
+});
+
+it('situação desconhecida na origem cai em Novos Leads (nunca status inválido)', () => {
+  const inventada = mapSantaAngelaToLead(
+    { id: 'p', nome: 'X', situacaocadastropessoa_titulo: 'SITUACAO QUE A ORIGEM INVENTOU' }, 't1');
+  expect(inventada.status).toBe('Novos Leads');
+});
+
+it('todo status gerado pelo mapper está na lista aceita pela constraint', () => {
+  const validos = new Set(['Novos Leads', 'Interação', 'Visita Agendada', 'Visita Realizada',
+    'Negociação', 'Proposta Criada', 'Proposta Enviada', 'Proposta Assinada']);
+  const situacoes = ['NOVO', 'EM ATENDIMENTO', 'VISITA', 'EM NEGOCIACAO', 'PROPOSTA',
+    'PROPOSTA CRIADA', 'PROPOSTA ENVIADA', 'PROPOSTA ASSINADA', 'VENDA', 'AGENDAMENTO',
+    'SEM CONTATO', '', undefined];
+  for (const s of situacoes) {
+    const { status } = mapSantaAngelaToLead({ id: 'p', nome: 'X', situacaocadastropessoa_titulo: s }, 't1');
+    expect(validos.has(status), `situação "${s}" gerou status inválido: ${status}`).toBe(true);
+  }
+});

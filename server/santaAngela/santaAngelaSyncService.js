@@ -18,6 +18,7 @@
  *   (sem retry imediato em loop, que amplificaria uma API instável). O timeout
  *   por requisição vive no apiClient; o timeout por tenant, no syncAllTenants.
  */
+import crypto from 'node:crypto';
 import { mapSantaAngelaToLead } from './leadMapper.js';
 import { getDeletedTenantIds } from '../utils/tenantSoftDelete.js';
 
@@ -113,6 +114,27 @@ export function createSantaAngelaSyncService({
     return error ? 'error' : 'updated';
   }
 
+  // Defesa em profundidade: o import histórico NÃO confia no gate de frescor do
+  // banco. Em 02/09 um trigger gêmeo (`trg_`, criado fora de migration, sem
+  // WHEN) furou o gate e 480 leads de 2015-2025 foram entregues à Lia. Aqui a
+  // supressão é do próprio sync: pré-grava o lead.created já 'delivered' com o
+  // mesmo (event_type, source_table, source_id) que o trigger usaria — se algum
+  // trigger disparar, cai no ON CONFLICT DO NOTHING, e o poller só processa
+  // 'pending'. Exige id gerado no cliente (o trigger usa NEW.id).
+  async function suppressLeadCreated(tenantId, leadId) {
+    const { error } = await supabase.from('webhook_events').insert({
+      tenant_id: tenantId,
+      event_type: 'lead.created',
+      source_table: 'leads',
+      source_id: leadId,
+      payload: { backfill: true, source: 'santa-angela-full-sync' },
+      status: 'delivered',
+      delivered_at: new Date().toISOString(),
+    });
+    if (error) logger.warn(`[santa-angela] supressão de lead.created falhou: ${error.message}`);
+    return !error;
+  }
+
   // Qual imóvel o lead procura. O grid não diz — só o detalhe do prospect
   // (/prospects/{id} → empreendimento_id) cruzado com /empreendimentos.
   //
@@ -144,7 +166,7 @@ export function createSantaAngelaSyncService({
     const finish = () => {
       const durationMs = Date.now() - startedAt;
       if (result.success) {
-        logger.info(`[santa-angela] {"event":"santa-angela.sync.tenant.done","runId":"${runId}","tenantId":"${tenantId}","durationMs":${durationMs},"totalFetched":${result.totalFetched},"new":${result.newLeads},"updated":${result.updatedLeads}}`);
+        logger.info(`[santa-angela] {"event":"santa-angela.sync.tenant.done","runId":"${runId}","tenantId":"${tenantId}","durationMs":${durationMs},"totalFetched":${result.totalFetched},"new":${result.newLeads},"updated":${result.updatedLeads},"errors":${result.errors}}`);
       } else {
         logger.warn(`[santa-angela] {"event":"santa-angela.sync.tenant.error","runId":"${runId}","tenantId":"${tenantId}","durationMs":${durationMs},"error":${JSON.stringify(result.message)}}`);
       }
@@ -195,17 +217,30 @@ export function createSantaAngelaSyncService({
         // pula: telefone já existe sob outro source_id (evita violar unique_phone_per_tenant)
       } else {
         const lead = historical
-          ? { ...mapped, participa_bolsao: false, assigned_at: mapped.created_at }
+          ? { ...mapped, id: crypto.randomUUID(), participa_bolsao: false, assigned_at: mapped.created_at }
           : mapped;
-        if (await insertNew(lead, { phoneNullFallback: !historical })) {
+        // Sem supressão gravada, o lead histórico NÃO entra: melhor faltar um
+        // lead antigo (recuperável no próximo full) que a Lia abordar alguém de 2019.
+        if (historical && !(await suppressLeadCreated(tenantId, lead.id))) {
+          result.errors++;
+        } else if (await insertNew(lead, { phoneNullFallback: !historical })) {
           result.newLeads++;
           if (mapped.phone) phoneSet.add(mapped.phone); // dedup intra-ciclo (full traz a base inteira)
+        } else {
+          // Insert rejeitado (ex.: status fora de leads_status_check) é PERDA de
+          // lead — conta como erro para aparecer no log do ciclo em vez de sumir.
+          result.errors++;
+          if (historical) {
+            await supabase.from('webhook_events').delete()
+              .eq('source_table', 'leads').eq('source_id', lead.id);
+          }
         }
       }
     }
 
     result.success = true;
-    result.message = `Sincronização concluída: ${result.newLeads} novos, ${result.updatedLeads} atualizados`;
+    result.message = `Sincronização concluída: ${result.newLeads} novos, ${result.updatedLeads} atualizados`
+      + (result.errors ? `, ${result.errors} leads NÃO inseridos` : '');
     await touchSync(tenantId, result.newLeads + result.updatedLeads);
     return finish();
   }

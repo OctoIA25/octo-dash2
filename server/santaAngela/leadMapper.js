@@ -16,6 +16,16 @@ export function mapAssignedAgentName(corretorNome) {
  * é ambíguo — "0001" hoje é de três empreendimentos diferentes. O código e o id
  * ficam em custom_fields para quem precisar casar com o ERP.
  */
+// Valores aceitos por leads_status_check. Status fora dela faz o INSERT falhar
+// e o lead ser PERDIDO — o insert só loga um warn (incidente 02/09: situação
+// "PROPOSTA" virava 'Proposta', inexistente na constraint, e 2 leads da Santa
+// Ângela nunca entraram, em nenhum ciclo). A whitelist é o cinto de segurança:
+// situação nova/desconhecida na origem cai em 'Novos Leads' em vez de sumir.
+const STATUS_VALIDOS = new Set([
+  'Novos Leads', 'Interação', 'Visita Agendada', 'Visita Realizada',
+  'Negociação', 'Proposta Criada', 'Proposta Enviada', 'Proposta Assinada',
+]);
+
 export function mapSantaAngelaToLead(saLead, tenantId, empreendimento = null) {
   const statusTitulo = saLead.situacaocadastropessoa_titulo || '';
   let status = 'Novos Leads';
@@ -27,8 +37,11 @@ export function mapSantaAngelaToLead(saLead, tenantId, empreendimento = null) {
     if (statusTitulo.includes('CRIADA')) status = 'Visita Realizada';
     else if (statusTitulo.includes('ENVIADA')) status = 'Proposta Enviada';
     else if (statusTitulo.includes('ASSINADA')) status = 'Proposta Assinada';
-    else status = 'Proposta';
+    // "PROPOSTA" sem qualificador: existe proposta, então 'Proposta Enviada'
+    // (o valor 'Proposta', usado antes aqui, não passa na constraint).
+    else status = 'Proposta Enviada';
   } else if (statusTitulo.includes('VENDA')) status = 'Proposta Assinada';
+  if (!STATUS_VALIDOS.has(status)) status = 'Novos Leads';
 
   const nowIso = new Date().toISOString();
   return {
