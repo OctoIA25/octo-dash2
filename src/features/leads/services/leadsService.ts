@@ -174,6 +174,15 @@ async function fetchPagesInBatches(
     }
     if (reachedEnd) break;
   }
+  // Bateu o teto de páginas sem achar o fim: a listagem está TRUNCADA. É a mesma
+  // classe do bug que a paginação conserta (dado que falta sem ninguém avisar),
+  // então no mínimo grita no console em vez de sumir calado.
+  if (all.length >= maxPages * PAGE_SIZE) {
+    console.warn(
+      `⚠️ listagem truncada em ${all.length} linhas (teto de ${maxPages} páginas). ` +
+      'Há mais dados no banco — aumente maxPages ou migre para keyset/agregação no servidor.'
+    );
+  }
   return all;
 }
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
