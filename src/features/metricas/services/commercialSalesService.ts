@@ -1,4 +1,10 @@
 import { supabase } from '@/lib/supabaseClient';
+import {
+  agruparPorCorretor,
+  agruparPorMes,
+  buscarVendasAssinadas,
+  type VendaAssinada,
+} from './vendasAssinadasService';
 
 const MES_LABELS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 type MesReferencia = number | number[];
@@ -130,7 +136,7 @@ export interface KPIsSalesCommercial {
   ticketMedio: number;
 }
 
-export type CommercialSalesFinanceSource = 'commercial_sales' | 'sales_transactions' | 'leads' | 'empty';
+export type CommercialSalesFinanceSource = 'proposals' | 'commercial_sales' | 'sales_transactions' | 'leads' | 'empty';
 
 export interface CommercialSalesFinanceMonthly {
   mesNumero: number;
@@ -283,6 +289,21 @@ function getLeadVgcFallback(lead: LeadFinanceRow): number {
   }
 
   return 0;
+}
+
+/** Financeiro mensal a partir das vendas assinadas (`proposals`). */
+function summarizeVendasAssinadas(vendas: VendaAssinada[]): CommercialSalesFinanceSummary {
+  const monthly = emptyFinanceMonthly();
+
+  agruparPorMes(vendas).forEach((totais, mes) => {
+    const bucket = monthly[mes - 1];
+    if (!bucket) return;
+    bucket.vendas += totais.vendas;
+    bucket.vgv += totais.vgv;
+    bucket.vgc += totais.vgc;
+  });
+
+  return buildFinanceSummary('proposals', monthly);
 }
 
 function summarizeCommercialMonthlyRows(rows: CommercialSalesMonthlySummary[]): CommercialSalesFinanceSummary {
@@ -576,86 +597,74 @@ export async function buscarVendasComerciaisPorFonte(
     .sort((a, b) => b.quantidade - a.quantidade);
 }
 
+/**
+ * Ranking de corretores por comissão das vendas assinadas.
+ *
+ * Origem trocada de `commercial_sales` para `proposals` em 02/09/2026. Além de
+ * voltar a enxergar venda nova, some a duplicação que a planilha carregava: o
+ * apelido digitado ali ("Fernanda", "Gabi", "Andre") só casava com o usuário
+ * por nome exato, então a mesma pessoa aparecia em duas linhas do ranking. Em
+ * `proposals` o dono da venda é `agent_user_id`.
+ */
 export async function buscarRankingCorretoresComercial(
   tenantId: string,
   anoReferencia = new Date().getFullYear(),
   mesReferencia?: MesReferencia,
 ): Promise<CommercialSalesBrokerRanking[]> {
-  const data: CommercialSalesRankingRow[] = [];
-  let page = 0;
+  const meses = mesReferencia
+    ? new Set(Array.isArray(mesReferencia) ? mesReferencia : [mesReferencia])
+    : null;
 
-  while (true) {
-    const query = supabase
-      .from('commercial_sales')
-      .select('corretor_nome, corretor_email, valor_vgv, valor_vgc, comissao_total_venda, mes_referencia, data_assinatura, data_recebimento')
-      .eq('tenant_id', tenantId)
-      .eq('ano_referencia', anoReferencia)
-      .eq('is_active', true)
-      .or('corretor_nome.not.is.null,corretor_email.not.is.null')
-      .range(page * COMMERCIAL_SALES_PAGE_SIZE, (page + 1) * COMMERCIAL_SALES_PAGE_SIZE - 1);
+  const vendas = (
+    await buscarVendasAssinadas(tenantId, `${anoReferencia}-01-01`, `${anoReferencia}-12-31`)
+  ).filter((venda) => (!meses || meses.has(venda.mes)) && (venda.agentUserId || venda.agentNome));
 
-    const { data: pageData, error } = await query;
+  const resolver = await buscarResolverUsuariosComerciais(tenantId);
 
-    if (error) throw error;
-
-    data.push(...((pageData || []) as CommercialSalesRankingRow[]));
-
-    if (!pageData || pageData.length < COMMERCIAL_SALES_PAGE_SIZE) break;
-    page += 1;
-  }
-
-  const userResolver = await buscarResolverUsuariosComerciais(tenantId);
-  const porCorretor = new Map<string, Omit<CommercialSalesBrokerRanking, 'ranking' | 'ticketMedio'>>();
-  const vendasDoPeriodo = filtrarVendasPorPeriodoComercial(data, mesReferencia);
-
-  vendasDoPeriodo.forEach((venda) => {
-    const userMatch = resolverUsuarioVendaComercial(userResolver, venda);
-    const nomeFallback = venda.corretor_nome?.trim() || venda.corretor_email?.trim() || 'Não informado';
-    const aggregationKey = userMatch?.userId || normalizeCommercialKey(nomeFallback);
-    const atual = porCorretor.get(aggregationKey) || {
-      corretor: userMatch?.displayName || nomeFallback,
-      userId: userMatch?.userId,
-      vendasFeitas: 0,
-      vgvTotal: 0,
-      vgcTotal: 0,
-      comissaoTotal: 0,
-      fotoUrl: userMatch?.avatarUrl || undefined,
-    };
-
-    if (userMatch) {
-      atual.corretor = userMatch.displayName;
-      atual.userId = userMatch.userId;
-      atual.fotoUrl = userMatch.avatarUrl || atual.fotoUrl;
-    }
-
-    atual.vendasFeitas += 1;
-    atual.vgvTotal += toCommercialNumber(venda.valor_vgv);
-    atual.vgcTotal += toCommercialNumber(venda.valor_vgc);
-    atual.comissaoTotal += toCommercialNumber(venda.comissao_total_venda);
-
-    porCorretor.set(aggregationKey, atual);
-  });
-
-  const ranking = Array.from(porCorretor.values())
-    .map((corretor) => ({
-      ...corretor,
-      ranking: 0,
-      ticketMedio: corretor.vendasFeitas > 0 ? corretor.vgvTotal / corretor.vendasFeitas : 0,
-    }))
-    .sort((a, b) => b.comissaoTotal - a.comissaoTotal);
-
-  return ranking.map((corretor, index) => ({
-    ...corretor,
-    ranking: index + 1,
+  // Resolver ANTES de agrupar: proposta sem `agent_user_id` mas com nome que
+  // casa com um membro (ex.: "FERNANDA SOUZA" digitado no funil) tem que cair
+  // na linha da mesma pessoa — senão a duplicação volta por outra porta.
+  const vendasResolvidas = vendas.map((venda) => ({
+    ...venda,
+    agentUserId:
+      venda.agentUserId || resolver.byName.get(normalizeCommercialKey(venda.agentNome))?.userId || null,
   }));
+
+  return agruparPorCorretor(vendasResolvidas)
+    .map((corretor) => {
+      // Sem usuário, o nome da planilha é tudo que há (Eduardo, Nathalia Lobo,
+      // "Flávia e Humberto").
+      const match =
+        (corretor.agentUserId ? resolver.byId.get(corretor.agentUserId) : undefined) ||
+        resolver.byName.get(normalizeCommercialKey(corretor.agentNome)) ||
+        null;
+
+      return {
+        corretor: match?.displayName || corretor.agentNome || 'Não informado',
+        userId: match?.userId || corretor.agentUserId || undefined,
+        vendasFeitas: corretor.vendas,
+        vgvTotal: corretor.vgv,
+        vgcTotal: corretor.vgc,
+        // Na planilha "Comiss. total da venda" era a própria coluna de VGC —
+        // o campo continua existindo para não quebrar quem já o consome.
+        comissaoTotal: corretor.vgc,
+        ticketMedio: corretor.vendas > 0 ? corretor.vgv / corretor.vendas : 0,
+        fotoUrl: match?.avatarUrl || undefined,
+        ranking: 0,
+      };
+    })
+    .sort((a, b) => b.comissaoTotal - a.comissaoTotal)
+    .map((corretor, index) => ({ ...corretor, ranking: index + 1 }));
 }
 
+/** O tenant tem venda assinada? Decide se o ranking usa a origem comercial. */
 export async function tenantTemVendasComerciais(tenantId: string): Promise<boolean> {
   const { count, error } = await supabase
-    .from('commercial_sales')
+    .from('proposals')
     .select('id', { count: 'exact', head: true })
     .eq('tenant_id', tenantId)
-    .eq('is_active', true);
+    .eq('stage_id', 'proposta-assinada')
+    .not('signed_at', 'is', null);
 
   if (error) throw error;
 
@@ -669,6 +678,19 @@ export async function buscarFinanceiroVendasComerciaisComFallback(
   const empty = emptyFinanceSummary();
   const summaries: CommercialSalesFinanceSummary[] = [];
 
+  try {
+    const vendas = await buscarVendasAssinadas(
+      tenantId,
+      `${anoReferencia}-01-01`,
+      `${anoReferencia}-12-31`,
+    );
+    summaries.push(summarizeVendasAssinadas(vendas));
+  } catch (error) {
+    console.warn('[commercialSalesService] proposals indisponível para financeiro:', error);
+  }
+
+  // `commercial_sales` continua como 2ª fonte: é o histórico congelado da
+  // importação e ainda cobre tenant que nunca assinou proposta no funil.
   try {
     const comercial = await buscarResumoVendasComerciaisMensal(tenantId, anoReferencia);
     summaries.push(summarizeCommercialMonthlyRows(comercial));
@@ -731,6 +753,7 @@ async function buscarResolverUsuariosComerciais(tenantId: string) {
   const empty = {
     byEmail: new Map<string, CommercialSalesUserMatch>(),
     byName: new Map<string, CommercialSalesUserMatch>(),
+    byId: new Map<string, CommercialSalesUserMatch>(),
   };
 
   const { data: memberships, error: membershipsError } = await supabase
@@ -764,6 +787,7 @@ async function buscarResolverUsuariosComerciais(tenantId: string) {
 
   const byEmail = new Map<string, CommercialSalesUserMatch>();
   const byName = new Map<string, CommercialSalesUserMatch>();
+  const byId = new Map<string, CommercialSalesUserMatch>();
 
   const addAlias = (
     map: Map<string, CommercialSalesUserMatch>,
@@ -792,6 +816,7 @@ async function buscarResolverUsuariosComerciais(tenantId: string) {
       avatarUrl: profile?.avatar_url || null,
     };
 
+    byId.set(member.user_id, match);
     addAlias(byName, profile?.full_name, match);
     addAlias(byName, member.name, match);
     addAlias(byName, member.email, match);
@@ -801,7 +826,7 @@ async function buscarResolverUsuariosComerciais(tenantId: string) {
     addAlias(byEmail, member.user_email, match);
   });
 
-  return { byEmail, byName };
+  return { byEmail, byName, byId };
 }
 
 function resolverUsuarioVendaComercial(

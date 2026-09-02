@@ -33,65 +33,36 @@ function dayEnd(date: string): string {
   return `${date}T23:59:59.999Z`;
 }
 
-/** VGV: soma do valor das propostas assinadas no período. */
+/**
+ * VGV: soma do valor das propostas assinadas no período.
+ *
+ * Recorta por `signed_at`, não por `created_at`: proposta criada em janeiro e
+ * assinada em março é venda de março — era o que a planilha sempre contou.
+ */
 const vgvSource: GoalMetricSource = {
   categoryId: 'vgv',
   label: 'Vendas (propostas assinadas)',
   async compute(tenantId, startDate, endDate) {
-    const { data, error } = await supabase
-      .from('proposals')
-      .select('value')
-      .eq('tenant_id', tenantId)
-      .eq('stage_id', 'proposta-assinada')
-      .gte('created_at', dayStart(startDate))
-      .lte('created_at', dayEnd(endDate));
-
-    if (error) throw new Error(`Falha ao calcular VGV: ${error.message}`);
-    return (data ?? []).reduce((sum, row) => sum + (Number(row.value) || 0), 0);
+    const vendas = await buscarVendasAssinadas(tenantId, startDate, endDate);
+    return somarVendas(vendas).vgv;
   },
 };
 
 /**
- * VGC: soma da comissão (`valor_vgc`) das vendas comerciais assinadas no
- * período. Diferente do VGV (origem em `proposals`), o VGC real é mantido em
- * `commercial_sales`, alimentado pela sincronização da planilha comercial.
+ * VGC: soma da comissão das vendas assinadas no período.
  *
- * - Filtra por `data_assinatura` (coluna DATE) — o marco equivalente à
- *   "proposta assinada" do VGV. Vendas sem data de assinatura ficam fora do
- *   período. Por ser DATE, comparamos com as datas ISO cruas (sem dayStart/End).
- * - Pagina os resultados: `commercial_sales` é um dataset de importação em
- *   massa e o PostgREST limita ~1000 linhas por requisição — somar só a 1ª
- *   página subestimaria a meta silenciosamente.
+ * Origem trocada de `commercial_sales` para `proposals` em 02/09/2026 — aquela
+ * tabela é o histórico congelado da importação da planilha e não recebe venda
+ * nova desde que o sync horário foi desligado. A comissão sai do override
+ * (`commission_total`, exato da planilha nas vendas antigas) ou da derivação
+ * 3,5% lançamento / 6% terceiros. Ver `vendasAssinadasService`.
  */
-const COMMERCIAL_SALES_PAGE_SIZE = 1000;
-
 const vgcSource: GoalMetricSource = {
   categoryId: 'vgc',
-  label: 'Comissão (vendas comerciais assinadas)',
+  label: 'Comissão (vendas assinadas)',
   async compute(tenantId, startDate, endDate) {
-    let total = 0;
-    let page = 0;
-
-    while (true) {
-      const { data, error } = await supabase
-        .from('commercial_sales')
-        .select('valor_vgc')
-        .eq('tenant_id', tenantId)
-        .eq('is_active', true)
-        .gte('data_assinatura', startDate)
-        .lte('data_assinatura', endDate)
-        .range(page * COMMERCIAL_SALES_PAGE_SIZE, (page + 1) * COMMERCIAL_SALES_PAGE_SIZE - 1);
-
-      if (error) throw new Error(`Falha ao calcular VGC: ${error.message}`);
-
-      const rows = (data ?? []) as Array<{ valor_vgc: number | string | null }>;
-      total += rows.reduce((sum, row) => sum + (Number(row.valor_vgc) || 0), 0);
-
-      if (rows.length < COMMERCIAL_SALES_PAGE_SIZE) break;
-      page += 1;
-    }
-
-    return total;
+    const vendas = await buscarVendasAssinadas(tenantId, startDate, endDate);
+    return somarVendas(vendas).vgc;
   },
 };
 

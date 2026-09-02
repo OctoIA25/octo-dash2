@@ -26,6 +26,7 @@ import { fetchKpis } from '@/features/kpis/admin/services/kpiAdminService';
 import { fetchTargets, fetchValues } from '@/features/kpis/admin/services/kpiTargetsService';
 import { resolveProgress } from '@/features/kpis/domain/kpiModel';
 import { normalizePeriodStart } from '@/features/kpis/domain/periods';
+import { buscarVendasAssinadas, somarVendas } from '@/features/metricas/services/vendasAssinadasService';
 import type {
   KpiCommercialComparison,
   KpiFunnel,
@@ -404,36 +405,26 @@ function buildCards(
     });
 }
 
-/** Soma VGV/VGC das vendas comerciais assinadas no período (commercial_sales). */
+/**
+ * Soma VGV/VGC das vendas assinadas no período.
+ *
+ * Origem trocada de `commercial_sales` para `proposals` em 02/09/2026: aquela
+ * tabela congelou quando o sync da planilha foi desligado e não recebe mais
+ * venda nova. Ver `vendasAssinadasService`.
+ */
 async function fetchCommercialTotals(
   tenantId: string,
   period: KpiPeriod,
 ): Promise<{ vgv: number; vgc: number }> {
-  const PAGE = 1000;
-  let vgv = 0;
-  let vgc = 0;
-  let page = 0;
-
-  for (;;) {
-    const { data, error } = await supabase
-      .from('commercial_sales' as never)
-      .select('valor_vgv,valor_vgc')
-      .eq('tenant_id', tenantId)
-      .eq('is_active', true)
-      .gte('data_assinatura', period.startDate)
-      .lte('data_assinatura', period.endDate)
-      .range(page * PAGE, (page + 1) * PAGE - 1);
-
-    if (error) return { vgv: 0, vgc: 0 };
-    const rows = (data ?? []) as Array<{ valor_vgv: number | string | null; valor_vgc: number | string | null }>;
-    for (const row of rows) {
-      vgv += Number(row.valor_vgv) || 0;
-      vgc += Number(row.valor_vgc) || 0;
-    }
-    if (rows.length < PAGE) break;
-    page += 1;
+  try {
+    const vendas = await buscarVendasAssinadas(tenantId, period.startDate, period.endDate);
+    const totais = somarVendas(vendas);
+    return { vgv: totais.vgv, vgc: totais.vgc };
+  } catch {
+    // Card de KPI não derruba a Home: sem dado, mostra zero (comportamento
+    // que a versão anterior já tinha no erro de query).
+    return { vgv: 0, vgc: 0 };
   }
-  return { vgv, vgc };
 }
 
 function buildCommercial(
