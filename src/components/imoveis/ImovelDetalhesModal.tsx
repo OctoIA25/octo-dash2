@@ -37,6 +37,7 @@ import type { Imovel } from '@/features/imoveis/services/kenloService';
 import { useAuth } from '@/hooks/useAuth';
 import { getFotoCapaUrl, getFotoUrl, type FotoInput } from './fotos-helpers';
 import { podeEditarImovel } from '@/features/imoveis/utils/podeEditarImovel';
+import { useCaptadores, mapCaptadoresPorId } from '@/features/imoveis/hooks/useCaptadores';
 import { ImovelHistorico } from './ImovelHistorico';
 
 interface ImovelDetalhesModalProps {
@@ -46,7 +47,8 @@ interface ImovelDetalhesModalProps {
   /**
    * Quando true, o imóvel possui registro local editável. O botão "Editar" só
    * aparece se, além disso, o usuário for diretoria (owner), administrador,
-   * o captador (corretor responsável) ou quem cadastrou o imóvel.
+   * gestor com atuação que cobre a finalidade do imóvel, o captador (corretor
+   * responsável) ou quem cadastrou o imóvel.
    */
   canEdit?: boolean;
   onEditar?: () => void;
@@ -55,6 +57,8 @@ interface ImovelDetalhesModalProps {
   criadoPor?: string | null;
   /** `imoveis_locais.captador_id` — atribuição manual (owner/admin). */
   captadorId?: string | null;
+  /** `imoveis_locais.captador_2_id` — 2º captador (opcional). */
+  captador2Id?: string | null;
   /** user_ids da equipe do gestor logado (inclui ele). Só relevante p/ team_leader. */
   equipeUserIds?: string[] | null;
   /** e-mails da equipe do gestor logado (inclui ele). Só relevante p/ team_leader. */
@@ -126,13 +130,19 @@ export const ImovelDetalhesModal = ({
   obsInterna,
   criadoPor,
   captadorId,
+  captador2Id,
   equipeUserIds,
   equipeEmails,
 }: ImovelDetalhesModalProps) => {
   const { user, isOwner, tenantId: authTenantId } = useAuth();
   const [mostrarLogs, setMostrarLogs] = useState(false);
+  // Nome do 2º captador (atribuição manual). React Query dedupe: o mesmo
+  // fetch já roda na página que abre este modal.
+  const { data: captadoresLista = [] } = useCaptadores(authTenantId || user?.tenantId);
 
   if (!imovel) return null;
+
+  const captador2Nome = captador2Id ? mapCaptadoresPorId(captadoresLista)[captador2Id] : null;
 
   const podeEditar = podeEditarImovel({
     temRegistroLocal: canEdit,
@@ -142,7 +152,10 @@ export const ImovelDetalhesModal = ({
     userEmail: user?.email,
     captadorEmail: imovel.corretor_email,
     captadorId,
+    captador2Id,
     criadoPor,
+    finalidade: imovel.finalidade,
+    permissions: user?.permissions,
     equipeUserIds,
     equipeEmails,
   });
@@ -281,6 +294,11 @@ export const ImovelDetalhesModal = ({
                 <p className="text-sm font-semibold text-text-primary truncate">
                   {imovel.corretor_nome || 'Sem captador'}
                 </p>
+                {captador2Nome && (
+                  <p className="text-xs text-text-secondary truncate">
+                    2º captador: {captador2Nome}
+                  </p>
+                )}
                 {imovel.corretorContatoDaXml && imovel.corretor_email && (
                   <p className="flex items-center gap-1.5 text-xs text-text-secondary truncate">
                     <Mail className="h-3.5 w-3.5 flex-shrink-0" />

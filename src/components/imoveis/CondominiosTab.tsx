@@ -88,6 +88,7 @@ export interface Condominio {
   construtora: string | null;
   incorporadora: string | null;
   captador_id: string | null;
+  captador_2_id: string | null;
   ano_construcao: number | null;
   num_blocos_torres: number | null;
   data_entrega: string | null;
@@ -250,6 +251,7 @@ export const CondominiosTab = () => {
     construtora: cond.construtora || '',
     incorporadora: cond.incorporadora || '',
     captador_id: cond.captador_id || '',
+    captador_2_id: cond.captador_2_id || '',
     ano_construcao: cond.ano_construcao ? String(cond.ano_construcao) : '',
     imobiliaria_exclusiva: (cond as any).imobiliaria_exclusiva || '',
     num_blocos_torres: cond.num_blocos_torres ? String(cond.num_blocos_torres) : '',
@@ -911,7 +913,10 @@ export const CondominiosTab = () => {
                     <div className="flex items-center gap-2 text-sm text-text-secondary">
                       <span>🤝</span>
                       <span className="truncate">
-                        {(cond.captador_id && mapaCaptadores[cond.captador_id]) || 'Sem captador'}
+                        {[cond.captador_id, cond.captador_2_id]
+                          .map((id) => id && mapaCaptadores[id])
+                          .filter(Boolean)
+                          .join(' + ') || 'Sem captador'}
                       </span>
                     </div>
 

@@ -99,6 +99,7 @@ interface ImovelLocal {
   aprovado_em?: string;
   motivo_aprovacao?: string;
   captador_id?: string | null;
+  captador_2_id?: string | null;
   chave_status?: string | null;
   chave_local?: string | null;
   chave_com?: string | null;
@@ -410,6 +411,7 @@ export const MeusImoveisTab = ({ allImoveis, onViewDetails, onPropertyCreated }:
       salas: local.salas ? String(local.salas) : '',
       status_aprovacao: local.status_aprovacao,
       captador_id: local.captador_id || '',
+      captador_2_id: local.captador_2_id || '',
       obs_interna: local.obs_interna || '',
     chave_status: local.chave_status || '',
     chave_local: local.chave_local || '',

@@ -225,6 +225,7 @@ interface ImovelLocal {
   super_destaque?: boolean | null;
   status_aprovacao?: 'aprovado' | 'nao_aprovado' | 'aguardando';
   captador_id?: string | null;
+  captador_2_id?: string | null;
   chave_status?: string | null;
   chave_local?: string | null;
   chave_com?: string | null;
@@ -275,6 +276,7 @@ const buildEditDataFromLocal = (local: ImovelLocal) => {
     salas: local.salas ? String(local.salas) : '',
     status_aprovacao: local.status_aprovacao,
     captador_id: local.captador_id || '',
+    captador_2_id: local.captador_2_id || '',
     obs_interna: local.obs_interna || '',
   chave_status: local.chave_status || '',
   chave_local: local.chave_local || '',
@@ -960,7 +962,7 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
         <div>
           <h1 className="text-3xl font-bold text-text-primary">Catálogo de Imóveis</h1>
           <p className="text-text-secondary mt-1">
-            Portfólio completo • Integração Kenlo • Atualização em tempo real
+            Portfólio completo • Atualização em tempo real
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -1616,6 +1618,7 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
         obsInterna={findImovelLocal(selectedImovel?.referencia)?.obs_interna}
         criadoPor={findImovelLocal(selectedImovel?.referencia)?.criado_por}
         captadorId={findImovelLocal(selectedImovel?.referencia)?.captador_id}
+        captador2Id={findImovelLocal(selectedImovel?.referencia)?.captador_2_id}
         equipeUserIds={equipeUserIds}
         equipeEmails={equipeEmails}
       />

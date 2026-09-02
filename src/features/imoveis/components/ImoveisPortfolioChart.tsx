@@ -414,7 +414,7 @@ export const ImoveisPortfolioChart = ({ leads }: ImoveisPortfolioChartProps) => 
         <CardContent className="flex-1 flex items-center justify-center">
           <div className="text-center">
             <Building2 className="h-12 w-12 text-red-400/50 mx-auto mb-3" />
-            <p className="text-sm text-text-secondary">Nenhum imóvel encontrado no XML Kenlo</p>
+            <p className="text-sm text-text-secondary">Nenhum imóvel encontrado</p>
             <p className="text-xs text-text-secondary mt-2">Verifique a integração com o XML</p>
           </div>
         </CardContent>

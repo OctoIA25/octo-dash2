@@ -4,10 +4,12 @@
  * A RLS de `imoveis_locais` é FOR ALL para qualquer membro do tenant — este
  * gate é de UI. Regras:
  *   - diretoria (owner) e administrador: qualquer imóvel;
- *   - gestor (team_leader): imóveis da própria equipe — captados/criados por
- *     ele ou por um corretor cujo `leader_user_id` aponta pra ele. O elo de
- *     equipe (`equipeUserIds`/`equipeEmails`) é montado pelo chamador e já
- *     inclui o próprio gestor;
+ *   - gestor (team_leader): imóveis da própria ATUAÇÃO (prontos → venda,
+ *     alugados → locação), independente de quem captou/criou, MAIS os da
+ *     própria equipe — captados/criados por ele ou por um corretor cujo
+ *     `leader_user_id` aponta pra ele. O elo de equipe
+ *     (`equipeUserIds`/`equipeEmails`) é montado pelo chamador e já inclui o
+ *     próprio gestor;
  *   - corretor: só os próprios (captador por e-mail, `captador_id` ou
  *     `criado_por`).
  *
@@ -16,7 +18,20 @@
  * corretor que cadastrou o registro local.
  */
 
+import { atuacoesDe, type AtuacaoTipo } from '@/types/permissions';
+
 const ROLES_EDIT_TOTAL = ['owner', 'admin'];
+
+/**
+ * Que atuação cobre cada finalidade do catálogo. 'lancamentos' não aparece:
+ * imóvel local não tem marcador de lançamento — lançamentos vivem na aba
+ * própria (LancamentosTab), que não tem gate de edição.
+ */
+const ATUACOES_POR_FINALIDADE: Record<string, AtuacaoTipo[]> = {
+  venda: ['prontos'],
+  locacao: ['alugados'],
+  venda_locacao: ['prontos', 'alugados'],
+};
 
 export interface PodeEditarImovelParams {
   /** O imóvel tem registro em `imoveis_locais` (só esses são editáveis). */
@@ -29,8 +44,14 @@ export interface PodeEditarImovelParams {
   captadorEmail?: string | null;
   /** `imoveis_locais.captador_id` — atribuição manual (owner/admin). */
   captadorId?: string | null;
+  /** `imoveis_locais.captador_2_id` — 2º captador (opcional). */
+  captador2Id?: string | null;
   /** `imoveis_locais.criado_por` */
   criadoPor?: string | null;
+  /** Finalidade do imóvel ('venda' | 'locacao' | 'venda_locacao'). Só usado p/ team_leader. */
+  finalidade?: string | null;
+  /** `tenant_memberships.permissions` do usuário logado — fonte da atuação. Só usado p/ team_leader. */
+  permissions?: Record<string, unknown> | null;
   /** user_ids da equipe do gestor, incluindo ele mesmo. Só usado p/ team_leader. */
   equipeUserIds?: string[] | null;
   /** e-mails da equipe do gestor, incluindo ele mesmo. Só usado p/ team_leader. */
@@ -47,7 +68,10 @@ export function podeEditarImovel({
   userEmail,
   captadorEmail,
   captadorId,
+  captador2Id,
   criadoPor,
+  finalidade,
+  permissions,
   equipeUserIds,
   equipeEmails,
 }: PodeEditarImovelParams): boolean {
@@ -56,6 +80,15 @@ export function podeEditarImovel({
 
   const role = norm(systemRole);
   if (ROLES_EDIT_TOTAL.includes(role)) return true;
+
+  // Gestor edita qualquer imóvel da própria atuação, mesmo captado/criado por
+  // outra equipe. Fail-open no mesmo sentido de atuacoesDe: gestor sem
+  // marcação de atuação cobre as três.
+  if (role === 'team_leader') {
+    const cobertas = atuacoesDe(permissions);
+    const necessarias = ATUACOES_POR_FINALIDADE[norm(finalidade)] ?? [];
+    if (necessarias.some((a) => cobertas.includes(a))) return true;
+  }
 
   // Conjunto de "donos" cujos imóveis este usuário pode editar. Gestor com
   // equipe carregada usa a equipe; qualquer outro caso cai no próprio usuário.
@@ -69,6 +102,7 @@ export function podeEditarImovel({
   // Comparações só valem com os dois lados preenchidos: '' nunca casa no Set.
   if (captadorEmail && emailsSet.has(norm(captadorEmail))) return true;
   if (captadorId && idsSet.has(captadorId)) return true;
+  if (captador2Id && idsSet.has(captador2Id)) return true;
   if (criadoPor && idsSet.has(criadoPor)) return true;
   return false;
 }

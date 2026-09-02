@@ -61,6 +61,7 @@ const ROTULOS: Record<string, string> = {
   proprietario_email: 'E-mail do proprietário',
   obs_interna: 'Observação interna',
   captador_id: 'Captador',
+  captador_2_id: '2º Captador',
   status_aprovacao: 'Status de aprovação',
   motivo_aprovacao: 'Motivo da aprovação',
   aprovado_por: 'Aprovado por',
@@ -76,7 +77,7 @@ const ROTULOS: Record<string, string> = {
 };
 
 /** Colunas que guardam user_id — o diff mostra o nome, não o UUID. */
-const CAMPOS_PESSOA = new Set(['chave_com', 'captador_id', 'aprovado_por']);
+const CAMPOS_PESSOA = new Set(['chave_com', 'captador_id', 'captador_2_id', 'aprovado_por']);
 
 const CAMPOS_DATA = new Set(['chave_retirada_em', 'aprovado_em']);
 

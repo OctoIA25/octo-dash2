@@ -166,8 +166,10 @@ interface ImovelFormData {
   
   // Comissões e Condições
   tipo_comissao: string;
-  /** user_id do captador. '' = sem captador. */
+  /** user_id do captador principal. '' = sem captador (só registros legados). */
   captador_id: string;
+  /** user_id do 2º captador (opcional). '' = sem 2º captador. */
+  captador_2_id: string;
   captou_pretensao: 'venda_locacao' | 'somente_venda' | 'somente_locacao' | '';
   condicao_comercial: string;
   
@@ -242,6 +244,7 @@ const initialFormData: ImovelFormData = {
   placa_local: 'nao',
   tipo_comissao: '',
   captador_id: '',
+  captador_2_id: '',
   captou_pretensao: '',
   condicao_comercial: '',
   codigo_iptu: '',
@@ -438,6 +441,14 @@ export const CriarImovelForm = ({
   const tenantId = authTenantId || user?.tenantId;
   const { data: captadores = [] } = useCaptadores(tenantId);
   const isManager = ['admin', 'owner'].includes(user?.systemRole?.toLowerCase() || '');
+  // O captador ATUAL do imóvel também pode alterar os captadores (comparado
+  // contra initialData, não formData: a permissão vem do que está salvo).
+  // O trigger tg_guard_captador aplica a mesma regra no banco.
+  const isCaptadorAtual = Boolean(
+    isEdit && user?.id &&
+    (initialData?.captador_id === user.id || initialData?.captador_2_id === user.id)
+  );
+  const podeEditarCaptador = isManager || isCaptadorAtual;
 
   const [formData, setFormData] = useState<ImovelFormData>(initialFormData);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -826,6 +837,15 @@ export const CriarImovelForm = ({
       return;
     }
 
+    // Captador principal é obrigatório para quem pode defini-lo (o 2º é
+    // opcional). Quem não pode editar captador salva sem tocar no campo.
+    if (podeEditarCaptador && !formData.captador_id) {
+      setOpenSections(prev => ({ ...prev, comissoes: true }));
+      setSubmitStatus('error');
+      setSubmitMessage('Selecione o corretor captador. O campo é obrigatório (o 2º captador é opcional).');
+      return;
+    }
+
     // Validar link de vídeo: se preenchido, precisa ser um YouTube válido
     if (formData.link_video.trim() && !normalizeYouTubeUrl(formData.link_video)) {
       setSubmitStatus('error');
@@ -1056,14 +1076,18 @@ export const CriarImovelForm = ({
       // chave_retirada_em fica de fora de propósito: o trigger carimba a data
       // quando esta coluna muda.
       chave_com: formData.chave_com || null,
-      // captador_id só entra no payload para diretoria/admin. Upsert vira
-      // INSERT ... ON CONFLICT DO UPDATE: colunas ausentes do payload ficam
-      // fora do SET e mantêm o valor já salvo. Omitir aqui é o que faz um
-      // corretor conseguir salvar outros campos sem precisar (nem poder) tocar
-      // no captador: o BEFORE UPDATE do tg_guard_captador dispara normalmente,
-      // mas NEW.captador_id continua igual a OLD e o `IS NOT DISTINCT FROM`
-      // libera antes da checagem de role.
-      ...(isManager ? { captador_id: formData.captador_id || null } : {}),
+      // Os captadores só entram no payload para quem pode defini-los
+      // (diretoria/admin ou o captador atual). Upsert vira INSERT ... ON
+      // CONFLICT DO UPDATE: colunas ausentes do payload ficam fora do SET e
+      // mantêm o valor já salvo. Omitir aqui é o que faz um corretor comum
+      // conseguir salvar outros campos sem precisar (nem poder) tocar no
+      // captador — o tg_guard_captador libera quando nada mudou.
+      ...(podeEditarCaptador
+        ? {
+            captador_id: formData.captador_id || null,
+            captador_2_id: formData.captador_2_id || null,
+          }
+        : {}),
       status_aprovacao: isEdit ? editStatusAprovacao || 'aguardando' : 'aguardando',
     };
 
@@ -1075,7 +1099,7 @@ export const CriarImovelForm = ({
     if (error) {
       console.error('❌ Erro ao salvar imóvel local:', error.message, error.code, error.details);
       if (error.code === '42501') {
-        throw new Error('Somente diretoria ou administrador pode definir o captador do imóvel.');
+        throw new Error('Somente diretoria, administrador ou o captador atual pode definir o captador do imóvel.');
       }
       throw error;
     }
@@ -1981,27 +2005,44 @@ export const CriarImovelForm = ({
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Corretor Captador</Label>
+                  <Label>Corretor Captador *</Label>
                   <Select
-                    value={formData.captador_id || 'sem'}
-                    onValueChange={(value) => handleInputChange('captador_id', value === 'sem' ? '' : value)}
-                    disabled={!isManager}
+                    value={formData.captador_id}
+                    onValueChange={(value) => handleInputChange('captador_id', value)}
+                    disabled={!podeEditarCaptador}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Sem captador" />
+                      <SelectValue placeholder="Selecione o captador" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="sem">Sem captador</SelectItem>
                       {captadores.map((c) => (
                         <SelectItem key={c.user_id} value={c.user_id}>{c.nome}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                  {!isManager && (
+                  {!podeEditarCaptador && (
                     <p className="text-xs text-text-secondary">
-                      Somente diretoria ou administrador pode alterar o captador.
+                      Somente diretoria, administrador ou o captador atual pode alterar o captador.
                     </p>
                   )}
+                </div>
+                <div className="space-y-2">
+                  <Label>2º Corretor Captador (opcional)</Label>
+                  <Select
+                    value={formData.captador_2_id || 'sem'}
+                    onValueChange={(value) => handleInputChange('captador_2_id', value === 'sem' ? '' : value)}
+                    disabled={!podeEditarCaptador}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Sem 2º captador" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="sem">Sem 2º captador</SelectItem>
+                      {captadores.map((c) => (
+                        <SelectItem key={c.user_id} value={c.user_id}>{c.nome}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
                   <Label>Captou qual Pretensão?</Label>

@@ -133,8 +133,10 @@ interface CondominioFormData {
   status_comercial: string;
   construtora: string;
   incorporadora: string;
-  /** user_id do captador. '' = sem captador. */
+  /** user_id do captador principal. '' = sem captador (só registros legados). */
   captador_id: string;
+  /** user_id do 2º captador (opcional). '' = sem 2º captador. */
+  captador_2_id: string;
   ano_construcao: string;
   imobiliaria_exclusiva: string;
   num_blocos_torres: string;
@@ -254,6 +256,7 @@ const initialFormData: CondominioFormData = {
   construtora: '',
   incorporadora: '',
   captador_id: '',
+  captador_2_id: '',
   ano_construcao: '',
   imobiliaria_exclusiva: '',
   num_blocos_torres: '',
@@ -386,6 +389,13 @@ export const CriarCondominioForm = ({
   const tenantId = user?.tenantId;
   const { data: captadores = [] } = useCaptadores(tenantId);
   const isManager = ['admin', 'owner'].includes(user?.systemRole?.toLowerCase() || '');
+  // O captador ATUAL do condomínio também pode alterar os captadores (mesma
+  // regra do CriarImovelForm; o trigger tg_guard_captador valida no banco).
+  const isCaptadorAtual = Boolean(
+    isEdit && user?.id &&
+    (initialData?.captador_id === user.id || initialData?.captador_2_id === user.id)
+  );
+  const podeEditarCaptador = isManager || isCaptadorAtual;
 
   const [formData, setFormData] = useState<CondominioFormData>(initialFormData);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -579,6 +589,14 @@ export const CriarCondominioForm = ({
       return;
     }
 
+    // Captador principal é obrigatório para quem pode defini-lo (o 2º é
+    // opcional) — mesma regra do CriarImovelForm.
+    if (podeEditarCaptador && !formData.captador_id) {
+      setSubmitStatus('error');
+      setSubmitMessage('Selecione o corretor captador. O campo é obrigatório (o 2º captador é opcional).');
+      return;
+    }
+
     // Validar que tenantId é um UUID válido (evita erro silencioso quando owner
     // não está impersonando, ou quando o AuthContext ainda não carregou)
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -682,12 +700,17 @@ export const CriarCondominioForm = ({
         status_comercial: formData.status_comercial || null,
         construtora: formData.construtora || null,
         incorporadora: formData.incorporadora || null,
-        // captador_id só entra no payload para diretoria/admin — mesma regra do
-        // CriarImovelForm. Omitir para os demais é o que evita que o corretor
-        // reenvie um valor obsoleto (admin trocou o captador com o form aberto)
-        // e leve 42501 do tg_guard_captador no save inteiro: fora do UPDATE, a
-        // coluna mantém o valor do banco e o trigger passa.
-        ...(isManager ? { captador_id: formData.captador_id || null } : {}),
+        // Os captadores só entram no payload para quem pode defini-los — mesma
+        // regra do CriarImovelForm. Omitir para os demais é o que evita que o
+        // corretor reenvie um valor obsoleto (admin trocou o captador com o
+        // form aberto) e leve 42501 do tg_guard_captador no save inteiro: fora
+        // do UPDATE, a coluna mantém o valor do banco e o trigger passa.
+        ...(podeEditarCaptador
+          ? {
+              captador_id: formData.captador_id || null,
+              captador_2_id: formData.captador_2_id || null,
+            }
+          : {}),
         ano_construcao: formData.ano_construcao ? parseInt(formData.ano_construcao) : null,
         imobiliaria_exclusiva: formData.imobiliaria_exclusiva || null,
         num_blocos_torres: formData.num_blocos_torres ? parseInt(formData.num_blocos_torres) : null,
@@ -1092,27 +1115,44 @@ export const CriarCondominioForm = ({
                   <Input placeholder="Nome da incorporadora" value={formData.incorporadora} onChange={(e) => handleInputChange('incorporadora', e.target.value)} />
                 </div>
                 <div className="space-y-2">
-                  <Label>Corretor Captador</Label>
+                  <Label>Corretor Captador *</Label>
                   <Select
-                    value={formData.captador_id || 'sem'}
-                    onValueChange={(value) => handleInputChange('captador_id', value === 'sem' ? '' : value)}
-                    disabled={!isManager}
+                    value={formData.captador_id}
+                    onValueChange={(value) => handleInputChange('captador_id', value)}
+                    disabled={!podeEditarCaptador}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Sem captador" />
+                      <SelectValue placeholder="Selecione o captador" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="sem">Sem captador</SelectItem>
                       {captadores.map((c) => (
                         <SelectItem key={c.user_id} value={c.user_id}>{c.nome}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                  {!isManager && (
+                  {!podeEditarCaptador && (
                     <p className="text-xs text-text-secondary">
-                      Somente diretoria ou administrador pode alterar o captador.
+                      Somente diretoria, administrador ou o captador atual pode alterar o captador.
                     </p>
                   )}
+                </div>
+                <div className="space-y-2">
+                  <Label>2º Corretor Captador (opcional)</Label>
+                  <Select
+                    value={formData.captador_2_id || 'sem'}
+                    onValueChange={(value) => handleInputChange('captador_2_id', value === 'sem' ? '' : value)}
+                    disabled={!podeEditarCaptador}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Sem 2º captador" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="sem">Sem 2º captador</SelectItem>
+                      {captadores.map((c) => (
+                        <SelectItem key={c.user_id} value={c.user_id}>{c.nome}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
                   <Label>Ano de Construção</Label>

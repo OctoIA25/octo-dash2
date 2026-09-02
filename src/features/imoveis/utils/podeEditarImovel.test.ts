@@ -44,6 +44,11 @@ describe('podeEditarImovel', () => {
     expect(podeEditarImovel({ ...corretor, captadorId: 'user-2' })).toBe(false);
   });
 
+  it('libera o corretor pelo captador_2_id (2º captador)', () => {
+    expect(podeEditarImovel({ ...corretor, captadorId: 'user-2', captador2Id: 'user-1' })).toBe(true);
+    expect(podeEditarImovel({ ...corretor, captadorId: 'user-2', captador2Id: 'user-3' })).toBe(false);
+  });
+
   describe('gestor (team_leader) — escopo da equipe', () => {
     const gestor = {
       temRegistroLocal: true,
@@ -69,6 +74,72 @@ describe('podeEditarImovel', () => {
     it('bloqueia imóvel de corretor de outra equipe', () => {
       expect(
         podeEditarImovel({ ...gestor, captadorEmail: 'fora@octo.com', criadoPor: 'membro-9' })
+      ).toBe(false);
+    });
+
+    it('libera imóvel da própria atuação mesmo criado por outra equipe', () => {
+      expect(
+        podeEditarImovel({
+          ...gestor,
+          criadoPor: 'membro-9',
+          finalidade: 'venda',
+          permissions: { atuacao: ['prontos'] },
+        })
+      ).toBe(true);
+      expect(
+        podeEditarImovel({
+          ...gestor,
+          criadoPor: 'membro-9',
+          finalidade: 'locacao',
+          permissions: { atuacao: ['alugados'] },
+        })
+      ).toBe(true);
+    });
+
+    it('venda_locacao casa com qualquer uma das duas atuações', () => {
+      expect(
+        podeEditarImovel({
+          ...gestor,
+          criadoPor: 'membro-9',
+          finalidade: 'venda_locacao',
+          permissions: { atuacao: ['alugados'] },
+        })
+      ).toBe(true);
+    });
+
+    it('bloqueia imóvel fora da atuação do gestor (e de fora da equipe)', () => {
+      expect(
+        podeEditarImovel({
+          ...gestor,
+          criadoPor: 'membro-9',
+          finalidade: 'venda',
+          permissions: { atuacao: ['alugados'] },
+        })
+      ).toBe(false);
+      expect(
+        podeEditarImovel({
+          ...gestor,
+          criadoPor: 'membro-9',
+          finalidade: 'locacao',
+          permissions: { atuacao: ['lancamentos'] },
+        })
+      ).toBe(false);
+    });
+
+    it('gestor sem atuação marcada cobre tudo (fail-open, como atuacoesDe)', () => {
+      expect(
+        podeEditarImovel({ ...gestor, criadoPor: 'membro-9', finalidade: 'venda' })
+      ).toBe(true);
+    });
+
+    it('atuação não vaza para corretor', () => {
+      expect(
+        podeEditarImovel({
+          ...corretor,
+          criadoPor: 'user-2',
+          finalidade: 'venda',
+          permissions: { atuacao: ['prontos'] },
+        })
       ).toBe(false);
     });
 
