@@ -865,6 +865,7 @@ const effectiveZapConfig = (tenantConfig) => {
     detailBaseUrl: tenantConfig.detailBaseUrl ?? env.detailBaseUrl,
     resyncUrl: tenantConfig.resyncUrl ?? env.resyncUrl,
     resyncToken: tenantConfig.resyncToken ?? env.resyncToken,
+    hideComplement: tenantConfig.hideComplement === true,
   };
 };
 
@@ -1183,7 +1184,7 @@ ${buildFeaturesXml(imovel) ? `${buildFeaturesXml(imovel)}\n` : ''}    </Details>
       <State abbreviation="${xmlEscape(normalizeFeedText(imovel.estado, 'SP').toUpperCase())}">${xmlEscape(normalizeFeedText(imovel.estado, 'SP').toUpperCase())}</State>
       <City>${xmlCdata(normalizeFeedText(imovel.cidade, 'Jundiaí'))}</City>
       <Neighborhood>${xmlCdata(normalizeFeedText(imovel.bairro, 'Não informado'))}</Neighborhood>
-${imovel.cep ? `      <PostalCode>${xmlEscape(imovel.cep)}</PostalCode>\n` : ''}${imovel.logradouro ? `      <Address>${xmlCdata(imovel.logradouro)}</Address>\n` : ''}${imovel.numero ? `      <StreetNumber>${xmlEscape(imovel.numero)}</StreetNumber>\n` : ''}${imovel.complemento ? `      <Complement>${xmlCdata(imovel.complemento)}</Complement>\n` : ''}    </Location>
+${imovel.cep ? `      <PostalCode>${xmlEscape(imovel.cep)}</PostalCode>\n` : ''}${imovel.logradouro ? `      <Address>${xmlCdata(imovel.logradouro)}</Address>\n` : ''}${imovel.numero ? `      <StreetNumber>${xmlEscape(imovel.numero)}</StreetNumber>\n` : ''}${imovel.complemento && !cfg.hideComplement ? `      <Complement>${xmlCdata(imovel.complemento)}</Complement>\n` : ''}    </Location>
     <ContactInfo>
       <Name>${xmlCdata(contact.name)}</Name>
       <Email>${xmlEscape(contact.email)}</Email>

@@ -120,7 +120,7 @@ type ActiveTab = 'integrations' | 'api' | 'xml' | 'whatsapp';
 
 // Componente principal da página
 export const IntegracoesPage: React.FC = () => {
-  const { tenantId } = useAuth();
+  const { tenantId, isOwner } = useAuth();
   const location = useLocation();
 
   // Aba ativa via URL (?tab=integrations|xml|api|whatsapp)
@@ -193,6 +193,8 @@ export const IntegracoesPage: React.FC = () => {
   const [zapContactName, setZapContactName] = useState('');
   const [zapContactPhone, setZapContactPhone] = useState('');
   const [zapResyncUrl, setZapResyncUrl] = useState('');
+  // Owner-only: oculta o complemento do endereço (apto/bloco) no feed dos portais.
+  const [zapHideComplement, setZapHideComplement] = useState(false);
   const [zapStatus, setZapStatus] = useState<'inativo' | 'ativo' | 'erro'>('inativo');
   const [zapHasSecret, setZapHasSecret] = useState(false);
   const [zapTesting, setZapTesting] = useState(false);
@@ -729,6 +731,7 @@ export const IntegracoesPage: React.FC = () => {
       setZapContactName(config.contactName || '');
       setZapContactPhone(config.contactPhone || '');
       setZapResyncUrl(config.resyncUrl || '');
+      setZapHideComplement(config.hideComplement === true);
       setZapHasSecret(config.hasSecret);
       setZapStatus(config.status === 'active' ? 'ativo' : 'inativo');
     }).catch(() => { /* best-effort */ });
@@ -747,6 +750,8 @@ export const IntegracoesPage: React.FC = () => {
       resyncUrl: zapResyncUrl,
       status: 'active',
       generateSecret: !zapHasSecret,
+      // Só o owner pode enviar hideComplement (o servidor devolve 403 p/ outros).
+      ...(isOwner ? { hideComplement: zapHideComplement } : {}),
     });
     if (r.ok) {
       setZapStatus('ativo');
@@ -1855,6 +1860,24 @@ export const IntegracoesPage: React.FC = () => {
                       disabled={zapSaving}
                     />
                   </div>
+
+                  {isOwner && (
+                    <label className="flex items-start gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={zapHideComplement}
+                        onChange={(e) => setZapHideComplement(e.target.checked)}
+                        disabled={zapSaving}
+                        className="mt-0.5 h-4 w-4 rounded border-gray-300 dark:border-slate-700 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-xs text-gray-700 dark:text-slate-300">
+                        Ocultar complemento do endereço no feed
+                        <span className="block text-[11px] text-gray-500 dark:text-slate-400">
+                          Não envia apto/bloco/casa aos portais que recebem os imóveis.
+                        </span>
+                      </span>
+                    </label>
+                  )}
 
                   {zapNewSecret && (
                     <div className="p-2 rounded-lg bg-amber-50 border border-amber-200 text-[11px] text-amber-800 break-all">

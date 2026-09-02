@@ -44,6 +44,7 @@ export function createZapConfigResolver({ supabase, processEnv = process.env, lo
       publicationType: data.publication_type || 'STANDARD',
       detailBaseUrl: data.detail_base_url || null,
       resyncUrl: data.resync_url || null,
+      hideComplement: data.hide_complement === true,
       secretLookup: data.feed_secret_lookup || null,
       source: 'db',
     };
@@ -96,7 +97,7 @@ export function createZapConfigResolver({ supabase, processEnv = process.env, lo
       status: 'status', provider: 'provider', contactName: 'contact_name',
       contactEmail: 'contact_email', contactPhone: 'contact_phone',
       publicationType: 'publication_type', detailBaseUrl: 'detail_base_url',
-      resyncUrl: 'resync_url',
+      resyncUrl: 'resync_url', hideComplement: 'hide_complement',
     };
     for (const [k, col] of Object.entries(map)) {
       if (fields[k] !== undefined) payload[col] = fields[k];

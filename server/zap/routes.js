@@ -49,7 +49,8 @@ function makeRequireOwnerOrTenantAdmin(supabase) {
     try {
       const user = await authenticate(supabase, req, res);
       if (!user) return;
-      if (isPlatformOwner(user.email)) return next();
+      req.isPlatformOwner = isPlatformOwner(user.email);
+      if (req.isPlatformOwner) return next();
 
       const tenantId = req.body?.tenantId;
       if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId obrigatório' });
@@ -78,6 +79,15 @@ export function registerZapRoutes(app, supabase, options = {}) {
     const { tenantId, generateSecret, ...fields } = req.body || {};
     if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId obrigatório' });
 
+    // hideComplement (ocultar complemento do endereço no feed) é decisão SÓ do
+    // owner da plataforma — admin/team_leader do tenant não podem alterá-la.
+    if (fields.hideComplement !== undefined) {
+      if (!req.isPlatformOwner) {
+        return res.status(403).json({ ok: false, error: 'hideComplement: somente o owner da plataforma' });
+      }
+      fields.hideComplement = fields.hideComplement === true;
+    }
+
     let secret;
     if (generateSecret) { secret = generateFeedSecret(); fields.feedSecret = secret; }
 
@@ -98,6 +108,7 @@ export function registerZapRoutes(app, supabase, options = {}) {
         tenantId: cfg.tenantId, status: cfg.status, provider: cfg.provider,
         contactName: cfg.contactName, contactEmail: cfg.contactEmail, contactPhone: cfg.contactPhone,
         publicationType: cfg.publicationType, detailBaseUrl: cfg.detailBaseUrl, resyncUrl: cfg.resyncUrl,
+        hideComplement: cfg.hideComplement === true,
         hasSecret: Boolean(cfg.feedSecret), hasResyncToken: Boolean(cfg.resyncToken),
       },
     });

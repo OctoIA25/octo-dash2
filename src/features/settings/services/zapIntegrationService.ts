@@ -24,6 +24,7 @@ export interface ZapConfigView {
   publicationType: string | null;
   detailBaseUrl: string | null;
   resyncUrl: string | null;
+  hideComplement: boolean;
   hasSecret: boolean;
   hasResyncToken: boolean;
 }
@@ -36,6 +37,8 @@ export interface ZapConfigInput {
   detailBaseUrl?: string;
   resyncUrl?: string;
   resyncToken?: string;
+  /** Owner-only: oculta o complemento do endereço no feed (o servidor rejeita não-owner). */
+  hideComplement?: boolean;
   status?: 'active' | 'inactive';
   generateSecret?: boolean;
 }
