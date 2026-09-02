@@ -31,11 +31,24 @@ export function createSantaAngelaSyncService({
 }) {
   const concurrency = Number(processEnv.SANTA_ANGELA_SYNC_CONCURRENCY) || DEFAULT_CONCURRENCY;
   const tenantTimeoutMs = Number(processEnv.SANTA_ANGELA_TENANT_TIMEOUT_MS) || DEFAULT_TENANT_TIMEOUT_MS;
+  // Retorna null em erro de leitura — e o ciclo do tenant DEVE abortar nesse
+  // caso. Retornar sets vazios aqui (comportamento antigo) fazia o sync tratar
+  // a página inteira como leads novos e RE-INSERIR os 100 mais recentes a cada
+  // ciclo que a leitura falhasse (statement timeout etc.) — foi a origem das
+  // centenas de duplicatas com phone null em produção.
   async function getExisting(tenantId) {
-    const { data, error } = await supabase
-      .from('leads').select('phone, source_lead_id, status, assigned_agent_name, property_code')
-      .eq('tenant_id', tenantId).eq('source', 'Santa Angela');
-    if (error) { logger.warn(`[santa-angela] erro lendo existentes: ${error.message}`); return { phoneSet: new Set(), sourceIdSet: new Set(), bySourceId: new Map() }; }
+    // Paginado: PostgREST corta em 1000 linhas SEM erro; um tenant com mais
+    // leads Santa Ângela que isso teria existentes invisíveis ao dedup.
+    const data = [];
+    for (let from = 0; ; from += 1000) {
+      const { data: page, error } = await supabase
+        .from('leads').select('phone, source_lead_id, status, assigned_agent_name, property_code')
+        .eq('tenant_id', tenantId).eq('source', 'Santa Angela')
+        .order('id').range(from, from + 999);
+      if (error) { logger.warn(`[santa-angela] erro lendo existentes: ${error.message}`); return null; }
+      data.push(...(page || []));
+      if (!page || page.length < 1000) break;
+    }
     const phoneSet = new Set((data || []).map((l) => l.phone).filter(Boolean));
     // filter(Boolean): um source_lead_id nulo no banco não pode virar match
     // contra uma saLead.id ausente (causaria falso "update" / .eq sem alvo).
@@ -52,10 +65,14 @@ export function createSantaAngelaSyncService({
     return { phoneSet, sourceIdSet, bySourceId };
   }
 
-  async function insertNew(lead) {
+  async function insertNew(lead, { phoneNullFallback = true } = {}) {
     const { error } = await supabase.from('leads').insert(lead);
     if (!error) return true;
     if (String(error.message || '').includes('unique_phone_per_tenant')) {
+      // Lead fresco com telefone já usado por outro source entra sem telefone
+      // (não perder lead vivo). No backfill histórico o fallback é desligado:
+      // duplicar uma pessoa antiga é pior que pular.
+      if (!phoneNullFallback) return false;
       const { error: e2 } = await supabase.from('leads').insert({ ...lead, phone: null });
       return !e2;
     }
@@ -113,9 +130,15 @@ export function createSantaAngelaSyncService({
     return byId.get(String(empreendimentoId)) || null;
   }
 
-  async function syncTenant(tenantId, runId = '-') {
+  // `full: true` (primeiro sync do tenant, last_sync_at null) varre TODAS as
+  // páginas do grid — sem isso a base histórica nunca entra: o polling só lê a
+  // página 1 (100 mais recentes por data de cadastro) e um lead antigo jamais
+  // aparece nela. Leads históricos (>48h) entram com participa_bolsao=false
+  // (não inundam o bolsão/expiração) e assigned_at original; o gate de frescor
+  // no trigger de lead.created (migration 20260902) impede que disparem a Lia.
+  async function syncTenant(tenantId, runId = '-', { full = false } = {}) {
     const startedAt = Date.now();
-    logger.info(`[santa-angela] {"event":"santa-angela.sync.tenant.start","runId":"${runId}","tenantId":"${tenantId}"}`);
+    logger.info(`[santa-angela] {"event":"santa-angela.sync.tenant.start","runId":"${runId}","tenantId":"${tenantId}","full":${full}}`);
     const result = { tenantId, success: false, totalFetched: 0, newLeads: 0, updatedLeads: 0, errors: 0, message: '' };
 
     const finish = () => {
@@ -128,29 +151,56 @@ export function createSantaAngelaSyncService({
       return result;
     };
 
-    const fetched = await apiClient.fetchLeads(tenantId);
-    if (!fetched.ok) {
-      result.errors = 1;
-      result.message = `Falha ao buscar leads: ${fetched.error || fetched.status}`;
-      return finish();
-    }
-    result.totalFetched = fetched.leads.length;
-    if (fetched.leads.length === 0) {
+    const leads = [];
+    let page = 1; let ultimaPagina = 1;
+    do {
+      const fetched = await apiClient.fetchLeads(tenantId, page);
+      if (!fetched.ok) {
+        result.errors = 1;
+        result.message = `Falha ao buscar leads (página ${page}): ${fetched.error || fetched.status}`;
+        return finish();
+      }
+      leads.push(...fetched.leads);
+      ultimaPagina = fetched.ultimaPagina || 1;
+      page++;
+    } while (full && page <= ultimaPagina);
+
+    result.totalFetched = leads.length;
+    if (leads.length === 0) {
       result.success = true; result.message = 'Nenhum lead encontrado na API';
       await touchSync(tenantId, 0);
       return finish();
     }
 
-    const { phoneSet, sourceIdSet, bySourceId } = await getExisting(tenantId);
-    for (const saLead of fetched.leads) {
+    const existing = await getExisting(tenantId);
+    if (!existing) {
+      // Sem visão dos existentes NÃO se insere nada — tratar como "tudo novo"
+      // duplicaria a página inteira. Falha o ciclo; o próximo cron re-tenta.
+      result.errors = 1;
+      result.message = 'Falha ao ler leads existentes — ciclo abortado';
+      return finish();
+    }
+    const { phoneSet, sourceIdSet, bySourceId } = existing;
+    const freshCutoff = Date.now() - 48 * 60 * 60 * 1000;
+    for (const saLead of leads) {
       const current = saLead.id ? bySourceId.get(saLead.id) : undefined;
-      const mapped = mapSantaAngelaToLead(saLead, tenantId, await resolveEmpreendimento(tenantId, saLead, current));
+      // ponytail: no full sync não se resolve empreendimento por lead (seriam
+      // ~1 req/lead a 5 req/s = minutos); histórico entra sem property_code.
+      const historical = full && new Date(saLead.datahoracadastro || Date.now()).getTime() < freshCutoff;
+      const empreendimento = historical ? null : await resolveEmpreendimento(tenantId, saLead, current);
+      const mapped = mapSantaAngelaToLead(saLead, tenantId, empreendimento);
       if (saLead.id && sourceIdSet.has(saLead.id)) {
         if (await updateExisting(mapped, tenantId, current) === 'updated') result.updatedLeads++;
       } else if (mapped.phone && phoneSet.has(mapped.phone)) {
         // pula: telefone já existe sob outro source_id (evita violar unique_phone_per_tenant)
-      } else if (await insertNew(mapped)) {
-        result.newLeads++;
+      } else {
+        const lead = historical
+          ? { ...mapped, participa_bolsao: false, assigned_at: mapped.created_at }
+          : mapped;
+        if (await insertNew(lead, { phoneNullFallback: !historical })) {
+          result.newLeads++;
+          if (mapped.phone) phoneSet.add(mapped.phone); // dedup intra-ciclo (full traz a base inteira)
+        }
       }
     }
 
@@ -167,13 +217,20 @@ export function createSantaAngelaSyncService({
   // até concluir. A escrita tardia é inofensiva: o sync é idempotente (chave
   // source_lead_id) e a guarda de reentrância impede ciclos sobrepostos; no pior
   // caso um touchSync atrasado regrava last_sync_at com valor levemente anterior.
-  function withTenantTimeout(tenantId, runId) {
+  function withTenantTimeout(tenantId, runId, { full = false } = {}) {
+    // Primeiro sync (full) varre a base inteira e insere centenas de leads —
+    // não cabe nos 60s. Teto próprio, folgado: se o race de 60s vencesse, a
+    // guarda de reentrância liberaria e o próximo tick iniciaria OUTRO full
+    // concorrente com o que ficou rodando em background (inserts duplicados).
+    const timeoutMs = full
+      ? (Number(processEnv.SANTA_ANGELA_FULL_SYNC_TIMEOUT_MS) || 15 * 60 * 1000)
+      : tenantTimeoutMs;
     return Promise.race([
-      syncTenant(tenantId, runId),
+      syncTenant(tenantId, runId, { full }),
       new Promise((resolve) => setTimeout(
         () => resolve({ tenantId, success: false, totalFetched: 0, newLeads: 0, updatedLeads: 0, errors: 1,
-          message: `timeout do tenant após ${tenantTimeoutMs}ms` }),
-        tenantTimeoutMs,
+          message: `timeout do tenant após ${timeoutMs}ms` }),
+        timeoutMs,
       )),
     ]);
   }
@@ -181,7 +238,7 @@ export function createSantaAngelaSyncService({
   async function syncAllTenants(runId = String(Date.now())) {
     const cycleStart = Date.now();
     const { data, error } = await supabase
-      .from(CONFIG_TABLE).select('tenant_id').eq('status', 'active');
+      .from(CONFIG_TABLE).select('tenant_id, last_sync_at').eq('status', 'active');
     if (error) {
       logger.error(`[santa-angela] {"event":"santa-angela.sync.cycle.error","runId":"${runId}","error":${JSON.stringify(error.message)}}`);
       return [];
@@ -195,8 +252,10 @@ export function createSantaAngelaSyncService({
     // p-limit: no máximo `concurrency` tenants em paralelo — evita abrir centenas
     // de sincronizações de uma vez conforme a base cresce. Injetável p/ testes.
     const limit = pLimitImpl ? pLimitImpl(concurrency) : (await import('p-limit')).default(concurrency);
+    // Tenant que nunca sincronizou (last_sync_at null) faz o primeiro sync
+    // completo: todas as páginas do grid, importando a base histórica.
     const settled = await Promise.allSettled(
-      rows.map((r) => limit(() => withTenantTimeout(r.tenant_id, runId))),
+      rows.map((r) => limit(() => withTenantTimeout(r.tenant_id, runId, { full: !r.last_sync_at }))),
     );
     const results = settled.map((s, i) => (s.status === 'fulfilled'
       ? s.value

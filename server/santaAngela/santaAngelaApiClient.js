@@ -84,10 +84,18 @@ export function createSantaAngelaApiClient({
     }
   }
 
-  async function fetchLeads(tenantId) {
-    const r = await request(tenantId, { method: 'POST', body: DEFAULT_BODY });
+  // `page` > 1 é usado só pelo primeiro sync de um tenant (backfill da base
+  // histórica); o polling normal continua lendo apenas a página 1.
+  async function fetchLeads(tenantId, page = 1) {
+    const body = { ...DEFAULT_BODY, paginacao: { ...DEFAULT_BODY.paginacao, paginaAtual: page } };
+    const r = await request(tenantId, { method: 'POST', body });
     if (!r.ok) return { ok: false, leads: [], status: r.status, error: r.error };
-    return { ok: true, leads: r.data?.prospects || [], status: r.status };
+    return {
+      ok: true,
+      leads: r.data?.prospects || [],
+      status: r.status,
+      ultimaPagina: Number(r.data?.paginacao?.ultimaPagina) || 1,
+    };
   }
 
   // O grid NÃO traz o imóvel — só o detalhe do prospect tem `empreendimento_id`.
