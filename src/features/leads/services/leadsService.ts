@@ -134,24 +134,32 @@ const LEADS_KANBAN_COLUMNS =
 const KENLO_KANBAN_COLUMNS =
   'id,client_name,client_phone,client_email,message,interest_reference,attended_by_name,is_exclusive,interest_type,interest_is_sale,interest_is_rent,stage,temperature,portal,lead_timestamp,archived_at,archive_reason,updated_at,created_at,tenant_id,classification,preferences';
 
-const KENLO_PAGE_SIZE = 1000;
+const PAGE_SIZE = 1000;
 // Manter baixo: cada página é sort+offset no Postgres, por usuário — 6 em paralelo
 // saturou o banco (incidente 28/jul; ver idx_kenlo_leads_tenant_created).
-const KENLO_PAGE_CONCURRENCY = 2;
+const PAGE_CONCURRENCY = 2;
 
-// Pagina kenlo_leads em lotes concorrentes. `buildPageQuery(from)` deve devolver a
-// query já filtrada/ordenada para o intervalo [from, from+PAGE_SIZE). Para quando um
-// lote traz uma página com < PAGE_SIZE — mesmo critério do loop serial, avaliado por
-// lote. ponytail: no pior caso o último lote busca algumas páginas vazias além do fim.
-async function fetchKenloPagesInBatches(
+// Pagina uma tabela de leads (kenlo_leads OU leads) em lotes concorrentes.
+// `buildPageQuery(from)` deve devolver a query já filtrada/ordenada para o intervalo
+// [from, from+PAGE_SIZE). Para quando um lote traz uma página com < PAGE_SIZE — mesmo
+// critério do loop serial, avaliado por lote.
+// ponytail: no pior caso o último lote busca algumas páginas vazias além do fim.
+//
+// OBRIGATÓRIO em toda listagem: o PostgREST devolve no máximo 1000 linhas e NÃO
+// avisa que truncou. Sem paginar, uma tela some com os leads além da milésima
+// linha da ordenação — em 02/09 o tenant Lotus passou de 1.048 para 1.386 leads
+// (import histórico Santa Ângela) e os 386 mais ANTIGOS desapareceram do Kanban,
+// sem erro nenhum. Ver também o tiebreaker de `id` nas queries: com offset, um
+// `order` não determinístico pula/repete linhas entre páginas.
+async function fetchPagesInBatches(
   buildPageQuery: (from: number) => PromiseLike<{ data: unknown[] | null; error: unknown }>,
   maxPages = 50
 ): Promise<Record<string, unknown>[]> {
   const all: Record<string, unknown>[] = [];
-  for (let batchStart = 0; batchStart < maxPages; batchStart += KENLO_PAGE_CONCURRENCY) {
-    const size = Math.min(KENLO_PAGE_CONCURRENCY, maxPages - batchStart);
+  for (let batchStart = 0; batchStart < maxPages; batchStart += PAGE_CONCURRENCY) {
+    const size = Math.min(PAGE_CONCURRENCY, maxPages - batchStart);
     const pages = await Promise.all(
-      Array.from({ length: size }, (_, i) => buildPageQuery((batchStart + i) * KENLO_PAGE_SIZE))
+      Array.from({ length: size }, (_, i) => buildPageQuery((batchStart + i) * PAGE_SIZE))
     );
     let reachedEnd = false;
     for (const { data, error } of pages) {
@@ -162,7 +170,7 @@ async function fetchKenloPagesInBatches(
       }
       const rows = (data || []) as Record<string, unknown>[];
       all.push(...rows);
-      if (rows.length < KENLO_PAGE_SIZE) reachedEnd = true;
+      if (rows.length < PAGE_SIZE) reachedEnd = true;
     }
     if (reachedEnd) break;
   }
@@ -271,14 +279,14 @@ async function fetchAllKenloLeadsForKanban(tenantId?: string): Promise<KanbanLea
   try {
     // Todos os leads não-arquivados da imobiliária, em lotes paralelos.
     // MAX_PAGES = 50 (50 mil leads) é o teto de segurança.
-    const all = await fetchKenloPagesInBatches((from) => {
+    const all = await fetchPagesInBatches((from) => {
       let query = supabase
         .from('kenlo_leads')
         .select(KENLO_KANBAN_COLUMNS)
         .is('archived_at', null)
         // event time: ordena pela data REAL do lead, não pela de import.
         .order('lead_timestamp', { ascending: false })
-        .range(from, from + KENLO_PAGE_SIZE - 1);
+        .range(from, from + PAGE_SIZE - 1);
       if (tenantId) query = query.eq('tenant_id', tenantId);
       return query;
     }, 50);
@@ -410,23 +418,28 @@ export async function fetchLeadsDoCorretorCRM(
 
     // 1) leads do CRM (tabela leads) — escopo por tenant obrigatório.
     //    Colunas explícitas: `select('*')` traz campos gordos que o Kanban não usa.
-    let crmQuery = supabase
-      .from(LEADS_TABLE)
-      .select(LEADS_KANBAN_COLUMNS)
-      .eq('assigned_agent_id', userId)
-      .is('archived_at', null)
-      .order('created_at', { ascending: false });
-    if (tenantId) crmQuery = crmQuery.eq('tenant_id', tenantId);
-    if (leadType) crmQuery = crmQuery.eq('lead_type', leadType);
+    const crmPages = () => fetchPagesInBatches((from) => {
+      let q = supabase
+        .from(LEADS_TABLE)
+        .select(LEADS_KANBAN_COLUMNS)
+        .eq('assigned_agent_id', userId)
+        .is('archived_at', null)
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false }) // tiebreaker: ORDER estável entre páginas
+        .range(from, from + PAGE_SIZE - 1);
+      if (tenantId) q = q.eq('tenant_id', tenantId);
+      if (leadType) q = q.eq('lead_type', leadType);
+      return q;
+    }, 20);
 
     // 2) kenlo_leads atribuídos pelo NOME do corretor, em lotes paralelos.
     //    kenlo_leads são sempre Interessado; se o filtro é Proprietário, pular.
     const buscaKenlo = leadType !== LEAD_TYPE_PROPRIETARIO && !!corretorNome && corretorNome.trim().length > 0;
 
-    const [crmResult, kenloRows] = await Promise.all([
-      crmQuery,
+    const [crmRows, kenloRows] = await Promise.all([
+      crmPages(),
       buscaKenlo
-        ? fetchKenloPagesInBatches((from) => {
+        ? fetchPagesInBatches((from) => {
             let q = supabase
               .from('kenlo_leads')
               .select(KENLO_KANBAN_COLUMNS)
@@ -435,18 +448,14 @@ export async function fetchLeadsDoCorretorCRM(
               // event time: ordena pela data REAL do lead, não pela de import.
               // ORDER estável é obrigatório com paginação paralela (offsets disjuntos).
               .order('lead_timestamp', { ascending: false })
-              .range(from, from + KENLO_PAGE_SIZE - 1);
+              .range(from, from + PAGE_SIZE - 1);
             if (tenantId) q = q.eq('tenant_id', tenantId);
             return q;
           }, 20)
         : Promise.resolve([] as Record<string, unknown>[]),
     ]);
 
-    if (crmResult.error) {
-      console.error('❌ Erro ao buscar leads do corretor (CRM):', crmResult.error);
-      throw crmResult.error;
-    }
-    const crmLeads = (crmResult.data || []).map(mapToKanbanLead);
+    const crmLeads = (crmRows as unknown as CRMLead[]).map(mapToKanbanLead);
     const kenloLeads = kenloRows.map((kl) => mapKenloToKanbanLead(kl));
 
     const allLeads = [...crmLeads, ...kenloLeads];
@@ -470,28 +479,27 @@ export async function fetchLeadsDoCorretorPorNome(
   try {
 
     // 1) leads (CRM)
-    let crmQuery = supabase
-      .from(LEADS_TABLE)
-      .select('id,tenant_id,name,phone,email,source,source_lead_id,status,temperature,property_id,property_code,property_value,property_type,assigned_agent_id,assigned_agent_name,comments,tags,custom_fields,visit_date,closing_date,final_sale_value,lead_type,is_exclusive,participa_bolsao,assigned_at,created_at,updated_at,classification,preferences')
-      .ilike('assigned_agent_name', nomeCorretor)
-      .is('archived_at', null)
-      .order('created_at', { ascending: false });
-    if (tenantId) crmQuery = crmQuery.eq('tenant_id', tenantId);
-    if (leadType) crmQuery = crmQuery.eq('lead_type', leadType);
-
-    const { data, error } = await crmQuery;
-    if (error) {
-      console.error('❌ Erro ao buscar leads por nome:', error);
-      throw error;
-    }
-    const crmLeads = (data || []).map(mapToKanbanLead);
+    const crmRows = await fetchPagesInBatches((from) => {
+      let q = supabase
+        .from(LEADS_TABLE)
+        .select('id,tenant_id,name,phone,email,source,source_lead_id,status,temperature,property_id,property_code,property_value,property_type,assigned_agent_id,assigned_agent_name,comments,tags,custom_fields,visit_date,closing_date,final_sale_value,lead_type,is_exclusive,participa_bolsao,assigned_at,created_at,updated_at,classification,preferences')
+        .ilike('assigned_agent_name', nomeCorretor)
+        .is('archived_at', null)
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false }) // tiebreaker: ORDER estável entre páginas
+        .range(from, from + PAGE_SIZE - 1);
+      if (tenantId) q = q.eq('tenant_id', tenantId);
+      if (leadType) q = q.eq('lead_type', leadType);
+      return q;
+    }, 20);
+    const crmLeads = (crmRows as unknown as CRMLead[]).map(mapToKanbanLead);
 
     // 2) kenlo_leads por attended_by_name — em lotes paralelos.
     //    kenlo_leads são sempre Interessado; se filtro é Proprietário, pular.
     if (leadType === LEAD_TYPE_PROPRIETARIO) {
       return crmLeads;
     }
-    const allKenlo = await fetchKenloPagesInBatches((from) => {
+    const allKenlo = await fetchPagesInBatches((from) => {
       let q = supabase
         .from('kenlo_leads')
         .select(KENLO_KANBAN_COLUMNS)
@@ -499,7 +507,7 @@ export async function fetchLeadsDoCorretorPorNome(
         .is('archived_at', null)
         // event time: ordena pela data REAL do lead, não pela de import.
         .order('lead_timestamp', { ascending: false })
-        .range(from, from + KENLO_PAGE_SIZE - 1);
+        .range(from, from + PAGE_SIZE - 1);
       if (tenantId) q = q.eq('tenant_id', tenantId);
       return q;
     }, 20);
@@ -521,20 +529,19 @@ export async function fetchTodosLeadsCRM(tenantId?: string, leadType?: LeadType)
   try {
 
     // Buscar leads CRM — filtrar por tenant_id (escopo multi-tenant obrigatório)
-    let crmQuery = supabase
-      .from(LEADS_TABLE)
-      .select(LEADS_KANBAN_COLUMNS)
-      .is('archived_at', null)
-      .order('created_at', { ascending: false });
-    if (tenantId) crmQuery = crmQuery.eq('tenant_id', tenantId);
-    if (leadType) crmQuery = crmQuery.eq('lead_type', leadType);
-
-    const { data, error } = await crmQuery;
-    if (error) {
-      console.error('❌ Erro ao buscar leads CRM:', error);
-      throw error;
-    }
-    const crmLeads = (data || []).map(mapToKanbanLead);
+    const crmRows = await fetchPagesInBatches((from) => {
+      let q = supabase
+        .from(LEADS_TABLE)
+        .select(LEADS_KANBAN_COLUMNS)
+        .is('archived_at', null)
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false }) // tiebreaker: ORDER estável entre páginas
+        .range(from, from + PAGE_SIZE - 1);
+      if (tenantId) q = q.eq('tenant_id', tenantId);
+      if (leadType) q = q.eq('lead_type', leadType);
+      return q;
+    }, 20);
+    const crmLeads = (crmRows as unknown as CRMLead[]).map(mapToKanbanLead);
 
     // kenlo_leads (sempre Interessado; se filtro é Proprietário, pular)
     if (leadType === LEAD_TYPE_PROPRIETARIO) {
