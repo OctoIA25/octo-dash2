@@ -4848,9 +4848,26 @@ if (process.env.ENPS_SCHEDULER === '1') {
 // REPORT espelho no Google Sheets (docs/superpowers/specs/2026-08-28-report-espelho-drive.md).
 // Scheduler flag-gated (REPORT_MIRROR_SCHEDULER=1) — sem rotas HTTP, só o cron.
 import { startReportMirrorScheduler } from './reportMirror/index.js';
+import { recordHeartbeat } from './observability/heartbeat.js';
+
+// Falha de partida grava heartbeat: entre 29/08 e 02/09/2026 o espelho ficou
+// parado com env faltando e ninguém viu, porque o único sinal era um
+// console.error no boot. Sem heartbeat, o card de status não acusa nada.
+const reportMirrorNaoSubiu = (motivo) => {
+  console.error('[reportMirror] scheduler não iniciou:', motivo);
+  recordHeartbeat(supabase, 'report_mirror', { ok: false, error: `scheduler não iniciou: ${motivo}` })
+    .catch(() => {});
+};
+
 if (process.env.REPORT_MIRROR_SCHEDULER === '1') {
   startReportMirrorScheduler(supabase)
-    .catch((e) => console.error('[reportMirror] scheduler não iniciou:', e?.message));
+    .then((task) => {
+      if (task) console.log(`[reportMirror] scheduler ativo (${process.env.REPORT_MIRROR_CRON || '17 * * * *'})`);
+      else reportMirrorNaoSubiu('node-cron indisponível');
+    })
+    .catch((e) => reportMirrorNaoSubiu(e?.message || String(e)));
+} else {
+  console.warn('[reportMirror] REPORT_MIRROR_SCHEDULER != 1 — aba ESPELHO não será atualizada.');
 }
 
 // 404 para rotas da API não encontradas
