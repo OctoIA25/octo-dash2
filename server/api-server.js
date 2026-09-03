@@ -13,6 +13,7 @@ import { createWorker } from './watermark/worker.js';
 import { createZapConfigResolver, registerZapRoutes, extractZapPhotoUrls } from './zap/index.js';
 import { handleClassificationPatch } from './leadClassification.js';
 import { avisoValorLancamento } from './lancamentoValor.js';
+import { enriquecerComCodigoLancamento } from './lancamentoAnuncios.js';
 
 const app = express();
 const PORT = process.env.API_PORT || 3001;
@@ -1010,7 +1011,8 @@ const normalizeZapLeadPayload = (payload) => {
     interest_reference: propertyCode,
     property_code: propertyCode,
     interest_type: propertyCode ? 'property' : null,
-    interest_is_sale: transactionType ? transactionType.includes('sale') || transactionType.includes('venda') : undefined,
+    // O ZAP manda 'SELL', não 'SALE'. Ver a cópia em proxy-production.js.
+    interest_is_sale: transactionType ? transactionType.includes('sell') || transactionType.includes('sale') || transactionType.includes('venda') : undefined,
     interest_is_rent: transactionType ? transactionType.includes('rent') || transactionType.includes('loca') || transactionType.includes('aluguel') : undefined,
     interest_image: pickFirstNonEmpty(body.interest_image, body.image, body.imageUrl, listing.image, listing.imageUrl, listing.thumbnail),
     attended_by: pickFirstNonEmpty(body.attended_by, body.assigned_agent, body.corretor, listing.brokerName, listing.agentName, lead.attended_by),
@@ -1677,9 +1679,12 @@ app.post('/api/v1/integrations/zapimoveis/notify-update', validateZapFeedAccess,
 // Pipeline: 1) attendedBy → 2) XML/cache → 3) Meus Imóveis → 4) Roleta
 app.post('/api/v1/integrations/zapimoveis/webhook', validateZapFeedAccess, async (req, res) => {
   try {
-    const normalized = normalizeZapLeadPayload(req.body);
     // Tenant vem do secret/API Key (validateZapFeedAccess), nunca do payload do portal.
     const tenantId = req.tenantId;
+    // Ver o gêmeo em proxy-production.js: código de lançamento vence o do portal.
+    const normalized = await enriquecerComCodigoLancamento(
+      supabase, tenantId, req.body, normalizeZapLeadPayload(req.body),
+    );
     const now = new Date().toISOString();
     const propertyCode = normalized.property_code || normalized.interest_reference || null;
     const sourceLeadId = normalized.external_id || `zap-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;

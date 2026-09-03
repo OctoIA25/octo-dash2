@@ -33,6 +33,7 @@ import { normalizePhone, phonesMatch } from './utils/phone.js';
 import { createWebhookDispatcher } from './webhookDispatch.js';
 import { computeNextAttempt, MAX_WEBHOOK_ATTEMPTS } from './webhookRetry.js';
 import { getDeletedTenantIds } from './utils/tenantSoftDelete.js';
+import { enriquecerComCodigoLancamento } from './lancamentoAnuncios.js';
 import { createLeadAssignment } from './leadAssignment.js';
 import { countLeadsPerBroker, fetchBrokerLeadStats } from './brokerLeadStats.js';
 import { handleClassificationPatch } from './leadClassification.js';
@@ -1517,7 +1518,9 @@ const getZapTransactionHints = (payload) => {
   ])).toLowerCase();
 
   return {
-    interest_is_sale: raw ? raw.includes('sale') || raw.includes('venda') : undefined,
+    // O ZAP manda 'SELL', não 'SALE' — 'sell'.includes('sale') é false, e o lead
+    // de venda saía com interest_is_sale=false. Verificado no payload real de 03/set.
+    interest_is_sale: raw ? raw.includes('sell') || raw.includes('sale') || raw.includes('venda') : undefined,
     interest_is_rent: raw ? raw.includes('rent') || raw.includes('loca') || raw.includes('aluguel') : undefined,
   };
 };
@@ -1949,7 +1952,12 @@ app.post('/api/v1/integrations/zapimoveis/webhook', validateZapFeedAccess, async
     // inferido. Havia aqui um fallback que extraía o BAIRRO do texto da mensagem e
     // pegava o primeiro imóvel daquele bairro — chute que sobrescrevia o código real
     // e gravava um imóvel qualquer (inclusive não-aprovados, fora do feed).
-    const normalizedLead = normalizeZapLeadPayload(req.body);
+    // O código do anúncio de lançamento (L0NN) substitui o do portal quando o
+    // anúncio está no de-para — é ele que identifica o imóvel para o corretor e
+    // faz a classificação automática enxergar 'lancamento'.
+    const normalizedLead = await enriquecerComCodigoLancamento(
+      supabase, req.tenantId, req.body, normalizeZapLeadPayload(req.body),
+    );
 
     const result = await createIncomingLead({
       tenantId: req.tenantId,
@@ -1988,10 +1996,10 @@ app.post('/api/v1/integrations/zapimoveis/webhook', validateZapFeedAccess, async
 
 app.post('/api/v1/integrations/grupo-olx/webhook', validateZapFeedAccess, async (req, res) => {
   try {
-    const normalizedLead = {
-      ...normalizeZapLeadPayload(req.body),
-      portal: 'Grupo OLX',
-    };
+    const normalizedLead = await enriquecerComCodigoLancamento(
+      supabase, req.tenantId, req.body,
+      { ...normalizeZapLeadPayload(req.body), portal: 'Grupo OLX' },
+    );
     const result = await createIncomingLead({
       tenantId: req.tenantId,
       body: normalizedLead,
