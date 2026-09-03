@@ -68,6 +68,12 @@ export async function resolverCodigoLancamento(supabase, tenantId, body) {
  * Troca o código do portal pelo do lançamento no lead já normalizado. O código
  * original não se perde: `clientListingId` e `originListingId` continuam em
  * `raw_data.original_request`.
+ *
+ * Marca também a `atuacao`: lead de lançamento não pode cair na roleta de imóvel
+ * pronto. O sinal antigo (`lancamento_id`) não serve aqui — o de-para liga o
+ * anúncio a um CÓDIGO, não a uma linha de `lancamentos` —, então a atuação vem
+ * explícita. Ela é sempre escrita pelo servidor: o normalizador do ZAP monta um
+ * objeto de chaves fixas, nada do payload do portal chega neste campo.
  */
 export async function enriquecerComCodigoLancamento(supabase, tenantId, rawBody, leadNormalizado) {
   const codigo = await resolverCodigoLancamento(supabase, tenantId, rawBody);
@@ -79,5 +85,6 @@ export async function enriquecerComCodigoLancamento(supabase, tenantId, rawBody,
     property_code: codigo,
     interest_reference: codigo,
     interest_type: 'property',
+    atuacao: 'lancamentos',
   };
 }

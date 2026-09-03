@@ -1664,7 +1664,9 @@ const normalizeZapLeadPayload = (payload) => {
  * em silêncio.
  */
 const atuacaoFromBody = (body) =>
-  (body?.lancamento_id || body?.raw_data?.lancamento_id ? 'lancamentos' : 'prontos');
+  (body?.atuacao === 'lancamentos' || body?.lancamento_id || body?.raw_data?.lancamento_id
+    ? 'lancamentos'
+    : 'prontos');
 
 const createIncomingLead = async ({ tenantId, body, source = 'API' }) => {
   const {
@@ -1748,12 +1750,13 @@ const createIncomingLead = async ({ tenantId, body, source = 'API' }) => {
   const resolveAssignment = async () => {
     if (!explicitBroker && auto_assign !== false) {
       // Os dois chamadores de hoje (webhooks ZAP Imóveis e Grupo OLX) passam o
-      // body já normalizado por normalizeZapLeadPayload, que não propaga
-      // lancamento_id — ou seja, aqui o helper sempre resulta em 'prontos', que
-      // é o correto para lead de portal. Ele fica genérico de propósito, para o
-      // dia em que alguém chamar createIncomingLead com um body cru — é o que a
-      // cópia do api-server.js (~1709) já faz, chegando ao mesmo 'prontos' por
-      // outro caminho.
+      // body já normalizado por normalizeZapLeadPayload. Ele não propaga
+      // lancamento_id, mas `enriquecerComCodigoLancamento` marca `atuacao` quando
+      // o anúncio está no de-para de lançamentos — é assim que um lead de portal
+      // deixa de ser 'prontos'. O helper fica genérico de propósito, para o dia em
+      // que alguém chamar createIncomingLead com um body cru; a cópia do
+      // api-server.js chega ao mesmo resultado por outro caminho (lê
+      // `normalized.atuacao` antes de cair no helper).
       const { broker, method } = await resolveBrokerForLead(
         propertyCode, tenantId, raw_data, lookupCache, { atuacao: atuacaoFromBody(body) },
       );

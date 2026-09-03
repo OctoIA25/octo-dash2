@@ -1724,7 +1724,11 @@ app.post('/api/v1/integrations/zapimoveis/webhook', validateZapFeedAccess, async
       interest_reference: normalizedPropertyCode,
       raw_data: normalized.raw_data,
     };
-    const { broker, method } = await resolveBrokerForLead(assignmentLeadData, tenantId, normalized.raw_data, { atuacao: atuacaoFromBody(req.body) });
+    // A marca de lançamento vem do lead normalizado (o de-para roda ali), não do
+    // payload do portal — que nunca traz lancamento_id nem pode ditar atuação.
+    const { broker, method } = await resolveBrokerForLead(assignmentLeadData, tenantId, normalized.raw_data, {
+      atuacao: normalized.atuacao || atuacaoFromBody(req.body),
+    });
     const crmLeadData = {
       tenant_id: tenantId,
       name: normalized.name || 'Lead sem nome',

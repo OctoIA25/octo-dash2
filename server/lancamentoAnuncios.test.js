@@ -129,6 +129,20 @@ describe('enriquecerComCodigoLancamento', () => {
     log.mockRestore();
   });
 
+  it('marca a atuação como lançamento — o lead não pode cair na roleta de pronto', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const { supabase } = fakeSupabase({ data: { codigo: 'L003' }, error: null });
+    const out = await enriquecerComCodigoLancamento(supabase, 'tenant-1', payloadReal, normalizado);
+    expect(out.atuacao).toBe('lancamentos');
+    log.mockRestore();
+  });
+
+  it('anúncio fora do de-para não ganha atuação (segue a roleta de sempre)', async () => {
+    const { supabase } = fakeSupabase({ data: null, error: null });
+    const out = await enriquecerComCodigoLancamento(supabase, 'tenant-1', payloadReal, normalizado);
+    expect(out.atuacao).toBeUndefined();
+  });
+
   it('sem casamento, devolve o lead intacto (mesma referência)', async () => {
     const { supabase } = fakeSupabase({ data: null, error: null });
     const out = await enriquecerComCodigoLancamento(supabase, 'tenant-1', payloadReal, normalizado);
@@ -146,6 +160,11 @@ describe('invariantes nos dois entrypoints', () => {
     it(`${arquivo}: o webhook do ZAP passa pelo de-para`, () => {
       expect(fonte).toContain("from './lancamentoAnuncios.js'");
       expect(fonte).toContain('enriquecerComCodigoLancamento(');
+    });
+
+    it(`${arquivo}: a atuação de lançamento chega na roleta`, () => {
+      // Sem isto o lead de lançamento é distribuído para corretor de imóvel pronto.
+      expect(fonte).toMatch(/atuacao === 'lancamentos'|normalized\.atuacao \|\|/);
     });
 
     it(`${arquivo}: transactionType 'SELL' conta como venda`, () => {
