@@ -37,6 +37,7 @@ import { VendedoresFunnelChart } from '@/features/corretores/components/Vendedor
 import { PreAtendimentoFunnelChart } from '@/features/leads/components/PreAtendimentoFunnelChart';
 import { AtendimentoFunnelChart } from '@/features/leads/components/AtendimentoFunnelChart';
 // Novo componente de performance com bolhas
+import { countProprietariosInStage } from '@/features/leads/utils/funnelStages';
 import { FunnelStagesBubbleChart } from '@/features/leads/components/FunnelStagesBubbleChart';
 // Novos gráficos de vendedores
 import { VendedoresValoresChart } from '@/features/corretores/components/VendedoresValoresChart';
@@ -731,19 +732,26 @@ export const MainMetricsSection = ({
         };
 
 
-      case 'proprietarios':
+      case 'proprietarios': {
         // Métricas específicas para Cliente Proprietário - 5 cards em layout 3x2
-        const proprietariosTotal = totalLeads;
-        
-        // LIA - Leads Captados pela LIA (IA)
-        const leadsCaptadosLIA = allLeads.filter(lead => 
-          lead.origem_lead?.toLowerCase().includes('lia') ||
-          lead.origem_lead?.toLowerCase().includes('ia') ||
+        // A sub-aba precisa mudar o NÚMERO, não só o rótulo: antes Vendedor e
+        // Locatário mostravam o mesmo total.
+        const proprietariosDaSubAba = allLeads.filter(lead => {
+          const tipoNegocio = lead.tipo_negocio?.toLowerCase() || '';
+          const ehLocacao = tipoNegocio.includes('locação') || tipoNegocio.includes('locacao');
+          return activeProprietariosSubSection === 'locatario' ? ehLocacao : !ehLocacao;
+        });
+        const proprietariosTotal = proprietariosDaSubAba.length;
+
+        // LIA - Leads Captados pela LIA (IA). O `includes('ia')` anterior casava
+        // com qualquer origem que tivesse "ia" no meio (Imobiliária, Mídia...).
+        const leadsCaptadosLIA = proprietariosDaSubAba.filter(lead =>
+          /\blia\b/i.test(lead.origem_lead || '') ||
           lead.origem_lead?.toLowerCase().includes('inteligência artificial')
         ).length;
         
         // Estudos de Mercado - leads que passaram pela etapa de estudo
-        const estudosMercado = allLeads.filter(lead => 
+        const estudosMercado = proprietariosDaSubAba.filter(lead => 
           lead.etapa_atual === 'Estudo de Mercado' ||
           lead.etapa_atual === 'Apresentação do Estudo de Mercado' ||
           lead.etapa_atual === 'Criação do Estudo de Mercado' ||
@@ -751,22 +759,12 @@ export const MainMetricsSection = ({
           lead.etapa_atual === 'Análise'
         ).length;
         
-        // Não Exclusivos - imóveis sem exclusividade
-        const naoExclusivos = allLeads.filter(lead => 
-          lead.etapa_atual === 'Não Exclusivo' ||
-          lead.etapa_atual === 'Nao Exclusivo' ||
-          lead.etapa_atual === 'Sem Exclusividade'
-        ).length;
-        
-        // Exclusivos - imóveis com exclusividade
-        const exclusivos = allLeads.filter(lead => 
-          lead.etapa_atual === 'Exclusivo' ||
-          lead.etapa_atual === 'Exclusividade' ||
-          lead.etapa_atual === 'Com Exclusividade'
-        ).length;
+        // Não Exclusivos / Exclusivos: mesma contagem por etapa do funil
+        const naoExclusivos = countProprietariosInStage(proprietariosDaSubAba, 'Não Exclusivo');
+        const exclusivos = countProprietariosInStage(proprietariosDaSubAba, 'Exclusivo');
         
         // Propostas - leads com propostas enviadas/recebidas
-        const propostas = allLeads.filter(lead => 
+        const propostas = proprietariosDaSubAba.filter(lead => 
           lead.etapa_atual === 'Proposta Enviada' ||
           lead.etapa_atual === 'Proposta Criada' ||
           lead.etapa_atual === 'Proposta' ||
@@ -805,6 +803,7 @@ export const MainMetricsSection = ({
             color: 'emerald'
           }
         };
+      }
 
       case 'geral':
         const visitasRealizadas = allLeads.filter(lead => 
@@ -1405,38 +1404,9 @@ export const MainMetricsSection = ({
                 });
                 
 
-                // Se não houver leads, criar um lead de exemplo
-                let leadsParaExibir = filteredProprietariosLeads;
-                if (filteredProprietariosLeads.length === 0) {
-                  const baseDate = new Date().toISOString().split('T')[0];
-                  
-                  const leadExemplo: ProcessedLead = {
-                    id_lead: 99999,
-                    nome_lead: "João Silva (Exemplo)",
-                    telefone: "(11) 99999-9999",
-                    origem_lead: "Site Direto",
-                    data_entrada: baseDate,
-                    status_temperatura: "Quente",
-                    etapa_atual: "Primeira Visita",
-                    codigo_imovel: "AP-EX001",
-                    valor_imovel: activeProprietariosSubSection === 'vendedor' ? 850000 : 4500,
-                    tipo_negocio: activeProprietariosSubSection === 'vendedor' ? 'Venda' : 'Locação',
-                    tipo_lead: activeProprietariosSubSection === 'vendedor' ? 'Proprietário' : 'Locatário',
-                    corretor_responsavel: "Ana Costa",
-                    Data_visita: baseDate,
-                    Imovel_visitado: "Não",
-                    Arquivamento: "Não",
-                    observacoes: `Lead de exemplo - ${activeProprietariosSubSection === 'vendedor' ? 'Proprietário quer vender apartamento 3 quartos' : 'Proprietário quer alugar imóvel'}`,
-                    data_finalizacao: undefined,
-                    valor_final_venda: undefined,
-                    link_imovel: undefined,
-                    motivo_arquivamento: undefined,
-                    Preferencias_lead: "3 quartos, 2 banheiros, garagem",
-                    Conversa: "Cliente interessado em avaliar imóvel"
-                  };
-                  
-                  leadsParaExibir = [leadExemplo];
-                }
+                // Somente dados reais: sem leads de proprietário, os gráficos
+                // ficam vazios em vez de mostrar um exemplo fictício.
+                const leadsParaExibir = filteredProprietariosLeads;
 
                 // Métricas específicas para Cliente Proprietário
                 const proprietariosMetrics = {

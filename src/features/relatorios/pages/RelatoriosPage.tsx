@@ -29,7 +29,6 @@ import {
   BarChart3,
   Filter,
   Calendar,
-  Building2,
   DollarSign,
   Target,
   ChevronLeft,
@@ -62,7 +61,6 @@ import { GenericImportPage } from '@/features/relatorios/import/generic/pages/Ge
 import { EnpsCorretoresSection } from '../enps/EnpsCorretoresSection';
 
 import { buildCorretorMetricasCompletas } from '../utils/buildCorretorMetricasCompletas';
-import { buscarValorTotal, formatarValorMonetario, buscarImoveisAtivos } from '../services/relatoriosService';
 import {
   buscarFinanceiroVendasComerciaisComFallback,
   type CommercialSalesFinanceSummary,
@@ -189,13 +187,12 @@ export const RelatoriosPage = () => {
   const [searchParams] = useSearchParams();
   const { tenantId } = useAuth();
 
+  // Declarados antes do hook: os KPIs são buscados para este período.
+  const [dataInicial, setDataInicial] = useState(format(subDays(new Date(), 30), 'yyyy-MM-dd'));
+  const [dataFinal, setDataFinal] = useState(format(new Date(), 'yyyy-MM-dd'));
+
   const {
-    vendasCriadas,
-    vendasAssinadas,
     metricasEquipes,
-    totalLeadsMensal,
-    valorTotal,
-    imoveisAtivos,
     kpis: kpisRelatorios,
     ranking: rankingCorretoresRelatorio,
     usandoDadosReaisRanking,
@@ -211,15 +208,13 @@ export const RelatoriosPage = () => {
     setRankingAno,
     setRankingMes,
     setRankingPeriodo,
-  } = useRelatorios();
+  } = useRelatorios({ inicio: dataInicial, fim: dataFinal });
 
   const reportRef = useRef<HTMLDivElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
   // Estados dos filtros
   const [empresa, setEmpresa] = useState('todas');
   const [usuario, setUsuario] = useState('meu-usuario');
-  const [dataInicial, setDataInicial] = useState(format(subDays(new Date(), 30), 'yyyy-MM-dd'));
-  const [dataFinal, setDataFinal] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [exibirValores, setExibirValores] = useState(true);
   const _tab = searchParams.get('tab');
   const activeSubArea: 'marketing' | 'metricas' | 'metricas-individuais' | 'imoveis' | 'financeiro' | 'excel' | 'enps' =
@@ -467,14 +462,18 @@ export const RelatoriosPage = () => {
     | null
   >(null);
 
-  // Dados calculados para KPIs - usando dados reais do useRelatorios
-  const kpisCalculados = useMemo(() => ({
-    totalLeadsRecebidos: totalLeadsMensal || 0,
-    totalLeadsInteragidos: vendasCriadas || 0,
-    mediaInteracaoDia: vendasCriadas ? Math.round((vendasCriadas / 30) * 100) / 100 : 0,
-    mediaTempoPrimeiraInteracao: 0, // Precisa implementar
-    totalLeadsConvertidos: vendasAssinadas || 0,
-  }), [totalLeadsMensal, vendasCriadas, vendasAssinadas]);
+  // KPIs vêm inteiros de buscarKPIsGerais, já no período do filtro. A versão
+  // anterior remontava os cards aqui a partir de contagens que mediam outra
+  // coisa: "Leads Interagidos" e "Leads Recebidos" eram a MESMA query, a média
+  // diária era vendas/30 exibida com "%", e o tempo de resposta era zero fixo.
+  const kpisCalculados = kpisRelatorios;
+
+  /** Sem dado real o card mostra "—": não existe número honesto para pôr ali. */
+  const kpiNumero = useCallback(
+    (valor: number | undefined) =>
+      valor === undefined || valor === null ? '—' : valor.toLocaleString('pt-BR'),
+    [],
+  );
 
   const rankingMetricasIndividuais = useMemo(() => {
     const slugify = (value: string) =>
@@ -526,8 +525,10 @@ export const RelatoriosPage = () => {
     return null;
   }, [usandoDadosReaisRanking, rankingMetricasIndividuais]);
 
+  // O agrupamento por bairro saiu: `leads` não tem coluna de bairro — o gráfico
+  // era 100% "Não informado". "Vendas realizadas" agora vem de `proposals`
+  // (metricasIndVendasView), não de uma etapa que não existe.
   const metricasIndLeadsView = useMemo(() => {
-    const emptyBairro = [{ label: 'Sem dados', value: 0 }];
     const emptyFonte = [{ label: 'Sem dados', value: 0 }];
     const emptyImovel = [{ label: '—', value: 0 }];
     const L = metricasIndLeads;
@@ -536,15 +537,12 @@ export const RelatoriosPage = () => {
         totalLeads: 0,
         leadsRecebidos: 0,
         visitas: 0,
-        vendasRealizadas: 0,
-        porBairro: emptyBairro,
         porFonte: emptyFonte,
         porImovel: emptyImovel,
       };
     }
     return {
       ...L,
-      porBairro: L.porBairro.length > 0 ? L.porBairro : emptyBairro,
       porFonte: L.porFonte.length > 0 ? L.porFonte : emptyFonte,
       porImovel: L.porImovel.length > 0 ? L.porImovel : emptyImovel,
     };
@@ -554,27 +552,6 @@ export const RelatoriosPage = () => {
     () => ['#22d3ee', '#3b82f6', '#8b5cf6', '#f97316', '#ec4899', '#10b981', '#a3e635', '#f59e0b'],
     []
   );
-
-  const leadsPorBairroData = useMemo(() => {
-    return {
-      labels: metricasIndLeadsView.porBairro.map((x) => x.label),
-      datasets: [
-        {
-          data: metricasIndLeadsView.porBairro.map((x) => x.value),
-          backgroundColor: metricasIndLeadsView.porBairro.map((_, i) => leadsPieColors[i % leadsPieColors.length]),
-          borderWidth: 0,
-        },
-      ],
-    };
-  }, [metricasIndLeadsView, leadsPieColors]);
-
-  const leadsPorBairroLegend = useMemo(() => {
-    return metricasIndLeadsView.porBairro.map((item, i) => ({
-      label: item.label,
-      value: item.value,
-      color: leadsPieColors[i % leadsPieColors.length],
-    }));
-  }, [metricasIndLeadsView, leadsPieColors]);
 
   const leadsPorFonteData = useMemo(() => {
     return {
@@ -775,33 +752,18 @@ export const RelatoriosPage = () => {
     [formatCurrencyBRL],
   );
 
+  // Só o realizado. As metas que existiam aqui eram derivadas do próprio
+  // resultado (comissão × 1,35 com piso de 360k, vendas × 0,35 + 2, leads × 0,2
+  // + 3) e a "ficha" era travada em min(leads, meta) — o gráfico comparava o
+  // número com ele mesmo. Meta de verdade mora em `goals` (categoria `vgc`);
+  // enquanto não estiver ligada, nada de meta na tela.
   const metricasIndComissaoMetasView = useMemo(() => {
     const row = rankingMetricasIndividuais.find((x) => x.corretor === metricasIndCorretor);
-    const v = metricasIndVendas;
-    const L = metricasIndLeads;
-    const comissaoRecebida = v?.comissaoTotal ?? 0;
-    const metaAnual = Math.max(Math.round(comissaoRecebida * 1.35), 360000);
-    const faltaParaMeta = Math.max(metaAnual - comissaoRecebida, 0);
-    const percentual = metaAnual > 0 ? (comissaoRecebida / metaAnual) * 100 : 0;
-    const vendasT = v?.vendasTotal ?? 0;
-    const metaExclusivo = Math.max(1, Math.round(vendasT * 0.35 + 2));
-    const exclusivos = v?.vendasExclusivas ?? 0;
-    const metaFicha = Math.max(1, Math.round((L?.totalLeads ?? 0) * 0.2 + 3));
-    const ficha = Math.min(L?.totalLeads ?? 0, metaFicha);
-    const imoveisFichaAtivos = L?.totalLeads ?? row?.gestaoAtiva ?? 0;
-    const imoveisExclusivosAtivos = exclusivos;
-
     return {
-      metaAnual,
-      comissaoRecebida,
-      faltaParaMeta,
-      percentual,
-      exclusivos,
-      metaExclusivo,
-      ficha,
-      metaFicha,
-      imoveisFichaAtivos,
-      imoveisExclusivosAtivos,
+      comissaoRecebida: metricasIndVendas?.comissaoTotal ?? 0,
+      vgvRecebido: metricasIndVendas?.vgvTotal ?? 0,
+      exclusivos: metricasIndVendas?.vendasExclusivas ?? 0,
+      leadsAtivos: metricasIndLeads?.totalLeads ?? row?.gestaoAtiva ?? 0,
     };
   }, [
     rankingMetricasIndividuais,
@@ -810,32 +772,32 @@ export const RelatoriosPage = () => {
     metricasIndLeads,
   ]);
 
-  const comissaoVsMetaData = useMemo(() => {
-    const start = new Date(metricasIndDataInicial);
-    const startOk = !Number.isNaN(start.getTime());
-    const month = startOk ? String(start.getMonth() + 1).padStart(2, '0') : '01';
-    const year = startOk ? String(start.getFullYear()) : '2026';
+  /** Comissão recebida por mês no período — sai das propostas assinadas. */
+  const comissaoPorMesData = useMemo(() => {
+    const porMes = new Map<string, number>();
+    for (const row of metricasIndVendasView.rows) {
+      const mes = String(row.data).slice(0, 7); // YYYY-MM
+      if (!mes) continue;
+      porMes.set(mes, (porMes.get(mes) || 0) + row.comissao);
+    }
+    const meses = [...porMes.keys()].sort();
 
     return {
-      labels: [`${month}/${year}`],
+      labels: meses.map((mes) => {
+        const [ano, m] = mes.split('-');
+        return `${m}/${ano}`;
+      }),
       datasets: [
         {
           label: 'Comissão recebida',
-          data: [metricasIndComissaoMetasView.comissaoRecebida / 1000],
+          data: meses.map((mes) => (porMes.get(mes) || 0) / 1000),
           backgroundColor: 'rgba(59, 130, 246, 0.95)',
-          borderRadius: 10,
-          maxBarThickness: 80,
-        },
-        {
-          label: 'Meta',
-          data: [metricasIndComissaoMetasView.metaAnual / 1000],
-          backgroundColor: 'rgba(34, 197, 94, 0.55)',
           borderRadius: 10,
           maxBarThickness: 80,
         },
       ],
     };
-  }, [metricasIndComissaoMetasView, metricasIndDataInicial]);
+  }, [metricasIndVendasView]);
 
   const corretorIndividualDashboardModel = useMemo(() => {
     const row = rankingMetricasIndividuais.find((x) => x.corretor === metricasIndCorretor);
@@ -845,14 +807,14 @@ export const RelatoriosPage = () => {
       leads: metricasIndLeads,
       vendas: metricasIndVendas,
       gestaoAtivaRanking: row?.gestaoAtiva ?? 0,
-      tempoMedioRespostaMin: kpisRelatorios.mediaTempoPrimeiraInteracao ?? 0,
+      // Do próprio corretor: antes vinha do KPI do tenant inteiro.
+      tempoMedioRespostaMin: metricasIndLeads?.tempoMedioRespostaMin ?? 0,
     });
   }, [
     rankingMetricasIndividuais,
     metricasIndCorretor,
     metricasIndLeads,
     metricasIndVendas,
-    kpisRelatorios.mediaTempoPrimeiraInteracao,
   ]);
 
   const comissaoChartOptions = useMemo(() => {
@@ -1529,11 +1491,11 @@ export const RelatoriosPage = () => {
     metricas: {
       subArea: activeMetricasSubArea === 'ranking' ? 'ranking' : 'visao-geral',
       kpis: {
-        vendasCriadas: vendasCriadas || 0,
-        vendasAssinadas: vendasAssinadas || 0,
-        imoveisAtivos: imoveisAtivos || 0,
-        totalLeadsMensal: totalLeadsMensal || 0,
-        valorTotalFormatado: formatarValorMonetario(valorTotal),
+        leadsNoPeriodo: kpisRelatorios?.totalLeadsRecebidos ?? 0,
+        vendasAssinadas: kpisRelatorios?.vendasAssinadas ?? 0,
+        vgvFormatado: formatCompactCurrencyBRL(kpisRelatorios?.vgv ?? 0),
+        vgcFormatado: formatCompactCurrencyBRL(kpisRelatorios?.vgc ?? 0),
+        ticketMedioFormatado: formatCompactCurrencyBRL(kpisRelatorios?.ticketMedio ?? 0),
       },
       charts: {
         leadsEquipe: fromChartJs(leadsPorEquipeData, 'bar'),
@@ -1560,7 +1522,6 @@ export const RelatoriosPage = () => {
         totalLeads: metricasIndLeadsView.totalLeads,
         leadsRecebidos: metricasIndLeadsView.leadsRecebidos,
         visitas: metricasIndLeadsView.visitas,
-        vendasRealizadas: metricasIndLeadsView.vendasRealizadas,
       },
       vendas: {
         vendasTotal: metricasIndVendasView.vendasTotal,
@@ -1579,7 +1540,6 @@ export const RelatoriosPage = () => {
         })),
       },
       charts: {
-        leadsBairro: fromChartJs(leadsPorBairroData, 'doughnut'),
         leadsFonte: fromChartJs(leadsPorFonteData, 'doughnut'),
         leadsImovel: fromChartJs(leadsPorImovelData, 'horizontalBar'),
         vendasFonte: fromChartJs(vendasPorFonteData, 'bar'),
@@ -1599,10 +1559,10 @@ export const RelatoriosPage = () => {
   }), [
     dataInicial, dataFinal, kpisCalculados,
     leadsPorCanalData, leadsPorOrigemData, leadsTotalOrigemData, leadsConvertidosOrigemData, leadsConvertidosCanalData, motivosArquivamentoData,
-    activeMetricasSubArea, vendasCriadas, vendasAssinadas, imoveisAtivos, totalLeadsMensal, valorTotal,
+    activeMetricasSubArea, kpisRelatorios, formatCompactCurrencyBRL,
     leadsPorEquipeData, tempoRespostaChartData, taxaConversaoChartData, leadsInteragidosUsuarioData, tempoInteracaoData, atividadesAbertoData, leadsConvertidosUsuarioData,
     rankingMetricasIndividuais, activeMetricasIndSubArea, metricasIndCorretor, metricasIndComissaoMetasView, metricasIndLeadsView, metricasIndVendasView,
-    leadsPorBairroData, leadsPorFonteData, leadsPorImovelData, vendasPorFonteData,
+    leadsPorFonteData, leadsPorImovelData, vendasPorFonteData,
     financeiroImoveis, vgvChartData, vgcChartData, bairrosInteresseData, vendasFaixaChartData, distribuicaoExclusivoFichaChartData,
     financeiroResumoExport,
   ]);
@@ -1772,7 +1732,7 @@ export const RelatoriosPage = () => {
             </div>
             <div>
               <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Leads Recebidos</p>
-              <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpisCalculados.totalLeadsRecebidos.toLocaleString()}</p>
+              <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpiNumero(kpisCalculados?.totalLeadsRecebidos)}</p>
             </div>
           </div>
         </div>
@@ -1784,7 +1744,7 @@ export const RelatoriosPage = () => {
             </div>
             <div>
               <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Leads Interagidos</p>
-              <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpisCalculados.totalLeadsInteragidos.toLocaleString()}</p>
+              <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpiNumero(kpisCalculados?.totalLeadsInteragidos)}</p>
             </div>
           </div>
         </div>
@@ -1795,8 +1755,8 @@ export const RelatoriosPage = () => {
               <BarChart3 className="h-5 w-5 text-yellow-600" />
             </div>
             <div>
-              <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Média Interação/Dia</p>
-              <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpisCalculados.mediaInteracaoDia}%</p>
+              <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Leads/dia (média)</p>
+              <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpiNumero(kpisCalculados?.mediaLeadsDia)}</p>
             </div>
           </div>
         </div>
@@ -1808,7 +1768,7 @@ export const RelatoriosPage = () => {
             </div>
             <div>
               <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Tempo 1ª Interação</p>
-              <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpisCalculados.mediaTempoPrimeiraInteracao} min</p>
+              <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpisCalculados ? `${kpisCalculados.mediaTempoPrimeiraInteracao} min` : '—'}</p>
             </div>
           </div>
         </div>
@@ -1820,7 +1780,7 @@ export const RelatoriosPage = () => {
             </div>
             <div>
               <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Leads Convertidos</p>
-              <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpisCalculados.totalLeadsConvertidos.toLocaleString()}</p>
+              <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpiNumero(kpisCalculados?.totalLeadsConvertidos)}</p>
             </div>
           </div>
         </div>
@@ -1968,8 +1928,8 @@ export const RelatoriosPage = () => {
                       <Users className="h-5 w-5 text-blue-600" />
                     </div>
                     <div>
-                      <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Vendas Criadas</p>
-                      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{vendasCriadas}</p>
+                      <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Leads no Período</p>
+                      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpiNumero(kpisRelatorios?.totalLeadsRecebidos)}</p>
                     </div>
                   </div>
                 </div>
@@ -1981,7 +1941,7 @@ export const RelatoriosPage = () => {
                     </div>
                     <div>
                       <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Vendas Assinadas</p>
-                      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{vendasAssinadas}</p>
+                      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpiNumero(kpisRelatorios?.vendasAssinadas)}</p>
                     </div>
                   </div>
                 </div>
@@ -1992,8 +1952,8 @@ export const RelatoriosPage = () => {
                       <BarChart3 className="h-5 w-5 text-yellow-600" />
                     </div>
                     <div>
-                      <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Imóveis Ativos</p>
-                      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{imoveisAtivos}</p>
+                      <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">VGV</p>
+                      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpisRelatorios ? formatCompactCurrencyBRL(kpisRelatorios.vgv) : '—'}</p>
                     </div>
                   </div>
                 </div>
@@ -2001,11 +1961,11 @@ export const RelatoriosPage = () => {
                 <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-4 hover:shadow-md transition-shadow">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
-                      <Clock className="h-5 w-5 text-purple-600" />
+                      <CheckCircle2 className="h-5 w-5 text-purple-600" />
                     </div>
                     <div>
-                      <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Total de Leads/Mês</p>
-                      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{totalLeadsMensal}</p>
+                      <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Comissão (VGC)</p>
+                      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpisRelatorios ? formatCompactCurrencyBRL(kpisRelatorios.vgc) : '—'}</p>
                     </div>
                   </div>
                 </div>
@@ -2013,11 +1973,11 @@ export const RelatoriosPage = () => {
                 <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-4 hover:shadow-md transition-shadow">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center">
-                      <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                      <Clock className="h-5 w-5 text-emerald-600" />
                     </div>
                     <div>
-                      <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Valor Total/Mês</p>
-                      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{formatarValorMonetario(valorTotal)}</p>
+                      <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Ticket Médio</p>
+                      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpisRelatorios ? formatCompactCurrencyBRL(kpisRelatorios.ticketMedio) : '—'}</p>
                     </div>
                   </div>
                 </div>
@@ -2572,21 +2532,17 @@ export const RelatoriosPage = () => {
                         <div className="px-5 pb-5">
                           <div className="grid grid-cols-2 gap-3">
                             <div className="rounded-xl bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 p-4">
-                              <div className="text-[11px] text-gray-500 dark:text-slate-400 font-medium">IMÓVEIS FICHA (ATIVOS)</div>
+                              <div className="text-[11px] text-gray-500 dark:text-slate-400 font-medium">LEADS NO PERÍODO</div>
                               <div className="mt-2 text-3xl font-extrabold text-gray-900 dark:text-slate-100">
-                                {metricasIndComissaoMetasView.imoveisFichaAtivos}
+                                {metricasIndComissaoMetasView.leadsAtivos}
                               </div>
                             </div>
                             <div className="rounded-xl bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 p-4">
-                              <div className="text-[11px] text-gray-500 dark:text-slate-400 font-medium">IMÓVEIS EXCLUSIVOS (ATIVOS)</div>
+                              <div className="text-[11px] text-gray-500 dark:text-slate-400 font-medium">VENDAS EXCLUSIVAS</div>
                               <div className="mt-2 text-3xl font-extrabold text-gray-900 dark:text-slate-100">
-                                {metricasIndComissaoMetasView.imoveisExclusivosAtivos}
+                                {metricasIndComissaoMetasView.exclusivos}
                               </div>
                             </div>
-                          </div>
-                          <div className="mt-3 rounded-xl bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 p-4">
-                            <div className="text-sm font-semibold text-gray-800">Imóveis fechados</div>
-                            <div className="mt-2 h-10 rounded-lg bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800" />
                           </div>
                         </div>
                       </div>
@@ -2594,71 +2550,68 @@ export const RelatoriosPage = () => {
                       <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-6 flex flex-col gap-6">
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                           <div className="rounded-xl bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 p-5">
-                            <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">% anual</div>
+                            <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">Comissão recebida</div>
                             <div className="mt-2 text-3xl font-extrabold text-gray-900 dark:text-slate-100">
-                              {metricasIndComissaoMetasView.percentual.toFixed(1)}%
-                            </div>
-                            <div className="mt-3 w-full h-2 rounded-full bg-gray-200 overflow-hidden">
-                              <div
-                                className="h-2 rounded-full bg-blue-500"
-                                style={{ width: `${Math.min(metricasIndComissaoMetasView.percentual, 100)}%` }}
-                              />
+                              {formatCompactCurrencyBRL(metricasIndComissaoMetasView.comissaoRecebida)}
                             </div>
                           </div>
                           <div className="rounded-xl bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 p-5">
-                            <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">META ANUAL</div>
+                            <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">VGV do período</div>
                             <div className="mt-2 text-3xl font-extrabold text-gray-900 dark:text-slate-100">
-                              {(metricasIndComissaoMetasView.metaAnual / 1000).toFixed(0)} Mil
+                              {formatCompactCurrencyBRL(metricasIndComissaoMetasView.vgvRecebido)}
                             </div>
                           </div>
                           <div className="rounded-xl bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 p-5">
-                            <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">Ainda falta para meta</div>
+                            <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">Vendas assinadas</div>
                             <div className="mt-2 text-3xl font-extrabold text-gray-900 dark:text-slate-100">
-                              {(metricasIndComissaoMetasView.faltaParaMeta / 1000).toFixed(0)} Mil
+                              {metricasIndVendasView.vendasTotal}
+                            </div>
+                            <div className="mt-2 text-[11px] text-gray-500 dark:text-slate-400">
+                              Meta do corretor fica na aba <span className="font-semibold">Meta</span>
                             </div>
                           </div>
                         </div>
 
                         <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6 flex-1">
                           <div className="rounded-xl bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 p-5">
-                            <div className="text-sm font-semibold text-gray-800">Comissão recebida x Meta</div>
+                            <div className="text-sm font-semibold text-gray-800">Comissão recebida por mês</div>
                             <div className="mt-4 h-[420px]">
-                              <Bar data={comissaoVsMetaData as any} options={comissaoChartOptions as any} />
+                              <Bar data={comissaoPorMesData as any} options={comissaoChartOptions as any} />
                             </div>
                           </div>
 
                           <div className="flex flex-col gap-4">
                             <div className="rounded-xl bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 p-5">
-                              <div className="text-sm font-semibold text-gray-800">Exclusivos x Meta exclusivo</div>
+                              <div className="text-sm font-semibold text-gray-800">Vendas por exclusividade</div>
                               <div className="mt-4 grid grid-cols-2 gap-3 items-end">
                                 <div className="text-center">
-                                  <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">Exclusivos</div>
+                                  <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">Exclusivas</div>
                                   <div className="mt-2 h-32 rounded-xl bg-emerald-50 border border-emerald-200 flex items-end justify-center pb-3 font-extrabold text-emerald-700">
-                                    {metricasIndComissaoMetasView.exclusivos}
+                                    {metricasIndVendasView.vendasExclusivas}
                                   </div>
                                 </div>
                                 <div className="text-center">
-                                  <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">Meta</div>
+                                  <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">Não exclusivas</div>
                                   <div className="mt-2 h-32 rounded-xl bg-blue-50 border border-blue-200 flex items-end justify-center pb-3 font-extrabold text-blue-700">
-                                    {metricasIndComissaoMetasView.metaExclusivo}
+                                    {metricasIndVendasView.vendasNaoExclusivas}
                                   </div>
                                 </div>
                               </div>
                             </div>
 
                             <div className="rounded-xl bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 p-5">
-                              <div className="text-sm font-semibold text-gray-800">Ficha x Meta ficha</div>
+                              <div className="text-sm font-semibold text-gray-800">Funil do corretor</div>
                               <div className="mt-4 grid grid-cols-2 gap-3 items-end">
                                 <div className="text-center">
-                                  <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">Ficha</div>
+                                  <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">Leads</div>
                                   <div className="mt-2 h-32 rounded-xl bg-emerald-50 border border-emerald-200 flex items-end justify-center pb-3 font-extrabold text-emerald-700">
-                                    {metricasIndComissaoMetasView.ficha}
+                                    {metricasIndLeadsView.totalLeads}
                                   </div>
                                 </div>
                                 <div className="text-center">
-                                  <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">Meta</div>
+                                  <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">Visitas</div>
                                   <div className="mt-2 h-32 rounded-xl bg-blue-50 border border-blue-200 flex items-end justify-center pb-3 font-extrabold text-blue-700">
-                                    {metricasIndComissaoMetasView.metaFicha}
+                                    {metricasIndLeadsView.visitas}
                                   </div>
                                 </div>
                               </div>
@@ -2760,7 +2713,7 @@ export const RelatoriosPage = () => {
                         <div className="mt-3 text-5xl font-extrabold text-gray-900 dark:text-slate-100">
                           {metricasIndLeadsView.leadsRecebidos}
                         </div>
-                        <div className="mt-2 text-xs text-gray-500 dark:text-slate-400">janeiro</div>
+                        <div className="mt-2 text-xs text-gray-500 dark:text-slate-400">{metricasIndDataInicial} a {metricasIndDataFinal}</div>
                       </div>
                     </div>
                   </div>
@@ -2783,34 +2736,13 @@ export const RelatoriosPage = () => {
                           </div>
                           <div className="rounded-lg bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 p-3">
                             <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">Vendas realizadas</div>
-                            <div className="mt-2 text-xl font-extrabold text-gray-900 dark:text-slate-100">{metricasIndLeadsView.vendasRealizadas}</div>
+                            <div className="mt-2 text-xl font-extrabold text-gray-900 dark:text-slate-100">{metricasIndVendasView.vendasTotal}</div>
                           </div>
                         </div>
                       </div>
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                      <div className="rounded-xl bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 p-5">
-                        <div className="text-sm font-semibold text-gray-800">Leads por bairro</div>
-                        <div className="mt-4 grid grid-cols-1 md:grid-cols-[240px_1fr] gap-4 items-center">
-                          <div className="h-[240px]">
-                            <Doughnut data={leadsPorBairroData as any} options={leadsDarkCardOptions as any} />
-                          </div>
-                          <div className="rounded-xl bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 p-4">
-                            <div className="text-xs font-semibold text-gray-700 dark:text-slate-300">Bairro</div>
-                            <div className="mt-3 space-y-2 max-h-[190px] overflow-auto pr-1">
-                              {leadsPorBairroLegend.map((item) => (
-                                <div key={item.label} className="flex items-center gap-2">
-                                  <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
-                                  <span className="text-xs text-gray-700 dark:text-slate-300 truncate">
-                                    {item.label}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
                       <div className="rounded-xl bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 p-5">
                         <div className="text-sm font-semibold text-gray-800">Leads por fonte</div>
                         <div className="mt-4 grid grid-cols-1 md:grid-cols-[240px_1fr] gap-4 items-center">
@@ -3082,21 +3014,7 @@ export const RelatoriosPage = () => {
       {tipoCliente === 'nenhum' && (
         <>
           {/* KPIs Cards - Imóveis */}
-          <div data-export-layout="kpis" className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
-            <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-4 hover:shadow-md transition-shadow">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
-                  <Building2 className="h-5 w-5 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Imóveis Ativos</p>
-                  <p className="text-xl font-bold text-gray-900 dark:text-slate-100">
-                    {Number(imoveisAtivos || 0).toLocaleString('pt-BR')}
-                  </p>
-                </div>
-              </div>
-            </div>
-
+          <div data-export-layout="kpis" className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-4 hover:shadow-md transition-shadow">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">

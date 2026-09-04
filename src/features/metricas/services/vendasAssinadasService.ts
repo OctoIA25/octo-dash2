@@ -25,6 +25,8 @@ const FUSO = 'America/Sao_Paulo';
 
 export interface VendaAssinada {
   id: string;
+  /** Lead de origem — permite contar leads convertidos sem reabrir `proposals`. */
+  leadId: string | null;
   agentUserId: string | null;
   /** Nome como veio da proposta; vazio quando a venda não tem corretor. */
   agentNome: string;
@@ -113,6 +115,7 @@ export async function buscarVendasAssinadas(
 
       return {
         id: row.id,
+        leadId: row.lead_id,
         agentUserId: row.agent_user_id,
         agentNome: row.agent_name?.trim() || '',
         vgv,

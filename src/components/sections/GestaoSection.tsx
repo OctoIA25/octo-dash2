@@ -2,6 +2,7 @@ import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { MainMetricsSection } from '@/features/metricas/components/MainMetricsSection';
 import { LeadsTable } from '@/features/leads/components/LeadsTable';
 import { BolsaoSection } from '@/features/leads/components/BolsaoSection';
+import { ProprietariosPlanilha } from '@/features/leads/components/ProprietariosPlanilha';
 import { Button } from '@/components/ui/button';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { RefreshCw, BarChart3 } from 'lucide-react';
@@ -190,8 +191,14 @@ export const GestaoSection = ({
           activeClienteInteressadoSubSection={activeClienteInteressadoSubSection}
         />
         
+        {/* Cliente Proprietário: planilha de proprietários reais (cadastro de
+            imóveis), não a tabela genérica de leads. */}
+        {activeDashboardSection === 'proprietarios' && activeProprietariosSubSection !== 'estudo-mercado' && (
+          <ProprietariosPlanilha tipo={activeProprietariosSubSection as 'vendedor' | 'locatario'} />
+        )}
+
         {/* Tabelas - SEMPRE exibir (mas com leads filtrados ou todos conforme a aba), exceto em estudo-mercado */}
-        {!(activeDashboardSection === 'proprietarios' && activeProprietariosSubSection === 'estudo-mercado') &&
+        {activeDashboardSection !== 'proprietarios' &&
           !(activeDashboardSection === 'leads' && (activeClienteInteressadoSubSection === 'pre-atendimento' || activeClienteInteressadoSubSection === 'atendimento')) && (
           <div className="pb-4 transition-all duration-300 ease-in-out">
             <LeadsTable 

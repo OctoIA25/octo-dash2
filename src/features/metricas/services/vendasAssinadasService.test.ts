@@ -85,9 +85,9 @@ describe('buscarVendasAssinadas — mês no fuso do escritório', () => {
 describe('agruparPorCorretor — fim da duplicação de apelido', () => {
   it('mesma pessoa com nomes diferentes soma numa linha só quando o user é o mesmo', () => {
     const vendas = [
-      { id: 'p1', agentUserId: 'u1', agentNome: 'Fernanda', vgv: 100, vgc: 10, dataAssinatura: '2026-01-05', mes: 1, ano: 2026 },
-      { id: 'p2', agentUserId: 'u1', agentNome: 'Fernanda Souza', vgv: 200, vgc: 20, dataAssinatura: '2026-02-05', mes: 2, ano: 2026 },
-      { id: 'p3', agentUserId: null, agentNome: 'Eduardo', vgv: 50, vgc: 5, dataAssinatura: '2026-01-15', mes: 1, ano: 2026 },
+      { id: 'p1', leadId: 'l1', agentUserId: 'u1', agentNome: 'Fernanda', vgv: 100, vgc: 10, dataAssinatura: '2026-01-05', mes: 1, ano: 2026 },
+      { id: 'p2', leadId: 'l2', agentUserId: 'u1', agentNome: 'Fernanda Souza', vgv: 200, vgc: 20, dataAssinatura: '2026-02-05', mes: 2, ano: 2026 },
+      { id: 'p3', leadId: null, agentUserId: null, agentNome: 'Eduardo', vgv: 50, vgc: 5, dataAssinatura: '2026-01-15', mes: 1, ano: 2026 },
     ];
 
     const porCorretor = agruparPorCorretor(vendas);

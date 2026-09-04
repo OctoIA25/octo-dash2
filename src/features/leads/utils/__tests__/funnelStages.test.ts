@@ -145,3 +145,54 @@ describe('computeFunnelStages', () => {
     expect(r.taxaConversaoProprietarios).toBe('75.0');
   });
 });
+
+describe('funil de Cliente Proprietário', () => {
+  const lead = (etapa: string, extra: Partial<ProcessedLead> = {}): ProcessedLead =>
+    makeLead({ etapa_atual: etapa, ...extra });
+
+  it('usa as 11 etapas próprias, não as do funil de Interessado', () => {
+    const r = computeFunnelStages([], 'proprietario');
+    expect(r.labels).toHaveLength(11);
+    expect(r.labels[0]).toBe('Novos Proprietários');
+    expect(r.labels[10]).toBe('Feitura de Contrato');
+    expect(r.labels).not.toContain('Novos Leads');
+  });
+
+  it('conta cada lead em exatamente uma etapa (soma = total)', () => {
+    // O lead em Exclusivo tem data de visita: antes ele era contado também em
+    // Primeira Visita, e o total das etapas passava do número de leads.
+    const leads = [
+      lead('Novos Proprietários'),
+      lead('Exclusivo', { Data_visita: '2026-08-01', Imovel_visitado: 'Sim' }),
+      lead('Primeira Visita', { Data_visita: '2026-08-02' }),
+    ];
+
+    const r = computeFunnelStages(leads, 'proprietario');
+
+    expect(r.data.reduce((s, v) => s + v, 0)).toBe(leads.length);
+    expect(r.data[r.labels.indexOf('Primeira Visita')]).toBe(1);
+    expect(r.data[r.labels.indexOf('Exclusivo')]).toBe(1);
+  });
+
+  it('não conta etapas do funil de Interessado como exclusividade', () => {
+    const r = computeFunnelStages(
+      [lead('Proposta Criada'), lead('Proposta Enviada')],
+      'proprietario',
+    );
+
+    expect(r.data[r.labels.indexOf('Exclusivo')]).toBe(0);
+    expect(r.data[r.labels.indexOf('Não Exclusivo')]).toBe(0);
+    expect(r.exclusivo).toBe(0);
+    expect(r.naoExclusivo).toBe(0);
+  });
+
+  it('aceita variações de grafia gravadas em leads.status', () => {
+    const r = computeFunnelStages(
+      [lead('Novo Proprietário'), lead('novos-proprietarios'), lead('NÃO EXCLUSIVO')],
+      'proprietario',
+    );
+
+    expect(r.data[r.labels.indexOf('Novos Proprietários')]).toBe(2);
+    expect(r.naoExclusivo).toBe(1);
+  });
+});

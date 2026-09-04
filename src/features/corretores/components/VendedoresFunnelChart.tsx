@@ -6,6 +6,7 @@ import { TrendingDown } from 'lucide-react';
 import { DateRangeFilter } from '@/components/DateRangeFilter';
 import { useLeadsMetrics } from '@/features/leads/hooks/useLeadsMetrics';
 import { normalizePercentagesFromCounts } from '@/utils/metrics';
+import { PROPRIETARIO_STAGE_ORDER, computeFunnelStages } from '@/features/leads/utils/funnelStages';
 
 interface VendedoresFunnelChartProps {
   leads?: ProcessedLead[];
@@ -43,7 +44,8 @@ export const VendedoresFunnelChart = ({ leads: propsLeads }: VendedoresFunnelCha
   const funnelData = useMemo(() => {
     const safeLeads = filteredLeads || [];
 
-    // Definir as etapas específicas para vendedores (11 etapas expandidas)
+    // Rótulos de exibição (com quebra de linha para o CanvasJS). A ORDEM é a
+    // mesma de PROPRIETARIO_STAGE_ORDER — as contagens vêm de lá.
     const etapasOrdem = [
       'Novos Proprietários',
       'Em Atendimento',
@@ -59,120 +61,24 @@ export const VendedoresFunnelChart = ({ leads: propsLeads }: VendedoresFunnelCha
     ];
 
     const totalLeads = safeLeads.length;
-    
-    // Calcular quantidade real para cada etapa baseada nos dados do Supabase
-    // IMPORTANTE: Cada lead deve aparecer em apenas UMA etapa (match exato por status)
-    const calcularEtapa = (etapa: string): number => {
-      switch (etapa) {
-        case 'Novos Proprietários':
-          // Apenas leads com status exato "Novos Proprietários" ou "Novo Proprietário"
-          return safeLeads.filter(l => 
-            l.etapa_atual === 'Novos Proprietários' ||
-            l.etapa_atual === 'Novo Proprietário' ||
-            l.etapa_atual === 'novos proprietários' ||
-            l.etapa_atual === 'novo proprietário'
-          ).length;
-        case 'Em Atendimento':
-          return safeLeads.filter(l => 
-            l.etapa_atual === 'Em Atendimento'
-          ).length;
-        
-        case 'Primeira Visita':
-          return safeLeads.filter(l => 
-            l.etapa_atual === 'Primeira Visita' ||
-            l.etapa_atual === 'Visita Agendada' ||
-            l.etapa_atual === 'Visita agendada' ||
-            (l.Data_visita && l.Data_visita.trim() !== '')
-          ).length;
-        
-        case 'Criação do\nEstudo de Mercado':
-          return safeLeads.filter(l => 
-            l.etapa_atual === 'Criação do Estudo de Mercado' ||
-            l.etapa_atual === 'Criação do\nEstudo de Mercado' ||
-            l.etapa_atual === 'Criando Estudo' ||
-            l.etapa_atual === 'Estudo em Criação' ||
-            l.etapa_atual === 'Preparando Estudo'
-          ).length;
-        
-        case 'Apresentação\nDo Estudo de Mercado':
-          return safeLeads.filter(l => 
-            l.etapa_atual === 'Apresentação do Estudo de Mercado' ||
-            l.etapa_atual === 'Apresentação\nDo Estudo de Mercado' ||
-            l.etapa_atual === 'Estudo de Mercado' ||
-            l.etapa_atual === 'Avaliação' ||
-            l.etapa_atual === 'Análise'
-          ).length;
-        
-        case 'Cadastro':
-          // Apenas leads com status exato relacionado a Cadastro
-          return safeLeads.filter(l => 
-            l.etapa_atual === 'Cadastro' ||
-            l.etapa_atual === 'Imóveis Cadastrados' ||
-            l.etapa_atual === 'Imovel Cadastrado' ||
-            l.etapa_atual === 'Cadastrado' ||
-            l.etapa_atual === 'Captação'
-          ).length;
-        
-        case 'Exclusivo':
-          return safeLeads.filter(l => 
-            l.etapa_atual === 'Exclusivo' ||
-            l.etapa_atual === 'Proposta Criada'
-          ).length;
-        
-        case 'Não Exclusivo':
-          return safeLeads.filter(l => 
-            l.etapa_atual === 'Não Exclusivo' ||
-            l.etapa_atual === 'Proposta Enviada'
-          ).length;
-        
-        case 'Plano de Marketing':
-          return safeLeads.filter(l => 
-            l.etapa_atual === 'Plano de Marketing' ||
-            l.etapa_atual === 'Marketing' ||
-            l.etapa_atual === 'Divulgação' ||
-            l.etapa_atual === 'Publicidade'
-          ).length;
-        
-        case 'Propostas Respondidas':
-          return safeLeads.filter(l => 
-            l.etapa_atual === 'Propostas Respondidas' ||
-            l.etapa_atual === 'Proposta' ||
-            l.etapa_atual === 'Negociação' ||
-            l.etapa_atual === 'Negociacao' ||
-            l.etapa_atual === 'Interessado'
-          ).length;
-        
-        case 'Feitura de Contrato':
-          return safeLeads.filter(l => 
-            l.etapa_atual === 'Feitura de Contrato' ||
-            l.etapa_atual === 'Contrato' ||
-            l.etapa_atual === 'Fechamento' ||
-            l.etapa_atual === 'Vendido' ||
-            l.etapa_atual === 'Finalizado'
-          ).length;
-        
-        default:
-          return 0;
-      }
-    };
 
-    const countsByStage = etapasOrdem.map((etapa) => calcularEtapa(etapa));
-    const totalStagesCount = countsByStage.reduce((s, v) => s + v, 0);
-    const fallbackCounts = [10, 9, 8, 7, 6, 5, 6, 7, 8, 9, 15];
-
-    const effectiveCounts = totalStagesCount > 0 ? countsByStage : fallbackCounts;
+    // Contagem vem de funnelStages.ts (mesma regra do outro gráfico da aba):
+    // etapa exata, cada lead em exatamente uma etapa. Antes daqui saía uma
+    // segunda implementação que contava 'Proposta Criada' como Exclusivo e
+    // qualquer lead com data de visita como Primeira Visita — o mesmo lead
+    // aparecia em duas etapas e o total estourava.
+    const effectiveCounts = computeFunnelStages(safeLeads, 'proprietario').data;
     const normalizedPercentages = normalizePercentagesFromCounts(effectiveCounts, 1);
 
-    // Criar dataPoints com tamanhos HARMÔNICOS E ESTÁTICOS - ATUALIZADO PARA 11 ETAPAS
+    // Um ponto por etapa: largura = quantidade real.
     const dataPoints = etapasOrdem.map((etapa, index) => {
       const quantidade = effectiveCounts[index] ?? 0;
-      
-      // 🎨 Valores FIXOS harmônicos para 11 etapas de vendedores (redução progressiva)
-      const valoresFixosHarmonicos = [100, 92, 84, 76, 68, 60, 52, 44, 36, 28, 20]; // Progressão harmônica para 11 etapas
-      const valorVisualFixo = valoresFixosHarmonicos[index] || (100 - (index * 9));
-      
+
       return {
-        y: valorVisualFixo, // Valor SEMPRE FIXO para manter consistência visual
+        // Largura proporcional ao número real. Antes era uma progressão fixa
+        // [100, 92, 84, ...] que desenhava um funil bonito mesmo com os dados
+        // dizendo outra coisa.
+        y: quantidade,
         label: etapa,
         originalKey: etapa,
         description: `${quantidade} vendedores em ${etapa}`,
@@ -196,7 +102,9 @@ export const VendedoresFunnelChart = ({ leads: propsLeads }: VendedoresFunnelCha
     const feituraContrato = effectiveCounts[10] ?? 0;
     
     const metrics = {
-      totalLeads: effectiveCounts.reduce((s, v) => s + v, 0),
+      // Total = leads de fato, não a soma das etapas (que dobrava quem caía
+      // em mais de uma).
+      totalLeads,
       novosProprietarios,
       emAtendimento,
       primeiraVisita,
@@ -208,7 +116,7 @@ export const VendedoresFunnelChart = ({ leads: propsLeads }: VendedoresFunnelCha
       planoMarketing,
       propostasRespondidas,
       feituraContrato,
-      taxaConversaoGeral: (effectiveCounts.reduce((s, v) => s + v, 0)) > 0 ? (feituraContrato / effectiveCounts.reduce((s, v) => s + v, 0) * 100) : 0,
+      taxaConversaoGeral: totalLeads > 0 ? (feituraContrato / totalLeads * 100) : 0,
       taxaEmAtendimento: novosProprietarios > 0 ? (emAtendimento / novosProprietarios * 100) : 0,
       taxaPrimeiraVisita: emAtendimento > 0 ? (primeiraVisita / emAtendimento * 100) : 0,
       taxaCriacaoEstudoMercado: primeiraVisita > 0 ? (criacaoEstudoMercado / primeiraVisita * 100) : 0,
@@ -413,7 +321,16 @@ export const VendedoresFunnelChart = ({ leads: propsLeads }: VendedoresFunnelCha
             
             {/* Funil principal - centralizado */}
             <div className="w-[68%] h-full flex justify-center">
-              <div ref={chartRef} className="w-full h-full max-w-[500px]" />
+              {funnelData.metrics.totalLeads === 0 ? (
+                <div className="w-full h-full flex flex-col items-center justify-center text-center px-6">
+                  <p className="text-sm font-medium text-text-primary">Nenhum proprietário no funil</p>
+                  <p className="text-xs text-text-secondary mt-1">
+                    O funil usa os leads do tipo Proprietário. Cadastre um pelo Kanban para vê-lo aqui.
+                  </p>
+                </div>
+              ) : (
+                <div ref={chartRef} className="w-full h-full max-w-[500px]" />
+              )}
             </div>
             
             {/* Labels harmônicos e visíveis - OTIMIZADO PARA 11 ETAPAS */}

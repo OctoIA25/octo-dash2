@@ -11,7 +11,7 @@
  */
 
 import { supabase } from '@/lib/supabaseClient';
-import { CRMLead, LeadType, LEAD_TYPE_INTERESSADO, LEAD_TYPE_PROPRIETARIO } from './leadsService';
+import { CRMLead, LeadType, LEAD_TYPE_INTERESSADO, LEAD_TYPE_PROPRIETARIO, fetchPagesInBatches, PAGE_SIZE } from './leadsService';
 import { ProcessedLead, canonicalizeOrigemLeads } from '@/data/realLeadsProcessor';
 import { KENLO_LEAD_COLUMNS_FOR_METRICS, LEADS_COLUMNS_FOR_METRICS } from './leadColumns';
 import type { ValorClassificacao } from '@/features/leads/utils/classificarLead';
@@ -91,17 +91,13 @@ async function fetchKenloLeadsAsCRM(
   includeArchived: boolean
 ): Promise<CRMLead[]> {
   try {
-    // Buscar TODOS os kenlo_leads com paginação (Supabase limita a 1000 por query)
-    const PAGE_SIZE = 1000;
-    let allData: Record<string, unknown>[] = [];
-    let from = 0;
-    let hasMore = true;
-
-    while (hasMore) {
+    const allData = await fetchPagesInBatches((from) => {
       let query = supabase
         .from('kenlo_leads')
         .select(KENLO_LEAD_COLUMNS_FOR_METRICS)
         .eq('tenant_id', tenantId)
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false }) // tiebreaker: ORDER estável entre páginas
         .range(from, from + PAGE_SIZE - 1);
 
       if (agentId) {
@@ -112,24 +108,8 @@ async function fetchKenloLeadsAsCRM(
         query = query.is('archived_at', null);
       }
 
-      query = query.order('created_at', { ascending: false });
-
-      const { data, error } = await query;
-
-      if (error) {
-        console.error('❌ Erro ao buscar kenlo_leads (page from=' + from + '):', error);
-        break;
-      }
-
-      const page = (data || []) as Record<string, unknown>[];
-      allData = [...allData, ...page];
-
-      if (page.length < PAGE_SIZE) {
-        hasMore = false;
-      } else {
-        from += PAGE_SIZE;
-      }
-    }
+      return query;
+    });
 
     return allData.map(kenloLeadToCRMLead);
   } catch (error) {
@@ -327,47 +307,55 @@ export async function fetchLeadsForMetrics(
       return results;
     }
     
-    let query = supabase
-      .from('leads')
-      .select(LEADS_COLUMNS_FOR_METRICS)
-      .eq('tenant_id', tenantId);
+    // Paginado: sem `.range()` o PostgREST devolve no máximo 1000 linhas e NÃO
+    // avisa que truncou — a Home mostrava 1001 leads (1000 do CRM + 1 do Kenlo)
+    // enquanto o Kanban de Meus Leads, já paginado, mostrava 1.300.
+    const buildLeadsPage = (from: number) => {
+      let query = supabase
+        .from('leads')
+        .select(LEADS_COLUMNS_FOR_METRICS)
+        .eq('tenant_id', tenantId);
 
-    // Filtrar por corretor se não for admin
-    if (agentId) {
-      query = query.eq('assigned_agent_id', agentId);
-    }
+      // Filtrar por corretor se não for admin
+      if (agentId) {
+        query = query.eq('assigned_agent_id', agentId);
+      }
 
-    // Filtrar por tipo de lead
-    // NOTA: leads sem lead_type são tratados como Interessado (tipo 1) por padrão
-    // Proprietário (tipo 2) requer filtro explícito no banco
-    if (leadType === LEAD_TYPE_PROPRIETARIO) {
-      query = query.eq('lead_type', leadType);
-    }
-    // Para Interessado (tipo 1) ou null, buscamos todos e filtramos no código
-    // pois precisamos incluir leads com lead_type null/undefined
+      // Filtrar por tipo de lead
+      // NOTA: leads sem lead_type são tratados como Interessado (tipo 1) por padrão
+      // Proprietário (tipo 2) requer filtro explícito no banco
+      if (leadType === LEAD_TYPE_PROPRIETARIO) {
+        query = query.eq('lead_type', leadType);
+      }
+      // Para Interessado (tipo 1) ou null, buscamos todos e filtramos no código
+      // pois precisamos incluir leads com lead_type null/undefined
 
-    // Excluir arquivados por padrão
-    if (!includeArchived) {
-      query = query.is('archived_at', null);
-    }
+      // Excluir arquivados por padrão
+      if (!includeArchived) {
+        query = query.is('archived_at', null);
+      }
 
-    // Ordenar por data de criação (mais recentes primeiro)
-    query = query.order('created_at', { ascending: false });
+      // Ordenar por data de criação (mais recentes primeiro)
+      return query
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false }) // tiebreaker: ORDER estável entre páginas
+        .range(from, from + PAGE_SIZE - 1);
+    };
 
     // `leads` (CRM) e `kenlo_leads` são independentes até o dedup abaixo — busca-se
     // as duas fontes em paralelo em vez de esperar uma terminar antes da outra.
-    const [leadsResult, kenloLeads] = await Promise.all([
-      query,
-      fetchKenloLeadsAsCRM(tenantId, agentId, includeArchived),
+    // kenlo_leads não tem coluna lead_type: o adapter carimba todos como
+    // Interessado (lead_type: 1). Buscá-los junto no funil de Proprietário
+    // fazia cada lead de portal ser contado como proprietário — a aba mostrava
+    // "1 Vendedor" num tenant sem nenhum proprietário cadastrado.
+    const [crmRows, kenloLeads] = await Promise.all([
+      fetchPagesInBatches(buildLeadsPage),
+      leadType === LEAD_TYPE_PROPRIETARIO
+        ? Promise.resolve([] as CRMLead[])
+        : fetchKenloLeadsAsCRM(tenantId, agentId, includeArchived),
     ]);
 
-    if (leadsResult.error) {
-      // Erro ao buscar CRM não invalida os kenlo já obtidos: segue com os que houver
-      // (mais resiliente que o antigo return [], que descartava tudo).
-      console.error('❌ Erro ao buscar leads para métricas:', leadsResult.error);
-    }
-
-    const crmLeads = (leadsResult.data || []) as CRMLead[];
+    const crmLeads = crmRows as unknown as CRMLead[];
 
     // Dedupe kenlo_leads que já foram migrados para `leads`.
     // O vínculo é leads.source_lead_id === kenlo_leads.external_id (após conversão,
@@ -515,8 +503,13 @@ export function calculateLeadsMetrics(
  * @param index Índice para gerar id_lead sequencial
  */
 export function crmLeadToProcessedLead(crmLead: Partial<CRMLead>, index: number = 0): ProcessedLead {
-  // Mapear status do CRM para etapa_atual do ProcessedLead
-  const etapaAtual = crmLead.status || 'Novos Leads';
+  // Mapear status do CRM para etapa_atual do ProcessedLead.
+  // O default depende do tipo: um proprietário sem status caindo em
+  // 'Novos Leads' não bate com nenhuma das 11 etapas do funil de Proprietário
+  // e sumia do gráfico.
+  const etapaAtual =
+    crmLead.status ||
+    (crmLead.lead_type === LEAD_TYPE_PROPRIETARIO ? 'Novos Proprietários' : 'Novos Leads');
   
   // Mapear temperatura
   const statusTemperatura = (() => {
@@ -530,10 +523,14 @@ export function crmLeadToProcessedLead(crmLead: Partial<CRMLead>, index: number 
   // Mapear tipo de lead
   const tipoLead = crmLead.lead_type === 2 ? 'Proprietário' : 'Interessado';
   
-  // Determinar tipo de negócio (inferir de property_type ou outros campos)
-  const tipoNegocio = crmLead.property_type?.toLowerCase()?.includes('locação') 
-    ? 'Locação' 
-    : 'Venda';
+  // Determinar tipo de negócio (inferir de property_type ou outros campos).
+  // Aceita 'locacao' sem acento — só 'locação' deixava de fora metade das
+  // grafias que chegam das integrações.
+  const propertyType = crmLead.property_type?.toLowerCase() ?? '';
+  const tipoNegocio =
+    propertyType.includes('locação') || propertyType.includes('locacao') || propertyType.includes('aluguel')
+      ? 'Locação'
+      : 'Venda';
 
   return {
     id_lead: index + 1,

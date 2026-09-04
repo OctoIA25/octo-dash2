@@ -28,13 +28,14 @@ export interface ChartInput {
 }
 
 export interface MarketingSource {
+  /** Null enquanto os KPIs carregam (ou se a busca falhou) — o builder trata. */
   kpis: {
     totalLeadsRecebidos: number;
     totalLeadsInteragidos: number;
-    mediaInteracaoDia: number;
+    mediaLeadsDia: number;
     mediaTempoPrimeiraInteracao: number;
     totalLeadsConvertidos: number;
-  };
+  } | null;
   charts: {
     canal: ChartInput;
     origem: ChartInput;
@@ -56,11 +57,11 @@ export interface MetricasRankingRow {
 export interface MetricasSource {
   subArea: 'visao-geral' | 'ranking';
   kpis: {
-    vendasCriadas: number;
+    leadsNoPeriodo: number;
     vendasAssinadas: number;
-    imoveisAtivos: number;
-    totalLeadsMensal: number;
-    valorTotalFormatado: string;
+    vgvFormatado: string;
+    vgcFormatado: string;
+    ticketMedioFormatado: string;
   };
   charts: {
     leadsEquipe: ChartInput;
@@ -78,20 +79,14 @@ export interface MetricasIndividuaisSource {
   subArea: 'comissao-metas' | 'metas' | 'leads' | 'vendas';
   corretor: string;
   comissaoMetas: {
-    metaAnual: number;
     comissaoRecebida: number;
-    faltaParaMeta: number;
-    percentual: number;
     exclusivos: number;
-    metaExclusivo: number;
-    ficha: number;
-    metaFicha: number;
+    leadsAtivos: number;
   };
   leads: {
     totalLeads: number;
     leadsRecebidos: number;
     visitas: number;
-    vendasRealizadas: number;
   };
   vendas: {
     vendasTotal: number;
@@ -110,7 +105,6 @@ export interface MetricasIndividuaisSource {
     }>;
   };
   charts: {
-    leadsBairro: ChartInput;
     leadsFonte: ChartInput;
     leadsImovel: ChartInput;
     vendasFonte: ChartInput;

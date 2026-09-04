@@ -171,7 +171,10 @@ export const MetricsDashboard = () => {
   const { tenantId } = useAuthContext();
 
   const relatoriosData = useRelatorios();
-  const { vendasCriadas: vendasCriadasRelatorio, vendasAssinadas: vendasAssinadasRelatorio, metricasEquipes: metricasEquipesRelatorio, totalLeadsMensal, valorTotal, imoveisAtivos: imoveisAtivosRelatorio } = relatoriosData;
+  // `vendasAssinadas` sai de `proposals` (kpis), não mais de leads com
+  // final_sale_value — coluna vazia em produção, o card vivia em zero.
+  const { metricasEquipes: metricasEquipesRelatorio, kpis: kpisRelatorios } = relatoriosData;
+  const vendasAssinadasRelatorio = kpisRelatorios?.vendasAssinadas ?? 0;
 
   const [loading, setLoading] = useState(true);
 
@@ -997,7 +1000,7 @@ export const MetricsDashboard = () => {
 
           {/* KPIs Principais */}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
 
             <Card className="bg-white dark:bg-gray-900/50 border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow">
 
@@ -1105,59 +1108,6 @@ export const MetricsDashboard = () => {
 
             </Card>
 
-
-
-            <Card className="bg-white dark:bg-gray-900/50 border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow">
-
-              <CardContent className="p-5">
-
-                <div className="flex items-center justify-between mb-3">
-
-                  <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg">
-
-                    <Home className="h-4 w-4 text-orange-600 dark:text-orange-400" />
-
-                  </div>
-
-                  <div className={`flex items-center gap-1 ${variacoes ? formatarVariacao(variacoes.imoveisAtivos).cor : 'text-green-600 dark:text-green-400'}`}>
-
-                    {variacoes ? (
-
-                      <>
-
-                        {formatarVariacao(variacoes.imoveisAtivos).icone === 'ArrowUpRight' && <ArrowUpRight className="h-3 w-3" />}
-
-                        {formatarVariacao(variacoes.imoveisAtivos).icone === 'ArrowDownRight' && <ArrowDownRight className="h-3 w-3" />}
-
-                        {formatarVariacao(variacoes.imoveisAtivos).icone === 'Minus' && <Minus className="h-3 w-3" />}
-
-                        <span className="text-[10px] font-semibold">{formatarVariacao(variacoes.imoveisAtivos).texto}</span>
-
-                      </>
-
-                    ) : (
-
-                      <>
-
-                        <ArrowUpRight className="h-3 w-3" />
-
-                        <span className="text-[10px] font-semibold">Carregando...</span>
-
-                      </>
-
-                    )}
-
-                  </div>
-
-                </div>
-
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">{imoveisAtivosRelatorio}</p>
-
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Imóveis Ativos</p>
-
-              </CardContent>
-
-            </Card>
 
 
 

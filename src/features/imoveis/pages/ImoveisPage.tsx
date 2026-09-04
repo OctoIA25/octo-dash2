@@ -231,6 +231,11 @@ interface ImovelLocal {
   chave_com?: string | null;
   chave_retirada_em?: string | null;
   obs_interna?: string | null;
+  proprietario_nome?: string | null;
+  proprietario_telefone?: string | null;
+  proprietario_tel_residencial?: string | null;
+  proprietario_tel_comercial?: string | null;
+  proprietario_email?: string | null;
   criado_por?: string | null;
   updated_at?: string | null;
 }
@@ -278,6 +283,13 @@ const buildEditDataFromLocal = (local: ImovelLocal) => {
     captador_id: local.captador_id || '',
     captador_2_id: local.captador_2_id || '',
     obs_interna: local.obs_interna || '',
+    // Sem isto o upsert de edição gravaria proprietario_* = null e apagaria o
+    // dono do imóvel a cada salvamento (mesmo caso do CEP acima).
+    proprietario_nome: local.proprietario_nome || '',
+    proprietario_celular: local.proprietario_telefone || '',
+    proprietario_tel_residencial: local.proprietario_tel_residencial || '',
+    proprietario_tel_comercial: local.proprietario_tel_comercial || '',
+    proprietario_email: local.proprietario_email || '',
   chave_status: local.chave_status || '',
   chave_local: local.chave_local || '',
   chave_com: local.chave_com || '',

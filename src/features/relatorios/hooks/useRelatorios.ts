@@ -3,8 +3,8 @@
  * Substitui dados mockados por dados reais do banco
  */
 
-import { useState, useEffect, useMemo } from 'react';
-import { format, startOfMonth, endOfMonth } from 'date-fns';
+import { useState, useEffect } from 'react';
+import { format, startOfMonth, endOfMonth, subDays } from 'date-fns';
 import { useAuth } from '@/hooks/useAuth';
 import {
   buscarKPIsGerais,
@@ -19,11 +19,6 @@ import {
   type MetricasIndividuaisVendas,
   type VendasPorFonte,
   type VendasPorFaixa,
-  buscarVendasCriadas,
-  buscarVendasAssinadas,
-  buscarTotalLeadsMensal,
-  buscarImoveisAtivos,
-  buscarValorTotal,
 } from '../services/relatoriosService';
 import { buscarMetricasPorEquipe } from '@/features/metricas/services/enhancedMetricsService';
 import {
@@ -68,7 +63,22 @@ function mapRankingComercial(ranking: CommercialSalesBrokerRanking[]): MetricasI
     }));
 }
 
-export const useRelatorios = () => {
+/**
+ * Período dos KPIs. Sem ele os cards eram o acumulado do tenant enquanto o
+ * cabeçalho do relatório anunciava um intervalo — o número não batia com a
+ * legenda em nenhuma tela nem no PDF exportado.
+ */
+interface PeriodoKPIs {
+  inicio: string;
+  fim: string;
+}
+
+const PERIODO_PADRAO: PeriodoKPIs = {
+  inicio: format(subDays(new Date(), 30), 'yyyy-MM-dd'),
+  fim: format(new Date(), 'yyyy-MM-dd'),
+};
+
+export const useRelatorios = (periodo: PeriodoKPIs = PERIODO_PADRAO) => {
   const { tenantId } = useAuth();
   
   // Estados para dados reais
@@ -76,11 +86,6 @@ export const useRelatorios = () => {
   const [rankingCorretores, setRankingCorretores] = useState<MetricasIndividuais[]>([]);
   const [vendasPorFonte, setVendasPorFonte] = useState<VendasPorFonte[]>([]);
   const [vendasPorFaixa, setVendasPorFaixa] = useState<VendasPorFaixa[]>([]);
-  const [vendasCriadas, setVendasCriadas ] = useState<number>(0);
-  const [vendasAssinadas, setVendasAssinadas] = useState<number>(0);
-  const [totalLeadsMensal, setTotalLeadsMensal] = useState<number>(0);
-  const [imoveisAtivos, setImoveisAtivos] = useState<number>(0);
-  const [valorTotal, setValorTotal] = useState<number>(0);
   const [metricasEquipes, setMetricasEquipes] = useState<any[]>([]);
 
   // Estados para métricas individuais
@@ -105,6 +110,8 @@ export const useRelatorios = () => {
   );
 
   // Carregar dados gerais
+  const { inicio, fim } = periodo;
+
   useEffect(() => {
 
     const carregarDadosGerais = async () => {
@@ -112,43 +119,32 @@ export const useRelatorios = () => {
       
       setLoading(true);
       try {
-        // Estas 9 consultas são independentes (dependem apenas de tenantId, nenhuma usa
-        // o resultado da outra). Buscamos em PARALELO: a latência passa a ser a da
-        // consulta mais lenta, não a soma das 9. Comportamento idêntico no caminho feliz
-        // (os mesmos setters recebem os mesmos valores); Promise.all preserva a ordem.
+        // Estas 4 consultas são independentes (dependem apenas de tenantId e do
+        // período, nenhuma usa o resultado da outra). Buscamos em PARALELO: a
+        // latência passa a ser a da consulta mais lenta, não a soma das 4.
+        // Contagens de venda/VGV/VGC vêm dentro de buscarKPIsGerais — uma única
+        // leitura de `proposals` serve os dois blocos de cards.
         const [
-          vendasCriadasData,
-          vendasAssinadas,
           metricasEquipesData,
           kpis,
           fonteData,
           faixaData,
-          totalLeadsMensal,
-          valorTotal,
-          imoveisAtivos,
         ] = await Promise.all([
-          buscarVendasCriadas(tenantId),
-          buscarVendasAssinadas(tenantId),
           buscarMetricasPorEquipe(tenantId),
-          buscarKPIsGerais(tenantId),
+          buscarKPIsGerais(tenantId, inicio, fim),
           buscarVendasPorFonte(tenantId),
           buscarVendasPorFaixa(tenantId),
-          buscarTotalLeadsMensal(tenantId),
-          buscarValorTotal(tenantId),
-          buscarImoveisAtivos(tenantId),
         ]);
 
-        setVendasCriadas(vendasCriadasData);
-        setVendasAssinadas(vendasAssinadas);
         setMetricasEquipes(metricasEquipesData);
         setKpisGerais(kpis);
         setVendasPorFonte(fonteData);
         setVendasPorFaixa(faixaData);
-        setTotalLeadsMensal(totalLeadsMensal);
-        setValorTotal(valorTotal);
-        setImoveisAtivos(Number(imoveisAtivos));
       } catch (error) {
         console.error('Erro ao carregar dados gerais dos relatórios:', error);
+        // Sem dado real não há número para mostrar: a tela exibe "—", nunca um
+        // valor inventado (o fallback mockado de 1247 leads saiu daqui).
+        setKpisGerais(null);
       } finally {
         setLoading(false);
       }
@@ -160,7 +156,7 @@ export const useRelatorios = () => {
     const interval = setInterval(carregarDadosGerais, 30000);
     
     return () => clearInterval(interval);
-  }, [tenantId]);
+  }, [tenantId, inicio, fim]);
 
   // Carregar ranking de corretores
   useEffect(() => {
@@ -237,17 +233,9 @@ export const useRelatorios = () => {
     carregarMetricasIndividuais();
   }, [tenantId, metricasIndCorretor, metricasIndDataInicial, metricasIndDataFinal]);
 
-  // Fallback mockado apenas para KPIs gerais.
-  const kpisMock = useMemo(() => ({
-    totalLeadsRecebidos: 1247,
-    totalLeadsInteragidos: 1015,
-    mediaInteracaoDia: 81.41,
-    mediaTempoPrimeiraInteracao: 26,
-    totalLeadsConvertidos: 187,
-  }), []);
-
-  // O ranking não usa mock: se não houver dados reais, volta vazio.
-  const kpis = kpisGerais || kpisMock;
+  // Nem KPI nem ranking usam mock: sem dado real, `kpis` é null e a tela mostra
+  // "—". Um número inventado no lugar de um erro é pior que a ausência dele.
+  const kpis = kpisGerais;
   const ranking = rankingCorretores;
 
   return {
@@ -258,12 +246,7 @@ export const useRelatorios = () => {
     vendasPorFaixa,
     metricasIndLeads,
     metricasIndVendas,
-    vendasCriadas,
-    vendasAssinadas,
     metricasEquipes,
-    totalLeadsMensal,
-    valorTotal,
-    imoveisAtivos,
 
     
     // Loading states

@@ -33,9 +33,9 @@ export function buildCorretorMetricasCompletas(params: {
 
   const lr = leads?.leadsRecebidos ?? 0;
   const visitas = leads?.visitas ?? 0;
-  const vendasFunil = leads?.vendasRealizadas ?? 0;
-  const vendasPorNegocio = vendas?.vendasTotal ?? 0;
-  const vendasRealizadas = Math.max(vendasFunil, vendasPorNegocio);
+  // Fonte única: proposta assinada. O `Math.max` com a etapa do funil saiu junto
+  // com a coluna `etapa_atual`, que não existe em `leads`.
+  const vendasRealizadas = vendas?.vendasTotal ?? 0;
 
   const taxaVisitas = lr > 0 ? Math.round((visitas / lr) * 1000) / 10 : 0;
   const taxaVendas =
@@ -46,8 +46,6 @@ export function buildCorretorMetricasCompletas(params: {
         : 0;
 
   const comissao = vendas?.comissaoTotal ?? 0;
-  const metaComissao = Math.max(Math.round(comissao * 1.35), 360000);
-  const pctMeta = metaComissao > 0 ? Math.min(100, Math.round((comissao / metaComissao) * 100)) : 0;
 
   return {
     id: slugCorretorId(nomeCorretor),
@@ -58,7 +56,9 @@ export function buildCorretorMetricasCompletas(params: {
       vendasFeitas: vendas?.vendasTotal ?? 0,
       comissaoTotal: comissao,
       gestaoAtiva: gestaoAtivaRanking,
-      percentualAtingimentoMeta: pctMeta,
+      // Sem meta real (feature Metas) não há atingimento a exibir: a anterior
+      // era comissão × 1,35, ou seja, 74% para todo corretor, sempre.
+      percentualAtingimentoMeta: 0,
       tempoMedioResposta: tempoMedioRespostaMin,
     },
     funil: {
@@ -69,7 +69,7 @@ export function buildCorretorMetricasCompletas(params: {
       taxaConversaoVendas: taxaVendas,
     },
     portfolio: {
-      imoveisFicha: gestaoAtivaRanking || lr,
+      imoveisFicha: gestaoAtivaRanking,
       imoveisExclusivos: vendas?.vendasExclusivas ?? 0,
     },
     leadsPorFonte: (leads?.porFonte ?? []).map((x) => ({

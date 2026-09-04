@@ -1068,6 +1068,8 @@ export const CriarImovelForm = ({
       tour_virtual: isHttpUrl(formData.tour_virtual) ? formData.tour_virtual.trim() : null,
       proprietario_nome: formData.proprietario_nome || null,
       proprietario_telefone: formData.proprietario_celular || formData.proprietario_tel_residencial || null,
+      proprietario_tel_residencial: formData.proprietario_tel_residencial || null,
+      proprietario_tel_comercial: formData.proprietario_tel_comercial || null,
       proprietario_email: formData.proprietario_email || null,
       criado_por: user?.id || null,
       obs_interna: formData.obs_interna || null,

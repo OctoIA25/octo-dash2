@@ -134,7 +134,7 @@ const LEADS_KANBAN_COLUMNS =
 const KENLO_KANBAN_COLUMNS =
   'id,client_name,client_phone,client_email,message,interest_reference,attended_by_name,is_exclusive,interest_type,interest_is_sale,interest_is_rent,stage,temperature,portal,lead_timestamp,archived_at,archive_reason,updated_at,created_at,tenant_id,classification,preferences';
 
-const PAGE_SIZE = 1000;
+export const PAGE_SIZE = 1000;
 // Manter baixo: cada página é sort+offset no Postgres, por usuário — 6 em paralelo
 // saturou o banco (incidente 28/jul; ver idx_kenlo_leads_tenant_created).
 const PAGE_CONCURRENCY = 2;
@@ -151,7 +151,7 @@ const PAGE_CONCURRENCY = 2;
 // (import histórico Santa Ângela) e os 386 mais ANTIGOS desapareceram do Kanban,
 // sem erro nenhum. Ver também o tiebreaker de `id` nas queries: com offset, um
 // `order` não determinístico pula/repete linhas entre páginas.
-async function fetchPagesInBatches(
+export async function fetchPagesInBatches(
   buildPageQuery: (from: number) => PromiseLike<{ data: unknown[] | null; error: unknown }>,
   maxPages = 50
 ): Promise<Record<string, unknown>[]> {

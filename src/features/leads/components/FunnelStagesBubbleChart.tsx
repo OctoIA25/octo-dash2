@@ -41,10 +41,15 @@ export const FunnelStagesBubbleChart = ({ leads, funnelType = 'comprador', subSe
   const chartRef = useRef<HTMLCanvasElement>(null);
   const chartInstance = useRef<ChartJS | null>(null);
 
+  // Cliente Proprietário tem funil próprio (11 etapas). Antes este gráfico
+  // recebia funnelType="vendedor" mas continuava calculando as 9 etapas do
+  // funil de Interessado — os rótulos eram do funil errado.
+  const effectiveSubSection = funnelType === 'vendedor' ? 'proprietario' : subSection;
+
   // Calcular dados das etapas (lógica compartilhada e testável em funnelStages.ts)
   const chartData = useMemo(
-    () => computeFunnelStages(leads, subSection),
-    [leads, subSection]
+    () => computeFunnelStages(leads, effectiveSubSection),
+    [leads, effectiveSubSection]
   );
 
   useEffect(() => {
@@ -79,16 +84,11 @@ export const FunnelStagesBubbleChart = ({ leads, funnelType = 'comprador', subSe
             pointHoverRadius: 12,
             pointBackgroundColor: chartData.data.map((value, index) => {
               // 🎨 CORES DO FUNIL - Mesmas cores das etapas do funil
+              // 11 cores: cobre tanto o funil de Interessado (9 etapas)
+              // quanto o de Proprietário (11), sem cair no cinza do fallback.
               const coresFunil = [
-                '#0891B2', // 1. Novos Leads - AZUL ciano intenso
-                '#2563EB', // 2. Em Atendimento - AZUL vibrante
-                '#1D4ED8', // 3. Interação - AZUL médio forte
-                '#10B981', // 4. Visita Agendada - VERDE limão intenso
-                '#059669', // 5. Visita Realizada - VERDE vibrante
-                '#FB923C', // 6. Negociação - LARANJA claro
-                '#F97316', // 7. Proposta Criada - LARANJA médio avermelhado
-                '#DC2626', // 8. Proposta Enviada - VERMELHO médio
-                '#DC2626'  // 9. Proposta Assinada - VERMELHO
+                '#0891B2', '#2563EB', '#1D4ED8', '#10B981', '#059669', '#34D399',
+                '#FB923C', '#F97316', '#EA580C', '#DC2626', '#B91C1C'
               ];
               return coresFunil[index] || '#6B7280';
             }),

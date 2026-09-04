@@ -48,11 +48,11 @@ function buildMarketing(src: MarketingSource, base: Base): ReportModel {
         group: 'visao-geral',
         kind: 'metrics',
         items: [
-          { label: 'Leads recebidos', value: formatNumber(k.totalLeadsRecebidos) },
-          { label: 'Leads interagidos', value: formatNumber(k.totalLeadsInteragidos) },
-          { label: 'Média interação/dia', value: `${k.mediaInteracaoDia}%` },
-          { label: 'Tempo 1ª interação', value: `${k.mediaTempoPrimeiraInteracao} min` },
-          { label: 'Leads convertidos', value: formatNumber(k.totalLeadsConvertidos) },
+          { label: 'Leads recebidos', value: formatNumber(k?.totalLeadsRecebidos) },
+          { label: 'Leads interagidos', value: formatNumber(k?.totalLeadsInteragidos) },
+          { label: 'Leads/dia (média)', value: formatNumber(k?.mediaLeadsDia) },
+          { label: 'Tempo 1ª interação', value: k ? `${k.mediaTempoPrimeiraInteracao} min` : '—' },
+          { label: 'Leads convertidos', value: formatNumber(k?.totalLeadsConvertidos) },
         ],
       },
       chart('mkt-canal', 'Clientes recebidos por Canal', 'graficos', c.canal),
@@ -82,11 +82,11 @@ function buildMetricas(src: MetricasSource, base: Base): ReportModel {
         group: 'visao-geral',
         kind: 'metrics',
         items: [
-          { label: 'Vendas criadas', value: formatNumber(k.vendasCriadas) },
+          { label: 'Leads no período', value: formatNumber(k.leadsNoPeriodo) },
           { label: 'Vendas assinadas', value: formatNumber(k.vendasAssinadas) },
-          { label: 'Imóveis ativos', value: formatNumber(k.imoveisAtivos) },
-          { label: 'Leads no mês', value: formatNumber(k.totalLeadsMensal) },
-          { label: 'Valor total', value: k.valorTotalFormatado },
+          { label: 'VGV', value: k.vgvFormatado },
+          { label: 'Comissão (VGC)', value: k.vgcFormatado },
+          { label: 'Ticket médio', value: k.ticketMedioFormatado },
         ],
       },
       chart('met-leads-equipe', 'Leads por Equipe', 'equipes', c.leadsEquipe),
@@ -141,13 +141,14 @@ function buildMetricasIndividuais(src: MetricasIndividuaisSource, base: Base): R
       title: 'Comissão e metas',
       group: 'comissao-metas',
       kind: 'metrics',
+      // As metas saíram daqui: eram derivadas do próprio resultado
+      // (comissão × 1,35, vendas × 0,35 + 2) — comparação do número consigo
+      // mesmo. Meta de verdade vive em `goals`; enquanto não estiver ligada,
+      // o relatório mostra só o realizado.
       items: [
         { label: 'Comissão recebida', value: formatCurrency(m.comissaoRecebida) },
-        { label: 'Meta anual', value: formatCurrency(m.metaAnual) },
-        { label: 'Falta para a meta', value: formatCurrency(m.faltaParaMeta) },
-        { label: 'Atingido', value: formatPercent(m.percentual) },
-        { label: 'Exclusivos', value: `${formatNumber(m.exclusivos)} / ${formatNumber(m.metaExclusivo)}` },
-        { label: 'Fichas', value: `${formatNumber(m.ficha)} / ${formatNumber(m.metaFicha)}` },
+        { label: 'Vendas exclusivas', value: formatNumber(m.exclusivos) },
+        { label: 'Leads ativos', value: formatNumber(m.leadsAtivos) },
       ],
     });
   } else if (src.subArea === 'leads') {
@@ -163,10 +164,8 @@ function buildMetricasIndividuais(src: MetricasIndividuaisSource, base: Base): R
           { label: 'Total de leads', value: formatNumber(L.totalLeads) },
           { label: 'Leads recebidos', value: formatNumber(L.leadsRecebidos) },
           { label: 'Visitas', value: formatNumber(L.visitas) },
-          { label: 'Vendas realizadas', value: formatNumber(L.vendasRealizadas) },
         ],
       },
-      chart('mi-leads-bairro', 'Leads por Bairro', 'leads', c.leadsBairro),
       chart('mi-leads-fonte', 'Leads por Fonte', 'leads', c.leadsFonte),
       chart('mi-leads-imovel', 'Leads por Imóvel', 'leads', c.leadsImovel),
     );

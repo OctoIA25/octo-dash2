@@ -9,6 +9,8 @@ import {
   Loader2,
   Download,
   Pencil,
+  ChevronDown,
+  ChevronUp,
   Check,
   X as XIcon,
 } from 'lucide-react';
@@ -119,6 +121,7 @@ export const LancamentoViewPage = () => {
   const [publicarSite, setPublicarSite] = useState(true);
   const [fotos, setFotos] = useState<Foto[]>([]);
   const [bookPdf, setBookPdf] = useState<string | null>(null);
+  const [showBookPreview, setShowBookPreview] = useState(false);
   const [bookFilename, setBookFilename] = useState<string | null>(null);
 
   const [isSaving, setIsSaving] = useState(false);
@@ -451,6 +454,22 @@ export const LancamentoViewPage = () => {
               >
                 <Download className="h-4 w-4" /> Baixar
               </a>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowBookPreview((v) => !v)}
+                aria-expanded={showBookPreview}
+              >
+                {showBookPreview ? (
+                  <>
+                    <ChevronUp className="h-4 w-4 mr-1" /> Ocultar
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="h-4 w-4 mr-1" /> Visualizar
+                  </>
+                )}
+              </Button>
               <Button variant="outline" size="sm" onClick={() => pdfInputRef.current?.click()}>
                 Substituir
               </Button>
@@ -458,9 +477,11 @@ export const LancamentoViewPage = () => {
                 <Trash2 className="h-4 w-4 text-destructive" />
               </Button>
             </div>
-            <div className="rounded-lg overflow-hidden border border-border">
-              <iframe src={bookPdf} title="Book do lançamento" className="w-full h-[600px]" />
-            </div>
+            {showBookPreview && (
+              <div className="rounded-lg overflow-hidden border border-border">
+                <iframe src={bookPdf} title="Book do lançamento" className="w-full h-[600px]" />
+              </div>
+            )}
           </div>
         ) : (
           <button

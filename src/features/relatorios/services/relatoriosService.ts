@@ -5,6 +5,13 @@
 
 import { supabase } from '@/lib/supabaseClient';
 import { canonicalizeFonteCounts } from '@/data/realLeadsProcessor';
+import {
+  buscarVendasAssinadas as buscarVendasAssinadasProposals,
+  agruparPorCorretor,
+  somarVendas,
+  normalizarNome,
+  type VendaAssinada,
+} from '@/features/metricas/services/vendasAssinadasService';
 
 const UUID_AGENT_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -30,6 +37,14 @@ function toDayStartIso(dateStr: string): string {
 
 function toDayEndIso(dateStr: string): string {
   return dateStr.includes('T') ? dateStr : `${dateStr}T23:59:59.999Z`;
+}
+
+/** Dias do período (inclusivo). Mínimo 1 para nunca dividir por zero. */
+function diasNoPeriodo(inicio: string, fim: string): number {
+  const de = new Date(toDayStartIso(inicio)).getTime();
+  const ate = new Date(toDayEndIso(fim)).getTime();
+  const dias = Math.round((ate - de) / (1000 * 60 * 60 * 24));
+  return Math.max(1, dias);
 }
 
 // Types (definidos inline para evitar dependência de Database)
@@ -137,17 +152,26 @@ export interface MetricasIndividuais {
 export interface KPIsGerais {
   totalLeadsRecebidos: number;
   totalLeadsInteragidos: number;
-  mediaInteracaoDia: number;
+  /** Leads recebidos por dia no período — contagem, não percentual. */
+  mediaLeadsDia: number;
   mediaTempoPrimeiraInteracao: number;
   totalLeadsConvertidos: number;
+  /** Propostas assinadas no período (`proposals`), não leads com valor preenchido. */
+  vendasAssinadas: number;
+  /** Valor Geral de Vendas do período. */
+  vgv: number;
+  /** Comissão: override de `commission_total` ou a derivação 3,5%/6% do forecast. */
+  vgc: number;
+  ticketMedio: number;
 }
 
 export interface MetricasIndividuaisLeads {
   totalLeads: number;
   leadsRecebidos: number;
+  /** Leads com `visit_date` preenchido — o fato da visita, não a etapa atual. */
   visitas: number;
-  vendasRealizadas: number;
-  porBairro: Array<{ label: string; value: number }>;
+  /** Tempo médio de 1ª resposta DESTE corretor, em minutos. */
+  tempoMedioRespostaMin: number;
   porFonte: Array<{ label: string; value: number }>;
   porImovel: Array<{ label: string; value: number }>;
 }
@@ -157,6 +181,7 @@ export interface MetricasIndividuaisVendas {
   vendasExclusivas: number;
   vendasNaoExclusivas: number;
   vgvTotal: number;
+  /** Comissão real das propostas assinadas (`proposals`), nunca o valor do imóvel. */
   comissaoTotal: number;
   ticketMedio: number;
   rows: Array<{
@@ -179,32 +204,57 @@ export interface MetricasIndividuaisVendas {
 // pedaço arbitrário do começo da tabela.
 const AMOSTRA_TEMPO_RESPOSTA = 1000;
 
-export async function buscarKPIsGerais(tenantId: string): Promise<KPIsGerais> {
-  const trintaDiasAtras = new Date();
-  trintaDiasAtras.setDate(trintaDiasAtras.getDate() - 30);
+/** Lote do `.in()` de leads — mesmo limite usado em vendasAssinadasService. */
+const LEADS_BATCH = 200;
 
-  const doTenant = () => supabase.from('leads').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId);
+/**
+ * KPIs gerais do período. Todas as leituras respeitam `inicio`/`fim` — o filtro de
+ * data da tela é o mesmo que o PDF exportado anuncia no subtítulo; antes os cards
+ * eram sempre o acumulado do tenant e o "Período: X a Y" do relatório era falso.
+ *
+ * `totalLeadsConvertidos` NÃO sai de `leads.final_sale_value`: essa coluna está
+ * vazia em produção e a venda de verdade mora em `proposals` (stage
+ * `proposta-assinada`) desde o corte de 01/09/2026. Contamos aqui os leads
+ * distintos com proposta assinada no período — o mesmo número que o card de
+ * vendas mostra, sem os dois valores se contradizerem na mesma tela.
+ */
+export async function buscarKPIsGerais(
+  tenantId: string,
+  inicio: string,
+  fim: string,
+): Promise<KPIsGerais> {
+  const de = toDayStartIso(inicio);
+  const ate = toDayEndIso(fim);
 
-  // As cinco leituras são independentes → uma rodada só.
+  const noPeriodo = () =>
+    supabase
+      .from('leads')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', tenantId)
+      .gte('created_at', de)
+      .lte('created_at', ate);
+
+  // As quatro leituras são independentes → uma rodada só.
   // Antes isto era um `select('*')` de TODOS os leads com os filtros feitos em JS,
   // sobre duas colunas que não existem na tabela (`first_interaction_at` e
-  // `etapa_atual`): o filtro nunca casava e três destes KPIs eram zero fixo. As
-  // colunas reais são `first_response_at` e, para conversão, `final_sale_value`.
-  const [recebidos, interagidos, convertidos, ultimos30, amostraResposta] = await Promise.all([
-    doTenant(),
-    doTenant().not('first_response_at', 'is', null),
-    doTenant().gt('final_sale_value', 0),
-    doTenant().gte('created_at', trintaDiasAtras.toISOString()),
+  // `etapa_atual`): o filtro nunca casava e três destes KPIs eram zero fixo. A
+  // coluna real de resposta é `first_response_at`.
+  const [recebidos, interagidos, amostraResposta, vendas] = await Promise.all([
+    noPeriodo(),
+    noPeriodo().not('first_response_at', 'is', null),
     supabase
       .from('leads')
       .select('created_at, first_response_at')
       .eq('tenant_id', tenantId)
+      .gte('created_at', de)
+      .lte('created_at', ate)
       .not('first_response_at', 'is', null)
       .order('created_at', { ascending: false })
       .limit(AMOSTRA_TEMPO_RESPOSTA),
+    buscarVendasAssinadasProposals(tenantId, inicio, fim),
   ]);
 
-  const primeiroErro = [recebidos, interagidos, convertidos, ultimos30, amostraResposta].find(r => r.error)?.error;
+  const primeiroErro = [recebidos, interagidos, amostraResposta].find(r => r.error)?.error;
   if (primeiroErro) throw primeiroErro;
 
   const temposResposta = (amostraResposta.data || [])
@@ -219,118 +269,22 @@ export async function buscarKPIsGerais(tenantId: string): Promise<KPIsGerais> {
     ? Math.round(temposResposta.reduce((a, b) => a + b, 0) / temposResposta.length)
     : 0;
 
+  const leadsConvertidos = new Set(
+    vendas.map(venda => venda.leadId).filter((id): id is string => Boolean(id)),
+  ).size;
+  const totais = somarVendas(vendas);
+
   return {
     totalLeadsRecebidos: recebidos.count ?? 0,
     totalLeadsInteragidos: interagidos.count ?? 0,
-    mediaInteracaoDia: Math.round((ultimos30.count ?? 0) / 30),
+    mediaLeadsDia: Math.round(((recebidos.count ?? 0) / diasNoPeriodo(inicio, fim)) * 10) / 10,
     mediaTempoPrimeiraInteracao,
-    totalLeadsConvertidos: convertidos.count ?? 0,
+    totalLeadsConvertidos: leadsConvertidos,
+    vendasAssinadas: totais.vendas,
+    vgv: totais.vgv,
+    vgc: totais.vgc,
+    ticketMedio: totais.vendas > 0 ? totais.vgv / totais.vendas : 0,
   };
-}
-
-export async function buscarTotalLeadsMensal(
-  tenantId: string,
-) {
-  // Usar query direta para contar leads mensais do tenant
-  const { count, error } = await supabase
-    .from('leads' as any)
-    .select('id', { count: 'exact', head: true })
-    .eq('tenant_id', tenantId)
-    .is('archived_at', null);
-
-  if (error) {
-    console.error('Erro ao buscar leads mensais:', error);
-    return 0;
-  }
-
-  return count ?? 0;
-}
-
-// Função para formatar valores monetários
-export const formatarValorMonetario = (valor: number): string => {
-  if (valor >= 1000000) {
-    return `$${(valor / 1000000).toFixed(1)}M`;
-  } else if (valor >= 1000) {
-    return `$${(valor / 1000).toFixed(1)}K`;
-  } else {
-    return `$${valor.toFixed(0)}`;
-  }
-};
-
-export async function buscarImoveisAtivos(tenantId: string) {
-  const { count, error } = await supabase
-    .from('leads' as any)
-    .select('id', { count: 'exact', head: true })
-    .eq('tenant_id', tenantId)
-    .eq('status', 'Novos Leads');
-
-  if (error) {
-    console.error('Erro ao buscar imoveis ativos:', error);
-    return 0;
-  }
-
-  return count ?? 0;
-}
-
-
-
-export async function buscarValorTotal(
-  tenantId: string,
-) {
-  const { data, error } = await supabase
-    .from('leads' as any)
-    .select('final_sale_value')
-    .eq('tenant_id', tenantId)
-    .not('final_sale_value', 'is', null);
-
-  if (error) {
-    console.error('Erro ao buscar valor total:', error);
-    return 0;
-  }
-
-  return data?.reduce((acc, lead) => acc + (lead.final_sale_value || 0), 0) || 0;
-}
-
-export async function buscarVendasAssinadas(
-  tenantId: string,
-) {
-  // Contagem no banco, não `.length` das linhas: o PostgREST corta o resultado em
-  // db-max-rows (1000 neste projeto, verificado) SEM erro — contar no cliente dá o
-  // número errado assim que o tenant passa desse volume. Mesmo padrão de
-  // buscarTotalLeadsMensal/buscarImoveisAtivos, e não traz nenhuma linha.
-  const { count, error } = await supabase
-    .from('leads' as any)
-    .select('id', { count: 'exact', head: true })
-    .eq('tenant_id', tenantId)
-    .not('assigned_agent_id', 'is', null)
-    .not('final_sale_value', 'is', null)
-    .gt('final_sale_value', 0);
-
-  if (error) {
-    console.error('Erro ao buscar vendas assinadas:', error);
-    return 0;
-  }
-
-  return count ?? 0;
-}
-
-export async function buscarVendasCriadas(
-  tenantId: string,
-) {
-  // Contagem no banco (ver nota em buscarVendasAssinadas): `.length` das linhas
-  // silenciosamente empaca em 1000.
-  const { count, error } = await supabase
-    .from('leads' as any)
-    .select('id', { count: 'exact', head: true })
-    .eq('tenant_id', tenantId)
-    .is('archived_at', null);
-
-  if (error) {
-    console.error('Erro ao buscar vendas criadas:', error);
-    return 0;
-  }
-
-  return count ?? 0;
 }
 
 export async function buscarRankingCorretores(
@@ -408,6 +362,18 @@ export async function buscarRankingCorretores(
   return ranking;
 }
 
+/** Página do PostgREST. Sem o laço, toda leitura empaca em 1000 linhas sem erro. */
+const PAGE_SIZE = 1000;
+
+/**
+ * Métricas de leads do corretor no período.
+ *
+ * Reescrita porque a versão anterior filtrava `etapa_atual` e agrupava por
+ * `bairro` — nenhuma das duas colunas existe em `leads` (o optional chaining
+ * engolia em silêncio, e "Visitas", "Vendas" e o gráfico de bairro eram zero
+ * fixo para todo corretor). O que existe e diz a mesma coisa: `visit_date`
+ * (o fato da visita) e `source` / `property_code`.
+ */
 export async function buscarMetricasIndividuaisLeads(
   tenantId: string,
   corretorId: string,
@@ -417,57 +383,49 @@ export async function buscarMetricasIndividuaisLeads(
   const di = toDayStartIso(dataInicial);
   const df = toDayEndIso(dataFinal);
 
-  let query = supabase
-    .from('leads')
-    .select('*')
-    .eq('tenant_id', tenantId)
-    .gte('created_at', di)
-    .lte('created_at', df);
+  const leads: Array<{
+    source: string | null;
+    property_code: string | null;
+    visit_date: string | null;
+    created_at: string | null;
+    first_response_at: string | null;
+  }> = [];
+  for (let page = 0; ; page += 1) {
+    let query = supabase
+      .from('leads')
+      .select('source, property_code, visit_date, created_at, first_response_at')
+      .eq('tenant_id', tenantId)
+      .gte('created_at', di)
+      .lte('created_at', df)
+      .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
 
-  query = applyAssignedAgentFilter(query, corretorId);
+    query = applyAssignedAgentFilter(query, corretorId);
 
-  const { data: leads, error: leadsError } = await query;
+    const { data, error } = await query;
+    if (error) throw error;
 
-  if (leadsError) throw leadsError;
+    const linhas = (data ?? []) as typeof leads;
+    leads.push(...linhas);
+    if (linhas.length < PAGE_SIZE) break;
+  }
 
-  const totalLeads = leads?.length || 0;
-  const leadsRecebidos = totalLeads;
+  const totalLeads = leads.length;
+  const visitas = leads.filter(l => Boolean(l.visit_date)).length;
 
-  // Contar visitas (leads em etapa de visita)
-  const visitas = leads?.filter(l =>
-    l.etapa_atual?.includes('Visita') ||
-    l.etapa_atual?.includes('Visitação') ||
-    l.etapa_atual?.includes('Mostrar')
-  ).length || 0;
+  // Tempo de resposta DO CORRETOR. Antes a tela mostrava a média do tenant
+  // inteiro dentro do painel individual — número certo, dono errado.
+  const tempos = leads
+    .filter(l => l.created_at && l.first_response_at)
+    .map(l => Math.floor(
+      (new Date(l.first_response_at as string).getTime() - new Date(l.created_at as string).getTime()) / (1000 * 60)
+    ))
+    .filter(t => t > 0);
+  const tempoMedioRespostaMin = tempos.length > 0
+    ? Math.round(tempos.reduce((a, b) => a + b, 0) / tempos.length)
+    : 0;
 
-  // Contar vendas realizadas
-  const vendasRealizadas = leads?.filter(l =>
-    l.etapa_atual?.includes('Venda') ||
-    l.etapa_atual?.includes('Concluído') ||
-    l.etapa_atual?.includes('Negócio Fechado')
-  ).length || 0;
-
-  // Agrupar por bairro
-  const bairrosCount = new Map<string, number>();
-  leads?.forEach(lead => {
-    const row = lead as Record<string, unknown>;
-    const bairro = String(
-      row.bairro ?? row.district ?? row.neighborhood ?? 'Não informado'
-    );
-    bairrosCount.set(bairro, (bairrosCount.get(bairro) || 0) + 1);
-  });
-
-  const porBairro = Array.from(bairrosCount.entries())
-    .map(([bairro, quantidade]) => ({ label: bairro, value: quantidade }))
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 6);
-
-  // Agrupar por fonte (deduplicando variações de capitalização)
   const fontesCount = canonicalizeFonteCounts(
-    (leads ?? []).map(lead => {
-      const row = lead as Record<string, unknown>;
-      return String(row.origem_lead ?? row.source ?? row.lead_source ?? 'Não informado');
-    })
+    leads.map(lead => lead.source || 'Não informado')
   );
 
   const porFonte = Array.from(fontesCount.entries())
@@ -475,11 +433,9 @@ export async function buscarMetricasIndividuaisLeads(
     .sort((a, b) => b.value - a.value)
     .slice(0, 5);
 
-  // Agrupar por imóvel
   const imoveisCount = new Map<string, number>();
-  leads?.forEach(lead => {
-    const row = lead as Record<string, unknown>;
-    const imovel = String(row.imovel_id ?? row.property_code ?? 'Não informado');
+  leads.forEach(lead => {
+    const imovel = lead.property_code || 'Não informado';
     imoveisCount.set(imovel, (imoveisCount.get(imovel) || 0) + 1);
   });
 
@@ -490,72 +446,77 @@ export async function buscarMetricasIndividuaisLeads(
 
   return {
     totalLeads,
-    leadsRecebidos,
+    leadsRecebidos: totalLeads,
     visitas,
-    vendasRealizadas,
-    porBairro,
+    tempoMedioRespostaMin,
     porFonte,
     porImovel
   };
 }
 
+/** Vendas do corretor no período — a chave é o UUID quando há, senão o nome. */
+function vendaEhDoCorretor(venda: VendaAssinada, corretorId: string): boolean {
+  const chave = corretorId.trim();
+  if (!chave) return true;
+  if (isAgentKeyUuid(chave)) return venda.agentUserId === chave;
+  return normalizarNome(venda.agentNome) === normalizarNome(chave);
+}
+
+/**
+ * Vendas e comissão do corretor.
+ *
+ * A fonte é `proposals` (stage `proposta-assinada`), a mesma do VGV/VGC da dash
+ * desde o corte de 01/09/2026 — antes isto lia `leads.final_sale_value`, coluna
+ * vazia em produção, e devolvia comissão = valor do imóvel.
+ */
 export async function buscarMetricasIndividuaisVendas(
   tenantId: string,
   corretorId: string,
   dataInicial: string,
   dataFinal: string
 ): Promise<MetricasIndividuaisVendas> {
-  const di = toDayStartIso(dataInicial);
-  const df = toDayEndIso(dataFinal);
+  const todas = await buscarVendasAssinadasProposals(tenantId, dataInicial, dataFinal);
+  const vendas = todas.filter(venda => vendaEhDoCorretor(venda, corretorId));
 
-  let query = supabase
-    .from('leads')
-    .select('*')
-    .eq('tenant_id', tenantId)
-    .gte('created_at', di)
-    .lte('created_at', df)
-    .not('final_sale_value', 'is', null);
+  // Exclusividade, código e fonte moram no lead, não na proposta.
+  const leadIds = [...new Set(vendas.map(v => v.leadId).filter((id): id is string => Boolean(id)))];
+  const dadosLead = new Map<string, { is_exclusive: boolean | null; property_code: string | null; source: string | null }>();
 
-  query = applyAssignedAgentFilter(query, corretorId);
+  for (let i = 0; i < leadIds.length; i += LEADS_BATCH) {
+    const { data, error } = await supabase
+      .from('leads')
+      .select('id, is_exclusive, property_code, source')
+      .in('id', leadIds.slice(i, i + LEADS_BATCH));
 
-  const { data: vendas, error: vendasError } = await query;
+    if (error) {
+      console.warn('[metricasIndividuais] dados do lead indisponíveis:', error.message);
+      break;
+    }
+    for (const lead of (data ?? []) as Array<{ id: string } & { is_exclusive: boolean | null; property_code: string | null; source: string | null }>) {
+      dadosLead.set(lead.id, lead);
+    }
+  }
 
-  if (vendasError) throw vendasError;
+  const totais = somarVendas(vendas);
+  const vendasExclusivas = vendas.filter(
+    v => v.leadId && dadosLead.get(v.leadId)?.is_exclusive === true
+  ).length;
 
-  const vendasTotal = vendas?.length || 0;
-  const vendasExclusivas = vendas?.filter(v => {
-    const row = v as Record<string, unknown>;
-    return Boolean(row.exclusividade ?? row.exclusivity);
-  }).length || 0;
-  const vendasNaoExclusivas = vendasTotal - vendasExclusivas;
-
-  const vgvTotal = vendas?.reduce((sum, v) => sum + (v.final_sale_value || 0), 0) || 0;
-  const comissaoTotal = vendas?.reduce((sum, v) => sum + (v.final_sale_value || 0), 0) || 0;
-  const ticketMedio = vendasTotal > 0 ? vgvTotal / vendasTotal : 0;
-
-  // Detalhamento das vendas
-  const rows = vendas?.map(v => {
-    const row = v as Record<string, unknown>;
-    const exclusivo = Boolean(row.exclusivity ?? row.exclusividade);
-    const fonte = String(row.lead_source ?? row.source ?? 'Não informado');
-    const codigo = String(row.property_code ?? row.codigo_imovel ?? '');
+  const rows = vendas.map(venda => {
+    const lead = venda.leadId ? dadosLead.get(venda.leadId) : undefined;
     return {
-      id: String(row.id ?? ''),
-      codigo_imovel: codigo,
-      exclusividade: exclusivo ? 'exclusivo' : 'não exclusivo',
-      fonte,
-      valor_imovel: Number(row.final_sale_value ?? 0),
-      comissao: Number(row.final_sale_value ?? 0),
-      data: String(row.created_at ?? ''),
+      id: venda.id,
+      codigo_imovel: lead?.property_code || '',
+      exclusividade: lead?.is_exclusive ? 'exclusivo' : 'não exclusivo',
+      fonte: lead?.source || 'Não informado',
+      valor_imovel: venda.vgv,
+      comissao: venda.vgc,
+      data: venda.dataAssinatura,
     };
-  }) || [];
+  });
 
-  // Agrupar por fonte (deduplicando variações de capitalização)
   const fontesCount = canonicalizeFonteCounts(
-    (vendas ?? []).map(venda => {
-      const row = venda as Record<string, unknown>;
-      return String(row.lead_source ?? row.source ?? 'Não informado');
-    })
+    rows.map(row => row.fonte)
   );
 
   const fonteBreakdown = Array.from(fontesCount.entries())
@@ -563,12 +524,12 @@ export async function buscarMetricasIndividuaisVendas(
     .sort((a, b) => b.quantidade - a.quantidade);
 
   return {
-    vendasTotal,
+    vendasTotal: totais.vendas,
     vendasExclusivas,
-    vendasNaoExclusivas,
-    vgvTotal,
-    comissaoTotal,
-    ticketMedio,
+    vendasNaoExclusivas: totais.vendas - vendasExclusivas,
+    vgvTotal: totais.vgv,
+    comissaoTotal: totais.vgc,
+    ticketMedio: totais.vendas > 0 ? totais.vgv / totais.vendas : 0,
     rows,
     fonteBreakdown
   };

@@ -14,13 +14,71 @@
 import { ProcessedLead } from '@/data/realLeadsProcessor';
 
 /** Subseção do funil exibida — controla quais etapas compõem o funil. */
-export type FunnelSubSection = 'pre-atendimento' | 'atendimento' | 'geral';
+export type FunnelSubSection = 'pre-atendimento' | 'atendimento' | 'geral' | 'proprietario';
+
+/**
+ * As 11 etapas do funil de Cliente Proprietário, na mesma ordem do kanban
+ * (ver mapKanbanSlugToStatus em leadsService.ts). Fonte única: antes cada
+ * gráfico mantinha a própria lista, e elas divergiam.
+ */
+export const PROPRIETARIO_STAGE_ORDER = [
+  'Novos Proprietários',
+  'Em Atendimento',
+  'Primeira Visita',
+  'Criação do Estudo de Mercado',
+  'Apresentação do Estudo de Mercado',
+  'Não Exclusivo',
+  'Exclusivo',
+  'Cadastro',
+  'Plano de Marketing',
+  'Propostas Respondidas',
+  'Feitura de Contrato',
+] as const;
+
+/** "Não Exclusivo" → "nao-exclusivo". Tolera acento, caixa e o formato slug. */
+const slugEtapa = (valor: string | null | undefined): string =>
+  (valor ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+
+/** Variantes gravadas em `leads.status` que apontam para a mesma etapa. */
+const ALIAS_ETAPA_PROPRIETARIO: Record<string, string> = {
+  'novo-proprietario': 'novos-proprietarios',
+  'nao-exclusivo': 'nao-exclusivo',
+  'criacao-estudo-mercado': 'criacao-do-estudo-de-mercado',
+  'apresentacao-estudo-mercado': 'apresentacao-do-estudo-de-mercado',
+  'feitura-do-contrato': 'feitura-de-contrato',
+};
+
+const etapaProprietarioDoLead = (etapa: string | null | undefined): string => {
+  const slug = slugEtapa(etapa);
+  return ALIAS_ETAPA_PROPRIETARIO[slug] ?? slug;
+};
+
+/**
+ * Conta leads numa etapa do funil de Proprietário: comparação exata por etapa
+ * atual, então cada lead entra em exatamente uma etapa (o funil de Interessado
+ * segue com as regras históricas mais frouxas, ver countLeadsInStage).
+ */
+export function countProprietariosInStage(leads: ProcessedLead[], stage: string): number {
+  const alvo = etapaProprietarioDoLead(stage);
+  return (leads || []).filter((l) => etapaProprietarioDoLead(l.etapa_atual) === alvo).length;
+}
 
 /**
  * Retorna a ordem das etapas do funil conforme a subseção ativa.
  * A ordem é significativa (topo → base do funil).
  */
 export function getFunnelStageOrder(subSection: FunnelSubSection): string[] {
+  // Cliente Proprietário: 11 etapas próprias
+  if (subSection === 'proprietario') {
+    return [...PROPRIETARIO_STAGE_ORDER];
+  }
+
   // Pré-Atendimento: apenas 4 etapas (termina em Visita Agendada)
   if (subSection === 'pre-atendimento') {
     return ['Novos Leads', 'Em Atendimento', 'Interação', 'Visita Agendada'];
@@ -167,20 +225,20 @@ export function computeFunnelStages(
   const totalLeads = safeLeads.length;
 
   const labels = etapasOrdem.map((e) => e.replace('\n', ' '));
-  const data = etapasOrdem.map((etapa) => countLeadsInStage(safeLeads, etapa));
+  const data = etapasOrdem.map((etapa) =>
+    subSection === 'proprietario'
+      ? countProprietariosInStage(safeLeads, etapa)
+      : countLeadsInStage(safeLeads, etapa),
+  );
   const percentuais = data.map((valor) => pct(valor, totalLeads));
 
   const visitasRealizadas = countLeadsInStage(safeLeads, 'Visita Realizada');
   const propostasAssinadas = countLeadsInStage(safeLeads, 'Proposta Assinada');
 
   // Cliente Proprietário (vendedor): Não Exclusivo, Exclusivo e Feitura de Contrato
-  const naoExclusivo = safeLeads.filter(
-    (l) => l.etapa_atual === 'Não Exclusivo' || l.etapa_atual === 'Nao Exclusivo'
-  ).length;
-  const exclusivo = safeLeads.filter((l) => l.etapa_atual === 'Exclusivo').length;
-  const feituraContrato = safeLeads.filter(
-    (l) => l.etapa_atual === 'Feitura de Contrato' || l.etapa_atual === 'Feitura do Contrato'
-  ).length;
+  const naoExclusivo = countProprietariosInStage(safeLeads, 'Não Exclusivo');
+  const exclusivo = countProprietariosInStage(safeLeads, 'Exclusivo');
+  const feituraContrato = countProprietariosInStage(safeLeads, 'Feitura de Contrato');
   const totalProprietariosConvertidos = naoExclusivo + exclusivo + feituraContrato;
 
   return {
