@@ -34,6 +34,7 @@ import { createWebhookDispatcher } from './webhookDispatch.js';
 import { computeNextAttempt, MAX_WEBHOOK_ATTEMPTS } from './webhookRetry.js';
 import { getDeletedTenantIds } from './utils/tenantSoftDelete.js';
 import { enriquecerComCodigoLancamento } from './lancamentoAnuncios.js';
+import { normalizeImovelwebLeadPayload, ehEventoDeLead } from './imovelweb/leadNormalizer.js';
 import { createLeadAssignment } from './leadAssignment.js';
 import { countLeadsPerBroker, fetchBrokerLeadStats } from './brokerLeadStats.js';
 import { handleClassificationPatch } from './leadClassification.js';
@@ -1989,6 +1990,64 @@ app.post('/api/v1/integrations/zapimoveis/webhook', validateZapFeedAccess, async
     res.status(error.statusCode || 500).json({
       success: false,
       integration: 'zapimoveis-webhook',
+      error: {
+        code: error.code || 'SERVER_ERROR',
+        message: error.message
+      }
+    });
+  }
+});
+
+/**
+ * Callback de lead do Imovelweb (OpenNavent).
+ *
+ * Autenticação: o mesmo `?token=` do feed (validateZapFeedAccess) — o secret
+ * identifica o tenant, a URL não escolhe. É a URL que registramos em
+ * `PUT /v1/configuracao/callbacks` na conta deles.
+ *
+ * PRESSA É REQUISITO: eles cortam em 1,5s e re-tentam por 72h. Por isso todo
+ * evento que não é lead sai daqui com 200 imediato, sem tocar no banco — e o
+ * caminho do lead é idempotente (external_id = idMensagem/idEvento), então uma
+ * retentativa devolve o lead existente em vez de duplicar.
+ */
+app.post('/api/v1/integrations/imovelweb/webhook', validateZapFeedAccess, async (req, res) => {
+  const evento = req.body?.tipoEvento || req.body?.eventType || null;
+
+  if (!ehEventoDeLead(req.body)) {
+    // AVISO_*/CREDITO não são lead. 2xx é obrigatório: um 4xx aqui os faria
+    // re-tentar o mesmo evento por 3 dias.
+    return res.status(200).json({ success: true, integration: 'imovelweb-webhook', ignored: evento });
+  }
+
+  try {
+    const result = await createIncomingLead({
+      tenantId: req.tenantId,
+      body: normalizeImovelwebLeadPayload(req.body),
+      source: 'Imovelweb'
+    });
+
+    if (req.integrationAuth === 'zapimoveis_tenant_secret') {
+      void zapConfigResolver.touch(req.tenantId, 'last_lead_at');
+    }
+
+    console.log('📥 Callback Imovelweb recebido e salvo:', {
+      tenant_id: req.tenantId,
+      evento,
+      lead_id: result.response?.data?.id,
+      external_id: result.response?.data?.external_id,
+      property_code: result.response?.data?.property_code,
+      duplicate: Boolean(result.response?.duplicate)
+    });
+
+    res.status(result.statusCode).json({
+      ...result.response,
+      integration: 'imovelweb-webhook'
+    });
+  } catch (error) {
+    console.error('❌ Erro no callback Imovelweb:', error);
+    res.status(error.statusCode || 500).json({
+      success: false,
+      integration: 'imovelweb-webhook',
       error: {
         code: error.code || 'SERVER_ERROR',
         message: error.message
@@ -5031,6 +5090,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log('   ├─ 🔎 GET /api/v1/integrations/zapimoveis/debug  → Motivos de imóveis fora do feed');
   console.log('   ├─ 🧾 GET /api/v1/integrations/zapimoveis/vrsync.xml → Feed VRSync Zap');
   console.log('   ├─ 🧾 GET /api/v1/integrations/grupo-olx/vrsync.xml  → Feed VRSync OLX');
+  console.log('   ├─ 📥 POST /api/v1/integrations/imovelweb/webhook → Leads do Imovelweb (callback)');
   console.log('   ├─ ℹ️  GET /api/info      → Informações do servidor');
   console.log('   └─ 🌐 GET /*             → Aplicação React (SPA)');
   console.log('');
