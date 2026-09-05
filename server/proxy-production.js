@@ -35,6 +35,7 @@ import { computeNextAttempt, MAX_WEBHOOK_ATTEMPTS } from './webhookRetry.js';
 import { getDeletedTenantIds } from './utils/tenantSoftDelete.js';
 import { enriquecerComCodigoLancamento } from './lancamentoAnuncios.js';
 import { normalizeImovelwebLeadPayload, ehEventoDeLead } from './imovelweb/leadNormalizer.js';
+import { buildImovelwebXml } from './imovelweb/buildFeed.js';
 import { createLeadAssignment } from './leadAssignment.js';
 import { countLeadsPerBroker, fetchBrokerLeadStats } from './brokerLeadStats.js';
 import { handleClassificationPatch } from './leadClassification.js';
@@ -1946,6 +1947,55 @@ app.get('/api/v1/integrations/zapimoveis/debug', validateZapFeedAccess, async (r
   }
 });
 
+/**
+ * Feed OpenNavent do Imovelweb. Mesma fonte e mesma auth do feed VRSync — muda
+ * só o formato. Eles validam o Content-Type via request HEAD antes de baixar,
+ * e o Express responde HEAD com os headers do GET.
+ */
+const createImovelwebFeed = async (req, res) => {
+  try {
+    const listings = await getZapFeedListings(req.tenantId);
+    const zap = req.zapConfig || getZapFeedConfig();
+    const xml = buildImovelwebXml({
+      listings,
+      config: {
+        codigoImobiliaria: process.env.IMOVELWEB_CODIGO_IMOBILIARIA || null,
+        emailUsuario: process.env.IMOVELWEB_EMAIL_USUARIO || null,
+        // Plano padrão SIMPLE de propósito: a conta tem poucos créditos HOME e
+        // muitos SIMPLE. Subir tudo como HOME trava o feed no 10º imóvel.
+        publicationType: process.env.IMOVELWEB_TIPO_PUBLICACAO || 'SIMPLE',
+        contactName: zap.contactName,
+        contactEmail: zap.contactEmail,
+        contactPhone: zap.contactPhone,
+        hideComplement: zap.hideComplement,
+      },
+    });
+
+    console.log('🧾 Feed Imovelweb gerado:', {
+      tenant_id: req.tenantId,
+      listings_count: listings.length,
+      publicados: (xml.match(/<Imovel>/g) || []).length,
+      requester_ip: firstHeaderValue(req.headers['x-forwarded-for']) || req.ip,
+    });
+
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store, max-age=0');
+    res.status(200).send(xml);
+
+    if (req.integrationAuth === 'zapimoveis_tenant_secret') {
+      void zapConfigResolver.touch(req.tenantId, 'last_feed_at');
+    }
+  } catch (error) {
+    console.error('❌ Erro ao gerar feed Imovelweb:', error);
+    res.status(500).json({
+      success: false,
+      integration: 'imovelweb-feed',
+      error: { code: 'SERVER_ERROR', message: error.message }
+    });
+  }
+};
+
+app.get('/api/v1/integrations/imovelweb/feed.xml', validateZapFeedAccess, createImovelwebFeed);
 app.get('/api/v1/integrations/zapimoveis/vrsync.xml', validateZapFeedAccess, createZapVRSyncFeed);
 app.get('/api/v1/integrations/zapimoveis/feed.xml', validateZapFeedAccess, createZapVRSyncFeed);
 app.get('/api/v1/integrations/grupo-olx/vrsync.xml', validateZapFeedAccess, createZapVRSyncFeed);
@@ -5090,6 +5140,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log('   ├─ 🔎 GET /api/v1/integrations/zapimoveis/debug  → Motivos de imóveis fora do feed');
   console.log('   ├─ 🧾 GET /api/v1/integrations/zapimoveis/vrsync.xml → Feed VRSync Zap');
   console.log('   ├─ 🧾 GET /api/v1/integrations/grupo-olx/vrsync.xml  → Feed VRSync OLX');
+  console.log('   ├─ 🧾 GET /api/v1/integrations/imovelweb/feed.xml   → Feed OpenNavent Imovelweb');
   console.log('   ├─ 📥 POST /api/v1/integrations/imovelweb/webhook → Leads do Imovelweb (callback)');
   console.log('   ├─ ℹ️  GET /api/info      → Informações do servidor');
   console.log('   └─ 🌐 GET /*             → Aplicação React (SPA)');

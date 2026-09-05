@@ -102,6 +102,10 @@ describe('wiring da rota em produção', () => {
     expect(fonte).toContain("app.post('/api/v1/integrations/imovelweb/webhook', validateZapFeedAccess");
   });
 
+  it('registra o feed OpenNavent com a mesma auth do feed do ZAP', () => {
+    expect(fonte).toContain("app.get('/api/v1/integrations/imovelweb/feed.xml', validateZapFeedAccess, createImovelwebFeed)");
+  });
+
   it('grava o lead com origem Imovelweb', () => {
     expect(fonte).toMatch(/normalizeImovelwebLeadPayload\(req\.body\)[\s\S]{0,80}source: 'Imovelweb'/);
   });
