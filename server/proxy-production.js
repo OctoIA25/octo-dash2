@@ -1321,6 +1321,7 @@ const getZapFeedDebugInfo = async (tenantId) => {
       id,
       tenant_id,
       codigo_imovel,
+      cep,
       titulo,
       finalidade,
       valor_venda,

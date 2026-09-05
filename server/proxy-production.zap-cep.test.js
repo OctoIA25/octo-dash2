@@ -57,6 +57,16 @@ describe('portão de CEP do feed', () => {
 
 describe('proxy-production.js / api-server.js — invariantes', () => {
   for (const [file, source] of Object.entries(sources)) {
+    // O /debug existe para responder "por que este imóvel não está no feed". Sem
+    // `cep` no SELECT ele acusava missing_cep em TODAS as linhas e publishable=0,
+    // enquanto o feed publicava normalmente — diagnóstico que mente é pior que
+    // diagnóstico nenhum, ainda mais para o motivo que já derrubou o feed uma vez.
+    it(`${file}: o SELECT do /debug traz o cep que a elegibilidade cobra`, () => {
+      const def = source.match(/const getZapFeedDebugInfo = async \(tenantId\) => \{[\s\S]*?\n\};/);
+      expect(def, 'getZapFeedDebugInfo não encontrado').not.toBeNull();
+      expect(def[0]).toMatch(/^\s+cep,\s*$/m);
+    });
+
     it(`${file}: getZapListingEligibility exige CEP`, () => {
       const def = source.match(/const getZapListingEligibility = \(imovel\) => \{[\s\S]*?\n\};/);
       expect(def, 'getZapListingEligibility não encontrado').not.toBeNull();
