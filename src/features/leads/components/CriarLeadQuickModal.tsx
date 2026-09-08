@@ -12,7 +12,8 @@ import { leadsEventEmitter } from '@/lib/leadsEventEmitter';
 import { CLASSIFICACAO_ESTILOS, CLASSIFICACAO_ORDEM } from './ClassificacaoBadge';
 import { classificacoesDe, toggleClassificacao } from '../utils/classificarLead';
 import { PreferenciasEditor, preferenciasDe } from './PreferenciasLead';
-import { LeadDocumentos } from './LeadDocumentos';
+import { DocumentosAnexos } from '@/components/DocumentosAnexos';
+import { formatCpf } from '@/lib/documentoMasks';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { ConversationLinkField, useChatPath } from '@/features/chat/components/OpenConversationLink';
@@ -67,16 +68,6 @@ const EMPTY_FORM: LeadForm = {
 };
 
 const TEMPERATURES = ['Quente', 'Morno', 'Frio'];
-
-/** Máscara leve 000.000.000-00 — só dígitos, sem validar dígito verificador
-    (mesmo contrato do CPF livre da PropostaPage). */
-const formatCpf = (value: string) => {
-  const d = value.replace(/\D/g, '').slice(0, 11);
-  return d
-    .replace(/(\d{3})(\d)/, '$1.$2')
-    .replace(/(\d{3})\.(\d{3})(\d)/, '$1.$2.$3')
-    .replace(/\.(\d{3})(\d{1,2})$/, '.$1-$2');
-};
 
 /**
  * Etapas em que a seção Documentação aparece: Propostas em diante.
@@ -520,9 +511,9 @@ export const CriarLeadQuickModal = ({
                     mono
                     disabled={!canEdit}
                   />
-                  <LeadDocumentos
-                    tenantId={tenantId}
-                    leadId={editingLead!.id}
+                  <DocumentosAnexos
+                    bucket="lead-documentos"
+                    folder={`${tenantId}/${editingLead!.id}`}
                     canEdit={canEdit}
                   />
                 </div>

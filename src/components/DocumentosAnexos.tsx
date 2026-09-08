@@ -1,10 +1,11 @@
 /**
- * Upload e listagem de documentos do lead — seção "Documentação" do modal de
- * edição do Kanban, visível a partir da etapa de Propostas.
+ * Upload e listagem de anexos sobre um bucket privado do Storage.
  *
- * Sem tabela própria: o Storage É a lista (bucket privado `lead-documentos`,
- * path `tenant/lead/arquivo`). Download sai por signed URL — nunca URL pública,
- * são documentos pessoais (RG, CPF, comprovantes).
+ * Sem tabela própria: o Storage É a lista. Download sai por signed URL — nunca
+ * URL pública, os buckets que usam isto guardam documentos pessoais.
+ *
+ * Usado pela Documentação do lead (bucket `lead-documentos`, path tenant/lead)
+ * e pelo Termo de Associação do corretor (`corretor-documentos`, tenant/user).
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -12,8 +13,7 @@ import { FileText, Loader2, Trash2, Upload } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { useToast } from '@/hooks/use-toast';
 
-const BUCKET = 'lead-documentos';
-const MAX_SIZE = 20 * 1024 * 1024; // espelha o file_size_limit do bucket
+const MAX_SIZE = 20 * 1024 * 1024; // espelha o file_size_limit dos buckets
 const ACCEPT = '.pdf,.jpg,.jpeg,.png,.webp,.doc,.docx';
 
 interface StoredDoc {
@@ -21,10 +21,13 @@ interface StoredDoc {
   size: number | null;
 }
 
-interface LeadDocumentosProps {
-  tenantId: string | undefined | null;
-  leadId: string;
+interface DocumentosAnexosProps {
+  bucket: string;
+  /** Pasta dentro do bucket, no formato que a policy do bucket espera. */
+  folder: string;
   canEdit: boolean;
+  emptyLabel?: string;
+  uploadLabel?: string;
 }
 
 const safeFilename = (name: string) => name.replace(/[^\w.-]+/g, '_').slice(0, 120);
@@ -35,22 +38,26 @@ const formatSize = (bytes: number | null) => {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 };
 
-export const LeadDocumentos = ({ tenantId, leadId, canEdit }: LeadDocumentosProps) => {
+export const DocumentosAnexos = ({
+  bucket,
+  folder,
+  canEdit,
+  emptyLabel = 'Nenhum documento anexado.',
+  uploadLabel = 'Anexar documento (PDF, imagem, Word — até 20MB)',
+}: DocumentosAnexosProps) => {
   const [docs, setDocs] = useState<StoredDoc[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
-  const folder = `${tenantId}/${leadId}`;
-
   const refresh = useCallback(async () => {
     const { data, error } = await supabase.storage
-      .from(BUCKET)
+      .from(bucket)
       .list(folder, { sortBy: { column: 'created_at', order: 'desc' } });
     if (error) {
       // Bucket ainda não criado (migration pendente) cai aqui — lista vazia + aviso no console.
-      console.warn('⚠️ Não foi possível listar documentos do lead:', error.message);
+      console.warn('⚠️ Não foi possível listar documentos:', error.message);
       setDocs([]);
     } else {
       setDocs(
@@ -60,7 +67,7 @@ export const LeadDocumentos = ({ tenantId, leadId, canEdit }: LeadDocumentosProp
       );
     }
     setIsLoading(false);
-  }, [folder]);
+  }, [bucket, folder]);
 
   useEffect(() => {
     setIsLoading(true);
@@ -78,7 +85,7 @@ export const LeadDocumentos = ({ tenantId, leadId, canEdit }: LeadDocumentosProp
     }
     setIsUploading(true);
     const path = `${folder}/${Date.now()}-${safeFilename(file.name)}`;
-    const { error } = await supabase.storage.from(BUCKET).upload(path, file, {
+    const { error } = await supabase.storage.from(bucket).upload(path, file, {
       cacheControl: '3600',
       upsert: false,
       contentType: file.type || undefined,
@@ -94,7 +101,7 @@ export const LeadDocumentos = ({ tenantId, leadId, canEdit }: LeadDocumentosProp
 
   const handleDownload = async (name: string) => {
     const { data, error } = await supabase.storage
-      .from(BUCKET)
+      .from(bucket)
       .createSignedUrl(`${folder}/${name}`, 300);
     if (error || !data?.signedUrl) {
       toast({
@@ -108,7 +115,7 @@ export const LeadDocumentos = ({ tenantId, leadId, canEdit }: LeadDocumentosProp
   };
 
   const handleDelete = async (name: string) => {
-    const { error } = await supabase.storage.from(BUCKET).remove([`${folder}/${name}`]);
+    const { error } = await supabase.storage.from(bucket).remove([`${folder}/${name}`]);
     if (error) {
       toast({ title: 'Falha ao remover', description: error.message, variant: 'destructive' });
       return;
@@ -121,7 +128,7 @@ export const LeadDocumentos = ({ tenantId, leadId, canEdit }: LeadDocumentosProp
       {isLoading ? (
         <p className="text-xs text-slate-400 py-1.5">Carregando documentos…</p>
       ) : docs.length === 0 ? (
-        <p className="text-xs text-slate-400 py-1.5">Nenhum documento anexado.</p>
+        <p className="text-xs text-slate-400 py-1.5">{emptyLabel}</p>
       ) : (
         <ul className="space-y-1.5 mb-2">
           {docs.map((doc) => (
@@ -176,7 +183,7 @@ export const LeadDocumentos = ({ tenantId, leadId, canEdit }: LeadDocumentosProp
             className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold rounded-lg border border-dashed border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-400 bg-white dark:bg-slate-900 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-            {isUploading ? 'Enviando…' : 'Anexar documento (PDF, imagem, Word — até 20MB)'}
+            {isUploading ? 'Enviando…' : uploadLabel}
           </button>
         </>
       )}
