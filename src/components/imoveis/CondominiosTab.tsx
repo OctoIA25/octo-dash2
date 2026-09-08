@@ -158,7 +158,7 @@ export const CondominiosTab = () => {
   const { user } = useAuth();
   const tenantId = user?.tenantId;
   const systemRole = user?.systemRole;
-  const isAdmin = ['admin', 'owner'].includes(systemRole?.toLowerCase() || '');
+  const podeAprovar = ['admin', 'owner', 'team_leader'].includes(systemRole?.toLowerCase() || '');
 
   const [condominios, setCondominios] = useState<Condominio[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -476,7 +476,7 @@ export const CondominiosTab = () => {
 
   // Confirmar aprovação com motivo
   const handleConfirmAprovacao = async () => {
-    if (!tenantId || !user?.id || !isAdmin || !aprovacaoDialog.condominioId || !aprovacaoDialog.novoStatus) return;
+    if (!tenantId || !user?.id || !podeAprovar || !aprovacaoDialog.condominioId || !aprovacaoDialog.novoStatus) return;
     
     try {
       const { error } = await supabase
@@ -939,12 +939,12 @@ export const CondominiosTab = () => {
                       )}
                     </div>
                     
-                    {/* Controles de Aprovação (apenas Admins) */}
-                    {isAdmin && (
+                    {/* Controles de Aprovação: admin, owner e gestor (team_leader) */}
+                    {podeAprovar && (
                       <div className="mt-3 pt-3 border-t border-border/50">
                         <div className="flex items-center gap-1 mb-2">
                           <ShieldCheck className="h-3 w-3 text-primary" />
-                          <span className="text-xs font-medium text-text-secondary">Aprovação Admin</span>
+                          <span className="text-xs font-medium text-text-secondary">Aprovação</span>
                         </div>
                         {cond.motivo_aprovacao && (
                           <p className="text-xs text-text-secondary mb-2 italic">
