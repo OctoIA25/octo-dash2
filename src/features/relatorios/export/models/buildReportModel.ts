@@ -89,7 +89,7 @@ function buildMetricas(src: MetricasSource, base: Base): ReportModel {
           { label: 'Ticket médio', value: k.ticketMedioFormatado },
         ],
       },
-      chart('met-leads-equipe', 'Leads por Equipe', 'equipes', c.leadsEquipe),
+      chart('met-leads-equipe', 'Leads por Etapa do Funil', 'equipes', c.leadsEquipe),
       chart('met-tempo-equipe', 'Tempo Médio de Resposta por Equipe', 'equipes', c.tempoEquipe),
       chart('met-conv-equipe', 'Taxa de Conversão por Equipe', 'equipes', c.convEquipe),
       chart('met-leads-usuario', 'Leads interagidos por Usuário', 'usuarios', c.leadsUsuario),
@@ -146,7 +146,11 @@ function buildMetricasIndividuais(src: MetricasIndividuaisSource, base: Base): R
       // mesmo. Meta de verdade vive em `goals`; enquanto não estiver ligada,
       // o relatório mostra só o realizado.
       items: [
-        { label: 'Comissão recebida', value: formatCurrency(m.comissaoRecebida) },
+        {
+          label: 'Comissão do corretor',
+          value: m.comissaoCorretor === null ? '—' : formatCurrency(m.comissaoCorretor),
+        },
+        { label: 'Comissão total das vendas (VGC)', value: formatCurrency(m.comissaoVgc) },
         { label: 'Vendas exclusivas', value: formatNumber(m.exclusivos) },
         { label: 'Leads ativos', value: formatNumber(m.leadsAtivos) },
       ],
@@ -228,7 +232,9 @@ function buildImoveis(src: ImoveisSource, base: Base): ReportModel {
   const sections: ReportSection[] = [
     {
       id: 'imv-kpis',
-      title: 'Indicadores comerciais',
+      // Ano civil, não o período do cabeçalho: a origem (financeiro de imóveis)
+      // devolve sempre os 12 meses do ano corrente.
+      title: `Indicadores comerciais — ano de ${new Date().getFullYear()}`,
       group: 'visao-geral',
       kind: 'metrics',
       items: [
@@ -240,8 +246,8 @@ function buildImoveis(src: ImoveisSource, base: Base): ReportModel {
     },
     chart('imv-vgv', 'VGV — Valor Geral de Vendas (Mensal)', 'graficos', c.vgv),
     chart('imv-vgc', 'VGC — Valor Geral de Comissionamento (Mensal)', 'graficos', c.vgc),
-    chart('imv-bairros', 'Bairros de Maior Interesse de Venda', 'graficos', c.bairros),
-    chart('imv-faixa', 'Vendas por Faixa de Valor', 'graficos', c.faixa),
+    chart('imv-imoveis', 'Imóveis de Maior Interesse', 'graficos', c.imoveis),
+    chart('imv-faixa', 'Vendas por Faixa de Valor (12 meses)', 'graficos', c.faixa),
     chart('imv-exclusivo', 'Distribuição Exclusivo/Ficha', 'graficos', c.exclusivo),
   ];
 

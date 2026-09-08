@@ -55,8 +55,13 @@ function mapRankingComercial(ranking: CommercialSalesBrokerRanking[]): MetricasI
       gestaoAtiva: 0,
       ranking: 0,
       fotoUrl: item.fotoUrl || `/avatars/${avatarSlug(item.corretor)}.jpg`,
+      comissaoCorretor: item.comissaoCorretor,
+      comissaoImobiliaria: item.comissaoImobiliaria,
+      precoMedio: Number(item.ticketMedio || 0),
     }))
-    .sort((a, b) => b.valorComissao - a.valorComissao)
+    // Mesma ordem do serviço (parte do corretor, sem rateio por último) — o
+    // sort aqui existe só para o `ranking` sequencial que a tela consome.
+    .sort((a, b) => (b.comissaoCorretor ?? -1) - (a.comissaoCorretor ?? -1) || b.valorComissao - a.valorComissao)
     .map((item, index) => ({
       ...item,
       ranking: index + 1,

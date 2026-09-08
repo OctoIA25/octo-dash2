@@ -15,8 +15,8 @@ import type {
 import { selectedSections } from '../types';
 import { buildReportFilename } from '../filename';
 
-type Cell = string | number;
-interface Block {
+export type Cell = string | number;
+export interface Block {
   columns: string[];
   rows: Cell[][];
 }
@@ -58,7 +58,13 @@ export async function generateXlsx(model: ReportModel, selection: ExportSelectio
 // Renderização de uma aba
 // ─────────────────────────────────────────────────────────────────────────────
 
-function renderBlock(
+/**
+ * Desenha um bloco tabular numa aba com o estilo da casa: banda de título,
+ * cabeçalho colorido, zebra, bordas, números formatados e largura automática.
+ * Genérico de propósito — usado também fora dos Relatórios (ver
+ * proprietariosExport.ts).
+ */
+export function renderBlock(
   sheet: import('exceljs').Worksheet,
   reportTitle: string,
   sectionTitle: string,
@@ -228,7 +234,7 @@ function uniqueSheetName(title: string, used: Set<string>): string {
   return name;
 }
 
-function downloadBlob(buffer: ArrayBuffer, filename: string): void {
+export function downloadBlob(buffer: ArrayBuffer, filename: string): void {
   const blob = new Blob([buffer], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   });

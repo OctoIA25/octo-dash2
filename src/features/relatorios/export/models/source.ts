@@ -79,7 +79,8 @@ export interface MetricasIndividuaisSource {
   subArea: 'comissao-metas' | 'metas' | 'leads' | 'vendas';
   corretor: string;
   comissaoMetas: {
-    comissaoRecebida: number;
+    comissaoCorretor: number | null;
+    comissaoVgc: number;
     exclusivos: number;
     leadsAtivos: number;
   };
@@ -116,7 +117,7 @@ export interface ImoveisSource {
   charts: {
     vgv: ChartInput;
     vgc: ChartInput;
-    bairros: ChartInput;
+    imoveis: ChartInput;
     faixa: ChartInput;
     exclusivo: ChartInput;
   };

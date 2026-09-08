@@ -5,6 +5,7 @@
 
 import { supabase } from '@/lib/supabaseClient';
 import { canonicalizeFonteCounts } from '@/data/realLeadsProcessor';
+import { ratearComissaoDoCorretor } from '@/features/metricas/services/commercialSalesService';
 import {
   buscarVendasAssinadas as buscarVendasAssinadasProposals,
   agruparPorCorretor,
@@ -21,6 +22,16 @@ export function isAgentKeyUuid(agentKey: string): boolean {
   return UUID_AGENT_RE.test(agentKey.trim());
 }
 
+/**
+ * Filtro por agente no servidor — só quando a chave é UUID.
+ *
+ * Por NOME não dá para filtrar no PostgREST: `leads.assigned_agent_name` guarda
+ * a grafia que veio da origem ("FABIO GONCALVES", "FLAVIA CEOLIN") enquanto a
+ * tela manda o nome exibido do cadastro ("Fábio Gonçalves"). Um `eq` exato
+ * devolvia zero para 5 dos 11 corretores do ranking da Lotus e 12 de 238 leads
+ * da Fernanda — sem erro nenhum. `ilike` não resolve: a diferença é de acento.
+ * A comparação normalizada acontece em JS, em `leadEhDoCorretor`.
+ */
 function applyAssignedAgentFilter<T extends { eq: (c: string, v: string) => T }>(
   query: T,
   agentKey: string
@@ -28,7 +39,17 @@ function applyAssignedAgentFilter<T extends { eq: (c: string, v: string) => T }>
   const key = agentKey.trim();
   if (!key) return query;
   if (isAgentKeyUuid(key)) return query.eq('assigned_agent_id', key);
-  return query.eq('assigned_agent_name', key);
+  return query;
+}
+
+/** Mesma regra de identidade do ranking: UUID quando há, senão nome normalizado. */
+function leadEhDoCorretor(
+  lead: { assigned_agent_name: string | null },
+  agentKey: string
+): boolean {
+  const key = agentKey.trim();
+  if (!key || isAgentKeyUuid(key)) return true; // UUID já foi filtrado no servidor
+  return normalizarNome(lead.assigned_agent_name) === normalizarNome(key);
 }
 
 function toDayStartIso(dateStr: string): string {
@@ -142,11 +163,20 @@ export interface LeadsPorBairro {
 
 export interface MetricasIndividuais {
   corretor: string;
+  /** Comissão TOTAL das vendas (VGC) — o bolo, antes do rateio. */
   valorComissao: number;
   vendasFeitas: number;
   gestaoAtiva: number;
   ranking: number;
   fotoUrl?: string;
+  /**
+   * Rateio Lotus. `null` quando nível ou Líder Direto não estão cadastrados e o
+   * motor bloqueia; `undefined` no ranking por leads, que não tem comissão.
+   */
+  comissaoCorretor?: number | null;
+  comissaoImobiliaria?: number | null;
+  /** Preço médio de venda (VGV / vendas). */
+  precoMedio?: number;
 }
 
 export interface KPIsGerais {
@@ -183,6 +213,14 @@ export interface MetricasIndividuaisVendas {
   vgvTotal: number;
   /** Comissão real das propostas assinadas (`proposals`), nunca o valor do imóvel. */
   comissaoTotal: number;
+  /**
+   * Parte do corretor no rateio Lotus — o mesmo número da coluna "Comissão do
+   * corretor" do ranking e da aba RANKING da planilha. `null` quando nível ou
+   * Líder Direto não estão cadastrados e o motor bloqueia (a tela mostra "—").
+   */
+  comissaoCorretor: number | null;
+  /** O que fica com a imobiliária. `null` pelo mesmo motivo. */
+  comissaoImobiliaria: number | null;
   ticketMedio: number;
   rows: Array<{
     id: string;
@@ -384,16 +422,20 @@ export async function buscarMetricasIndividuaisLeads(
   const df = toDayEndIso(dataFinal);
 
   const leads: Array<{
+    assigned_agent_name: string | null;
     source: string | null;
     property_code: string | null;
     visit_date: string | null;
     created_at: string | null;
     first_response_at: string | null;
   }> = [];
+  // ponytail: por nome, lê os leads do período do tenant inteiro e filtra em JS
+  // (maior tenant hoje: ~2,6 mil leads). Se algum passar de dezenas de milhares,
+  // o caminho é uma coluna normalizada no banco, não voltar ao `eq` exato.
   for (let page = 0; ; page += 1) {
     let query = supabase
       .from('leads')
-      .select('source, property_code, visit_date, created_at, first_response_at')
+      .select('assigned_agent_name, source, property_code, visit_date, created_at, first_response_at')
       .eq('tenant_id', tenantId)
       .gte('created_at', di)
       .lte('created_at', df)
@@ -405,7 +447,7 @@ export async function buscarMetricasIndividuaisLeads(
     if (error) throw error;
 
     const linhas = (data ?? []) as typeof leads;
-    leads.push(...linhas);
+    leads.push(...linhas.filter(lead => leadEhDoCorretor(lead, corretorId)));
     if (linhas.length < PAGE_SIZE) break;
   }
 
@@ -498,6 +540,11 @@ export async function buscarMetricasIndividuaisVendas(
   }
 
   const totais = somarVendas(vendas);
+  // Mesmo motor e mesma resolução de identidade do ranking. O split é linear no
+  // valor, então ratear a comissão somada = ratear venda a venda.
+  const rateio = totais.vendas > 0
+    ? await ratearComissaoDoCorretor(tenantId, corretorId, totais.vgc)
+    : { corretor: 0, imobiliaria: 0 };
   const vendasExclusivas = vendas.filter(
     v => v.leadId && dadosLead.get(v.leadId)?.is_exclusive === true
   ).length;
@@ -529,6 +576,8 @@ export async function buscarMetricasIndividuaisVendas(
     vendasNaoExclusivas: totais.vendas - vendasExclusivas,
     vgvTotal: totais.vgv,
     comissaoTotal: totais.vgc,
+    comissaoCorretor: rateio?.corretor ?? null,
+    comissaoImobiliaria: rateio?.imobiliaria ?? null,
     ticketMedio: totais.vendas > 0 ? totais.vgv / totais.vendas : 0,
     rows,
     fonteBreakdown
@@ -553,47 +602,54 @@ export async function buscarVendasPorFonte(tenantId: string): Promise<VendasPorF
     .sort((a, b) => b.quantidade - a.quantidade);
 }
 
+const MESES_ABREV = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+
+/**
+ * Vendas assinadas por faixa de valor, nos últimos `meses` meses.
+ *
+ * Origem trocada de `leads.final_sale_value` para `proposals` — mesma troca que
+ * VGV/VGC fizeram em 02/09/2026 (ver [[vgv-vgc-fonte-proposals]]). A coluna do
+ * lead está NULA em 100% das linhas dos tenants em produção, então o gráfico
+ * voltava vazio sempre; a venda mora na proposta assinada.
+ *
+ * O eixo devolve os `meses` meses completos (com zero), não só os que tiveram
+ * venda — mês sem venda é informação, e um eixo com buracos mente sobre a
+ * evolução.
+ */
 export async function buscarVendasPorFaixa(
   tenantId: string,
   meses: number = 12
 ): Promise<VendasPorFaixa[]> {
-  const { data: vendas, error } = await supabase
-    .from('leads')
-    .select('final_sale_value, created_at')
-    .eq('tenant_id', tenantId)
-    .not('final_sale_value', 'is', null)
-    .gte('created_at', new Date(Date.now() - meses * 30 * 24 * 60 * 60 * 1000).toISOString())
-    .order('created_at', { ascending: true });
+  const hoje = new Date();
+  const primeiroMes = new Date(hoje.getFullYear(), hoje.getMonth() - (meses - 1), 1);
+  const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-  if (error) throw error;
+  const vendas = await buscarVendasAssinadasProposals(tenantId, iso(primeiroMes), iso(hoje));
 
-  // Agrupar por mês e faixa de valor
-  const mesesData = new Map<string, {
-    ate_500k: number;
-    de_500k_999k: number;
-    acima_1m: number;
-  }>();
+  const buckets = new Map<string, VendasPorFaixa>();
+  for (let i = 0; i < meses; i++) {
+    const d = new Date(primeiroMes.getFullYear(), primeiroMes.getMonth() + i, 1);
+    buckets.set(`${d.getFullYear()}-${d.getMonth() + 1}`, {
+      mes: MESES_ABREV[d.getMonth()],
+      ate_500k: 0,
+      de_500k_999k: 0,
+      acima_1m: 0,
+    });
+  }
 
-  vendas?.forEach(venda => {
-    if (!venda.created_at || !venda.final_sale_value) return;
+  for (const venda of vendas) {
+    // Proposta assinada sem valor preenchido não é "venda até 500 mil": sem
+    // valor não há faixa. Contá-la infla a faixa mais baixa (a Lotus tem
+    // propostas assinadas com value = 0).
+    if (venda.vgv <= 0) continue;
 
-    const mes = new Date(venda.created_at).toLocaleDateString('pt-BR', { month: 'short' });
-    const valor = venda.final_sale_value;
+    const bucket = buckets.get(`${venda.ano}-${venda.mes}`);
+    if (!bucket) continue;
 
-    if (!mesesData.has(mes)) {
-      mesesData.set(mes, { ate_500k: 0, de_500k_999k: 0, acima_1m: 0 });
-    }
+    if (venda.vgv <= 500_000) bucket.ate_500k++;
+    else if (venda.vgv < 1_000_000) bucket.de_500k_999k++;
+    else bucket.acima_1m++;
+  }
 
-    const data = mesesData.get(mes)!;
-    if (valor <= 500000) {
-      data.ate_500k++;
-    } else if (valor <= 999999) {
-      data.de_500k_999k++;
-    } else {
-      data.acima_1m++;
-    }
-  });
-
-  return Array.from(mesesData.entries())
-    .map(([mes, data]) => ({ mes, ...data }));
+  return [...buckets.values()];
 }

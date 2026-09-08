@@ -49,11 +49,22 @@ import { useImovelTipoMap } from '@/features/leads/hooks/useImovelTipoMap';
 import { useAuth } from '@/hooks/useAuth';
 import { fetchTenantMembers, type TenantMember } from '@/features/corretores/services/tenantMembersService';
 import { LEAD_TYPE_INTERESSADO, LEAD_TYPE_PROPRIETARIO } from '@/features/leads/services/leadsService';
+import { countProprietariosInStage } from '@/features/leads/utils/funnelStages';
 import { ProcessedLead, canonicalizeOrigemLeads } from '@/data/realLeadsProcessor';
 import { getRankingColor } from '@/utils/colors';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { CorretorMetricCard } from '@/components/metrics/individual';
 import { IndividualGoalsPanel } from '@/features/metas';
+import {
+  buscarMapaEquipesPorTenant,
+  resolverEquipeDoLead,
+  type TeamResolver,
+} from '@/features/metricas/services/teamMetricsService';
+import {
+  buscarVendasAssinadas,
+  somarVendas,
+  type VendaAssinada,
+} from '@/features/metricas/services/vendasAssinadasService';
 import { useRelatorios } from '../hooks/useRelatorios';
 import { useLeadSourceChannels } from '../hooks/useLeadSourceChannels';
 
@@ -97,20 +108,6 @@ function countByField(leads: ProcessedLead[], field: keyof ProcessedLead): Recor
 function topN(counts: Record<string, number>, n: number): { labels: string[]; values: number[] } {
   const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, n);
   return { labels: sorted.map(e => e[0]), values: sorted.map(e => e[1]) };
-}
-
-function leadsByMonth(leads: ProcessedLead[], months: number = 12): { labels: string[]; values: number[] } {
-  const now = new Date();
-  const labels: string[] = [];
-  const values: number[] = [];
-  for (let i = months - 1; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const yearMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    const label = d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '');
-    labels.push(label.charAt(0).toUpperCase() + label.slice(1));
-    values.push(leads.filter(l => (l.data_entrada || '').startsWith(yearMonth)).length);
-  }
-  return { labels, values };
 }
 
 const generateDailyLabels = (days: number) => {
@@ -193,6 +190,7 @@ export const RelatoriosPage = () => {
 
   const {
     metricasEquipes,
+    vendasPorFaixa,
     kpis: kpisRelatorios,
     ranking: rankingCorretoresRelatorio,
     usandoDadosReaisRanking,
@@ -213,8 +211,11 @@ export const RelatoriosPage = () => {
   const reportRef = useRef<HTMLDivElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
   // Estados dos filtros
-  const [empresa, setEmpresa] = useState('todas');
   const [usuario, setUsuario] = useState('meu-usuario');
+  // 'todas' | teams.id — as opções vêm do banco, nunca de uma lista fixa.
+  const [equipeFiltro, setEquipeFiltro] = useState('todas');
+  const [teamResolver, setTeamResolver] = useState<TeamResolver | null>(null);
+  const [vendasDoPeriodo, setVendasDoPeriodo] = useState<VendaAssinada[] | null>(null);
   const [exibirValores, setExibirValores] = useState(true);
   const _tab = searchParams.get('tab');
   const activeSubArea: 'marketing' | 'metricas' | 'metricas-individuais' | 'imoveis' | 'financeiro' | 'excel' | 'enps' =
@@ -490,6 +491,9 @@ export const RelatoriosPage = () => {
         valorComissao: item.valorComissao,
         vendasFeitas: item.vendasFeitas,
         gestaoAtiva: item.gestaoAtiva,
+        comissaoCorretor: item.comissaoCorretor,
+        comissaoImobiliaria: item.comissaoImobiliaria,
+        precoMedio: item.precoMedio ?? 0,
         ranking: item.ranking ?? index + 1,
         fotoUrl:
           getCorretorPhoto(item.corretor) ||
@@ -711,6 +715,27 @@ export const RelatoriosPage = () => {
 
   const top3MetricasIndividuais = useMemo(() => rankingMetricasIndividuais.slice(0, 3), [rankingMetricasIndividuais]);
 
+  /**
+   * Rodapé da tabela do ranking. O preço médio do total é VGV/vendas — média
+   * ponderada, não média das médias por corretor (que daria outro número).
+   * `semRateio` conta quem está sem nível/Líder Direto: as colunas de rateio
+   * mostram "—" nessas linhas, então o total delas é parcial e precisa dizer.
+   */
+  const totaisRanking = useMemo(() => {
+    const soma = rankingMetricasIndividuais.reduce(
+      (acc, item) => ({
+        comissaoTotal: acc.comissaoTotal + item.valorComissao,
+        comissaoCorretor: acc.comissaoCorretor + (item.comissaoCorretor ?? 0),
+        comissaoImobiliaria: acc.comissaoImobiliaria + (item.comissaoImobiliaria ?? 0),
+        vendas: acc.vendas + item.vendasFeitas,
+        vgv: acc.vgv + (item.precoMedio ?? 0) * item.vendasFeitas,
+        semRateio: acc.semRateio + (item.comissaoCorretor === null || item.comissaoCorretor === undefined ? 1 : 0),
+      }),
+      { comissaoTotal: 0, comissaoCorretor: 0, comissaoImobiliaria: 0, vendas: 0, vgv: 0, semRateio: 0 },
+    );
+    return { ...soma, precoMedio: soma.vendas > 0 ? soma.vgv / soma.vendas : 0 };
+  }, [rankingMetricasIndividuais]);
+
   const top3PodiumHeights = useMemo(() => {
     const values = top3MetricasIndividuais.map((x) => x.valorComissao);
     const max = Math.max(1, ...values);
@@ -760,7 +785,11 @@ export const RelatoriosPage = () => {
   const metricasIndComissaoMetasView = useMemo(() => {
     const row = rankingMetricasIndividuais.find((x) => x.corretor === metricasIndCorretor);
     return {
-      comissaoRecebida: metricasIndVendas?.comissaoTotal ?? 0,
+      // A parte do corretor (rateio Lotus) — o mesmo número da coluna "Comissão
+      // do corretor" do ranking. O VGC fica ao lado, como na planilha, senão a
+      // mesma tela mostra dois valores de "comissão" que não conversam.
+      comissaoCorretor: metricasIndVendas?.comissaoCorretor ?? null,
+      comissaoVgc: metricasIndVendas?.comissaoTotal ?? 0,
       vgvRecebido: metricasIndVendas?.vgvTotal ?? 0,
       exclusivos: metricasIndVendas?.vendasExclusivas ?? 0,
       leadsAtivos: metricasIndLeads?.totalLeads ?? row?.gestaoAtiva ?? 0,
@@ -916,6 +945,80 @@ export const RelatoriosPage = () => {
     return etapa.includes('assinada') || etapa.includes('fechamento') || etapa.includes('contrato');
   }), [allLeadsEarly]);
 
+  // Equipes reais do tenant (mesmo resolver das métricas de equipe: traz teams
+  // + o de-para usuário/nome -> equipe, com cache de 5 min).
+  useEffect(() => {
+    if (!tenantId || tenantId === 'owner') return;
+    let ativo = true;
+    buscarMapaEquipesPorTenant(tenantId)
+      .then((resolver) => { if (ativo) setTeamResolver(resolver); })
+      .catch((error) => console.error('Erro ao carregar equipes do tenant:', error));
+    return () => { ativo = false; };
+  }, [tenantId]);
+
+  const equipeSelecionada = equipeFiltro !== 'todas'
+    ? teamResolver?.teamById.get(equipeFiltro) ?? null
+    : null;
+
+  /**
+   * Recorta uma lista de leads pela equipe escolhida. Sem filtro (ou antes de as
+   * equipes carregarem) devolve a lista intacta — o gráfico nunca fica vazio por
+   * causa de dado que ainda não chegou.
+   */
+  const filtrarPorEquipe = useCallback((leads: ProcessedLead[]) => {
+    if (!equipeSelecionada || !teamResolver) return leads;
+    return leads.filter((lead) => resolverEquipeDoLead(teamResolver, {
+      assigned_agent_id: lead.assigned_agent_id,
+      assigned_agent_name: lead.corretor_responsavel,
+    })?.id === equipeSelecionada.id);
+  }, [equipeSelecionada, teamResolver]);
+
+  // Recortes consumidos SÓ pelos gráficos da aba Métricas. As demais abas
+  // (Marketing, Financeiro, Imóveis) seguem sobre a lista inteira.
+  const leadsEquipe = useMemo(() => filtrarPorEquipe(allLeadsEarly), [filtrarPorEquipe, allLeadsEarly]);
+  const convertidosEquipe = useMemo(() => filtrarPorEquipe(convertidosEarly), [filtrarPorEquipe, convertidosEarly]);
+
+  // As propostas assinadas do período só são buscadas quando há equipe escolhida:
+  // sem filtro os cards continuam vindo prontos do servidor (`kpisRelatorios`).
+  useEffect(() => {
+    if (!tenantId || tenantId === 'owner' || !equipeSelecionada) return;
+    let ativo = true;
+    buscarVendasAssinadas(tenantId, dataInicial, dataFinal)
+      .then((vendas) => { if (ativo) setVendasDoPeriodo(vendas); })
+      .catch((error) => console.error('Erro ao carregar vendas do período:', error));
+    return () => { ativo = false; };
+  }, [tenantId, dataInicial, dataFinal, equipeSelecionada]);
+
+  /**
+   * KPIs do topo. Sem filtro são os do servidor (tenant inteiro). Com equipe
+   * escolhida são recalculados aqui, pela MESMA regra lead -> equipe usada nos
+   * gráficos — senão os cards contradiriam os gráficos logo abaixo deles.
+   */
+  const kpisVisiveis = useMemo(() => {
+    if (!equipeSelecionada) return kpisRelatorios;
+    if (!vendasDoPeriodo) return null; // carregando: os cards mostram "—"
+
+    const leadsNoPeriodo = leadsEquipe.filter(
+      (lead) => lead.data_entrada >= dataInicial && lead.data_entrada <= dataFinal,
+    ).length;
+
+    const vendasDaEquipe = vendasDoPeriodo.filter((venda) => resolverEquipeDoLead(teamResolver!, {
+      assigned_agent_id: venda.agentUserId,
+      assigned_agent_name: venda.agentNome,
+    })?.id === equipeSelecionada.id);
+
+    const totais = somarVendas(vendasDaEquipe);
+
+    return {
+      ...kpisRelatorios,
+      totalLeadsRecebidos: leadsNoPeriodo,
+      vendasAssinadas: totais.vendas,
+      vgv: totais.vgv,
+      vgc: totais.vgc,
+      ticketMedio: totais.vendas > 0 ? totais.vgv / totais.vendas : 0,
+    };
+  }, [equipeSelecionada, kpisRelatorios, vendasDoPeriodo, leadsEquipe, dataInicial, dataFinal, teamResolver]);
+
   const openChartModal = (
     chart:
       | 'tempo_interacao_usuario'
@@ -963,7 +1066,7 @@ export const RelatoriosPage = () => {
   }, [defaultBarOptions]);
 
   // Modais expandidos — usam os mesmos dados reais dos corretores
-  const allCorretorCounts = useMemo(() => countByField(allLeadsEarly, 'corretor_responsavel'), [allLeadsEarly]);
+  const allCorretorCounts = useMemo(() => countByField(leadsEquipe, 'corretor_responsavel'), [leadsEquipe]);
   const allCorretorTop = useMemo(() => topN(allCorretorCounts, 30), [allCorretorCounts]);
   const ALL_CORRETORES = allCorretorTop.labels;
 
@@ -972,32 +1075,32 @@ export const RelatoriosPage = () => {
     datasets: [
       {
         label: 'Interagidos',
-        data: ALL_CORRETORES.map(nome => allLeadsEarly.filter(l => l.corretor_responsavel === nome && (l.etapa_atual || '').toLowerCase() !== 'novos leads').length),
+        data: ALL_CORRETORES.map(nome => leadsEquipe.filter(l => l.corretor_responsavel === nome && (l.etapa_atual || '').toLowerCase() !== 'novos leads').length),
         backgroundColor: CHART_COLORS.primary,
         borderRadius: 6,
       },
       {
         label: 'Não Interagidos',
-        data: ALL_CORRETORES.map(nome => allLeadsEarly.filter(l => l.corretor_responsavel === nome && (l.etapa_atual || '').toLowerCase() === 'novos leads').length),
+        data: ALL_CORRETORES.map(nome => leadsEquipe.filter(l => l.corretor_responsavel === nome && (l.etapa_atual || '').toLowerCase() === 'novos leads').length),
         backgroundColor: CHART_COLORS.primaryLight,
         borderRadius: 6,
       },
     ],
-  }), [allLeadsEarly, ALL_CORRETORES]);
+  }), [leadsEquipe, ALL_CORRETORES]);
 
   const modalLeadsConvertidosUsuarioData = useMemo(() => ({
     labels: ALL_CORRETORES,
     datasets: [{
       label: 'Leads Convertidos',
-      data: ALL_CORRETORES.map(nome => convertidosEarly.filter(l => l.corretor_responsavel === nome).length),
+      data: ALL_CORRETORES.map(nome => convertidosEquipe.filter(l => l.corretor_responsavel === nome).length),
       backgroundColor: CHART_COLORS.primary,
       borderRadius: 6,
     }],
-  }), [convertidosEarly, ALL_CORRETORES]);
+  }), [convertidosEquipe, ALL_CORRETORES]);
 
   const modalTempoInteracaoUsuarioData = useMemo(() => {
     const temposPorCorretor = ALL_CORRETORES.map(nome => {
-      const leadsDoCorretor = allLeadsEarly.filter(l => l.corretor_responsavel === nome);
+      const leadsDoCorretor = leadsEquipe.filter(l => l.corretor_responsavel === nome);
       const leadsComInteracao = leadsDoCorretor.filter(l => l.data_entrada && l.Data_visita);
       
       if (leadsComInteracao.length === 0) return 0;
@@ -1019,14 +1122,14 @@ export const RelatoriosPage = () => {
         borderRadius: 6,
       }]
     };
-  }, [allLeadsEarly, ALL_CORRETORES]);
+  }, [leadsEquipe, ALL_CORRETORES]);
 
   const modalAtividadesAbertoUsuarioData = useMemo(() => {
     const visitaData = ALL_CORRETORES.map(nome =>
-      allLeadsEarly.filter(l => l.corretor_responsavel === nome && (l.etapa_atual || '').toLowerCase().includes('visita')).length
+      leadsEquipe.filter(l => l.corretor_responsavel === nome && (l.etapa_atual || '').toLowerCase().includes('visita')).length
     );
     const propostaData = ALL_CORRETORES.map(nome =>
-      allLeadsEarly.filter(l => l.corretor_responsavel === nome && (l.etapa_atual || '').toLowerCase().includes('proposta')).length
+      leadsEquipe.filter(l => l.corretor_responsavel === nome && (l.etapa_atual || '').toLowerCase().includes('proposta')).length
     );
     return {
       labels: ALL_CORRETORES,
@@ -1035,7 +1138,7 @@ export const RelatoriosPage = () => {
         { label: 'Propostas', data: propostaData, backgroundColor: CHART_COLORS.primaryLight, borderRadius: 6 },
       ],
     };
-  }, [allLeadsEarly, ALL_CORRETORES]);
+  }, [leadsEquipe, ALL_CORRETORES]);
 
   const stackedBarOptions = {
     ...defaultBarOptions,
@@ -1196,16 +1299,16 @@ export const RelatoriosPage = () => {
   };
 
   // 4. Leads por Corretor (dados reais)
-  const corretorCounts = useMemo(() => countByField(allLeads, 'corretor_responsavel'), [allLeads]);
+  const corretorCounts = useMemo(() => countByField(leadsEquipe, 'corretor_responsavel'), [leadsEquipe]);
   const corretorTop = useMemo(() => topN(corretorCounts, 15), [corretorCounts]);
   const REAL_CORRETORES = corretorTop.labels;
 
   const leadsInteragidosUsuarioData = useMemo(() => {
     const interagidos = REAL_CORRETORES.map(nome => {
-      return allLeads.filter(l => l.corretor_responsavel === nome && (l.etapa_atual || '').toLowerCase() !== 'novos leads').length;
+      return leadsEquipe.filter(l => l.corretor_responsavel === nome && (l.etapa_atual || '').toLowerCase() !== 'novos leads').length;
     });
     const naoInteragidos = REAL_CORRETORES.map(nome => {
-      return allLeads.filter(l => l.corretor_responsavel === nome && (l.etapa_atual || '').toLowerCase() === 'novos leads').length;
+      return leadsEquipe.filter(l => l.corretor_responsavel === nome && (l.etapa_atual || '').toLowerCase() === 'novos leads').length;
     });
     return {
       labels: REAL_CORRETORES,
@@ -1214,14 +1317,14 @@ export const RelatoriosPage = () => {
         { label: 'Não Interagidos', data: naoInteragidos, backgroundColor: CHART_COLORS.primaryLight, borderRadius: 6 },
       ]
     };
-  }, [allLeads, REAL_CORRETORES]);
+  }, [leadsEquipe, REAL_CORRETORES]);
 
   // 5. Leads convertidos por Usuário
   const leadsConvertidosUsuarioData = {
     labels: REAL_CORRETORES,
     datasets: [{
       label: 'Leads Convertidos',
-      data: REAL_CORRETORES.map(nome => convertidos.filter(l => l.corretor_responsavel === nome).length),
+      data: REAL_CORRETORES.map(nome => convertidosEquipe.filter(l => l.corretor_responsavel === nome).length),
       backgroundColor: CHART_COLORS.primary,
       borderRadius: 6,
     }]
@@ -1230,7 +1333,7 @@ export const RelatoriosPage = () => {
   // 6. Tempo de primeira interação por Usuário (dados reais)
   const tempoInteracaoData = useMemo(() => {
     const temposPorCorretor = REAL_CORRETORES.map(nome => {
-      const leadsDoCorretor = allLeads.filter(l => l.corretor_responsavel === nome);
+      const leadsDoCorretor = leadsEquipe.filter(l => l.corretor_responsavel === nome);
       const leadsComInteracao = leadsDoCorretor.filter(l => l.data_entrada && l.Data_visita);
       
       if (leadsComInteracao.length === 0) return 0;
@@ -1252,17 +1355,17 @@ export const RelatoriosPage = () => {
         borderRadius: 6,
       }]
     };
-  }, [allLeads, REAL_CORRETORES]);
+  }, [leadsEquipe, REAL_CORRETORES]);
 
   const atividadesAbertoData = useMemo(() => {
     const visitaData = REAL_CORRETORES.map(nome =>
-      allLeads.filter(l => l.corretor_responsavel === nome && (l.etapa_atual || '').toLowerCase().includes('visita')).length
+      leadsEquipe.filter(l => l.corretor_responsavel === nome && (l.etapa_atual || '').toLowerCase().includes('visita')).length
     );
     const negociacaoData = REAL_CORRETORES.map(nome =>
-      allLeads.filter(l => l.corretor_responsavel === nome && (l.etapa_atual || '').toLowerCase().includes('negociação')).length
+      leadsEquipe.filter(l => l.corretor_responsavel === nome && (l.etapa_atual || '').toLowerCase().includes('negociação')).length
     );
     const propostaData = REAL_CORRETORES.map(nome =>
-      allLeads.filter(l => l.corretor_responsavel === nome && (l.etapa_atual || '').toLowerCase().includes('proposta')).length
+      leadsEquipe.filter(l => l.corretor_responsavel === nome && (l.etapa_atual || '').toLowerCase().includes('proposta')).length
     );
     return {
       labels: REAL_CORRETORES,
@@ -1272,13 +1375,13 @@ export const RelatoriosPage = () => {
         { label: 'Propostas', data: propostaData, backgroundColor: CHART_COLORS.primaryLight, borderRadius: 4 },
       ]
     };
-  }, [allLeads, REAL_CORRETORES]);
+  }, [leadsEquipe, REAL_CORRETORES]);
 
   // 7. Leads por Temperatura (distribuição real)
   const tempCounts = useMemo(() => countByField(allLeads, 'status_temperatura'), [allLeads]);
 
   // 8. Leads por Etapa do Funil
-  const etapaCounts = useMemo(() => countByField(allLeads, 'etapa_atual'), [allLeads]);
+  const etapaCounts = useMemo(() => countByField(leadsEquipe, 'etapa_atual'), [leadsEquipe]);
   const etapaTop = useMemo(() => topN(etapaCounts, 10), [etapaCounts]);
 
   const leadsPorEquipeData = {
@@ -1291,26 +1394,30 @@ export const RelatoriosPage = () => {
     }]
   };
 
-  // 9. Leads por Mês (últimos 12 meses, dados reais)
-  const mensalData = useMemo(() => leadsByMonth(allLeads, 12), [allLeads]);
-
+  // 9. Vendas por faixa de valor (propostas assinadas, últimos 12 meses).
+  // Antes este gráfico era `leadsByMonth(allLeads)` — leads por mês exibidos
+  // sob o título "Vendas por Faixa de Valor". Nem venda, nem faixa.
   const vendasFaixaChartData = {
-    labels: mensalData.labels,
-    datasets: [{
-      label: 'Leads por mês',
-      data: mensalData.values,
-      backgroundColor: CHART_COLORS.primary,
-      borderRadius: 4,
-    }]
+    labels: vendasPorFaixa.map(d => d.mes),
+    datasets: [
+      { label: 'Até 500K', data: vendasPorFaixa.map(d => d.ate_500k), backgroundColor: CHART_COLORS.primaryLight, borderRadius: 4 },
+      { label: '500K a 1M', data: vendasPorFaixa.map(d => d.de_500k_999k), backgroundColor: CHART_COLORS.primary, borderRadius: 4 },
+      { label: 'Acima de 1M', data: vendasPorFaixa.map(d => d.acima_1m), backgroundColor: CHART_COLORS.primaryDark, borderRadius: 4 },
+    ]
   };
 
   // 10. Tempo Médio de Resposta por Equipe (dados reais)
+  // `metricasEquipes` já vem quebrado por equipe: com filtro ativo, sobra a barra dela.
+  const metricasEquipesVisiveis = equipeSelecionada
+    ? metricasEquipes.filter(d => d.equipe === equipeSelecionada.name)
+    : metricasEquipes;
+
   const tempoRespostaChartData = {
-    labels: metricasEquipes.map(d => d.equipe),
+    labels: metricasEquipesVisiveis.map(d => d.equipe),
     datasets: [{
       label: 'Tempo (min)',
-      data: metricasEquipes.map(d => d.tempoMedio),
-      backgroundColor: metricasEquipes.map(d => d.cor),
+      data: metricasEquipesVisiveis.map(d => d.tempoMedio),
+      backgroundColor: metricasEquipesVisiveis.map(d => d.cor),
       borderRadius: 6,
     }]
   };
@@ -1319,25 +1426,32 @@ export const RelatoriosPage = () => {
   const taxaConversaoChartData = useMemo(() => {
     const origens = origemTop.labels.slice(0, 6);
     const taxas = origens.map(origem => {
-      const total = allLeads.filter(l => l.origem_lead === origem).length;
-      const conv = convertidos.filter(l => l.origem_lead === origem).length;
+      const total = leadsEquipe.filter(l => l.origem_lead === origem).length;
+      const conv = convertidosEquipe.filter(l => l.origem_lead === origem).length;
       return total > 0 ? Math.round((conv / total) * 1000) / 10 : 0;
     });
     return {
       labels: origens,
       datasets: [{ label: 'Taxa (%)', data: taxas, backgroundColor: CHART_COLORS.primary, borderRadius: 6 }]
     };
-  }, [allLeads, convertidos, origemTop.labels]);
+  }, [leadsEquipe, convertidosEquipe, origemTop.labels]);
 
-  // 12. Exclusivo vs Não Exclusivo (dados reais)
-  const exclusivoCount = allLeads.filter(l => l.etapa_atual?.toLowerCase().includes('exclusivo')).length;
-  const naoExclusivoCount = allLeads.length - exclusivoCount;
+  // 12. Exclusivo vs Ficha — captação, então só o funil de Proprietário conta.
+  //
+  // Antes o filtro era `etapa_atual.includes('exclusivo')` sobre TODOS os leads,
+  // e errava três vezes: "Não Exclusivo" contém "exclusivo" e caía como
+  // exclusivo; interessado não tem etapa de exclusividade, então engordava a
+  // "Ficha"; e o fallback `|| allLeads.length` inventava a barra quando não
+  // havia dado. "Exclusivo" e "Não Exclusivo" são etapas reais do funil de
+  // Proprietário (PROPRIETARIO_STAGE_ORDER) — a contagem é a mesma do funil.
+  const exclusivoCount = countProprietariosInStage(processedLeadsProprietario, 'Exclusivo');
+  const naoExclusivoCount = countProprietariosInStage(processedLeadsProprietario, 'Não Exclusivo');
 
   const distribuicaoExclusivoFichaChartData = {
     labels: ['Exclusivo', 'Ficha'],
     datasets: [{
-      label: 'Quantidade',
-      data: [exclusivoCount || 0, naoExclusivoCount || allLeads.length],
+      label: 'Proprietários',
+      data: [exclusivoCount, naoExclusivoCount],
       backgroundColor: [CHART_COLORS.primaryLight, CHART_COLORS.primaryDark],
       borderRadius: 6,
     }]
@@ -1395,7 +1509,13 @@ export const RelatoriosPage = () => {
   }, [allLeads]);
   const imovelTop = useMemo(() => topN(imovelCounts, 10), [imovelCounts]);
 
-  const bairrosInteresseData = {
+  // Agrupa por `leads.property_code`. O título era "Bairros de Maior Interesse
+  // de Venda", mas nunca houve bairro aqui: `leads` não tem a coluna, e a barra
+  // maior da Lotus é "RESERVA CASTANHEIRA" (nome de lançamento).
+  // ponytail: bairro real sairia de um join com `imoveis_locais.bairro`; hoje
+  // só 2 dos 292 códigos de lead casam com a tabela, então o gráfico nasceria
+  // vazio. Vale fazer quando a captação estiver alimentando `imoveis_locais`.
+  const imoveisInteresseData = {
     labels: imovelTop.labels,
     datasets: [{
       label: 'Leads por imóvel',
@@ -1491,11 +1611,11 @@ export const RelatoriosPage = () => {
     metricas: {
       subArea: activeMetricasSubArea === 'ranking' ? 'ranking' : 'visao-geral',
       kpis: {
-        leadsNoPeriodo: kpisRelatorios?.totalLeadsRecebidos ?? 0,
-        vendasAssinadas: kpisRelatorios?.vendasAssinadas ?? 0,
-        vgvFormatado: formatCompactCurrencyBRL(kpisRelatorios?.vgv ?? 0),
-        vgcFormatado: formatCompactCurrencyBRL(kpisRelatorios?.vgc ?? 0),
-        ticketMedioFormatado: formatCompactCurrencyBRL(kpisRelatorios?.ticketMedio ?? 0),
+        leadsNoPeriodo: kpisVisiveis?.totalLeadsRecebidos ?? 0,
+        vendasAssinadas: kpisVisiveis?.vendasAssinadas ?? 0,
+        vgvFormatado: formatCompactCurrencyBRL(kpisVisiveis?.vgv ?? 0),
+        vgcFormatado: formatCompactCurrencyBRL(kpisVisiveis?.vgc ?? 0),
+        ticketMedioFormatado: formatCompactCurrencyBRL(kpisVisiveis?.ticketMedio ?? 0),
       },
       charts: {
         leadsEquipe: fromChartJs(leadsPorEquipeData, 'bar'),
@@ -1550,7 +1670,7 @@ export const RelatoriosPage = () => {
       charts: {
         vgv: fromChartJs(vgvChartData, 'bar', 'currency'),
         vgc: fromChartJs(vgcChartData, 'bar', 'currency'),
-        bairros: fromChartJs(bairrosInteresseData, 'horizontalBar'),
+        imoveis: fromChartJs(imoveisInteresseData, 'horizontalBar'),
         faixa: fromChartJs(vendasFaixaChartData, 'bar'),
         exclusivo: fromChartJs(distribuicaoExclusivoFichaChartData, 'stackedBar'),
       },
@@ -1559,11 +1679,11 @@ export const RelatoriosPage = () => {
   }), [
     dataInicial, dataFinal, kpisCalculados,
     leadsPorCanalData, leadsPorOrigemData, leadsTotalOrigemData, leadsConvertidosOrigemData, leadsConvertidosCanalData, motivosArquivamentoData,
-    activeMetricasSubArea, kpisRelatorios, formatCompactCurrencyBRL,
+    activeMetricasSubArea, kpisVisiveis, formatCompactCurrencyBRL,
     leadsPorEquipeData, tempoRespostaChartData, taxaConversaoChartData, leadsInteragidosUsuarioData, tempoInteracaoData, atividadesAbertoData, leadsConvertidosUsuarioData,
     rankingMetricasIndividuais, activeMetricasIndSubArea, metricasIndCorretor, metricasIndComissaoMetasView, metricasIndLeadsView, metricasIndVendasView,
     leadsPorFonteData, leadsPorImovelData, vendasPorFonteData,
-    financeiroImoveis, vgvChartData, vgcChartData, bairrosInteresseData, vendasFaixaChartData, distribuicaoExclusivoFichaChartData,
+    financeiroImoveis, vgvChartData, vgcChartData, imoveisInteresseData, vendasFaixaChartData, distribuicaoExclusivoFichaChartData,
     financeiroResumoExport,
   ]);
 
@@ -1599,22 +1719,22 @@ export const RelatoriosPage = () => {
       {activeSubArea === 'metricas' && (
         <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-4 mb-6">
           <div className="flex flex-wrap items-end gap-4">
-            {/* Filtro de Empresa/Equipe */}
+            {/* Filtro de Equipe — opções vindas de `teams` do tenant */}
             <div className="flex flex-col gap-1.5 min-w-[200px]">
               <label className="text-xs font-medium text-gray-600 dark:text-slate-400 flex items-center gap-1">
                 <Users className="h-3.5 w-3.5" />
-                Empresa/Equipe
+                Equipe
               </label>
               <select
-                value={empresa}
-                onChange={(e) => setEmpresa(e.target.value)}
-                className="h-10 px-3 rounded-lg border border-gray-300 bg-white dark:bg-slate-900 text-sm text-gray-700 dark:text-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                value={equipeFiltro}
+                onChange={(e) => setEquipeFiltro(e.target.value)}
+                disabled={!teamResolver}
+                className="h-10 px-3 rounded-lg border border-gray-300 bg-white dark:bg-slate-900 text-sm text-gray-700 dark:text-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all disabled:opacity-60"
               >
-                <option value="todas">Todas - Imobiliária JAPI</option>
-                <option value="equipe-verde">Equipe Verde</option>
-                <option value="equipe-azul">Equipe Azul</option>
-                <option value="equipe-vermelha">Equipe Vermelha</option>
-                <option value="equipe-amarela">Equipe Amarela</option>
+                <option value="todas">Todas as equipes</option>
+                {(teamResolver?.teams ?? []).map((team) => (
+                  <option key={team.id} value={team.id}>{team.name}</option>
+                ))}
               </select>
             </div>
 
@@ -1929,7 +2049,7 @@ export const RelatoriosPage = () => {
                     </div>
                     <div>
                       <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Leads no Período</p>
-                      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpiNumero(kpisRelatorios?.totalLeadsRecebidos)}</p>
+                      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpiNumero(kpisVisiveis?.totalLeadsRecebidos)}</p>
                     </div>
                   </div>
                 </div>
@@ -1941,7 +2061,7 @@ export const RelatoriosPage = () => {
                     </div>
                     <div>
                       <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Vendas Assinadas</p>
-                      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpiNumero(kpisRelatorios?.vendasAssinadas)}</p>
+                      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpiNumero(kpisVisiveis?.vendasAssinadas)}</p>
                     </div>
                   </div>
                 </div>
@@ -1953,7 +2073,7 @@ export const RelatoriosPage = () => {
                     </div>
                     <div>
                       <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">VGV</p>
-                      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpisRelatorios ? formatCompactCurrencyBRL(kpisRelatorios.vgv) : '—'}</p>
+                      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpisVisiveis ? formatCompactCurrencyBRL(kpisVisiveis.vgv) : '—'}</p>
                     </div>
                   </div>
                 </div>
@@ -1965,7 +2085,7 @@ export const RelatoriosPage = () => {
                     </div>
                     <div>
                       <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Comissão (VGC)</p>
-                      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpisRelatorios ? formatCompactCurrencyBRL(kpisRelatorios.vgc) : '—'}</p>
+                      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpisVisiveis ? formatCompactCurrencyBRL(kpisVisiveis.vgc) : '—'}</p>
                     </div>
                   </div>
                 </div>
@@ -1977,7 +2097,7 @@ export const RelatoriosPage = () => {
                     </div>
                     <div>
                       <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Ticket Médio</p>
-                      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpisRelatorios ? formatCompactCurrencyBRL(kpisRelatorios.ticketMedio) : '—'}</p>
+                      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpisVisiveis ? formatCompactCurrencyBRL(kpisVisiveis.ticketMedio) : '—'}</p>
                     </div>
                   </div>
                 </div>
@@ -1987,7 +2107,7 @@ export const RelatoriosPage = () => {
               <div data-export-layout="charts" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* 1. Leads por Equipe */}
                 <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-5">
-                  <h3 className="text-sm font-semibold text-gray-800 mb-4">Leads por Equipe</h3>
+                  <h3 className="text-sm font-semibold text-gray-800 mb-4">Leads por Etapa do Funil</h3>
                   <div className="h-[280px]">
                     <Bar data={leadsPorEquipeData} options={defaultBarOptions} />
                   </div>
@@ -2306,20 +2426,22 @@ export const RelatoriosPage = () => {
                     </div>
 
                     <div className="mt-4 overflow-auto rounded-xl border border-gray-200 dark:border-slate-800 bg-gray-50/70 flex-1">
-                      <table className="w-full min-w-[620px] text-sm">
+                      <table className="w-full min-w-[900px] text-sm">
                         <thead className="sticky top-0 z-10 bg-gray-100 dark:bg-slate-800">
                           <tr className="text-xs">
                             <th className="text-left py-2.5 pl-3 pr-3 font-semibold text-gray-600 dark:text-slate-400">Corretores</th>
                             <th className="text-right py-2.5 px-3 font-semibold text-gray-600 dark:text-slate-400">Ranking</th>
-                            <th className="text-right py-2.5 px-3 font-semibold text-gray-600 dark:text-slate-400">Valor comissão</th>
-                            <th className="text-right py-2.5 px-3 font-semibold text-gray-600 dark:text-slate-400">Vendas feitas</th>
-                            <th className="text-right py-2.5 pr-3 font-semibold text-gray-600 dark:text-slate-400">Gestão ativa</th>
+                            <th className="text-right py-2.5 px-3 font-semibold text-gray-600 dark:text-slate-400">Comissão total</th>
+                            <th className="text-right py-2.5 px-3 font-semibold text-gray-600 dark:text-slate-400">Comissão do corretor</th>
+                            <th className="text-right py-2.5 px-3 font-semibold text-gray-600 dark:text-slate-400">Líquido imobiliária</th>
+                            <th className="text-right py-2.5 px-3 font-semibold text-gray-600 dark:text-slate-400">Imóveis vendidos</th>
+                            <th className="text-right py-2.5 pr-3 font-semibold text-gray-600 dark:text-slate-400">Preço médio</th>
                           </tr>
                         </thead>
                         <tbody>
                           {rankingMetricasIndividuais.length === 0 ? (
                             <tr className="bg-white dark:bg-slate-900">
-                              <td colSpan={5} className="py-10 px-3 text-center text-xs text-gray-500 dark:text-slate-400">
+                              <td colSpan={7} className="py-10 px-3 text-center text-xs text-gray-500 dark:text-slate-400">
                                 Nenhum dado de ranking encontrado para o período selecionado.
                               </td>
                             </tr>
@@ -2351,8 +2473,18 @@ export const RelatoriosPage = () => {
                                         </span>
                                       </td>
                                       <td className="py-2.5 px-3 text-right text-xs text-gray-800">{formatCurrencyBRL.format(row.valorComissao)}</td>
+                                      <td className="py-2.5 px-3 text-right text-xs text-gray-800">
+                                        {row.comissaoCorretor === null || row.comissaoCorretor === undefined
+                                          ? <span title="Nível ou Líder Direto não cadastrado em Gestão de Equipe">—</span>
+                                          : formatCurrencyBRL.format(row.comissaoCorretor)}
+                                      </td>
+                                      <td className="py-2.5 px-3 text-right text-xs text-gray-800">
+                                        {row.comissaoImobiliaria === null || row.comissaoImobiliaria === undefined
+                                          ? <span title="Nível ou Líder Direto não cadastrado em Gestão de Equipe">—</span>
+                                          : formatCurrencyBRL.format(row.comissaoImobiliaria)}
+                                      </td>
                                       <td className="py-2.5 px-3 text-right text-xs text-gray-800">{row.vendasFeitas}</td>
-                                      <td className="py-2.5 pr-3 text-right text-xs text-gray-800">{row.gestaoAtiva}</td>
+                                      <td className="py-2.5 pr-3 text-right text-xs text-gray-800">{formatCurrencyBRL.format(row.precoMedio ?? 0)}</td>
                                     </tr>
                                   );
                                 })}
@@ -2360,19 +2492,36 @@ export const RelatoriosPage = () => {
                                 <td className="py-2.5 pl-3 pr-3 text-xs font-semibold text-gray-800">Total</td>
                                 <td className="py-2.5 px-3" />
                                 <td className="py-2.5 px-3 text-right text-xs font-semibold text-gray-800">
-                                  {formatCurrencyBRL.format(rankingMetricasIndividuais.reduce((acc, item) => acc + item.valorComissao, 0))}
+                                  {formatCurrencyBRL.format(totaisRanking.comissaoTotal)}
                                 </td>
                                 <td className="py-2.5 px-3 text-right text-xs font-semibold text-gray-800">
-                                  {rankingMetricasIndividuais.reduce((acc, item) => acc + item.vendasFeitas, 0)}
+                                  {formatCurrencyBRL.format(totaisRanking.comissaoCorretor)}
                                 </td>
-                                <td className="py-2.5 pr-3" />
+                                <td className="py-2.5 px-3 text-right text-xs font-semibold text-gray-800">
+                                  {formatCurrencyBRL.format(totaisRanking.comissaoImobiliaria)}
+                                </td>
+                                <td className="py-2.5 px-3 text-right text-xs font-semibold text-gray-800">
+                                  {totaisRanking.vendas}
+                                </td>
+                                <td className="py-2.5 pr-3 text-right text-xs font-semibold text-gray-800">
+                                  {formatCurrencyBRL.format(totaisRanking.precoMedio)}
+                                </td>
                               </tr>
                             </>
                           )}
                         </tbody>
                       </table>
                     </div>
-                    
+
+                    {totaisRanking.semRateio > 0 && (
+                      <p className="mt-2 px-2 text-xs text-gray-500 dark:text-slate-400">
+                        {totaisRanking.semRateio === 1
+                          ? '1 corretor está sem nível de comissionamento ou Líder Direto cadastrado'
+                          : `${totaisRanking.semRateio} corretores estão sem nível de comissionamento ou Líder Direto cadastrado`}
+                        {' '}em Gestão de Equipe — o rateio deles aparece como “—” e não entra nos totais.
+                      </p>
+                    )}
+
                     {/* Pagination Controls */}
                     {rankingMetricasIndividuais.length > rankingItemsPerPage && (
                       <div className="mt-4 flex items-center justify-between px-2">
@@ -2550,9 +2699,14 @@ export const RelatoriosPage = () => {
                       <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-6 flex flex-col gap-6">
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                           <div className="rounded-xl bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 p-5">
-                            <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">Comissão recebida</div>
+                            <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">Comissão do corretor</div>
                             <div className="mt-2 text-3xl font-extrabold text-gray-900 dark:text-slate-100">
-                              {formatCompactCurrencyBRL(metricasIndComissaoMetasView.comissaoRecebida)}
+                              {metricasIndComissaoMetasView.comissaoCorretor === null
+                                ? '—'
+                                : formatCompactCurrencyBRL(metricasIndComissaoMetasView.comissaoCorretor)}
+                            </div>
+                            <div className="mt-2 text-[11px] text-gray-500 dark:text-slate-400">
+                              Comissão total das vendas (VGC): {formatCompactCurrencyBRL(metricasIndComissaoMetasView.comissaoVgc)}
                             </div>
                           </div>
                           <div className="rounded-xl bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 p-5">
@@ -3014,6 +3168,13 @@ export const RelatoriosPage = () => {
       {tipoCliente === 'nenhum' && (
         <>
           {/* KPIs Cards - Imóveis */}
+          {/* O período destes 4 cards (e do VGV/VGC mensal) é o ANO CIVIL, não o
+              filtro de data acima — buscarFinanceiroVendasComerciaisComFallback
+              devolve os 12 meses do ano. Dito na tela para o número não ser lido
+              como o do intervalo escolhido. */}
+          <p className="text-xs text-gray-500 dark:text-slate-400 mb-2">
+            Indicadores comerciais do ano de {new Date().getFullYear()} (não seguem o filtro de período).
+          </p>
           <div data-export-layout="kpis" className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-4 hover:shadow-md transition-shadow">
               <div className="flex items-center gap-3">
@@ -3091,17 +3252,17 @@ export const RelatoriosPage = () => {
               </div>
             </div>
 
-            {/* 3. Bairros de Maior Interesse de Venda */}
+            {/* 3. Imóveis de Maior Interesse */}
             <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-5">
-              <h3 className="text-sm font-semibold text-gray-800 mb-4">Bairros de Maior Interesse de Venda</h3>
+              <h3 className="text-sm font-semibold text-gray-800 mb-4">Imóveis de Maior Interesse</h3>
               <div className="h-[280px]">
-                <Bar data={bairrosInteresseData} options={defaultBarOptions} />
+                <Bar data={imoveisInteresseData} options={defaultBarOptions} />
               </div>
             </div>
 
             {/* 4. Vendas por Faixa de Valor */}
             <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-5">
-              <h3 className="text-sm font-semibold text-gray-800 mb-4">Vendas por Faixa de Valor</h3>
+              <h3 className="text-sm font-semibold text-gray-800 mb-4">Vendas por Faixa de Valor (12 meses)</h3>
               <div className="h-[280px]">
                 <Bar data={vendasFaixaChartData} options={stackedBarOptions} />
               </div>
@@ -3110,6 +3271,7 @@ export const RelatoriosPage = () => {
             {/* 5. Distribuição Exclusivo/Ficha */}
             <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-5">
               <h3 className="text-sm font-semibold text-gray-800 mb-4">Distribuição Exclusivo/Ficha</h3>
+              <p className="text-xs text-gray-500 dark:text-slate-400 -mt-3 mb-3">Etapa de captação dos leads de Proprietário.</p>
               <div className="h-[280px]">
                 <Bar data={distribuicaoExclusivoFichaChartData} options={stackedBarOptions} />
               </div>

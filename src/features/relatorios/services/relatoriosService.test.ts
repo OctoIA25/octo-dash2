@@ -64,7 +64,7 @@ vi.mock('@/features/metricas/services/vendasAssinadasService', async (importOrig
   return { ...real, buscarVendasAssinadas: async () => vendasFake };
 });
 
-import { buscarKPIsGerais } from './relatoriosService';
+import { buscarKPIsGerais, buscarVendasPorFaixa } from './relatoriosService';
 
 const TENANT = '33bf7e62-78ea-44fb-a047-c7b13d9a9d7f';
 const INICIO = '2026-08-01';
@@ -192,5 +192,59 @@ describe('buscarKPIsGerais', () => {
     ];
 
     await expect(buscarKPIsGerais(TENANT, INICIO, FIM)).rejects.toMatchObject({ code: '42703' });
+  });
+});
+
+/**
+ * Regressão do gráfico "Vendas por Faixa de Valor" da aba Imóveis.
+ *
+ * Ele lia `leads.final_sale_value`, coluna NULA em 100% das linhas dos tenants
+ * em produção — o gráfico voltava vazio e a tela exibia, no lugar, leads por
+ * mês sob o título de vendas. A venda mora em `proposals`.
+ */
+describe('buscarVendasPorFaixa', () => {
+  const hoje = new Date();
+  const venda = (vgv: number, offsetMeses = 0) => {
+    const d = new Date(hoje.getFullYear(), hoje.getMonth() - offsetMeses, 1);
+    return {
+      id: `p-${vgv}-${offsetMeses}`,
+      leadId: null,
+      agentUserId: null,
+      agentNome: '',
+      vgv,
+      vgc: 0,
+      dataAssinatura: `${d.getFullYear()}-01-01`,
+      mes: d.getMonth() + 1,
+      ano: d.getFullYear(),
+    };
+  };
+
+  it('classifica pelas faixas e devolve a janela inteira de meses', async () => {
+    vendasFake = [venda(500_000), venda(500_001), venda(999_999), venda(1_000_000)];
+
+    const faixas = await buscarVendasPorFaixa(TENANT, 12);
+
+    expect(faixas).toHaveLength(12);
+    // O mês corrente é o último bucket da janela.
+    expect(faixas[11]).toMatchObject({ ate_500k: 1, de_500k_999k: 2, acima_1m: 1 });
+    // Mês sem venda continua no eixo, zerado.
+    expect(faixas[0]).toMatchObject({ ate_500k: 0, de_500k_999k: 0, acima_1m: 0 });
+  });
+
+  it('ignora proposta assinada sem valor em vez de somá-la na faixa mais baixa', async () => {
+    vendasFake = [venda(0), venda(0), venda(300_000)];
+
+    const faixas = await buscarVendasPorFaixa(TENANT, 12);
+
+    expect(faixas[11]).toMatchObject({ ate_500k: 1, de_500k_999k: 0, acima_1m: 0 });
+  });
+
+  it('não lê `leads` nem `final_sale_value`', async () => {
+    vendasFake = [venda(300_000)];
+
+    await buscarVendasPorFaixa(TENANT, 12);
+
+    expect(JSON.stringify(queries)).not.toContain('final_sale_value');
+    expect(queries.some((q) => q.table === 'leads')).toBe(false);
   });
 });
