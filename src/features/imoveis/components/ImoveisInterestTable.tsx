@@ -101,7 +101,10 @@ export const ImoveisInterestTable = ({ leads }: ImoveisInterestTableProps) => {
         acc[codigo].negociacoes++;
       }
       
-      if (lead.etapa_atual === 'Vendido' || lead.etapa_atual === 'Fechado') {
+      // 'Vendido'/'Fechado' não existem em `leads.status` — a etapa final do
+      // funil é 'Proposta Assinada'. Com os valores antigos a coluna era zero
+      // para todo imóvel, sempre.
+      if (lead.etapa_atual === 'Proposta Assinada') {
         acc[codigo].fechados++;
       }
       
