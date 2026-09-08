@@ -294,6 +294,25 @@ export function createWatermarkService(supabase) {
   }
 
   /**
+   * Opt-out POR IMÓVEL: a foto já veio marcada (fotógrafo/construtora/portal) e
+   * aplicar a nossa marca duplicaria. O flag mora em `imoveis_locais` porque é a
+   * linha que o corretor edita, e `property_photos.property_id` é o
+   * `codigo_imovel`. Condomínios/lançamentos não têm o flag: a query não acha
+   * linha → false → marca aplicada (default seguro, igual a hoje).
+   */
+  async function propertySkipsWatermark(tenantId, propertyId) {
+    if (!propertyId) return false;
+    const { data, error } = await supabase
+      .from('imoveis_locais')
+      .select('sem_marca_dagua')
+      .eq('tenant_id', tenantId)
+      .eq('codigo_imovel', propertyId)
+      .maybeSingle();
+    if (error) return false; // migration ainda não aplicada / erro transitório
+    return data?.sem_marca_dagua === true;
+  }
+
+  /**
    * Garante o derivado de UM tamanho para a versão de logo atual (idempotente):
    * reaproveita se já existe, senão gera, persiste no banco e devolve a URL pública.
    * Fonte única usada pela rota lazy e pelo backfill.
@@ -312,7 +331,10 @@ export function createWatermarkService(supabase) {
       .eq('id', photo.tenant_id).single();
 
     const version = tenant?.logo_version || 0;
-    const enabled = tenant?.watermark_enabled !== false && !!tenant?.logo_mask_path;
+    const enabled =
+      tenant?.watermark_enabled !== false &&
+      !!tenant?.logo_mask_path &&
+      !(await propertySkipsWatermark(photo.tenant_id, photo.property_id));
     const opacity = tenant?.watermark_opacity ?? WATERMARK_DEFAULTS.opacity;
     const scale = tenant?.watermark_scale ?? WATERMARK_DEFAULTS.scale;
     const position = WATERMARK_POSITIONS.includes(tenant?.watermark_position)

@@ -10,6 +10,7 @@ import { useCaptadores } from '@/features/imoveis/hooks/useCaptadores';
 import { buscarCep, formatarCepExibicao, validarCep } from '@/services/viaCepService';
 import { supabase } from '@/lib/supabaseClient';
 import { uploadImoveisFotos } from '@/lib/uploadImoveisFotos';
+import { watermarkPhotoUrl } from '@/lib/watermarkUpload';
 import { normalizeFotos } from './fotos-helpers';
 import { FotosUploader } from './FotosUploader';
 import { PropertyCompleteness } from './PropertyCompleteness';
@@ -26,6 +27,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -160,6 +162,8 @@ interface ImovelFormData {
   link_video: string;
   tour_virtual: string;
   fotos: import('./FotosUploader').Foto[];
+  /** Fotos já vêm com marca d'água própria → o pipeline não aplica a do tenant. */
+  sem_marca_dagua: boolean;
   
   // Placas e Faixas
   placa_local: 'sim' | 'nao';
@@ -241,6 +245,7 @@ const initialFormData: ImovelFormData = {
   link_video: '',
   tour_virtual: '',
   fotos: [],
+  sem_marca_dagua: false,
   placa_local: 'nao',
   tipo_comissao: '',
   captador_id: '',
@@ -1012,6 +1017,15 @@ export const CriarImovelForm = ({
         })
       : fotosNormalizadas;
 
+    // Se o opt-out da marca mudou, as fotos que um reprocessamento anterior
+    // reapontou para a CDN ficariam presas na variante antiga (URL de arquivo
+    // fixo). Volta para a URL do endpoint, que resolve a variante ATUAL. Fotos
+    // novas já saem assim do upload; as sem `id` não passaram pelo pipeline.
+    const marcaMudou = (initialData?.sem_marca_dagua ?? false) !== formData.sem_marca_dagua;
+    const fotosFinal = marcaMudou
+      ? fotosComUrls.map((f) => (f.id ? { ...f, url: watermarkPhotoUrl(f.id) } : f))
+      : fotosComUrls;
+
     // Gerar título automático se não preenchido
     const tituloAuto = formData.titulo ||
       `${formData.tipo || 'Imóvel'} ${formData.bairro ? `- ${formData.bairro}` : ''} ${formData.cidade ? `- ${formData.cidade}` : ''}`;
@@ -1061,7 +1075,8 @@ export const CriarImovelForm = ({
       publicar_site: formData.anunciar === 'sim',
       destaque: formData.destaque === 'sim',
       super_destaque: formData.super_destaque === 'sim',
-      fotos: fotosComUrls,
+      fotos: fotosFinal,
+      sem_marca_dagua: formData.sem_marca_dagua,
       ...splitCaracteristicas(formData.caracteristicas || []),
       aceita_troca: formData.aceita_troca === 'sim',
       link_video: normalizeYouTubeUrl(formData.link_video) || null,
@@ -1910,7 +1925,24 @@ export const CriarImovelForm = ({
                     inputId="fotos-upload"
                   />
                 </div>
-                
+
+                <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
+                  <div>
+                    <Label htmlFor="sem-marca-dagua" className="text-sm font-medium">
+                      As fotos já têm marca d'água
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Ligue quando as imagens já vierem marcadas (fotógrafo, construtora, portal).
+                      A marca da imobiliária não é aplicada — evita marca duplicada.
+                    </p>
+                  </div>
+                  <Switch
+                    id="sem-marca-dagua"
+                    checked={formData.sem_marca_dagua}
+                    onCheckedChange={(v) => setFormData((prev) => ({ ...prev, sem_marca_dagua: v }))}
+                  />
+                </div>
+
                 <div className="space-y-2">
                   <Label>Link do Vídeo (YouTube)</Label>
                   <Input

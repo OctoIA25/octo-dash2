@@ -84,6 +84,8 @@ interface ImovelLocal {
   valor_iptu: number;
   descricao: string | null;
   fotos: FotoInput[];
+  /** Fotos já vêm marcadas → pipeline não aplica a marca do tenant. */
+  sem_marca_dagua?: boolean | null;
   area_comum?: string[] | null;
   area_privativa?: string[] | null;
   aceita_troca?: boolean | null;
@@ -178,7 +180,7 @@ export const MeusImoveisTab = ({ allImoveis, onViewDetails, onPropertyCreated }:
   });
 
   const isManager = ['admin', 'owner', 'gestao', 'gerente', 'team_leader'].includes(systemRole?.toLowerCase() || '');
-  const isAdmin = ['admin', 'owner'].includes(systemRole?.toLowerCase() || '');
+  const podeAprovar = ['admin', 'owner', 'team_leader'].includes(systemRole?.toLowerCase() || '');
 
   // Carregar atribuições do corretor
   const loadAssignments = async () => {
@@ -314,7 +316,7 @@ export const MeusImoveisTab = ({ allImoveis, onViewDetails, onPropertyCreated }:
 
   // Confirmar aprovação com motivo
   const handleConfirmAprovacao = async () => {
-    if (!tenantId || !user?.id || !isAdmin || !aprovacaoDialog.imovelReferencia || !aprovacaoDialog.novoStatus) return;
+    if (!tenantId || !user?.id || !podeAprovar || !aprovacaoDialog.imovelReferencia || !aprovacaoDialog.novoStatus) return;
     
     try {
       const { error } = await supabase
@@ -406,6 +408,7 @@ export const MeusImoveisTab = ({ allImoveis, onViewDetails, onPropertyCreated }:
       destaque: (local.destaque ? 'sim' : 'nao') as 'sim' | 'nao',
       super_destaque: (local.super_destaque ? 'sim' : 'nao') as 'sim' | 'nao',
       fotos: normalizeFotos(local.fotos),
+      sem_marca_dagua: local.sem_marca_dagua === true,
       caracteristicas: [
         ...(Array.isArray(local.area_privativa) ? local.area_privativa : []),
         ...(Array.isArray(local.area_comum) ? local.area_comum : []),
@@ -964,12 +967,12 @@ export const MeusImoveisTab = ({ allImoveis, onViewDetails, onPropertyCreated }:
                     canDelete={isImovelLocal}
                   />
                   
-                  {/* Controles de Aprovação (apenas Admins) */}
-                  {isAdmin && isImovelLocal && (
+                  {/* Controles de Aprovação: admin, owner e gestor (team_leader) */}
+                  {podeAprovar && isImovelLocal && (
                     <div className="mt-2 p-2 bg-card border rounded-lg">
                       <div className="flex items-center gap-1 mb-2">
                         <ShieldCheck className="h-3 w-3 text-primary" />
-                        <span className="text-xs font-medium text-text-secondary">Aprovação Admin</span>
+                        <span className="text-xs font-medium text-text-secondary">Aprovação</span>
                       </div>
                       {getMotivoAprovacao(imovel.referencia) && (
                         <p className="text-xs text-text-secondary mb-2 italic">

@@ -16,6 +16,16 @@ async function authHeader(): Promise<Record<string, string>> {
 }
 
 /**
+ * URL ESTÁVEL (endpoint, não CDN) do derivado de portal de uma foto do pipeline.
+ * Sempre resolve para a variante ATUAL — marcada ou limpa. É por isso que
+ * ligar/desligar a marca (global ou por imóvel) surte efeito sem reescrever nada.
+ */
+export function watermarkPhotoUrl(id: string): string {
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  return `${origin}${WM_BASE}/photos/${id}/${WM_SIZE}.jpg`;
+}
+
+/**
  * Sobe o MASTER e devolve a URL ESTÁVEL do endpoint, com `.jpg` no final:
  * `<origin>/api/v1/watermark/photos/:id/portal.jpg`. A extensão é decorativa
  * (importador do Grupo OLX só aceita JPG e olha o fim da URL) — continua
@@ -46,8 +56,7 @@ export async function uploadViaWatermarkPipeline(
   // `.jpg` no fim da URL: o importador do Grupo OLX só aceita JPG e olha a
   // extensão. Continua sendo o endpoint (302 dinâmico), então o toggle da marca
   // segue funcionando — a extensão é ignorada pela rota.
-  const origin = typeof window !== 'undefined' ? window.location.origin : '';
-  return { url: `${origin}${WM_BASE}/photos/${id}/${WM_SIZE}.jpg`, id };
+  return { url: watermarkPhotoUrl(id), id };
 }
 
 /**

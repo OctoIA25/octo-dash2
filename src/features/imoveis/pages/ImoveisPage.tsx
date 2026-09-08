@@ -212,6 +212,8 @@ interface ImovelLocal {
   valor_iptu: number;
   descricao: string | null;
   fotos: string[];
+  /** Fotos já vêm marcadas → pipeline não aplica a marca do tenant. */
+  sem_marca_dagua?: boolean | null;
   logradouro?: string | null;
   numero?: string | null;
   salas?: number | null;
@@ -271,6 +273,7 @@ const buildEditDataFromLocal = (local: ImovelLocal) => {
     destaque: (local.destaque ? 'sim' : 'nao') as 'sim' | 'nao',
     super_destaque: (local.super_destaque ? 'sim' : 'nao') as 'sim' | 'nao',
     fotos: normalizeFotos(local.fotos),
+    sem_marca_dagua: local.sem_marca_dagua === true,
     caracteristicas: [
       ...(Array.isArray(local.area_privativa) ? local.area_privativa : []),
       ...(Array.isArray(local.area_comum) ? local.area_comum : []),
