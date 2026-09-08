@@ -31,6 +31,10 @@ export interface UseRecruitmentReturn {
   filtroStatus: string;
   filtroCargo: string;
   filtroExperiencia: string;
+  filtroCanal: string;
+  filtroCondicao: string;
+  periodoDe: string;
+  periodoAte: string;
 
   // Actions
   refresh: () => Promise<void>;
@@ -51,6 +55,11 @@ export interface UseRecruitmentReturn {
   setFiltroStatus: (status: string) => void;
   setFiltroCargo: (cargo: string) => void;
   setFiltroExperiencia: (experiencia: string) => void;
+  setFiltroCanal: (canal: string) => void;
+  setFiltroCondicao: (condicao: string) => void;
+  setPeriodoDe: (data: string) => void;
+  setPeriodoAte: (data: string) => void;
+  candidatosNoRecorte: CandidatoComEtapas[];
   clearFilters: () => void;
 
   // Selection
@@ -88,12 +97,39 @@ export const useRecruitment = ({ tenantId, autoRefresh = false, refreshInterval 
   const [filtroStatus, setFiltroStatus] = useState('todos');
   const [filtroCargo, setFiltroCargo] = useState('todos');
   const [filtroExperiencia, setFiltroExperiencia] = useState('todos');
+  const [filtroCanal, setFiltroCanal] = useState('todos');
+  const [filtroCondicao, setFiltroCondicao] = useState('todas');
+  const [periodoDe, setPeriodoDe] = useState('');
+  const [periodoAte, setPeriodoAte] = useState('');
 
   // Computed values
   const totalPages = useMemo(() => Math.ceil(totalCount / itemsPerPage), [totalCount, itemsPerPage]);
 
-  const candidatosFiltrados = useMemo(() => {
+  /**
+   * Recorte de PERÍODO e CANAL: vale para o funil, os indicadores e a lista.
+   * Fica separado dos demais filtros de propósito — filtrar o funil por estágio
+   * faria cada barra mostrar só quem está nela, que é o bug que ele corrige.
+   */
+  const candidatosNoRecorte = useMemo(() => {
     return candidatos.filter(candidato => {
+      const canal = (candidato as any).fonte;
+      const matchCanal = filtroCanal === 'todos' || canal === filtroCanal;
+      const dia = String((candidato as any).data_inscricao || '').slice(0, 10);
+      const matchDe = periodoDe === '' || dia >= periodoDe;
+      const matchAte = periodoAte === '' || dia <= periodoAte;
+      return matchCanal && matchDe && matchAte;
+    });
+  }, [candidatos, filtroCanal, periodoDe, periodoAte]);
+
+  const candidatosFiltrados = useMemo(() => {
+    return candidatosNoRecorte.filter(candidato => {
+      const tres = ['cond_regiao', 'cond_tempo', 'cond_verba'].map((k) => (candidato as any)[k]);
+      const matchCondicao =
+        filtroCondicao === 'todas' ? true
+        : filtroCondicao === 'aprovadas' ? tres.every((v) => v === 'aprovado')
+        : filtroCondicao === 'reprovada' ? tres.some((v) => v === 'reprovado')
+        : tres.some((v) => v === 'pendente' || v == null);
+      if (!matchCondicao) return false;
       const matchSearch = searchTerm === '' ||
         candidato.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
         candidato.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -105,7 +141,7 @@ export const useRecruitment = ({ tenantId, autoRefresh = false, refreshInterval 
 
       return matchSearch && matchStatus && matchCargo && matchExperiencia;
     });
-  }, [candidatos, searchTerm, filtroStatus, filtroCargo, filtroExperiencia]);
+  }, [candidatosNoRecorte, searchTerm, filtroStatus, filtroCargo, filtroExperiencia, filtroCondicao]);
 
   const candidatosPorStatus = useMemo(() => {
     const statusCounts: Record<string, number> = {};
@@ -147,7 +183,9 @@ export const useRecruitment = ({ tenantId, autoRefresh = false, refreshInterval 
   }, [candidatos.length, loadCandidateSources]);
 
   const filtrosAtivos = useMemo(() => {
-    return filtroStatus !== 'todos' || filtroCargo !== 'todos' || filtroExperiencia !== 'todos' || searchTerm !== '';
+    return filtroStatus !== 'todos' || filtroCargo !== 'todos' || filtroExperiencia !== 'todos'
+      || filtroCanal !== 'todos' || filtroCondicao !== 'todas'
+      || periodoDe !== '' || periodoAte !== '' || searchTerm !== '';
   }, [filtroStatus, filtroCargo, filtroExperiencia, searchTerm]);
 
   // API calls
@@ -297,6 +335,10 @@ export const useRecruitment = ({ tenantId, autoRefresh = false, refreshInterval 
     setFiltroStatus('todos');
     setFiltroCargo('todos');
     setFiltroExperiencia('todos');
+    setFiltroCanal('todos');
+    setFiltroCondicao('todas');
+    setPeriodoDe('');
+    setPeriodoAte('');
     setCurrentPage(1);
   }, []);
 
@@ -384,12 +426,21 @@ export const useRecruitment = ({ tenantId, autoRefresh = false, refreshInterval 
     setFiltroStatus,
     setFiltroCargo,
     setFiltroExperiencia,
+    filtroCanal,
+    filtroCondicao,
+    periodoDe,
+    periodoAte,
+    setFiltroCanal,
+    setFiltroCondicao,
+    setPeriodoDe,
+    setPeriodoAte,
     clearFilters,
 
     // Selection
     selectCandidato,
 
     // Computed values
+    candidatosNoRecorte,
     candidatosFiltrados,
     candidatosPorStatus,
     candidatosPorCargo,

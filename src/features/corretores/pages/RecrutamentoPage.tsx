@@ -17,6 +17,12 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { RecrutamentoFunnelChart } from '../components/RecrutamentoFunnelChart';
 import { RecrutamentoPerformanceChart } from '../components/RecrutamentoPerformanceChart';
 import { useRecruitment } from '../hooks/useRecruitment';
+import { ESTAGIOS, LABEL_ESTAGIO, MOTIVOS_PERDA, nivelAlcancado } from '../domain/recruitmentStages';
+import { FilaDeAcao } from '../components/FilaDeAcao';
+import { CondicoesDeEntrada } from '../components/CondicoesDeEntrada';
+import { MarcosDeAtivacao } from '../components/MarcosDeAtivacao';
+import { IndicadoresDoProcesso } from '../components/IndicadoresDoProcesso';
+import { recruitmentService } from '../services/recruitmentService';
 import { createTenantMember } from '../services/tenantMembersService';
 import { useAuth } from '@/hooks/useAuth';
 import {
@@ -58,7 +64,8 @@ interface Candidato {
   email: string;
   telefone: string;
   cargo: string;
-  status: 'Lead' | 'Interação' | 'Reunião' | 'Onboard' | 'Aprovado' | 'Rejeitado';
+  status: string;   // label de `estagio` (domain/recruitmentStages)
+  estagio?: string;
   dataInscricao: string;
   experiencia: string;
   linkedin?: string;
@@ -104,6 +111,11 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
     setFiltroStatus: setHookFiltroStatus,
     setFiltroCargo: setHookFiltroCargo,
     setFiltroExperiencia: setHookFiltroExperiencia,
+    filtroCanal, setFiltroCanal,
+    filtroCondicao, setFiltroCondicao,
+    periodoDe, setPeriodoDe,
+    periodoAte, setPeriodoAte,
+    candidatosNoRecorte,
     clearFilters,
     selectCandidato,
     candidatosFiltrados,
@@ -116,6 +128,9 @@ export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: Recrutament
 
   // Local state for modals and forms
   const [modalOpen, setModalOpen] = useState(false);
+  // Encerrar exige um motivo da taxonomia — a spec não deixa fechar card sem ele.
+  const [encerrando, setEncerrando] = useState(false);
+  const [motivoPerda, setMotivoPerda] = useState('');
   const [novoModalOpen, setNovoModalOpen] = useState(false);
   const [novoFormData, setNovoFormData] = useState({
     nome: '',
@@ -192,7 +207,7 @@ const handleMudarStatus = async (novoStatus: string) => {
     }
 
     // 2. Lógica baseada no novo status
-    if (novoStatus === 'Aprovado') {
+    if (novoStatus === LABEL_ESTAGIO.onboard) {
       if (verifyUser) {
         toast.error('Usuário já existe como corretor');
         return;
@@ -379,13 +394,15 @@ const handleMudarStatus = async (novoStatus: string) => {
         return 'bg-[#88C0E5]/10 text-[#88C0E5] dark:bg-[#88C0E5]/20 dark:text-[#88C0E5]';
       case 'Interação':
         return 'bg-[#598DC6]/10 text-[#598DC6] dark:bg-[#598DC6]/20 dark:text-[#88C0E5]';
-      case 'Reunião':
+      case 'Qualificado':
+        return 'bg-[#598DC6]/10 text-[#598DC6] dark:bg-[#598DC6]/20 dark:text-[#88C0E5]';
+      case 'Reunião realizada':
         return 'bg-[#234992]/10 text-[#234992] dark:bg-[#234992]/20 dark:text-[#598DC6]';
+      case 'Matrícula':
+        return 'bg-[#324F74]/10 text-[#324F74] dark:bg-[#324F74]/20 dark:text-[#598DC6]';
       case 'Onboard':
         return 'bg-[#324F74]/10 text-[#324F74] dark:bg-[#324F74]/20 dark:text-[#598DC6]';
-      case 'Aprovado':
-        return 'bg-green-100 dark:bg-green-950/60 text-green-700 dark:text-green-300 dark:bg-green-900/30 dark:text-green-400';
-      case 'Rejeitado':
+      case 'Perdido':
         return 'bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300 dark:bg-red-900/30 dark:text-red-400';
       default:
         return 'bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-slate-300 dark:bg-gray-900/30 dark:text-gray-400';
@@ -417,6 +434,12 @@ const handleMudarStatus = async (novoStatus: string) => {
           </div>
         </div>
 
+        {/* A fila vem antes das métricas: é o que se olha primeiro de manhã. */}
+        <FilaDeAcao tenantId={tenantId} />
+
+        {/* Indicadores de SLA e conversão por canal (spec §10). */}
+        <IndicadoresDoProcesso tenantId={tenantId} />
+
         {/* Seção de Métricas */}
         <div className="mb-12">
           <div className="flex items-center gap-2 mb-6">
@@ -435,7 +458,7 @@ const handleMudarStatus = async (novoStatus: string) => {
               </CardHeader>
               <CardContent>
                 <p className="text-3xl font-bold text-gray-900 dark:text-slate-100 dark:text-white mb-2">
-                  {metrics?.tempoMedioProcesso ? `${metrics.tempoMedioProcesso} dias` : 'N/A'}
+                  {metrics?.tempoMedioProcesso != null ? `${metrics.tempoMedioProcesso} dias` : 'N/A'}
                 </p>
                 <p className="text-sm text-gray-600 dark:text-slate-400 dark:text-gray-400">
                   Do primeiro contato à contratação
@@ -492,7 +515,7 @@ const handleMudarStatus = async (novoStatus: string) => {
                       <TrendingUp className="h-3 w-3 text-green-600 dark:text-green-300 dark:text-green-400" />
                       <span className="text-xs text-green-600 dark:text-green-300 dark:text-green-400 font-medium">
                         {candidatos.length > 0
-                          ? `${Math.round((candidatos.filter(c => ['Interação', 'Reunião', 'Onboard', 'Aprovado'].includes(c.status)).length / candidatos.length) * 100)}%`
+                          ? `${Math.round((candidatos.filter(c => nivelAlcancado(c.estagio) >= 1).length / candidatos.length) * 100)}%`
                           : '0%'
                         }
                       </span>
@@ -513,7 +536,7 @@ const handleMudarStatus = async (novoStatus: string) => {
                       Em Avaliação
                     </p>
                     <p className="text-2xl font-bold text-gray-900 dark:text-slate-100 dark:text-white">
-                      {candidatos.filter(c => c.status === 'Interação' || c.status === 'Reunião').length}
+                      {candidatos.filter(c => nivelAlcancado(c.estagio) >= 1 && c.estagio !== 'onboard').length}
                     </p>
                     <div className="flex items-center gap-1 mt-1">
                       <span className="text-xs text-gray-500 dark:text-slate-400 dark:text-gray-400 font-medium">Em análise</span>
@@ -534,7 +557,7 @@ const handleMudarStatus = async (novoStatus: string) => {
                       Em Onboard
                     </p>
                     <p className="text-2xl font-bold text-gray-900 dark:text-slate-100 dark:text-white">
-                      {candidatos.filter(c => c.status === 'Onboard').length}
+                      {candidatos.filter(c => c.estagio === 'onboard').length}
                     </p>
                     <div className="flex items-center gap-1 mt-1">
                       <span className="text-xs text-gray-500 dark:text-slate-400 dark:text-gray-400 font-medium">Este mês</span>
@@ -555,7 +578,7 @@ const handleMudarStatus = async (novoStatus: string) => {
                       Taxa de Conversão
                     </p>
                     <p className="text-2xl font-bold text-gray-900 dark:text-slate-100 dark:text-white">
-                      {candidatos.length > 0 ? ((candidatos.filter(c => ['Onboard', 'Aprovado'].includes(c.status)).length / candidatos.length) * 100).toFixed(1) : 0.0}%
+                      {candidatos.length > 0 ? ((candidatos.filter(c => c.estagio === 'onboard').length / candidatos.length) * 100).toFixed(1) : 0.0}%
                     </p>
                     <div className="flex items-center gap-1 mt-1">
                       <span className="text-xs text-gray-500 dark:text-slate-400 dark:text-gray-400 font-medium">Média</span>
@@ -573,12 +596,12 @@ const handleMudarStatus = async (novoStatus: string) => {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
             {/* Coluna Esquerda - Funil de Recrutamento */}
             <div className="h-[735px]">
-              <RecrutamentoFunnelChart candidatos={candidatos} />
+              <RecrutamentoFunnelChart candidatos={candidatosNoRecorte} />
             </div>
 
             {/* Coluna Direita - Performance de Conversão */}
             <div className="h-[735px]">
-              <RecrutamentoPerformanceChart candidatos={candidatos} />
+              <RecrutamentoPerformanceChart candidatos={candidatosNoRecorte} />
             </div>
           </div>
 
@@ -675,7 +698,7 @@ const handleMudarStatus = async (novoStatus: string) => {
                       Filtros
                       {filtrosAtivos && (
                         <span className="ml-1 px-1.5 py-0.5 text-xs bg-blue-500 text-white rounded-full">
-                          {[filtroStatus !== 'todos', filtroCargo !== 'todos', filtroExperiencia !== 'todos'].filter(Boolean).length}
+                          {[filtroStatus !== 'todos', filtroCargo !== 'todos', filtroExperiencia !== 'todos', filtroCanal !== 'todos', filtroCondicao !== 'todas', periodoDe !== '' || periodoAte !== ''].filter(Boolean).length}
                         </span>
                       )}
                     </Button>
@@ -699,15 +722,51 @@ const handleMudarStatus = async (novoStatus: string) => {
                             <SelectValue placeholder="Todos os status" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="todos">Todos os status</SelectItem>
-                            <SelectItem value="Lead">Lead</SelectItem>
-                            <SelectItem value="Interação">Interação</SelectItem>
-                            <SelectItem value="Reunião">Reunião</SelectItem>
-                            <SelectItem value="Onboard">Onboard</SelectItem>
-                            <SelectItem value="Aprovado">Aprovado</SelectItem>
-                            <SelectItem value="Rejeitado">Rejeitado</SelectItem>
+                            <SelectItem value="todos">Todos os estágios</SelectItem>
+                            {ESTAGIOS.map((e) => (
+                              <SelectItem key={e.id} value={e.label}>{e.label}</SelectItem>
+                            ))}
+                            <SelectItem value={LABEL_ESTAGIO.perdido}>{LABEL_ESTAGIO.perdido}</SelectItem>
                           </SelectContent>
                         </Select>
+                      </div>
+
+                      {/* Filtro por Canal */}
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-gray-700 dark:text-slate-300">Canal</label>
+                        <Select value={filtroCanal} onValueChange={setFiltroCanal}>
+                          <SelectTrigger><SelectValue placeholder="Todos os canais" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="todos">Todos os canais</SelectItem>
+                            {['Indicação', 'Meta', 'LinkedIn', 'Site Institucional', 'Email Marketing', 'Portal de vagas', 'Instagram', 'Panfletagem', 'Outros'].map((f) => (
+                              <SelectItem key={f} value={f}>{f}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Filtro pelas três condições */}
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-gray-700 dark:text-slate-300">Condições de entrada</label>
+                        <Select value={filtroCondicao} onValueChange={setFiltroCondicao}>
+                          <SelectTrigger><SelectValue placeholder="Todas" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="todas">Todas</SelectItem>
+                            <SelectItem value="aprovadas">As três aprovadas</SelectItem>
+                            <SelectItem value="pendentes">Alguma pendente</SelectItem>
+                            <SelectItem value="reprovada">Alguma reprovada</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Período da candidatura — vale também para o funil e os indicadores */}
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-gray-700 dark:text-slate-300">Período da candidatura</label>
+                        <div className="flex items-center gap-2">
+                          <Input type="date" value={periodoDe} onChange={(e) => setPeriodoDe(e.target.value)} />
+                          <span className="text-xs text-gray-500 dark:text-slate-400">até</span>
+                          <Input type="date" value={periodoAte} onChange={(e) => setPeriodoAte(e.target.value)} />
+                        </div>
                       </div>
 
                       {/* Filtro por Cargo */}
@@ -983,17 +1042,74 @@ const handleMudarStatus = async (novoStatus: string) => {
 
                   {/* Botões de Mudança de Status */}
                   <div className="flex flex-wrap gap-2">
-                    {['Lead', 'Interação', 'Reunião', 'Onboard', 'Aprovado', 'Rejeitado'].map((status) => (
+                    {[...ESTAGIOS.slice(1).map((e) => e.label), LABEL_ESTAGIO.perdido].map((status) => (
                       <Button
                         key={status}
                         size="sm"
                         variant={candidatoSelecionado.status === status ? 'default' : 'outline'}
-                        onClick={() => handleMudarStatus(status as Candidato['status'])}
+                        onClick={() => (status === LABEL_ESTAGIO.perdido
+                          ? setEncerrando(true)
+                          : handleMudarStatus(status))}
                       >
                         {status}
                       </Button>
                     ))}
                   </div>
+
+                  {encerrando && (
+                    <div className="mt-4 rounded-lg border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/30 p-4">
+                      <p className="mb-3 text-sm font-medium text-amber-900 dark:text-amber-200">
+                        Por que este candidato não seguiu?
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Select value={motivoPerda} onValueChange={setMotivoPerda}>
+                          <SelectTrigger className="w-64"><SelectValue placeholder="Escolha o motivo" /></SelectTrigger>
+                          <SelectContent>
+                            {MOTIVOS_PERDA.map((m) => (
+                              <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          size="sm"
+                          disabled={!motivoPerda}
+                          onClick={async () => {
+                            if (!candidatoSelecionado || !tenantId) return;
+                            try {
+                              await recruitmentService.encerrar(String(candidatoSelecionado.id), tenantId, motivoPerda);
+                              toast.success('Candidato encerrado');
+                              setEncerrando(false);
+                              setMotivoPerda('');
+                              selectCandidato(null);
+                              setModalOpen(false);
+                              await refresh();
+                            } catch (e) {
+                              toast.error(e instanceof Error ? e.message : 'Não foi possível encerrar');
+                            }
+                          }}
+                        >
+                          Encerrar candidato
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => { setEncerrando(false); setMotivoPerda(''); }}>
+                          Cancelar
+                        </Button>
+                      </div>
+                      <p className="mt-2 text-xs text-amber-800/80 dark:text-amber-300/70">
+                        O motivo alimenta a análise de onde o processo perde gente. Sem ele, o card não fecha.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <CondicoesDeEntrada
+                  candidato={candidatoSelecionado as unknown as Record<string, unknown>}
+                  tenantId={tenantId}
+                  onSaved={refresh}
+                />
+
+                <MarcosDeAtivacao candidatoId={String(candidatoSelecionado.id)} />
+
+                <div>
                 </div>
 
                 {/* Informações de Contato */}

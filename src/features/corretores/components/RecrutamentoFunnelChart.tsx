@@ -3,10 +3,11 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { StandardCardTitle } from '@/components/ui/StandardCardTitle';
 import { TrendingDown } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
+import { ESTAGIOS, contarEtapas } from '../domain/recruitmentStages';
 
 interface Candidato {
   id: string | number;
-  status: string;
+  estagio?: string;
 }
 
 interface RecrutamentoFunnelChartProps {
@@ -28,38 +29,21 @@ export const RecrutamentoFunnelChart = ({ candidatos }: RecrutamentoFunnelChartP
   const funnelData = useMemo(() => {
     if (!candidatos || candidatos.length === 0) return { dataPoints: [], metrics: null };
 
-    // Definir as etapas do funil de recrutamento
-    const etapasOrdem = [
-      'Lead',
-      'Interação',
-      'Reunião',
-      'Onboard'
-    ];
-
+    // Os seis estágios da spec, contados de forma CUMULATIVA (domain/
+    // recruitmentStages): quem chegou ao Onboard continua contando nas etapas
+    // anteriores. O cálculo antigo contava "está atualmente em" e imprimia
+    // 0·0·0·1 sempre que ninguém estava parado no meio.
+    const etapasOrdem: string[] = ESTAGIOS.map((e) => e.label);
     const totalCandidatos = candidatos.length;
-    
-    // Calcular quantidade real para cada etapa
-    const calcularEtapa = (etapa: string): number => {
-      switch (etapa) {
-        case 'Lead':
-          return candidatos.filter(c => c.status === 'Lead').length;
-        case 'Interação':
-          return candidatos.filter(c => c.status === 'Interação').length;
-        case 'Reunião':
-          return candidatos.filter(c => c.status === 'Reunião').length;
-        case 'Onboard':
-          return candidatos.filter(c => c.status === 'Onboard').length;
-        default:
-          return 0;
-      }
-    };
+    const quantidades = contarEtapas(candidatos);
+    const calcularEtapa = (etapa: string): number => quantidades[etapasOrdem.indexOf(etapa)] ?? 0;
 
     // Criar dataPoints com tamanhos harmônicos e estáticos
     const dataPoints = etapasOrdem.map((etapa, index) => {
       const quantidade = calcularEtapa(etapa);
       
       // Valores FIXOS harmônicos para 4 etapas
-      const valoresFixosHarmonicos = [100, 92, 84, 76];
+      const valoresFixosHarmonicos = [100, 95, 90, 85, 80, 75];
       const valorVisualFixo = valoresFixosHarmonicos[index] || (100 - (index * 8));
       
       return {
@@ -76,7 +60,7 @@ export const RecrutamentoFunnelChart = ({ candidatos }: RecrutamentoFunnelChartP
     // Métricas calculadas para as 4 etapas
     const lead = calcularEtapa('Lead');
     const interacao = calcularEtapa('Interação');
-    const reuniao = calcularEtapa('Reunião');
+    const reuniao = calcularEtapa('Reunião realizada');
     const onboard = calcularEtapa('Onboard');
     
     const metrics = {

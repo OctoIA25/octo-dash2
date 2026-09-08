@@ -4171,6 +4171,12 @@ registerSantaAngelaRoutes(app, supabase);
 import { registerGaRoutes } from './googleAnalytics/index.js';
 registerGaRoutes(app, supabase);
 
+// Recrutamento — funil de candidatos a corretor (spec do Erick). Entidade
+// própria, separada de lead de imóvel. Gate admin/owner: candidato é dado
+// pessoal de quem ainda não trabalha aqui.
+import { registerRecrutamentoRoutes } from './recrutamento/index.js';
+registerRecrutamentoRoutes(app, supabase);
+
 // Rotas owner/admin da config ZAP por tenant — mesmo resolver do feed (save invalida cache).
 registerZapRoutes(app, supabase, { resolver: zapConfigResolver });
 

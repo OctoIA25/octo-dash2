@@ -4894,6 +4894,21 @@ registerSantaAngelaRoutes(app, supabase, { runner: santaAngelaRunner });
 import { registerGaRoutes } from './googleAnalytics/index.js';
 registerGaRoutes(app, supabase);
 
+// Recrutamento — funil de candidatos a corretor (spec do Erick). Entidade
+// própria, separada de lead de imóvel. Gate admin/owner: candidato é dado
+// pessoal de quem ainda não trabalha aqui.
+import { registerRecrutamentoRoutes } from './recrutamento/index.js';
+registerRecrutamentoRoutes(app, supabase);
+
+// Os 5 jobs da spec (§9): SLA de 1h, confirmação D-1, prazo de matrícula,
+// resgate por silêncio e marcos atrasados. Flag-gated para rodar em UM
+// processo. Enquanto a Lia não existe, o que iria ao candidato vira
+// notificação in-app para quem toca o processo.
+import { startRecrutamentoScheduler } from './recrutamento/jobs.js';
+if (process.env.RECRUTAMENTO_SCHEDULER === '1') {
+  startRecrutamentoScheduler(supabase);
+}
+
 // Polling automático (default 60s). Flag-gated para rodar em UM processo, igual
 // ao scheduler do Kenlo. O sync alimenta o time de IA em quase tempo real.
 if (process.env.SANTA_ANGELA_SYNC_SCHEDULER === '1') {

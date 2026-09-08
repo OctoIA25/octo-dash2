@@ -2,6 +2,7 @@ import { useEffect, useRef, useMemo } from 'react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { StandardCardTitle } from '@/components/ui/StandardCardTitle';
 import { Target, TrendingUp } from 'lucide-react';
+import { ESTAGIOS, contarEtapas } from '../domain/recruitmentStages';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -30,7 +31,7 @@ ChartJS.register(
 
 interface Candidato {
   id: string | number;
-  status: string;
+  estagio?: string;
 }
 
 interface RecrutamentoPerformanceChartProps {
@@ -45,21 +46,13 @@ export const RecrutamentoPerformanceChart = ({ candidatos }: RecrutamentoPerform
   const chartData = useMemo(() => {
     if (!candidatos || candidatos.length === 0) return null;
 
-    // Definir as etapas do funil de recrutamento
-    const etapasOrdem = [
-      'Lead',
-      'Interação',
-      'Reunião',
-      'Onboard',
-      'Aprovado'
-    ];
-
+    // Os seis estágios da spec, contados de forma CUMULATIVA (mesma regra do
+    // funil, em domain/recruitmentStages): quem chegou ao Onboard continua
+    // contando nas etapas anteriores.
+    const etapasOrdem: string[] = ESTAGIOS.map((e) => e.label);
     const totalCandidatos = candidatos.length;
-
-    // Calcular quantidade real para cada etapa
-    const calcularEtapa = (etapa: string): number => {
-      return candidatos.filter(c => c.status === etapa).length;
-    };
+    const quantidades = contarEtapas(candidatos);
+    const calcularEtapa = (etapa: string): number => quantidades[etapasOrdem.indexOf(etapa)] ?? 0;
 
     // Preparar dados para o gráfico
     const labels = etapasOrdem;
@@ -69,9 +62,9 @@ export const RecrutamentoPerformanceChart = ({ candidatos }: RecrutamentoPerform
     // Calcular métricas de conversão
     const lead = calcularEtapa('Lead');
     const interacao = calcularEtapa('Interação');
-    const reuniao = calcularEtapa('Reunião');
+    const reuniao = calcularEtapa('Reunião realizada');
     const onboard = calcularEtapa('Onboard');
-    const aprovado = calcularEtapa('Aprovado')
+    const aprovado = onboard; // 'Aprovado' virou Onboard: quem opera, foi aprovado
     
     // Taxa de conversão em reunião (leads que chegaram até reunião)
     const taxaConversaoReuniao = totalCandidatos > 0 ? ((reuniao / totalCandidatos) * 100).toFixed(1) : '0.0';
@@ -79,7 +72,7 @@ export const RecrutamentoPerformanceChart = ({ candidatos }: RecrutamentoPerform
     // Taxa de conversão em onboard (leads que foram contratados)
     const taxaConversaoOnboard = totalCandidatos > 0 ? ((onboard / totalCandidatos) * 100).toFixed(1) : '0.0';
 
-    const geralConversao = totalCandidatos > 0 ? (([onboard, aprovado].reduce((acc, curr) => acc + curr, 0) / totalCandidatos) * 100).toFixed(1) : '0.0';
+    const geralConversao = totalCandidatos > 0 ? ((onboard / totalCandidatos) * 100).toFixed(1) : '0.0';
 
     return {
       labels,
@@ -251,9 +244,13 @@ export const RecrutamentoPerformanceChart = ({ candidatos }: RecrutamentoPerform
     );
   }
 
-  // Identificar etapa com mais candidatos (ignorando "Lead")
-  const maxCandidatos = Math.max(...chartData.data.slice(1)); // Ignorar "Lead"
-  const etapaComMaisCandidatos = chartData.labels[chartData.data.indexOf(maxCandidatos)];
+  // "Dominante" = onde há mais gente PARADA agora (estágio atual), não no
+  // acumulado. No cumulativo, Lead é sempre o maior e indexOf devolvia sempre
+  // o índice 0 — o rótulo nunca mudava de "Lead".
+  const etapaComMaisCandidatos = ESTAGIOS
+    .slice(1) // ignora Lead, como antes
+    .map((e) => ({ label: e.label, n: candidatos.filter((c) => c.estagio === e.id).length }))
+    .reduce((a, b) => (b.n > a.n ? b : a), { label: '—', n: 0 }).label;
 
   return (
     <Card className="bg-white dark:bg-gray-900 border-gray-200/60 dark:border-gray-700/60 h-full overflow-hidden">

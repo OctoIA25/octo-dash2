@@ -84,18 +84,26 @@ const captacaoSource: GoalMetricSource = {
   },
 };
 
-/** Recrutamento: contagem de candidatos aprovados no período. */
+/**
+ * Recrutamento: contagem de candidatos que chegaram a operar, no período.
+ *
+ * Fonte trocada de recruitment_candidates para recrut_candidato (modelo de
+ * eventos). A semântica é a MESMA de antes — candidatura no período que acabou
+ * dando certo — para não alterar metas já em curso: era status='Aprovado' com
+ * data_inscricao no período; agora é ts_onboard preenchido com ts_candidatura
+ * no período.
+ */
 const recrutamentoSource: GoalMetricSource = {
   categoryId: 'recrutamento',
   label: 'Corretores recrutados',
   async compute(tenantId, startDate, endDate) {
     const { count, error } = await supabase
-      .from('recruitment_candidates')
+      .from('recrut_candidato')
       .select('id', { count: 'exact', head: true })
       .eq('tenant_id', tenantId)
-      .eq('status', 'Aprovado')
-      .gte('data_inscricao', dayStart(startDate))
-      .lte('data_inscricao', dayEnd(endDate));
+      .not('ts_onboard', 'is', null)
+      .gte('ts_candidatura', dayStart(startDate))
+      .lte('ts_candidatura', dayEnd(endDate));
 
     if (error) throw new Error(`Falha ao calcular Recrutamento: ${error.message}`);
     return count ?? 0;
