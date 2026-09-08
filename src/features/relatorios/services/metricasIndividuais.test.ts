@@ -61,6 +61,11 @@ vi.mock('@/features/metricas/services/vendasAssinadasService', async (importOrig
   return { ...real, buscarVendasAssinadas: async () => vendasFake };
 });
 
+let rateioFake: { corretor: number; imobiliaria: number } | null = null;
+vi.mock('@/features/metricas/services/commercialSalesService', () => ({
+  ratearComissaoDoCorretor: async () => rateioFake,
+}));
+
 import {
   buscarMetricasIndividuaisLeads,
   buscarMetricasIndividuaisVendas,
@@ -75,6 +80,18 @@ beforeEach(() => {
   queries.length = 0;
   respostaPorTabela = {};
   vendasFake = [];
+  rateioFake = null;
+});
+
+/** Lead do fixture — só os campos que o serviço lê. */
+const lead = (over: Partial<Record<string, unknown>> = {}) => ({
+  assigned_agent_name: CORRETOR,
+  source: 'Site',
+  property_code: 'A1',
+  visit_date: null,
+  created_at: null,
+  first_response_at: null,
+  ...over,
 });
 
 describe('buscarMetricasIndividuaisLeads', () => {
@@ -90,8 +107,8 @@ describe('buscarMetricasIndividuaisLeads', () => {
   it('conta visita pelo fato (visit_date), não pela etapa', async () => {
     respostaPorTabela = {
       leads: [[
-        { source: 'Site', property_code: 'A1', visit_date: '2026-08-10', created_at: null, first_response_at: null },
-        { source: 'Site', property_code: 'A2', visit_date: null, created_at: null, first_response_at: null },
+        lead({ property_code: 'A1', visit_date: '2026-08-10' }),
+        lead({ property_code: 'A2' }),
       ]],
     };
 
@@ -103,13 +120,7 @@ describe('buscarMetricasIndividuaisLeads', () => {
 
   it('pagina: 1000 linhas na primeira página não param a leitura', async () => {
     const pagina = (n: number, prefixo: string) =>
-      Array.from({ length: n }, (_, i) => ({
-        source: 'Site',
-        property_code: `${prefixo}${i}`,
-        visit_date: null,
-        created_at: null,
-        first_response_at: null,
-      }));
+      Array.from({ length: n }, (_, i) => lead({ property_code: `${prefixo}${i}` }));
     respostaPorTabela = { leads: [pagina(1000, 'p1-'), pagina(7, 'p2-')] };
 
     const m = await buscarMetricasIndividuaisLeads(TENANT, CORRETOR, DE, ATE);
@@ -119,12 +130,51 @@ describe('buscarMetricasIndividuaisLeads', () => {
     expect(queries[1].range).toEqual([1000, 1999]);
   });
 
+  /**
+   * O que quebrava a conferência com a planilha: `leads.assigned_agent_name`
+   * guarda a grafia da origem ("FABIO GONCALVES") e a tela manda o nome do
+   * cadastro ("Fábio Gonçalves"). O `eq` exato zerava o painel de 5 dos 11
+   * corretores do ranking da Lotus enquanto as vendas deles apareciam.
+   */
+  it('casa o corretor por nome normalizado (maiúscula, acento, espaço duplo)', async () => {
+    respostaPorTabela = {
+      leads: [[
+        lead({ assigned_agent_name: 'FERNANDA SOUZA' }),
+        lead({ assigned_agent_name: 'Fernanda  Souza' }),
+        lead({ assigned_agent_name: 'Fernanda Souza' }),
+        lead({ assigned_agent_name: 'Outro Corretor' }),
+        lead({ assigned_agent_name: null }),
+      ]],
+    };
+
+    const m = await buscarMetricasIndividuaisLeads(TENANT, CORRETOR, DE, ATE);
+
+    expect(m.totalLeads).toBe(3);
+  });
+
+  it('não filtra por nome no servidor — a comparação exata perdia lead', async () => {
+    await buscarMetricasIndividuaisLeads(TENANT, CORRETOR, DE, ATE);
+
+    const filtroPorNome = queries[0].filters.find((f) => f.col === 'assigned_agent_name');
+    expect(filtroPorNome).toBeUndefined();
+  });
+
+  it('chave UUID continua filtrando no servidor por assigned_agent_id', async () => {
+    const uuid = '3f7a1c2e-9b4d-4a6f-8c1e-2d5b7a9f0c34';
+    respostaPorTabela = { leads: [[lead({ assigned_agent_name: 'QUALQUER GRAFIA' })]] };
+
+    const m = await buscarMetricasIndividuaisLeads(TENANT, uuid, DE, ATE);
+
+    expect(queries[0].filters).toContainEqual({ op: 'eq', col: 'assigned_agent_id', val: uuid });
+    expect(m.totalLeads).toBe(1);
+  });
+
   it('tempo médio de resposta é do corretor consultado', async () => {
     respostaPorTabela = {
       leads: [[
-        { source: 'Site', property_code: 'A', visit_date: null, created_at: '2026-08-01T10:00:00Z', first_response_at: '2026-08-01T10:10:00Z' },
-        { source: 'Site', property_code: 'B', visit_date: null, created_at: '2026-08-01T10:00:00Z', first_response_at: '2026-08-01T10:30:00Z' },
-        { source: 'Site', property_code: 'C', visit_date: null, created_at: '2026-08-01T10:00:00Z', first_response_at: null },
+        lead({ property_code: 'A', created_at: '2026-08-01T10:00:00Z', first_response_at: '2026-08-01T10:10:00Z' }),
+        lead({ property_code: 'B', created_at: '2026-08-01T10:00:00Z', first_response_at: '2026-08-01T10:30:00Z' }),
+        lead({ property_code: 'C', created_at: '2026-08-01T10:00:00Z', first_response_at: null }),
       ]],
     };
 
@@ -172,10 +222,86 @@ describe('buscarMetricasIndividuaisVendas', () => {
     expect(JSON.stringify(queries)).toContain('is_exclusive');
   });
 
+  it('expõe a parte do corretor pelo mesmo rateio do ranking', async () => {
+    rateioFake = { corretor: 12000, imobiliaria: 18000 };
+    vendasFake = [
+      { id: 'p1', leadId: 'l1', agentUserId: null, agentNome: CORRETOR, vgv: 500000, vgc: 30000, dataAssinatura: '2026-08-10' },
+    ];
+
+    const v = await buscarMetricasIndividuaisVendas(TENANT, CORRETOR, DE, ATE);
+
+    expect(v.comissaoTotal).toBe(30000); // VGC, o bolo
+    expect(v.comissaoCorretor).toBe(12000); // o que a planilha chama de comissão do corretor
+    expect(v.comissaoImobiliaria).toBe(18000);
+  });
+
+  it('sem nível/líder cadastrado a parte do corretor é null, nunca zero', async () => {
+    rateioFake = null;
+    vendasFake = [
+      { id: 'p1', leadId: 'l1', agentUserId: null, agentNome: CORRETOR, vgv: 500000, vgc: 30000, dataAssinatura: '2026-08-10' },
+    ];
+
+    const v = await buscarMetricasIndividuaisVendas(TENANT, CORRETOR, DE, ATE);
+
+    expect(v.comissaoCorretor).toBeNull();
+    expect(v.comissaoTotal).toBe(30000);
+  });
+
   it('sem venda no período devolve zeros, não NaN', async () => {
     const v = await buscarMetricasIndividuaisVendas(TENANT, CORRETOR, DE, ATE);
 
     expect(v).toMatchObject({ vendasTotal: 0, vgvTotal: 0, comissaoTotal: 0, ticketMedio: 0 });
     expect(v.rows).toEqual([]);
+  });
+});
+
+/**
+ * A conferência que o gestor faz: somar os painéis individuais e bater com o
+ * total da tela (KPIs e ranking leem as MESMAS duas fontes — `leads` no período
+ * e `proposals` assinadas). Enquanto o painel filtrava por nome exato, a soma
+ * ficava abaixo do total sem nenhum erro na tela.
+ */
+describe('reconciliação: soma dos individuais x total', () => {
+  const CORRETORES = ['Fernanda Souza', 'Fábio Gonçalves', 'Flavia Ceolin'];
+
+  const LEADS_DO_TENANT = [
+    lead({ assigned_agent_name: 'FERNANDA SOUZA', visit_date: '2026-08-02' }),
+    lead({ assigned_agent_name: 'Fernanda Souza' }),
+    lead({ assigned_agent_name: 'FABIO GONCALVES' }),
+    lead({ assigned_agent_name: 'FLAVIA CEOLIN', visit_date: '2026-08-05' }),
+    lead({ assigned_agent_name: 'Flavia Ceolin' }),
+  ];
+
+  const VENDAS_DO_TENANT = [
+    { id: 'p1', leadId: null, agentUserId: null, agentNome: 'FERNANDA SOUZA', vgv: 500000, vgc: 30000, dataAssinatura: '2026-08-10' },
+    { id: 'p2', leadId: null, agentUserId: null, agentNome: 'Fábio Gonçalves', vgv: 300000, vgc: 18000, dataAssinatura: '2026-08-12' },
+    { id: 'p3', leadId: null, agentUserId: null, agentNome: 'FLAVIA CEOLIN', vgv: 200000, vgc: 12000, dataAssinatura: '2026-08-14' },
+  ];
+
+  it('leads, visitas, vendas e VGV dos individuais somam o total do período', async () => {
+    let leadsSomados = 0;
+    let visitasSomadas = 0;
+    let vendasSomadas = 0;
+    let vgvSomado = 0;
+
+    for (const corretor of CORRETORES) {
+      queries.length = 0;
+      respostaPorTabela = { leads: [LEADS_DO_TENANT] };
+      const l = await buscarMetricasIndividuaisLeads(TENANT, corretor, DE, ATE);
+      leadsSomados += l.leadsRecebidos;
+      visitasSomadas += l.visitas;
+
+      queries.length = 0;
+      respostaPorTabela = { leads: [[]] };
+      vendasFake = VENDAS_DO_TENANT;
+      const v = await buscarMetricasIndividuaisVendas(TENANT, corretor, DE, ATE);
+      vendasSomadas += v.vendasTotal;
+      vgvSomado += v.vgvTotal;
+    }
+
+    expect(leadsSomados).toBe(LEADS_DO_TENANT.length);
+    expect(visitasSomadas).toBe(LEADS_DO_TENANT.filter((x) => x.visit_date).length);
+    expect(vendasSomadas).toBe(VENDAS_DO_TENANT.length);
+    expect(vgvSomado).toBe(VENDAS_DO_TENANT.reduce((s, x) => s + x.vgv, 0));
   });
 });

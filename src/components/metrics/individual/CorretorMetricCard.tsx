@@ -84,9 +84,13 @@ export const CorretorMetricCard = memo(({ corretor, isLoading = false }: Correto
               <h3 className="text-base font-semibold text-gray-900 dark:text-white leading-tight">
                 {nome}
               </h3>
-              <Badge className={`mt-1 text-[10px] font-medium px-2 py-0.5 ${getRankingBadgeColor(ranking)}`}>
-                {getRankingLabel(ranking)}
-              </Badge>
+              {/* Sem posição conhecida (ranking do tenant não carregado) o badge
+                  sai da tela — "0º Lugar" seria informação inventada. */}
+              {ranking > 0 && (
+                <Badge className={`mt-1 text-[10px] font-medium px-2 py-0.5 ${getRankingBadgeColor(ranking)}`}>
+                  {getRankingLabel(ranking)}
+                </Badge>
+              )}
             </div>
           </div>
         </div>
@@ -106,7 +110,7 @@ export const CorretorMetricCard = memo(({ corretor, isLoading = false }: Correto
           <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-100 dark:border-green-800">
             <div className="flex items-center gap-2 mb-1.5">
               <DollarSign className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />
-              <span className="text-[10px] font-medium text-green-600 dark:text-green-400">Comissão</span>
+              <span className="text-[10px] font-medium text-green-600 dark:text-green-400">Comissão (VGC)</span>
             </div>
             <p className="text-base font-bold text-gray-900 dark:text-white">
               {formatarMoeda(kpis.comissaoTotal)}

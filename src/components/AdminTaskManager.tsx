@@ -4,6 +4,7 @@
  */
 
 import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAdminTarefas } from '@/hooks/useAdminTarefas';
 import { useAuth } from "@/hooks/useAuth";
 import { PrioridadeTarefa, Tarefa } from '@/hooks/useTarefas';
@@ -30,6 +31,7 @@ import { useLateralDrawer } from '@/hooks/useLateralDrawer';
 
 export const AdminTaskManager = () => {
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
   const { tarefas, isLoading, atribuirTarefa, atribuirTarefaMultiplos, estatisticasPorCorretor } = useAdminTarefas();
   const { setIsSidebarOpen } = useSidebar();
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -65,7 +67,11 @@ export const AdminTaskManager = () => {
     categoria: 'geral',
     editavel_por_corretor: true
   });
-  const [filtroCorretor, setFiltroCorretor] = useState<string>('todos');
+  // `?corretor=<email>` vem dos atalhos do card em Gestão de Equipe: a tela abre
+  // já filtrada naquele corretor. Só o valor inicial — depois o Select manda.
+  const [filtroCorretor, setFiltroCorretor] = useState<string>(
+    () => searchParams.get('corretor') || 'todos',
+  );
 
   // Carrega corretores reais do tenant (filtrando por equipes que o gestor lidera, se aplicável)
   const [corretoresComEmails, setCorretoresComEmails] = useState<

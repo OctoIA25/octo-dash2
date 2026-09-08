@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { Search, ChevronDown, Users, UserPlus, Shield, User, Loader2, Trash2, Mail, Lock, Unlock, Camera, AlertTriangle, CheckCircle, Settings, Info, Ban, X, IdCard, Building2, Phone } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Search, ChevronDown, Users, UserPlus, Shield, User, Loader2, Trash2, Mail, Lock, Unlock, Camera, AlertTriangle, CheckCircle, Settings, Info, Ban, X, IdCard, Building2, Phone, ClipboardList, Target, BarChart3, GraduationCap, Key, FileUser, LineChart } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import {
@@ -23,6 +24,10 @@ import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { useAuth } from "@/hooks/useAuth";
 import { fetchTenantMembers, createTenantMember, updateMemberRole, removeTenantMember, updateMemberPermissions, updateMemberLeader, deleteMemberCompletely, adminUpdateMemberPassword, adminUpdateMemberEmail, type TenantMember } from '../services/tenantMembersService';
 import { fetchTeams, toggleTeamLeader, type Team } from '../services/teamsManagementService';
+import { fetchMemberDados, saveMemberDados, EMPTY_MEMBER_DADOS, type MemberDados } from '../services/memberDadosService';
+import { DocumentosAnexos } from '@/components/DocumentosAnexos';
+import { CorretorMetricasPanel } from './CorretorMetricasPanel';
+import { formatCpf, formatCnpj } from '@/lib/documentoMasks';
 import { useLateralDrawer } from '@/hooks/useLateralDrawer';
 import { SidebarPermission, ATUACAO_TIPOS, ATUACAO_LABELS, atuacoesDe, comPermissoesNaoEditaveis, type AtuacaoTipo } from '@/types/permissions';
 import { NIVEIS, nivelValido, type Nivel } from '@/features/comissionamento/commissionRules';
@@ -100,6 +105,7 @@ const toggleAtuacao = (lista: AtuacaoTipo[], tipo: AtuacaoTipo): AtuacaoTipo[] =
 
 export const EquipeSection = ({ leads }: EquipeSectionProps) => {
   const { tenantId, tenantCode, user: currentUser } = useAuth() as any;
+  const navigate = useNavigate();
   const isCurrentUserAdmin = currentUser?.systemRole === 'admin' || currentUser?.systemRole === 'owner';
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -153,6 +159,17 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
   const [editSpecialPermissions, setEditSpecialPermissions] = useState<Record<string, boolean>>({ can_manage_roleta: false });
   const [editMemberPhoto, setEditMemberPhoto] = useState<string>('');
   const [editMemberCreci, setEditMemberCreci] = useState<string>('');
+  const [editDados, setEditDados] = useState<MemberDados>({ ...EMPTY_MEMBER_DADOS });
+  const [isLoadingDados, setIsLoadingDados] = useState(false);
+  // Card expandido com o painel de métricas (um por vez — a busca é por corretor).
+  const [metricasAbertasId, setMetricasAbertasId] = useState<string | null>(null);
+  // Quando o drawer é aberto pelo atalho "Dados", rola até a seção de dados cadastrais.
+  const [focarDadosAoAbrir, setFocarDadosAoAbrir] = useState(false);
+  // Espelha a RLS de tenant_member_dados: admin/owner do tenant, ou o próprio membro.
+  // Um team_leader NÃO vê PII de corretor — mostrar o form seria prometer um save que o banco recusa.
+  const podeVerDadosCadastrais = Boolean(
+    editingMember && (isCurrentUserAdmin || editingMember.user_id === currentUser?.id),
+  );
   const [editNivelComissao, setEditNivelComissao] = useState<Nivel | ''>('');
   const [editMemberWhatsapp, setEditMemberWhatsapp] = useState<string>('');
   const [editAtuacao, setEditAtuacao] = useState<AtuacaoTipo[]>([...ATUACAO_TIPOS]);
@@ -469,7 +486,8 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
   };
 
   // Abrir modal de edição de permissões
-  const handleOpenEditModal = (member: TenantMember) => {
+  const handleOpenEditModal = (member: TenantMember, foco?: 'dados') => {
+    setFocarDadosAoAbrir(foco === 'dados');
     setEditingMember(member);
     setEditLeaderId(member.leader_user_id ?? null);
     setEditRole(member.role === 'owner' ? 'admin' : (member.role as 'admin' | 'corretor' | 'team_leader'));
@@ -484,6 +502,14 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
     const currentPhoto = (currentPerms as any).photo as string | undefined;
     setEditMemberPhoto(currentPhoto || '');
     setEditMemberCreci(member.creci || '');
+    // Dados cadastrais vivem em tabela própria (PII) — carga assíncrona ao abrir.
+    setEditDados({ ...EMPTY_MEMBER_DADOS });
+    if (tenantId && tenantId !== 'owner' && (isCurrentUserAdmin || member.user_id === currentUser?.id)) {
+      setIsLoadingDados(true);
+      fetchMemberDados(tenantId, member.user_id)
+        .then(setEditDados)
+        .finally(() => setIsLoadingDados(false));
+    }
     setEditNivelComissao(nivelValido((currentPerms as any).nivel_comissao) ?? '');
     const whatsappPhones = (currentPerms as any).whatsapp_phones;
     setEditMemberWhatsapp(Array.isArray(whatsappPhones) ? whatsappPhones.join(', ') : '');
@@ -551,6 +577,17 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
     setIsEditModalOpen(true);
   };
 
+  // Atalho "Dados" do card: o drawer abre no topo, então rolamos até a seção.
+  // O rAF espera o drawer pintar — sem ele o elemento ainda não existe no DOM.
+  useEffect(() => {
+    if (!isEditModalOpen || !focarDadosAoAbrir) return;
+    const raf = requestAnimationFrame(() => {
+      document.getElementById('dados-cadastrais')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setFocarDadosAoAbrir(false);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [isEditModalOpen, focarDadosAoAbrir]);
+
   // Salvar permissões editadas
   const handleSavePermissions = async () => {
     if (!editingMember) return;
@@ -597,6 +634,16 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
       if (!result.success) {
         toast.error(result.error || 'Erro ao salvar permissões');
         return;
+      }
+
+      // Dados cadastrais (tabela separada, RLS própria). Falha aqui não desfaz as
+      // permissões já salvas — avisa e interrompe para o usuário poder tentar de novo.
+      if (podeVerDadosCadastrais && tenantId && tenantId !== 'owner') {
+        const dadosResult = await saveMemberDados(tenantId, editingMember.user_id, editDados);
+        if (!dadosResult.success) {
+          toast.error(dadosResult.error || 'Erro ao salvar dados cadastrais');
+          return;
+        }
       }
 
       // Atualizar cargo se mudou
@@ -1118,8 +1165,8 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
           </div>
         ) : (
           <div
-            className="grid gap-3"
-            style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}
+            className="grid gap-3 items-start"
+            style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}
           >
             {membrosFiltrados.map((membro) => {
               // Verificar se o membro tem dados no banco (tenant_memberships)
@@ -1159,12 +1206,71 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                 }
               };
 
+              const isMetricasAberta = metricasAbertasId === membro.id;
+              // minúsculo porque é assim que a tela de Tarefas monta as opções do
+              // filtro (get_tenant_members → email.toLowerCase()); comparação é exata.
+              const emailCorretor = (tenantMember?.email || membro.email || '').toLowerCase();
+              // Nome sem lixo de encoding — é o que a tela mostra E a chave que as
+              // métricas casam contra `assigned_agent_name` (normalizarNome não
+              // remove \uFFFD, então o nome sujo não bateria com o do banco).
+              const nomeLimpo = (membro.nome || '').replace(/[\uFFFD\u0000-\u001F]/g, '').trim();
+
+              // Atalhos por corretor. Tarefas leva o e-mail na URL porque a tela de
+              // Tarefas filtra por ele; OKRs, KPIs e PDI não têm recorte por pessoa
+              // hoje, então abrem a área (OKRs e PDI ainda são telas "em breve").
+              const atalhos: {
+                id: string;
+                label: string;
+                icon: React.ElementType;
+                onClick: () => void;
+                disabled?: boolean;
+                ativo?: boolean;
+              }[] = [
+                {
+                  id: 'tarefas',
+                  label: 'Tarefas',
+                  icon: ClipboardList,
+                  onClick: () => navigate(`/gestao-equipe?tab=tarefas${emailCorretor ? `&corretor=${encodeURIComponent(emailCorretor)}` : ''}`),
+                },
+                { id: 'okrs', label: 'OKRs', icon: Target, onClick: () => navigate('/gestao-equipe?tab=okrs') },
+                { id: 'kpis', label: 'KPIs', icon: BarChart3, onClick: () => navigate('/leads?tab=kpis') },
+                { id: 'pdi', label: 'PDI', icon: GraduationCap, onClick: () => navigate('/gestao-equipe?tab=pdi') },
+                {
+                  id: 'autorizacoes',
+                  label: 'Autorizações',
+                  icon: Key,
+                  onClick: handleMemberClick,
+                  disabled: !tenantMember,
+                },
+                {
+                  id: 'dados',
+                  label: 'Dados',
+                  icon: FileUser,
+                  onClick: () => tenantMember && handleOpenEditModal(tenantMember, 'dados'),
+                  disabled: !tenantMember,
+                },
+                {
+                  id: 'metricas',
+                  label: isMetricasAberta ? 'Ocultar métricas' : 'Métricas individuais',
+                  icon: LineChart,
+                  onClick: () => setMetricasAbertasId((atual) => (atual === membro.id ? null : membro.id)),
+                  ativo: isMetricasAberta,
+                },
+              ];
+
               return (
+                // Com as métricas abertas o card ocupa a linha inteira do grid —
+                // o painel não cabe na largura de uma coluna.
                 <div
                   key={membro.id}
-                  onClick={handleMemberClick}
-                  className="group relative rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 cursor-pointer p-4 flex items-center gap-3 min-w-0"
+                  className="group relative rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 flex flex-col gap-3 min-w-0"
+                  style={isMetricasAberta ? { gridColumn: '1 / -1' } : undefined}
                 >
+                  {/* Cabeçalho (clique abre o drawer de autorizações, como antes) */}
+                  <div
+                    onClick={handleMemberClick}
+                    className="flex items-center gap-3 min-w-0 cursor-pointer"
+                  >
                   {/* Avatar */}
                   <div className="relative shrink-0">
                     <div className="w-14 h-14 rounded-2xl overflow-hidden bg-gradient-to-br from-blue-600 to-blue-500 shadow-md shadow-blue-500/20 flex items-center justify-center">
@@ -1188,7 +1294,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 mb-0.5">
                       <h3 className="text-[13px] font-semibold text-slate-900 dark:text-slate-100 truncate">
-                        {(membro.nome || '').replace(/[\uFFFD\u0000-\u001F]/g, '').trim() || '—'}
+                        {nomeLimpo || '—'}
                       </h3>
                     </div>
                     <div className="flex items-center gap-1.5">
@@ -1235,6 +1341,40 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                     >
                       <Shield className="h-3.5 w-3.5" />
                     </button>
+                  )}
+                  </div>
+
+                  {/* Atalhos por corretor */}
+                  <div className="grid grid-cols-2 gap-1.5 pt-3 border-t border-slate-100 dark:border-slate-800">
+                    {atalhos.map((atalho) => {
+                      const Icone = atalho.icon;
+                      return (
+                        <button
+                          key={atalho.id}
+                          type="button"
+                          onClick={atalho.onClick}
+                          disabled={atalho.disabled}
+                          title={atalho.disabled ? 'Membro sem cadastro no tenant' : atalho.label}
+                          className={`flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-[11px] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                            atalho.id === 'metricas' ? 'col-span-2 justify-center' : ''
+                          } ${
+                            atalho.ativo
+                              ? 'bg-blue-600 text-white hover:bg-blue-700'
+                              : 'bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100'
+                          }`}
+                        >
+                          <Icone className="h-3.5 w-3.5 shrink-0" />
+                          <span className="truncate">{atalho.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {isMetricasAberta && (
+                    <CorretorMetricasPanel
+                      nome={nomeLimpo}
+                      onAbrirRelatorios={() => navigate('/relatorios?tab=metricas-individuais')}
+                    />
                   )}
                 </div>
               );
@@ -2009,6 +2149,152 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                 className="h-10"
               />
             </div>
+            {/* Dados cadastrais — PII. Só admin/owner ou o próprio membro (mesmo recorte da RLS). */}
+            {podeVerDadosCadastrais && editingMember && (
+              <div id="dados-cadastrais" className="rounded-lg border border-gray-200 dark:border-slate-800 p-4 space-y-4">
+                <div className="flex items-center gap-2">
+                  <IdCard className="h-4 w-4 text-gray-500 dark:text-slate-400" />
+                  <span className="text-sm font-medium text-gray-700 dark:text-slate-300">Dados cadastrais</span>
+                  {isLoadingDados && <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-400" />}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit-rg" className="text-xs">RG</Label>
+                    <Input
+                      id="edit-rg"
+                      value={editDados.rg}
+                      onChange={(e) => setEditDados((d) => ({ ...d, rg: e.target.value }))}
+                      placeholder="Ex: 12.345.678-9"
+                      disabled={isSavingPermissions}
+                      className="h-10"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit-cpf" className="text-xs">CPF</Label>
+                    <Input
+                      id="edit-cpf"
+                      inputMode="numeric"
+                      value={editDados.cpf}
+                      onChange={(e) => setEditDados((d) => ({ ...d, cpf: formatCpf(e.target.value) }))}
+                      placeholder="000.000.000-00"
+                      disabled={isSavingPermissions}
+                      className="h-10"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit-nascimento" className="text-xs">Data de nascimento</Label>
+                    {/* input nativo de data — sem dependência de datepicker */}
+                    <Input
+                      id="edit-nascimento"
+                      type="date"
+                      value={editDados.data_nascimento}
+                      onChange={(e) => setEditDados((d) => ({ ...d, data_nascimento: e.target.value }))}
+                      disabled={isSavingPermissions}
+                      className="h-10"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit-cnpj" className="text-xs">CNPJ (se tiver)</Label>
+                    <Input
+                      id="edit-cnpj"
+                      inputMode="numeric"
+                      value={editDados.cnpj}
+                      onChange={(e) => setEditDados((d) => ({ ...d, cnpj: formatCnpj(e.target.value) }))}
+                      placeholder="00.000.000/0000-00"
+                      disabled={isSavingPermissions}
+                      className="h-10"
+                    />
+                  </div>
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <Label htmlFor="edit-endereco" className="text-xs">Endereço</Label>
+                    <Input
+                      id="edit-endereco"
+                      value={editDados.endereco}
+                      onChange={(e) => setEditDados((d) => ({ ...d, endereco: e.target.value }))}
+                      placeholder="Rua, número, complemento, bairro, cidade/UF, CEP"
+                      disabled={isSavingPermissions}
+                      className="h-10"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-3 pt-1 border-t border-gray-100 dark:border-slate-800">
+                  <span className="text-xs font-medium text-gray-600 dark:text-slate-400 block pt-3">
+                    Dados de recebimento
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1.5 sm:col-span-2">
+                      <Label htmlFor="edit-pix" className="text-xs">Chave PIX</Label>
+                      <Input
+                        id="edit-pix"
+                        value={editDados.pix_chave}
+                        onChange={(e) => setEditDados((d) => ({ ...d, pix_chave: e.target.value }))}
+                        placeholder="CPF, e-mail, telefone ou chave aleatória"
+                        disabled={isSavingPermissions}
+                        className="h-10"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="edit-banco" className="text-xs">Banco</Label>
+                      <Input
+                        id="edit-banco"
+                        value={editDados.banco}
+                        onChange={(e) => setEditDados((d) => ({ ...d, banco: e.target.value }))}
+                        placeholder="Ex: 341 — Itaú"
+                        disabled={isSavingPermissions}
+                        className="h-10"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="edit-titular" className="text-xs">Titular da conta</Label>
+                      <Input
+                        id="edit-titular"
+                        value={editDados.titular}
+                        onChange={(e) => setEditDados((d) => ({ ...d, titular: e.target.value }))}
+                        placeholder="Nome ou razão social"
+                        disabled={isSavingPermissions}
+                        className="h-10"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="edit-agencia" className="text-xs">Agência</Label>
+                      <Input
+                        id="edit-agencia"
+                        value={editDados.agencia}
+                        onChange={(e) => setEditDados((d) => ({ ...d, agencia: e.target.value }))}
+                        placeholder="0000"
+                        disabled={isSavingPermissions}
+                        className="h-10"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="edit-conta" className="text-xs">Conta</Label>
+                      <Input
+                        id="edit-conta"
+                        value={editDados.conta}
+                        onChange={(e) => setEditDados((d) => ({ ...d, conta: e.target.value }))}
+                        placeholder="00000-0"
+                        disabled={isSavingPermissions}
+                        className="h-10"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2 pt-3 border-t border-gray-100 dark:border-slate-800">
+                  <Label className="text-xs">Termo de Associação</Label>
+                  {/* Anexos gravam direto no Storage (bucket privado) — não dependem do botão Salvar. */}
+                  <DocumentosAnexos
+                    bucket="corretor-documentos"
+                    folder={`${tenantId}/${editingMember.user_id}`}
+                    canEdit={!isSavingPermissions}
+                    emptyLabel="Nenhum termo anexado."
+                    uploadLabel="Anexar Termo de Associação (PDF, imagem, Word — até 20MB)"
+                  />
+                </div>
+              </div>
+            )}
             {/* Nível de comissionamento */}
             <div className="space-y-2">
               <Label className="flex items-center gap-2">
