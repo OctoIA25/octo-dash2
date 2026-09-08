@@ -23,6 +23,55 @@ describe('normalizeLeadgen', () => {
     expect(p.phone).toBe('+5511999998888');
   });
 
+  // Lead real da Lótus (leadgen 958220959879077, form "[CAST] Reserva
+  // Castanheira"): o portfólio novo trouxe formulário com as chaves em
+  // português. Antes disso o lead virava 400 "Nome ou telefone é obrigatório".
+  it('reconhece chave em português do anunciante (Nome Completo / Whatsapp)', () => {
+    const p = normalizeLeadgen(lead({
+      field_data: [
+        { name: 'Nome Completo', values: ['José Renato Guimarães Claro'] },
+        { name: 'Whatsapp', values: ['+5519991528350'] },
+        { name: 'email', values: ['jose@exemplo.com'] },
+      ],
+    }), CTX);
+    expect(p.name).toBe('José Renato Guimarães Claro');
+    expect(p.phone).toBe('+5519991528350');
+    expect(p.email).toBe('jose@exemplo.com');
+    expect(p.message).toBeNull(); // nenhum dos três vira "pergunta customizada"
+  });
+
+  it('chave padrão vence a heurística quando as duas existem', () => {
+    const p = normalizeLeadgen(lead({
+      field_data: [
+        { name: 'Seu nome', values: ['Apelido'] },
+        { name: 'full_name', values: ['Maria Silva'] },
+      ],
+    }), CTX);
+    expect(p.name).toBe('Maria Silva');
+    expect(p.message).toContain('Seu nome: Apelido');
+  });
+
+  it('pergunta customizada com "whats" na chave não vira telefone se a resposta não for número', () => {
+    const p = normalizeLeadgen(lead({
+      field_data: [
+        { name: 'full_name', values: ['João'] },
+        { name: 'Prefere contato por Whatsapp?', values: ['Sim'] },
+      ],
+    }), CTX);
+    expect(p.phone).toBeNull();
+    expect(p.message).toContain('Prefere contato por Whatsapp?: Sim');
+  });
+
+  it('CPF em pergunta customizada não é sequestrado como telefone', () => {
+    const p = normalizeLeadgen(lead({
+      field_data: [
+        { name: 'full_name', values: ['João'] },
+        { name: 'CPF', values: ['12345678901'] },
+      ],
+    }), CTX);
+    expect(p.phone).toBeNull();
+  });
+
   it('manda o rótulo em portal, não em source (a rota deriva source de portal)', () => {
     const p = normalizeLeadgen(lead(), CTX);
     expect(p.portal).toBe('Facebook');

@@ -9,11 +9,34 @@
  * Meta são mapeados, o resto é preservado. Formulário novo com pergunta nova
  * não quebra a integração.
  */
-// Duas chaves para telefone porque a Meta usa as duas: a documentação diz
-// `phone_number`, mas os formulários da Japi Lançamentos emitem `phone` (visto
-// em lead real de produção). Aceitar só uma deixa o telefone vazio — e sem
-// telefone a Lia não dispara, que é o ponto do fluxo.
-const STANDARD = new Set(['full_name', 'email', 'phone_number', 'phone']);
+// A CHAVE do campo é texto livre do anunciante, não um enum da Meta. Os
+// formulários antigos vinham com `full_name`/`phone`/`phone_number` (a doc diz
+// um, a Japi Lançamentos emitia outro); o formulário "[CAST] Reserva
+// Castanheira" da Lótus (set/2026) veio com "Nome Completo" e "Whatsapp" —
+// tipos FULL_NAME e PHONE do mesmo jeito, chave em português. Casar só por
+// chave exata perdia nome E telefone, e sem os dois a rota recusa o lead com
+// 400 "Nome ou telefone é obrigatório": 7 leads pagos perdidos antes de alguém
+// notar.
+const EXATAS = { full_name: 'name', email: 'email', phone_number: 'phone', phone: 'phone' };
+
+const semAcento = (s) => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+// ponytail: heurística sobre a chave normalizada. O caminho exato seria ler
+// `questions[].type` do formulário no Graph (FULL_NAME/PHONE/EMAIL), mas é uma
+// chamada extra por lead mais cache por form_id. Se um formulário real escapar
+// daqui, é para lá que se vai.
+function porChave(chave) {
+  const k = semAcento(chave);
+  if (k.includes('mail')) return 'email';
+  if (/whats|phone|fone|celular/.test(k)) return 'phone';
+  if (/name|nome/.test(k)) return 'name';
+  return null;
+}
+
+const ehEmail = (v) => typeof v === 'string' && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v);
+// Só descarta lixo óbvio ("Sim", "80") de uma chave que já parece telefone —
+// não tenta validar número brasileiro, que a rota já normaliza depois.
+const ehTelefone = (v) => typeof v === 'string' && v.replace(/\D/g, '').length >= 8;
 
 // Standard fields always scalar (first value only): name/email/phone are single-value by nature.
 function firstValue(v) {
@@ -37,12 +60,34 @@ export function normalizeLeadgen(lead = {}, ctx = {}) {
     allFields[f.name] = filtered.length === 1 ? filtered[0] : filtered;
   }
 
-  const custom = Object.entries(allFields).filter(([name]) => !STANDARD.has(name));
+  const std = { name: null, email: null, phone: null };
+  const consumidas = new Set();
+  const atribui = (campo, chave) => {
+    if (std[campo] != null) return;
+    const v = firstValue(allFields[chave]);
+    if (v == null) return;
+    if (campo === 'phone' && !ehTelefone(v)) return;
+    if (campo === 'email' && !ehEmail(v)) return;
+    std[campo] = v;
+    consumidas.add(chave);
+  };
+
+  const chaves = Object.keys(allFields);
+  // Chave exata primeiro: numa colisão ("full_name" e "Seu nome" no mesmo
+  // formulário) quem manda é a chave padrão da Meta, não a ordem do field_data.
+  for (const c of chaves) if (EXATAS[c]) atribui(EXATAS[c], c);
+  for (const c of chaves) { const campo = porChave(c); if (campo) atribui(campo, c); }
+  // Rede final só para e-mail: `@` é inequívoco. Não existe equivalente para
+  // telefone — um CPF respondido numa pergunta customizada tem 11 dígitos e
+  // viraria "telefone" do lead.
+  for (const c of chaves) if (!consumidas.has(c)) atribui('email', c);
+
+  const custom = Object.entries(allFields).filter(([name]) => !consumidas.has(name));
 
   return {
-    name: firstValue(allFields.full_name),
-    email: firstValue(allFields.email),
-    phone: firstValue(allFields.phone_number ?? allFields.phone),
+    name: std.name,
+    email: std.email,
+    phone: std.phone,
     // `portal`, não `source`: a rota faz `source: portal || 'API'`. Mandar
     // `source` seria silenciosamente ignorado e todo lead viraria origem "API".
     portal: lead.platform === 'ig' ? 'Instagram' : 'Facebook',
