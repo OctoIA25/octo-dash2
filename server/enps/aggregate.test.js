@@ -26,7 +26,8 @@ function makeSupabase({ responses = [], cycle = { id: 'cyc1', status: 'open' }, 
       }
       // .eq() encadeável e thenable: admin usa 1 eq (tenant), team_leader usa 2 (tenant + líder).
       if (table === 'teams') {
-        const chain = { eq: () => chain, then: (r) => Promise.resolve({ data: teams, error: null }).then(r) };
+        // .or() entrou com o multi-gestor (leader_user_id OU leader_user_ids).
+        const chain = { eq: () => chain, or: () => chain, then: (r) => Promise.resolve({ data: teams, error: null }).then(r) };
         return { select: () => chain };
       }
       if (table === 'survey_cycles') {
@@ -302,6 +303,8 @@ function makeScopeSupabase(tables) {
       select() { return builder; },
       eq() { return builder; },
       in() { return builder; },
+      // `teams` passou a ser buscada com .or() (líder primário OU multi-gestor).
+      or() { return builder; },
       maybeSingle: async () => ({ data: builder._rows[0] ?? null, error: null }),
       then(res) { return Promise.resolve({ data: builder._rows, error: null }).then(res); },
     };
