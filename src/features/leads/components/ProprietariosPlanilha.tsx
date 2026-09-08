@@ -10,9 +10,10 @@
 
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Building2, Mail, Phone, Search } from 'lucide-react';
+import { Building2, Download, Loader2, Mail, Phone, Search } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { OctoDashLoader } from '@/components/ui/OctoDashLoader';
 import {
@@ -40,6 +41,8 @@ import {
   ProprietarioRow,
   listarProprietarios,
 } from '@/features/imoveis/services/proprietarioService';
+import { exportarProprietariosXlsx } from '@/features/imoveis/services/proprietariosExport';
+import { toast } from 'sonner';
 
 const moeda = (v: number) =>
   v > 0
@@ -54,8 +57,13 @@ interface ProprietariosPlanilhaProps {
 }
 
 export function ProprietariosPlanilha({ tipo = 'vendedor' }: ProprietariosPlanilhaProps) {
-  const { user } = useAuth();
+  const { user, isAdmin, tenantName } = useAuth();
   const tenantId = user?.tenantId;
+
+  // Exportar a base de proprietários é dado sensível (nome + telefone + e-mail
+  // de terceiros), então fica com admin/owner. `isAdmin` já é gestao|owner —
+  // team_leader e corretor caem fora.
+  const podeExportar = isAdmin;
 
   const { data: proprietarios = [], isLoading } = useQuery({
     queryKey: ['proprietarios-planilha', tenantId],
@@ -63,6 +71,7 @@ export function ProprietariosPlanilha({ tipo = 'vendedor' }: ProprietariosPlanil
     queryFn: () => listarProprietarios(tenantId as string),
   });
 
+  const [exportando, setExportando] = useState(false);
   const [busca, setBusca] = useState('');
   const [cidadeFiltro, setCidadeFiltro] = useState('todas');
   const [selecionado, setSelecionado] = useState<ProprietarioRow | null>(null);
@@ -91,6 +100,25 @@ export function ProprietariosPlanilha({ tipo = 'vendedor' }: ProprietariosPlanil
         .some((campo) => String(campo).toLowerCase().includes(termo));
     });
   }, [doTipo, busca, cidadeFiltro]);
+
+  const exportar = async () => {
+    if (!podeExportar || exportando) return;
+    setExportando(true);
+    try {
+      // Exporta o que está na tela (filtros aplicados), não a base inteira.
+      const nome = await exportarProprietariosXlsx({
+        proprietarios: filtrados,
+        tipo,
+        tenantName,
+      });
+      toast.success(`Planilha exportada: ${nome}`);
+    } catch (erro) {
+      console.error('[ProprietariosPlanilha] falha ao exportar:', erro);
+      toast.error('Não foi possível gerar a planilha. Tente novamente.');
+    } finally {
+      setExportando(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -126,9 +154,32 @@ export function ProprietariosPlanilha({ tipo = 'vendedor' }: ProprietariosPlanil
             </SelectContent>
           </Select>
 
-          <Badge variant="secondary" className="shrink-0 lg:ml-auto">
-            {filtrados.length} de {doTipo.length}
-          </Badge>
+          <div className="flex items-center gap-3 lg:ml-auto">
+            <Badge variant="secondary" className="shrink-0">
+              {filtrados.length} de {doTipo.length}
+            </Badge>
+
+            {podeExportar && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={exportar}
+                disabled={exportando || filtrados.length === 0}
+                title={
+                  filtrados.length === 0
+                    ? 'Nada para exportar com os filtros atuais'
+                    : 'Baixar em Excel (.xlsx)'
+                }
+              >
+                {exportando ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4 mr-2" />
+                )}
+                Exportar Excel
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 
