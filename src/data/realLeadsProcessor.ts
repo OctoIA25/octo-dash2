@@ -311,6 +311,8 @@ export interface ProcessedLead {
   tipo_negocio: string; // Pode ser string vazia
   tipo_lead?: string; // Novo campo: Comprador, Proprietário, etc.
   corretor_responsavel: string; // Pode ser string vazia
+  /** auth id do corretor. Única chave confiável para ligar lead -> equipe (o nome vem sujo: e-mails, apelidos). Ausente nos leads vindos do Kenlo. */
+  assigned_agent_id?: string | null;
   data_finalizacao: string; // Pode ser string vazia
   valor_final_venda?: number;
   Data_visita: string; // Pode ser string vazia

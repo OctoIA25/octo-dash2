@@ -545,6 +545,7 @@ export function crmLeadToProcessedLead(crmLead: Partial<CRMLead>, index: number 
     tipo_negocio: tipoNegocio,
     tipo_lead: tipoLead,
     corretor_responsavel: crmLead.assigned_agent_name || 'Não atribuído',
+    assigned_agent_id: crmLead.assigned_agent_id ?? null,
     data_finalizacao: crmLead.closing_date || '',
     valor_final_venda: crmLead.final_sale_value || undefined,
     Data_visita: crmLead.visit_date?.split('T')[0] || '',

@@ -63,6 +63,64 @@ describe('buscarRankingCorretoresComercial — uma linha por pessoa', () => {
     expect(ranking[1]).toMatchObject({ ranking: 2, corretor: 'Nathalia Lobo', vendasFeitas: 1 });
   });
 
+  it('rateia a comissão pelo motor Lotus e ordena pela parte do corretor', async () => {
+    const COORD = 'b1a1c0de-0000-4000-8000-000000000001';
+    store.tenant_memberships = [
+      // Pleno (45%) sob Coordenador (teto 60%): 45% corretor, 15% líder, 40% Lotus.
+      { user_id: FERNANDA, role: 'corretor', permissions: { nivel_comissao: 'pleno' }, leader_user_id: COORD },
+      // Coordenador é líder de si mesmo (D062): 60% dele, 40% Lotus.
+      { user_id: COORD, role: 'corretor', permissions: { nivel_comissao: 'coordenador' }, leader_user_id: null },
+    ];
+    store.user_profiles = [
+      { id: FERNANDA, email: 'fernanda@lotus.com', full_name: 'Fernanda Souza', avatar_url: null },
+      { id: COORD, email: 'gabi@lotus.com', full_name: 'Gabriele Fávaro', avatar_url: null },
+    ];
+    store.proposals = [
+      { id: 'p1', value: 400000, commission_total: 20000, signed_at: '2026-01-12T12:00:00-03:00', agent_user_id: FERNANDA, agent_name: 'Fernanda', lead_id: null },
+      { id: 'p2', value: 300000, commission_total: 15000, signed_at: '2026-02-10T12:00:00-03:00', agent_user_id: COORD, agent_name: 'Gabi', lead_id: null },
+    ];
+
+    const ranking = await buscarRankingCorretoresComercial(TENANT, 2026);
+
+    // Gabi recebe 9.000 (60% de 15.000) e Fernanda 9.000 (45% de 20.000) —
+    // empate na parte do corretor, desempatado pela comissão total.
+    expect(ranking[0]).toMatchObject({
+      corretor: 'Fernanda Souza',
+      comissaoTotal: 20000,
+      comissaoCorretor: 9000,
+      comissaoImobiliaria: 8000,
+      ticketMedio: 400000,
+    });
+    expect(ranking[1]).toMatchObject({
+      corretor: 'Gabriele Fávaro',
+      comissaoTotal: 15000,
+      comissaoCorretor: 9000,
+      comissaoImobiliaria: 6000,
+    });
+  });
+
+  it('devolve rateio nulo quando falta nível ou Líder Direto (nunca zero)', async () => {
+    store.tenant_memberships = [
+      // Sem nível cadastrado.
+      { user_id: FERNANDA, role: 'corretor', permissions: {}, leader_user_id: null },
+    ];
+    store.user_profiles = [{ id: FERNANDA, email: 'fernanda@lotus.com', full_name: 'Fernanda Souza', avatar_url: null }];
+    store.proposals = [
+      { id: 'p1', value: 400000, commission_total: 20000, signed_at: '2026-01-12T12:00:00-03:00', agent_user_id: FERNANDA, agent_name: 'Fernanda', lead_id: null },
+      // Pleno sem Líder Direto: o motor bloqueia (L003), não inventa split.
+      { id: 'p2', value: 300000, commission_total: 15000, signed_at: '2026-02-10T12:00:00-03:00', agent_user_id: null, agent_name: 'Nathalia Lobo', lead_id: null },
+    ];
+
+    const ranking = await buscarRankingCorretoresComercial(TENANT, 2026);
+
+    expect(ranking.map((r) => [r.comissaoCorretor, r.comissaoImobiliaria])).toEqual([
+      [null, null],
+      [null, null],
+    ]);
+    // Sem rateio, a ordem cai no VGC — o maior primeiro.
+    expect(ranking[0]).toMatchObject({ corretor: 'Fernanda Souza', comissaoTotal: 20000 });
+  });
+
   it('filtra por mês de referência usando a data de assinatura', async () => {
     store.tenant_memberships = [];
     store.user_profiles = [];

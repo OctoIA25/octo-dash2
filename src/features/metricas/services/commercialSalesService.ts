@@ -1,5 +1,10 @@
 import { supabase } from '@/lib/supabaseClient';
 import {
+  calcularComissao,
+  nivelValido,
+  type Nivel,
+} from '@/features/comissionamento/commissionRules';
+import {
   agruparPorCorretor,
   agruparPorMes,
   buscarVendasAssinadas,
@@ -36,6 +41,9 @@ interface CommercialSalesUserProfile {
 
 interface CommercialSalesTenantMember {
   user_id: string;
+  /** `permissions.nivel_comissao` — entrada do rateio (Gestão de Equipe). */
+  permissions?: { nivel_comissao?: unknown } | null;
+  leader_user_id?: string | null;
   email?: string | null;
   name?: string | null;
   user_email?: string | null;
@@ -48,6 +56,9 @@ interface CommercialSalesUserMatch {
   displayName: string;
   email: string | null;
   avatarUrl: string | null;
+  /** Nível §2 do comissionamento. `null` quando não foi cadastrado. */
+  nivel: Nivel | null;
+  liderUserId: string | null;
 }
 
 export interface CommercialSalesSyncParams {
@@ -121,7 +132,13 @@ export interface CommercialSalesBrokerRanking {
   vendasFeitas: number;
   vgvTotal: number;
   vgcTotal: number;
+  /** Comissão total das vendas (VGC) — o bolo inteiro, antes do rateio. */
   comissaoTotal: number;
+  /** Parte do corretor no rateio. `null` = nível/líder não cadastrado. */
+  comissaoCorretor: number | null;
+  /** O que fica com a imobiliária (papel "lotus" do motor). `null` idem. */
+  comissaoImobiliaria: number | null;
+  /** Preço médio de venda: VGV / vendas. */
   ticketMedio: number;
   fotoUrl?: string;
 }
@@ -598,7 +615,75 @@ export async function buscarVendasComerciaisPorFonte(
 }
 
 /**
- * Ranking de corretores por comissão das vendas assinadas.
+ * Rateio da comissão pelo motor Lotus (`commissionRules`) — o mesmo cálculo que
+ * o espelho do Drive escreve nas colunas "Corretor R$" / "Lotus R$".
+ *
+ * `proposals` só conhece UM corretor por venda, então a operação é modelada
+ * como lançamento sem parceria: ponta única de intermediação. É a mesma
+ * simplificação de `server/reportMirror/motor.js`, pinada pelo teste de
+ * paridade — revenda com duas pontas e parceria continuam sendo caso da
+ * calculadora, onde o usuário informa quem atendeu cada ponta.
+ *
+ * O split é linear no valor, então roda uma vez sobre a comissão somada do
+ * corretor em vez de venda a venda.
+ *
+ * Devolve `null` quando o motor bloqueia (nível ou Líder Direto não
+ * cadastrado): a tela mostra "—", nunca R$ 0,00 — zero seria afirmar que a
+ * pessoa não recebeu nada.
+ */
+function ratearComissao(
+  comissaoTotal: number,
+  match: CommercialSalesUserMatch | null,
+  byId: Map<string, CommercialSalesUserMatch>,
+): { corretor: number; imobiliaria: number } | null {
+  if (!match?.nivel) return null;
+
+  const lider = match.liderUserId ? byId.get(match.liderUserId) : null;
+  const resultado = calcularComissao({
+    tipo: 'lancamento',
+    comissaoTotal,
+    // Líder sem nível cadastrado entra como ausente — aí o motor decide: o
+    // Sênior/Coordenador é líder de si mesmo, os demais bloqueiam (D062).
+    intermediacao: {
+      nome: match.displayName,
+      nivel: match.nivel,
+      liderDireto: lider?.nivel ? { nome: lider.displayName, nivel: lider.nivel } : null,
+    },
+  });
+
+  if (resultado.bloqueio) return null;
+
+  const somar = (papel: 'corretor' | 'lotus') =>
+    resultado.linhas.filter((linha) => linha.papel === papel).reduce((soma, linha) => soma + linha.valor, 0);
+
+  return { corretor: somar('corretor'), imobiliaria: somar('lotus') };
+}
+
+/**
+ * Rateio Lotus da comissão de UM corretor — mesma resolução de identidade e
+ * mesmo motor do ranking, para que o painel individual e a linha do ranking não
+ * discordem sobre quanto a pessoa recebeu no mesmo período.
+ *
+ * `chave` é o que a tela tem em mãos: o `user_id` (UUID) ou o nome exibido.
+ */
+export async function ratearComissaoDoCorretor(
+  tenantId: string,
+  chave: string,
+  comissaoTotal: number,
+): Promise<{ corretor: number; imobiliaria: number } | null> {
+  const resolver = await buscarResolverUsuariosComerciais(tenantId);
+  const match =
+    resolver.byId.get(chave.trim()) || resolver.byName.get(normalizeCommercialKey(chave)) || null;
+
+  return ratearComissao(comissaoTotal, match, resolver.byId);
+}
+
+/**
+ * Ranking de corretores pela comissão das vendas assinadas.
+ *
+ * Ordenado pela parte DO CORRETOR (rateio Lotus), como a aba RANKING da
+ * planilha — lá cada linha é o que a pessoa recebeu, não o VGC da venda. O
+ * VGC continua na resposta, agora ao lado do líquido da imobiliária.
  *
  * Origem trocada de `commercial_sales` para `proposals` em 02/09/2026. Além de
  * voltar a enxergar venda nova, some a duplicação que a planilha carregava: o
@@ -639,6 +724,8 @@ export async function buscarRankingCorretoresComercial(
         resolver.byName.get(normalizeCommercialKey(corretor.agentNome)) ||
         null;
 
+      const rateio = ratearComissao(corretor.vgc, match, resolver.byId);
+
       return {
         corretor: match?.displayName || corretor.agentNome || 'Não informado',
         userId: match?.userId || corretor.agentUserId || undefined,
@@ -648,12 +735,16 @@ export async function buscarRankingCorretoresComercial(
         // Na planilha "Comiss. total da venda" era a própria coluna de VGC —
         // o campo continua existindo para não quebrar quem já o consome.
         comissaoTotal: corretor.vgc,
+        comissaoCorretor: rateio?.corretor ?? null,
+        comissaoImobiliaria: rateio?.imobiliaria ?? null,
         ticketMedio: corretor.vendas > 0 ? corretor.vgv / corretor.vendas : 0,
         fotoUrl: match?.avatarUrl || undefined,
         ranking: 0,
       };
     })
-    .sort((a, b) => b.comissaoTotal - a.comissaoTotal)
+    // Ordena pela parte do corretor, como a aba RANKING da planilha. Quem está
+    // sem rateio cai para o fim (não dá para comparar) e lá se ordena pelo VGC.
+    .sort((a, b) => (b.comissaoCorretor ?? -1) - (a.comissaoCorretor ?? -1) || b.comissaoTotal - a.comissaoTotal)
     .map((corretor, index) => ({ ...corretor, ranking: index + 1 }));
 }
 
@@ -814,6 +905,8 @@ async function buscarResolverUsuariosComerciais(tenantId: string) {
       displayName,
       email: profile?.email || member.email || member.user_email || null,
       avatarUrl: profile?.avatar_url || null,
+      nivel: nivelValido(member.permissions?.nivel_comissao),
+      liderUserId: member.leader_user_id ?? null,
     };
 
     byId.set(member.user_id, match);

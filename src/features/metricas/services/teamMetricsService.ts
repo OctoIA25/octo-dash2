@@ -3,6 +3,20 @@ import { supabase } from '@/lib/supabaseClient';
 const CACHE_DURATION = 5 * 60 * 1000;
 const DEFAULT_TEAM_COLOR = '#6b7280';
 
+// `teams.color` guarda o slug escolhido na tela de Equipes ('verde', 'azul'...),
+// não um valor CSS. Os gráficos precisam do hex.
+const TEAM_COLOR_HEX: Record<string, string> = {
+  verde: '#22c55e',
+  vermelha: '#ef4444',
+  amarela: '#eab308',
+  azul: '#3b82f6',
+};
+
+export function resolveTeamColor(color?: string | null): string {
+  if (!color) return DEFAULT_TEAM_COLOR;
+  return TEAM_COLOR_HEX[color.trim().toLowerCase()] || color;
+}
+
 export interface TeamMetricInfo {
   id: string;
   name: string;
@@ -223,7 +237,7 @@ export async function buscarMapaEquipesPorTenant(tenantId?: string): Promise<Tea
   const teams = ((teamsData || []) as any[]).map((team) => ({
     id: team.id,
     name: team.name || 'Equipe sem nome',
-    color: team.color || DEFAULT_TEAM_COLOR,
+    color: resolveTeamColor(team.color),
   }));
 
   const teamById = new Map(teams.map((team) => [team.id, team]));
