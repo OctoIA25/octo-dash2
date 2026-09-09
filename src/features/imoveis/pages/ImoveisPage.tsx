@@ -16,7 +16,7 @@ import { LancamentosTab } from '@/components/imoveis/LancamentosTab';
 import { ConstrutorasTab } from '@/components/imoveis/ConstrutorasTab';
 import { CriarImovelForm } from '@/components/imoveis/CriarImovelForm';
 import { ImovelDetalhesModal } from '@/components/imoveis/ImovelDetalhesModal';
-import { normalizeFotos } from '@/components/imoveis/fotos-helpers';
+import { buildEditDataFromLocal } from '@/features/imoveis/utils/buildEditDataFromLocal';
 import { Imovel } from '../services/kenloService';
 import { resolverCaptador, matchCaptadorFilter, CAPTADOR_FILTRO_TODOS, CAPTADOR_FILTRO_SEM } from '../utils/captador';
 import { convertLocalToImovel } from '../utils/convertLocalToImovel';
@@ -216,6 +216,10 @@ interface ImovelLocal {
   sem_marca_dagua?: boolean | null;
   logradouro?: string | null;
   numero?: string | null;
+  complemento?: string | null;
+  condominio_id?: string | null;
+  metragem_m2?: number | null;
+  exclusivo?: boolean | null;
   salas?: number | null;
   aceita_troca?: boolean | null;
   link_video?: string | null;
@@ -241,64 +245,6 @@ interface ImovelLocal {
   criado_por?: string | null;
   updated_at?: string | null;
 }
-
-// Converte o registro local (imoveis_locais) no formato de initialData esperado
-// pelo CriarImovelForm em modo edição.
-const buildEditDataFromLocal = (local: ImovelLocal) => {
-  return {
-    codigo_imovel: local.codigo_imovel,
-    tipo: local.tipo || '',
-    finalidade: (local.finalidade || '') as 'residencial' | 'comercial' | 'industrial' | 'rural' | 'temporada' | 'corporativa' | '',
-    bairro: local.bairro || '',
-    cidade: local.cidade || '',
-    estado: local.estado || 'SP',
-    // Sem isto o upsert de edição gravaria cep: null e apagaria o CEP existente
-    cep: local.cep || '',
-    logradouro: local.logradouro || '',
-    numero: local.numero || '',
-    area_total: local.area_total ? String(local.area_total) : '',
-    area_util: local.area_util ? String(local.area_util) : '',
-    quartos: local.quartos ? String(local.quartos) : '',
-    suites: local.suites ? String(local.suites) : '',
-    banheiros: local.banheiros ? String(local.banheiros) : '',
-    vagas: local.vagas ? String(local.vagas) : '',
-    valor_venda: local.valor_venda ? String(local.valor_venda) : '',
-    valor_locacao: local.valor_locacao ? String(local.valor_locacao) : '',
-    valor_condominio: local.valor_condominio ? String(local.valor_condominio) : '',
-    valor_iptu: local.valor_iptu ? String(local.valor_iptu) : '',
-    titulo: local.titulo || '',
-    descricao: local.descricao || '',
-    // Linhas antigas (anteriores à coluna) vêm com publicar_site true por default.
-    anunciar: (local.publicar_site ? 'sim' : 'nao') as 'sim' | 'nao',
-    destaque: (local.destaque ? 'sim' : 'nao') as 'sim' | 'nao',
-    super_destaque: (local.super_destaque ? 'sim' : 'nao') as 'sim' | 'nao',
-    fotos: normalizeFotos(local.fotos),
-    sem_marca_dagua: local.sem_marca_dagua === true,
-    caracteristicas: [
-      ...(Array.isArray(local.area_privativa) ? local.area_privativa : []),
-      ...(Array.isArray(local.area_comum) ? local.area_comum : []),
-    ],
-    aceita_troca: local.aceita_troca ? 'sim' : 'nao',
-    link_video: local.link_video || '',
-    tour_virtual: local.tour_virtual || '',
-    salas: local.salas ? String(local.salas) : '',
-    status_aprovacao: local.status_aprovacao,
-    captador_id: local.captador_id || '',
-    captador_2_id: local.captador_2_id || '',
-    obs_interna: local.obs_interna || '',
-    // Sem isto o upsert de edição gravaria proprietario_* = null e apagaria o
-    // dono do imóvel a cada salvamento (mesmo caso do CEP acima).
-    proprietario_nome: local.proprietario_nome || '',
-    proprietario_celular: local.proprietario_telefone || '',
-    proprietario_tel_residencial: local.proprietario_tel_residencial || '',
-    proprietario_tel_comercial: local.proprietario_tel_comercial || '',
-    proprietario_email: local.proprietario_email || '',
-  chave_status: local.chave_status || '',
-  chave_local: local.chave_local || '',
-  chave_com: local.chave_com || '',
-  chave_retirada_em: local.chave_retirada_em || '',
-  };
-};
 
 export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
   const { user } = useAuth();

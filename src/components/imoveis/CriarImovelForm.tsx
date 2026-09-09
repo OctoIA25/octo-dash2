@@ -12,6 +12,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { uploadImoveisFotos } from '@/lib/uploadImoveisFotos';
 import { watermarkPhotoUrl } from '@/lib/watermarkUpload';
 import { normalizeFotos } from './fotos-helpers';
+import { formatCurrency, parseCurrency } from '@/features/imoveis/utils/buildEditDataFromLocal';
 import { FotosUploader } from './FotosUploader';
 import { PropertyCompleteness } from './PropertyCompleteness';
 import { isHttpUrl, normalizeYouTubeUrl } from '@/features/imoveis/utils/mediaUrls';
@@ -132,7 +133,10 @@ interface ImovelFormData {
   bairro: string;
   cidade: string;
   estado: string;
+  /** Nome do condomínio — o que o select exibe. */
   condominio: string;
+  /** `imoveis_locais.condominio_id` — é ele que é salvo; o nome é só display. */
+  condominio_id: string;
   
   // Características
   area_total: string;
@@ -224,6 +228,7 @@ const initialFormData: ImovelFormData = {
   cidade: '',
   estado: 'SP',
   condominio: '',
+  condominio_id: '',
   area_total: '',
   area_util: '',
   area_terreno: '',
@@ -509,6 +514,19 @@ export const CriarImovelForm = ({
     }
   }, [tenantId, isOpen]);
 
+  // O initialData da edição traz `condominio_id`; o select é por nome e a lista
+  // de condomínios carrega em paralelo. Assim que ela chega, resolve o nome e
+  // as metragens do condomínio atual.
+  useEffect(() => {
+    if (!isOpen || !formData.condominio_id || condominios.length === 0) return;
+    const cond = condominios.find(c => c.id === formData.condominio_id);
+    if (!cond) return;
+    if (formData.condominio !== cond.nome) {
+      setFormData(prev => ({ ...prev, condominio: cond.nome }));
+    }
+    setMetragensDisponiveis(cond.metragens_disponiveis || []);
+  }, [condominios, formData.condominio_id, formData.condominio, isOpen]);
+
   // Gerar código automaticamente quando o tipo mudar
   const generateCodigoImovel = async (tipo: string, skipCurrentCode = false) => {
     if (!tenantId || !tipo) {
@@ -783,21 +801,9 @@ export const CriarImovelForm = ({
     }
   };
 
-  const formatCurrency = (value: string): string => {
-    const numbers = value.replace(/\D/g, '');
-    if (!numbers) return '';
-    const amount = parseInt(numbers) / 100;
-    return amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
-  };
-
   const handleCurrencyInput = (field: keyof ImovelFormData, value: string) => {
     const formatted = formatCurrency(value);
     handleInputChange(field, formatted);
-  };
-
-  const parseCurrency = (value: string): number => {
-    if (!value) return 0;
-    return parseFloat(value.replace(/\./g, '').replace(',', '.')) || 0;
   };
 
   // Aplica os dados de um proprietário existente clicado no autocomplete
@@ -1038,11 +1044,6 @@ export const CriarImovelForm = ({
       finalidadeExibicao = 'locacao';
     }
 
-    // Buscar ID do condomínio se selecionado
-    const condominioSelecionado = formData.condominio 
-      ? condominios.find(c => c.nome === formData.condominio)
-      : null;
-
     const imovelLocal = {
       tenant_id: tenantId,
       codigo_imovel: codigoImovel,
@@ -1058,7 +1059,7 @@ export const CriarImovelForm = ({
       cidade: formData.cidade || null,
       estado: formData.estado || 'SP',
       cep: formData.cep || null,
-      condominio_id: condominioSelecionado?.id || null,
+      condominio_id: formData.condominio_id || null,
       area_total: parseFloat(formData.area_total) || 0,
       area_util: parseFloat(formData.area_util) || 0,
       metragem_m2: formData.metragem_m2 ? parseFloat(formData.metragem_m2) : null,
@@ -1086,8 +1087,28 @@ export const CriarImovelForm = ({
       proprietario_tel_residencial: formData.proprietario_tel_residencial || null,
       proprietario_tel_comercial: formData.proprietario_tel_comercial || null,
       proprietario_email: formData.proprietario_email || null,
-      criado_por: user?.id || null,
+      // Só no cadastro: no upsert de edição isto sobrescrevia o autor original
+      // pelo editor, e com ele o dono perdia o próprio gate de podeEditarImovel.
+      ...(isEdit ? {} : { criado_por: user?.id || null }),
       obs_interna: formData.obs_interna || null,
+      // Estes 16 a tela sempre coletou e o save jogava fora — as colunas só
+      // existem a partir de 20260909_imovel_campos_do_formulario.sql.
+      midia_origem: formData.midia_origem || null,
+      envio_atividades: formData.envio_atividades || null,
+      pais: formData.pais || null,
+      area_terreno: formData.area_terreno ? parseFloat(formData.area_terreno) : null,
+      placa_local: formData.placa_local === 'sim',
+      tipo_comissao: formData.tipo_comissao || null,
+      captou_pretensao: formData.captou_pretensao || null,
+      condicao_comercial: formData.condicao_comercial || null,
+      codigo_iptu: formData.codigo_iptu || null,
+      numero_matricula: formData.numero_matricula || null,
+      codigo_eletricidade: formData.codigo_eletricidade || null,
+      codigo_agua: formData.codigo_agua || null,
+      titulos_direitos: formData.titulos_direitos || null,
+      aprovado_ambiental: formData.aprovado_ambiental || null,
+      projeto_aprovado: formData.projeto_aprovado || null,
+      obs_documentacao: formData.obs_documentacao || null,
       chave_status: formData.chave_status || null,
       chave_local: formData.chave_local || null,
       // chave_retirada_em fica de fora de propósito: o trigger carimba a data
@@ -1511,20 +1532,18 @@ export const CriarImovelForm = ({
                       value={formData.condominio || "none"}
                       onValueChange={(value) => {
                         const condominioNome = value === "none" ? "" : value;
+                        const condSelecionado = condominioNome
+                          ? condominios.find(c => c.nome === condominioNome)
+                          : null;
                         handleInputChange('condominio', condominioNome);
-                        
-                        // Carregar metragens do condomínio selecionado
-                        if (condominioNome) {
-                          const condSelecionado = condominios.find(c => c.nome === condominioNome);
-                          if (condSelecionado && condSelecionado.metragens_disponiveis) {
-                            setMetragensDisponiveis(condSelecionado.metragens_disponiveis);
-                          } else {
-                            setMetragensDisponiveis([]);
-                          }
-                        } else {
-                          setMetragensDisponiveis([]);
-                          handleInputChange('metragem_m2', '');
-                        }
+                        // O id é o que vai pro banco: sem ele, reabrir a edição
+                        // perdia o condomínio (o select é por nome).
+                        setFormData(prev => ({
+                          ...prev,
+                          condominio_id: condSelecionado?.id || '',
+                          metragem_m2: condominioNome ? prev.metragem_m2 : '',
+                        }));
+                        setMetragensDisponiveis(condSelecionado?.metragens_disponiveis || []);
                       }}
                     >
                       <SelectTrigger>
@@ -1544,7 +1563,11 @@ export const CriarImovelForm = ({
                     <Input
                       placeholder={isLoadingCondominios ? "Carregando..." : "Digite o nome do condomínio"}
                       value={formData.condominio}
-                      onChange={(e) => handleInputChange('condominio', e.target.value)}
+                      onChange={(e) => {
+                        // Digitado à mão não tem id — não pode herdar o do registro salvo.
+                        handleInputChange('condominio', e.target.value);
+                        setFormData(prev => ({ ...prev, condominio_id: '' }));
+                      }}
                       disabled={isLoadingCondominios}
                     />
                   )}
