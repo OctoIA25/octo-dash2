@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, ChevronDown, Users, UserPlus, Shield, User, Loader2, Trash2, Mail, Lock, Unlock, Camera, AlertTriangle, CheckCircle, Settings, Info, Ban, X, IdCard, Building2, Phone, ClipboardList, Target, BarChart3, GraduationCap, Key, FileUser, LineChart } from 'lucide-react';
+import { Search, ChevronDown, Users, UserPlus, Shield, User, Loader2, Trash2, Mail, Lock, Unlock, Camera, AlertTriangle, CheckCircle, Settings, Info, Ban, X, IdCard, Building2, Phone, ClipboardList, Target, BarChart3, GraduationCap, Key, FileUser, LineChart, Brain } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import {
@@ -22,11 +22,14 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { useAuth } from "@/hooks/useAuth";
-import { fetchTenantMembers, createTenantMember, updateMemberRole, removeTenantMember, updateMemberPermissions, updateMemberLeader, deleteMemberCompletely, adminUpdateMemberPassword, adminUpdateMemberEmail, type TenantMember } from '../services/tenantMembersService';
+import { podeAlterarTelefoneDe } from '../domain/memberPhonePermission';
+import { fetchTenantMembers, createTenantMember, updateMemberRole, removeTenantMember, updateMemberPermissions, updateMemberWhatsappPhones, updateMemberLeader, deleteMemberCompletely, adminUpdateMemberPassword, adminUpdateMemberEmail, type TenantMember } from '../services/tenantMembersService';
 import { fetchTeams, toggleTeamLeader, type Team } from '../services/teamsManagementService';
 import { fetchMemberDados, saveMemberDados, EMPTY_MEMBER_DADOS, type MemberDados } from '../services/memberDadosService';
 import { DocumentosAnexos } from '@/components/DocumentosAnexos';
 import { CorretorMetricasPanel } from './CorretorMetricasPanel';
+import { CorretorPainel } from '@/features/personalidade/admin/components/CorretorPainel';
+import { buscarCorretorPorEmail } from '../services/buscarCorretorPorEmailService';
 import { formatCpf, formatCnpj } from '@/lib/documentoMasks';
 import { useLateralDrawer } from '@/hooks/useLateralDrawer';
 import { SidebarPermission, ATUACAO_TIPOS, ATUACAO_LABELS, atuacoesDe, comPermissoesNaoEditaveis, type AtuacaoTipo } from '@/types/permissions';
@@ -104,7 +107,7 @@ const toggleAtuacao = (lista: AtuacaoTipo[], tipo: AtuacaoTipo): AtuacaoTipo[] =
     : ATUACAO_TIPOS.filter((t) => t === tipo || lista.includes(t));
 
 export const EquipeSection = ({ leads }: EquipeSectionProps) => {
-  const { tenantId, tenantCode, user: currentUser } = useAuth() as any;
+  const { tenantId, tenantCode, user: currentUser, isAdmin } = useAuth() as any;
   const navigate = useNavigate();
   const isCurrentUserAdmin = currentUser?.systemRole === 'admin' || currentUser?.systemRole === 'owner';
 
@@ -163,6 +166,10 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
   const [isLoadingDados, setIsLoadingDados] = useState(false);
   // Card expandido com o painel de métricas (um por vez — a busca é por corretor).
   const [metricasAbertasId, setMetricasAbertasId] = useState<string | null>(null);
+  // Drawer de perfil comportamental (DISC/MBTI/Eneagrama + relatórios da Elaine).
+  // Mesmo painel do drill-down de "Resultados da Equipe" — só muda por onde se abre.
+  const [perfilComportamental, setPerfilComportamental] = useState<{ id: number; nome: string } | null>(null);
+  const [buscandoPerfilId, setBuscandoPerfilId] = useState<string | null>(null);
   // Quando o drawer é aberto pelo atalho "Dados", rola até a seção de dados cadastrais.
   const [focarDadosAoAbrir, setFocarDadosAoAbrir] = useState(false);
   // Espelha a RLS de tenant_member_dados: admin/owner do tenant, ou o próprio membro.
@@ -184,6 +191,16 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
   const [credentialsEmail, setCredentialsEmail] = useState('');
   const [credentialsNewPassword, setCredentialsNewPassword] = useState('');
   const [isSavingCredentials, setIsSavingCredentials] = useState(false);
+
+  // Quem pode alterar o número de WhatsApp do membro aberto (regra em
+  // domain/memberPhonePermission, espelhando a RPC set_member_whatsapp_phones).
+  const podeEditarTelefone = podeAlterarTelefoneDe({
+    alvo: editingMember,
+    usuarioId: currentUser?.id,
+    isTenantAdmin: isCurrentUserAdmin,
+    minhaRole: tenantMembers.find((m) => m.user_id === currentUser?.id)?.role,
+    equipes: teams,
+  });
 
   // ---- Lead Limit Config ----
   const [leadLimitConfig, setLeadLimitConfig] = useState<TenantLeadLimitConfig | null>(null);
@@ -577,6 +594,28 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
     setIsEditModalOpen(true);
   };
 
+  // Atalho "Comportamental": o card vive em tenant_memberships (uuid) e os testes
+  // vivem na tabela `Corretores` (id numérico) — o e-mail é a ponte.
+  // O serviço tem fallbacks por nome que podem cair no corretor ERRADO; aqui isso
+  // significaria mostrar o perfil de outra pessoa, então só aceitamos e-mail igual.
+  const abrirPerfilComportamental = useCallback(async (membroId: string, email: string, nome: string) => {
+    if (!email) {
+      toast.error('Membro sem e-mail — não dá para localizar os testes.');
+      return;
+    }
+    setBuscandoPerfilId(membroId);
+    try {
+      const corretor = await buscarCorretorPorEmail(email);
+      if (!corretor || (corretor.email || '').toLowerCase() !== email) {
+        toast.error('Este membro ainda não tem cadastro na base de testes comportamentais.');
+        return;
+      }
+      setPerfilComportamental({ id: corretor.id, nome: nome || corretor.nome });
+    } finally {
+      setBuscandoPerfilId(null);
+    }
+  }, []);
+
   // Atalho "Dados" do card: o drawer abre no topo, então rolamos até a seção.
   // O rAF espera o drawer pintar — sem ele o elemento ainda não existe no DOM.
   useEffect(() => {
@@ -603,6 +642,40 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
     const numeroInvalido = whatsappPhones.find((p) => p.replace(/\D/g, '').length < 10);
     if (numeroInvalido) {
       toast.error(`Número de WhatsApp incompleto: "${numeroInvalido}". Use DDD + número.`);
+      return;
+    }
+
+    // Sem poder de admin no tenant, o único campo gravável deste drawer é o
+    // número (RPC própria) — e os dados cadastrais do próprio membro, que têm
+    // RLS separada. O resto nem aparece na tela.
+    if (!isCurrentUserAdmin) {
+      if (!podeEditarTelefone) {
+        toast.error('Você não pode alterar o número deste membro.');
+        return;
+      }
+      setIsSavingPermissions(true);
+      try {
+        const phoneResult = await updateMemberWhatsappPhones(editingMember.id, whatsappPhones);
+        if (!phoneResult.success) {
+          toast.error(phoneResult.error || 'Erro ao salvar o número');
+          return;
+        }
+        if (podeVerDadosCadastrais && tenantId && tenantId !== 'owner') {
+          const dadosResult = await saveMemberDados(tenantId, editingMember.user_id, editDados);
+          if (!dadosResult.success) {
+            toast.error(dadosResult.error || 'Erro ao salvar dados cadastrais');
+            return;
+          }
+        }
+        toast.success('Número de WhatsApp atualizado!');
+        setIsEditModalOpen(false);
+        setEditingMember(null);
+        loadTenantMembers();
+      } catch (error) {
+        toast.error('Erro ao salvar o número');
+      } finally {
+        setIsSavingPermissions(false);
+      }
       return;
     }
 
@@ -1249,6 +1322,17 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                   onClick: () => tenantMember && handleOpenEditModal(tenantMember, 'dados'),
                   disabled: !tenantMember,
                 },
+                // Perfil comportamental: só para quem já enxerga a área de testes
+                // (mesmo gate de /admin-testes: isGestao || isOwner).
+                ...(isAdmin
+                  ? [{
+                      id: 'comportamental',
+                      label: buscandoPerfilId === membro.id ? 'Abrindo…' : 'Comportamental',
+                      icon: Brain,
+                      onClick: () => abrirPerfilComportamental(membro.id, emailCorretor, nomeLimpo),
+                      disabled: buscandoPerfilId === membro.id,
+                    }]
+                  : []),
                 {
                   id: 'metricas',
                   label: isMetricasAberta ? 'Ocultar métricas' : 'Métricas individuais',
@@ -1356,7 +1440,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                           disabled={atalho.disabled}
                           title={atalho.disabled ? 'Membro sem cadastro no tenant' : atalho.label}
                           className={`flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-[11px] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-                            atalho.id === 'metricas' ? 'col-span-2 justify-center' : ''
+                            atalho.id === 'metricas' || atalho.id === 'comportamental' ? 'col-span-2 justify-center' : ''
                           } ${
                             atalho.ativo
                               ? 'bg-blue-600 text-white hover:bg-blue-700'
@@ -1387,6 +1471,13 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
           Exibindo {membrosFiltrados.length} de {membrosEquipe.length} pessoas
         </div>
       </div>
+
+      {/* Perfil comportamental do corretor (mesmo painel de Resultados da Equipe) */}
+      <CorretorPainel
+        corretorId={perfilComportamental?.id ?? null}
+        corretorNome={perfilComportamental?.nome ?? ''}
+        onClose={() => setPerfilComportamental(null)}
+      />
 
       {/* Drawer lateral: Novo Membro */}
       {isNewMemberModalOpen && (
@@ -1881,7 +1972,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
               <div className="min-w-0">
                 <h2 className="text-base font-semibold text-gray-900 dark:text-slate-100 flex items-center gap-2">
                   <Shield className="h-5 w-5 text-[#1a5276]" />
-                  Gerenciar Permissões
+                  {isCurrentUserAdmin ? 'Gerenciar Permissões' : 'Dados do membro'}
                 </h2>
                 <p className="text-xs text-gray-500 dark:text-slate-400 mt-1 truncate">
                   {editingMember?.email} — {editRole === 'admin' ? 'Administrador' : editRole === 'team_leader' ? 'Líder de Equipe' : 'Corretor'}
@@ -1906,6 +1997,11 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
 
             {/* Corpo scrollable */}
             <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
+            {/* Tudo abaixo é gestão de acesso do membro: só admin/owner do tenant
+                grava (policy memberships_update_tenant_admin). Corretor e gestor
+                abrem este drawer apenas pelo número de WhatsApp. */}
+            {isCurrentUserAdmin && (
+              <>
             {/* Cargo do membro */}
             <div className="rounded-lg border border-gray-200 dark:border-slate-800 p-4 bg-gray-50/40 dark:bg-slate-900/40">
               <div className="flex items-center gap-2 mb-3">
@@ -2149,6 +2245,8 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                 className="h-10"
               />
             </div>
+              </>
+            )}
             {/* Dados cadastrais — PII. Só admin/owner ou o próprio membro (mesmo recorte da RLS). */}
             {podeVerDadosCadastrais && editingMember && (
               <div id="dados-cadastrais" className="rounded-lg border border-gray-200 dark:border-slate-800 p-4 space-y-4">
@@ -2295,6 +2393,8 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                 </div>
               </div>
             )}
+            {isCurrentUserAdmin && (
+              <>
             {/* Nível de comissionamento */}
             <div className="space-y-2">
               <Label className="flex items-center gap-2">
@@ -2318,6 +2418,8 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                 Preenche automaticamente o nível ao selecionar este membro na calculadora de Comissionamento.
               </p>
             </div>
+              </>
+            )}
             {/* Números de WhatsApp (obrigatório) */}
             <div className="space-y-2">
               <Label htmlFor="edit-whatsapp" className="flex items-center gap-2">
@@ -2330,13 +2432,17 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                 placeholder="Ex: (11) 99999-8888, (11) 97777-6666"
                 value={editMemberWhatsapp}
                 onChange={(e) => setEditMemberWhatsapp(e.target.value)}
-                disabled={isSavingPermissions}
+                disabled={isSavingPermissions || !podeEditarTelefone}
                 className="h-10"
               />
               <p className="text-xs text-gray-500 dark:text-slate-400">
-                Separe mais de um número por vírgula. Apenas os números definidos aqui contam no filtro "Corretores" do WhatsApp.
+                {podeEditarTelefone
+                  ? 'Separe mais de um número por vírgula. Apenas os números definidos aqui contam no filtro "Corretores" do WhatsApp.'
+                  : 'Só o próprio corretor, o gestor da equipe dele ou um administrador podem alterar este número.'}
               </p>
             </div>
+            {isCurrentUserAdmin && (
+              <>
             {/* Atuação */}
             <div className="space-y-2">
               <Label className="flex items-center gap-2">
@@ -2778,6 +2884,8 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                 )}
               </div>
             </div>
+              </>
+            )}
           </div>
 
             {/* Footer fixo */}
@@ -2791,7 +2899,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
               </Button>
               <Button
                 onClick={handleSavePermissions}
-                disabled={isSavingPermissions}
+                disabled={isSavingPermissions || (!isCurrentUserAdmin && !podeEditarTelefone)}
                 className="bg-[#1a5276] hover:bg-[#154360] text-white"
               >
                 {isSavingPermissions ? (
@@ -2802,7 +2910,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                 ) : (
                   <>
                     <Shield className="h-4 w-4 mr-2" />
-                    Salvar Permissões
+                    {isCurrentUserAdmin ? 'Salvar Permissões' : 'Salvar'}
                   </>
                 )}
               </Button>

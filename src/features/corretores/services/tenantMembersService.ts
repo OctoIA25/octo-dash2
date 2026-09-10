@@ -20,6 +20,7 @@ export interface TenantMember {
   created_at: string;
   leader_user_id?: string | null;
   creci?: string | null;
+  team_id?: string | null;
 }
 
 export interface CreateMemberData {
@@ -54,10 +55,16 @@ export interface ServiceResult {
   data?: any;
 }
 
+/** Colunas que a RPC get_tenant_members (anterior a elas) não devolve. */
+interface TenantMemberExtra {
+  leader_user_id: string | null;
+  creci: string | null;
+  team_id: string | null;
+}
+
 function mapTenantMemberRow(
   member: any,
-  leaderMap: Record<string, string | null> = {},
-  creciMap: Record<string, string | null> = {},
+  extraMap: Record<string, TenantMemberExtra> = {},
 ): TenantMember | null {
   const rawPermissions = member.permissions && typeof member.permissions === 'object' ? member.permissions : undefined;
   const sidebarPerms =
@@ -69,6 +76,8 @@ function mapTenantMemberRow(
   if (!String(email).trim()) return null;
   if (String(email).trim().toLowerCase() === 'email não disponível') return null;
 
+  const extra = extraMap[member.user_id];
+
   return {
     id: member.id,
     user_id: member.user_id,
@@ -79,10 +88,12 @@ function mapTenantMemberRow(
     permissions: rawPermissions,
     sidebar_permissions: sidebarPerms,
     created_at: member.created_at,
-    leader_user_id: leaderMap[member.user_id] ?? member.leader_user_id ?? null,
-    // A RPC get_tenant_members não retorna a coluna `creci` (é anterior a ela);
-    // creciMap traz o valor do select paralelo. member.creci cobre o fallback direto.
-    creci: creciMap[member.user_id] ?? member.creci ?? null,
+    // A RPC get_tenant_members não retorna as colunas novas (leader_user_id,
+    // creci, team_id); extraMap traz o valor do select paralelo. Os campos do
+    // próprio `member` cobrem a leitura direta da tabela.
+    leader_user_id: extra?.leader_user_id ?? member.leader_user_id ?? null,
+    creci: extra?.creci ?? member.creci ?? null,
+    team_id: extra?.team_id ?? member.team_id ?? null,
   };
 }
 
@@ -123,25 +134,27 @@ export async function fetchTenantMembers(tenantId: string): Promise<TenantMember
     }
 
     // Mapear resultado da RPC para o formato esperado.
-    // A RPC get_tenant_members não retorna colunas novas (leader_user_id, creci);
-    // buscamos ambas num único select paralelo e fazemos merge por user_id.
+    // A RPC get_tenant_members não retorna as colunas novas (leader_user_id,
+    // creci, team_id); buscamos num único select paralelo e fazemos merge por user_id.
     const memberIds = (members as any[]).map((m: any) => m.user_id);
-    const leaderMap: Record<string, string | null> = {};
-    const creciMap: Record<string, string | null> = {};
+    const extraMap: Record<string, TenantMemberExtra> = {};
     if (memberIds.length > 0) {
       const { data: extraData } = await supabase
         .from('tenant_memberships')
-        .select('user_id, leader_user_id, creci')
+        .select('user_id, leader_user_id, creci, team_id')
         .eq('tenant_id', tenantId)
         .in('user_id', memberIds);
       (extraData || []).forEach((row: any) => {
-        leaderMap[row.user_id] = row.leader_user_id ?? null;
-        creciMap[row.user_id] = row.creci ?? null;
+        extraMap[row.user_id] = {
+          leader_user_id: row.leader_user_id ?? null,
+          creci: row.creci ?? null,
+          team_id: row.team_id ?? null,
+        };
       });
     }
 
     return (members as any[])
-      .map((member: any) => mapTenantMemberRow(member, leaderMap, creciMap))
+      .map((member: any) => mapTenantMemberRow(member, extraMap))
       .filter((member): member is TenantMember => Boolean(member));
   } catch (error) {
     console.error('Erro ao buscar membros do tenant:', error);
@@ -353,6 +366,34 @@ export async function updateMemberPermissions(
   } catch (error: any) {
     console.error('Erro ao atualizar permissões:', error);
     return { success: false, error: error.message || 'Erro ao atualizar permissões' };
+  }
+}
+
+/**
+ * Grava só os números de WhatsApp do membro, via RPC.
+ *
+ * updateMemberPermissions reescreve o jsonb `permissions` inteiro e a policy de
+ * UPDATE de tenant_memberships é admin/owner do tenant. Para o corretor mexer no
+ * PRÓPRIO número (e o gestor no dos corretores da equipe dele) sem ganhar poder
+ * de reescrever sidebar_permissions/roleta/limites, a autorização e a escrita
+ * ficam na RPC set_member_whatsapp_phones (20260910).
+ */
+export async function updateMemberWhatsappPhones(
+  memberId: string,
+  phones: string[]
+): Promise<ServiceResult> {
+  try {
+    const { data, error } = await supabase.rpc('set_member_whatsapp_phones', {
+      p_membership_id: memberId,
+      p_phones: phones,
+    });
+    if (error) return { success: false, error: error.message };
+    const result = data as { success: boolean; error?: string };
+    if (!result?.success) return { success: false, error: result?.error || 'Erro ao salvar o número' };
+    return { success: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Erro ao salvar o número';
+    return { success: false, error: message };
   }
 }
 
