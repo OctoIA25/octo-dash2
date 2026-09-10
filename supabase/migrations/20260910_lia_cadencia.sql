@@ -146,20 +146,29 @@ CREATE INDEX IF NOT EXISTS idx_lia_followups_phone
 -- ------------------------------------------------------------
 -- BLOCO 4 — segurança
 --
--- A tabela já está com RLS ligada e SEM policy: com a anon key ela devolve
--- lista vazia (verificado). É o padrão de webhook_events / recovery_queue —
--- tabela 100% server-side, acessada só pelo service_role. Mantemos assim de
--- propósito: `motivo` e `message_sent` carregam texto de conversa com o
--- cliente, e a RLS de `leads` neste banco já está frouxa demais para confiar
--- em uma policy nova aqui.
+-- A tabela já está com RLS ligada e SEM policy. É o padrão de webhook_events /
+-- recovery_queue — tabela 100% server-side, acessada só pelo service_role.
+-- Mantemos assim de propósito: `motivo` e `message_sent` carregam texto de
+-- conversa com o cliente, e a RLS de `leads` neste banco já está frouxa demais
+-- para confiar em uma policy nova aqui.
 --
--- O REVOKE abaixo fica COMENTADO: se o app da LIA escrever com a anon key em
--- vez da service_role, ele mata a cadência em silêncio. Descomentar SOMENTE
--- depois de confirmar qual chave o app usa.
+-- O REVOKE É SEGURO — medido, não suposto (10/set/2026). A dúvida era se o app
+-- da LIA escreve com a anon key; nesse caso o REVOKE mataria a cadência em
+-- silêncio. Sonda: INSERT via PostgREST com tenant_id inexistente (nenhuma
+-- linha é criada em qualquer desfecho), uma vez com a anon key e outra com JWT
+-- de usuário real. Ambas voltaram 42501 "new row violates row-level security
+-- policy", e o SELECT com o mesmo JWT voltou []. Ou seja: anon e authenticated
+-- já não escrevem NEM leem nada aqui. Como o app gravou 2.527 linhas, ele usa
+-- service_role (ou conexão Postgres direta) — que o REVOKE não toca.
+--
+-- Então por que revogar, se a RLS já nega? Defesa em profundidade: o GRANT de
+-- tabela continua existindo, e no dia em que alguém criar uma policy
+-- permissiva por engano, anon ganha acesso na hora. Sem o GRANT, não ganha.
+-- Nunca revogar de service_role: é a chave do servidor.
 -- ------------------------------------------------------------
 ALTER TABLE public.lia_followups ENABLE ROW LEVEL SECURITY;
 
--- REVOKE ALL ON public.lia_followups FROM anon, authenticated;
+REVOKE ALL ON public.lia_followups FROM anon, authenticated;
 
 COMMENT ON TABLE public.lia_followups IS
   'Cadência de follow-up da LIA com o lead (1 linha por tentativa). Escrita pelo app da LIA e pela rota POST /api/v1/lia/cadencias; leitura do CRM só via servidor (service_role) — RLS ligada sem policy de propósito.';
@@ -190,6 +199,11 @@ BEGIN
          'índice por lead não existe';
   ASSERT (SELECT relrowsecurity FROM pg_class WHERE oid = 'public.lia_followups'::regclass),
          'RLS não está habilitada';
+  ASSERT NOT EXISTS (
+           SELECT 1 FROM information_schema.role_table_grants
+            WHERE table_schema = 'public' AND table_name = 'lia_followups'
+              AND grantee IN ('anon', 'authenticated')
+         ), 'anon/authenticated ainda têm grant na tabela';
 
   RAISE NOTICE 'OK — lia_followups pronta para a cadência (% linhas preservadas)',
     (SELECT count(*) FROM public.lia_followups);
@@ -198,6 +212,7 @@ END $$;
 -- ============================================================
 -- ROLLBACK
 -- ============================================================
+-- GRANT SELECT, INSERT, UPDATE, DELETE ON public.lia_followups TO anon, authenticated;
 -- DROP INDEX IF EXISTS public.ux_lia_followups_idem;
 -- DROP INDEX IF EXISTS public.idx_lia_followups_lead;
 -- DROP INDEX IF EXISTS public.idx_lia_followups_phone;

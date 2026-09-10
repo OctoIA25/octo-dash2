@@ -8,8 +8,10 @@
  *  - RLS habilitada e NENHUMA policy criada — `lia_followups` é server-side
  *    (motivo/message_sent carregam texto de conversa com o cliente). Uma
  *    policy nova aqui exporia isso ao PostgREST com a anon key.
- *  - o REVOKE fica COMENTADO até sabermos com que chave o app da LIA escreve;
- *    ativá-lo às cegas mata a cadência em silêncio.
+ *  - o REVOKE de anon/authenticated está ATIVO (medido em 10/set/2026: os dois
+ *    papéis já levam 42501 da RLS, então revogar não pode quebrar o app da
+ *    LIA, que escreve com service_role) e NUNCA alcança service_role, que é a
+ *    chave do servidor.
  *  - o índice único de idempotência é PARCIAL: sem o WHERE, as 2.527 linhas
  *    existentes (idempotency_key NULL) colidiriam e a migration falharia.
  *  - as colunas novas não têm DEFAULT de valor (só updated_at): um DEFAULT
@@ -36,13 +38,27 @@ describe('20260910 lia_cadencia — segurança', () => {
     expect(/CREATE\s+POLICY/i.test(code)).toBe(false);
   });
 
-  it('mantém o REVOKE comentado até confirmarmos a chave do app da LIA', () => {
-    expect(/REVOKE/i.test(code)).toBe(false);
-    expect(sql.includes('-- REVOKE ALL ON public.lia_followups FROM anon, authenticated;')).toBe(true);
+  it('revoga o grant de tabela de anon e authenticated', () => {
+    const revoke = code.match(/REVOKE\s+ALL\s+ON\s+public\.lia_followups\s+FROM\s+([^;]+);/i);
+    expect(revoke).not.toBeNull();
+    expect(revoke[1]).toMatch(/\banon\b/);
+    expect(revoke[1]).toMatch(/\bauthenticated\b/);
+  });
+
+  it('NUNCA revoga de service_role — é a chave com que o servidor lê e grava', () => {
+    const revoke = code.match(/REVOKE[^;]+;/i)[0];
+    expect(revoke).not.toMatch(/service_role/i);
   });
 
   it('não concede acesso a anon/authenticated', () => {
-    expect(/GRANT[\s\S]*?\b(anon|authenticated)\b/i.test(code)).toBe(false);
+    // Casar o comando GRANT ... TO <papel>, e não a palavra solta: o nome da
+    // view do catálogo (role_table_GRANTS) contém "grant" e dava falso positivo.
+    expect(/\bGRANT\b[^;]*\bTO\b[^;]*\b(anon|authenticated)\b/i.test(code)).toBe(false);
+  });
+
+  it('a prova da migration confere que o grant realmente sumiu', () => {
+    expect(code).toMatch(/role_table_grants/);
+    expect(code).toMatch(/grantee IN \('anon', 'authenticated'\)/);
   });
 });
 
