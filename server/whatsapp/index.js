@@ -10,7 +10,7 @@
  *   POST /api/v1/whatsapp/conversations/assign  — Lia define o corretor dono (API key)
  */
 
-import { normalizePhone as canonicalPhone } from '../utils/phone.js';
+import { phoneVariants } from '../utils/phone.js';
 
 const META_GRAPH_VERSION = process.env.META_GRAPH_VERSION || 'v21.0';
 const PLATFORM_OWNER_EMAIL = 'octo.inteligenciaimobiliaria@gmail.com';
@@ -19,24 +19,6 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 function normalizePhone(value) {
   if (!value) return '';
   return String(value).replace(/\D+/g, '');
-}
-
-/**
- * Formas equivalentes do mesmo número que podem estar gravadas em
- * whatsapp_conversations — wa_id da Meta às vezes vem sem o 9º dígito e
- * conversas antigas podem estar sem DDI ou em E.164 com '+'. Mesma lista de
- * src/features/chat/services/chatService.ts e do trigger da 20260702.
- */
-function phoneVariants(value) {
-  const canonical = canonicalPhone(value, { withCountryCode: true });
-  if (!canonical) return [];
-  let forms = [canonical];
-  if (/^55\d{2}9\d{8}$/.test(canonical)) {
-    const semDdi = canonical.slice(2);
-    const semNove = `${semDdi.slice(0, 2)}${semDdi.slice(3)}`;
-    forms = [canonical, `55${semNove}`, semDdi, semNove];
-  }
-  return [...forms, ...forms.map((f) => `+${f}`)];
 }
 
 function isPlatformOwner(email) {

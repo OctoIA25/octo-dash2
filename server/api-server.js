@@ -4177,6 +4177,12 @@ registerGaRoutes(app, supabase);
 import { registerRecrutamentoRoutes } from './recrutamento/index.js';
 registerRecrutamentoRoutes(app, supabase);
 
+// Cadência da LIA — o que a IA já tentou com o lead, dentro do card do lead.
+// Leitura passa pelo servidor porque lia_followups tem RLS sem policy (o texto
+// da conversa não vai ao PostgREST); escrita é o contrato do app da LIA.
+import { registerLiaCadenciaRoutes } from './liaCadencia/index.js';
+registerLiaCadenciaRoutes(app, supabase);
+
 // Rotas owner/admin da config ZAP por tenant — mesmo resolver do feed (save invalida cache).
 registerZapRoutes(app, supabase, { resolver: zapConfigResolver });
 

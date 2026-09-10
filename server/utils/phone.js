@@ -56,3 +56,29 @@ export const phonesMatch = (a, b) => {
   const pb = normalizePhone(b);
   return Boolean(pa && pb && pa === pb);
 };
+
+/**
+ * Formas equivalentes do mesmo número que podem estar gravadas no banco.
+ *
+ * O wa_id da Meta às vezes vem sem o 9º dígito, e linhas antigas podem estar
+ * sem DDI ou em E.164 com '+'. Quem busca por telefone precisa tentar todas,
+ * senão acha a casca vazia em vez da conversa com histórico.
+ *
+ * Espelha `phoneVariants` de src/features/chat/services/chatService.ts e o
+ * trigger da migration 20260702. Estava duplicada em server/whatsapp/index.js;
+ * mora aqui para não virar a terceira cópia.
+ *
+ * @param {string} value - Telefone em qualquer formato.
+ * @returns {string[]} Variantes (com e sem '+'), ou [] se a entrada não normaliza.
+ */
+export const phoneVariants = (value) => {
+  const canonical = normalizePhone(value, { withCountryCode: true });
+  if (!canonical) return [];
+  let forms = [canonical];
+  if (/^55\d{2}9\d{8}$/.test(canonical)) {
+    const semDdi = canonical.slice(2);
+    const semNove = `${semDdi.slice(0, 2)}${semDdi.slice(3)}`;
+    forms = [canonical, `55${semNove}`, semDdi, semNove];
+  }
+  return [...forms, ...forms.map((f) => `+${f}`)];
+};
