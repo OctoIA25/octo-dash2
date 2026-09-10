@@ -24,6 +24,10 @@ import { isPlatformOwner } from '../utils/ownerAuth.js';
 import { buscarLead, carregarCadencia, gravarCadencia } from './query.js';
 import { resumirCadencia } from './compute.js';
 import { normalizarCadencia } from './normalize.js';
+import { createHash } from 'node:crypto';
+
+/** Impressão digital de um segredo, para log. Nunca o segredo em si. */
+const digital = (v) => (v ? createHash('sha256').update(String(v).trim()).digest('hex').slice(0, 8) : '-');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -72,7 +76,19 @@ export async function autenticar(req, supabase) {
   const enviado = req.headers['x-service-token'];
   if (enviado != null) {
     const esperado = process.env.LIA_SERVICE_TOKEN || process.env.DISPARADOR_SERVICE_TOKEN;
-    if (!esperado || enviado !== esperado) {
+    if (!esperado || enviado.trim() !== esperado.trim()) {
+      // 401 sozinho não distingue "env com outro nome/ausente" de "valor
+      // diferente" — foi o que travou a integração da LIA em 10/set/2026.
+      // Impressão digital, nunca o segredo.
+      console.warn('[lia-auth] x-service-token recusado', {
+        env: process.env.LIA_SERVICE_TOKEN
+          ? 'LIA_SERVICE_TOKEN'
+          : process.env.DISPARADOR_SERVICE_TOKEN
+            ? 'DISPARADOR_SERVICE_TOKEN (fallback)'
+            : 'NENHUMA CONFIGURADA',
+        esperado: digital(esperado),
+        recebido: digital(enviado),
+      });
       return { ok: false, status: 401, error: 'invalid_service_token' };
     }
     return { ok: true, isService: true };
