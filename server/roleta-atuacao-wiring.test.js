@@ -56,7 +56,10 @@ function extractHandler(source, method, route) {
 // refactor apagar ou duplicar um call site, este teste fica vermelho.
 const ESPERADO = {
   'proxy-production.js': { resolveBrokerForLead: 2, getNextBrokerFromRoleta: 1 },
-  'api-server.js': { resolveBrokerForLead: 2, getNextBrokerFromRoleta: 2 },
+  // getNextBrokerFromRoleta caiu de 2 para 1: a chamada que ficava dentro do
+  // resolveBrokerForLead local sumiu junto com ele — api-server.js agora usa o
+  // resolveBrokerForLead/roleta do módulo leadAssignment.js, sem cópia própria.
+  'api-server.js': { resolveBrokerForLead: 2, getNextBrokerFromRoleta: 1 },
 };
 
 describe('atuação da roleta — todos os call sites passam o argumento', () => {

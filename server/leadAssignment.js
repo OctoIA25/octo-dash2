@@ -618,6 +618,12 @@ export function createLeadAssignment({ supabase }) {
    * 2. properties_cache (XML sincronizado) - busca corretor responsável no ACL
    * 3. imoveis_corretores (Meus Imóveis) - busca corretor responsável no ACL
    * 4. Roleta (fallback) - distribui entre corretores do ACL
+   *
+   * INVARIANTE: o corretor devolvido SEMPRE existe no ACL do tenant. As fontes
+   * 1-3 trazem nome/e-mail de sistemas externos (Kenlo, XML, cadastro manual) e
+   * antes eram gravadas cruas quando o ACL não reconhecia a pessoa — era assim
+   * que lead terminava com corretor de outra imobiliária ou que nem existe mais.
+   * Não reconheceu, vai para a roleta.
    */
   const resolveBrokerForLead = async (propertyCode, tenantId, rawData = null, cache = createLeadLookupCache(), { atuacao } = {}) => {
     let broker = null;
@@ -646,17 +652,8 @@ export function createLeadAssignment({ supabase }) {
           }
         }
 
-        // Se não encontrou no ACL, usar dados do Kenlo mesmo (sem checar limite — ID desconhecido)
         if (!broker && attendedBroker.name) {
-          broker = {
-            name: attendedBroker.name,
-            id: attendedBroker.id?.toString() || null,
-            phone: normalizePhone(attendedBroker.phone || attendedBroker.cel, { withCountryCode: true }),
-            email: attendedBroker.email
-          };
-          method = 'kenlo_attended_by';
-          console.log(`✅ Corretor via Kenlo attendedBy (não validado no ACL): ${broker.name}`);
-          return { broker, method };
+          console.log(`⚠️ attendedBy "${attendedBroker.name}" não existe no ACL do tenant — indo para a roleta`);
         }
       }
     }
@@ -692,16 +689,8 @@ export function createLeadAssignment({ supabase }) {
           }
         }
 
-        // Se não encontrou no ACL, usar dados do XML mesmo (sem checar limite)
         if (!broker && cached.agent_name) {
-          broker = {
-            name: cached.agent_name,
-            phone: normalizePhone(cached.agent_phone, { withCountryCode: true }),
-            email: cached.agent_email
-          };
-          method = 'xml_property_cache';
-          console.log(`✅ Corretor via XML/cache (não validado no ACL): ${broker.name}`);
-          return { broker, method };
+          console.log(`⚠️ Corretor do XML "${cached.agent_name}" não existe no ACL do tenant — seguindo o pipeline`);
         }
       }
 
@@ -725,17 +714,8 @@ export function createLeadAssignment({ supabase }) {
           }
         }
 
-        // Se não encontrou no ACL, usar dados da tabela mesmo (sem checar limite)
         if (!broker && manual.corretor_nome) {
-          broker = {
-            name: manual.corretor_nome,
-            id: manual.corretor_id,
-            phone: normalizePhone(manual.corretor_telefone, { withCountryCode: true }),
-            email: manual.corretor_email
-          };
-          method = 'meus_imoveis';
-          console.log(`✅ Corretor via Meus Imóveis (não validado no ACL): ${broker.name}`);
-          return { broker, method };
+          console.log(`⚠️ Corretor de Meus Imóveis "${manual.corretor_nome}" não existe no ACL do tenant — indo para a roleta`);
         }
       }
     }

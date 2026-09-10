@@ -181,7 +181,10 @@ describe('distribuição — prioridade de resolveBrokerForLead', () => {
     tenantBrokers: [
       { id: uuid(21), name: 'Gil', email: 'gil@x.com', phone: '11999990000', photo_url: null, auth_user_id: uuid(2), status: 'active' },
     ],
-    members: [],
+    // Gil precisa de membership para existir no ACL. Sem ela estes testes
+    // passavam pelo fallback cru (que gravava o nome sem validar), não pela
+    // validação que eles dizem cobrir.
+    members: [{ user_id: uuid(2), role: 'corretor' }],
     participantes: [participante(3, 'Roleta Rita')],
   };
 
@@ -195,13 +198,29 @@ describe('distribuição — prioridade de resolveBrokerForLead', () => {
     expect(countQueries('roleta_participantes')).toBe(0); // não chegou na roleta
   });
 
-  it('attendedBy fora do ACL é usado mesmo assim (não validado)', async () => {
+  // Antes: o nome cru do Kenlo virava o corretor do lead sem passar pelo ACL —
+  // era assim que lead ficava com corretor de outra imobiliária ou inexistente.
+  it('attendedBy fora do ACL NÃO é usado: cai na roleta', async () => {
     const { la } = setup(aclDb);
     const { broker, method } = await la.resolveBrokerForLead(null, TENANT, {
       attendedBy: [{ name: 'Externo', id: 42 }],
     });
-    expect(method).toBe('kenlo_attended_by');
-    expect(broker).toMatchObject({ name: 'Externo', id: '42' });
+    expect(method).toBe('roleta');
+    expect(broker.name).toBe('Roleta Rita');
+  });
+
+  it('corretor do XML fora do ACL NÃO é usado: cai na roleta', async () => {
+    const { la } = setup({ ...aclDb, propertyCache: { agent_name: 'Externo', agent_email: null, agent_phone: null, main_photo: null } });
+    const { broker, method } = await la.resolveBrokerForLead('CA0001', TENANT);
+    expect(method).toBe('roleta');
+    expect(broker.name).toBe('Roleta Rita');
+  });
+
+  it('corretor de Meus Imóveis fora do ACL NÃO é usado: cai na roleta', async () => {
+    const { la } = setup({ ...aclDb, imovelCorretor: { corretor_nome: 'Externo', corretor_id: 'x-1', corretor_telefone: null, corretor_email: null, exclusivo: null } });
+    const { broker, method } = await la.resolveBrokerForLead('CA0001', TENANT);
+    expect(method).toBe('roleta');
+    expect(broker.name).toBe('Roleta Rita');
   });
 
   it('2º: corretor responsável do XML (properties_cache)', async () => {
@@ -212,10 +231,10 @@ describe('distribuição — prioridade de resolveBrokerForLead', () => {
   });
 
   it('3º: corretor manual de imoveis_corretores (Meus Imóveis)', async () => {
-    const { la } = setup({ ...aclDb, imovelCorretor: { corretor_nome: 'Hugo', corretor_id: 'h-1', corretor_telefone: null, corretor_email: null, exclusivo: null } });
+    const { la } = setup({ ...aclDb, imovelCorretor: { corretor_nome: 'Gil', corretor_id: 'h-1', corretor_telefone: null, corretor_email: null, exclusivo: null } });
     const { broker, method } = await la.resolveBrokerForLead('CA0001', TENANT);
     expect(method).toBe('meus_imoveis');
-    expect(broker.name).toBe('Hugo');
+    expect(broker.name).toBe('Gil');
   });
 
   it('4º: fallback para roleta quando nada identifica o corretor', async () => {
@@ -296,15 +315,15 @@ describe('limites de leads por corretor', () => {
     expect((await la.getNextBrokerFromRoleta(TENANT)).name).toBe('Ana');
   });
 
-  it('comportamento preservado: attendedBy COM nome bloqueado por limite ainda recebe o lead (não validado)', async () => {
-    // Regra herdada do código original: quando o corretor do attendedBy é
-    // achado no ACL mas está no limite, o fluxo NÃO vai para a roleta — cai no
-    // ramo "não encontrou no ACL" e atribui com os dados crus do Kenlo.
+  it('attendedBy achado no ACL mas no limite vai para a roleta', async () => {
+    // Antes o limite era contornável: o corretor cheio era achado no ACL, caía
+    // no ramo "não encontrou" e recebia o lead com os dados crus do Kenlo — o
+    // limite não segurava nada quando o payload trazia o nome.
     const { la } = setup({
       tenantBrokers: [
         { id: uuid(31), name: 'Gil', email: 'gil@x.com', phone: null, photo_url: null, auth_user_id: uuid(1), status: 'active' },
       ],
-      members: [],
+      members: [{ user_id: uuid(1), role: 'corretor' }],
       participantes: [participante(2, 'Bia')],
       limitConfig: limitConfigOn(),
       leadCounts: { [uuid(1)]: { active: 10, pending: 0 } },
@@ -314,9 +333,8 @@ describe('limites de leads por corretor', () => {
       attendedBy: [{ name: 'Gil', email: 'gil@x.com' }],
     });
 
-    expect(method).toBe('kenlo_attended_by');
-    expect(broker.name).toBe('Gil');
-    expect(broker.auth_user_id).toBeUndefined(); // dados crus do Kenlo, não do ACL
+    expect(method).toBe('roleta');
+    expect(broker.name).toBe('Bia');
   });
 
   it('attendedBy SEM nome no limite cai para a roleta, sem repetir a checagem do mesmo corretor', async () => {

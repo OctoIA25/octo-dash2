@@ -11,6 +11,7 @@ import { createWatermarkRouter } from './watermark/routes.js';
 import { countLeadsPerBroker } from './brokerLeadStats.js';
 import { createWorker } from './watermark/worker.js';
 import { createZapConfigResolver, registerZapRoutes, extractZapPhotoUrls } from './zap/index.js';
+import { createLeadAssignment } from './leadAssignment.js';
 import { handleClassificationPatch } from './leadClassification.js';
 import { avisoValorLancamento } from './lancamentoValor.js';
 import { enriquecerComCodigoLancamento } from './lancamentoAnuncios.js';
@@ -1295,9 +1296,15 @@ app.get('/api/v1/leads/phone/:phone', validateApiKey, async (req, res) => {
 });
 
 // ============================================
-// ROLETA DE CORRETORES - Estado em memória por tenant
+// ROLETA DE CORRETORES
 // ============================================
-const tenantRoletaState = new Map(); // { tenant_id: { lastIndex: number, brokers: string[] } }
+// Vem do módulo compartilhado (o mesmo que proxy-production.js usa). Este
+// arquivo mantinha a própria cópia, que divergiu: pegava o nome cru de
+// attendedBy/XML/Meus Imóveis sem nem consultar o ACL, e a roleta dela não
+// tinha checagem de limite nem de membership. Como o dev roda contra o mesmo
+// banco de produção, essa cópia criava lead com corretor de outro tenant ou
+// inexistente. Uma implementação só, uma garantia só.
+const { resolveBrokerForLead, getNextBrokerFromRoleta, tenantRoletaState } = createLeadAssignment({ supabase });
 
 /**
  * Normaliza telefone para comparação (remove máscaras, DDD duplicado, etc)
@@ -1317,252 +1324,12 @@ const normalizePhone = (phone) => {
   return clean;
 };
 
-/**
- * Busca corretor responsável pelo imóvel usando pipeline:
- * 1. raw_data.attendedBy (leads Kenlo)
- * 2. properties_cache (XML sincronizado)  
- * 3. imoveis_corretores (Meus Imóveis - atribuição manual)
- * 4. Roleta (fallback)
- */
-const resolveBrokerForLead = async (leadData, tenantId, rawData = null, { atuacao } = {}) => {
-  let broker = null;
-  let method = null;
-  
-  // 1. Verificar se já veio com attendedBy do Kenlo (raw_data)
-  if (rawData?.attendedBy && Array.isArray(rawData.attendedBy) && rawData.attendedBy.length > 0) {
-    const attendedBroker = rawData.attendedBy[0];
-    if (attendedBroker?.name) {
-      broker = {
-        name: attendedBroker.name,
-        id: attendedBroker.id?.toString() || null,
-        phone: null
-      };
-      method = 'kenlo_attended_by';
-      console.log(`✅ Corretor encontrado via Kenlo attendedBy: ${broker.name}`);
-      return { broker, method };
-    }
-  }
-  
-  // 2. Buscar no cache de imóveis (XML sincronizado) por código
-  const propertyCode = leadData.interest_reference?.trim().toUpperCase();
-  if (propertyCode) {
-    // 2a. Primeiro tentar properties_cache (dados do XML)
-    const { data: cachedProperty } = await supabase
-      .from('properties_cache')
-      .select('agent_name, agent_phone, agent_email')
-      .eq('tenant_id', tenantId)
-      .eq('property_code', propertyCode)
-      .single();
-    
-    if (cachedProperty?.agent_name) {
-      broker = {
-        name: cachedProperty.agent_name,
-        phone: normalizePhone(cachedProperty.agent_phone),
-        email: cachedProperty.agent_email
-      };
-      method = 'xml_property_cache';
-      console.log(`✅ Corretor encontrado via XML/cache: ${broker.name}`);
-      return { broker, method };
-    }
-    
-    // 2b. Fallback: buscar em imoveis_corretores (Meus Imóveis - atribuição manual)
-    const { data: manualAssignment } = await supabase
-      .from('imoveis_corretores')
-      .select('corretor_nome, corretor_id, corretor_telefone, corretor_email')
-      .eq('tenant_id', tenantId)
-      .eq('codigo_imovel', propertyCode)
-      .single();
-    
-    if (manualAssignment?.corretor_nome) {
-      broker = {
-        name: manualAssignment.corretor_nome,
-        id: manualAssignment.corretor_id,
-        phone: normalizePhone(manualAssignment.corretor_telefone),
-        email: manualAssignment.corretor_email
-      };
-      method = 'meus_imoveis';
-      console.log(`✅ Corretor encontrado via Meus Imóveis: ${broker.name}`);
-      return { broker, method };
-    }
-  }
-  
-  // 3. Nenhum corretor encontrado - usar ROLETA
-  console.log(`⚙️ Nenhum corretor encontrado para código ${propertyCode}, usando roleta...`);
-  const roletaBroker = await getNextBrokerFromRoleta(tenantId, { atuacao });
-  
-  if (roletaBroker) {
-    broker = roletaBroker;
-    method = 'roleta';
-    console.log(`🎰 Corretor atribuído via roleta: ${broker.name}`);
-    return { broker, method };
-  }
-  
-  // Nenhum corretor disponível
-  console.log('⚠️ Nenhum corretor disponível para atribuição');
-  return { broker: null, method: null };
-};
-
-const UUID_RE_ATUACAO = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 // Aceita o id na raiz e repetido dentro de `raw_data` (as duas posições do
 // contrato com a Lia) — só na raiz, um payload com o id aninhado viraria
 // 'prontos' em silêncio.
 const atuacaoFromBody = (body) =>
   (body?.lancamento_id || body?.raw_data?.lancamento_id ? 'lancamentos' : 'prontos');
 
-/**
- * ponytail: cópia do filtro de server/leadAssignment.js. Este arquivo tem a
- * própria versão (já divergente) da roleta e não importa o módulo. Unificar os
- * dois deleta ~250 linhas duplicadas e é a correção de raiz, mas muda os
- * fallbacks do dev — ficou fora do escopo. Ao mexer aqui, mexa lá também.
- *
- * Fail-open em três pontos: sem id utilizável, sem membership e sem ninguém do
- * tipo pedido, o corretor/pool continua elegível.
- */
-const filtrarPorAtuacao = async (tenantId, brokerList, atuacao) => {
-  if (atuacao !== 'lancamentos' && atuacao !== 'prontos') return brokerList;
-
-  const ids = [...new Set(brokerList.map(b => b.id || b.auth_user_id).filter(Boolean))]
-    .filter(id => UUID_RE_ATUACAO.test(String(id)));
-  if (ids.length === 0) return brokerList;
-
-  const { data } = await supabase
-    .from('tenant_memberships')
-    .select('user_id, permissions')
-    .eq('tenant_id', tenantId)
-    .in('user_id', ids);
-
-  const porUserId = new Map((data || []).map(m => [String(m.user_id).toLowerCase(), m.permissions?.atuacao]));
-
-  const TIPOS = ['lancamentos', 'prontos', 'alugados'];
-  const matching = brokerList.filter(b => {
-    const brokerId = b.id || b.auth_user_id;
-    const valor = brokerId ? porUserId.get(String(brokerId).toLowerCase()) : undefined;
-    // Multi-seleção (array) com legado string: 'prontos' era "tudo que não é
-    // lançamento" → prontos+alugados; ausente/vazio/lixo → todas (fail-open).
-    const atuacoes = valor === 'lancamentos' ? ['lancamentos']
-      : valor === 'prontos' ? ['prontos', 'alugados']
-      : Array.isArray(valor) && valor.some(t => TIPOS.includes(t)) ? valor
-      : TIPOS;
-    // Pool 'prontos' aceita prontos OU alugados — nada classifica lead de
-    // aluguel ainda; quando houver sinal, o pool 'alugados' nasce separado.
-    return atuacao === 'lancamentos'
-      ? atuacoes.includes('lancamentos')
-      : atuacoes.includes('prontos') || atuacoes.includes('alugados');
-  });
-
-  if (matching.length === 0) {
-    console.log(`⚠️ Roleta: nenhum corretor de ${atuacao} entre ${brokerList.length} — usando o pool inteiro`);
-    return brokerList;
-  }
-  console.log(`🎰 Roleta ${atuacao}: ${matching.length} corretor(es)`);
-  return matching;
-};
-
-/**
- * Obtém próximo corretor da roleta para o tenant (Multi-tenant)
- * Fonte primária: roleta_participantes (corretores selecionados pelo admin)
- * Fallback 1: tenant_memberships (todos os corretores do tenant)
- * Fallback 2: imoveis_corretores (para compatibilidade)
- */
-const getNextBrokerFromRoleta = async (tenantId, { atuacao } = {}) => {
-  try {
-    let brokerList = [];
-    
-    // 1. FONTE PRIMÁRIA: Buscar corretores ATIVOS na tabela roleta_participantes
-    const { data: participantes, error: participantesError } = await supabase
-      .from('roleta_participantes')
-      .select('broker_id, broker_name, broker_email, broker_phone')
-      .eq('tenant_id', tenantId)
-      .eq('is_active', true);
-    
-    if (!participantesError && participantes && participantes.length > 0) {
-      brokerList = participantes.map(p => ({
-        id: p.broker_id,
-        name: p.broker_name,
-        email: p.broker_email,
-        phone: normalizePhone(p.broker_phone)
-      }));
-      console.log(`🎰 Roleta: ${brokerList.length} corretor(es) configurados na roleta`);
-    }
-    
-    // 2. FALLBACK 1: Se não houver participantes configurados, usar tenant_memberships
-    if (brokerList.length === 0) {
-      console.log('⚠️ Nenhum corretor configurado na roleta, usando memberships...');
-      const { data: members } = await supabase
-        .from('tenant_memberships')
-        .select(`
-          user_id,
-          role,
-          users:user_id (
-            id,
-            raw_user_meta_data
-          )
-        `)
-        .eq('tenant_id', tenantId)
-        .eq('role', 'corretor');
-      
-      if (members && members.length > 0) {
-        brokerList = members
-          .filter(m => m.users?.raw_user_meta_data?.name)
-          .map(m => ({
-            name: m.users.raw_user_meta_data.name,
-            id: m.user_id,
-            phone: m.users.raw_user_meta_data.phone || null
-          }));
-      }
-    }
-    
-    // 3. FALLBACK 2: Se não houver memberships, tentar imoveis_corretores
-    if (brokerList.length === 0) {
-      console.log('⚠️ Nenhum corretor em memberships, tentando imoveis_corretores...');
-      const { data: brokers } = await supabase
-        .from('imoveis_corretores')
-        .select('corretor_nome, corretor_id, corretor_telefone')
-        .eq('tenant_id', tenantId)
-        .not('corretor_nome', 'is', null);
-      
-      if (brokers && brokers.length > 0) {
-        // Deduplicar por nome
-        const seen = new Set();
-        brokerList = brokers
-          .filter(b => {
-            if (seen.has(b.corretor_nome)) return false;
-            seen.add(b.corretor_nome);
-            return true;
-          })
-          .map(b => ({
-            name: b.corretor_nome,
-            id: b.corretor_id,
-            phone: b.corretor_telefone
-          }));
-      }
-    }
-    
-    if (brokerList.length === 0) {
-      console.log('⚠️ Nenhum corretor disponível para roleta');
-      return null;
-    }
-
-    brokerList = await filtrarPorAtuacao(tenantId, brokerList, atuacao);
-
-    // Estado da roleta por tenant E por pool (round-robin)
-    const stateKey = `${tenantId}:${atuacao || 'all'}`;
-    if (!tenantRoletaState.has(stateKey)) {
-      tenantRoletaState.set(stateKey, { lastIndex: -1 });
-    }
-
-    const state = tenantRoletaState.get(stateKey);
-    const nextIndex = (state.lastIndex + 1) % brokerList.length;
-    state.lastIndex = nextIndex;
-    
-    console.log(`🎰 Roleta: ${nextIndex + 1}/${brokerList.length} - ${brokerList[nextIndex].name}`);
-    return brokerList[nextIndex];
-  } catch (error) {
-    console.error('❌ Erro na roleta:', error);
-    return null;
-  }
-};
 
 // ============================================
 // ZAP/OLX VRSync feed routes
@@ -1720,14 +1487,9 @@ app.post('/api/v1/integrations/zapimoveis/webhook', validateZapFeedAccess, async
 
     const normalizedPropertyCode = propertyCode ? String(propertyCode).trim().toUpperCase() : null;
     const isExclusive = await resolvePropertyExclusivity(tenantId, normalizedPropertyCode);
-    const assignmentLeadData = {
-      tenant_id: tenantId,
-      interest_reference: normalizedPropertyCode,
-      raw_data: normalized.raw_data,
-    };
     // A marca de lançamento vem do lead normalizado (o de-para roda ali), não do
     // payload do portal — que nunca traz lancamento_id nem pode ditar atuação.
-    const { broker, method } = await resolveBrokerForLead(assignmentLeadData, tenantId, normalized.raw_data, {
+    const { broker, method } = await resolveBrokerForLead(normalizedPropertyCode, tenantId, normalized.raw_data, undefined, {
       atuacao: normalized.atuacao || atuacaoFromBody(req.body),
     });
     const crmLeadData = {
@@ -1878,7 +1640,7 @@ app.post('/api/v1/leads', validateApiKey, async (req, res) => {
       
       // Se não encontrou por ID/phone explícito, usar pipeline completo
       if (!assignedBroker && tenantId) {
-        const { broker, method } = await resolveBrokerForLead(leadData, tenantId, raw_data || leadData.raw_data, { atuacao: atuacaoFromBody(req.body) });
+        const { broker, method } = await resolveBrokerForLead(leadData.interest_reference, tenantId, raw_data || leadData.raw_data, undefined, { atuacao: atuacaoFromBody(req.body) });
         
         if (broker) {
           leadData.attended_by_name = broker.name;
@@ -2597,7 +2359,7 @@ app.post('/api/v1/leads/roleta', validateApiKey, async (req, res) => {
     }
 
     // Distribuição FORÇADA via roleta (ignora imóvel/pipeline)
-    const broker = await getNextBrokerFromRoleta(tenantId, { atuacao: req.body?.lancamento_id ? 'lancamentos' : undefined });
+    const broker = await getNextBrokerFromRoleta(tenantId, undefined, { atuacao: req.body?.lancamento_id ? 'lancamentos' : undefined });
 
     if (!broker) {
       return res.status(422).json({
