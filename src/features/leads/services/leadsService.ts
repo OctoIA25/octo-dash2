@@ -208,9 +208,20 @@ async function setFirstResponseAtIfMissing(
 }
 
 /**
- * Mapeamento de stage do kenlo_leads para status do CRM
+ * Mapeamento de stage do kenlo_leads para status do CRM — FONTE ÚNICA.
+ *
+ * Exportado porque existiam três cópias divergentes deste mapa (aqui, em
+ * `leadsMetricsService` e em `supabaseService`) e as outras duas estavam
+ * desatualizadas em relação ao que o servidor realmente grava: nenhuma conhecia
+ * `visit_scheduled`, e a de `leadsMetricsService` esperava `visit`/`closed` em
+ * vez de `visit_done`/`closed_won`/`closed_lost`. Como quem lê cai em
+ * `|| 'Novos Leads'`, 1.579 leads ativos da Japi (24,7%) — incluindo as 1.283
+ * vendas `closed_won` — apareciam no funil como lead novo, sem erro nenhum.
+ *
+ * Quem grava: `server/contact2sale/c2sNormalizer.js` e a função de mudança de
+ * etapa logo abaixo. Ao adicionar um stage lá, adicione aqui.
  */
-const KENLO_STAGE_TO_STATUS: Record<string, string> = {
+export const KENLO_STAGE_TO_STATUS: Record<string, string> = {
   'new': 'Novos Leads',
   'contacted': 'Interação',
   'qualified': 'Visita Agendada',
@@ -926,4 +937,82 @@ export async function fetchMetricasFunilAdmin(): Promise<Record<string, number>>
     console.error('❌ Erro ao buscar métricas admin:', error);
     return {};
   }
+}
+
+/**
+ * Um imóvel em que o lead demonstrou interesse.
+ */
+export interface ImovelInteresse {
+  codigo: string;
+  portal: string | null;
+  /** Data de entrada do lead que trouxe este imóvel. */
+  data: string | null;
+}
+
+/** Chave de deduplicação: o mesmo código pode vir grafado de formas diferentes. */
+const chaveCodigo = (codigo: string) => codigo.trim().toUpperCase();
+
+/**
+ * Todos os imóveis em que a MESMA pessoa demonstrou interesse.
+ *
+ * Não existe tabela de "interesses": cada anúncio visto num portal gera uma
+ * LINHA de lead própria, com um código de imóvel só. O histórico do cliente é,
+ * portanto, o conjunto das linhas com o mesmo telefone nas duas fontes
+ * (`leads` do CRM e `kenlo_leads`) — as mesmas variantes de número usadas para
+ * casar conversa e lead, porque integrações gravam com/sem DDI e 9º dígito.
+ *
+ * Uma fonte que falha não derruba a outra: isto é informação complementar do
+ * modal, não o dado principal.
+ */
+export async function fetchImoveisDeInteresse(
+  tenantId: string,
+  phoneVariants: string[],
+): Promise<ImovelInteresse[]> {
+  if (!tenantId || tenantId === 'owner' || phoneVariants.length === 0) return [];
+
+  const [crm, kenlo] = await Promise.all([
+    supabase
+      .from(LEADS_TABLE)
+      .select('property_code,source,created_at')
+      .eq('tenant_id', tenantId)
+      .in('phone', phoneVariants)
+      .not('property_code', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(200),
+    supabase
+      .from('kenlo_leads')
+      .select('interest_reference,portal,lead_timestamp,created_at')
+      .eq('tenant_id', tenantId)
+      .in('client_phone', phoneVariants)
+      .not('interest_reference', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(200),
+  ]);
+
+  if (crm.error) console.error('❌ Imóveis de interesse (leads):', crm.error);
+  if (kenlo.error) console.error('❌ Imóveis de interesse (kenlo_leads):', kenlo.error);
+
+  const brutos: ImovelInteresse[] = [
+    ...(crm.data ?? []).map((r: Record<string, unknown>) => ({
+      codigo: String(r.property_code ?? '').trim(),
+      portal: (r.source as string) || null,
+      data: (r.created_at as string) || null,
+    })),
+    ...(kenlo.data ?? []).map((r: Record<string, unknown>) => ({
+      codigo: String(r.interest_reference ?? '').trim(),
+      portal: (r.portal as string) || null,
+      data: (r.lead_timestamp as string) || (r.created_at as string) || null,
+    })),
+  ].filter((i) => i.codigo.length > 0);
+
+  // Dedup pelo código, mantendo a ocorrência mais recente (a que traz o portal
+  // e a data que interessam ao corretor agora).
+  const porCodigo = new Map<string, ImovelInteresse>();
+  for (const item of brutos) {
+    const chave = chaveCodigo(item.codigo);
+    const atual = porCodigo.get(chave);
+    if (!atual || (item.data ?? '') > (atual.data ?? '')) porCodigo.set(chave, item);
+  }
+
+  return [...porCodigo.values()].sort((a, b) => (b.data ?? '').localeCompare(a.data ?? ''));
 }
