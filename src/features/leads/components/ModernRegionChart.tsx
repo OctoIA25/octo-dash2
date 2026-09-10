@@ -15,7 +15,9 @@ import { useMemo, useState, useEffect } from 'react';
 import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { MapPin, Eye, X } from 'lucide-react';
-import { fetchImoveisFromKenlo, Imovel } from '@/features/imoveis/services/kenloService';
+import type { Imovel } from '@/features/imoveis/services/kenloService';
+import { fetchCatalogoImoveis } from '@/features/imoveis/services/catalogoImoveisService';
+import { useAuthContext } from '@/contexts/AuthContext';
 import { StandardCardTitle } from '@/components/ui/StandardCardTitle';
 import { useTheme } from '@/hooks/useTheme';
 import {
@@ -80,21 +82,25 @@ interface RegionStats {
 
 export const ModernRegionChart = ({ leads, tipoNegocioFilter = 'todos', onFilterChange }: ModernRegionChartProps) => {
   const [imoveis, setImoveis] = useState<Imovel[]>([]);
+  const { tenantId } = useAuthContext();
   const { currentTheme } = useTheme();
   const isDarkMode = currentTheme === 'preto' || currentTheme === 'cinza';
 
-  // Buscar imóveis do XML Kenlo
+  // Catálogo do tenant (XML + imoveis_locais). Antes vinha do kenloService,
+  // que serve um XML estático de outra base — o gráfico era desenhado sobre
+  // imóveis que não são deste tenant.
   useEffect(() => {
+    if (!tenantId) return;
     const loadImoveis = async () => {
       try {
-        const data = await fetchImoveisFromKenlo();
+        const data = await fetchCatalogoImoveis(tenantId);
         setImoveis(data);
       } catch (error) {
-        console.error('❌ Erro ao carregar XML:', error);
+        console.error('❌ Erro ao carregar catálogo de imóveis:', error);
       }
     };
     loadImoveis();
-  }, []);
+  }, [tenantId]);
 
   const regionStats = useMemo(() => {
     if (!leads || leads.length === 0) return { top5: [], all: [] };

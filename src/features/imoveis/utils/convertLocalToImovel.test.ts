@@ -46,4 +46,33 @@ describe('convertLocalToImovel', () => {
   it('monta o título a partir de tipo + bairro quando não há título', () => {
     expect(convertLocalToImovel(base).titulo).toBe('Apartamento - Centro');
   });
+
+  // Colunas numeric do Postgres chegam como string pelo PostgREST — foi assim
+  // que o CA054 (cadastro local) veio do banco.
+  it('converte para número os valores que o PostgREST devolve como string', () => {
+    const imovel = convertLocalToImovel({
+      ...base,
+      valor_venda: '790000',
+      valor_iptu: '1500',
+      area_total: '250',
+      area_util: '250',
+    });
+
+    expect(imovel.valor_venda).toBe(790000);
+    expect(imovel.valor_iptu).toBe(1500);
+    expect(imovel.area_total).toBe(250);
+    expect(imovel.valor_venda.toLocaleString('pt-BR')).toBe('790.000');
+  });
+
+  it('aproveita as salas do cadastro local em vez de fixar zero', () => {
+    expect(convertLocalToImovel({ ...base, salas: 2 }).salas).toBe(2);
+    expect(convertLocalToImovel(base).salas).toBe(0);
+  });
+
+  it('valor ausente ou ilegível vira 0, não NaN', () => {
+    const imovel = convertLocalToImovel({ ...base, valor_locacao: null, valor_condominio: 'abc' });
+
+    expect(imovel.valor_locacao).toBe(0);
+    expect(imovel.valor_condominio).toBe(0);
+  });
 });

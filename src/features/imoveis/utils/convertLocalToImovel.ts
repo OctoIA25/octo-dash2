@@ -15,6 +15,13 @@ import { normalizeFotos, type FotoInput } from '@/components/imoveis/fotos-helpe
  * `ImovelLocal` com colunas a mais (created_at, aprovado_por, ...) — tipagem
  * estrutural aceita ambos sem obrigá-las a compartilhar a interface inteira.
  */
+/**
+ * Colunas `numeric` do Postgres chegam como string pelo PostgREST
+ * ("790000", "250"). Quem consome espera número — daí o tipo aceitar os dois e
+ * a conversão normalizar.
+ */
+type Numerico = number | string | null | undefined;
+
 export interface ImovelLocalConvertivel {
   codigo_imovel: string;
   titulo: string | null;
@@ -24,22 +31,30 @@ export interface ImovelLocalConvertivel {
   bairro: string | null;
   cidade: string | null;
   estado: string | null;
-  valor_venda: number;
-  valor_locacao: number;
-  valor_iptu: number;
-  valor_condominio: number;
-  area_total: number;
-  area_util: number;
-  quartos: number;
-  suites: number;
-  vagas: number;
-  banheiros: number;
+  valor_venda: Numerico;
+  valor_locacao: Numerico;
+  valor_iptu: Numerico;
+  valor_condominio: Numerico;
+  area_total: Numerico;
+  area_util: Numerico;
+  quartos: Numerico;
+  suites: Numerico;
+  vagas: Numerico;
+  banheiros: Numerico;
+  /** Existe no cadastro local; o conversor antigo fixava 0 e jogava fora. */
+  salas?: Numerico;
   descricao: string | null;
   fotos: FotoInput[];
   captador_id?: string | null;
   /** Último ajuste no cadastro — base da regra de imóvel desatualizado. */
   updated_at?: string | null;
 }
+
+/** "790.000" nunca aparece se o valor seguir string: toLocaleString não formata texto. */
+const paraNumero = (valor: Numerico): number => {
+  const n = typeof valor === 'string' ? Number(valor) : valor;
+  return typeof n === 'number' && Number.isFinite(n) ? n : 0;
+};
 
 export const convertLocalToImovel = (local: ImovelLocalConvertivel): Imovel => ({
   referencia: local.codigo_imovel,
@@ -49,18 +64,18 @@ export const convertLocalToImovel = (local: ImovelLocalConvertivel): Imovel => (
   bairro: local.bairro || 'Sem bairro',
   cidade: local.cidade || 'Sem cidade',
   estado: local.estado || 'SP',
-  valor_venda: local.valor_venda || 0,
-  valor_locacao: local.valor_locacao || 0,
+  valor_venda: paraNumero(local.valor_venda),
+  valor_locacao: paraNumero(local.valor_locacao),
   finalidade: (local.finalidade as Imovel['finalidade']) || 'venda',
-  valor_iptu: local.valor_iptu || 0,
-  valor_condominio: local.valor_condominio || 0,
-  area_total: local.area_total || 0,
-  area_util: local.area_util || 0,
-  quartos: local.quartos || 0,
-  suites: local.suites || 0,
-  garagem: local.vagas || 0,
-  banheiro: local.banheiros || 0,
-  salas: 0,
+  valor_iptu: paraNumero(local.valor_iptu),
+  valor_condominio: paraNumero(local.valor_condominio),
+  area_total: paraNumero(local.area_total),
+  area_util: paraNumero(local.area_util),
+  quartos: paraNumero(local.quartos),
+  suites: paraNumero(local.suites),
+  garagem: paraNumero(local.vagas),
+  banheiro: paraNumero(local.banheiros),
+  salas: paraNumero(local.salas),
   descricao: local.descricao || '',
   captador_id: local.captador_id ?? null,
   updated_at: local.updated_at ?? null,

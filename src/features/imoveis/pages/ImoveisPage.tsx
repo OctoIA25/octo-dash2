@@ -19,7 +19,7 @@ import { ImovelDetalhesModal } from '@/components/imoveis/ImovelDetalhesModal';
 import { buildEditDataFromLocal } from '@/features/imoveis/utils/buildEditDataFromLocal';
 import { Imovel } from '../services/kenloService';
 import { resolverCaptador, matchCaptadorFilter, CAPTADOR_FILTRO_TODOS, CAPTADOR_FILTRO_SEM } from '../utils/captador';
-import { convertLocalToImovel } from '../utils/convertLocalToImovel';
+import { mergeCatalogoImoveis } from '../utils/mergeCatalogoImoveis';
 import { isDesatualizado } from '../utils/desatualizado';
 import { useCaptadores, mapCaptadoresPorId } from '../hooks/useCaptadores';
 import { supabase } from '@/lib/supabaseClient';
@@ -364,39 +364,11 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
     }
   }, [tenantId]);
 
-  // Combinar imóveis XML + Locais
+  // Combinar imóveis XML + Locais.
+  // A união vive em mergeCatalogoImoveis porque as telas de lead precisam do
+  // mesmo catálogo — enquanto a regra morava só aqui, elas viam outro.
   const imoveis = useMemo(() => {
-    const imoveisLocaisConvertidos = imoveisLocais.map(convertLocalToImovel);
-    const codigosXml = new Set(imoveisXml.map(i => i.referencia?.toUpperCase()));
-
-    // Índice dos locais por referência para sobrepor dados ao Kenlo.
-    const localPorCodigo = new Map(
-      imoveisLocaisConvertidos.map((l) => [l.referencia?.trim().toUpperCase(), l] as const),
-    );
-
-    // Adicionar apenas imóveis locais que não existem no XML
-    const locaisSemDuplicata = imoveisLocaisConvertidos.filter(
-      local => !codigosXml.has(local.referencia?.toUpperCase())
-    );
-
-    // A CAPA/fotos passam primeiro pelo registro local: se o corretor subiu/curou
-    // fotos próprias, elas têm prioridade. O Kenlo (XML) entra como fallback quando
-    // o local não tem nenhuma foto.
-    const baseComFotosLocais = imoveisXml.map((imovel) => {
-      const codigo = imovel.referencia?.trim().toUpperCase();
-      const local = codigo ? localPorCodigo.get(codigo) : undefined;
-      if (!local) return imovel;
-      return {
-        ...imovel,
-        ...(local.fotos.length > 0 ? { fotos: local.fotos } : {}),
-        captador_id: local.captador_id,
-        // O ajuste acontece no cadastro local, mesmo quando o imóvel também vem
-        // do XML — sem isso o duplicado nunca seria avaliado como desatualizado.
-        updated_at: local.updated_at,
-      };
-    });
-
-    return [...baseComFotosLocais, ...locaisSemDuplicata].map((imovel) => {
+    return mergeCatalogoImoveis(imoveisXml, imoveisLocais).map((imovel) => {
       const codigoNormalizado = imovel.referencia?.trim().toUpperCase();
       // As duas fontes com prioridade sobre o nome do XML (mesma ordem de
       // resolverCaptador). Se nenhuma delas resolveu, o nome exibido é o do

@@ -64,9 +64,6 @@ COPY server/proxy-production.js ./server/
 # Copiar build da aplicação do estágio anterior
 COPY --from=builder /app/dist ./dist
 
-# Copiar XML local como fallback
-COPY public/temp_kenlo.xml ./public/
-
 # Ajustar propriedade dos arquivos
 RUN chown -R nodejs:nodejs /app
 

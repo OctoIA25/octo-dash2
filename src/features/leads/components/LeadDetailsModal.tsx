@@ -53,7 +53,8 @@ import { PreferenciasEditor, preferenciasDe } from './PreferenciasLead';
 import { classificacoesDe, toggleClassificacao } from '../utils/classificarLead';
 import { EnviarRecomendacoesModal } from '@/features/recommendations/components/EnviarRecomendacoesModal';
 import { bolsaoLeadToRecommendationInput } from '@/features/recommendations/adapters';
-import { Imovel, fetchImovelByCodigo } from '@/features/imoveis/services/kenloService';
+import type { Imovel } from '@/features/imoveis/services/kenloService';
+import { fetchImovelDoTenantPorCodigo } from '@/features/imoveis/services/catalogoImoveisService';
 import { supabase } from '@/integrations/supabase/client';
 import { eventoToSupabase, supabaseToEvento } from '@/features/agenda/services/agendaSupabaseService';
 import { useAuth } from "@/hooks/useAuth";
@@ -429,11 +430,14 @@ export const LeadDetailsModal = ({
     }
   }, [isOpen, lead?.id]);
   
-  // Buscar imóvel quando o modal abrir
+  // Buscar imóvel quando o modal abrir.
+  // Catálogo do tenant (XML + imoveis_locais). O kenloService que ficava aqui
+  // lia um XML estático de outra base e dizia "não encontrado" para código que
+  // existe na aba Imóveis.
   useEffect(() => {
-    if (isOpen && lead?.codigo) {
+    if (isOpen && lead?.codigo && tenantId) {
       setCarregandoImovel(true);
-      fetchImovelByCodigo(lead.codigo)
+      fetchImovelDoTenantPorCodigo(tenantId, lead.codigo)
         .then(imovelEncontrado => {
           setImovel(imovelEncontrado);
         })
@@ -447,7 +451,7 @@ export const LeadDetailsModal = ({
     } else {
       setImovel(null);
     }
-  }, [isOpen, lead?.codigo]);
+  }, [isOpen, lead?.codigo, tenantId]);
   
   const chatPath = useChatPath(lead?.lead, lead?.nomedolead);
 
