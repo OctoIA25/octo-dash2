@@ -62,4 +62,6 @@ export const PREFERENCIAS_PADRAO = [
   'Sala Comercial', 'Loja', 'Galpão', 'Chácara',
   // Estágio do imóvel — não são tipos, então ficam fora de TODOS_TIPOS_IMOVEL.
   'Imóvel Pronto', 'Lançamento',
+  // Intenção de compra — também não é tipo de imóvel.
+  'Investimento',
 ];
