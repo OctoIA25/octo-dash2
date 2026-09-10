@@ -14,7 +14,7 @@
 /**
  * Colunas de `kenlo_leads` lidas por `kenloLeadToCRMLead` (leadsMetricsService).
  *
- * São exatamente as 18 colunas distintas que o mapper consome. Manter em sincronia com o mapper —
+ * São exatamente as 19 colunas distintas que o mapper consome. Manter em sincronia com o mapper —
  * o teste `leadColumns.test.ts` falha se divergirem.
  *
  * `classification` NÃO é "por via das dúvidas": consumidor real é `LeadsTable.tsx:489`
@@ -24,7 +24,7 @@
 export const KENLO_LEAD_COLUMNS_FOR_METRICS =
   'id, tenant_id, client_name, client_phone, client_email, portal, external_id, ' +
   'stage, temperature, interest_reference, interest_is_rent, interest_is_sale, ' +
-  'attended_by_name, message, created_at, updated_at, first_response_at, classification';
+  'attended_by_name, attended_by_id, message, created_at, updated_at, first_response_at, classification';
 
 /**
  * Colunas de `public.leads` (schema do CRM) lidas pelos consumidores de `fetchLeadsForMetrics`:

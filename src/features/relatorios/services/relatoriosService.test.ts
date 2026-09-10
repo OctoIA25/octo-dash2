@@ -64,7 +64,7 @@ vi.mock('@/features/metricas/services/vendasAssinadasService', async (importOrig
   return { ...real, buscarVendasAssinadas: async () => vendasFake };
 });
 
-import { buscarKPIsGerais, buscarVendasPorFaixa } from './relatoriosService';
+import { buscarKPIsGerais, buscarVendasPorFaixa, montarEvolucaoCarteira } from './relatoriosService';
 
 const TENANT = '33bf7e62-78ea-44fb-a047-c7b13d9a9d7f';
 const INICIO = '2026-08-01';
@@ -246,5 +246,43 @@ describe('buscarVendasPorFaixa', () => {
 
     expect(JSON.stringify(queries)).not.toContain('final_sale_value');
     expect(queries.some((q) => q.table === 'leads')).toBe(false);
+  });
+});
+
+describe('montarEvolucaoCarteira', () => {
+  const HOJE = new Date(2026, 8, 9); // 09/09/2026
+
+  it('devolve os N meses da janela, mesmo os sem movimento', () => {
+    const serie = montarEvolucaoCarteira([], [], 12, HOJE);
+    expect(serie).toHaveLength(12);
+    expect(serie[0].mes).toBe('Out');
+    expect(serie[11].mes).toBe('Set');
+    expect(serie.every((m) => m.carteira === 0)).toBe(true);
+  });
+
+  it('acumula: carteira do mês = saldo do mês anterior + entradas - saídas', () => {
+    const serie = montarEvolucaoCarteira(
+      ['2026-07-10T12:00:00Z', '2026-07-20T12:00:00Z', '2026-08-05T12:00:00Z'],
+      ['2026-08-15T12:00:00Z'],
+      12,
+      HOJE,
+    );
+    const jul = serie.find((m) => m.mes === 'Jul')!;
+    const ago = serie.find((m) => m.mes === 'Ago')!;
+    const set = serie.find((m) => m.mes === 'Set')!;
+
+    expect(jul).toMatchObject({ entradas: 2, saidas: 0, carteira: 2 });
+    expect(ago).toMatchObject({ entradas: 1, saidas: 1, carteira: 2 });
+    expect(set).toMatchObject({ entradas: 0, saidas: 0, carteira: 2 }); // saldo não zera em mês parado
+  });
+
+  it('o que entrou antes da janela vira saldo inicial em vez de sumir', () => {
+    const serie = montarEvolucaoCarteira(
+      ['2020-01-01T00:00:00Z', '2020-02-01T00:00:00Z'],
+      ['2019-05-01T00:00:00Z'],
+      12,
+      HOJE,
+    );
+    expect(serie[0]).toMatchObject({ entradas: 0, saidas: 0, carteira: 1 });
   });
 });

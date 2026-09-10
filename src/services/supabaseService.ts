@@ -17,6 +17,7 @@ import { normalizeDate } from '@/utils/dateUtils';
 import { normalizeCodigoImovel } from '@/utils/codigoImovelUtils';
 import { supabase } from '@/lib/supabaseClient';
 import type { ValorClassificacao } from '@/features/leads/utils/classificarLead';
+import { KENLO_STAGE_TO_STATUS } from '@/features/leads/services/leadsService';
 
 const DEBUG_LOGS = import.meta.env?.VITE_DEBUG_LOGS === 'true';
 let warnedSupabaseRemoved = false;
@@ -26,17 +27,6 @@ const PAGE_SIZE = 1000;
 interface FetchSupabaseLeadsOptions {
   throwOnError?: boolean;
 }
-
-const KENLO_STAGE_TO_ETAPA: Record<string, string> = {
-  new: 'Novos Leads',
-  contacted: 'Interação',
-  qualified: 'Visita Agendada',
-  visit_done: 'Visita Realizada',
-  negotiation: 'Negociação',
-  proposal: 'Proposta Enviada',
-  closed_won: 'Proposta Assinada',
-  closed_lost: 'Perdido',
-};
 
 const CRM_STATUS_TO_ETAPA: Record<string, string> = {
   'Novos Leads': 'Novos Leads',
@@ -202,8 +192,11 @@ const getErrorMessage = (error: unknown): string => {
 };
 
 function mapKenloToProcessed(row: KenloLeadRow, id: number, override?: CRMLeadRow): ProcessedLead {
-  const stageKey = (override?.status && CRM_STATUS_TO_ETAPA[override.status]) ||
-    (row.stage ? KENLO_STAGE_TO_ETAPA[row.stage] : undefined) ||
+  // O `override.status` vem de `leads` e já está em pt-BR: se não estiver no
+  // mapa (ex.: 'Arquivado'), vale o próprio valor. Antes o termo inteiro virava
+  // falsy e o lead caía em 'Novos Leads' — a etapa do CRM era descartada.
+  const stageKey = (override?.status && (CRM_STATUS_TO_ETAPA[override.status] || override.status)) ||
+    (row.stage ? KENLO_STAGE_TO_STATUS[row.stage] : undefined) ||
     'Novos Leads';
 
   const temperature =

@@ -120,6 +120,7 @@ export interface ImoveisSource {
     imoveis: ChartInput;
     faixa: ChartInput;
     exclusivo: ChartInput;
+    carteira: ChartInput;
   };
 }
 

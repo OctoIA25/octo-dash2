@@ -7,7 +7,7 @@ import { KENLO_LEAD_COLUMNS_FOR_METRICS, LEADS_COLUMNS_FOR_METRICS } from './lea
  * Risco protegido: como a leitura deixou de ser `select('*')`, se a projeção divergir das colunas
  * que `kenloLeadToCRMLead` lê, o campo faltante volta como `undefined` SILENCIOSAMENTE (sem erro).
  *
- * A lista abaixo é a fonte da verdade explícita: exatamente as 18 colunas que o mapper consome
+ * A lista abaixo é a fonte da verdade explícita: exatamente as 19 colunas que o mapper consome
  * (verificadas 1:1 contra kenloLeadToCRMLead). Se o mapper passar a ler uma coluna nova, este teste
  * quebra até que a coluna seja adicionada aqui E na constante — forçando os dois a andarem juntos.
  */
@@ -25,6 +25,7 @@ const EXPECTED_KENLO_COLUMNS = [
   'interest_is_rent',
   'interest_is_sale',
   'attended_by_name',
+  'attended_by_id',
   'message',
   'created_at',
   'updated_at',
@@ -36,7 +37,7 @@ const parseColumns = (projection: string): string[] =>
   projection.split(',').map((c) => c.trim()).filter(Boolean);
 
 describe('KENLO_LEAD_COLUMNS_FOR_METRICS', () => {
-  it('projeta exatamente as 17 colunas que kenloLeadToCRMLead lê', () => {
+  it('projeta exatamente as 19 colunas que kenloLeadToCRMLead lê', () => {
     const projected = parseColumns(KENLO_LEAD_COLUMNS_FOR_METRICS);
     expect(projected.sort()).toEqual([...EXPECTED_KENLO_COLUMNS].sort());
   });

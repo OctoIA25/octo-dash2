@@ -11,25 +11,12 @@
  */
 
 import { supabase } from '@/lib/supabaseClient';
-import { CRMLead, LeadType, LEAD_TYPE_INTERESSADO, LEAD_TYPE_PROPRIETARIO, fetchPagesInBatches, PAGE_SIZE } from './leadsService';
+import { CRMLead, LeadType, LEAD_TYPE_INTERESSADO, LEAD_TYPE_PROPRIETARIO, KENLO_STAGE_TO_STATUS, fetchPagesInBatches, PAGE_SIZE } from './leadsService';
 import { ProcessedLead, canonicalizeOrigemLeads } from '@/data/realLeadsProcessor';
 import { KENLO_LEAD_COLUMNS_FOR_METRICS, LEADS_COLUMNS_FOR_METRICS } from './leadColumns';
 import type { ValorClassificacao } from '@/features/leads/utils/classificarLead';
 
 const TEST_TENANT_ID = 'tenant-area-de-teste';
-
-/**
- * Mapeamento de stage do kenlo_leads (inglês) para status do CRM (português)
- */
-const KENLO_STAGE_MAP: Record<string, string> = {
-  'new': 'Novos Leads',
-  'contacted': 'Interação',
-  'qualified': 'Visita Agendada',
-  'visit': 'Visita Realizada',
-  'negotiation': 'Negociação',
-  'proposal': 'Proposta Enviada',
-  'closed': 'Proposta Assinada',
-};
 
 /**
  * Mapeamento de temperatura do kenlo_leads (inglês) para CRM (português)
@@ -55,13 +42,13 @@ function kenloLeadToCRMLead(kenloLead: Record<string, unknown>): CRMLead {
     email: (kenloLead.client_email as string) || null,
     source: (kenloLead.portal as string) || 'Kenlo',
     source_lead_id: (kenloLead.external_id as string) || null,
-    status: KENLO_STAGE_MAP[stage] || 'Novos Leads',
+    status: KENLO_STAGE_TO_STATUS[stage] || 'Novos Leads',
     temperature: KENLO_TEMPERATURE_MAP[temperature] || 'Frio',
     property_id: null,
     property_code: (kenloLead.interest_reference as string) || null,
     property_value: null,
     property_type: kenloLead.interest_is_rent ? 'Locação' : kenloLead.interest_is_sale ? 'Venda' : null,
-    assigned_agent_id: null,
+    assigned_agent_id: (kenloLead.attended_by_id as string) || null,
     assigned_agent_name: (kenloLead.attended_by_name as string) || null,
     comments: (kenloLead.message as string) || null,
     tags: null,
@@ -101,7 +88,15 @@ async function fetchKenloLeadsAsCRM(
         .range(from, from + PAGE_SIZE - 1);
 
       if (agentId) {
-        query = query.eq('attended_by_name', agentId);
+        // `agentId` é o UUID do usuário (useLeadsMetrics passa `scopeUserId`).
+        // Comparar UUID com `attended_by_name` devolvia ZERO linha, sem erro:
+        // no tenant cuja base inteira é kenlo_leads, o corretor abria Relatórios
+        // e via tudo vazio. A coluna de identidade é `attended_by_id`.
+        // ponytail: hoje 71.623 das 72.895 linhas da Japi têm attended_by_id
+        // NULO — o corretor passa a ver os leads que o sync carimbou, não todos.
+        // Preencher o resto é trabalho do sync (casar attended_by_name → user),
+        // não deste filtro.
+        query = query.eq('attended_by_id', agentId);
       }
 
       if (!includeArchived) {

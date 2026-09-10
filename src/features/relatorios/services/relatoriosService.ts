@@ -653,3 +653,157 @@ export async function buscarVendasPorFaixa(
 
   return [...buckets.values()];
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Evolução da carteira de imóveis
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Um mês da série da carteira. `carteira` é o saldo ao FIM do mês. */
+export interface CarteiraMes {
+  mes: string;
+  ano: number;
+  entradas: number;
+  saidas: number;
+  carteira: number;
+}
+
+const chaveMes = (d: Date) => `${d.getFullYear()}-${d.getMonth() + 1}`;
+
+/**
+ * Monta a série da carteira a partir das datas de entrada e de saída.
+ *
+ * Separada da query para poder ser testada sem banco. O saldo de cada mês é
+ * acumulado (entradas − saídas) sobre um saldo inicial: tudo que entrou e saiu
+ * ANTES da janela vira o ponto de partida, senão o primeiro mês do gráfico
+ * começaria em zero e a linha inteira mentiria.
+ */
+export function montarEvolucaoCarteira(
+  entradas: string[],
+  saidas: string[],
+  meses = 12,
+  hoje: Date = new Date()
+): CarteiraMes[] {
+  const primeiroMes = new Date(hoje.getFullYear(), hoje.getMonth() - (meses - 1), 1);
+
+  const buckets = new Map<string, CarteiraMes>();
+  for (let i = 0; i < meses; i++) {
+    const d = new Date(primeiroMes.getFullYear(), primeiroMes.getMonth() + i, 1);
+    buckets.set(chaveMes(d), {
+      mes: MESES_ABREV[d.getMonth()],
+      ano: d.getFullYear(),
+      entradas: 0,
+      saidas: 0,
+      carteira: 0,
+    });
+  }
+
+  let saldoInicial = 0;
+  const acumular = (datas: string[], campo: 'entradas' | 'saidas', sinal: 1 | -1) => {
+    for (const iso of datas) {
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) continue;
+      if (d < primeiroMes) {
+        saldoInicial += sinal;
+        continue;
+      }
+      // Data fora da janela pela frente (relógio adiantado) não entra em mês nenhum.
+      const bucket = buckets.get(chaveMes(d));
+      if (bucket) bucket[campo] += 1;
+    }
+  };
+  acumular(entradas, 'entradas', 1);
+  acumular(saidas, 'saidas', -1);
+
+  let saldo = saldoInicial;
+  for (const bucket of buckets.values()) {
+    saldo += bucket.entradas - bucket.saidas;
+    bucket.carteira = saldo;
+  }
+
+  return [...buckets.values()];
+}
+
+/** Lê todas as páginas de uma consulta — sem o laço, o PostgREST corta em 1000 sem avisar. */
+async function lerPaginado<T>(
+  pagina: (de: number, ate: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>
+): Promise<T[]> {
+  const linhas: T[] = [];
+  for (let page = 0; ; page += 1) {
+    const { data, error } = await pagina(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+    if (error) throw error;
+    const lote = data ?? [];
+    linhas.push(...lote);
+    if (lote.length < PAGE_SIZE) break;
+  }
+  return linhas;
+}
+
+/**
+ * Evolução da carteira de imóveis mês a mês (entradas, saídas e saldo).
+ *
+ * Carteira = linhas de `imoveis_locais`, a mesma definição de "imóveis ativos"
+ * que os KPIs usam (`countImoveisAtivos` no servidor) — não existe baixa lógica
+ * na tabela: sair da carteira é a linha ser apagada.
+ *
+ * Por isso a SAÍDA vem de `imoveis_locais_log` (`acao = 'excluido'`), o único
+ * lugar onde o imóvel apagado deixa rastro, e a ENTRADA de `created_at`: das
+ * linhas vivas direto, e das apagadas pelo evento 'criado' do mesmo log.
+ *
+ * ponytail: o log só existe desde 17/08/2026. Imóvel apagado antes disso não
+ * tem evento 'criado' — entra como saldo anterior à janela, que é a verdade
+ * mais próxima (ele já existia). E imóvel que nasceu E morreu antes do log é
+ * invisível: some dos dois lados, então só subestima meses antigos e nunca o
+ * saldo atual, que bate com a contagem da tabela.
+ */
+export async function buscarEvolucaoCarteira(
+  tenantId: string,
+  meses: number = 12
+): Promise<CarteiraMes[]> {
+  const lerLog = (acao: 'criado' | 'excluido', filtrarIds?: string[]) =>
+    lerPaginado<{ imovel_id: string; created_at: string }>((de, ate) => {
+      let query = supabase
+        .from('imoveis_locais_log')
+        .select('imovel_id, created_at')
+        .eq('tenant_id', tenantId)
+        .eq('acao', acao);
+      if (filtrarIds) query = query.in('imovel_id', filtrarIds);
+      // Ordem estável: sem ela a paginação do PostgREST pode repetir/pular linha.
+      return query.order('created_at').range(de, ate);
+    });
+
+  const [vivos, exclusoes] = await Promise.all([
+    lerPaginado<{ id: string; created_at: string | null }>((de, ate) =>
+      supabase
+        .from('imoveis_locais')
+        .select('id, created_at')
+        .eq('tenant_id', tenantId)
+        .order('created_at')
+        .range(de, ate)
+    ),
+    // Falha aqui (log ausente/sem permissão) não pode zerar o gráfico: sem as
+    // saídas a curva ainda é a carteira, só sem as baixas.
+    lerLog('excluido').catch((erro) => {
+      console.warn('[carteira] saídas indisponíveis, série segue só com entradas:', erro);
+      return [] as Array<{ imovel_id: string; created_at: string }>;
+    }),
+  ]);
+
+  const entradas: string[] = [];
+  for (const imovel of vivos) {
+    if (imovel.created_at) entradas.push(imovel.created_at);
+  }
+
+  if (exclusoes.length > 0) {
+    // Só as criações dos que saíram: as dos vivos já vieram da própria tabela.
+    // ponytail: um `in` por id; se um dia forem milhares de exclusões a URL
+    // estoura e o caminho é ler o log de 'criado' inteiro, paginado.
+    const criacoes = await lerLog('criado', exclusoes.map((e) => e.imovel_id));
+    const criadoEm = new Map(criacoes.map((c) => [c.imovel_id, c.created_at]));
+    // Sem evento 'criado' (imóvel anterior ao log): conta como saldo anterior.
+    for (const saida of exclusoes) {
+      entradas.push(criadoEm.get(saida.imovel_id) ?? '1970-01-01T00:00:00.000Z');
+    }
+  }
+
+  return montarEvolucaoCarteira(entradas, exclusoes.map((e) => e.created_at), meses);
+}

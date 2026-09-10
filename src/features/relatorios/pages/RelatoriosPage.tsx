@@ -18,7 +18,7 @@ import {
   PointElement,
   LineElement,
 } from 'chart.js';
-import { Bar, Pie, Doughnut } from 'react-chartjs-2';
+import { Bar, Line, Pie, Doughnut } from 'react-chartjs-2';
 import { 
   Search, 
   Download, 
@@ -65,6 +65,7 @@ import {
   somarVendas,
   type VendaAssinada,
 } from '@/features/metricas/services/vendasAssinadasService';
+import { buscarEvolucaoCarteira, type CarteiraMes } from '../services/relatoriosService';
 import { useRelatorios } from '../hooks/useRelatorios';
 import { useLeadSourceChannels } from '../hooks/useLeadSourceChannels';
 
@@ -279,6 +280,7 @@ export const RelatoriosPage = () => {
   const [rankingPeriod, setRankingPeriod] = useState<'monthly' | 'quarterly' | 'semiannual' | 'yearly'>('yearly');
   const [rankingCurrentPage, setRankingCurrentPage] = useState<number>(1);
   const [financeiroImoveis, setFinanceiroImoveis] = useState<CommercialSalesFinanceSummary | null>(null);
+  const [evolucaoCarteira, setEvolucaoCarteira] = useState<CarteiraMes[]>([]);
   const rankingItemsPerPage = 10;
 
   // Reset page when period or filters change
@@ -334,6 +336,28 @@ export const RelatoriosPage = () => {
     return () => {
       mounted = false;
       clearInterval(interval);
+    };
+  }, [tenantId, activeSubArea]);
+
+  // Evolução da carteira: sem polling, ao contrário do financeiro acima —
+  // captação e exclusão de imóvel são eventos de dias, não de 30 segundos.
+  useEffect(() => {
+    let mounted = true;
+
+    const loadCarteira = async () => {
+      if (!tenantId || tenantId === 'owner' || activeSubArea !== 'imoveis') return;
+      try {
+        const serie = await buscarEvolucaoCarteira(tenantId);
+        if (mounted) setEvolucaoCarteira(serie);
+      } catch (error) {
+        console.error('Erro ao carregar evolução da carteira:', error);
+        if (mounted) setEvolucaoCarteira([]);
+      }
+    };
+
+    loadCarteira();
+    return () => {
+      mounted = false;
     };
   }, [tenantId, activeSubArea]);
 
@@ -1498,6 +1522,46 @@ export const RelatoriosPage = () => {
     }]
   };
 
+  // Evolução da carteira: o saldo é a linha; entradas/saídas ficam no tooltip.
+  // Plotar os três juntos achataria a linha do saldo (dezenas) contra
+  // movimentações que são de unidades.
+  const carteiraChartData = useMemo(() => ({
+    labels: evolucaoCarteira.map((m) => `${m.mes}/${String(m.ano).slice(2)}`),
+    datasets: [
+      {
+        label: 'Em carteira',
+        data: evolucaoCarteira.map((m) => m.carteira),
+        borderColor: 'rgb(37, 99, 235)',
+        backgroundColor: 'rgba(37, 99, 235, 0.12)',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 3,
+      },
+    ],
+  }), [evolucaoCarteira]);
+
+  const carteiraChartOptions = useMemo(() => ({
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        callbacks: {
+          label: (ctx: { parsed: { y: number } }) => `${ctx.parsed.y} imóveis em carteira`,
+          afterLabel: (ctx: { dataIndex: number }) => {
+            const mes = evolucaoCarteira[ctx.dataIndex];
+            if (!mes) return '';
+            return `+${mes.entradas} entradas / -${mes.saidas} saídas`;
+          },
+        },
+      },
+    },
+    scales: {
+      x: { grid: { display: false }, ticks: { color: '#6B7280', font: { size: 10 } } },
+      y: { beginAtZero: true, ticks: { color: '#6B7280', precision: 0 } },
+    },
+  }), [evolucaoCarteira]);
+
   // 14. Imóveis mais procurados (dados reais)
   const imovelCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -1673,6 +1737,8 @@ export const RelatoriosPage = () => {
         imoveis: fromChartJs(imoveisInteresseData, 'horizontalBar'),
         faixa: fromChartJs(vendasFaixaChartData, 'bar'),
         exclusivo: fromChartJs(distribuicaoExclusivoFichaChartData, 'stackedBar'),
+        // O exportador não desenha linha; no PDF/Excel o saldo vira barra por mês.
+        carteira: fromChartJs(carteiraChartData, 'bar'),
       },
     },
     financeiro: { resumo: financeiroResumoExport },
@@ -1683,7 +1749,7 @@ export const RelatoriosPage = () => {
     leadsPorEquipeData, tempoRespostaChartData, taxaConversaoChartData, leadsInteragidosUsuarioData, tempoInteracaoData, atividadesAbertoData, leadsConvertidosUsuarioData,
     rankingMetricasIndividuais, activeMetricasIndSubArea, metricasIndCorretor, metricasIndComissaoMetasView, metricasIndLeadsView, metricasIndVendasView,
     leadsPorFonteData, leadsPorImovelData, vendasPorFonteData,
-    financeiroImoveis, vgvChartData, vgcChartData, imoveisInteresseData, vendasFaixaChartData, distribuicaoExclusivoFichaChartData,
+    financeiroImoveis, vgvChartData, vgcChartData, imoveisInteresseData, vendasFaixaChartData, distribuicaoExclusivoFichaChartData, carteiraChartData,
     financeiroResumoExport,
   ]);
 
@@ -3230,6 +3296,23 @@ export const RelatoriosPage = () => {
                   </p>
                 </div>
               </div>
+            </div>
+          </div>
+
+          {/* Evolução da carteira — o que estava em carteira ao fim de cada mês */}
+          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-5 mb-6">
+            <h3 className="text-sm font-semibold text-gray-800 mb-1">Evolução da Carteira (12 meses)</h3>
+            <p className="text-xs text-gray-500 dark:text-slate-400 mb-4">
+              Imóveis cadastrados ao fim de cada mês (entradas menos saídas). Passe o mouse para ver a movimentação do mês.
+            </p>
+            <div className="h-[280px]">
+              {evolucaoCarteira.length > 0 ? (
+                <Line data={carteiraChartData} options={carteiraChartOptions} />
+              ) : (
+                <div className="h-full flex items-center justify-center text-sm text-gray-400">
+                  Sem dados de carteira.
+                </div>
+              )}
             </div>
           </div>
 
