@@ -14,8 +14,13 @@ export interface PoloLetra {
 }
 
 export interface DimensaoMBTI {
-  /** chave do percentual no resultado (percentuais.{Mind,Energy,...}) */
-  chave: 'Energy' | 'Mind' | 'Nature' | 'Tactics' | 'Identity';
+  /**
+   * Identificador da dimensão. Deliberadamente em PT-BR e NÃO nos nomes do
+   * 16personalities: lá `Mind` é a dimensão I/E e `Energy` é S/N, o inverso do
+   * que os nomes sugerem, e essa ambiguidade já causou a exibição trocada.
+   * Aqui a chave é só identidade da dimensão — não indexa percentual nenhum.
+   */
+  chave: 'energia' | 'mente' | 'natureza' | 'abordagem' | 'identidade';
   /** rótulo leigo da dimensão */
   rotulo: string;
   /** as duas pontas da dicotomia */
@@ -25,7 +30,7 @@ export interface DimensaoMBTI {
 // Ordem das letras no código MBTI: [E/I][S/N][T/F][J/P], + Identidade (A/T).
 export const DIMENSOES: DimensaoMBTI[] = [
   {
-    chave: 'Energy',
+    chave: 'energia',
     rotulo: 'De onde vem sua energia',
     polos: [
       { letra: 'E', nome: 'Extroversão', resumo: 'Recarrega no convívio e pensa em voz alta.' },
@@ -33,7 +38,7 @@ export const DIMENSOES: DimensaoMBTI[] = [
     ],
   },
   {
-    chave: 'Mind',
+    chave: 'mente',
     rotulo: 'Como você capta o mundo',
     polos: [
       { letra: 'S', nome: 'Sensação', resumo: 'Foca em fatos concretos e no presente.' },
@@ -41,7 +46,7 @@ export const DIMENSOES: DimensaoMBTI[] = [
     ],
   },
   {
-    chave: 'Nature',
+    chave: 'natureza',
     rotulo: 'Como você decide',
     polos: [
       { letra: 'T', nome: 'Razão', resumo: 'Decide pela lógica e pela coerência.' },
@@ -49,7 +54,7 @@ export const DIMENSOES: DimensaoMBTI[] = [
     ],
   },
   {
-    chave: 'Tactics',
+    chave: 'abordagem',
     rotulo: 'Como você se organiza',
     polos: [
       { letra: 'J', nome: 'Julgamento', resumo: 'Prefere planejar e fechar decisões.' },
@@ -57,7 +62,7 @@ export const DIMENSOES: DimensaoMBTI[] = [
     ],
   },
   {
-    chave: 'Identity',
+    chave: 'identidade',
     rotulo: 'Como você lida com pressão',
     polos: [
       { letra: 'A', nome: 'Assertivo', resumo: 'Mantém a confiança e a calma sob estresse.' },
@@ -67,23 +72,23 @@ export const DIMENSOES: DimensaoMBTI[] = [
 ];
 
 /**
- * Resolve qual pólo a pessoa expressa, dado o código (ex.: "INTJ-A") e o percentual
- * 0–100 da dimensão. O percentual no 16personalities indica a força do PRIMEIRO
- * pólo de cada par; >=50 → primeiro pólo, senão o segundo. Para Energy o primeiro
- * pólo é E, etc. Mantém consistência com a letra real do código quando disponível.
+ * Resolve qual pólo a pessoa expressa a partir do código do tipo (ex.: "INTJ-A").
+ *
+ * O código é a única fonte: o percentual costumava servir de desempate
+ * (`>= 50 ? a : b`), mas ele nunca foi medido de verdade — era constante derivada
+ * da própria letra —, e usá-lo já produziu dimensões invertidas na releitura.
  */
-export function poloAtivo(dim: DimensaoMBTI, codigo: string, percentual: number): PoloLetra {
+export function poloAtivo(dim: DimensaoMBTI, codigo: string): PoloLetra {
   const cod = codigo.toUpperCase();
   const [a, b] = dim.polos;
 
   // Identidade (A/T) é o sufixo do código (ex.: "INTJ-A"). Tratada à parte porque
   // a letra T também aparece na dimensão Nature, gerando ambiguidade num includes().
-  if (dim.chave === 'Identity') return cod.endsWith('-T') ? b : a;
+  if (dim.chave === 'identidade') return cod.endsWith('-T') ? b : a;
 
   // As 4 primeiras letras vêm da base do tipo (antes do "-"); cada pólo só pode
   // ocupar sua posição, então checar presença na base é seguro.
   const base = cod.split('-')[0];
-  if (base.includes(a.letra)) return a;
   if (base.includes(b.letra)) return b;
-  return percentual >= 50 ? a : b; // fallback
+  return a;
 }

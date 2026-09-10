@@ -88,36 +88,38 @@ export async function salvarResultado16Personalities(
       // Atualizar também as colunas MBTI existentes (compatibilidade)
       mbti_tipo: dados.tipoCodigo,
       
-      // Energia (Mind) - I/E
-      percentual_energia: dados.percentuais.energia.percentual,
-      lado_energia: dados.percentuais.energia.lado,
-      letra_energia: dados.percentuais.energia.letra,
-      mbti_percent_mind: dados.percentuais.energia.percentual,
-      
-      // Mente (Energy) - S/N
-      percentual_mente: dados.percentuais.mente.percentual,
-      lado_mente: dados.percentuais.mente.lado,
-      letra_mente: dados.percentuais.mente.letra,
-      mbti_percent_energy: dados.percentuais.mente.percentual,
-      
-      // Natureza (Nature) - T/F
-      percentual_natureza: dados.percentuais.natureza.percentual,
-      lado_natureza: dados.percentuais.natureza.lado,
-      letra_natureza: dados.percentuais.natureza.letra,
-      mbti_percent_nature: dados.percentuais.natureza.percentual,
-      
-      // Abordagem (Tactics) - J/P
-      percentual_abordagem: dados.percentuais.abordagem.percentual,
-      lado_abordagem: dados.percentuais.abordagem.lado,
-      letra_abordagem: dados.percentuais.abordagem.letra,
-      mbti_percent_tactics: dados.percentuais.abordagem.percentual,
-      
-      // Identidade (Identity) - A/T
-      percentual_identidade: dados.percentuais.identidade.percentual,
-      lado_identidade: dados.percentuais.identidade.lado,
-      letra_identidade: dados.percentuais.identidade.letra,
-      mbti_percent_identity: dados.percentuais.identidade.percentual,
-      
+      // Letra e lado de cada dimensão, derivados do código do tipo.
+      //
+      // As colunas de percentual (percentual_* e mbti_percent_*) são gravadas
+      // como null de propósito: o valor que ia aqui era constante derivada da
+      // própria letra (55/45), não medição. Escrever null também limpa o valor
+      // fabricado de quem reimportar. As colunas ficam no banco por
+      // compatibilidade — nenhuma tela lê mais.
+      percentual_energia: null,
+      lado_energia: dados.dimensoes.energia.lado,
+      letra_energia: dados.dimensoes.energia.letra,
+      mbti_percent_mind: null,
+
+      percentual_mente: null,
+      lado_mente: dados.dimensoes.mente.lado,
+      letra_mente: dados.dimensoes.mente.letra,
+      mbti_percent_energy: null,
+
+      percentual_natureza: null,
+      lado_natureza: dados.dimensoes.natureza.lado,
+      letra_natureza: dados.dimensoes.natureza.letra,
+      mbti_percent_nature: null,
+
+      percentual_abordagem: null,
+      lado_abordagem: dados.dimensoes.abordagem.lado,
+      letra_abordagem: dados.dimensoes.abordagem.letra,
+      mbti_percent_tactics: null,
+
+      percentual_identidade: null,
+      lado_identidade: dados.dimensoes.identidade.lado,
+      letra_identidade: dados.dimensoes.identidade.letra,
+      mbti_percent_identity: null,
+
       // Timestamps
       data_importacao_16personalities: new Date().toISOString(),
       mbti_data_teste: new Date().toISOString()

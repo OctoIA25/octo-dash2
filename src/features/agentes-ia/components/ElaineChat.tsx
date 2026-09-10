@@ -83,7 +83,6 @@ interface ElaineChatProps {
   selectedCorretorMBTI?: {
     nome: string;
     tipoMBTI: string;
-    percentuais: { [key: string]: number };
   } | null;
   onClearCorretorMBTI?: () => void;
   selectedEspecialidade?: string | null;
@@ -327,7 +326,7 @@ export const ElaineChat = ({
           
           // Buscar corretor pelo email (estratégia principal) ou nome parcial (fallback)
           let corretorResponse = await fetch(
-            `${config.url}/rest/v1/Corretores?email=ilike.${encodeURIComponent(user.email)}&select=id,nm_corretor,disc_tipo_principal,disc_percentual_d,disc_percentual_i,disc_percentual_s,disc_percentual_c,eneagrama_tipo_principal,eneagrama_score_tipo_1,eneagrama_score_tipo_2,eneagrama_score_tipo_3,eneagrama_score_tipo_4,eneagrama_score_tipo_5,eneagrama_score_tipo_6,eneagrama_score_tipo_7,eneagrama_score_tipo_8,eneagrama_score_tipo_9,mbti_tipo,mbti_percent_energy,mbti_percent_mind,mbti_percent_nature,mbti_percent_tactics,mbti_percent_identity&limit=1`,
+            `${config.url}/rest/v1/Corretores?email=ilike.${encodeURIComponent(user.email)}&select=id,nm_corretor,disc_tipo_principal,disc_percentual_d,disc_percentual_i,disc_percentual_s,disc_percentual_c,eneagrama_tipo_principal,eneagrama_score_tipo_1,eneagrama_score_tipo_2,eneagrama_score_tipo_3,eneagrama_score_tipo_4,eneagrama_score_tipo_5,eneagrama_score_tipo_6,eneagrama_score_tipo_7,eneagrama_score_tipo_8,eneagrama_score_tipo_9,mbti_tipo&limit=1`,
             {
               method: 'GET',
               headers: headers
@@ -341,7 +340,7 @@ export const ElaineChat = ({
             const nomeFromEmail = user.email.split('@')[0]?.replace(/[._-]/g, ' ');
             if (nomeFromEmail && nomeFromEmail.length > 2) {
               corretorResponse = await fetch(
-                `${config.url}/rest/v1/Corretores?nm_corretor=ilike.*${encodeURIComponent(nomeFromEmail)}*&select=id,nm_corretor,disc_tipo_principal,disc_percentual_d,disc_percentual_i,disc_percentual_s,disc_percentual_c,eneagrama_tipo_principal,eneagrama_score_tipo_1,eneagrama_score_tipo_2,eneagrama_score_tipo_3,eneagrama_score_tipo_4,eneagrama_score_tipo_5,eneagrama_score_tipo_6,eneagrama_score_tipo_7,eneagrama_score_tipo_8,eneagrama_score_tipo_9,mbti_tipo,mbti_percent_energy,mbti_percent_mind,mbti_percent_nature,mbti_percent_tactics,mbti_percent_identity&limit=1`,
+                `${config.url}/rest/v1/Corretores?nm_corretor=ilike.*${encodeURIComponent(nomeFromEmail)}*&select=id,nm_corretor,disc_tipo_principal,disc_percentual_d,disc_percentual_i,disc_percentual_s,disc_percentual_c,eneagrama_tipo_principal,eneagrama_score_tipo_1,eneagrama_score_tipo_2,eneagrama_score_tipo_3,eneagrama_score_tipo_4,eneagrama_score_tipo_5,eneagrama_score_tipo_6,eneagrama_score_tipo_7,eneagrama_score_tipo_8,eneagrama_score_tipo_9,mbti_tipo&limit=1`,
                 {
                   method: 'GET',
                   headers: headers
@@ -401,16 +400,10 @@ export const ElaineChat = ({
             
             // Adicionar MBTI se existir
             if (corretor.mbti_tipo) {
-              dadosComportamentais.mbti = {
-                tipo: corretor.mbti_tipo,
-                percentuais: {
-                  Mind: corretor.mbti_percent_mind || 0,
-                  Energy: corretor.mbti_percent_energy || 0,
-                  Nature: corretor.mbti_percent_nature || 0,
-                  Tactics: corretor.mbti_percent_tactics || 0,
-                  Identity: corretor.mbti_percent_identity || 0
-                }
-              };
+              // Só o tipo: o percentual MBTI nunca foi medido (constante 55/45 derivada da
+              // própria letra) e agora é gravado como null. Mandar "0%" para o modelo é
+              // pior que omitir — ele narra uma intensidade que não existe.
+              dadosComportamentais.mbti = { tipo: corretor.mbti_tipo };
             }
           }
         } catch (error) {
@@ -428,7 +421,7 @@ export const ElaineChat = ({
             
             // Buscar ID do corretor pelo nome
             const corretorResponse = await fetch(
-              `${config.url}/rest/v1/Corretores?nm_corretor=eq.${encodeURIComponent(selectedCorretorGestaoLiderados)}&select=id,email,disc_tipo_principal,disc_percentual_d,disc_percentual_i,disc_percentual_s,disc_percentual_c,eneagrama_tipo_principal,eneagrama_score_tipo_1,eneagrama_score_tipo_2,eneagrama_score_tipo_3,eneagrama_score_tipo_4,eneagrama_score_tipo_5,eneagrama_score_tipo_6,eneagrama_score_tipo_7,eneagrama_score_tipo_8,eneagrama_score_tipo_9,mbti_tipo,mbti_percent_energy,mbti_percent_mind,mbti_percent_nature,mbti_percent_tactics,mbti_percent_identity`,
+              `${config.url}/rest/v1/Corretores?nm_corretor=eq.${encodeURIComponent(selectedCorretorGestaoLiderados)}&select=id,email,disc_tipo_principal,disc_percentual_d,disc_percentual_i,disc_percentual_s,disc_percentual_c,eneagrama_tipo_principal,eneagrama_score_tipo_1,eneagrama_score_tipo_2,eneagrama_score_tipo_3,eneagrama_score_tipo_4,eneagrama_score_tipo_5,eneagrama_score_tipo_6,eneagrama_score_tipo_7,eneagrama_score_tipo_8,eneagrama_score_tipo_9,mbti_tipo`,
               {
                 method: 'GET',
                 headers: headers
@@ -484,16 +477,10 @@ export const ElaineChat = ({
                 
                 // Adicionar MBTI se existir
                 if (corretor.mbti_tipo) {
-                  dadosComportamentais.mbti = {
-                    tipo: corretor.mbti_tipo,
-                    percentuais: {
-                      Mind: corretor.mbti_percent_mind || 0,
-                      Energy: corretor.mbti_percent_energy || 0,
-                      Nature: corretor.mbti_percent_nature || 0,
-                      Tactics: corretor.mbti_percent_tactics || 0,
-                      Identity: corretor.mbti_percent_identity || 0
-                    }
-                  };
+                  // Só o tipo: o percentual MBTI nunca foi medido (constante 55/45 derivada da
+                  // própria letra) e agora é gravado como null. Mandar "0%" para o modelo é
+                  // pior que omitir — ele narra uma intensidade que não existe.
+                  dadosComportamentais.mbti = { tipo: corretor.mbti_tipo };
                 }
               }
             }
@@ -524,10 +511,7 @@ export const ElaineChat = ({
         
         // Adicionar dados MBTI se corretor selecionado (seletor MBTI)
         if (selectedCorretorMBTI) {
-          dadosComportamentais.mbti = {
-            tipo: selectedCorretorMBTI.tipoMBTI,
-            percentuais: selectedCorretorMBTI.percentuais
-          };
+          dadosComportamentais.mbti = { tipo: selectedCorretorMBTI.tipoMBTI };
         }
       }
 

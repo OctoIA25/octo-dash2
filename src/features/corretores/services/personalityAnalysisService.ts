@@ -65,12 +65,17 @@ export interface AnaliseMBTI {
   gestaoEnergia: string;
   pontosFortes: string;
   desafios: string;
-  percentuais: {
-    Mind: { valor: number; categoria: string };
-    Energy: { valor: number; categoria: string };
-    Nature: { valor: number; categoria: string };
-    Tactics: { valor: number; categoria: string };
-    Identity: { valor: number; categoria: string };
+  /**
+   * Categoria de cada dimensão (Introvertido, Intuitivo, …), derivada das LETRAS
+   * do tipo. Não há percentual: o do 16personalities nunca foi medido — era
+   * constante derivada da própria letra — e deixou de ser gravado.
+   */
+  dimensoes: {
+    Mind: string;
+    Energy: string;
+    Nature: string;
+    Tactics: string;
+    Identity: string;
   };
   interpretacao: string;
 }
@@ -416,10 +421,7 @@ const MBTI_TIPOS: Record<string, {
 /**
  * Gera análise completa do perfil MBTI
  */
-export function gerarAnaliseMBTI(
-  tipo: string,
-  percentuais: { [key: string]: number }
-): AnaliseMBTI {
+export function gerarAnaliseMBTI(tipo: string): AnaliseMBTI {
   // Extrair tipo base (ex: "ENFP-T" -> "ENFP")
   const tipoBase = tipo.split('-')[0];
   const assertividade = tipo.includes('-A') ? 'Assertivo' : tipo.includes('-T') ? 'Turbulento' : '';
@@ -440,38 +442,12 @@ export function gerarAnaliseMBTI(
   // (a coluna mbti_percent_energy guarda S/N ancorado em 'S') — N5, mesma classe
   // do C1. As letras do código nunca contradizem o tipo.
   const sufixoIdentidade = tipo.split('-')[1]?.toUpperCase() === 'T' ? 'T' : 'A';
-  const categoriaPorDimensao = (dimensao: string): string => {
-    switch (dimensao) {
-      case 'Mind':     return tipoBase[0] === 'I' ? 'Introvertido' : 'Extrovertido';      // I/E
-      case 'Energy':   return tipoBase[1] === 'N' ? 'Intuitivo' : 'Observador';           // N/S
-      case 'Nature':   return tipoBase[2] === 'T' ? 'Pensamento' : 'Sentimento';          // T/F
-      case 'Tactics':  return tipoBase[3] === 'J' ? 'Julgamento' : 'Percepção';           // J/P
-      case 'Identity': return sufixoIdentidade === 'A' ? 'Assertivo' : 'Turbulento';      // A/T
-      default:         return 'N/A';
-    }
-  };
-
-  const percentuaisFormatados = {
-    Mind: {
-      valor: percentuais.Mind ?? 50,
-      categoria: categoriaPorDimensao('Mind')
-    },
-    Energy: {
-      valor: percentuais.Energy ?? 50,
-      categoria: categoriaPorDimensao('Energy')
-    },
-    Nature: {
-      valor: percentuais.Nature ?? 50,
-      categoria: categoriaPorDimensao('Nature')
-    },
-    Tactics: {
-      valor: percentuais.Tactics ?? 50,
-      categoria: categoriaPorDimensao('Tactics')
-    },
-    Identity: {
-      valor: percentuais.Identity ?? 50,
-      categoria: categoriaPorDimensao('Identity')
-    }
+  const dimensoes = {
+    Mind:     tipoBase[0] === 'I' ? 'Introvertido' : 'Extrovertido',   // I/E
+    Energy:   tipoBase[1] === 'N' ? 'Intuitivo' : 'Observador',        // N/S
+    Nature:   tipoBase[2] === 'T' ? 'Pensamento' : 'Sentimento',       // T/F
+    Tactics:  tipoBase[3] === 'J' ? 'Julgamento' : 'Percepção',        // J/P
+    Identity: sufixoIdentidade === 'A' ? 'Assertivo' : 'Turbulento',   // A/T
   };
 
   // Gerar interpretação
@@ -501,7 +477,7 @@ export function gerarAnaliseMBTI(
     gestaoEnergia: tipoInfo.gestaoEnergia,
     pontosFortes: tipoInfo.pontosFortes,
     desafios: tipoInfo.desafios,
-    percentuais: percentuaisFormatados,
+    dimensoes,
     interpretacao
   };
 }

@@ -1,7 +1,14 @@
 /**
  * MBTI — "Como você pensa". Decompõe as letras do tipo em linguagem leiga (cada
- * letra → o que significa no dia a dia), mostra as 5 dimensões com ScoreBar e revela
- * características/forças/carreira (texto de MBTI_TIPOS). Componente puro.
+ * letra → o que significa no dia a dia) e revela características/forças/carreira
+ * (texto de MBTI_TIPOS). Componente puro.
+ *
+ * NÃO exibe intensidade por dimensão: o percentual do 16personalities nunca é
+ * lido de fato (o scraping foi descontinuado — ver M9), então o valor gravado era
+ * uma constante derivada da própria letra (55 para I/S/T/J, 45 para o oposto).
+ * Como toda constante caía na mesma faixa, a barra dizia "Moderado" para todo
+ * mundo em todas as dimensões — número inventado com aparência de medição.
+ * A letra e o tipo continuam: esses vêm da URL do resultado e são reais.
  */
 
 import { useTheme } from '@/hooks/useTheme';
@@ -9,7 +16,6 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { MBTI_TIPOS } from '@/data/mbtiQuestions';
 import type { MBTICorretorProfile } from '@/features/corretores/services/mbtiResultsService';
 import { SecaoMetodologia } from './SecaoMetodologia';
-import { ScoreBar } from './ScoreBar';
 import { anchorOf, isTemaEscuro } from './tokens';
 import { DIMENSOES, poloAtivo } from './mbtiDimensoes';
 
@@ -34,7 +40,7 @@ export function MbtiSection({ mbti }: MbtiSectionProps) {
       {/* Decomposição das letras */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
         {DIMENSOES.map((dim) => {
-          const polo = poloAtivo(dim, mbti.tipo_mbti, mbti.percentuais[dim.chave] ?? 0);
+          const polo = poloAtivo(dim, mbti.tipo_mbti);
           return (
             <div
               key={dim.chave}
@@ -53,14 +59,6 @@ export function MbtiSection({ mbti }: MbtiSectionProps) {
               </div>
             </div>
           );
-        })}
-      </div>
-
-      {/* Intensidade de cada dimensão */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 mb-4">
-        {DIMENSOES.map((dim) => {
-          const polo = poloAtivo(dim, mbti.tipo_mbti, mbti.percentuais[dim.chave] ?? 0);
-          return <ScoreBar key={dim.chave} nome={polo.nome} valor={mbti.percentuais[dim.chave] ?? 0} barFill={anchor.barFill} />;
         })}
       </div>
 

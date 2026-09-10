@@ -162,13 +162,16 @@ export function obterLadoPorLetra(dimensao: 'energia' | 'mente' | 'natureza' | '
 }
 
 /**
- * Dimensão MBTI pronta para exibição: letra e lado vêm SEMPRE do código do
- * tipo (fonte de verdade), e o percentual é apenas a magnitude da barra.
+ * Dimensão MBTI pronta para exibição: letra e lado vêm SEMPRE do código do tipo,
+ * a única informação que o 16personalities realmente entrega pela URL.
+ *
+ * Não há `percentual`: o scraping da página foi descontinuado (M9) e o que
+ * ocupava esse campo era uma constante derivada da própria letra (55/45), sem
+ * relação com o resultado da pessoa. Ver MbtiSection.
  */
 export interface DimensaoMBTI {
   letra: string;
   lado: string;
-  percentual: number;
 }
 
 export interface DimensoesMBTI {
@@ -190,33 +193,28 @@ const LADO_EXIBICAO: Record<string, string> = {
 
 /**
  * Deriva as 5 dimensões a partir do código do tipo (ex.: "INTJ-A") — assim a
- * letra/lado exibidos NUNCA contradizem o tipo do corretor. O percentual serve
- * só como magnitude da barra; não é mais usado para decidir o lado (essa era a
- * causa da inversão I/E·S/N·T/F·J/P ao reabrir o resultado salvo).
+ * letra/lado exibidos NUNCA contradizem o tipo do corretor. Decidir o lado por
+ * percentual (`>= 50`) era a causa da inversão I/E·S/N·T/F·J/P ao reabrir o
+ * resultado salvo.
  *
  * Para a identidade, "T" significa Turbulento (não Pensamento), então o rótulo
  * é tratado à parte.
  */
-export function derivarDimensoesMBTI(
-  mbtiTipo: string,
-  percentuais: { mind?: number; energy?: number; nature?: number; tactics?: number; identity?: number }
-): DimensoesMBTI {
+export function derivarDimensoesMBTI(mbtiTipo: string): DimensoesMBTI {
   const tipoBase = (mbtiTipo || '').substring(0, 4).toUpperCase();
   const identidadeLetra = mbtiTipo?.split('-')[1]?.toUpperCase() === 'T' ? 'T' : 'A';
 
-  const dim = (letra: string, percentual: number | undefined, ladoOverride?: string): DimensaoMBTI => ({
+  const dim = (letra: string, ladoOverride?: string): DimensaoMBTI => ({
     letra,
     lado: ladoOverride || LADO_EXIBICAO[letra] || letra,
-    percentual: percentual ?? 50,
   });
 
   return {
-    // mbti_percent_mind guarda a magnitude de I/E; energy guarda S/N (ver 16personalitiesSaveService).
-    energia: dim(tipoBase[0], percentuais.mind, undefined),
-    mente: dim(tipoBase[1], percentuais.energy, undefined),
-    natureza: dim(tipoBase[2], percentuais.nature, undefined),
-    abordagem: dim(tipoBase[3], percentuais.tactics, undefined),
-    identidade: dim(identidadeLetra, percentuais.identity, identidadeLetra === 'T' ? 'Turbulento' : 'Assertivo'),
+    energia: dim(tipoBase[0]),
+    mente: dim(tipoBase[1]),
+    natureza: dim(tipoBase[2]),
+    abordagem: dim(tipoBase[3]),
+    identidade: dim(identidadeLetra, identidadeLetra === 'T' ? 'Turbulento' : 'Assertivo'),
   };
 }
 

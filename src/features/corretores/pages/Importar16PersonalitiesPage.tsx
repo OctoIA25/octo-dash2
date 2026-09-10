@@ -20,6 +20,15 @@ import { MBTI_TIPOS, MBTITipo } from '@/data/mbtiQuestions';
 import { derivarDimensoesMBTI } from '@/utils/16personalitiesMapper';
 import { toast } from 'sonner';
 
+/** Rótulo e explicação de cada dimensão MBTI no preview da importação. */
+const DIMENSOES_PREVIEW = [
+  { chave: 'energia' as const,    rotulo: 'Energia',    descricao: 'Como você interage com o mundo exterior e recarrega suas energias' },
+  { chave: 'mente' as const,      rotulo: 'Mente',      descricao: 'Como você processa informações e percebe o mundo ao redor' },
+  { chave: 'natureza' as const,   rotulo: 'Natureza',   descricao: 'Como você toma decisões e expressa suas emoções' },
+  { chave: 'abordagem' as const,  rotulo: 'Abordagem',  descricao: 'Como você organiza sua vida e lida com o mundo exterior' },
+  { chave: 'identidade' as const, rotulo: 'Identidade', descricao: 'Sua confiança pessoal e como você lida com suas decisões' },
+];
+
 export default function Importar16PersonalitiesPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -73,21 +82,7 @@ export default function Importar16PersonalitiesPage() {
           const tipoBase = tipoCompleto.substring(0, 4);
           const dadosTipo = MBTI_TIPOS[tipoBase as keyof typeof MBTI_TIPOS];
 
-          // Letra/lado vêm do código do tipo; o percentual é só magnitude. Em
-          // admin_test_results, percentuais.Energy guarda a magnitude de I/E e
-          // percentuais.Mind a de S/N (ver M3). Ver C1.
-          const dims = derivarDimensoesMBTI(tipoCompleto, {
-            mind: resultadosAdmin.mbti.percentuais.Energy,
-            energy: resultadosAdmin.mbti.percentuais.Mind,
-            nature: resultadosAdmin.mbti.percentuais.Nature,
-            tactics: resultadosAdmin.mbti.percentuais.Tactics,
-            identity: resultadosAdmin.mbti.percentuais.Identity,
-          });
-          const energiaInfo = dims.energia;
-          const menteInfo = dims.mente;
-          const naturezaInfo = dims.natureza;
-          const abordagemInfo = dims.abordagem;
-          const identidadeInfo = dims.identidade;
+          const dims = derivarDimensoesMBTI(tipoCompleto);
 
           const dadosPreview: DadosExtraidos16P = {
             url: '',
@@ -98,33 +93,7 @@ export default function Importar16PersonalitiesPage() {
             tipoGrupo: dadosTipo?.grupo || '',
             tipoDescricao: dadosTipo?.descricaoBreve || '',
             genero: '',
-            percentuais: {
-              energia: {
-                percentual: resultadosAdmin.mbti.percentuais.Energy || 50,
-                lado: energiaInfo.lado,
-                letra: energiaInfo.letra
-              },
-              mente: {
-                percentual: resultadosAdmin.mbti.percentuais.Mind || 50,
-                lado: menteInfo.lado,
-                letra: menteInfo.letra
-              },
-              natureza: {
-                percentual: resultadosAdmin.mbti.percentuais.Nature || 50,
-                lado: naturezaInfo.lado,
-                letra: naturezaInfo.letra
-              },
-              abordagem: {
-                percentual: resultadosAdmin.mbti.percentuais.Tactics || 50,
-                lado: abordagemInfo.lado,
-                letra: abordagemInfo.letra
-              },
-              identidade: {
-                percentual: resultadosAdmin.mbti.percentuais.Identity || 50,
-                lado: identidadeInfo.lado,
-                letra: identidadeInfo.letra
-              }
-            }
+            dimensoes: dims
           };
 
           setPreview(dadosPreview);
@@ -172,20 +141,7 @@ export default function Importar16PersonalitiesPage() {
         // Obter informações do tipo do MBTI_TIPOS
         const dadosTipo = MBTI_TIPOS[tipoBase];
 
-        // Letra/lado vêm SEMPRE do código do tipo; o percentual é só magnitude.
-        // (Antes derivava o lado por "percentual >= 50", invertendo as dimensões — ver C1.)
-        const dims = derivarDimensoesMBTI(corretor.mbti_tipo, {
-          mind: corretor.mbti_percent_mind,
-          energy: corretor.mbti_percent_energy,
-          nature: corretor.mbti_percent_nature,
-          tactics: corretor.mbti_percent_tactics,
-          identity: corretor.mbti_percent_identity,
-        });
-        const energiaInfo = dims.energia;
-        const menteInfo = dims.mente;
-        const naturezaInfo = dims.natureza;
-        const abordagemInfo = dims.abordagem;
-        const identidadeInfo = dims.identidade;
+        const dims = derivarDimensoesMBTI(corretor.mbti_tipo);
 
         // Montar preview com os dados salvos
         const dadosPreview: DadosExtraidos16P = {
@@ -197,33 +153,7 @@ export default function Importar16PersonalitiesPage() {
           tipoGrupo: dadosTipo?.grupo || '',
           tipoDescricao: dadosTipo?.descricaoBreve || '',
           genero: '',
-          percentuais: {
-            energia: {
-              percentual: corretor.mbti_percent_mind || 50,
-              lado: energiaInfo.lado,
-              letra: energiaInfo.letra
-            },
-            mente: {
-              percentual: corretor.mbti_percent_energy || 50,
-              lado: menteInfo.lado,
-              letra: menteInfo.letra
-            },
-            natureza: {
-              percentual: corretor.mbti_percent_nature || 50,
-              lado: naturezaInfo.lado,
-              letra: naturezaInfo.letra
-            },
-            abordagem: {
-              percentual: corretor.mbti_percent_tactics || 50,
-              lado: abordagemInfo.lado,
-              letra: abordagemInfo.letra
-            },
-            identidade: {
-              percentual: corretor.mbti_percent_identity || 50,
-              lado: identidadeInfo.lado,
-              letra: identidadeInfo.letra
-            }
-          }
+          dimensoes: dims
         };
         
         setPreview(dadosPreview);
@@ -288,16 +218,7 @@ export default function Importar16PersonalitiesPage() {
           user.id,
           user.email || '',
           user.name || 'Gestor',
-          {
-            tipoFinal: preview.tipoCodigo,
-            percentuais: {
-              Mind: preview.percentuais.mente.percentual,
-              Energy: preview.percentuais.energia.percentual,
-              Nature: preview.percentuais.natureza.percentual,
-              Tactics: preview.percentuais.abordagem.percentual,
-              Identity: preview.percentuais.identidade.percentual
-            }
-          }
+          { tipoFinal: preview.tipoCodigo }
         );
 
         if (!sucesso) {
@@ -662,202 +583,28 @@ export default function Importar16PersonalitiesPage() {
                     <p className="text-sm text-gray-500 dark:text-slate-400">Características comportamentais detalhadas</p>
                   </div>
                   
-                  {/* Grid 2x2 - Layout Harmonioso */}
+                  {/* Uma dimensão por card. Sem percentual: o 16personalities só
+                      entrega o TIPO pela URL, e o número que ficava aqui era
+                      constante derivada da letra (55/45) — ver o extractor. */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                    {preview.percentuais?.energia && (
-                      <div className="bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-lg p-5 hover:shadow-md transition-shadow">
-                        <div className="flex items-start gap-3 mb-4">
-                          <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center flex-shrink-0 shadow-sm">
-                            <span className="text-white font-bold text-lg">
-                              {preview.percentuais.energia.letra}
-                            </span>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-baseline justify-between mb-1">
-                              <p className="font-semibold text-base text-gray-900 dark:text-slate-100">
-                                Energia
-                              </p>
-                              <p className="text-2xl font-bold text-gray-900 dark:text-slate-100 flex-shrink-0">
-                                {preview.percentuais.energia.percentual}%
-                              </p>
+                    {DIMENSOES_PREVIEW.map(({ chave, rotulo, descricao }) => {
+                      const dim = preview.dimensoes?.[chave];
+                      if (!dim) return null;
+                      return (
+                        <div key={chave} className="bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-lg p-5 hover:shadow-md transition-shadow">
+                          <div className="flex items-start gap-3">
+                            <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center flex-shrink-0 shadow-sm">
+                              <span className="text-white font-bold text-lg">{dim.letra}</span>
                             </div>
-                            <p className="text-sm text-gray-600 dark:text-slate-400">
-                              {preview.percentuais.energia.lado}
-                            </p>
-                          </div>
-                        </div>
-                        
-                        <p className="text-xs text-gray-500 dark:text-slate-400 leading-relaxed mb-3">
-                          Como você interage com o mundo exterior e recarrega suas energias
-                        </p>
-                        
-                        <div className="w-full h-2.5 rounded-full overflow-hidden bg-gray-100 dark:bg-slate-800">
-                          <div 
-                            className="h-full rounded-full transition-all duration-1000 ease-out"
-                            style={{ 
-                              width: `${preview.percentuais.energia.percentual}%`,
-                              background: 'linear-gradient(to right, #6B7280, #9CA3AF)'
-                            }}
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {preview.percentuais?.mente && (
-                      <div className="bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-lg p-5 hover:shadow-md transition-shadow">
-                        <div className="flex items-start gap-3 mb-4">
-                          <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center flex-shrink-0 shadow-sm">
-                            <span className="text-white font-bold text-lg">
-                              {preview.percentuais.mente.letra}
-                            </span>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-baseline justify-between mb-1">
-                              <p className="font-semibold text-base text-gray-900 dark:text-slate-100">
-                                Mente
-                              </p>
-                              <p className="text-2xl font-bold text-gray-900 dark:text-slate-100 flex-shrink-0">
-                                {preview.percentuais.mente.percentual}%
-                              </p>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-semibold text-base text-gray-900 dark:text-slate-100">{rotulo}</p>
+                              <p className="text-sm text-gray-600 dark:text-slate-400">{dim.lado}</p>
+                              <p className="text-xs text-gray-500 dark:text-slate-400 leading-relaxed mt-2">{descricao}</p>
                             </div>
-                            <p className="text-sm text-gray-600 dark:text-slate-400">
-                              {preview.percentuais.mente.lado}
-                            </p>
                           </div>
                         </div>
-                        
-                        <p className="text-xs text-gray-500 dark:text-slate-400 leading-relaxed mb-3">
-                          Como você processa informações e percebe o mundo ao redor
-                        </p>
-                        
-                        <div className="w-full h-2.5 rounded-full overflow-hidden bg-gray-100 dark:bg-slate-800">
-                          <div 
-                            className="h-full rounded-full transition-all duration-1000 ease-out"
-                            style={{ 
-                              width: `${preview.percentuais.mente.percentual}%`,
-                              background: 'linear-gradient(to right, #6B7280, #9CA3AF)'
-                            }}
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {preview.percentuais?.natureza && (
-                      <div className="bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-lg p-5 hover:shadow-md transition-shadow">
-                        <div className="flex items-start gap-3 mb-4">
-                          <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center flex-shrink-0 shadow-sm">
-                            <span className="text-white font-bold text-lg">
-                              {preview.percentuais.natureza.letra}
-                            </span>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-baseline justify-between mb-1">
-                              <p className="font-semibold text-base text-gray-900 dark:text-slate-100">
-                                Natureza
-                              </p>
-                              <p className="text-2xl font-bold text-gray-900 dark:text-slate-100 flex-shrink-0">
-                                {preview.percentuais.natureza.percentual}%
-                              </p>
-                            </div>
-                            <p className="text-sm text-gray-600 dark:text-slate-400">
-                              {preview.percentuais.natureza.lado}
-                            </p>
-                          </div>
-                        </div>
-                        
-                        <p className="text-xs text-gray-500 dark:text-slate-400 leading-relaxed mb-3">
-                          Como você toma decisões e expressa suas emoções
-                        </p>
-                        
-                        <div className="w-full h-2.5 rounded-full overflow-hidden bg-gray-100 dark:bg-slate-800">
-                          <div 
-                            className="h-full rounded-full transition-all duration-1000 ease-out"
-                            style={{ 
-                              width: `${preview.percentuais.natureza.percentual}%`,
-                              background: 'linear-gradient(to right, #6B7280, #9CA3AF)'
-                            }}
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {preview.percentuais?.abordagem && (
-                      <div className="bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-lg p-5 hover:shadow-md transition-shadow">
-                        <div className="flex items-start gap-3 mb-4">
-                          <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center flex-shrink-0 shadow-sm">
-                            <span className="text-white font-bold text-lg">
-                              {preview.percentuais.abordagem.letra}
-                            </span>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-baseline justify-between mb-1">
-                              <p className="font-semibold text-base text-gray-900 dark:text-slate-100">
-                                Abordagem
-                              </p>
-                              <p className="text-2xl font-bold text-gray-900 dark:text-slate-100 flex-shrink-0">
-                                {preview.percentuais.abordagem.percentual}%
-                              </p>
-                            </div>
-                            <p className="text-sm text-gray-600 dark:text-slate-400">
-                              {preview.percentuais.abordagem.lado}
-                            </p>
-                          </div>
-                        </div>
-                        
-                        <p className="text-xs text-gray-500 dark:text-slate-400 leading-relaxed mb-3">
-                          Como você organiza sua vida e lida com o mundo exterior
-                        </p>
-                        
-                        <div className="w-full h-2.5 rounded-full overflow-hidden bg-gray-100 dark:bg-slate-800">
-                          <div 
-                            className="h-full rounded-full transition-all duration-1000 ease-out"
-                            style={{ 
-                              width: `${preview.percentuais.abordagem.percentual}%`,
-                              background: 'linear-gradient(to right, #6B7280, #9CA3AF)'
-                            }}
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {preview.percentuais?.identidade && (
-                      <div className="bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-lg p-5 hover:shadow-md transition-shadow md:col-span-2">
-                        <div className="flex items-start gap-3 mb-4">
-                          <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center flex-shrink-0 shadow-sm">
-                            <span className="text-white font-bold text-lg">
-                              {preview.percentuais.identidade.letra}
-                            </span>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-baseline justify-between mb-1">
-                              <p className="font-semibold text-base text-gray-900 dark:text-slate-100">
-                                Identidade
-                              </p>
-                              <p className="text-2xl font-bold text-gray-900 dark:text-slate-100 flex-shrink-0">
-                                {preview.percentuais.identidade.percentual}%
-                              </p>
-                            </div>
-                            <p className="text-sm text-gray-600 dark:text-slate-400">
-                              {preview.percentuais.identidade.lado}
-                            </p>
-                          </div>
-                        </div>
-                        
-                        <p className="text-xs text-gray-500 dark:text-slate-400 leading-relaxed mb-3">
-                          Sua confiança pessoal e como você lida com suas decisões
-                        </p>
-                        
-                        <div className="w-full h-2.5 rounded-full overflow-hidden bg-gray-100 dark:bg-slate-800">
-                          <div 
-                            className="h-full rounded-full transition-all duration-1000 ease-out"
-                            style={{ 
-                              width: `${preview.percentuais.identidade.percentual}%`,
-                              background: 'linear-gradient(to right, #6B7280, #9CA3AF)'
-                            }}
-                          />
-                        </div>
-                      </div>
-                    )}
+                      );
+                    })}
                   </div>
                 </CardContent>
               </Card>

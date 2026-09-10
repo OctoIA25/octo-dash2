@@ -53,13 +53,6 @@ export interface ResultadoEneagrama {
 
 export interface ResultadoMBTI {
   tipoFinal: string; // ex: "INTJ-A", "ENFP-T"
-  percentuais: {
-    Mind: number; // 0 a 100
-    Energy: number;
-    Nature: number;
-    Tactics: number;
-    Identity: number;
-  };
 }
 
 export interface TodosOsTestes {
@@ -250,11 +243,12 @@ export async function salvarResultadoMBTI(
 
     const updateData = {
       mbti_tipo: resultado.tipoFinal,
-      mbti_percent_mind: resultado.percentuais.Mind,
-      mbti_percent_energy: resultado.percentuais.Energy,
-      mbti_percent_nature: resultado.percentuais.Nature,
-      mbti_percent_tactics: resultado.percentuais.Tactics,
-      mbti_percent_identity: resultado.percentuais.Identity,
+      // null: o percentual MBTI nunca foi medido (ver 16personalitiesExtractor).
+      mbti_percent_mind: null,
+      mbti_percent_energy: null,
+      mbti_percent_nature: null,
+      mbti_percent_tactics: null,
+      mbti_percent_identity: null,
       mbti_data_teste: new Date().toISOString()
     };
 
@@ -321,11 +315,14 @@ export async function salvarTodosOsTestes(
     // MBTI
     if (resultados.mbti) {
       updateData.mbti_tipo = resultados.mbti.tipoFinal;
-      updateData.mbti_percent_mind = resultados.mbti.percentuais.Mind;
-      updateData.mbti_percent_energy = resultados.mbti.percentuais.Energy;
-      updateData.mbti_percent_nature = resultados.mbti.percentuais.Nature;
-      updateData.mbti_percent_tactics = resultados.mbti.percentuais.Tactics;
-      updateData.mbti_percent_identity = resultados.mbti.percentuais.Identity;
+      // Percentuais gravados como null: o valor nunca foi medido (constante
+      // derivada da própria letra do tipo — ver 16personalitiesExtractor) e
+      // nenhuma tela o lê mais. Escrever null limpa o resíduo de quem refizer.
+      updateData.mbti_percent_mind = null;
+      updateData.mbti_percent_energy = null;
+      updateData.mbti_percent_nature = null;
+      updateData.mbti_percent_tactics = null;
+      updateData.mbti_percent_identity = null;
       updateData.mbti_data_teste = new Date().toISOString();
     }
 

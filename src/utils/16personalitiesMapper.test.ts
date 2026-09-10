@@ -29,24 +29,22 @@ describe('validarUrl16Personalities', () => {
   });
 });
 
-// A letra/lado de cada dimensão DEVE vir do código do tipo, não do percentual.
-// Antes, a UI derivava o lado por "percentual >= 50", e o estimador grava 55%
-// para a 1ª letra (I/S/T/J) — então um INTJ salvo reabria mostrando E/N/F/P.
+// A letra/lado de cada dimensão vem do código do tipo — a única coisa que a URL
+// do 16personalities realmente entrega. Antes a UI derivava o lado por
+// "percentual >= 50" sobre um percentual que era constante fabricada (55 na 1ª
+// letra), então um INTJ salvo reabria mostrando E/N/F/P.
 describe('derivarDimensoesMBTI', () => {
-  it('deriva letras coerentes com o tipo, mesmo com percentuais "55 na 1ª letra"', () => {
-    // Percentuais como o estimador grava para INTJ-A: 55 nas 4 primeiras letras.
-    const dims = derivarDimensoesMBTI('INTJ-A', { mind: 55, energy: 45, nature: 55, tactics: 55, identity: 60 });
+  it('deriva as letras do código do tipo', () => {
+    const dims = derivarDimensoesMBTI('INTJ-A');
     expect(dims.energia.letra).toBe('I');
     expect(dims.mente.letra).toBe('N');
     expect(dims.natureza.letra).toBe('T');
     expect(dims.abordagem.letra).toBe('J');
     expect(dims.identidade.letra).toBe('A');
-    // o percentual permanece como magnitude
-    expect(dims.energia.percentual).toBe(55);
   });
 
   it('cobre o tipo oposto (ESFP-T)', () => {
-    const dims = derivarDimensoesMBTI('ESFP-T', { mind: 55, energy: 55, nature: 55, tactics: 55, identity: 55 });
+    const dims = derivarDimensoesMBTI('ESFP-T');
     expect(dims.energia.letra).toBe('E');
     expect(dims.mente.letra).toBe('S');
     expect(dims.natureza.letra).toBe('F');
@@ -55,14 +53,12 @@ describe('derivarDimensoesMBTI', () => {
     expect(dims.identidade.lado).toBe('Turbulento');
   });
 
-  it('identidade A vs T usa o sufixo, não o percentual', () => {
-    expect(derivarDimensoesMBTI('INTJ-A', { identity: 10 }).identidade.letra).toBe('A');
-    expect(derivarDimensoesMBTI('INTJ-T', { identity: 90 }).identidade.letra).toBe('T');
+  it('identidade A vs T usa o sufixo, não a letra T de Natureza', () => {
+    expect(derivarDimensoesMBTI('INTJ-A').identidade.letra).toBe('A');
+    expect(derivarDimensoesMBTI('INTJ-T').identidade.letra).toBe('T');
   });
 
-  it('percentual ausente cai para 50 (magnitude neutra), sem afetar a letra', () => {
-    const dims = derivarDimensoesMBTI('ENFP-A', {});
-    expect(dims.energia.letra).toBe('E');
-    expect(dims.energia.percentual).toBe(50);
+  it('não expõe percentual: o número não existe mais', () => {
+    expect('percentual' in derivarDimensoesMBTI('ENFP-A').energia).toBe(false);
   });
 });

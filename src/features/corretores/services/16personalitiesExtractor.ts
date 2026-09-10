@@ -7,7 +7,8 @@ import {
   validarUrl16Personalities,
   parseUrl16Personalities,
   derivarDimensoesMBTI,
-  obterDescricaoTipo
+  obterDescricaoTipo,
+  type DimensoesMBTI
 } from '@/utils/16personalitiesMapper';
 
 export interface DadosExtraidos16P {
@@ -19,42 +20,8 @@ export interface DadosExtraidos16P {
   tipoGrupo: string;
   tipoDescricao: string;
   genero: string;
-  percentuais: {
-    energia: { percentual: number; lado: string; letra: string };
-    mente: { percentual: number; lado: string; letra: string };
-    natureza: { percentual: number; lado: string; letra: string };
-    abordagem: { percentual: number; lado: string; letra: string };
-    identidade: { percentual: number; lado: string; letra: string };
-  };
-}
-
-/**
- * Gera percentuais estimados baseados nas letras do tipo.
- * É a única fonte de percentuais hoje (o scraping foi descontinuado — ver M9).
- */
-function gerarPercentuaisEstimados(letras: {
-  energia: string;
-  mente: string;
-  natureza: string;
-  abordagem: string;
-  identidade: string;
-}): number[] {
-  // Percentuais padrão baseados na letra dominante
-  // Letras no início do alfabeto = valores mais baixos (tendência para o primeiro lado)
-  // Letras no fim = valores mais altos (tendência para o segundo lado)
-  
-  const calcularPercentual = (letra: string, primeiraLetra: string): number => {
-    // Se é a primeira letra da dimensão, retorna um valor entre 40-60 (levemente para aquele lado)
-    return letra === primeiraLetra ? 55 : 45;
-  };
-  
-  return [
-    calcularPercentual(letras.energia, 'I') * 100 / 100,      // Energia: I=Intro, E=Extro
-    calcularPercentual(letras.mente, 'S') * 100 / 100,        // Mente: S=Sensing, N=Intuition
-    calcularPercentual(letras.natureza, 'T') * 100 / 100,     // Natureza: T=Thinking, F=Feeling
-    calcularPercentual(letras.abordagem, 'J') * 100 / 100,    // Abordagem: J=Judging, P=Perceiving
-    letras.identidade === 'A' ? 60 : 40                       // Identidade: A=Assertive, T=Turbulent
-  ];
+  /** letra e lado de cada dimensão, derivados do código do tipo */
+  dimensoes: DimensoesMBTI;
 }
 
 /**
@@ -70,24 +37,12 @@ export async function extrairDados16Personalities(url: string): Promise<DadosExt
   // Parse básico da URL (sempre funciona)
   const dadosBasicos = parseUrl16Personalities(url);
 
-  // Percentuais: usamos os ESTIMADOS (derivados das letras do tipo). O scraping
-  // via proxy CORS público era removido por ser não-confiável (M9): pegava os 5
-  // primeiros "%"/"data-value" do HTML sem garantir que fossem as dimensões nem
-  // a ordem, gravando valores errados de forma silenciosa. Como não há como
-  // mapear com segurança os % raspados às dimensões, preferimos o estimado
-  // previsível — a letra/lado já vêm do código do tipo (ver derivarDimensoesMBTI).
-  const percentuais = gerarPercentuaisEstimados(dadosBasicos.letras);
-
-  // Letra/lado vêm de derivarDimensoesMBTI — a MESMA fonte usada ao reabrir o
-  // resultado salvo —, para que o texto do preview e o da releitura coincidam
-  // (antes o preview usava obterLadoPorLetra com vocabulário diferente) — N6.
-  const dims = derivarDimensoesMBTI(dadosBasicos.tipoCodigo, {
-    mind: percentuais[0],
-    energy: percentuais[1],
-    nature: percentuais[2],
-    tactics: percentuais[3],
-    identity: percentuais[4],
-  });
+  // A URL entrega o TIPO, e só. O scraping da página foi descontinuado por ser
+  // não-confiável (M9), e o "percentual estimado" que o substituía era constante
+  // derivada da própria letra (55/45) — número inventado com cara de medição,
+  // então deixou de existir. Letra/lado saem do código do tipo, a MESMA fonte
+  // usada ao reabrir o resultado salvo, para preview e releitura coincidirem (N6).
+  const dims = derivarDimensoesMBTI(dadosBasicos.tipoCodigo);
 
   // Montar objeto de resposta completo
   const dadosCompletos: DadosExtraidos16P = {
@@ -99,13 +54,7 @@ export async function extrairDados16Personalities(url: string): Promise<DadosExt
     tipoGrupo: dadosBasicos.tipoGrupo,
     tipoDescricao: obterDescricaoTipo(dadosBasicos.tipoBase),
     genero: dadosBasicos.genero,
-    percentuais: {
-      energia: dims.energia,
-      mente: dims.mente,
-      natureza: dims.natureza,
-      abordagem: dims.abordagem,
-      identidade: dims.identidade,
-    }
+    dimensoes: dims
   };
 
   return dadosCompletos;

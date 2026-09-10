@@ -285,7 +285,6 @@ export const AgentesIaPage = () => {
   const [selectedCorretorMBTI, setSelectedCorretorMBTI] = useState<{
     nome: string;
     tipoMBTI: string;
-    percentuais: { [key: string]: number };
   } | null>(null);
 
   // Estado para seleção de corretor na Gestão de Liderados

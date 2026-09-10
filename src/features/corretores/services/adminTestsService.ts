@@ -278,29 +278,24 @@ export async function salvarResultadoMBTIAdmin(
   userName: string,
   resultado: {
     tipoFinal: string;
-    percentuais: { Mind: number; Energy: number; Nature: number; Tactics: number; Identity: number };
   }
 ): Promise<boolean> {
   try {
 
-    // ⚠️ ATENÇÃO (M3): nesta tabela (admin_test_results), por como a página
-    // monta `resultado.percentuais`, mbti_percent_mind acaba guardando a
-    // magnitude de S/N (Mente) e mbti_percent_energy a de I/E (Energia) — o
-    // OPOSTO da tabela Corretores. Leitura e escrita do fluxo admin são casadas,
-    // então não há troca visível; mas NÃO reutilize estes valores no fluxo do
-    // corretor sem inverter mind↔energy. A letra/lado exibidos vêm do código do
-    // tipo (ver derivarDimensoesMBTI / C1), então a barra pode no máximo trocar
-    // a magnitude, nunca a letra.
+    // Percentuais gravados como null: o número era constante derivada da letra,
+    // não medição (ver 16personalitiesExtractor). Isso encerra de quebra a
+    // armadilha M3 — este fluxo gravava mind↔energy trocados em relação à tabela
+    // Corretores, divergência que agora não tem como se manifestar.
     const updateData = {
       user_id: userId,
       user_email: userEmail,
       user_name: userName,
       mbti_tipo: resultado.tipoFinal,
-      mbti_percent_mind: resultado.percentuais.Mind,
-      mbti_percent_energy: resultado.percentuais.Energy,
-      mbti_percent_nature: resultado.percentuais.Nature,
-      mbti_percent_tactics: resultado.percentuais.Tactics,
-      mbti_percent_identity: resultado.percentuais.Identity,
+      mbti_percent_mind: null,
+      mbti_percent_energy: null,
+      mbti_percent_nature: null,
+      mbti_percent_tactics: null,
+      mbti_percent_identity: null,
       mbti_data_teste: new Date().toISOString()
     };
 

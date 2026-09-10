@@ -190,7 +190,6 @@ export interface DadosComportamentais {
   };
   mbti?: {
     tipo: string;
-    percentuais: { [key: string]: number };
   };
 }
 
@@ -360,10 +359,7 @@ ${analises.eneagrama.interpretacao}
     
     // Gerar análise MBTI
     if (dadosComportamentais.mbti) {
-      analises.mbti = gerarAnaliseMBTI(
-        dadosComportamentais.mbti.tipo,
-        dadosComportamentais.mbti.percentuais
-      );
+      analises.mbti = gerarAnaliseMBTI(dadosComportamentais.mbti.tipo);
       
       // Formatar análise MBTI como texto estruturado
       payload.mbti = `
@@ -393,11 +389,11 @@ DESAFIOS:
 ${analises.mbti.desafios}
 
 DIMENSÕES:
-- Mente (Introversão/Extroversão): ${analises.mbti.percentuais.Mind.valor}% - ${analises.mbti.percentuais.Mind.categoria}
-- Energia (Observador/Intuitivo): ${analises.mbti.percentuais.Energy.valor}% - ${analises.mbti.percentuais.Energy.categoria}
-- Natureza (Pensamento/Sentimento): ${analises.mbti.percentuais.Nature.valor}% - ${analises.mbti.percentuais.Nature.categoria}
-- Tática (Julgamento/Percepção): ${analises.mbti.percentuais.Tactics.valor}% - ${analises.mbti.percentuais.Tactics.categoria}
-- Identidade (Assertivo/Turbulento): ${analises.mbti.percentuais.Identity.valor}% - ${analises.mbti.percentuais.Identity.categoria}
+- Mente (Introversão/Extroversão): ${analises.mbti.dimensoes.Mind}
+- Energia (Observador/Intuitivo): ${analises.mbti.dimensoes.Energy}
+- Natureza (Pensamento/Sentimento): ${analises.mbti.dimensoes.Nature}
+- Tática (Julgamento/Percepção): ${analises.mbti.dimensoes.Tactics}
+- Identidade (Assertivo/Turbulento): ${analises.mbti.dimensoes.Identity}
 
 INTERPRETAÇÃO E IMPLICAÇÕES:
 ${analises.mbti.interpretacao}
