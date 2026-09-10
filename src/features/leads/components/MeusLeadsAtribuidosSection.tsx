@@ -73,6 +73,7 @@ import {
 import { syncProposalStageFromLead } from '../services/proposalsService';
 import { leadStatusToPropostaStage } from '../utils/stageBridge';
 import { leadCasaBusca } from '../utils/buscaLead';
+import { canaisDosLeads, leadCasaCanal, SEM_CANAL } from '../utils/canalLead';
 import {
   fetchTenantBolsaoConfig,
   type TenantBolsaoConfig,
@@ -664,6 +665,9 @@ export const MeusLeadsAtribuidosSection = ({
   const [dataFim, setDataFim] = useState('');
   const [filtroTemperatura, setFiltroTemperatura] = useState<string>('todos');
   const [filtroTipo, setFiltroTipo] = useState<string>('todos');
+  // Canal = de onde o lead veio (ZAP, VivaReal, Site, Meta...). Fica em `portal`
+  // (kenlo_leads.portal / leads.source, achatados no mesmo campo pelo leadsService).
+  const [filtroPortal, setFiltroPortal] = useState<string>('todos');
   const [busca, setBusca] = useState('');
   
   // Estados para scroll horizontal
@@ -1017,6 +1021,9 @@ export const MeusLeadsAtribuidosSection = ({
 
   const termoBusca = debouncedBusca.trim().toLowerCase();
 
+  // Opções do filtro de canal, derivadas dos leads já carregados (ver canalLead.ts).
+  const { opcoes: opcoesPortal, temSemCanal } = useMemo(() => canaisDosLeads(meusLeads), [meusLeads]);
+
   // Aplicar filtros nos leads (memoizado)
   const leadsFiltrados = useMemo(() => meusLeads.filter(lead => {
     const leadRecord = lead as unknown as Record<string, unknown>;
@@ -1042,10 +1049,12 @@ export const MeusLeadsAtribuidosSection = ({
       if (filtroTipo === 'locacao' && tipo !== 'locação' && tipo !== 'locacao') return false;
     }
 
+    if (!leadCasaCanal(lead, filtroPortal)) return false;
+
     if (!leadCasaBusca(lead, termoBusca)) return false;
 
     return true;
-  }), [meusLeads, filtroPeriodo, debouncedDataInicio, debouncedDataFim, filtroTemperatura, filtroTipo, termoBusca]);
+  }), [meusLeads, filtroPeriodo, debouncedDataInicio, debouncedDataFim, filtroTemperatura, filtroTipo, filtroPortal, termoBusca]);
 
   // Agrupar leads filtrados por etapa do funil (memoizado)
   const leadsAgrupados = useMemo(() => {
@@ -1138,7 +1147,7 @@ const handleDragEnd = useCallback(async (event: DragEndEvent) => {
   // Lead ativo sendo arrastado
   const activeLead = activeId ? meusLeads.find(l => l.id === activeId) : null;
 
-  const temFiltroAtivo = filtroPeriodo !== 'todos' || filtroTemperatura !== 'todos' || filtroTipo !== 'todos' || busca.trim() !== '';
+  const temFiltroAtivo = filtroPeriodo !== 'todos' || filtroTemperatura !== 'todos' || filtroTipo !== 'todos' || filtroPortal !== 'todos' || busca.trim() !== '';
 
   return (
     <div className="flex flex-col h-full" style={{ backgroundColor: 'var(--bg-primary)' }}>
@@ -1223,6 +1232,21 @@ const handleDragEnd = useCallback(async (event: DragEndEvent) => {
           </SelectContent>
         </Select>
 
+        {opcoesPortal.length > 0 && (
+          <Select value={filtroPortal} onValueChange={setFiltroPortal}>
+            <SelectTrigger className="h-8 text-xs w-[150px]">
+              <SelectValue placeholder="Canal" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todos os canais</SelectItem>
+              {opcoesPortal.map(([chave, rotulo]) => (
+                <SelectItem key={chave} value={chave}>{rotulo}</SelectItem>
+              ))}
+              {temSemCanal && <SelectItem value={SEM_CANAL}>Sem canal</SelectItem>}
+            </SelectContent>
+          </Select>
+        )}
+
         {temFiltroAtivo && (
           <Button
             variant="outline"
@@ -1233,6 +1257,7 @@ const handleDragEnd = useCallback(async (event: DragEndEvent) => {
               setDataFim('');
               setFiltroTemperatura('todos');
               setFiltroTipo('todos');
+              setFiltroPortal('todos');
               setBusca('');
             }}
             className="h-8 text-xs"
@@ -1350,6 +1375,7 @@ const handleDragEnd = useCallback(async (event: DragEndEvent) => {
                       setFiltroPeriodo('todos');
                       setFiltroTemperatura('todos');
                       setFiltroTipo('todos');
+                      setFiltroPortal('todos');
                       setBusca('');
                     }}
                   >
