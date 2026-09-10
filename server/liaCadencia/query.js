@@ -17,6 +17,7 @@
  * do corpo da requisição.
  */
 
+import { randomUUID } from 'node:crypto';
 import { phoneVariants } from '../utils/phone.js';
 
 /** Cadências por lead. 200 cobre folgado o maior histórico real (3 por ciclo). */
@@ -233,8 +234,11 @@ export async function gravarCadencia(supabase, tenantId, row) {
 
   const { data, error } = await supabase
     .from('lia_followups')
+    // `lia_followups.id` é text NOT NULL e SEM default — a tabela nasceu do app
+    // da LIA, que gera o id antes de inserir. Quem insere gera; sem isto todo
+    // INSERT morre com 23502 e a rota devolve 500 (10/set/2026).
     // `status` só ganha default aqui: no UPDATE, ausente significa "não mexa".
-    .insert({ tenant_id: tenantId, status: 'pending', ...row })
+    .insert({ id: randomUUID(), tenant_id: tenantId, status: 'pending', ...row })
     .select('id')
     .single();
 

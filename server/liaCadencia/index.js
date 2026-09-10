@@ -22,6 +22,9 @@
 import { makeRequireSupabaseAuth, resolveTenant } from '../kpis/index.js';
 import { isPlatformOwner } from '../utils/ownerAuth.js';
 import { buscarLead, carregarCadencia, gravarCadencia } from './query.js';
+// Mora em leadEvents porque nasceu lá; é a MESMA âncora por telefone que a LIA
+// usa nas duas rotas. Duplicar daria duas regras de resolução divergentes.
+import { buscarLeadPorTelefone } from '../leadEvents/query.js';
 import { resumirCadencia } from './compute.js';
 import { normalizarCadencia } from './normalize.js';
 import { createHash } from 'node:crypto';
@@ -165,8 +168,13 @@ export function registerLiaCadenciaRoutes(app, supabase, options = {}) {
       }
 
       // Cadência de lead que não é deste tenant seria linha órfã na tela.
+      // Pelo telefone vale o mesmo: era o único caminho que gravava sem
+      // conferir nada, e telefone desconhecido virava linha solta em vez de 404.
       if (validado.row.lead_id) {
         const lead = await buscarLead(supabase, tenantId, validado.row.lead_id);
+        if (!lead) return res.status(404).json({ ok: false, error: 'lead_not_found' });
+      } else if (validado.row.lead_phone) {
+        const lead = await buscarLeadPorTelefone(supabase, tenantId, validado.row.lead_phone);
         if (!lead) return res.status(404).json({ ok: false, error: 'lead_not_found' });
       }
 
