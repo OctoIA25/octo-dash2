@@ -4183,6 +4183,13 @@ registerRecrutamentoRoutes(app, supabase);
 import { registerLiaCadenciaRoutes } from './liaCadencia/index.js';
 registerLiaCadenciaRoutes(app, supabase);
 
+// Histórico do lead — linha do tempo no card (criação, atribuição, etapa,
+// arquivamento) + o que a LIA reporta. Leitura pelo servidor porque
+// lead_events tem RLS sem policy; a escrita resolve o lead pelo id OU pelo
+// telefone e devolve o lead resolvido, para quem integra detectar divergência.
+import { registerLeadEventsRoutes } from './leadEvents/index.js';
+registerLeadEventsRoutes(app, supabase);
+
 // Rotas owner/admin da config ZAP por tenant — mesmo resolver do feed (save invalida cache).
 registerZapRoutes(app, supabase, { resolver: zapConfigResolver });
 

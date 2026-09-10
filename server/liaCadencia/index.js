@@ -44,7 +44,7 @@ export function podeVerCadencia({ ehOwnerDaPlataforma, role, userId, lead }) {
 }
 
 /** Papel do usuário no tenant; null quando não é membro. */
-async function papelNoTenant(supabase, userId, tenantId) {
+export async function papelNoTenant(supabase, userId, tenantId) {
   const { data, error } = await supabase
     .from('tenant_memberships')
     .select('role')
@@ -63,8 +63,12 @@ async function papelNoTenant(supabase, userId, tenantId) {
  * ponytail: comparação simples de string, igual aos outros três módulos que
  * usam service token. Trocar por timingSafeEqual em todos de uma vez, não só
  * aqui, para não virar um padrão divergente.
+ *
+ * Exportada porque server/leadEvents usa o MESMO contrato de credencial: para
+ * quem integra, cadência e histórico são o mesmo app da LIA com um token só.
+ * Duplicar a função criaria duas regras de auth que divergem no primeiro fix.
  */
-async function autenticar(req, supabase) {
+export async function autenticar(req, supabase) {
   const enviado = req.headers['x-service-token'];
   if (enviado != null) {
     const esperado = process.env.LIA_SERVICE_TOKEN || process.env.DISPARADOR_SERVICE_TOKEN;

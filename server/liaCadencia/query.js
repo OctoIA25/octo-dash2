@@ -31,14 +31,23 @@ const ehNaoEncontrado = (error) => !error || error.code === '22P02';
  * Localiza o lead nas duas tabelas que o CRM usa, na mesma ordem do resto do
  * repositório (`leads` primeiro, `kenlo_leads` como espelho de portal).
  *
- * Devolve o dono em `owner_id` já normalizado: em `leads` o campo é
- * `assigned_agent_id`, que é TEXT com o uuid dentro; em `kenlo_leads` é
- * `attended_by_id`, que guarda o auth_user_id.
+ * NOMES NORMALIZADOS. As duas tabelas guardam o mesmo conceito com nomes
+ * diferentes; quem chama não deveria precisar saber de qual veio. O dono sai
+ * em `owner_id` (em `leads` é `assigned_agent_id`, TEXT com o uuid dentro; em
+ * `kenlo_leads` é `attended_by_id`, com o auth_user_id), a etapa em `etapa`
+ * (status/stage) e assim por diante.
+ *
+ * Os campos além de id/phone/owner_id existem para o histórico do lead
+ * (server/leadEvents): são a base dos eventos derivados e do eco que a rota
+ * da LIA devolve. A cadência simplesmente os ignora.
  */
 export async function buscarLead(supabase, tenantId, leadId) {
   const { data: lead, error } = await supabase
     .from('leads')
-    .select('id, phone, assigned_agent_id')
+    .select(
+      'id, name, phone, source, status, assigned_agent_id, assigned_agent_name, ' +
+      'assigned_at, archived_at, archive_reason, created_at',
+    )
     .eq('id', leadId)
     .eq('tenant_id', tenantId)
     .maybeSingle();
@@ -49,12 +58,26 @@ export async function buscarLead(supabase, tenantId, leadId) {
       tabela: 'leads',
       phone: lead.phone ?? null,
       owner_id: lead.assigned_agent_id ? String(lead.assigned_agent_id) : null,
+      nome: lead.name ?? null,
+      origem: lead.source ?? null,
+      etapa: lead.status ?? null,
+      corretor_nome: lead.assigned_agent_name ?? null,
+      assigned_at: lead.assigned_at ?? null,
+      archived_at: lead.archived_at ?? null,
+      archive_reason: lead.archive_reason ?? null,
+      created_at: lead.created_at ?? null,
+      // Em `leads` o created_at já é a data real do lead — não há event time
+      // separado como o lead_timestamp do Kenlo.
+      event_at: lead.created_at ?? null,
     };
   }
 
   const { data: kenlo, error: erroKenlo } = await supabase
     .from('kenlo_leads')
-    .select('id, client_phone, attended_by_id')
+    .select(
+      'id, client_name, client_phone, portal, stage, attended_by_id, attended_by_name, ' +
+      'archived_at, archive_reason, created_at, lead_timestamp',
+    )
     .eq('id', leadId)
     .eq('tenant_id', tenantId)
     .maybeSingle();
@@ -66,6 +89,19 @@ export async function buscarLead(supabase, tenantId, leadId) {
     tabela: 'kenlo_leads',
     phone: kenlo.client_phone ?? null,
     owner_id: kenlo.attended_by_id ? String(kenlo.attended_by_id) : null,
+    nome: kenlo.client_name ?? null,
+    origem: kenlo.portal ?? null,
+    etapa: kenlo.stage ?? null,
+    corretor_nome: kenlo.attended_by_name ?? null,
+    // kenlo_leads não tem o par de assigned_at — a data de atribuição só
+    // existe no espelho `bolsao` (data_atribuicao), lido no histórico.
+    assigned_at: null,
+    archived_at: kenlo.archived_at ?? null,
+    archive_reason: kenlo.archive_reason ?? null,
+    created_at: kenlo.created_at ?? null,
+    // lead_timestamp é o instante em que o lead surgiu no portal; created_at é
+    // quando o sync o trouxe. O histórico quer o primeiro.
+    event_at: kenlo.lead_timestamp ?? kenlo.created_at ?? null,
   };
 }
 

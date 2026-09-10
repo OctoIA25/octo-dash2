@@ -28,6 +28,8 @@ import {
 import { phoneVariants } from '@/features/chat/services/chatService';
 import { CadenciaLiaSection } from './CadenciaLiaSection';
 import { useCadenciaLead } from '../hooks/useCadenciaLead';
+import { HistoricoLeadSection } from './HistoricoLeadSection';
+import { useHistoricoLead } from '../hooks/useHistoricoLead';
 import { getTenantImoveis, loadXmlDataFromSupabase } from '@/features/imoveis/services/imoveisXmlService';
 import type { Imovel } from '@/features/imoveis/services/kenloService';
 
@@ -124,6 +126,15 @@ export const CriarLeadQuickModal = ({
   // no modo criar nem com o modal fechado — o Kanban abre e fecha isto o tempo
   // todo e cada abertura seria uma requisição.
   const cadenciaLead = useCadenciaLead(editingLead?.id, tenantId, isOpen && isEditMode);
+  // Histórico: só busca quando o corretor expande a seção. O Kanban abre e
+  // fecha este modal o tempo todo e a maioria das aberturas é para editar um
+  // campo, não para ler a linha do tempo.
+  const [verHistorico, setVerHistorico] = useState(false);
+  const historicoLead = useHistoricoLead(
+    editingLead?.id,
+    tenantId,
+    isOpen && isEditMode && verHistorico,
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
@@ -676,6 +687,19 @@ export const CriarLeadQuickModal = ({
                 cadencia={cadenciaLead.cadencia}
                 carregando={cadenciaLead.carregando}
                 erro={cadenciaLead.erro}
+              />
+            )}
+
+            {/* Seção: Histórico — como o lead se movimentou na dash (criação,
+                entrega ao corretor, etapas) e o que a LIA reportou. Somente
+                leitura: quem grava são os triggers do banco. */}
+            {isEditMode && (
+              <HistoricoLeadSection
+                historico={historicoLead.historico}
+                carregando={historicoLead.carregando}
+                erro={historicoLead.erro}
+                aberto={verHistorico}
+                onToggle={() => setVerHistorico((v) => !v)}
               />
             )}
 

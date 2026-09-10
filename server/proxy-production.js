@@ -4906,6 +4906,13 @@ registerRecrutamentoRoutes(app, supabase);
 import { registerLiaCadenciaRoutes } from './liaCadencia/index.js';
 registerLiaCadenciaRoutes(app, supabase);
 
+// Histórico do lead — linha do tempo no card (criação, atribuição, etapa,
+// arquivamento) + o que a LIA reporta. Leitura pelo servidor porque
+// lead_events tem RLS sem policy; a escrita resolve o lead pelo id OU pelo
+// telefone e devolve o lead resolvido, para quem integra detectar divergência.
+import { registerLeadEventsRoutes } from './leadEvents/index.js';
+registerLeadEventsRoutes(app, supabase);
+
 // Os 5 jobs da spec (§9): SLA de 1h, confirmação D-1, prazo de matrícula,
 // resgate por silêncio e marcos atrasados. Flag-gated para rodar em UM
 // processo. Enquanto a Lia não existe, o que iria ao candidato vira
