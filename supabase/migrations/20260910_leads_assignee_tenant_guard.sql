@@ -17,6 +17,15 @@
 -- misroteado é ruim, lead perdido é pior. Anulado, o lead entra sem corretor —
 -- estado normal e visível para todo o tenant — e a distribuição é refeita.
 --
+-- NÃO TOQUE EM `assigned_at`
+-- `leads.assigned_at` é NOT NULL DEFAULT now(). A primeira versão desta
+-- migration zerava as três colunas juntas (id, name, assigned_at) e, com isso,
+-- fazia o oposto do parágrafo acima: o NOT NULL derrubava o statement inteiro.
+-- INSERT de lead com corretor não-membro passou a ser RECUSADO (lead perdido) e
+-- o DELETE de membership travava para quem tivesse leads (impossível remover
+-- corretor do CRM). Zeramos só id e nome; o timestamp fica como resíduo — que é
+-- o estado de 4.924 leads sem corretor que já existiam aqui antes, inofensivo.
+--
 -- ORDEM DOS TRIGGERS
 -- O Postgres dispara triggers BEFORE em ordem alfabética de nome.
 -- `tr_leads_assign_roleta` (BEFORE INSERT, 20260428) escolhe o corretor a partir
@@ -52,7 +61,7 @@ BEGIN
       NEW.id, NEW.assigned_agent_id, NEW.tenant_id;
     NEW.assigned_agent_id := NULL;
     NEW.assigned_agent_name := NULL;
-    NEW.assigned_at := NULL;
+    -- assigned_at fica: é NOT NULL. Ver o cabeçalho.
   END IF;
 
   RETURN NEW;
@@ -88,8 +97,8 @@ AS $$
 BEGIN
   UPDATE public.leads
      SET assigned_agent_id = NULL,
-         assigned_agent_name = NULL,
-         assigned_at = NULL
+         assigned_agent_name = NULL
+         -- assigned_at fica: é NOT NULL e derrubaria o DELETE da membership.
    WHERE tenant_id = OLD.tenant_id
      AND lower(assigned_agent_id) = OLD.user_id::text;
   RETURN OLD;
