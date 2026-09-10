@@ -12,6 +12,7 @@ import { ArrowLeft, ArrowRight, Sparkles, Star } from 'lucide-react';
 import { ENEAGRAMA_QUESTIONS, ENEAGRAMA_TIPOS } from '@/data/eneagramaQuestions';
 import { 
   EneagramaResponse, 
+  EneagramaResult,
   validarRespostaEneagrama,
   calcularResultadoEneagrama
 } from '../services/eneagramaService';
@@ -30,7 +31,7 @@ interface TesteEneagramaProps {
   onVoltar: () => void;
 }
 
-type EstadoTeste = 'landing' | 'teste' | 'processando' | 'resultado';
+type EstadoTeste = 'landing' | 'teste' | 'desempate' | 'processando' | 'erroAoSalvar' | 'resultado';
 
 export const TesteEneagrama = ({
   corretorId,
@@ -42,6 +43,11 @@ export const TesteEneagrama = ({
 }: TesteEneagramaProps) => {
   // Iniciar direto no teste (pular landing page)
   const [estado, setEstado] = useState<EstadoTeste>('teste');
+  // Empate no topo: em vez de resolver pelo menor índice — o que fazia o Tipo 1
+  // vencer silenciosamente —, a própria pessoa escolhe entre os tipos empatados.
+  const [empatados, setEmpatados] = useState<number[]>([]);
+  const [erroSalvar, setErroSalvar] = useState<string>('');
+  const [respostasPendentes, setRespostasPendentes] = useState<EneagramaResponse[]>([]);
   const [perguntaAtual, setPerguntaAtual] = useState(0);
   const [respostas, setRespostas] = useState<EneagramaResponse[]>([]);
   const [respostaAtual, setRespostaAtual] = useState<EneagramaResponse | null>(null);
@@ -171,15 +177,21 @@ export const TesteEneagrama = ({
 
   const finalizarTeste = async (todasRespostas: EneagramaResponse[]) => {
     setEstado('processando');
+    // Guardadas antes de qualquer validação: se algo falhar, a tela de erro
+    // reaproveita estas respostas em vez de mandar refazer as 36 perguntas.
+    setRespostasPendentes(todasRespostas);
     try {
       
-      // Validar que temos exatamente 10 respostas
-      if (todasRespostas.length !== 10) {
-        throw new Error(`Número inválido de respostas: ${todasRespostas.length}. Esperado: 10`);
+      // Contagem esperada vem do item bank, não de um número fixo — o
+      // questionário passou de 10 para 36 perguntas.
+      if (todasRespostas.length !== ENEAGRAMA_QUESTIONS.length) {
+        throw new Error(
+          `Número inválido de respostas: ${todasRespostas.length}. Esperado: ${ENEAGRAMA_QUESTIONS.length}`,
+        );
       }
       
       // Validar que todas as respostas são 'A' ou 'B'
-      const respostasInvalidas = todasRespostas.filter((r, i) => r !== 'A' && r !== 'B');
+      const respostasInvalidas = todasRespostas.filter((r) => r !== 'A' && r !== 'B');
       if (respostasInvalidas.length > 0) {
         throw new Error(`Respostas inválidas encontradas: ${JSON.stringify(respostasInvalidas)}`);
       }
@@ -187,7 +199,27 @@ export const TesteEneagrama = ({
       // 1. Calcular resultado localmente
       const resultado = calcularResultadoEneagrama(todasRespostas);
 
-      // 2. Preparar dados no formato do serviço personalityTestsService
+      // Empate real (dois ou mais tipos no topo): quem decide é a pessoa, não a
+      // ordem de iteração.
+      if (resultado.empate && resultado.topTipos.length > 1) {
+        setEmpatados(resultado.topTipos);
+        setEstado('desempate');
+        return;
+      }
+
+      await persistirResultado(resultado);
+    } catch (error) {
+      console.error('❌ Erro ao finalizar teste:', error);
+      // Voltar para 'teste' aqui reaproveitava um `respostas` já completo: a
+      // próxima resposta virava a 37ª e o teste travava na validação de tamanho.
+      setErroSalvar(error instanceof Error ? error.message : 'Erro desconhecido');
+      setEstado('erroAoSalvar');
+    }
+  };
+
+  /** Grava o resultado já desempatado e mostra a tela final. */
+  const persistirResultado = async (resultado: EneagramaResult) => {
+    try {
       const resultadoFormatado: ResultadoEneagrama = {
         tipoPrincipal: resultado.tipoPrincipal,
         scores: resultado.scores,
@@ -225,14 +257,30 @@ export const TesteEneagrama = ({
       }
 
       
-      // 5. Armazenar resultado e mostrar tela
       setResultadoFinal(resultado);
       setEstado('resultado');
     } catch (error) {
-      console.error('❌ Erro ao finalizar teste:', error);
-      alert(`Erro ao salvar teste: ${error instanceof Error ? error.message : 'Erro desconhecido'}. Tente novamente.`);
-      setEstado('teste');
+      console.error('❌ Erro ao gravar resultado do Eneagrama:', error);
+      setErroSalvar(error instanceof Error ? error.message : 'Erro desconhecido');
+      setEstado('erroAoSalvar');
     }
+  };
+
+  /** Nova tentativa de gravação, sem refazer as 36 perguntas. */
+  const tentarSalvarNovamente = async () => {
+    if (respostasPendentes.length === 0) {
+      setEstado('teste');
+      return;
+    }
+    setEstado('processando');
+    await persistirResultado(calcularResultadoEneagrama(respostasPendentes));
+  };
+
+  /** A pessoa escolheu, entre os tipos empatados, o que mais a descreve. */
+  const resolverEmpate = async (tipoEscolhido: number) => {
+    setEstado('processando');
+    const resultado = calcularResultadoEneagrama(respostasPendentes);
+    await persistirResultado({ ...resultado, tipoPrincipal: tipoEscolhido });
   };
 
   // LANDING PAGE
@@ -352,6 +400,78 @@ export const TesteEneagrama = ({
             </CardContent>
           </Card>
         </div>
+      </div>
+    );
+  }
+
+  // DESEMPATE — dois ou mais tipos terminaram com a mesma pontuação.
+  // A alternativa seria escolher o de menor índice, que é o que fazia o Tipo 1
+  // vencer sem que ninguém percebesse.
+  if (estado === 'desempate') {
+    return (
+      <div className="fixed inset-0 z-50 overflow-auto flex items-center justify-center p-4" style={{ backgroundColor: 'var(--bg-primary)' }}>
+        <Card className="w-full max-w-2xl shadow-xl" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+          <CardContent className="p-8">
+            <h2 className="text-2xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>
+              Deu empate
+            </h2>
+            <p className="mb-6" style={{ color: 'var(--text-secondary)' }}>
+              {empatados.length} tipos ficaram com a mesma pontuação. Leia as descrições e escolha
+              a que mais parece com você — é essa que vai valer como seu tipo principal.
+            </p>
+
+            <div className="space-y-3">
+              {empatados.map((tipo) => {
+                const info = ENEAGRAMA_TIPOS[tipo];
+                if (!info) return null;
+                return (
+                  <button
+                    key={tipo}
+                    type="button"
+                    onClick={() => resolverEmpate(tipo)}
+                    className="w-full text-left rounded-xl p-4 border transition-colors hover:border-purple-500"
+                    style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border)' }}
+                  >
+                    <p className="font-bold mb-1" style={{ color: 'var(--text-primary)' }}>
+                      Tipo {tipo} — {info.nome}
+                    </p>
+                    <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>
+                      {info.descricaoBreve}
+                    </p>
+                    <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                      <span className="font-semibold">O que te move: </span>{info.motivacaoCentral}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // ERRO AO SALVAR — as respostas ficam guardadas; refazer 36 perguntas por
+  // uma falha de rede seria punir a pessoa por um problema que não é dela.
+  if (estado === 'erroAoSalvar') {
+    return (
+      <div className="fixed inset-0 z-50 overflow-auto flex items-center justify-center p-4" style={{ backgroundColor: 'var(--bg-primary)' }}>
+        <Card className="w-full max-w-md shadow-xl" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+          <CardContent className="p-8 text-center">
+            <h2 className="text-2xl font-bold mb-3" style={{ color: 'var(--text-primary)' }}>
+              Não consegui salvar
+            </h2>
+            <p className="mb-2" style={{ color: 'var(--text-secondary)' }}>
+              Suas respostas estão guardadas. Pode tentar de novo sem refazer o teste.
+            </p>
+            {erroSalvar && (
+              <p className="text-xs mb-6" style={{ color: 'var(--text-secondary)' }}>{erroSalvar}</p>
+            )}
+            <Button onClick={tentarSalvarNovamente} className="w-full">
+              Tentar novamente
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }

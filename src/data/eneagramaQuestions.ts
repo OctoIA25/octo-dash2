@@ -1,6 +1,19 @@
 /**
- * 🔄 AUTO-COMMIT GITHUB ATIVO
- * Dados do Teste de Eneagrama - 10 Perguntas de Escolha Forçada
+ * Dados do Teste de Eneagrama — 36 pares de escolha forçada.
+ *
+ * POR QUE 36: são todos os pares possíveis entre os 9 tipos (C(9,2) = 36), o que
+ * faz cada tipo aparecer exatamente 8 vezes e disputar cada rival uma vez. Isso
+ * não é detalhe de conteúdo, é a correção de um viés estrutural.
+ *
+ * O questionário anterior tinha 10 perguntas com um mapa desbalanceado: os tipos
+ * 1 e 5 apareciam em 3 pares e os demais em 2, e o desempate ia para o menor
+ * índice. Enumerando as 1024 respostas possíveis, o Tipo 1 saía em 46,9% delas e
+ * o Tipo 9 em 0,2% — e 73% dos resultados eram empate resolvido por ordem de
+ * iteração. O resultado descrevia o questionário, não a pessoa.
+ *
+ * Com o round-robin completo o teto de pontuação é 8 para todo tipo, a soma dos
+ * 9 scores é sempre 36, e nenhum tipo tem vantagem de exposição. Os invariantes
+ * estão cobertos em eneagramaQuestions.test.ts.
  */
 
 /**
@@ -15,96 +28,115 @@ export interface EneagramaQuestion {
   tipoB: number; // 1-9
 }
 
-/**
- * 10 Perguntas do Teste de Eneagrama
- * Cada resposta mapeia para um tipo específico
- */
-export const ENEAGRAMA_QUESTIONS: EneagramaQuestion[] = [
-  {
-    numero: 1,
-    instrucao: "Para cada alternativa, escolha aquela que melhor descreve você na maior parte do tempo.",
-    opcaoA: "Eu me esforço para ser correto, fazer a coisa certa e evitar erros.",
-    opcaoB: "Eu busco novas experiências, me mantenho otimista e evito dor.",
-    tipoA: 1,
-    tipoB: 7
-  },
-  {
-    numero: 2,
-    instrucao: "Para cada alternativa, escolha aquela que melhor descreve você na maior parte do tempo.",
-    opcaoA: "Ajudar os outros e ser amado é uma das coisas mais importantes para mim.",
-    opcaoB: "Eu gosto de entender como as coisas funcionam e preciso do meu espaço privado para recarregar.",
-    tipoA: 2,
-    tipoB: 5
-  },
-  {
-    numero: 3,
-    instrucao: "Para cada alternativa, escolha aquela que melhor descreve você na maior parte do tempo.",
-    opcaoA: "Eu sou altamente motivado pelo sucesso e por alcançar meus objetivos.",
-    opcaoB: "Eu busco paz e harmonia, evitando conflitos sempre que possível.",
-    tipoA: 3,
-    tipoB: 9
-  },
-  {
-    numero: 4,
-    instrucao: "Para cada alternativa, escolha aquela que melhor descreve você na maior parte do tempo.",
-    opcaoA: "Eu sinto que sou único e diferente, e busco formas de expressar minha individualidade.",
-    opcaoB: "Eu gosto de estar no controle da situação e de proteger as pessoas que considero minhas.",
-    tipoA: 4,
-    tipoB: 8
-  },
-  {
-    numero: 5,
-    instrucao: "Para cada alternativa, escolha aquela que melhor descreve você na maior parte do tempo.",
-    opcaoA: "Eu sou cauteloso e estou sempre pensando nos piores cenários para estar preparado.",
-    opcaoB: "Eu tenho um forte senso de certo e errado e me sinto responsável por melhorar as coisas.",
-    tipoA: 6,
-    tipoB: 1
-  },
-  {
-    numero: 6,
-    instrucao: "Para cada alternativa, escolha aquela que melhor descreve você na maior parte do tempo.",
-    opcaoA: "Eu me sinto bem quando sou necessário e consigo atender às necessidades dos outros.",
-    opcaoB: "Eu evito sentimentos negativos, preferindo focar em atividades prazerosas e divertidas.",
-    tipoA: 2,
-    tipoB: 7
-  },
-  {
-    numero: 7,
-    instrucao: "Para cada alternativa, escolha aquela que melhor descreve você na maior parte do tempo.",
-    opcaoA: "Eu prefiro observar e acumular conhecimento antes de me envolver em uma situação.",
-    opcaoB: "Eu sou muito focado na minha imagem pública e em ser visto como bem-sucedido.",
-    tipoA: 5,
-    tipoB: 3
-  },
-  {
-    numero: 8,
-    instrucao: "Para cada alternativa, escolha aquela que melhor descreve você na maior parte do tempo.",
-    opcaoA: "Frequentemente me fundo com os desejos dos outros para manter a paz.",
-    opcaoB: "Eu sinto minhas emoções de forma muito intensa e posso ser um pouco melancólico.",
-    tipoA: 9,
-    tipoB: 4
-  },
-  {
-    numero: 9,
-    instrucao: "Para cada alternativa, escolha aquela que melhor descreve você na maior parte do tempo.",
-    opcaoA: "Eu sou direto, assertivo e não tenho medo de confrontos para conseguir o que quero.",
-    opcaoB: "Eu valorizo a lealdade e busco apoio e segurança em pessoas e sistemas que confio.",
-    tipoA: 8,
-    tipoB: 6
-  },
-  {
-    numero: 10,
-    instrucao: "Para cada alternativa, escolha aquela que melhor descreve você na maior parte do tempo.",
-    opcaoA: "Eu tenho um crítico interno muito forte que me cobra organização e perfeição.",
-    opcaoB: "Eu me sinto mais confortável com dados e conhecimento do que com emoções intensas.",
-    tipoA: 1,
-    tipoB: 5
-  }
-];
+const INSTRUCAO = 'Escolha a alternativa que melhor descreve você na maior parte do tempo.';
 
 /**
- * Perfis dos 9 Tipos de Eneagrama
+ * Quatro afirmações por tipo, em primeira pessoa e focadas em comportamento.
+ * Cada tipo entra em 8 pares, então cada afirmação é usada duas vezes — variar o
+ * texto evita que a pessoa reconheça "a frase do tipo 1" e responda no padrão.
  */
+export const AFIRMACOES: Record<number, string[]> = {
+  1: [
+    'Percebo rápido o que está errado e sinto necessidade de corrigir.',
+    'Tenho um padrão alto e cobro de mim antes de cobrar dos outros.',
+    'Me incomoda ver algo feito de qualquer jeito.',
+    'Procuro agir de forma correta mesmo quando ninguém está vendo.',
+  ],
+  2: [
+    'Percebo o que o outro precisa antes mesmo de ele pedir.',
+    'Tenho dificuldade de dizer não para quem precisa de mim.',
+    'Me sinto bem sendo a pessoa com quem os outros contam.',
+    'Coloco a necessidade dos outros na frente da minha com frequência.',
+  ],
+  3: [
+    'Gosto de me destacar naquilo que faço.',
+    'Me organizo em torno de metas e gosto de mostrar resultado.',
+    'Me adapto para causar boa impressão no ambiente em que estou.',
+    'Tenho dificuldade de parar enquanto ainda há algo a conquistar.',
+  ],
+  4: [
+    'Sinto que sou diferente das outras pessoas.',
+    'Minhas emoções são intensas e eu não gosto de escondê-las.',
+    'Busco o que é autêntico e recuso o que me parece comum.',
+    'Costumo sentir falta de algo que eu não sei nomear.',
+  ],
+  5: [
+    'Preciso entender bem um assunto antes de me envolver.',
+    'Meu tempo sozinho é o que me recarrega.',
+    'Guardo minha energia e evito demandas que me consomem.',
+    'Observo mais do que participo até me sentir seguro.',
+  ],
+  6: [
+    'Antecipo o que pode dar errado para não ser pego de surpresa.',
+    'Confiança é algo que se constrói devagar comigo.',
+    'Me sinto mais firme quando tenho um grupo em quem confiar.',
+    'Costumo testar bem as ideias antes de aderir a elas.',
+  ],
+  7: [
+    'Gosto de manter várias opções abertas ao mesmo tempo.',
+    'Me entusiasmo rápido com possibilidades novas.',
+    'Prefiro olhar para o lado bom e seguir em frente.',
+    'Fico inquieto quando a rotina fica limitada demais.',
+  ],
+  8: [
+    'Falo o que penso de forma direta, sem rodeios.',
+    'Não gosto de me sentir controlado por ninguém.',
+    'Assumo o comando quando percebo que ninguém está assumindo.',
+    'Defendo quem está sendo passado para trás.',
+  ],
+  9: [
+    'Evito conflito e busco o caminho que acomoda todo mundo.',
+    'Consigo enxergar o lado de cada um numa discussão.',
+    'Tenho dificuldade de decidir o que eu mesmo quero.',
+    'Prefiro manter a paz a impor a minha posição.',
+  ],
+};
+
+/**
+ * Gera os 36 pares por escalonamento round-robin (método do círculo), com um
+ * "bye" porque 9 é ímpar. Isso dá 9 rodadas de 4 pares e espalha os tipos: em
+ * cada bloco de 4 perguntas aparecem 8 tipos distintos, em vez de concentrar
+ * todos os pares do tipo 1 no começo.
+ */
+function gerarPares(): Array<[number, number]> {
+  const BYE = 0;
+  let circulo = [BYE, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+  const pares: Array<[number, number]> = [];
+
+  for (let rodada = 0; rodada < circulo.length - 1; rodada++) {
+    for (let i = 0; i < circulo.length / 2; i++) {
+      const a = circulo[i];
+      const b = circulo[circulo.length - 1 - i];
+      if (a !== BYE && b !== BYE) pares.push([a, b]);
+    }
+    // rotaciona mantendo a primeira posição fixa
+    circulo = [circulo[0], circulo[circulo.length - 1], ...circulo.slice(1, circulo.length - 1)];
+  }
+
+  return pares;
+}
+
+function montarQuestoes(): EneagramaQuestion[] {
+  const usos: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0 };
+  const frase = (tipo: number): string => AFIRMACOES[tipo][usos[tipo]++ % AFIRMACOES[tipo].length];
+
+  return gerarPares().map(([x, y], i) => {
+    // Alterna qual lado do par vira a opção A: sem isso o tipo de menor índice
+    // ficaria sempre em primeiro, e posição influencia escolha.
+    const [tipoA, tipoB] = i % 2 === 0 ? [x, y] : [y, x];
+    return {
+      numero: i + 1,
+      instrucao: INSTRUCAO,
+      opcaoA: frase(tipoA),
+      opcaoB: frase(tipoB),
+      tipoA,
+      tipoB,
+    };
+  });
+}
+
+export const ENEAGRAMA_QUESTIONS: EneagramaQuestion[] = montarQuestoes();
+
 export interface EneagramaTipo {
   numero: number;
   nome: string;
@@ -250,19 +282,11 @@ export const ENEAGRAMA_TIPOS: Record<number, EneagramaTipo> = {
 };
 
 /**
- * Mapeamento de respostas para tipos
- * Estrutura: { pergunta: { opcao: tipo } }
+ * De-para pergunta → tipo, derivado das próprias perguntas.
+ *
+ * Antes o serviço de cálculo mantinha uma cópia manual desta tabela; duas listas
+ * que precisavam concordar e ninguém garantia que concordassem.
  */
-export const ENEAGRAMA_MAPPING: Record<number, { A: number; B: number }> = {
-  1: { A: 1, B: 7 },
-  2: { A: 2, B: 5 },
-  3: { A: 3, B: 9 },
-  4: { A: 4, B: 8 },
-  5: { A: 6, B: 1 },
-  6: { A: 2, B: 7 },
-  7: { A: 5, B: 3 },
-  8: { A: 9, B: 4 },
-  9: { A: 8, B: 6 },
-  10: { A: 1, B: 5 }
-};
-
+export const ENEAGRAMA_MAPPING: Record<number, { A: number; B: number }> = Object.fromEntries(
+  ENEAGRAMA_QUESTIONS.map((q) => [q.numero, { A: q.tipoA, B: q.tipoB }]),
+);

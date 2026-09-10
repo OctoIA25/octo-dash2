@@ -5,6 +5,7 @@
 
 import { getSupabaseConfig, getAuthenticatedHeaders } from '@/utils/encryption';
 import { salvarResultadoEneagrama as salvarNoTestesComportamentais, ResultadoEneagrama } from './testesComportamentaisService';
+import { ENEAGRAMA_MAPPING, ENEAGRAMA_QUESTIONS } from '@/data/eneagramaQuestions';
 
 /**
  * Estrutura de resposta individual (1 pergunta)
@@ -125,20 +126,10 @@ export async function salvarRespostasEneagrama(
  */
 export function calcularResultadoEneagrama(respostas: EneagramaResponse[]): EneagramaResult {
   
-  // Mapeamento de perguntas para tipos
-  const mapa: Record<number, { A: number; B: number }> = {
-    1: { A: 1, B: 7 },
-    2: { A: 2, B: 5 },
-    3: { A: 3, B: 9 },
-    4: { A: 4, B: 8 },
-    5: { A: 6, B: 1 },
-    6: { A: 2, B: 7 },
-    7: { A: 5, B: 3 },
-    8: { A: 9, B: 4 },
-    9: { A: 8, B: 6 },
-    10: { A: 1, B: 5 }
-  };
-  
+  // Fonte única do de-para pergunta → tipo: ENEAGRAMA_MAPPING é derivado do
+  // próprio item bank. Antes havia uma cópia manual aqui.
+  const mapa = ENEAGRAMA_MAPPING;
+
   // Inicializar pontuações
   const scores: Record<number, number> = {
     1: 0, 2: 0, 3: 0, 4: 0, 5: 0,
@@ -191,21 +182,8 @@ export function calcularResultadoEneagrama(respostas: EneagramaResponse[]): Enea
   // que a UI não apresente um Eneagrama fabricado.
   const empate = maxScore <= 0 || topTipos.length > 1;
 
-  
-  // Formatar scores no formato correto da interface
-  const scoresFormatados = {
-    1: scores[1],
-    2: scores[2],
-    3: scores[3],
-    4: scores[4],
-    5: scores[5],
-    6: scores[6],
-    7: scores[7],
-    8: scores[8],
-    9: scores[9]
-  };
-  
-  return { scores: scoresFormatados, tipoPrincipal, topTipos, empate };
+
+  return { scores: scores as EneagramaResult['scores'], tipoPrincipal, topTipos, empate };
 }
 
 /**
