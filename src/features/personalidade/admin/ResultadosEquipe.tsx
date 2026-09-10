@@ -31,14 +31,14 @@ export function ResultadosEquipe({ abaInicial }: AbaInicial) {
   // tab da URL (?tab=disc) define a aba inicial quando vier dos atalhos do gestor.
   const tabUrl = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '').get('tab');
   const abaPadrao: Aba = abaInicial ?? (ABAS_VALIDAS.includes(tabUrl as Aba) ? (tabUrl as Aba) : 'overview');
-  const { loading, stats, totalCorretores } = useEstatisticasEquipe();
+  const { loading, stats, universo, comTeste, totalCorretores } = useEstatisticasEquipe();
   const [busca, setBusca] = useState('');
   const [selecionado, setSelecionado] = useState<{ id: number; nome: string } | null>(null);
   const [filtroTipo, setFiltroTipo] = useState<{ met: Metodologia; chave: string } | null>(null);
 
   const corretores = useMemo(
-    () => unirCorretores(stats.disc, stats.eneagrama, stats.mbti),
-    [stats],
+    () => unirCorretores(stats.disc, stats.eneagrama, stats.mbti, universo),
+    [stats, universo],
   );
 
   const listaFiltrada = useMemo(() => {
@@ -69,13 +69,15 @@ export function ResultadosEquipe({ abaInicial }: AbaInicial) {
           Nenhum corretor encontrado.
         </p>
       ) : (
-        listaFiltrada.map((c) => (
+        listaFiltrada.map(({ id, nome, chips, totalFeitos, foraDaEquipe, semCadastro }) => (
           <CorretorRow
-            key={c.id}
-            nome={c.nome}
-            chips={c.chips}
-            totalFeitos={c.totalFeitos}
-            onClick={() => setSelecionado({ id: c.id, nome: c.nome })}
+            key={id ?? `sem-cadastro:${nome}`}
+            nome={nome}
+            chips={chips}
+            totalFeitos={totalFeitos}
+            foraDaEquipe={foraDaEquipe}
+            semCadastro={semCadastro}
+            onClick={id === null ? undefined : () => setSelecionado({ id, nome })}
           />
         ))
       )}
@@ -105,9 +107,9 @@ export function ResultadosEquipe({ abaInicial }: AbaInicial) {
           {/* VISÃO GERAL */}
           <TabsContent value="overview" className="space-y-6 mt-6">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {stats.disc && <AdesaoCard nome="DISC" comTeste={stats.disc.comTeste} total={totalCorretores} metodologia="disc" />}
-              {stats.mbti && <AdesaoCard nome="MBTI" comTeste={stats.mbti.comTeste} total={totalCorretores} metodologia="mbti" />}
-              {stats.eneagrama && <AdesaoCard nome="Eneagrama" comTeste={stats.eneagrama.comTeste} total={totalCorretores} metodologia="eneagrama" />}
+              {stats.disc && <AdesaoCard nome="DISC" comTeste={comTeste.disc} total={totalCorretores} metodologia="disc" />}
+              {stats.mbti && <AdesaoCard nome="MBTI" comTeste={comTeste.mbti} total={totalCorretores} metodologia="mbti" />}
+              {stats.eneagrama && <AdesaoCard nome="Eneagrama" comTeste={comTeste.eneagrama} total={totalCorretores} metodologia="eneagrama" />}
             </div>
 
             <BuscaCorretor busca={busca} setBusca={setBusca} />
@@ -119,7 +121,7 @@ export function ResultadosEquipe({ abaInicial }: AbaInicial) {
             {stats.disc && (
               <DistribuicaoBarras
                 {...distDisc(stats.disc)}
-                total={stats.disc.comTeste}
+                total={comTeste.disc}
                 metodologia="disc"
                 onSelecionarTipo={(chave) => setFiltroTipo((f) => (f?.chave === chave && f.met === 'disc' ? null : { met: 'disc', chave }))}
                 tipoSelecionado={filtroTipo?.met === 'disc' ? filtroTipo.chave : null}
@@ -134,7 +136,7 @@ export function ResultadosEquipe({ abaInicial }: AbaInicial) {
             {stats.eneagrama && (
               <DistribuicaoBarras
                 {...distEneagrama(stats.eneagrama)}
-                total={stats.eneagrama.comTeste}
+                total={comTeste.eneagrama}
                 metodologia="eneagrama"
                 onSelecionarTipo={(chave) => setFiltroTipo((f) => (f?.chave === chave && f.met === 'eneagrama' ? null : { met: 'eneagrama', chave }))}
                 tipoSelecionado={filtroTipo?.met === 'eneagrama' ? filtroTipo.chave : null}
@@ -149,7 +151,7 @@ export function ResultadosEquipe({ abaInicial }: AbaInicial) {
             {stats.mbti && (
               <DistribuicaoBarras
                 {...distMbti(stats.mbti)}
-                total={stats.mbti.comTeste}
+                total={comTeste.mbti}
                 metodologia="mbti"
                 onSelecionarTipo={(chave) => setFiltroTipo((f) => (f?.chave === chave && f.met === 'mbti' ? null : { met: 'mbti', chave }))}
                 tipoSelecionado={filtroTipo?.met === 'mbti' ? filtroTipo.chave : null}

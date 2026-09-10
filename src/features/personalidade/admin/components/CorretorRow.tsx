@@ -7,15 +7,21 @@ interface CorretorRowProps {
   nome: string;
   chips: string[];     // ex.: ['Dominância', 'O Arquiteto'] (só os que existem)
   totalFeitos: number; // 0–3
-  onClick: () => void;
+  /** tem resultado mas não é mais membro do tenant */
+  foraDaEquipe?: boolean;
+  /** é membro sem cadastro em `Corretores` — não consegue fazer os testes */
+  semCadastro?: boolean;
+  /** ausente quando não há perfil para abrir (pessoa sem cadastro) */
+  onClick?: () => void;
 }
 
-export function CorretorRow({ nome, chips, totalFeitos, onClick }: CorretorRowProps) {
+export function CorretorRow({ nome, chips, totalFeitos, foraDaEquipe, semCadastro, onClick }: CorretorRowProps) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="w-full flex items-center gap-3 rounded-xl p-3 text-left transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.04]"
+      disabled={!onClick}
+      className={`w-full flex items-center gap-3 rounded-xl p-3 text-left transition-colors ${onClick ? 'hover:bg-black/[0.03] dark:hover:bg-white/[0.04]' : 'cursor-default'}`}
       style={{ border: '1px solid hsl(var(--border))' }}
     >
       <div
@@ -28,6 +34,16 @@ export function CorretorRow({ nome, chips, totalFeitos, onClick }: CorretorRowPr
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold truncate" style={{ color: 'hsl(var(--text-primary))' }}>{nome}</p>
         <div className="flex flex-wrap gap-1 mt-0.5">
+          {semCadastro && (
+            <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300">
+              Sem cadastro de corretor
+            </span>
+          )}
+          {foraDaEquipe && (
+            <span className="text-[11px] px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'hsl(var(--bg-secondary))', color: 'hsl(var(--text-secondary))' }}>
+              Fora da equipe
+            </span>
+          )}
           {chips.length > 0 ? (
             chips.map((c) => (
               <span key={c} className="text-[11px] px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'hsl(var(--bg-secondary))', color: 'hsl(var(--text-secondary))' }}>

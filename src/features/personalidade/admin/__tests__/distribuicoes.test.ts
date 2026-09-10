@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { unirCorretores, distMbti } from '../distribuicoes';
+import { unirCorretores, distMbti, distDisc } from '../distribuicoes';
 import type { DISCStats, EneagramaStats, MBTIStats } from '@/services/testesEstatisticasService';
 
 const disc = {
@@ -33,6 +33,36 @@ describe('unirCorretores', () => {
   it('ordena por nome', () => {
     const nomes = unirCorretores(disc, null, null).map((c) => c.nome);
     expect(nomes).toEqual([...nomes].sort((a, b) => a.localeCompare(b)));
+  });
+});
+
+describe('unirCorretores com universo', () => {
+  it('não inventa linha para id que ficou fora do universo', () => {
+    // Bia (id 2) tem DISC mas não está no universo (ex.: duplicata deduplicada).
+    // Antes ela era recriada pelo laço de corretoresPorTipo e a lista mostrava
+    // mais gente do que o denominador contava — o card dizia "2 de 1".
+    const universo = [{ id: 1, nome: 'Ana', email: 'ana@x.com', foraDaEquipe: false, semCadastro: false }];
+    const lista = unirCorretores(disc, null, null, universo);
+    expect(lista.map((c) => c.id)).toEqual([1]);
+  });
+});
+
+describe('destaque "mais comum"', () => {
+  const statsDisc = (d: number, i: number, sc: number, c: number) =>
+    ({ distribuicao: { D: { count: d }, I: { count: i }, S: { count: sc }, C: { count: c } } }) as unknown as DISCStats;
+
+  it('aponta o tipo quando há vencedor isolado', () => {
+    expect(distDisc(statsDisc(3, 1, 0, 0)).destaque).toBe('D');
+  });
+
+  it('não destaca nada quando ninguém fez o teste', () => {
+    // antes: exibia "Dominância — MAIS COMUM — 0 pessoas · 0%"
+    expect(distDisc(statsDisc(0, 0, 0, 0)).destaque).toBeUndefined();
+  });
+
+  it('não destaca nada em caso de empate no topo', () => {
+    // antes: o empate era resolvido pela ordem D,I,S,C e D levava o selo
+    expect(distDisc(statsDisc(2, 2, 1, 0)).destaque).toBeUndefined();
   });
 });
 

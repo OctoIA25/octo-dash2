@@ -6,6 +6,21 @@
 
 import { getSupabaseConfig, getAuthenticatedHeaders } from '@/utils/encryption';
 
+/**
+ * Uma linha da tabela `Corretores`, sem nenhum julgamento sobre ela pertencer ou
+ * não à equipe atual — quem cruza com tenant_memberships é useEstatisticasEquipe.
+ * A tabela guarda ex-corretores e cadastros sem login, então `data.length` NÃO é
+ * o tamanho da equipe.
+ */
+export interface CorretorRoster {
+  id: number;
+  nome: string;
+  email: string;
+}
+
+const roster = (data: any[]): CorretorRoster[] =>
+  data.map((c: any) => ({ id: c.id, nome: c.nm_corretor || 'Sem nome', email: c.email || '' }));
+
 // Interfaces de estatísticas
 export interface DISCStats {
   totalCorretores: number;
@@ -29,6 +44,8 @@ export interface DISCStats {
     S: number;
     C: number;
   };
+  /** todas as linhas de `Corretores` do tenant, sem filtro de equipe */
+  todos: CorretorRoster[];
 }
 
 export interface EneagramaStats {
@@ -43,6 +60,8 @@ export interface EneagramaStats {
   };
   tipoMaisComum: number;
   tipoMenosComum: number;
+  /** todas as linhas de `Corretores` do tenant, sem filtro de equipe */
+  todos: CorretorRoster[];
 }
 
 export interface MBTIStats {
@@ -62,6 +81,8 @@ export interface MBTIStats {
     Judging_Perceiving: { J: number; P: number };
   };
   tipoMaisComum: string;
+  /** todas as linhas de `Corretores` do tenant, sem filtro de equipe */
+  todos: CorretorRoster[];
 }
 
 /**
@@ -75,7 +96,7 @@ export async function buscarEstatisticasDISC(tenantId?: string): Promise<DISCSta
 
     const tenantFilter = tenantId ? `&tenant_id=eq.${tenantId}` : '';
     const response = await fetch(
-      `${config.url}/rest/v1/Corretores?select=id,nm_corretor,disc_tipo_principal,disc_percentual_d,disc_percentual_i,disc_percentual_s,disc_percentual_c&order=nm_corretor.asc${tenantFilter}`,
+      `${config.url}/rest/v1/Corretores?select=id,nm_corretor,email,disc_tipo_principal,disc_percentual_d,disc_percentual_i,disc_percentual_s,disc_percentual_c&order=nm_corretor.asc${tenantFilter}`,
       {
         method: 'GET',
         headers: headers
@@ -133,7 +154,8 @@ export async function buscarEstatisticasDISC(tenantId?: string): Promise<DISCSta
         C: { count: distribuicao.C, percentual: pctLetra(distribuicao.C) }
       },
       corretoresPorTipo,
-      mediasPercentuais
+      mediasPercentuais,
+      todos: roster(data)
     };
     
     return stats;
@@ -155,7 +177,7 @@ export async function buscarEstatisticasEneagrama(tenantId?: string): Promise<En
 
     const tenantFilter = tenantId ? `&tenant_id=eq.${tenantId}` : '';
     const response = await fetch(
-      `${config.url}/rest/v1/Corretores?select=id,nm_corretor,eneagrama_tipo_principal&order=nm_corretor.asc${tenantFilter}`,
+      `${config.url}/rest/v1/Corretores?select=id,nm_corretor,email,eneagrama_tipo_principal&order=nm_corretor.asc${tenantFilter}`,
       {
         method: 'GET',
         headers: headers
@@ -224,7 +246,8 @@ export async function buscarEstatisticasEneagrama(tenantId?: string): Promise<En
       distribuicao: distribuicaoComPercentual,
       corretoresPorTipo,
       tipoMaisComum,
-      tipoMenosComum
+      tipoMenosComum,
+      todos: roster(data)
     };
     
     return stats;
@@ -246,7 +269,7 @@ export async function buscarEstatisticasMBTI(tenantId?: string): Promise<MBTISta
 
     const tenantFilter = tenantId ? `&tenant_id=eq.${tenantId}` : '';
     const response = await fetch(
-      `${config.url}/rest/v1/Corretores?select=id,nm_corretor,mbti_tipo,mbti_percent_mind,mbti_percent_energy,mbti_percent_nature,mbti_percent_tactics,mbti_percent_identity&order=nm_corretor.asc${tenantFilter}`,
+      `${config.url}/rest/v1/Corretores?select=id,nm_corretor,email,mbti_tipo,mbti_percent_mind,mbti_percent_energy,mbti_percent_nature,mbti_percent_tactics,mbti_percent_identity&order=nm_corretor.asc${tenantFilter}`,
       {
         method: 'GET',
         headers: headers
@@ -341,7 +364,8 @@ export async function buscarEstatisticasMBTI(tenantId?: string): Promise<MBTISta
       distribuicao: distribuicaoComPercentual,
       corretoresPorTipo,
       dimensoes,
-      tipoMaisComum
+      tipoMaisComum,
+      todos: roster(data)
     };
     
     return stats;
