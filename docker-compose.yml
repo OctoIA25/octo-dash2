@@ -46,7 +46,6 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=8080
-      - KENLO_XML_URL=https://imob.valuegaia.com.br/integra/midia.ashx?midia=ChaveNaMao&p=pQdBmFcGRFgUiPu6qbT5CB0b4QQUZf5v
     depends_on:
       - octodash-api
     restart: unless-stopped

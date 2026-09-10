@@ -26,6 +26,7 @@ import { registerScrapeRoute } from './scrapers/index.js';
 import { registerHealthRoutes } from './observability/healthRoutes.js';
 import { registerTenantHealthRoutes } from './observability/tenantHealthRoutes.js';
 import { createWatermarkRouter } from './watermark/routes.js';
+import { criarKenloXmlProxyRouter } from './kenloXmlProxy.js';
 import { createWorker } from './watermark/worker.js';
 import { promises } from 'dns';
 import { assertSafeHttpUrl, parseHttpUrl } from './security/ssrfGuard.js';
@@ -123,6 +124,11 @@ app.use(express.json({
   verify: (req, _res, buf) => { req.rawBody = buf; },
 }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// 📡 XML de imóveis do tenant. A rota existia só no proxy do Vite: em produção
+// /api/kenlo caía no catch-all da SPA e devolvia index.html com 200, que o
+// cliente engolia como XML vazio e gravava por cima do catálogo.
+app.use('/api/kenlo', criarKenloXmlProxyRouter({ supabase }));
 
 // 🖼️ Pipeline de marca d'água (upload de master → fila → derivados versionados → CDN).
 app.use('/api/v1/watermark', createWatermarkRouter(supabase));

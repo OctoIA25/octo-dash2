@@ -25,58 +25,15 @@ export default defineConfig(({ mode }) => ({
           });
         },
       },
+      // Mesma rota do servidor (server/kenloXmlProxy.js), com allowlist de host.
+      // Antes o Vite tinha um proxy PRÓPRIO aqui, que aceitava qualquer ?url= e
+      // caía numa URL hardcoded quando o parâmetro faltava — dev e produção se
+      // comportavam diferente, que foi como o bug do catálogo passou despercebido.
       '/api/kenlo': {
-        target: 'https://imob.valuegaia.com.br',
+        target: 'http://localhost:3001',
         changeOrigin: true,
         secure: false,
-        router: (req: any) => {
-          try {
-            const requestUrl = new URL(req.url || '', 'http://localhost');
-            const raw = requestUrl.searchParams.get('url') || '';
-            if (raw) {
-              const target = new URL(raw);
-              return `${target.protocol}//${target.host}`;
-            }
-          } catch {
-            // ignore
-          }
-          return 'https://imob.valuegaia.com.br';
-        },
-        rewrite: (path) => {
-          try {
-            const requestUrl = new URL(path || '', 'http://localhost');
-            const raw = requestUrl.searchParams.get('url') || '';
-            if (raw) {
-              const target = new URL(raw);
-              return `${target.pathname}${target.search}`;
-            }
-          } catch {
-            // ignore
-          }
-          return '/integra/midia.ashx?midia=ChaveNaMao&p=pQdBmFcGRFgUiPu6qbT5CB0b4QQUZf5v';
-        },
-        configure: (proxy, _options) => {
-          proxy.on('error', (err, _req, res) => {
-            console.log('❌ Proxy error:', err.message);
-            (res as any).writeHead(500, {
-              'Content-Type': 'application/json',
-            });
-            (res as any).end(JSON.stringify({ error: 'Proxy error', message: err.message }));
-          });
-          proxy.on('proxyReq', (proxyReq, req, _res) => {
-            console.log('📤 Sending Request to Target:', req.method, req.url);
-            // Manter o método original (GET/POST). Só aplicar Content-Type no POST.
-            if (req.method && req.method.toUpperCase() !== 'GET') {
-              proxyReq.method = 'POST';
-              proxyReq.setHeader('Content-Type', 'application/x-www-form-urlencoded');
-            }
-            proxyReq.setHeader('Accept', 'application/xml, text/xml, */*');
-          });
-          proxy.on('proxyRes', (proxyRes, req, _res) => {
-            console.log('📥 Received Response from Target:', proxyRes.statusCode, req.url);
-          });
-        },
-      }
+      },
     }
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),

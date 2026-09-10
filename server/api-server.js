@@ -8,6 +8,7 @@ import express from 'express';
 import cors from 'cors';
 import { createClient } from '@supabase/supabase-js';
 import { createWatermarkRouter } from './watermark/routes.js';
+import { criarKenloXmlProxyRouter } from './kenloXmlProxy.js';
 import { countLeadsPerBroker } from './brokerLeadStats.js';
 import { createWorker } from './watermark/worker.js';
 import { createZapConfigResolver, registerZapRoutes, extractZapPhotoUrls } from './zap/index.js';
@@ -70,6 +71,11 @@ console.log('🔌 [api-server] Supabase conectado:', usingServiceRole ? '(servic
 
 // 🖼️ Pipeline de marca d'água (upload de master → fila → derivados versionados → CDN).
 // Montado antes do express.json não interferir: multer trata o multipart internamente.
+// 📡 XML de imóveis do tenant. Mesma implementação do proxy-production: se o dev
+// usasse o proxy do Vite (sem allowlist) e a prod usasse esta, voltaríamos a ter
+// comportamento diferente entre os dois ambientes.
+app.use('/api/kenlo', criarKenloXmlProxyRouter({ supabase }));
+
 app.use('/api/v1/watermark', createWatermarkRouter(supabase));
 
 // Worker embarcado opcional. Em produção prefira um processo/container dedicado

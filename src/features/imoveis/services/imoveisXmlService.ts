@@ -430,6 +430,17 @@ const extractFotos = (imovelXml: string): string[] => {
   return urls;
 };
 
+/**
+ * Basta para separar feed de página de erro/SPA: o index.html abre com
+ * <!doctype html> e nunca traz <imovel>/<Document>.
+ */
+export const pareceXmlDeImoveis = (texto: string): boolean => {
+  const inicio = texto.trimStart().slice(0, 200).toLowerCase();
+  if (!inicio.startsWith('<?xml') && !inicio.startsWith('<')) return false;
+  if (inicio.includes('<!doctype html') || inicio.includes('<html')) return false;
+  return true;
+};
+
 export const fetchXmlTextViaProxy = async (xmlUrl: string): Promise<string> => {
   const url = xmlUrl.trim();
   if (!url) throw new Error('URL do XML não informada');
@@ -458,7 +469,21 @@ export const fetchXmlTextViaProxy = async (xmlUrl: string): Promise<string> => {
     throw new Error(`Falha ao buscar XML (HTTP ${response.status}). ${preview ? `Resposta: ${preview.substring(0, 200)}` : ''}`);
   }
 
-  return response.text();
+  const texto = await response.text();
+
+  // Quando /api/kenlo não existe no servidor, a requisição cai no catch-all da
+  // SPA e volta o index.html com HTTP 200. Sem esta checagem o HTML seguia como
+  // se fosse o feed, rendia zero imóveis e o sync gravava vazio por cima do
+  // catálogo. Falhar aqui é o que torna o problema visível.
+  if (!pareceXmlDeImoveis(texto)) {
+    throw new Error(
+      'A resposta de /api/kenlo não é XML de imóveis. ' +
+        'Em produção isso costuma significar que a rota não está registrada no servidor ' +
+        `(veio ${texto.trim().slice(0, 60) || 'corpo vazio'}...).`,
+    );
+  }
+
+  return texto;
 };
 
 export const parseImoveisFromXml = (xmlText: string): Imovel[] => {
@@ -600,7 +625,17 @@ export const syncTenantImoveisFromXml = async (tenantId: string): Promise<{ coun
 
   const xmlText = await fetchXmlTextViaProxy(xmlUrl);
   const imoveis = parseImoveisFromXml(xmlText);
-  
+
+  // Nunca trocar um catálogo que existe por uma lista vazia: `backup_data` é a
+  // única cópia dos imóveis no banco e `setTenantImoveis` apaga a da sessão.
+  // Feed novo/legitimamente vazio (nada guardado ainda) segue em frente.
+  if (imoveis.length === 0 && getTenantImoveis(tenantId).length > 0) {
+    throw new Error(
+      'O XML foi lido mas não trouxe nenhum imóvel, e já existe catálogo carregado. ' +
+        'Sync abortado para não apagar os imóveis — confira a URL do feed.',
+    );
+  }
+
   // Salvar no localStorage (para uso na sessão atual)
   setTenantImoveis(tenantId, imoveis);
   

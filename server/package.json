@@ -7,7 +7,6 @@
   "scripts": {
     "start": "node proxy-production.js",
     "start:api": "node proxy-production.js",
-    "start:kenlo": "node kenlo-proxy.js",
     "dev": "nodemon proxy-production.js"
   },
   "dependencies": {
