@@ -58,3 +58,47 @@ export function decimalToPercent(decimal: number): number {
   // ponytail: DISC vem 0–1; valores já em 0–100 (>1) passam direto, sem dobrar a escala.
   return d <= 1 ? Math.round(d * 100) : Math.round(d);
 }
+
+export type LetraDisc = 'D' | 'I' | 'S' | 'C';
+
+/**
+ * Percentuais DISC prontos para exibir: inteiros que somam exatamente 100.
+ *
+ * Duas coisas que as telas faziam de formas diferentes e agora fazem igual:
+ *
+ * 1. NORMALIZAR. As 4 dimensões competem entre si e devem somar 1,0. O cálculo
+ *    atual garante isso, mas linhas antigas do banco não — e uma tela normalizava
+ *    (dashboard admin) enquanto a outra só multiplicava por 100 (Meu Perfil),
+ *    então a mesma pessoa aparecia com números diferentes em cada lugar.
+ *
+ * 2. ARREDONDAR EM CONJUNTO. Arredondar cada uma por si fazia as 4 barras somarem
+ *    99% ou 101%. Aqui o resto maior recebe o ponto que sobra (maior-resto), então
+ *    o total exibido é sempre 100.
+ */
+export function percentuaisDiscExibicao(
+  brutos: Record<LetraDisc, number>,
+): Record<LetraDisc, number> {
+  const letras: LetraDisc[] = ['D', 'I', 'S', 'C'];
+  const valores = letras.map((l) => (Number.isFinite(brutos[l]) ? Math.max(0, brutos[l]) : 0));
+  const soma = valores.reduce((a, b) => a + b, 0);
+
+  if (soma <= 0) return { D: 0, I: 0, S: 0, C: 0 };
+
+  const exatos = valores.map((v) => (v / soma) * 100);
+  const chao = exatos.map(Math.floor);
+  let sobra = 100 - chao.reduce((a, b) => a + b, 0);
+
+  // distribui a sobra para quem tem a maior parte fracionária
+  const ordem = exatos
+    .map((v, i) => ({ i, resto: v - Math.floor(v) }))
+    .sort((a, b) => b.resto - a.resto);
+
+  const saida = [...chao];
+  for (const { i } of ordem) {
+    if (sobra <= 0) break;
+    saida[i]++;
+    sobra--;
+  }
+
+  return Object.fromEntries(letras.map((l, i) => [l, saida[i]])) as Record<LetraDisc, number>;
+}

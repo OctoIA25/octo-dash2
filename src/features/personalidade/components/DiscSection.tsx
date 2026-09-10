@@ -11,7 +11,7 @@ import type { DISCResultData } from '@/features/corretores/services/discResultsS
 import { SecaoMetodologia } from './SecaoMetodologia';
 import { ScoreBar } from './ScoreBar';
 import { anchorOf, isTemaEscuro } from './tokens';
-import { decimalToPercent, discScoreToLabel } from '../interpret/scoreToLabel';
+import { percentuaisDiscExibicao, discScoreToLabel } from '../interpret/scoreToLabel';
 
 interface DiscSectionProps {
   disc: DISCResultData;
@@ -23,12 +23,14 @@ export function DiscSection({ disc }: DiscSectionProps) {
   const { currentTheme } = useTheme();
   const anchor = anchorOf('disc', isTemaEscuro(currentTheme));
 
-  const valores: Record<'D' | 'I' | 'S' | 'C', number> = {
-    D: decimalToPercent(disc.percentual_d),
-    I: decimalToPercent(disc.percentual_i),
-    S: decimalToPercent(disc.percentual_s),
-    C: decimalToPercent(disc.percentual_c),
-  };
+  // Normalizado e arredondado em conjunto: as 4 barras somam 100 e batem com o
+  // que o dashboard admin mostra para a mesma pessoa.
+  const valores = percentuaisDiscExibicao({
+    D: disc.percentual_d,
+    I: disc.percentual_i,
+    S: disc.percentual_s,
+    C: disc.percentual_c,
+  });
 
   const principal = DISC_PROFILES[disc.tipo_principal];
 

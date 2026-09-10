@@ -8,13 +8,7 @@ import { ElaineChat } from './ElaineChat';
 
 // Prompts da Elaine
 const ELAINE_PROMPTS: Record<string, string> = {
-  'disc': `Elaine, realize uma Análise Completa do Perfil DISC para o colaborador(a) [NOME DO CORRETOR].
-
-**Dados DISC:**
-- D (Dominância): [Pontuação de 1-4]
-- I (Influência): [Pontuação de 1-4]
-- S (Estabilidade): [Pontuação de 1-4]
-- C (Conformidade): [Pontuação de 1-4]
+  'disc': `Elaine, realize uma Análise Completa do Perfil DISC do colaborador(a), usando os dados DISC fornecidos junto com esta mensagem.
 
 **Estruture a análise em:**
 
@@ -30,11 +24,7 @@ const ELAINE_PROMPTS: Record<string, string> = {
 
 6. **Dicas para o Gestor:** Como gerenciar e motivar esse perfil especificamente.`,
 
-  'eneagrama': `Elaine, realize uma Análise Completa do Eneagrama para o colaborador(a) [NOME DO CORRETOR].
-
-**Tipo Eneagrama:**
-- Tipo Principal: [Ex: Tipo 3 - O Realizador]
-- Nível de Desenvolvimento: [Saudável/Médio/Estressado]
+  'eneagrama': `Elaine, realize uma Análise Completa do Eneagrama do colaborador(a), usando os dados de Eneagrama fornecidos junto com esta mensagem.
 
 **Estruture a análise em:**
 
@@ -52,11 +42,9 @@ const ELAINE_PROMPTS: Record<string, string> = {
 
 7. **Relações Interpessoais:** Como interage com outros tipos e o que precisa para trabalhar bem em equipe.`,
 
-  'mbti': `Elaine, realize uma Análise Completa do MBTI para o colaborador(a) [NOME DO CORRETOR].
+  'mbti': `Elaine, realize uma Análise Completa do MBTI do colaborador(a), usando os dados de MBTI fornecidos junto com esta mensagem.
 
-**Tipo MBTI:**
-- Tipo: [Ex: ENFJ - O Protagonista]
-- Funções Cognitivas: [Ex: Fe-Ni-Se-Ti]
+Trabalhe com o TIPO e as letras. Não há percentual por dimensão: esse dado não é medido, então não estime nem cite intensidade.
 
 **Estruture a análise em:**
 
@@ -76,12 +64,9 @@ const ELAINE_PROMPTS: Record<string, string> = {
 
 8. **Compatibilidade em Equipe:** Com quais tipos trabalha melhor e quais podem gerar atrito.`,
 
-  'relatorio-geral': `Elaine, crie um Relatório Comportamental Completo e Integrado para o colaborador(a) [NOME DO CORRETOR].
+  'relatorio-geral': `Elaine, crie um Relatório Comportamental Completo e Integrado do colaborador(a), usando os dados de DISC, Eneagrama e MBTI fornecidos junto com esta mensagem.
 
-**Dados Comportamentais Completos:**
-- **DISC:** [Ex: Alto I, Médio D, Baixo S, Baixo C]
-- **Eneagrama:** [Ex: Tipo 3 - O Realizador]
-- **MBTI:** [Ex: ENFJ - O Protagonista]
+Use apenas o que foi fornecido. Se algum dos três testes não vier, diga isso no relatório em vez de supor.
 
 **Estruture o relatório completo em:**
 
@@ -111,23 +96,7 @@ const ELAINE_PROMPTS: Record<string, string> = {
 
   'gestao-liderados': `Elaine, crie um Plano de Gestão de Equipe para o gestor liderar sua equipe de corretores de forma estratégica.
 
-**Equipe:**
-[Listar os corretores e seus perfis comportamentais]
-
-**Corretor 1:** [NOME]
-- DISC: [Perfil]
-- Eneagrama: [Tipo]
-- MBTI: [Tipo]
-
-**Corretor 2:** [NOME]
-- DISC: [Perfil]
-- Eneagrama: [Tipo]
-- MBTI: [Tipo]
-
-**Corretor 3:** [NOME]
-- DISC: [Perfil]
-- Eneagrama: [Tipo]
-- MBTI: [Tipo]
+Use os perfis da equipe fornecidos junto com esta mensagem. Considere apenas os corretores que vierem nos dados.
 
 **Análise solicitada:**
 

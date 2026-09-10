@@ -19,7 +19,7 @@ import { TesteEneagrama } from '@/features/corretores/components/TesteEneagrama'
 import { verificarTestesCompletos } from '@/features/corretores/services/testesComportamentaisService';
 import { buscarIdCorretorPorNome } from '@/features/corretores/services/buscarCorretorIdService';
 import { buscarCorretorPorEmail, CorretorIdentidade } from '@/features/corretores/services/buscarCorretorPorEmailService';
-import { normalizarPercentuaisDISC } from '@/features/corretores/services/personalityAnalysisService';
+import { percentuaisDiscExibicao } from '@/features/personalidade/interpret/scoreToLabel';
 import { PerfilCompleto } from '@/features/personalidade/PerfilCompleto';
 import { EneagramaCorretorIndividualModal } from '@/features/corretores/components/EneagramaCorretorIndividualModal';
 import { MBTICorretorIndividualModal } from '@/features/corretores/components/MBTICorretorIndividualModal';
@@ -1406,13 +1406,13 @@ export const AgentesIaPage = () => {
                         Perfil: <span className="font-semibold">{adminResultados.disc.tipoPrincipal}</span>
                       </p>
                       {(() => {
-                        const discNorm = normalizarPercentuaisDISC(adminResultados.disc.percentuais);
+                        // Mesmo helper das outras telas: normaliza e arredonda em
+                        // conjunto, então os 4 números somam 100 e batem com o
+                        // que o corretor vê no próprio perfil.
+                        const disc = percentuaisDiscExibicao(adminResultados.disc.percentuais);
                         return (
                           <p className={`text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-500'}`}>
-                            D: {(discNorm.D * 100).toFixed(0)}% |
-                            I: {(discNorm.I * 100).toFixed(0)}% |
-                            S: {(discNorm.S * 100).toFixed(0)}% |
-                            C: {(discNorm.C * 100).toFixed(0)}%
+                            D: {disc.D}% | I: {disc.I}% | S: {disc.S}% | C: {disc.C}%
                           </p>
                         );
                       })()}

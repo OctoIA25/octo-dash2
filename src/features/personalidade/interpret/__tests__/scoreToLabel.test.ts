@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { scoreToLabel, discScoreToLabel, decimalToPercent } from '../scoreToLabel';
+import { scoreToLabel, discScoreToLabel, decimalToPercent, percentuaisDiscExibicao } from '../scoreToLabel';
 
 describe('scoreToLabel', () => {
   it('mapeia faixas para rótulos qualitativos', () => {
@@ -50,5 +50,38 @@ describe('decimalToPercent', () => {
 
   it('trata não-finitos como 0', () => {
     expect(decimalToPercent(NaN)).toBe(0);
+  });
+});
+
+describe('percentuaisDiscExibicao', () => {
+  const soma = (p: Record<string, number>) => Object.values(p).reduce((a, b) => a + b, 0);
+
+  it('converte decimais do banco em inteiros que somam 100', () => {
+    const p = percentuaisDiscExibicao({ D: 0.4, I: 0.3, S: 0.2, C: 0.1 });
+    expect(p).toEqual({ D: 40, I: 30, S: 20, C: 10 });
+    expect(soma(p)).toBe(100);
+  });
+
+  it('soma 100 mesmo quando o arredondamento simples daria 99 ou 101', () => {
+    // 1/3 cada em três dimensões: arredondar cada uma daria 33+33+33 = 99
+    const p = percentuaisDiscExibicao({ D: 1, I: 1, S: 1, C: 0 });
+    expect(soma(p)).toBe(100);
+  });
+
+  it('normaliza linha antiga cujos valores não somam 1,0', () => {
+    // era aqui que as duas telas divergiam: uma normalizava, a outra não
+    const p = percentuaisDiscExibicao({ D: 0.2, I: 0.1, S: 0.1, C: 0 });
+    expect(p).toEqual({ D: 50, I: 25, S: 25, C: 0 });
+    expect(soma(p)).toBe(100);
+  });
+
+  it('aceita valores já em 0–100 sem dobrar a escala', () => {
+    const p = percentuaisDiscExibicao({ D: 40, I: 30, S: 20, C: 10 });
+    expect(p).toEqual({ D: 40, I: 30, S: 20, C: 10 });
+  });
+
+  it('tudo zerado devolve zeros, não NaN', () => {
+    expect(percentuaisDiscExibicao({ D: 0, I: 0, S: 0, C: 0 })).toEqual({ D: 0, I: 0, S: 0, C: 0 });
+    expect(percentuaisDiscExibicao({ D: NaN, I: 0, S: 0, C: 0 })).toEqual({ D: 0, I: 0, S: 0, C: 0 });
   });
 });
