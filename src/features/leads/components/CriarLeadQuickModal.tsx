@@ -26,6 +26,8 @@ import {
   type LeadType,
 } from '../services/leadsService';
 import { phoneVariants } from '@/features/chat/services/chatService';
+import { CadenciaLiaSection } from './CadenciaLiaSection';
+import { useCadenciaLead } from '../hooks/useCadenciaLead';
 import { getTenantImoveis, loadXmlDataFromSupabase } from '@/features/imoveis/services/imoveisXmlService';
 import type { Imovel } from '@/features/imoveis/services/kenloService';
 
@@ -118,6 +120,10 @@ export const CriarLeadQuickModal = ({
   const [catalogo, setCatalogo] = useState<Imovel[]>([]);
   const [carregandoInteresses, setCarregandoInteresses] = useState(false);
   const [verImoveisInteresse, setVerImoveisInteresse] = useState(false);
+  // Cadência da LIA: só faz sentido em lead que já existe. O hook não dispara
+  // no modo criar nem com o modal fechado — o Kanban abre e fecha isto o tempo
+  // todo e cada abertura seria uma requisição.
+  const cadenciaLead = useCadenciaLead(editingLead?.id, tenantId, isOpen && isEditMode);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
@@ -661,6 +667,16 @@ export const CriarLeadQuickModal = ({
                   )
                 )}
               </div>
+            )}
+
+            {/* Seção: Cadência da LIA — o que a IA já tentou com este lead.
+                Somente leitura: quem agenda e dispara é a LIA; o CRM lê. */}
+            {isEditMode && (
+              <CadenciaLiaSection
+                cadencia={cadenciaLead.cadencia}
+                carregando={cadenciaLead.carregando}
+                erro={cadenciaLead.erro}
+              />
             )}
 
             {/* Seção: Documentação — só a partir da etapa de Propostas. Antes
