@@ -26,12 +26,33 @@ const noopLogger = { info() {}, warn() {}, error() {} };
 const CONFIG_TABLE = 'tenant_santa_angela_config';
 const DEFAULT_CONCURRENCY = 5;       // tenants sincronizados em paralelo por ciclo
 const DEFAULT_TENANT_TIMEOUT_MS = 60000; // teto por tenant; estourou → erro no ciclo, não bloqueia os demais
+const DEFAULT_FULL_SYNC_TTL_MS = 60 * 60 * 1000; // reconciliação: varre o grid inteiro 1x/h (espelha KENLO_FULL_SYNC_TTL_MS)
 
 export function createSantaAngelaSyncService({
   supabase, apiClient, logger = noopLogger, processEnv = process.env, pLimitImpl,
 }) {
   const concurrency = Number(processEnv.SANTA_ANGELA_SYNC_CONCURRENCY) || DEFAULT_CONCURRENCY;
   const tenantTimeoutMs = Number(processEnv.SANTA_ANGELA_TENANT_TIMEOUT_MS) || DEFAULT_TENANT_TIMEOUT_MS;
+  const fullSyncTtlMs = Number(processEnv.SANTA_ANGELA_FULL_SYNC_TTL_MS) || DEFAULT_FULL_SYNC_TTL_MS;
+
+  // QUANDO o ciclo varre o grid INTEIRO em vez de só a página 1.
+  //
+  // A página 1 são os 100 mais recentes por DATA DE CADASTRO. Um lead que entra
+  // no grid com cadastro antigo — reativado na origem, ou movido para uma
+  // carteira que o filtro cobre — nunca aparece nela e ficaria fora da dash para
+  // sempre: em 10/09/2026 eram 11 leads reais (cadastro de 2019 a 2026, todos
+  // com interação nos últimos dias). O mesmo valia para um insert rejeitado num
+  // ciclo (ex.: status fora da constraint): sem varredura completa, não havia
+  // segunda chance. Por isso a varredura completa VOLTA a rodar a cada
+  // fullSyncTtlMs, espelhando a reconciliação periódica do Kenlo
+  // (kenlo/provider.js: dueFull + last_full_sync_at).
+  function isFullDue(row, nowMs = Date.now()) {
+    if (!row.last_sync_at) return true;      // primeiro sync do tenant
+    if (!row.last_full_sync_at) return true; // nunca reconciliou (inclui o 1º ciclo após a migration)
+    const last = Date.parse(row.last_full_sync_at);
+    // carimbo ilegível → reconcilia (NaN em comparação seria `false` para sempre)
+    return !Number.isFinite(last) || nowMs - last >= fullSyncTtlMs;
+  }
   // Retorna null em erro de leitura — e o ciclo do tenant DEVE abortar nesse
   // caso. Retornar sets vazios aqui (comportamento antigo) fazia o sync tratar
   // a página inteira como leads novos e RE-INSERIR os 100 mais recentes a cada
@@ -152,12 +173,13 @@ export function createSantaAngelaSyncService({
     return byId.get(String(empreendimentoId)) || null;
   }
 
-  // `full: true` (primeiro sync do tenant, last_sync_at null) varre TODAS as
-  // páginas do grid — sem isso a base histórica nunca entra: o polling só lê a
-  // página 1 (100 mais recentes por data de cadastro) e um lead antigo jamais
-  // aparece nela. Leads históricos (>48h) entram com participa_bolsao=false
-  // (não inundam o bolsão/expiração) e assigned_at original; o gate de frescor
-  // no trigger de lead.created (migration 20260902) impede que disparem a Lia.
+  // `full: true` (primeiro sync do tenant + reconciliação periódica — ver
+  // isFullDue) varre TODAS as páginas do grid — sem isso a base histórica nunca
+  // entra: o polling só lê a página 1 (100 mais recentes por data de cadastro) e
+  // um lead antigo jamais aparece nela. Leads históricos (>48h) entram com
+  // participa_bolsao=false (não inundam o bolsão/expiração) e assigned_at
+  // original; o gate de frescor no trigger de lead.created (migration 20260902)
+  // impede que disparem a Lia.
   async function syncTenant(tenantId, runId = '-', { full = false } = {}) {
     const startedAt = Date.now();
     logger.info(`[santa-angela] {"event":"santa-angela.sync.tenant.start","runId":"${runId}","tenantId":"${tenantId}","full":${full}}`);
@@ -190,7 +212,7 @@ export function createSantaAngelaSyncService({
     result.totalFetched = leads.length;
     if (leads.length === 0) {
       result.success = true; result.message = 'Nenhum lead encontrado na API';
-      await touchSync(tenantId, 0);
+      await touchSync(tenantId, 0, { full });
       return finish();
     }
 
@@ -241,7 +263,7 @@ export function createSantaAngelaSyncService({
     result.success = true;
     result.message = `Sincronização concluída: ${result.newLeads} novos, ${result.updatedLeads} atualizados`
       + (result.errors ? `, ${result.errors} leads NÃO inseridos` : '');
-    await touchSync(tenantId, result.newLeads + result.updatedLeads);
+    await touchSync(tenantId, result.newLeads + result.updatedLeads, { full });
     return finish();
   }
 
@@ -273,7 +295,7 @@ export function createSantaAngelaSyncService({
   async function syncAllTenants(runId = String(Date.now())) {
     const cycleStart = Date.now();
     const { data, error } = await supabase
-      .from(CONFIG_TABLE).select('tenant_id, last_sync_at').eq('status', 'active');
+      .from(CONFIG_TABLE).select('tenant_id, last_sync_at, last_full_sync_at').eq('status', 'active');
     if (error) {
       logger.error(`[santa-angela] {"event":"santa-angela.sync.cycle.error","runId":"${runId}","error":${JSON.stringify(error.message)}}`);
       return [];
@@ -282,28 +304,33 @@ export function createSantaAngelaSyncService({
     // bypassa RLS, então o filtro é explícito aqui.
     const deletedIds = await getDeletedTenantIds(supabase, (data || []).map((r) => r.tenant_id));
     const rows = (data || []).filter((r) => !deletedIds.has(r.tenant_id));
-    logger.info(`[santa-angela] {"event":"santa-angela.sync.cycle.start","runId":"${runId}","tenantsAtivos":${rows.length},"concurrency":${concurrency}}`);
+    // Decide o modo UMA vez por tenant: o log do ciclo diz quantas reconciliações
+    // (varredura completa) vão rodar, então dá para ver no log se elas acontecem.
+    const alvos = rows.map((r) => ({ tenantId: r.tenant_id, full: isFullDue(r) }));
+    logger.info(`[santa-angela] {"event":"santa-angela.sync.cycle.start","runId":"${runId}","tenantsAtivos":${alvos.length},"reconciliacoes":${alvos.filter((a) => a.full).length},"concurrency":${concurrency}}`);
 
     // p-limit: no máximo `concurrency` tenants em paralelo — evita abrir centenas
     // de sincronizações de uma vez conforme a base cresce. Injetável p/ testes.
     const limit = pLimitImpl ? pLimitImpl(concurrency) : (await import('p-limit')).default(concurrency);
-    // Tenant que nunca sincronizou (last_sync_at null) faz o primeiro sync
-    // completo: todas as páginas do grid, importando a base histórica.
     const settled = await Promise.allSettled(
-      rows.map((r) => limit(() => withTenantTimeout(r.tenant_id, runId, { full: !r.last_sync_at }))),
+      alvos.map((a) => limit(() => withTenantTimeout(a.tenantId, runId, { full: a.full }))),
     );
     const results = settled.map((s, i) => (s.status === 'fulfilled'
       ? s.value
-      : { tenantId: rows[i]?.tenant_id, success: false, errors: 1, message: s.reason?.message }));
+      : { tenantId: alvos[i]?.tenantId, success: false, errors: 1, message: s.reason?.message }));
 
     const ok = results.filter((r) => r.success).length;
     logger.info(`[santa-angela] {"event":"santa-angela.sync.cycle.done","runId":"${runId}","durationMs":${Date.now() - cycleStart},"ok":${ok},"failed":${results.length - ok}}`);
     return results;
   }
 
-  async function touchSync(tenantId, count) {
+  // `full` carimba last_full_sync_at — e SÓ em ciclo bem-sucedido (as saídas por
+  // erro do syncTenant não chamam touchSync), então uma reconciliação que falhou
+  // no meio é re-tentada no próximo tick em vez de ficar marcada como feita.
+  async function touchSync(tenantId, count, { full = false } = {}) {
+    const nowIso = new Date().toISOString();
     const { error } = await supabase.from(CONFIG_TABLE)
-      .update({ last_sync_at: new Date().toISOString(), leads_count: count })
+      .update({ last_sync_at: nowIso, leads_count: count, ...(full ? { last_full_sync_at: nowIso } : {}) })
       .eq('tenant_id', tenantId);
     if (error) logger.warn(`[santa-angela] touchSync falhou: ${error.message}`);
   }

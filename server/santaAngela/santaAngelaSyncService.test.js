@@ -31,11 +31,12 @@ function makeSupabase({ existing = [], existingError = null } = {}) {
 // Supabase fake para syncAllTenants: .from(config).select('tenant_id').eq('status','active')
 // resolve a lista de tenants ativos; .in().not() (getDeletedTenantIds) resolve a
 // lista de soft-deletados; demais operações (leads) resolvem vazio/sucesso.
-// Aceita string (tenant já sincronizado, last_sync_at preenchido → modo página 1)
-// ou objeto { tenant_id, last_sync_at } para exercitar o primeiro sync (full).
+// Aceita string (tenant em dia: já sincronizado e recém-reconciliado → modo
+// página 1) ou objeto { tenant_id, last_sync_at, last_full_sync_at } para
+// exercitar o primeiro sync e a reconciliação periódica (ambos full).
 function makeSupabaseWithTenants(activeTenants, deletedTenantIds = []) {
   const rows = activeTenants.map((t) => (typeof t === 'string'
-    ? { tenant_id: t, last_sync_at: '2026-01-01T00:00:00Z' }
+    ? { tenant_id: t, last_sync_at: '2026-01-01T00:00:00Z', last_full_sync_at: new Date().toISOString() }
     : t));
   return {
     from() { return this; },
@@ -369,4 +370,68 @@ it('syncAllTenants: tenant sem last_sync_at faz o primeiro sync completo; os dem
   const results = await svc.syncAllTenants('run-full');
   expect(results[0].success).toBe(true);
   expect(calls.pages).toEqual([1, 2]); // full: andou as duas páginas
+});
+
+// --- reconciliação periódica (varredura completa fora do primeiro sync) ------
+// O polling lê só a página 1 (100 mais recentes por data de cadastro). Sem estes
+// ciclos completos, um lead que entra no grid com cadastro antigo — reativado na
+// origem — nunca chega à dash, e um insert que falhou não tem segunda chance.
+
+const gridDuasPaginas = (calls) => okClient(
+  [[{ id: 'p1', nome: 'A', celular: '1' }], [{ id: 'p2', nome: 'B', celular: '2' }]], { calls },
+);
+
+it('syncAllTenants: tenant sem last_full_sync_at reconcilia (é o 1º ciclo após a migration)', async () => {
+  const calls = { detalhes: [], empreendimentos: 0, pages: [] };
+  const supabase = makeSupabaseWithTenants([
+    { tenant_id: 't1', last_sync_at: '2026-09-10T12:00:00Z', last_full_sync_at: null },
+  ]);
+  const svc = createSantaAngelaSyncService({ supabase, apiClient: gridDuasPaginas(calls), pLimitImpl: makeBoundedLimit() });
+  await svc.syncAllTenants('run-migrou');
+  expect(calls.pages).toEqual([1, 2]); // varreu o grid inteiro e recuperou o atrasado
+});
+
+it('syncAllTenants: reconciliação vencida (TTL) varre o grid inteiro', async () => {
+  const calls = { detalhes: [], empreendimentos: 0, pages: [] };
+  const supabase = makeSupabaseWithTenants([{
+    tenant_id: 't1',
+    last_sync_at: new Date().toISOString(),
+    last_full_sync_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), // 2h > TTL de 1h
+  }]);
+  const svc = createSantaAngelaSyncService({ supabase,
+    apiClient: gridDuasPaginas(calls), pLimitImpl: makeBoundedLimit(),
+    processEnv: { SANTA_ANGELA_FULL_SYNC_TTL_MS: '3600000' } });
+  await svc.syncAllTenants('run-vencida');
+  expect(calls.pages).toEqual([1, 2]);
+});
+
+it('syncAllTenants: dentro do TTL segue lendo só a página 1 (não varre o grid a cada minuto)', async () => {
+  const calls = { detalhes: [], empreendimentos: 0, pages: [] };
+  const supabase = makeSupabaseWithTenants([{
+    tenant_id: 't1',
+    last_sync_at: new Date().toISOString(),
+    last_full_sync_at: new Date(Date.now() - 60 * 1000).toISOString(), // 1min < TTL de 1h
+  }]);
+  const svc = createSantaAngelaSyncService({ supabase,
+    apiClient: gridDuasPaginas(calls), pLimitImpl: makeBoundedLimit(),
+    processEnv: { SANTA_ANGELA_FULL_SYNC_TTL_MS: '3600000' } });
+  await svc.syncAllTenants('run-em-dia');
+  expect(calls.pages).toEqual([1]);
+});
+
+it('last_full_sync_at só é carimbado no ciclo completo — e o ciclo normal não o toca', async () => {
+  // Carimbar no ciclo de página 1 adiaria a próxima reconciliação por mais um TTL
+  // sem nunca ter varrido o grid: o atraso viraria permanente.
+  const cfgUpdate = (state) => state.updated.filter((u) => u.table === 'tenant_santa_angela_config').pop();
+
+  const completo = makeSupabase({ existing: [] });
+  await createSantaAngelaSyncService({ supabase: completo.supabase,
+    apiClient: okClient([{ id: 'n1', nome: 'N', celular: '1' }]) }).syncTenant('t1', 'run', { full: true });
+  expect(cfgUpdate(completo.state).payload.last_full_sync_at).toBeTruthy();
+
+  const normal = makeSupabase({ existing: [] });
+  await createSantaAngelaSyncService({ supabase: normal.supabase,
+    apiClient: okClient([{ id: 'n1', nome: 'N', celular: '1' }]) }).syncTenant('t1');
+  expect(cfgUpdate(normal.state).payload.last_sync_at).toBeTruthy();
+  expect(cfgUpdate(normal.state).payload.last_full_sync_at).toBeUndefined();
 });
