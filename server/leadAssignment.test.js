@@ -34,14 +34,17 @@ function createFakeSupabase(db) {
       case 'tenant_brokers':
         return { data: db.tenantBrokers || [], error: null };
       case 'tenant_memberships': {
-        if (eqOf(q, 'role') === 'corretor') return { data: db.members || [], error: null };
         const batchIds = inOf(q, 'user_id');
         if (batchIds) {
           return { data: (db.memberships || []).filter((m) => batchIds.includes(m.user_id)), error: null };
         }
         const uid = eqOf(q, 'user_id');
-        const row = (db.memberships || []).find((m) => m.user_id === uid) || null;
-        return { data: row ? { permissions: row.permissions } : null, error: null };
+        if (uid !== undefined) {
+          const row = (db.memberships || []).find((m) => m.user_id === uid) || null;
+          return { data: row ? { permissions: row.permissions } : null, error: null };
+        }
+        // Sem filtro de user_id: é a listagem de membros do tenant (o ACL).
+        return { data: db.members || [], error: null };
       }
       case 'user_profiles':
         return { data: (db.profiles || []).filter((p) => (inOf(q, 'id') || []).includes(p.id)), error: null };
@@ -138,7 +141,7 @@ describe('distribuição — roleta', () => {
       tenantBrokers: [
         { id: uuid(11), name: 'Duda', email: 'duda@x.com', phone: null, photo_url: null, auth_user_id: uuid(1), status: 'active' },
       ],
-      members: [],
+      members: [{ user_id: uuid(1), role: 'corretor' }],
     });
 
     const broker = await la.getNextBrokerFromRoleta(TENANT);
@@ -430,7 +433,7 @@ describe('round-trips do pipeline (regressão de queries)', () => {
       tenantBrokers: [
         { id: uuid(41), name: 'Gil', email: 'gil@x.com', phone: null, photo_url: null, auth_user_id: uuid(4), status: 'active' },
       ],
-      members: [{ user_id: uuid(5), role: 'corretor' }],
+      members: [{ user_id: uuid(4), role: 'corretor' }, { user_id: uuid(5), role: 'corretor' }],
       profiles: [{ id: uuid(5), email: 'ivo@x.com', full_name: 'Ivo', phone: null, avatar_url: null }],
     });
 
@@ -456,6 +459,37 @@ describe('round-trips do pipeline (regressão de queries)', () => {
     const brokers = await la.getAllBrokersFromACL(TENANT);
     expect(brokers.map((b) => b.name)).toEqual(['Gil', 'Ivo']);
     expect(brokers[0].id).toBe(uuid(4)); // dedupe por auth_user_id
+  });
+
+  // Regressão: linha em tenant_brokers sobrevive à saída do CRM (e a importações
+  // de outra imobiliária). Sem membership a pessoa some da tela de Acessos e
+  // Permissões, mas continuava recebendo lead pela roleta.
+  it('ACL ignora tenant_brokers sem membership no tenant', async () => {
+    const { la } = setup({
+      tenantBrokers: [
+        { id: uuid(41), name: 'Gil', email: 'gil@x.com', phone: null, photo_url: null, auth_user_id: uuid(4), status: 'active' },
+        { id: uuid(42), name: 'Ex-corretora', email: 'ex@outra.com', phone: null, photo_url: null, auth_user_id: uuid(6), status: 'active' },
+        { id: uuid(43), name: 'Sem login', email: null, phone: null, photo_url: null, auth_user_id: null, status: 'active' },
+      ],
+      members: [{ user_id: uuid(4), role: 'corretor' }],
+    });
+
+    const brokers = await la.getAllBrokersFromACL(TENANT);
+    expect(brokers.map((b) => b.name)).toEqual(['Gil']);
+  });
+
+  it('roleta não sorteia corretor que saiu do CRM', async () => {
+    const { la } = setup({
+      tenantBrokers: [
+        { id: uuid(41), name: 'Gil', email: 'gil@x.com', phone: null, photo_url: null, auth_user_id: uuid(4), status: 'active' },
+        { id: uuid(42), name: 'Ex-corretora', email: 'ex@outra.com', phone: null, photo_url: null, auth_user_id: uuid(6), status: 'active' },
+      ],
+      members: [{ user_id: uuid(4), role: 'corretor' }],
+    });
+
+    const picks = [];
+    for (let i = 0; i < 3; i++) picks.push((await la.getNextBrokerFromRoleta(TENANT)).name);
+    expect(picks).toEqual(['Gil', 'Gil', 'Gil']);
   });
 });
 

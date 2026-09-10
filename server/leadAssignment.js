@@ -150,11 +150,13 @@ export function createLeadAssignment({ supabase }) {
           .select('id, name, email, phone, photo_url, auth_user_id, status')
           .eq('tenant_id', tenantId)
           .eq('status', 'active'),
+        // Todos os papéis, não só 'corretor': a membership é o que diz se a
+        // pessoa AINDA está no tenant, e admin/team_leader com linha em
+        // tenant_brokers sempre entraram na roleta.
         supabase
           .from('tenant_memberships')
           .select('user_id, role')
-          .eq('tenant_id', tenantId)
-          .eq('role', 'corretor'),
+          .eq('tenant_id', tenantId),
       ]);
 
       if (brokersError) {
@@ -164,9 +166,20 @@ export function createLeadAssignment({ supabase }) {
         console.error('❌ Erro ao buscar tenant_memberships:', membersError);
       }
 
+      // A membership é a fonte de verdade de quem está no tenant — é o que a
+      // tela "Acessos e Permissões" mostra (RPC get_tenant_members).
+      const memberIds = new Set((members || []).map(m => m.user_id));
+
       // Adicionar corretores de tenant_brokers ao mapa
       (tenantBrokers || []).forEach(broker => {
-        const key = broker.auth_user_id || broker.id;
+        // Sem membership no tenant, a pessoa não aparece na tela e não consegue
+        // nem logar aqui — mas a linha em tenant_brokers sobrevive à saída do
+        // CRM e a importações de outra imobiliária. Enquanto a roleta lia essa
+        // tabela crua, lead ia parar em quem ninguém via (Lotus: 72 na roleta
+        // contra 17 na tela).
+        if (!broker.auth_user_id || !memberIds.has(broker.auth_user_id)) return;
+
+        const key = broker.auth_user_id;
         if (!brokerMap.has(key)) {
           brokerMap.set(key, {
             id: key,
@@ -182,7 +195,12 @@ export function createLeadAssignment({ supabase }) {
       });
 
       // Buscar dados dos usuários via user_profiles (view de auth.users)
-      const memberUserIds = (members || []).map(m => m.user_id).filter(id => !brokerMap.has(id));
+      // Só 'corretor' aqui: admin/team_leader sem linha em tenant_brokers nunca
+      // entrou na roleta e continua fora.
+      const memberUserIds = (members || [])
+        .filter(m => m.role === 'corretor')
+        .map(m => m.user_id)
+        .filter(id => !brokerMap.has(id));
 
       if (memberUserIds.length > 0) {
         const { data: profiles, error: profilesError } = await supabase
