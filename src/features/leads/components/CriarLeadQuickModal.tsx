@@ -30,7 +30,7 @@ import { CadenciaLiaSection } from './CadenciaLiaSection';
 import { useCadenciaLead } from '../hooks/useCadenciaLead';
 import { HistoricoLeadSection } from './HistoricoLeadSection';
 import { useHistoricoLead } from '../hooks/useHistoricoLead';
-import { getTenantImoveis, loadXmlDataFromSupabase } from '@/features/imoveis/services/imoveisXmlService';
+import { fetchCatalogoImoveis } from '@/features/imoveis/services/catalogoImoveisService';
 import type { Imovel } from '@/features/imoveis/services/kenloService';
 
 interface CriarLeadQuickModalProps {
@@ -219,13 +219,14 @@ export const CriarLeadQuickModal = ({
     if (!abrindo || imoveisInteresse !== null || !telefone || !tenantId) return;
     setCarregandoInteresses(true);
     try {
-      let lista = getTenantImoveis(tenantId);
-      if (lista.length === 0) {
-        await loadXmlDataFromSupabase(tenantId);
-        lista = getTenantImoveis(tenantId);
-      }
+      // Catálogo = XML do tenant + imoveis_locais. Ler só o XML fazia todo imóvel
+      // cadastrado na mão (CA054 e afins) cair em "Não encontrado no catálogo".
+      const [lista, interesses] = await Promise.all([
+        fetchCatalogoImoveis(tenantId),
+        fetchImoveisDeInteresse(tenantId, phoneVariants(telefone)),
+      ]);
       setCatalogo(lista);
-      setImoveisInteresse(await fetchImoveisDeInteresse(tenantId, phoneVariants(telefone)));
+      setImoveisInteresse(interesses);
     } catch (err) {
       console.error('Erro ao buscar imóveis de interesse:', err);
       setImoveisInteresse([]);
