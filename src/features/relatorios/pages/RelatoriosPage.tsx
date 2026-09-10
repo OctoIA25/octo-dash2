@@ -2753,9 +2753,9 @@ export const RelatoriosPage = () => {
                               </div>
                             </div>
                             <div className="rounded-xl bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 p-4">
-                              <div className="text-[11px] text-gray-500 dark:text-slate-400 font-medium">VENDAS EXCLUSIVAS</div>
+                              <div className="text-[11px] text-gray-500 dark:text-slate-400 font-medium">VENDAS</div>
                               <div className="mt-2 text-3xl font-extrabold text-gray-900 dark:text-slate-100">
-                                {metricasIndComissaoMetasView.exclusivos}
+                                {metricasIndVendasView.vendasTotal}
                               </div>
                             </div>
                           </div>
