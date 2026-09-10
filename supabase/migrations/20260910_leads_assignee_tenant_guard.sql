@@ -33,12 +33,15 @@
 -- precisa rodar DEPOIS dele: daí o `zz` no nome. O espelho para `bolsao` é AFTER
 -- INSERT, então já enxerga o valor saneado.
 
+-- Dollar-quote NOMEADO ($guard$) em vez de $$: um `$$` aninhado ou um editor
+-- que reformate o texto fecha o corpo no lugar errado, e o erro que aparece é
+-- "syntax error" numa linha adiante, longe da causa.
 CREATE OR REPLACE FUNCTION public.tg_leads_assignee_must_be_member()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
-AS $$
+AS $guard$
 BEGIN
   IF NEW.assigned_agent_id IS NULL THEN
     RETURN NEW;
@@ -66,7 +69,7 @@ BEGIN
 
   RETURN NEW;
 END;
-$$;
+$guard$;
 
 DROP TRIGGER IF EXISTS tr_leads_zz_assignee_guard ON public.leads;
 CREATE TRIGGER tr_leads_zz_assignee_guard
@@ -88,22 +91,26 @@ CREATE TRIGGER tr_leads_zz_assignee_guard
 -- Os leads voltam para o pool sem corretor (não são apagados nem arquivados),
 -- prontos para redistribuição.
 
+-- `assigned_at` NÃO entra no SET: é NOT NULL, e zerá-lo derrubaria o UPDATE —
+-- e junto o DELETE da membership, tornando impossível remover alguém do CRM.
+-- O comentário fica AQUI, fora do statement: um `--` no meio do SET vira uma
+-- bomba se alguma ferramenta reformatar e comer a quebra de linha, porque
+-- engole o WHERE e o UPDATE passa a valer para a tabela inteira.
 CREATE OR REPLACE FUNCTION public.tg_clear_leads_on_membership_delete()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
-AS $$
+AS $clear$
 BEGIN
   UPDATE public.leads
      SET assigned_agent_id = NULL,
          assigned_agent_name = NULL
-         -- assigned_at fica: é NOT NULL e derrubaria o DELETE da membership.
    WHERE tenant_id = OLD.tenant_id
      AND lower(assigned_agent_id) = OLD.user_id::text;
   RETURN OLD;
 END;
-$$;
+$clear$;
 
 DROP TRIGGER IF EXISTS tr_membership_delete_clears_leads ON public.tenant_memberships;
 CREATE TRIGGER tr_membership_delete_clears_leads
