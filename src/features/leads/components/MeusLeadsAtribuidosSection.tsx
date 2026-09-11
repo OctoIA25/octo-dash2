@@ -613,8 +613,8 @@ export const MeusLeadsAtribuidosSection = ({
 
   // "Visualizar como": sem contexto ativo, `scope` é o próprio usuário e nada
   // muda. Com contexto, a LEITURA (quais leads, quais colunas) passa a ser a do
-  // usuário visualizado. Escritas continuam com o usuário real — ver
-  // `assumed_by: user?.id` abaixo — e `isOwner` (sync server-side) idem.
+  // usuário visualizado. Escritas continuam com o usuário real (`isOwner`,
+  // sync server-side, idem).
   const scope = useEffectiveUser();
   const isAdmin = scope.isViewingAs ? scope.isAdmin : realIsAdmin;
   const isCorretor = scope.isViewingAs ? !scope.isAdmin : realIsCorretor;
@@ -766,11 +766,11 @@ export const MeusLeadsAtribuidosSection = ({
   const handleAssumirDoBolsao = useCallback(async (leadId: string) => {
     const { error } = await supabase
       .from('bolsao')
+      // `bolsao` não tem assumed_by/assumed_at — quem/quando já vivem em
+      // corretor_responsavel (escrito pelo espelho) e data_atendimento.
       .update({
         atendido: true,
         data_atendimento: new Date().toISOString(),
-        assumed_by: user?.id,
-        assumed_at: new Date().toISOString(),
         status: 'assumido',
       })
       .eq('source_lead_id', leadId);
