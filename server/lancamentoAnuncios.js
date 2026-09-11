@@ -65,26 +65,62 @@ export async function resolverCodigoLancamento(supabase, tenantId, body) {
 }
 
 /**
- * Troca o código do portal pelo do lançamento no lead já normalizado. O código
+ * O de-para diz QUAL é o código do anúncio — não diz que ele é lançamento.
+ * Desde 20260911 um anúncio pode ser amarrado a um imóvel pronto do cadastro
+ * (o 2886878809 é o AP001), e quem decide o estágio é o código.
+ *
+ * Reusa a função do banco em vez de repetir a consulta: a mesma
+ * `eh_codigo_catalogo` que a classificação usa, para não existirem duas noções
+ * de "está no catálogo" divergindo em silêncio.
+ *
+ * FALHA FECHADA, ao contrário do lookup do de-para: erro aqui devolve `false` e
+ * o lead segue com `atuacao = 'lancamentos'`, que é o comportamento que existia
+ * antes desta mudança. Errar para o lado do status quo é mais barato que soltar
+ * um lead de lançamento na roleta de imóvel pronto.
+ */
+async function ehCodigoDoCatalogo(supabase, tenantId, codigo) {
+  const { data, error } = await supabase.rpc('eh_codigo_catalogo', {
+    p_tenant: tenantId,
+    p_codigo: codigo,
+  });
+
+  if (error) {
+    console.error('❌ [lancamentoAnuncios] eh_codigo_catalogo falhou:', {
+      code: error.code, message: error.message, details: error.details, hint: error.hint,
+    });
+    return false;
+  }
+
+  return data === true;
+}
+
+/**
+ * Troca o código do portal pelo do anúncio no lead já normalizado. O código
  * original não se perde: `clientListingId` e `originListingId` continuam em
  * `raw_data.original_request`.
  *
- * Marca também a `atuacao`: lead de lançamento não pode cair na roleta de imóvel
- * pronto. O sinal antigo (`lancamento_id`) não serve aqui — o de-para liga o
- * anúncio a um CÓDIGO, não a uma linha de `lancamentos` —, então a atuação vem
- * explícita. Ela é sempre escrita pelo servidor: o normalizador do ZAP monta um
- * objeto de chaves fixas, nada do payload do portal chega neste campo.
+ * `atuacao` só é marcada quando o código NÃO é do catálogo: lead de lançamento
+ * não pode cair na roleta de imóvel pronto, e lead de imóvel pronto não pode
+ * cair na de lançamento. O sinal antigo (`lancamento_id`) não serve aqui — o
+ * de-para liga o anúncio a um CÓDIGO, não a uma linha de `lancamentos` —, então
+ * a atuação vem explícita. Ela é sempre escrita pelo servidor: o normalizador
+ * do ZAP monta um objeto de chaves fixas, nada do payload do portal chega aqui.
  */
 export async function enriquecerComCodigoLancamento(supabase, tenantId, rawBody, leadNormalizado) {
   const codigo = await resolverCodigoLancamento(supabase, tenantId, rawBody);
   if (!codigo) return leadNormalizado;
 
-  console.log(`🏗️  Lançamento identificado pelo anúncio: ${extrairOriginListingId(rawBody)} → ${codigo}`);
+  const doCatalogo = await ehCodigoDoCatalogo(supabase, tenantId, codigo);
+  console.log(
+    `🏗️  Anúncio identificado: ${extrairOriginListingId(rawBody)} → ${codigo}`
+    + ` (${doCatalogo ? 'imóvel do catálogo' : 'lançamento'})`,
+  );
+
   return {
     ...leadNormalizado,
     property_code: codigo,
     interest_reference: codigo,
     interest_type: 'property',
-    atuacao: 'lancamentos',
+    ...(doCatalogo ? {} : { atuacao: 'lancamentos' }),
   };
 }

@@ -12,6 +12,7 @@
  */
 import { createZapConfigResolver } from './zapConfigResolver.js';
 import { generateFeedSecret } from './secretLookup.js';
+import { listarAnunciosDesconhecidos, amarrarAnuncio } from './anunciosPendentes.js';
 
 const PLATFORM_OWNER_EMAIL = 'octo.inteligenciaimobiliaria@gmail.com';
 const isPlatformOwner = (email) => (email || '').toLowerCase() === PLATFORM_OWNER_EMAIL;
@@ -131,6 +132,26 @@ export function registerZapRoutes(app, supabase, options = {}) {
     const cfg = await resolver.resolveByTenant(tenantId);
     const ok = Boolean(cfg && cfg.feedSecret && cfg.status === 'active');
     res.status(200).json({ ok, error: ok ? undefined : 'tenant sem config ativa ou sem feed_secret' });
+  });
+
+  // Anúncios do portal que mandam lead e não batem com imóvel nenhum. Leitura:
+  // mesmo gate da config (admin/líder do próprio tenant, ou o owner) — a lista
+  // expõe o que o portal mandou naquele tenant, não é informação pública.
+  app.post('/api/v1/zap/anuncios/desconhecidos', requireManager, async (req, res) => {
+    const { tenantId } = req.body || {};
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId obrigatório' });
+    const r = await listarAnunciosDesconhecidos(supabase, tenantId);
+    res.status(r.ok ? 200 : 500).json(r);
+  });
+
+  // Amarra o anúncio a um código e conserta os leads já recebidos por ele.
+  // ESCRITA é de admin/líder de propósito: a amarração vale para TODOS os leads
+  // daquele anúncio, inclusive os dos outros corretores.
+  app.post('/api/v1/zap/anuncios', requireManager, async (req, res) => {
+    const { tenantId, originListingId, codigo } = req.body || {};
+    if (!tenantId) return res.status(400).json({ ok: false, error: 'tenantId obrigatório' });
+    const r = await amarrarAnuncio(supabase, { tenantId, originListingId, codigo });
+    res.status(r.ok ? 200 : 400).json(r);
   });
 
   // Lista status/observabilidade por tenant — sem segredos.

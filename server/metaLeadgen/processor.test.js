@@ -25,12 +25,17 @@ function fakeSupabase({
   apiKey = 'octo_key_123', apiKeyError = null,
   pending = [], existingLead = false, leadCheckError = null,
   activeTenants = ['t1'], deletedTenants = [], configError = null,
-  lancamentoCodigo = null, lancamentoError = null,
+  lancamentoCodigo = null, lancamentoError = null, codigoDoCatalogo = false,
 } = {}) {
   const updates = [];
   const tabelas = [];
+  const rpcs = [];
   return {
-    updates, tabelas,
+    updates, tabelas, rpcs,
+    // eh_codigo_catalogo: o de-para deixou de presumir lançamento (20260911), e
+    // `enriquecerComCodigoLancamento` pergunta ao banco se o código resolvido é
+    // um imóvel do cadastro antes de marcar a atuação.
+    async rpc(fn, args) { rpcs.push({ fn, args }); return { data: codigoDoCatalogo, error: null }; },
     from(table) {
       tabelas.push(table);
       if (table === 'tenant_api_keys') {

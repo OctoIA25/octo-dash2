@@ -8,7 +8,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { Phone, Building2, Clock, User, Maximize2, CheckCircle, Loader2, MessageCircle, Hand } from 'lucide-react';
+import { Phone, Building2, Clock, User, Maximize2, CheckCircle, Loader2, MessageCircle, Hand, HelpCircle } from 'lucide-react';
 import { BolsaoLead } from '@/features/leads/services/bolsaoService';
 import { ClassificacaoDots, CLASSIFICACAO_ESTILOS } from '@/features/leads/components/ClassificacaoBadge';
 import { classificacoesDe, type TipoLead } from '@/features/leads/utils/classificarLead';
@@ -24,6 +24,14 @@ interface LeadMiniCardProps {
   mostrarBotaoConfirmar?: boolean;
   mostrarBotaoMensagem?: boolean;
   mostrarBotaoAssumir?: boolean;
+  /**
+   * O anúncio do portal que gerou este lead não bate com imóvel nenhum. Quem
+   * calcula isso é o servidor (`/api/v1/zap/anuncios/desconhecidos`) — o card
+   * só pinta o aviso. Sem o handler, o aviso aparece sem ação: identificar o
+   * anúncio vale para os leads de todo mundo, então é de admin/líder.
+   */
+  anuncioNaoIdentificado?: boolean;
+  onIdentificarAnuncio?: () => void;
 }
 
 export const LeadMiniCard = ({
@@ -36,7 +44,9 @@ export const LeadMiniCard = ({
   isAssumindoLead,
   mostrarBotaoConfirmar,
   mostrarBotaoMensagem,
-  mostrarBotaoAssumir
+  mostrarBotaoAssumir,
+  anuncioNaoIdentificado,
+  onIdentificarAnuncio
 }: LeadMiniCardProps) => {
   const [modalFotoAberto, setModalFotoAberto] = useState(false);
   
@@ -179,6 +189,25 @@ export const LeadMiniCard = ({
                 {codigoImovel || finalidade || 'Sem código'}
               </span>
             </div>
+
+            {/* Anúncio do portal sem imóvel: o código que aparece acima é o id
+                do anúncio no portal, não um imóvel nosso. */}
+            {anuncioNaoIdentificado && (
+              <div className="flex items-center gap-2 text-xs">
+                <HelpCircle className="h-4 w-4 text-amber-500 flex-shrink-0" />
+                <span className="text-amber-600 dark:text-amber-400 truncate">Imóvel não identificado</span>
+                {onIdentificarAnuncio && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-6 px-2 text-xs ml-auto flex-shrink-0"
+                    onClick={(e) => { e.stopPropagation(); onIdentificarAnuncio(); }}
+                  >
+                    Identificar
+                  </Button>
+                )}
+              </div>
+            )}
 
             {/* Corretor Responsável ou Original */}
             <div className="flex items-center gap-2 text-sm">

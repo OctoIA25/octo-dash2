@@ -38,15 +38,27 @@ const payloadReal = {
   transactionType: 'SELL',
 };
 
-/** Supabase de mentira: só o caminho from→select→eq→eq→maybeSingle que usamos. */
-const fakeSupabase = (resultado) => {
+/**
+ * Supabase de mentira: o caminho from→select→eq→eq→maybeSingle do de-para, mais
+ * o `rpc` de eh_codigo_catalogo. `catalogo` default false = código de
+ * lançamento, que é o caso da maioria dos testes.
+ */
+const fakeSupabase = (resultado, catalogo = { data: false, error: null }) => {
   const filtros = {};
+  const rpcs = [];
   const chain = {
     select: () => chain,
     eq: (col, val) => { filtros[col] = val; return chain; },
     maybeSingle: async () => resultado,
   };
-  return { supabase: { from: (t) => { filtros.__tabela = t; return chain; } }, filtros };
+  return {
+    supabase: {
+      from: (t) => { filtros.__tabela = t; return chain; },
+      rpc: async (fn, args) => { rpcs.push({ fn, args }); return catalogo; },
+    },
+    filtros,
+    rpcs,
+  };
 };
 
 describe('extrairOriginListingId', () => {
@@ -148,6 +160,40 @@ describe('enriquecerComCodigoLancamento', () => {
     const out = await enriquecerComCodigoLancamento(supabase, 'tenant-1', payloadReal, normalizado);
     expect(out).toBe(normalizado);
   });
+
+  // Desde 20260911 o de-para pode apontar para um imóvel PRONTO do cadastro (o
+  // anúncio 2886878809 é o AP001). Marcar 'lancamentos' nesse caso jogaria o
+  // lead na roleta errada e na seção errada do Bolsão.
+  it('código do catálogo troca o código mas NÃO marca atuação de lançamento', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const { supabase } = fakeSupabase({ data: { codigo: 'AP001' }, error: null }, { data: true, error: null });
+    const out = await enriquecerComCodigoLancamento(supabase, 'tenant-1', payloadReal, normalizado);
+    expect(out.property_code).toBe('AP001');
+    expect(out.atuacao).toBeUndefined();
+    log.mockRestore();
+  });
+
+  it('a checagem de catálogo usa a função do banco, com o código JÁ resolvido', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const { supabase, rpcs } = fakeSupabase({ data: { codigo: 'L003' }, error: null });
+    await enriquecerComCodigoLancamento(supabase, 'tenant-1', payloadReal, normalizado);
+    expect(rpcs).toEqual([{ fn: 'eh_codigo_catalogo', args: { p_tenant: 'tenant-1', p_codigo: 'L003' } }]);
+    log.mockRestore();
+  });
+
+  it('erro na checagem falha FECHADA: mantém a atuação de lançamento', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const erro = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { supabase } = fakeSupabase(
+      { data: { codigo: 'L003' }, error: null },
+      { data: null, error: { code: '42883', message: 'function does not exist' } },
+    );
+    const out = await enriquecerComCodigoLancamento(supabase, 'tenant-1', payloadReal, normalizado);
+    expect(out.atuacao).toBe('lancamentos');
+    expect(erro).toHaveBeenCalled();
+    log.mockRestore();
+    erro.mockRestore();
+  });
 });
 
 describe('invariantes nos dois entrypoints', () => {
@@ -213,6 +259,17 @@ describe('migrations', () => {
       /CREATE TRIGGER tr_leads_reclassificar_revive\s+BEFORE UPDATE ON public\.leads\s+FOR EACH ROW\s+WHEN \(NEW\.created_at IS DISTINCT FROM OLD\.created_at/,
     );
     expect(regra).toMatch(/NEW\.created_at >= now\(\) - interval '5 minutes'/);
+  });
+
+  it('o de-para não presume lançamento: catálogo é consultado antes', () => {
+    const ordem = read('../supabase/migrations/20260911_de_para_nao_presume_lancamento.sql');
+    const posCatalogo = ordem.indexOf('eh_codigo_catalogo(p_tenant, p_codigo)');
+    const posDepara = ordem.indexOf('eh_codigo_lancamento(p_tenant, p_codigo)');
+    expect(posCatalogo).toBeGreaterThan(-1);
+    expect(posDepara).toBeGreaterThan(-1);
+    // Invertido, um anúncio amarrado a imóvel pronto voltaria a classificar como
+    // lançamento — o bug que esta migration existe para impedir.
+    expect(posCatalogo).toBeLessThan(posDepara);
   });
 
   it('o nome do trigger de revive ordena DEPOIS do guard de origem', () => {

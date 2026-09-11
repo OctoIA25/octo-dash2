@@ -68,6 +68,14 @@ import {
 // Novos componentes de mini cards
 import { LeadMiniCard } from '@/components/LeadMiniCard';
 import { LeadDetailsModal } from './LeadDetailsModal';
+import { AmarrarAnuncioDialog } from './AmarrarAnuncioDialog';
+import {
+  fetchAnunciosPendentes,
+  fetchOpcoesDeCodigo,
+  amarrarAnuncio,
+  type AnuncioPendente,
+  type OpcaoDeCodigo,
+} from '../services/anunciosPendentesService';
 // Importar serviço de equipes
 import { fetchSupabaseTeamsData, SupabaseTeam } from '@/services/supabaseService';
 // Importar serviço de tokens do Bolsão
@@ -241,6 +249,65 @@ const BolsaoSectionContent = (props: BolsaoSectionProps) => {
   }, [config.tempoExpiracaoExclusivo, config.tempoExpiracaoNaoExclusivo]);
 
   const canManageBolsaoConfig = isAdmin || user?.systemRole === 'team_leader';
+
+  // ---- Anúncios do portal sem imóvel identificado ----
+  // A rota é de admin/líder (a amarração vale para os leads de todo mundo), e é
+  // ela que sabe o que é pendência — o card só pinta o aviso.
+  const [anunciosPendentes, setAnunciosPendentes] = useState<AnuncioPendente[]>([]);
+  const [opcoesCodigo, setOpcoesCodigo] = useState<OpcaoDeCodigo[]>([]);
+  const [anuncioSelecionado, setAnuncioSelecionado] = useState<AnuncioPendente | null>(null);
+  const [salvandoAnuncio, setSalvandoAnuncio] = useState(false);
+
+  const carregarAnunciosPendentes = useCallback(async () => {
+    if (!tenantId || tenantId === 'owner' || !canManageBolsaoConfig) return;
+    const { anuncios, codigosConhecidos, error } = await fetchAnunciosPendentes(tenantId);
+    if (error) {
+      // Falha aqui não pode atrapalhar o Bolsão: o aviso some, os leads ficam.
+      console.error('[bolsao] anúncios pendentes:', error);
+      return;
+    }
+    setAnunciosPendentes(anuncios);
+    setOpcoesCodigo(await fetchOpcoesDeCodigo(tenantId, codigosConhecidos));
+  }, [tenantId, canManageBolsaoConfig]);
+
+  useEffect(() => { carregarAnunciosPendentes(); }, [carregarAnunciosPendentes]);
+
+  // O card do Bolsão não carrega o id do anúncio — carrega o `codigo`, que para
+  // estes leads é o código do portal ('110D1GD'), único por anúncio. É por ele
+  // que o aviso encontra o lead.
+  const anuncioPorCodigo = useMemo(() => {
+    const mapa = new Map<string, AnuncioPendente>();
+    for (const anuncio of anunciosPendentes) {
+      if (anuncio.codigoNoPortal) mapa.set(anuncio.codigoNoPortal.toUpperCase(), anuncio);
+    }
+    return mapa;
+  }, [anunciosPendentes]);
+
+  const anuncioDoLead = useCallback(
+    (codigo: string | null) => (codigo ? anuncioPorCodigo.get(codigo.trim().toUpperCase()) ?? null : null),
+    [anuncioPorCodigo],
+  );
+
+  const confirmarAmarracao = useCallback(async (codigo: string) => {
+    if (!tenantId || !anuncioSelecionado) return;
+    setSalvandoAnuncio(true);
+    try {
+      const r = await amarrarAnuncio(tenantId, anuncioSelecionado.originListingId, codigo);
+      if (!r.ok) {
+        toast({ title: '❌ Não foi possível amarrar', description: r.error || 'tente de novo', variant: 'destructive' });
+        return;
+      }
+      toast({
+        title: '✅ Anúncio identificado',
+        description: `${anuncioSelecionado.originListingId} → ${codigo}`
+          + (r.leadsAtualizados ? ` · ${r.leadsAtualizados} lead(s) corrigido(s)` : ''),
+      });
+      setAnuncioSelecionado(null);
+      await Promise.all([carregarLeads(), carregarAnunciosPendentes()]);
+    } finally {
+      setSalvandoAnuncio(false);
+    }
+  }, [tenantId, anuncioSelecionado, toast, carregarAnunciosPendentes]);
 
   // Proteção: Redirecionar não-admins que tentarem acessar "Todos os Leads"
   useEffect(() => {
@@ -1411,6 +1478,12 @@ const BolsaoSectionContent = (props: BolsaoSectionProps) => {
               <LeadMiniCard
                 key={lead.id}
                 lead={lead}
+                anuncioNaoIdentificado={Boolean(anuncioDoLead(lead.codigo))}
+                onIdentificarAnuncio={
+                  canManageBolsaoConfig && anuncioDoLead(lead.codigo)
+                    ? () => setAnuncioSelecionado(anuncioDoLead(lead.codigo))
+                    : undefined
+                }
                 onClick={() => {
                   setLeadSelecionado(lead);
                   setModalAberto(true);
@@ -2208,6 +2281,15 @@ const BolsaoSectionContent = (props: BolsaoSectionProps) => {
         </>
         )}
       </div>
+
+      {/* Pendência: "que imóvel é este anúncio?" */}
+      <AmarrarAnuncioDialog
+        anuncio={anuncioSelecionado}
+        opcoes={opcoesCodigo}
+        salvando={salvandoAnuncio}
+        onFechar={() => setAnuncioSelecionado(null)}
+        onConfirmar={confirmarAmarracao}
+      />
 
       {/* 🆕 Modal de Detalhes do Lead */}
       <LeadDetailsModal
