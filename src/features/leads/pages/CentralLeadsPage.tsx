@@ -1,782 +1,919 @@
 /**
- * 🔄 AUTO-COMMIT GITHUB ATIVO
- * CentralLeadsPage - Área de Leads das Integrações
- * 
- * Esta página exibe os leads que chegam via integrações (Kenlo, etc.)
+ * Painel de Atividades (rota /central-leads e aba "Central de Leads").
+ *
+ * Substituiu a listagem de leads das integrações que morava aqui. A listagem por
+ * portal continua existindo no Kanban e no Bolsão; esta tela passou a responder
+ * outra pergunta: "o que eu preciso fazer, e o que eu deixei passar".
+ *
+ * Atividade = linha de `agenda_eventos`. Não há tabela nova: o modal do lead, a
+ * agenda, o WeekPlanner e o bloqueio do bolsão já escrevem e leem de lá.
+ * As faixas de tempo e as abas vivem em `utils/atividades.ts`.
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Users,
-  Phone,
-  Mail,
-  Calendar,
-  Search,
-  Filter,
-  RefreshCw,
-  ChevronLeft,
-  ChevronRight,
-  X,
-  Building2,
+  AlertTriangle,
+  Archive,
+  ClipboardList,
   Clock,
-  Plus,
-  User,
-  Home,
+  Link2,
   Loader2,
-  CheckCircle2,
-  CheckSquare,
-  MessageSquare,
+  MapPin,
+  Plus,
+  RefreshCw,
+  Sun,
 } from 'lucide-react';
-import { format, subDays } from 'date-fns';
 import { useAuth } from '@/hooks/useAuth';
-import { useLeadsMetrics } from '@/features/leads/hooks/useLeadsMetrics';
-import { atualizarStatusLeadCRM } from '@/features/leads/services/leadsService';
-import { leadsEventEmitter } from '@/lib/leadsEventEmitter';
-import type { ProcessedLead } from '@/data/realLeadsProcessor';
-import { getImovelByCodigo } from '@/features/imoveis/services/imoveisXmlService';
-import type { Imovel } from '@/features/imoveis/services/kenloService';
-import { CriarLeadQuickModal } from '@/features/leads/components/CriarLeadQuickModal';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
+import { ComboBox } from '@/components/ui/combobox';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  fetchTodosLeadsCRM,
+  LEAD_TYPE_PROPRIETARIO,
+  type KanbanLead,
+} from '@/features/leads/services/leadsService';
+import { classificacoesDe } from '@/features/leads/utils/classificarLead';
+import { ClassificacaoDots } from '@/features/leads/components/ClassificacaoBadge';
+import { fetchTenantMembers } from '@/features/corretores/services/tenantMembersService';
+import {
+  hasAnyPendingBlockingActivity,
+  unblockCorretor,
+} from '@/features/corretores/services/activityBlockingService';
+import {
+  faixaDaAtividade,
+  contarAbas,
+  filtrarPorAba,
+  ordenarPorPrazo,
+  separarAFazer,
+  rotuloTipoAtividade,
+  type AbaAtividades,
+  TIPOS_ATIVIDADE,
+  prazoAtividade,
+  JANELA_DIAS,
+  TIPOS_BLOQUEANTES,
+  type Atividade,
+} from '@/features/leads/utils/atividades';
 
-const ETAPAS_INTERESSADO = [
-  'Novos Leads',
-  'Interação',
-  'Visita Agendada',
-  'Visita Realizada',
-  'Negociação',
-  'Proposta Criada',
-  'Proposta Enviada',
-  'Proposta Assinada',
-] as const;
+const TODOS = '__todos__';
 
-type Etapa = (typeof ETAPAS_INTERESSADO)[number];
-
-const ETAPA_COLORS: Record<string, { bg: string; text: string; ring: string }> = {
-  'Novos Leads':       { bg: 'bg-cyan-50 dark:bg-cyan-950/40',     text: 'text-cyan-700 dark:text-cyan-300',     ring: 'ring-cyan-200 dark:ring-cyan-900' },
-  'Interação':         { bg: 'bg-blue-50 dark:bg-blue-950/40',     text: 'text-blue-700 dark:text-blue-300',     ring: 'ring-blue-200 dark:ring-blue-900' },
-  'Visita Agendada':   { bg: 'bg-emerald-50 dark:bg-emerald-950/40', text: 'text-emerald-700 dark:text-emerald-300', ring: 'ring-emerald-200 dark:ring-emerald-900' },
-  'Visita Realizada':  { bg: 'bg-green-50 dark:bg-green-950/40',   text: 'text-green-700 dark:text-green-300',   ring: 'ring-green-200 dark:ring-green-900' },
-  'Negociação':        { bg: 'bg-orange-50 dark:bg-orange-950/40', text: 'text-orange-700 dark:text-orange-300', ring: 'ring-orange-200 dark:ring-orange-900' },
-  'Proposta Criada':   { bg: 'bg-amber-50 dark:bg-amber-950/40',   text: 'text-amber-700 dark:text-amber-300',   ring: 'ring-amber-200 dark:ring-amber-900' },
-  'Proposta Enviada':  { bg: 'bg-red-50 dark:bg-red-950/40',       text: 'text-red-700 dark:text-red-300',       ring: 'ring-red-200 dark:ring-red-900' },
-  'Proposta Assinada': { bg: 'bg-rose-50 dark:bg-rose-950/40',     text: 'text-rose-700 dark:text-rose-300',     ring: 'ring-rose-200 dark:ring-rose-900' },
+const PRIORIDADE_CLASSE: Record<string, string> = {
+  alta: 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300',
+  media: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300',
+  baixa: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
 };
 
-const getEtapaStyle = (etapa: string) => ETAPA_COLORS[etapa] ?? { bg: 'bg-slate-100 dark:bg-slate-800', text: 'text-slate-600 dark:text-slate-300', ring: 'ring-slate-200 dark:ring-slate-700' };
+/** Colunas que a tela precisa de `agenda_eventos`. */
+const COLUNAS =
+  'id, titulo, descricao, data, horario, tipo, status, prioridade, corretor_email, lead_uuid, lead_nome, lead_telefone';
 
-const DEBUG_LOGS = import.meta.env?.VITE_DEBUG_LOGS === 'true';
+const hojeISO = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 
-// Interface para lead da integração
-export interface IntegrationLead {
-  _id: string;
-  client: {
-    name: string;
-    phone: string;
-    email: string;
-  };
-  timestamp: string;
-  portal?: string;
-  chavenamao?: string;
-  origem?: string;
-  // Detalhes extras do Ingaia
-  interest?: any;
-  message?: string;
-  attendedBy?: any;
-  raw_data?: any;
+/** Piso da consulta: atividade mais velha que isso não interessa ao painel. */
+const inicioJanelaISO = () => {
+  const d = new Date();
+  d.setDate(d.getDate() - JANELA_DIAS);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+const negocioDoLead = (lead: KanbanLead): string => {
+  if (lead.lead_type === LEAD_TYPE_PROPRIETARIO) return 'Captação';
+  return classificacoesDe(lead.classification).includes('locacao') ? 'Aluguel' : 'Compra';
+};
+
+/** "Recebido em 05 de Dezembro de 2025 às 11:32" */
+const recebidoEm = (lead: KanbanLead): string => {
+  const quando = new Date(lead.event_at || lead.created_at);
+  if (Number.isNaN(quando.getTime())) return '';
+  const data = quando.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+  const hora = quando.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  return `Recebido em ${data} às ${hora}`;
+};
+
+const formatarPrazo = (a: Atividade) => {
+  const prazo = prazoAtividade(a);
+  const data = prazo.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+  const temHorario = /^\d{2}:\d{2}/.test((a.horario || '').toString());
+  return temHorario ? `${data} às ${(a.horario || '').slice(0, 5)}` : `${data} · dia todo`;
+};
+
+/**
+ * Uma aba do topo. Visual no espírito do C2S (ícone, rótulo, contagem), mas com
+ * os tokens da dash — `primary` no ativo, `destructive` na contagem que cobra.
+ */
+const Aba: React.FC<{
+  ativa: boolean;
+  rotulo: string;
+  contagem: number;
+  icone: React.ReactNode;
+  /** Contagem em vermelho: é dívida, não informação. */
+  alerta?: boolean;
+  onClick: () => void;
+}> = ({ ativa, rotulo, contagem, icone, alerta, onClick }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    aria-current={ativa ? 'page' : undefined}
+    className={`relative flex min-w-[7rem] flex-1 flex-col items-center gap-1 border-b-2 px-3 py-2.5 transition-colors ${
+      ativa
+        ? 'border-primary text-primary'
+        : 'border-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+    }`}
+  >
+    <span className="relative">
+      {icone}
+      {contagem > 0 && (
+        <span
+          className={`absolute -right-3 -top-2 min-w-[1.15rem] rounded-full px-1 text-[10px] font-bold leading-[1.15rem] text-white ${
+            alerta ? 'bg-destructive' : 'bg-primary'
+          }`}
+        >
+          {contagem > 999 ? '999+' : contagem}
+        </span>
+      )}
+    </span>
+    <span className="text-xs font-semibold">{rotulo}</span>
+  </button>
+);
+
+/**
+ * Card de uma atividade no painel, no formato do card de lead: quem é o lead e o
+ * que ele quer em cima, a cobrança embaixo. A atividade é a linha vermelha do
+ * rodapé — é assim que o corretor lê ("de quem é isso, e o que eu tenho que
+ * fazer"), não uma lista de tarefas soltas.
+ *
+ * Atividade sem lead (tarefa avulsa) degrada pro título da própria atividade:
+ * o card continua legível, só perde as colunas de interesse.
+ */
+const Linha: React.FC<{
+  atividade: Atividade;
+  lead?: KanbanLead;
+  /** Só na aba "A fazer"; nas outras a faixa é derivada da própria atividade. */
+  atrasada?: boolean;
+  meuEmailNorm: string;
+  concluindo: string | null;
+  /** corretor_email (normalizado) → dono. Vazio enquanto não carregou. */
+  pessoaPorEmail: Map<string, Pessoa>;
+  onConcluir: (a: Atividade) => void;
+  onVincularLead: (a: Atividade) => void;
+}> = ({
+  atividade,
+  lead,
+  atrasada,
+  meuEmailNorm,
+  concluindo,
+  pessoaPorEmail,
+  onConcluir,
+  onVincularLead,
+}) => {
+  const minha = (atividade.corretor_email || '').toLowerCase() === meuEmailNorm;
+  const faixa = faixaDaAtividade(atividade);
+  const concluida = faixa === 'concluida';
+  const cancelada = faixa === 'cancelada';
+  // A aba "Todos" mostra vencidas que a aba "A fazer" já marcaria — a cor vem da
+  // atividade, não de quem a renderiza.
+  const emAtraso = atrasada ?? faixa === 'atrasada';
+  const nome = lead?.nomedolead || atividade.lead_nome || atividade.titulo;
+  // Nome e equipe descrevem a MESMA pessoa: quem tem que fazer a atividade.
+  // Antes o nome vinha do `corretor_responsavel` do lead e a equipe do dono da
+  // atividade — pessoas diferentes quando o gestor agenda para o corretor.
+  const emailDono = (atividade.corretor_email || '').trim().toLowerCase();
+  const pessoa = pessoaPorEmail.get(emailDono);
+  const dono = pessoa?.nome || atividade.corretor_email;
+
+  return (
+    <article
+      className={`overflow-hidden rounded-none border border-l-[3px] bg-card ${
+        emAtraso
+          ? 'border-border border-l-destructive'
+          : concluida || cancelada
+            ? 'border-border border-l-muted-foreground/30 bg-muted/30'
+            : 'border-border border-l-primary'
+      }`}
+    >
+      {/* Linha 1 — quem é */}
+      <div className="flex items-center gap-3 px-3 py-2">
+        <Checkbox
+          checked={concluida}
+          disabled={concluida || cancelada || !minha || concluindo === atividade.id}
+          onCheckedChange={() => onConcluir(atividade)}
+          aria-label={`Concluir ${atividade.titulo}`}
+        />
+        <span
+          className={`truncate font-semibold ${
+            concluida || cancelada ? 'text-muted-foreground line-through' : 'text-foreground'
+          }`}
+        >
+          {nome}
+        </span>
+        {lead && <ClassificacaoDots tipo={lead.classification} />}
+        <div className="ml-auto flex items-center gap-2">
+          {concluindo === atividade.id && (
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          )}
+          {minha && (
+            <button
+              type="button"
+              onClick={() => onVincularLead(atividade)}
+              title={lead || atividade.lead_nome ? 'Trocar o lead vinculado' : 'Vincular um lead'}
+              className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <Link2 className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Linha 2 — o que ele quer */}
+      {lead ? (
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1 border-t border-border px-3 py-2 text-sm text-muted-foreground md:grid-cols-3">
+          <span className="truncate">{negocioDoLead(lead)}</span>
+          <span className="truncate">{lead.portal || 'Sem canal'}</span>
+          <span className="truncate">{lead.lead || lead.email || ''}</span>
+        </div>
+      ) : (
+        atividade.descricao && (
+          <p className="border-t border-border px-3 py-2 text-sm text-muted-foreground">
+            {atividade.descricao}
+          </p>
+        )
+      )}
+
+      {/* Linha 3 — quando entrou, e a cobrança */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border bg-muted/40 px-3 py-1.5 text-xs">
+        <span className="text-muted-foreground">{lead ? recebidoEm(lead) : ''}</span>
+        <span className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-1">
+          <span
+            className={
+              concluida
+                ? 'text-muted-foreground line-through'
+                : emAtraso
+                  ? 'font-semibold text-destructive'
+                  : 'text-primary'
+            }
+          >
+            {rotuloTipoAtividade(atividade.tipo)} · {formatarPrazo(atividade)}
+          </span>
+          {atividade.prioridade === 'alta' && !concluida && (
+            <Badge className={`text-[10px] ${PRIORIDADE_CLASSE.alta}`}>alta</Badge>
+          )}
+          {dono && <span className="text-muted-foreground">{dono}</span>}
+          <span className="text-muted-foreground">
+            {pessoa?.equipe ? `Team ${pessoa.equipe}` : 'Sem time'}
+          </span>
+        </span>
+      </div>
+    </article>
+  );
+};
+
+const Secao: React.FC<{
+  titulo: string;
+  icone: React.ReactNode;
+  itens: Atividade[];
+  vazio: string;
+  children: (a: Atividade) => React.ReactNode;
+}> = ({ titulo, icone, itens, vazio, children }) => (
+  <section className="space-y-2">
+    <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+      {icone}
+      {titulo}
+      <span className="rounded-full bg-muted px-2 text-xs">{itens.length}</span>
+    </h2>
+    {itens.length === 0 ? (
+      <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
+        {vazio}
+      </p>
+    ) : (
+      <div className="space-y-2">{itens.map((a) => children(a))}</div>
+    )}
+  </section>
+);
+
+/** Quem é o dono da atividade. Nome e equipe vêm juntos, da mesma pessoa. */
+interface Pessoa {
+  nome: string;
+  equipe: string | null;
 }
 
-// Componente principal da página
 interface CentralLeadsPageProps {
   embedded?: boolean;
 }
 
 export const CentralLeadsPage: React.FC<CentralLeadsPageProps> = ({ embedded = false }) => {
-  const { tenantId } = useAuth();
+  const { user, tenantId, isAdmin } = useAuth();
+  // Leads direto do CRM: precisamos do `id` de verdade (uuid) pra amarrar a
+  // atividade. `useLeadsData` entrega ProcessedLead, cujo `id_lead` é um
+  // contador gerado no mapeamento — serve pra listar, não pra referenciar.
+  const [leads, setLeads] = useState<KanbanLead[]>([]);
 
-  // Fonte de dados única, compartilhada com o Kanban — useLeadsMetrics
-  // assina leadsEventEmitter, então move-de-card no Kanban re-renderiza aqui.
-  const { processedLeads: leads, isLoading } = useLeadsMetrics();
+  const [atividades, setAtividades] = useState<Atividade[]>([]);
+  const [carregando, setCarregando] = useState(false);
+  const [concluindo, setConcluindo] = useState<string | null>(null);
+  const [corretores, setCorretores] = useState<{ email: string; nome: string }[]>([]);
+  // corretor_email (normalizado) → { nome, equipe }. Nome e equipe SEMPRE da
+  // mesma pessoa: o dono da atividade.
+  const [pessoaPorEmail, setPessoaPorEmail] = useState<Map<string, Pessoa>>(new Map());
+  const [filtroCorretor, setFiltroCorretor] = useState<string>('');
 
-  const [searchTerm, setSearchTerm] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const leadsPerPage = 10;
+  const [aba, setAba] = useState<AbaAtividades>('afazer');
 
-  // Filtros de data
-  const [dataInicial, setDataInicial] = useState(format(subDays(new Date(), 30), 'yyyy-MM-dd'));
-  const [dataFinal, setDataFinal] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [vinculando, setVinculando] = useState<Atividade | null>(null);
+  const [leadEscolhido, setLeadEscolhido] = useState('');
 
-  // Filtro de portal (origem_lead)
-  const [portalFilter, setPortalFilter] = useState('todos');
+  const [criarAberto, setCriarAberto] = useState(false);
+  const [salvando, setSalvando] = useState(false);
+  const [nova, setNova] = useState({
+    titulo: '',
+    descricao: '',
+    data: hojeISO(),
+    horario: '',
+    tipo: 'retornar_cliente',
+    prioridade: 'media' as 'alta' | 'media' | 'baixa',
+    leadNome: '',
+    leadTelefone: '',
+    leadUuid: null as string | null,
+  });
 
-  // Drawer de detalhes
-  const [selectedLead, setSelectedLead] = useState<ProcessedLead | null>(null);
-  const [showModal, setShowModal] = useState(false);
+  const tenantValido = Boolean(tenantId) && tenantId !== 'owner';
+  // Casing original pra igualdade exata no banco; a versao minuscula so compara
+  // em memoria. `_` e `%` sao legais em e-mail e viram curinga no LIKE, entao a
+  // consulta usa `eq`, nunca `ilike`.
+  const meuEmail = user?.email || '';
+  const meuEmailNorm = meuEmail.toLowerCase();
 
-  // Atualização de etapa (stage)
-  const [updatingEtapa, setUpdatingEtapa] = useState(false);
-  const [etapaError, setEtapaError] = useState<string | null>(null);
-  
-  // Modal de criar lead — reutiliza o mesmo componente do Kanban (sem API key)
-  const [showCreateModal, setShowCreateModal] = useState(false);
+  // Corretor vê só as suas; gestor escolhe no filtro (default: a equipe toda).
+  const emailConsultado = isAdmin ? filtroCorretor : meuEmail;
+  const visaoDeEquipe = isAdmin && filtroCorretor === '';
 
-  // Buscar corretor a partir do código do imóvel (mantido para enriquecer o drawer)
-  const getCorretorByImovel = (codigoImovel?: string): { nome: string; imovel: Imovel } | null => {
-    if (!codigoImovel || !tenantId) return null;
-    const imovel = getImovelByCodigo(tenantId, codigoImovel);
-    if (imovel?.corretor_nome) {
-      return { nome: imovel.corretor_nome, imovel };
-    }
-    return null;
-  };
+  const carregar = useCallback(async () => {
+    if (!tenantValido) return;
+    if (!visaoDeEquipe && !emailConsultado) return;
 
-  const openLeadDetails = (lead: ProcessedLead) => {
-    setSelectedLead(lead);
-    setShowModal(true);
-    setEtapaError(null);
-  };
-
-  const closeModal = () => {
-    setShowModal(false);
-    setSelectedLead(null);
-    setEtapaError(null);
-  };
-
-  // Atualiza a etapa do lead (compartilha a mesma função usada pelo Kanban)
-  // → reflete imediatamente no Kanban via leadsEventEmitter.emit().
-  const handleChangeEtapa = async (novaEtapa: Etapa) => {
-    if (!selectedLead) return;
-    if (selectedLead.etapa_atual === novaEtapa) return;
-
-    setUpdatingEtapa(true);
-    setEtapaError(null);
-    const leadIdStr = String(selectedLead.id_lead);
-
+    setCarregando(true);
     try {
-      const result = await atualizarStatusLeadCRM(leadIdStr, novaEtapa);
-      if (!result.success) {
-        throw new Error(result.message || 'Falha ao atualizar etapa');
-      }
-      // Update otimista local + dispara re-render global (Kanban + Início + aqui)
-      setSelectedLead({ ...selectedLead, etapa_atual: novaEtapa });
-      leadsEventEmitter.emit();
-    } catch (err) {
-      console.error('[CentralLeads] Erro ao atualizar etapa:', err);
-      setEtapaError(err instanceof Error ? err.message : 'Erro desconhecido');
+      let query = supabase
+        .from('agenda_eventos')
+        .select(COLUNAS)
+        .eq('tenant_id', tenantId)
+        .gte('data', inicioJanelaISO());
+
+      if (!visaoDeEquipe) query = query.eq('corretor_email', emailConsultado);
+
+      const { data, error } = await query;
+      if (error) throw error;
+      setAtividades((data || []) as unknown as Atividade[]);
+    } catch (error) {
+      console.error('Erro ao carregar atividades:', error);
+      toast.error('Erro ao carregar atividades');
+      setAtividades([]);
     } finally {
-      setUpdatingEtapa(false);
+      setCarregando(false);
     }
-  };
-
-  // Lista de portais (origens) únicos para o filtro
-  const portaisUnicos = useMemo(() => {
-    const set = new Set<string>();
-    for (const lead of leads) {
-      const origem = (lead.origem_lead || '').trim();
-      if (origem) set.add(origem);
-    }
-    return Array.from(set).sort();
-  }, [leads]);
-
-  // Filtragem: busca (nome/telefone/código imóvel) + período + portal.
-  const filteredLeads = useMemo(() => {
-    const searchLower = searchTerm.toLowerCase().trim();
-    const start = dataInicial ? new Date(`${dataInicial}T00:00:00`).getTime() : -Infinity;
-    const end = dataFinal ? new Date(`${dataFinal}T23:59:59`).getTime() : Infinity;
-
-    return leads.filter((lead) => {
-      const nome = (lead.nome_lead || '').toLowerCase();
-      const tel = (lead.telefone || '').replace(/\D/g, '');
-      const codigo = (lead.codigo_imovel || '').toLowerCase();
-
-      const matchesSearch =
-        searchLower === '' ||
-        nome.includes(searchLower) ||
-        tel.includes(searchTerm.replace(/\D/g, '')) ||
-        codigo.includes(searchLower);
-
-      const matchesPortal = portalFilter === 'todos' || lead.origem_lead === portalFilter;
-
-      const entradaTs = lead.data_entrada ? new Date(lead.data_entrada).getTime() : 0;
-      const matchesData = entradaTs === 0 || (entradaTs >= start && entradaTs <= end);
-
-      return matchesSearch && matchesPortal && matchesData;
-    });
-  }, [leads, searchTerm, portalFilter, dataInicial, dataFinal]);
-
-  // Paginação
-  const totalPages = Math.max(1, Math.ceil(filteredLeads.length / leadsPerPage));
-  const startIndex = (currentPage - 1) * leadsPerPage;
-  const paginatedLeads = filteredLeads.slice(startIndex, startIndex + leadsPerPage);
+  }, [tenantId, tenantValido, emailConsultado, visaoDeEquipe]);
 
   useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm, portalFilter, dataInicial, dataFinal]);
+    carregar();
+  }, [carregar]);
 
-  // Quando os leads são atualizados externamente (ex: kanban moveu um card),
-  // re-sincroniza o lead aberto no drawer com a nova versão.
   useEffect(() => {
-    if (!selectedLead) return;
-    const fresh = leads.find((l) => l.id_lead === selectedLead.id_lead);
-    if (fresh && fresh.etapa_atual !== selectedLead.etapa_atual) {
-      setSelectedLead(fresh);
-    }
-  }, [leads, selectedLead]);
+    if (!tenantValido) return;
+    fetchTodosLeadsCRM(tenantId as string)
+      .then(setLeads)
+      .catch((e) => console.error('Erro ao carregar leads para vínculo:', e));
+  }, [tenantId, tenantValido]);
 
-  // Formatar data (data_entrada vem como ISO ou yyyy-mm-dd)
-  const formatDate = (timestamp: string | undefined) => {
-    if (!timestamp) return '-';
-    try {
-      const date = new Date(timestamp);
-      if (Number.isNaN(date.getTime())) return timestamp;
-      return date.toLocaleDateString('pt-BR', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-    } catch {
-      return timestamp;
-    }
-  };
+  /**
+   * Quem é cada corretor, da MESMA fonte que a tela de Equipe usa:
+   * `tenant_memberships.team_id` para o vínculo, `user_profiles` para nome e
+   * e-mail, `teams.name` para o nome do time.
+   *
+   * Não dá pra usar `fetchTenantMembers` aqui: `tenant_memberships` não tem
+   * coluna de e-mail — ele vem da RPC `get_tenant_members`, e no fallback
+   * (select direto) o campo `email` acaba preenchido com o `user_id`.
+   */
+  useEffect(() => {
+    if (!tenantValido) return;
 
-  // Formatar telefone
-  const formatPhone = (phone: string) => {
-    if (!phone) return '-';
-    // Remove caracteres não numéricos
-    let cleaned = phone.replace(/\D/g, '');
-    
-    // Detectar e remover DDD duplicado
-    // Padrão: DDD foi concatenado ao telefone que já tinha DDD
-    // Ex: "11" + "11982918424" = "1111982918424" (13 dígitos)
-    // Ex: "35" + "35999606968" = "3535999606968" (13 dígitos)
-    if (cleaned.length >= 13) {
-      const first2 = cleaned.slice(0, 2);
-      const next2 = cleaned.slice(2, 4);
-      // Se os primeiros 4 dígitos são DDD duplicado (ex: 1111, 3535)
-      if (first2 === next2) {
-        // Remove os primeiros 2 dígitos (o DDD duplicado)
-        cleaned = cleaned.slice(2);
+    (async () => {
+      const [{ data: vinculos }, { data: times }] = await Promise.all([
+        supabase.from('tenant_memberships').select('user_id, team_id').eq('tenant_id', tenantId),
+        supabase.from('teams').select('id, name').eq('tenant_id', tenantId),
+      ]);
+
+      const ids = [...new Set((vinculos || []).map((v) => v.user_id as string))];
+      if (ids.length === 0) return;
+
+      const { data: perfis } = await supabase
+        .from('user_profiles')
+        .select('id, email, full_name')
+        .in('id', ids);
+
+      const nomeDoTime = new Map((times || []).map((t) => [t.id as string, t.name as string]));
+      // Membership sem time não pode sobrescrever uma com time: o banco tem
+      // linhas duplicadas por usuário e a ordem do select não é garantida.
+      const timeDoUsuario = new Map<string, string>();
+      for (const v of vinculos || []) {
+        const nome = nomeDoTime.get(v.team_id as string);
+        if (nome) timeDoUsuario.set(v.user_id as string, nome);
       }
+
+      const mapa = new Map<string, Pessoa>();
+      for (const p of perfis || []) {
+        const email = String(p.email ?? '').trim().toLowerCase();
+        if (!email) continue;
+        mapa.set(email, {
+          nome: String(p.full_name ?? '').trim() || email,
+          equipe: timeDoUsuario.get(p.id as string) ?? null,
+        });
+      }
+      setPessoaPorEmail(mapa);
+    })().catch((e) => console.error('Erro ao carregar equipes:', e));
+  }, [tenantId, tenantValido]);
+
+  useEffect(() => {
+    if (!isAdmin || !tenantValido) return;
+    fetchTenantMembers(tenantId as string)
+      .then((membros) =>
+        setCorretores(
+          membros
+            .filter((m) => m.email)
+            .map((m) => ({ email: m.email, nome: m.email }))
+            .sort((a, b) => a.nome.localeCompare(b.nome))
+        )
+      )
+      .catch((e) => console.error('Erro ao carregar corretores:', e));
+  }, [isAdmin, tenantId, tenantValido]);
+
+  // O card mostra o LEAD, não só a atividade — indexado por uuid pra não varrer
+  // a lista de leads a cada linha renderizada.
+  const leadsPorId = useMemo(() => new Map(leads.map((l) => [l.id, l])), [leads]);
+
+  const contagens = useMemo(() => contarAbas(atividades), [atividades]);
+  const aFazer = useMemo(() => separarAFazer(atividades), [atividades]);
+  const listaDaAba = useMemo(
+    () => ordenarPorPrazo(filtrarPorAba(atividades, aba)),
+    [atividades, aba]
+  );
+
+  /**
+   * Concluir é o que destrava o bolsão. Só o dono da atividade pode concluir —
+   * gestor vê, cobra, mas não marca por ele.
+   */
+  const concluir = async (a: Atividade) => {
+    if (!tenantValido) return;
+    if ((a.corretor_email || '').toLowerCase() !== meuEmailNorm) {
+      toast.error('Só o corretor responsável pode concluir a atividade.');
+      return;
     }
-    
-    // Se ainda tem mais de 11 dígitos, pega os últimos 11 (celular com DDD)
-    if (cleaned.length > 11) {
-      cleaned = cleaned.slice(-11);
+
+    setConcluindo(a.id);
+    try {
+      const { error } = await supabase
+        .from('agenda_eventos')
+        .update({ status: 'concluido', updated_at: new Date().toISOString() })
+        .eq('id', a.id)
+        .eq('tenant_id', tenantId)
+        .eq('corretor_email', meuEmail);
+      if (error) throw error;
+
+      setAtividades((prev) =>
+        prev.map((x) => (x.id === a.id ? { ...x, status: 'concluido' } : x))
+      );
+
+      if ((TIPOS_BLOQUEANTES as readonly string[]).includes(a.tipo)) {
+        const aindaPendente = await hasAnyPendingBlockingActivity(tenantId as string, meuEmail);
+        if (!aindaPendente) {
+          await unblockCorretor(tenantId as string, meuEmail);
+          toast.success('Atividade concluída! Você foi desbloqueado do recebimento de leads.');
+          return;
+        }
+      }
+      toast.success('Atividade concluída!');
+    } catch (error) {
+      console.error('Erro ao concluir atividade:', error);
+      toast.error('Erro ao concluir atividade');
+      carregar();
+    } finally {
+      setConcluindo(null);
     }
-    
-    // Celular com DDD (11 dígitos): (XX) 9XXXX-XXXX
-    if (cleaned.length === 11) {
-      return `(${cleaned.slice(0, 2)}) ${cleaned.slice(2, 7)}-${cleaned.slice(7)}`;
-    }
-    // Fixo com DDD (10 dígitos): (XX) XXXX-XXXX
-    if (cleaned.length === 10) {
-      return `(${cleaned.slice(0, 2)}) ${cleaned.slice(2, 6)}-${cleaned.slice(6)}`;
-    }
-    // Celular sem DDD (9 dígitos): 9XXXX-XXXX
-    if (cleaned.length === 9) {
-      return `${cleaned.slice(0, 5)}-${cleaned.slice(5)}`;
-    }
-    // Fixo sem DDD (8 dígitos): XXXX-XXXX
-    if (cleaned.length === 8) {
-      return `${cleaned.slice(0, 4)}-${cleaned.slice(4)}`;
-    }
-    return phone;
   };
 
-  // Atualizar leads (dispara refetch global do useLeadsMetrics)
-  const handleRefresh = () => {
-    leadsEventEmitter.emit();
+  /** Vincula (ou troca) o lead de uma atividade que já existe. */
+  const salvarVinculo = async () => {
+    if (!vinculando || !tenantValido) return;
+    const lead = leads.find((l) => (l.nomedolead || l.lead || l.id) === leadEscolhido);
+    const patch = {
+      lead_uuid: lead?.id ?? null,
+      lead_nome: leadEscolhido.trim() || null,
+      lead_telefone: lead?.lead || null,
+      updated_at: new Date().toISOString(),
+    };
+
+    try {
+      const { error } = await supabase
+        .from('agenda_eventos')
+        .update(patch)
+        .eq('id', vinculando.id)
+        .eq('tenant_id', tenantId)
+        .eq('corretor_email', meuEmail);
+      if (error) throw error;
+
+      setAtividades((prev) =>
+        prev.map((x) => (x.id === vinculando.id ? { ...x, ...patch } : x))
+      );
+      toast.success(patch.lead_nome ? 'Lead vinculado!' : 'Lead desvinculado.');
+      setVinculando(null);
+    } catch (error) {
+      console.error('Erro ao vincular lead:', error);
+      toast.error('Erro ao vincular lead');
+    }
   };
+
+  const criar = async () => {
+    if (!nova.titulo.trim()) {
+      toast.error('Escreva o que precisa ser feito');
+      return;
+    }
+    if (!user?.email || !tenantValido) {
+      toast.error('Sessão sem tenant selecionado');
+      return;
+    }
+
+    setSalvando(true);
+    try {
+      const { error } = await supabase.from('agenda_eventos').insert([
+        {
+          tenant_id: tenantId,
+          corretor_email: user.email,
+          titulo: nova.titulo.trim(),
+          descricao: nova.descricao.trim() || null,
+          data: nova.data,
+          horario: nova.horario || null,
+          tipo: nova.tipo,
+          status: 'pendente',
+          prioridade: nova.prioridade,
+          lead_uuid: nova.leadUuid,
+          lead_nome: nova.leadNome.trim() || null,
+          lead_telefone: nova.leadTelefone.trim() || null,
+        },
+      ]);
+      if (error) throw error;
+
+      toast.success('Atividade criada!');
+      setCriarAberto(false);
+      setNova((prev) => ({
+        ...prev,
+        titulo: '',
+        descricao: '',
+        horario: '',
+        leadNome: '',
+        leadTelefone: '',
+        leadUuid: null,
+      }));
+      carregar();
+    } catch (error) {
+      console.error('Erro ao criar atividade:', error);
+      toast.error('Erro ao criar atividade');
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  const linhaProps = {
+    pessoaPorEmail,
+    meuEmailNorm,
+    concluindo,
+    onConcluir: concluir,
+    onVincularLead: (a: Atividade) => {
+      setVinculando(a);
+      setLeadEscolhido(a.lead_nome || '');
+    },
+  };
+
+  const opcoesLead = useMemo(
+    () =>
+      leads.map((l) => ({
+        value: l.nomedolead || l.lead || l.id,
+        label: l.nomedolead || 'Sem nome',
+        sublabel: l.lead || undefined,
+      })),
+    [leads]
+  );
+
+  if (!tenantValido) {
+    return (
+      <div className="p-6 text-sm text-slate-500">
+        Selecione uma imobiliária para ver as atividades.
+      </div>
+    );
+  }
 
   return (
-    <div
-      key="central-leads"
-      className={embedded ? 'w-full' : 'animate-in fade-in-0 slide-in-from-bottom-3 duration-300 ease-out'}
-    >
-      <div
-        className={embedded ? 'w-full transition-all duration-300 ease-in-out' : 'px-6 py-5 transition-all duration-300 ease-in-out'}
-        style={{ marginRight: showModal ? '400px' : '0' }}
-      >
-        <div className={embedded ? 'w-full' : 'max-w-[1400px] mx-auto'}>
-        {!embedded && (
-          <>
-            {/* Header */}
-            <div className="flex items-start justify-between gap-4 mb-5 flex-wrap">
-              <div>
-                <h1 className="text-[22px] font-bold text-slate-900 dark:text-slate-100 leading-tight tracking-tight">
-                  Central de Leads
-                </h1>
-                <p className="text-[12.5px] text-slate-500 dark:text-slate-400 mt-0.5">
-                  Leads recebidos via integrações
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleRefresh}
-                  disabled={isLoading}
-                  className="h-9 px-3 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-[12.5px] font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5 transition-colors disabled:opacity-50"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} strokeWidth={2} />
-                  Atualizar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowCreateModal(true)}
-                  className="h-9 px-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[12.5px] font-semibold flex items-center gap-1.5 transition-colors"
-                >
-                  <Plus className="w-3.5 h-3.5" strokeWidth={2.2} />
-                  Criar Lead
-                </button>
-              </div>
-            </div>
-
-            {/* KPIs */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
-              <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 transition-all hover:border-slate-300 hover:shadow-sm">
-                <div className="flex items-center gap-2 mb-3">
-                  <Users className="w-[18px] h-[18px] text-slate-700 dark:text-slate-300" strokeWidth={1.6} />
-                  <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Total de Leads</p>
-                </div>
-                <p className="text-[26px] font-bold text-slate-900 dark:text-slate-100 leading-none tracking-tight">
-                  {leads.length.toLocaleString('pt-BR')}
-                </p>
-              </div>
-              <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 transition-all hover:border-slate-300 hover:shadow-sm">
-                <div className="flex items-center gap-2 mb-3">
-                  <Clock className="w-[18px] h-[18px] text-slate-700 dark:text-slate-300" strokeWidth={1.6} />
-                  <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Leads Hoje</p>
-                </div>
-                <p className="text-[26px] font-bold text-slate-900 dark:text-slate-100 leading-none tracking-tight">
-                  {leads.filter((l) => {
-                    if (!l.data_entrada) return false;
-                    const today = new Date().toDateString();
-                    return new Date(l.data_entrada).toDateString() === today;
-                  }).length.toLocaleString('pt-BR')}
-                </p>
-              </div>
-              <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 transition-all hover:border-slate-300 hover:shadow-sm">
-                <div className="flex items-center gap-2 mb-3">
-                  <Calendar className="w-[18px] h-[18px] text-slate-700 dark:text-slate-300" strokeWidth={1.6} />
-                  <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Visitas Agendadas</p>
-                </div>
-                <p className="text-[26px] font-bold text-slate-900 dark:text-slate-100 leading-none tracking-tight">
-                  {leads.filter((l) => (l.etapa_atual || '').toLowerCase().includes('visita agendada')).length.toLocaleString('pt-BR')}
-                </p>
-              </div>
-            </div>
-          </>
-        )}
-
-        {embedded && (
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-foreground">Central de Leads</h2>
-              <p className="text-xs text-muted-foreground">Leads recebidos via integrações</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setShowCreateModal(true)}
-                className="flex items-center gap-2 px-3 py-2 bg-blue-600 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm"
-                style={{ color: '#ffffff' }}
-              >
-                <Plus className="w-4 h-4" style={{ color: '#ffffff' }} />
-                Criar Lead
-              </button>
-              <button
-                onClick={handleRefresh}
-                disabled={isLoading}
-                className="flex items-center gap-2 px-3 py-2 bg-background border border-border rounded-lg text-sm font-medium text-foreground hover:bg-muted transition-colors"
-              >
-                <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-                Atualizar
-              </button>
-            </div>
-          </div>
-        )}
-
-      {/* Container da Tabela */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
-        {/* Barra de Filtros */}
-        <div className="px-4 py-4 border-b border-border/30">
-          {/* Linha: Busca + Filtros de Data */}
-          <div className="flex gap-4 items-end">
-            {/* Busca */}
-            <div className="relative w-96">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Buscar por nome, email ou telefone..."
-                className="w-full pl-9 pr-4 py-2 bg-muted/50 border border-border/40 rounded-lg text-sm focus:ring-1 focus:ring-border/40 outline-none"
-              />
-            </div>
-
-            {/* Data Inicial */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-                <Calendar className="h-3.5 w-3.5" />
-                De
-              </label>
-              <input
-                type="date"
-                value={dataInicial}
-                onChange={(e) => setDataInicial(e.target.value)}
-                className="h-10 px-3 rounded-lg border border-border/40 bg-muted/50 text-sm text-foreground focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-              />
-            </div>
-
-            {/* Data Final */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-                <Calendar className="h-3.5 w-3.5" />
-                Até
-              </label>
-              <input
-                type="date"
-                value={dataFinal}
-                onChange={(e) => setDataFinal(e.target.value)}
-                className="h-10 px-3 rounded-lg border border-border/40 bg-muted/50 text-sm text-foreground focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-              />
-            </div>
-
-            {/* Filtro de Portal */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-                <Building2 className="h-3.5 w-3.5" />
-                Portal
-              </label>
-              <select
-                value={portalFilter}
-                onChange={(e) => {
-                  setPortalFilter(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="h-10 px-3 rounded-lg border border-border/40 bg-muted/50 text-sm text-foreground focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-              >
-                <option value="todos">Todos</option>
-                {portaisUnicos.map(portal => (
-                  <option key={portal} value={portal}>{portal}</option>
-                ))}
-              </select>
-            </div>
-          </div>
+    <div className={embedded ? 'space-y-6' : 'space-y-6 p-6'}>
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-900 dark:text-slate-100">
+            <ClipboardList className="h-6 w-6" />
+            Atividades
+          </h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            O que precisa ser feito em cada lead — e o que passou do prazo.
+          </p>
         </div>
 
-        {/* Indicador "Todos" + contagem (substitui as 5 abas antigas) */}
-        <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
-          <span className="inline-flex items-center gap-2 px-3 h-9 rounded-lg bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 text-[13px] font-semibold">
-            <Users className="w-4 h-4" strokeWidth={2} />
-            Todos os leads
-            <span className="text-[11px] px-2 py-0.5 rounded-full bg-white dark:bg-slate-900 text-blue-700 dark:text-blue-300 font-semibold">
-              {filteredLeads.length}
-            </span>
-          </span>
-          {isLoading && (
-            <span className="inline-flex items-center gap-1.5 text-[12px] text-slate-500 dark:text-slate-400">
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              carregando...
-            </span>
-          )}
-        </div>
-
-        {/* Conteúdo da Tabela */}
-        {leads.length === 0 ? (
-          <div className="p-12 text-center">
-            <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-4">
-              <Users className="w-8 h-8 text-slate-400" />
-            </div>
-            <h3 className="text-[15px] font-semibold text-slate-900 dark:text-slate-100 mb-1">
-              {isLoading ? 'Carregando leads…' : 'Nenhum lead encontrado'}
-            </h3>
-            <p className="text-[13px] text-slate-500 dark:text-slate-400">
-              Leads do CRM e das integrações aparecem aqui automaticamente.
-            </p>
-          </div>
-        ) : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="bg-slate-50 dark:bg-slate-800/40 border-b border-slate-200 dark:border-slate-800">
-                    <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Nome</th>
-                    <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Telefone</th>
-                    <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Etapa</th>
-                    <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Data entrada</th>
-                    <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Origem</th>
-                    <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Imóvel</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {paginatedLeads.map((lead) => {
-                    const etapaStyle = getEtapaStyle(lead.etapa_atual);
-                    return (
-                      <tr
-                        key={lead.id_lead}
-                        className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors cursor-pointer"
-                        onClick={() => openLeadDetails(lead)}
-                      >
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-semibold text-[12px]">
-                              {lead.nome_lead?.charAt(0).toUpperCase() || '?'}
-                            </div>
-                            <div className="min-w-0">
-                              <p className="font-semibold text-slate-900 dark:text-slate-100 text-[13px] truncate">{lead.nome_lead || 'Sem nome'}</p>
-                              <p className="text-[11px] text-slate-500 dark:text-slate-400">ID: {lead.id_lead}</p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="text-[13px] text-slate-700 dark:text-slate-200">{formatPhone(lead.telefone || '')}</span>
-                        </td>
-                        <td className="px-4 py-3">
-                          {lead.etapa_atual ? (
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold ${etapaStyle.bg} ${etapaStyle.text}`}>
-                              {lead.etapa_atual}
-                            </span>
-                          ) : (
-                            <span className="text-[12px] text-slate-400">—</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="text-[12.5px] text-slate-500 dark:text-slate-400">{formatDate(lead.data_entrada)}</span>
-                        </td>
-                        <td className="px-4 py-3">
-                          {lead.origem_lead ? (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                              {lead.origem_lead}
-                            </span>
-                          ) : (
-                            <span className="text-[12px] text-slate-400">—</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="text-[12.5px] text-slate-500 dark:text-slate-400">{lead.codigo_imovel || '—'}</span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Paginação */}
-            {totalPages > 1 && (
-              <div className="px-4 py-3 border-t border-border/30 flex items-center justify-between">
-                <p className="text-sm text-muted-foreground">
-                  Mostrando {startIndex + 1} a {Math.min(startIndex + leadsPerPage, filteredLeads.length)} de {filteredLeads.length} leads
-                </p>
-                
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                    disabled={currentPage === 1}
-                    className="p-2 border border-border/40 rounded-lg hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                  
-                  <span className="text-sm text-muted-foreground">
-                    Página {currentPage} de {totalPages}
-                  </span>
-                  
-                  <button
-                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                    disabled={currentPage === totalPages}
-                    className="p-2 border border-border/40 rounded-lg hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            )}
-          </>
-        )}
-      </div>
-        </div>
-      </div>
-      {/* Drawer Lateral de Detalhes */}
-      {showModal && selectedLead && (() => {
-        const etapaStyle = getEtapaStyle(selectedLead.etapa_atual);
-        const corretorInfo = getCorretorByImovel(selectedLead.codigo_imovel);
-        return (
-          <>
-            {/* Drawer */}
-            <div
-              className="fixed top-0 right-0 h-full w-[400px] z-50 overflow-hidden border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xl"
-              style={{ animation: 'slideIn 0.2s ease-out' }}
+        <div className="flex flex-wrap items-center gap-2">
+          {isAdmin && (
+            <Select
+              value={filtroCorretor || TODOS}
+              onValueChange={(v) => setFiltroCorretor(v === TODOS ? '' : v)}
             >
-              {/* Header */}
-              <div className="flex items-center justify-between px-4 h-14 border-b border-slate-200 dark:border-slate-800">
-                <h2 className="text-[14px] font-semibold text-slate-900 dark:text-slate-100">Detalhes do Lead</h2>
-                <button
-                  onClick={closeModal}
-                  className="w-7 h-7 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
-                  type="button"
-                >
-                  <X className="w-4 h-4" />
-                </button>
+              <SelectTrigger className="w-56">
+                <SelectValue placeholder="Corretor" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={TODOS}>Equipe toda</SelectItem>
+                {corretores.map((c) => (
+                  <SelectItem key={c.email} value={c.email}>
+                    {c.nome}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <Button variant="outline" size="icon" onClick={carregar} disabled={carregando}>
+            <RefreshCw className={`h-4 w-4 ${carregando ? 'animate-spin' : ''}`} />
+          </Button>
+          <Button onClick={() => setCriarAberto(true)}>
+            <Plus className="mr-1 h-4 w-4" />
+            Nova atividade
+          </Button>
+        </div>
+      </header>
+
+      {/* Abas = estágios de tempo, não categorias. A atividade anda sozinha
+          entre elas conforme o relógio; ver `atividadeNaAba` em utils. */}
+      <nav
+        className="flex overflow-x-auto border-b border-border"
+        aria-label="Estágio das atividades"
+      >
+        <Aba
+          ativa={aba === 'afazer'}
+          onClick={() => setAba('afazer')}
+          rotulo="A fazer"
+          contagem={contagens.afazer}
+          alerta={aFazer.pendentes.length > 0}
+          icone={<ClipboardList className="h-5 w-5" />}
+        />
+        <Aba
+          ativa={aba === 'visitas'}
+          onClick={() => setAba('visitas')}
+          rotulo="Visitas"
+          contagem={contagens.visitas}
+          icone={<MapPin className="h-5 w-5" />}
+        />
+        <Aba
+          ativa={aba === 'futuras'}
+          onClick={() => setAba('futuras')}
+          rotulo="Futuras"
+          contagem={contagens.futuras}
+          icone={<Clock className="h-5 w-5" />}
+        />
+        <Aba
+          ativa={aba === 'todos'}
+          onClick={() => setAba('todos')}
+          rotulo="Todos"
+          contagem={contagens.todos}
+          icone={<Archive className="h-5 w-5" />}
+        />
+      </nav>
+
+      {carregando && atividades.length === 0 ? (
+        <div className="flex items-center gap-2 p-6 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Carregando atividades...
+        </div>
+      ) : aba === 'afazer' ? (
+        <div className="space-y-6">
+          <Secao
+            titulo="Pendentes"
+            icone={<AlertTriangle className="h-4 w-4 text-destructive" />}
+            itens={aFazer.pendentes}
+            vazio="Nada pendente."
+          >
+            {(a) => <Linha key={a.id} atividade={a} lead={leadsPorId.get(a.lead_uuid || '')} atrasada {...linhaProps} />}
+          </Secao>
+          <Secao
+            titulo="Hoje"
+            icone={<Sun className="h-4 w-4 text-amber-500" />}
+            itens={aFazer.hoje}
+            vazio="Nada marcado para hoje."
+          >
+            {(a) => <Linha key={a.id} atividade={a} lead={leadsPorId.get(a.lead_uuid || '')} {...linhaProps} />}
+          </Secao>
+        </div>
+      ) : (
+        <Secao
+          titulo={
+            aba === 'visitas' ? 'Visitas agendadas' : aba === 'futuras' ? 'Agendadas para depois' : 'Todas'
+          }
+          icone={
+            aba === 'visitas' ? (
+              <MapPin className="h-4 w-4 text-primary" />
+            ) : aba === 'futuras' ? (
+              <Clock className="h-4 w-4 text-primary" />
+            ) : (
+              <Archive className="h-4 w-4 text-muted-foreground" />
+            )
+          }
+          itens={listaDaAba}
+          vazio={
+            aba === 'visitas'
+              ? 'Nenhuma visita agendada.'
+              : aba === 'futuras'
+                ? 'Nada agendado para os próximos dias.'
+                : `Nenhuma atividade nos últimos ${JANELA_DIAS} dias.`
+          }
+        >
+          {(a) => <Linha key={a.id} atividade={a} lead={leadsPorId.get(a.lead_uuid || '')} {...linhaProps} />}
+        </Secao>
+      )}
+
+      {aba === 'todos' && (
+        <p className="text-xs text-muted-foreground">
+          Mostrando os últimos {JANELA_DIAS} dias em diante.
+        </p>
+      )}
+
+      <Dialog open={Boolean(vinculando)} onOpenChange={(aberto) => !aberto && setVinculando(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Vincular lead</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-slate-500 dark:text-slate-400">{vinculando?.titulo}</p>
+          <ComboBox
+            options={opcoesLead}
+            value={leadEscolhido}
+            onChange={setLeadEscolhido}
+            placeholder="Selecione o lead..."
+            emptyText="Nenhum lead"
+            allowCustom
+          />
+          <DialogFooter>
+            {vinculando?.lead_nome && (
+              <Button variant="ghost" onClick={() => setLeadEscolhido('')}>
+                Desvincular
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => setVinculando(null)}>
+              Cancelar
+            </Button>
+            <Button onClick={salvarVinculo}>Salvar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={criarAberto} onOpenChange={setCriarAberto}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Nova atividade</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>O que precisa ser feito</Label>
+              <Input
+                value={nova.titulo}
+                onChange={(e) => setNova({ ...nova, titulo: e.target.value })}
+                placeholder="Ex.: Ligar pro João confirmando a visita"
+                autoFocus
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Data</Label>
+                <Input
+                  type="date"
+                  value={nova.data}
+                  onChange={(e) => setNova({ ...nova, data: e.target.value })}
+                />
               </div>
-
-              {/* Conteúdo */}
-              <div className="overflow-y-auto h-[calc(100vh-56px)] p-4">
-                {/* Avatar + nome + etapa atual */}
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-[16px] font-semibold">
-                    {selectedLead.nome_lead?.charAt(0).toUpperCase() || '?'}
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className="text-[16px] font-semibold text-slate-900 dark:text-slate-100 truncate">{selectedLead.nome_lead || 'Sem nome'}</h3>
-                    <p className="text-[12px] text-slate-500 dark:text-slate-400">Entrou em {formatDate(selectedLead.data_entrada)}</p>
-                  </div>
-                </div>
-
-                {/* Etapa atual + selector */}
-                <div className="mb-5">
-                  <h4 className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3.5 h-3.5" strokeWidth={2} />
-                    Etapa atual
-                  </h4>
-                  {selectedLead.etapa_atual ? (
-                    <div className={`inline-flex items-center px-3 py-1.5 rounded-lg text-[13px] font-semibold ${etapaStyle.bg} ${etapaStyle.text} ring-1 ${etapaStyle.ring}`}>
-                      {selectedLead.etapa_atual}
-                    </div>
-                  ) : (
-                    <p className="text-[13px] text-slate-400 italic">Sem etapa definida</p>
-                  )}
-
-                  <p className="mt-3 mb-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Mover para</p>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {ETAPAS_INTERESSADO.map((etapa) => {
-                      const isCurrent = selectedLead.etapa_atual === etapa;
-                      const s = getEtapaStyle(etapa);
-                      return (
-                        <button
-                          key={etapa}
-                          type="button"
-                          disabled={updatingEtapa || isCurrent}
-                          onClick={() => handleChangeEtapa(etapa)}
-                          className={`text-left px-2.5 py-2 rounded-lg text-[12px] font-semibold transition-all border ${
-                            isCurrent
-                              ? `${s.bg} ${s.text} border-transparent ring-1 ${s.ring} cursor-default`
-                              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/30'
-                          } disabled:opacity-60`}
-                        >
-                          {isCurrent && <span className="mr-1">✓</span>}
-                          {etapa}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {updatingEtapa && (
-                    <p className="mt-2 inline-flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                      Atualizando…
-                    </p>
-                  )}
-                  {etapaError && (
-                    <p className="mt-2 text-[11px] text-rose-600 dark:text-rose-400">⚠ {etapaError}</p>
-                  )}
-                </div>
-
-                {/* Divider */}
-                <div className="border-t border-slate-200 dark:border-slate-800 my-4" />
-
-                {/* Contato */}
-                <div className="space-y-2.5 mb-5">
-                  <h4 className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Contato</h4>
-                  <div className="flex items-center gap-2.5 text-[13px]">
-                    <Phone className="w-3.5 h-3.5 text-slate-400" />
-                    <span className="text-slate-700 dark:text-slate-200">{formatPhone(selectedLead.telefone || '')}</span>
-                  </div>
-                </div>
-
-                {/* Imóvel + valor */}
-                {(selectedLead.codigo_imovel || selectedLead.valor_imovel) && (
-                  <div className="mb-5">
-                    <h4 className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Imóvel de interesse</h4>
-                    <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-3 bg-slate-50 dark:bg-slate-800/40 space-y-1">
-                      {selectedLead.codigo_imovel && (
-                        <div className="flex items-center gap-1.5">
-                          <Home className="w-3.5 h-3.5 text-slate-400" />
-                          <span className="text-[12.5px] font-semibold text-slate-900 dark:text-slate-100">{selectedLead.codigo_imovel}</span>
-                          {selectedLead.tipo_negocio && (
-                            <span className="ml-1 text-[10.5px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200">{selectedLead.tipo_negocio}</span>
-                          )}
-                        </div>
-                      )}
-                      {selectedLead.valor_imovel ? (
-                        <p className="text-[12px] text-slate-500 dark:text-slate-400">
-                          {selectedLead.valor_imovel.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })}
-                        </p>
-                      ) : null}
-                    </div>
-                  </div>
-                )}
-
-                {/* Origem */}
-                {selectedLead.origem_lead && (
-                  <div className="mb-5">
-                    <h4 className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Origem</h4>
-                    <div className="flex items-center gap-2 text-[13px]">
-                      <Building2 className="w-3.5 h-3.5 text-slate-400" />
-                      <span className="text-slate-700 dark:text-slate-200">{selectedLead.origem_lead}</span>
-                    </div>
-                  </div>
-                )}
-
-                {/* Visita agendada */}
-                {selectedLead.Data_visita && (
-                  <div className="mb-5">
-                    <h4 className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Visita</h4>
-                    <div className="flex items-center gap-2 text-[13px]">
-                      <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                      <span className="text-slate-700 dark:text-slate-200">{formatDate(selectedLead.Data_visita)}</span>
-                    </div>
-                  </div>
-                )}
-
-                {/* Corretor */}
-                <div className="mb-5">
-                  <h4 className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                    Corretor responsável
-                    {corretorInfo && <span className="ml-2 text-emerald-600 dark:text-emerald-400 normal-case font-normal">(via imóvel)</span>}
-                  </h4>
-                  {selectedLead.corretor_responsavel || corretorInfo ? (
-                    <div className="flex items-center gap-3 p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 rounded-lg">
-                      <div className="w-9 h-9 rounded-full bg-emerald-100 dark:bg-emerald-900/60 flex items-center justify-center text-emerald-700 dark:text-emerald-300 text-[12px] font-semibold">
-                        {(selectedLead.corretor_responsavel || corretorInfo?.nome || '?').charAt(0).toUpperCase()}
-                      </div>
-                      <p className="text-[13px] font-semibold text-emerald-800 dark:text-emerald-300">
-                        {selectedLead.corretor_responsavel || corretorInfo?.nome}
-                      </p>
-                    </div>
-                  ) : (
-                    <p className="text-[12.5px] text-slate-400 italic">Nenhum corretor atribuído</p>
-                  )}
-                </div>
+              <div className="space-y-2">
+                <Label>Horário (opcional)</Label>
+                <Input
+                  type="time"
+                  value={nova.horario}
+                  onChange={(e) => setNova({ ...nova, horario: e.target.value })}
+                />
               </div>
             </div>
 
-            {/* CSS Animation */}
-            <style>{`
-              @keyframes slideIn {
-                from { transform: translateX(100%); }
-                to { transform: translateX(0); }
-              }
-            `}</style>
-          </>
-        );
-      })()}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Tipo</Label>
+                <Select value={nova.tipo} onValueChange={(v) => setNova({ ...nova, tipo: v })}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TIPOS_ATIVIDADE.map((t) => (
+                      <SelectItem key={t.value} value={t.value}>
+                        {t.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Prioridade</Label>
+                <Select
+                  value={nova.prioridade}
+                  onValueChange={(v) => setNova({ ...nova, prioridade: v as 'alta' | 'media' | 'baixa' })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="alta">Alta</SelectItem>
+                    <SelectItem value="media">Média</SelectItem>
+                    <SelectItem value="baixa">Baixa</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
 
-      {/* Modal de Criar Lead — reutiliza o componente do Kanban (Supabase direto, sem API key) */}
-      <CriarLeadQuickModal
-        isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-        tenantId={tenantId}
-      />
+            <div className="space-y-2">
+              <Label>Lead (opcional)</Label>
+              <ComboBox
+                options={opcoesLead}
+                value={nova.leadNome}
+                onChange={(value) => {
+                  const lead = leads.find((l) => (l.nomedolead || l.lead || l.id) === value);
+                  setNova((prev) => ({
+                    ...prev,
+                    leadNome: value,
+                    leadTelefone: lead?.lead || '',
+                    leadUuid: lead?.id ?? null,
+                  }));
+                }}
+                placeholder="Selecione..."
+                emptyText="Nenhum lead"
+                allowCustom
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Detalhes (opcional)</Label>
+              <Textarea
+                value={nova.descricao}
+                onChange={(e) => setNova({ ...nova, descricao: e.target.value })}
+                rows={3}
+                placeholder="Contexto que você vai querer lembrar depois"
+              />
+            </div>
+
+            {(TIPOS_BLOQUEANTES as readonly string[]).includes(nova.tipo) && (
+              <p className="rounded-lg bg-amber-50 p-2 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+                Se esta atividade passar do prazo sem ser concluída, você é avisado e, 24h
+                depois, bloqueado de receber novos leads até concluí-la.
+              </p>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCriarAberto(false)} disabled={salvando}>
+              Cancelar
+            </Button>
+            <Button onClick={criar} disabled={salvando}>
+              {salvando && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
+              Criar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

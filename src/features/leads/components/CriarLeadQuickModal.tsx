@@ -27,6 +27,7 @@ import {
 } from '../services/leadsService';
 import { phoneVariants } from '@/features/chat/services/chatService';
 import { CadenciaLiaSection } from './CadenciaLiaSection';
+import { AtividadesLeadSection } from './AtividadesLeadSection';
 import { useCadenciaLead } from '../hooks/useCadenciaLead';
 import { HistoricoLeadSection } from './HistoricoLeadSection';
 import { useHistoricoLead } from '../hooks/useHistoricoLead';
@@ -141,7 +142,8 @@ export const CriarLeadQuickModal = ({
 
   // Apenas gestores podem criar/editar leads. Não-gestores abrem o modal
   // em modo somente leitura.
-  const { isGestao } = useAuthContext();
+  const { isGestao, user } = useAuthContext();
+  const userEmail = user?.email || '';
   const canEdit = isGestao;
 
   // Sem telefone válido ou sem permissão 'chat' o campo não renderiza — a
@@ -679,6 +681,21 @@ export const CriarLeadQuickModal = ({
                   )
                 )}
               </div>
+            )}
+
+            {/* Seção: Atividades — o que está marcado para este lead e o que
+                já passou do prazo. Escreve em `agenda_eventos`, a mesma fonte do
+                painel de Atividades e do bloqueio do bolsão. */}
+            {isEditMode && editingLead && userEmail && (
+              <AtividadesLeadSection
+                vinculo={{ coluna: 'lead_uuid', valor: editingLead.id }}
+                leadNome={editingLead.nomedolead}
+                leadTelefone={editingLead.lead}
+                tenantId={tenantId}
+                corretorEmail={userEmail}
+                imovelRef={editingLead.codigo}
+                ativo={isOpen}
+              />
             )}
 
             {/* Seção: Cadência da LIA — o que a IA já tentou com este lead.

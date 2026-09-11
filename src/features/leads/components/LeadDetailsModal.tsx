@@ -1,7 +1,7 @@
 /**
  * 🪟 MODAL DE DETALHES DO LEAD
  * Modal que exibe todas as informações completas de um lead
- * Com integração de atividades da Agenda
+ * Atividades ficam na AtividadesLeadSection, a mesma do card do lead no Kanban.
  */
 
 import { useState, useEffect } from 'react';
@@ -16,7 +16,6 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { Link } from 'react-router-dom';
 import { useChatPath, ConversationLinkField } from '@/features/chat/components/OpenConversationLink';
@@ -38,15 +37,14 @@ import {
   Square,
   Plus,
   X,
-  CalendarPlus,
-  ChevronDown,
-  Flag,
   ClipboardList,
   Archive,
   Sparkles,
   Tag,
   MessageSquare
 } from 'lucide-react';
+import { etapaAposAtividade } from '../utils/atividades';
+import { AtividadesLeadSection } from './AtividadesLeadSection';
 import { BolsaoLead } from '../services/bolsaoService';
 import { CLASSIFICACAO_ESTILOS, CLASSIFICACAO_ORDEM } from './ClassificacaoBadge';
 import { PreferenciasEditor, preferenciasDe } from './PreferenciasLead';
@@ -56,24 +54,8 @@ import { bolsaoLeadToRecommendationInput } from '@/features/recommendations/adap
 import type { Imovel } from '@/features/imoveis/services/kenloService';
 import { fetchImovelDoTenantPorCodigo } from '@/features/imoveis/services/catalogoImoveisService';
 import { supabase } from '@/integrations/supabase/client';
-import { eventoToSupabase, supabaseToEvento } from '@/features/agenda/services/agendaSupabaseService';
 import { useAuth } from "@/hooks/useAuth";
 import { useImoveisData } from '@/features/imoveis/hooks/useImoveisData';
-import { ImoveisComboBox } from '@/components/ui/imovel-combobox';
-
-// Tipos de atividade
-type TipoAtividade = 'visita_agendada' | 'visita_realizada' | 'visita_nao_realizada' | 'retornar_cliente' | 'reuniao' | 'tarefa' | 'outro';
-
-interface Atividade {
-  id: string;
-  titulo: string;
-  descricao?: string;
-  data: Date;
-  horario?: string;
-  tipo: TipoAtividade;
-  status: 'pendente' | 'confirmado' | 'concluido' | 'cancelado';
-  prioridade?: 'alta' | 'media' | 'baixa';
-}
 
 interface LeadDetailsModalProps {
   lead: BolsaoLead | null;
@@ -204,232 +186,6 @@ export const LeadDetailsModal = ({
     }
   };
 
-  // Estados para atividades
-  const [criarAtividadeOpen, setCriarAtividadeOpen] = useState(false);
-  const [atividades, setAtividades] = useState<Atividade[]>([]);
-  const [carregandoAtividades, setCarregandoAtividades] = useState(false);
-  const [salvandoAtividade, setSalvandoAtividade] = useState(false);
-  
-  // Estado do formulário de nova atividade
-  const [novaAtividade, setNovaAtividade] = useState({
-    titulo: '',
-    descricao: '',
-    data: new Date().toISOString().split('T')[0],
-    horario: '',
-    tipo: 'outro' as TipoAtividade,
-    prioridade: 'media' as 'alta' | 'media' | 'baixa',
-    imovelCodigo: '',
-    imovelTitulo: ''
-  });
-  
-  // Atualizar código do imóvel quando o lead mudar
-  useEffect(() => {
-    if (lead?.codigo) {
-      // Buscar o imóvel correspondente para pegar o título
-      const imovelDoLead = imoveis.find(i => i.referencia === lead.codigo);
-      setNovaAtividade(prev => ({ 
-        ...prev, 
-        imovelCodigo: lead.codigo || '',
-        imovelTitulo: imovelDoLead?.titulo || ''
-      }));
-    }
-  }, [lead?.codigo, imoveis]);
-
-  // Função para carregar atividades do lead (multitenant)
-  const carregarAtividadesDoLead = async () => {
-    if (!lead?.id || !tenantId || tenantId === 'owner') return;
-    
-    try {
-      setCarregandoAtividades(true);
-      
-      const { data, error } = await supabase
-        .from('agenda_eventos')
-        .select('*')
-        .eq('tenant_id', tenantId)
-        .eq('lead_id', lead.id)
-        .order('data', { ascending: false });
-      
-      if (error) {
-        console.error('Erro ao buscar atividades:', error);
-        return;
-      }
-      
-      if (data) {
-        const atividadesFormatadas = data.map((a: any) => supabaseToEvento(a));
-        setAtividades(atividadesFormatadas);
-      }
-    } catch (error) {
-      console.error('Erro ao carregar atividades:', error);
-    } finally {
-      setCarregandoAtividades(false);
-    }
-  };
-
-  // Função para criar nova atividade
-  const handleCriarAtividade = async () => {
-
-    if (!novaAtividade.titulo || !novaAtividade.data || !novaAtividade.horario) {
-      toast({
-        title: "Campos obrigatórios",
-        description: "Preencha título, data e horário",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    if (!user?.email || !tenantId || tenantId === 'owner') {
-      console.error('❌ Usuário não autenticado ou tenant não selecionado:', user);
-      toast({
-        title: "Erro",
-        description: "Usuário não autenticado ou tenant não selecionado",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    if (!lead) {
-      console.error('❌ Lead não selecionado');
-      toast({
-        title: "Erro",
-        description: "Lead não selecionado",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    try {
-      setSalvandoAtividade(true);
-
-      const eventoTemp = {
-        titulo: novaAtividade.titulo,
-        descricao: novaAtividade.descricao || undefined,
-        data: new Date(novaAtividade.data + 'T12:00:00'),
-        horario: novaAtividade.horario,
-        tipo: novaAtividade.tipo,
-        status: 'pendente' as const,
-        prioridade: novaAtividade.prioridade,
-        leadId: lead.id,
-        leadNome: lead.nomedolead || '',
-        leadTelefone: lead.lead || '',
-        imovelRef: novaAtividade.imovelCodigo || lead.codigo || '',
-        imovelTitulo: novaAtividade.imovelTitulo || ''
-      };
-
-
-      const corretorNome = user.name || currentCorretor || 'Corretor';
-      const eventoSupabase = eventoToSupabase(eventoTemp, user.email, corretorNome);
-      
-
-      const { data, error } = await supabase
-        .from('agenda_eventos')
-        .insert([{ ...eventoSupabase, tenant_id: tenantId }])
-        .select();
-      
-      if (error) {
-        console.error('❌ Erro Supabase:', error);
-        throw new Error(error.message || 'Erro ao salvar no Supabase');
-      }
-
-
-      toast({
-        title: "✅ Atividade criada!",
-        description: `${novaAtividade.titulo} adicionada à agenda`,
-        className: "bg-green-500/10 border-green-500/50"
-      });
-
-      // Atualizar status do lead baseado no tipo de atividade
-      
-      if (onAtualizarStatusLead) {
-        if (novaAtividade.tipo === 'visita_agendada' || novaAtividade.tipo === 'visita_realizada') {
-          // Visita agendada OU visita realizada → move para "visita-agendada"
-          await onAtualizarStatusLead(lead.id, 'visita-agendada');
-          toast({
-            title: "📍 Lead movido!",
-            description: `Lead movido para etapa "Visita Agendada"`,
-            className: "bg-blue-500/10 border-blue-500/50"
-          });
-        } else if (novaAtividade.tipo === 'retornar_cliente' || novaAtividade.tipo === 'reuniao') {
-          // Se criar uma atividade de retornar cliente ou reunião, move para "visita-agendada" (se ainda não estiver em etapas avançadas)
-          const statusAtual = lead.status?.toLowerCase().replace(/\s+/g, '-');
-          if (statusAtual === 'novos-leads' || statusAtual === 'novo' || statusAtual === 'interacao' || statusAtual === 'assumido') {
-            await onAtualizarStatusLead(lead.id, 'visita-agendada');
-            toast({
-              title: "📍 Lead movido!",
-              description: `Lead movido para etapa "Visita Agendada"`,
-              className: "bg-blue-500/10 border-blue-500/50"
-            });
-          } else {
-          }
-        } else {
-        }
-      } else {
-        console.warn('⚠️ Callback onAtualizarStatusLead não está disponível!');
-      }
-
-      // Recarregar atividades
-      await carregarAtividadesDoLead();
-      
-      // Fechar modal de criar e resetar form
-      setCriarAtividadeOpen(false);
-      const imovelDoLead = imoveis.find(i => i.referencia === lead?.codigo);
-      setNovaAtividade({
-        titulo: '',
-        descricao: '',
-        data: new Date().toISOString().split('T')[0],
-        horario: '',
-        tipo: 'outro',
-        prioridade: 'media',
-        imovelCodigo: lead?.codigo || '',
-        imovelTitulo: imovelDoLead?.titulo || ''
-      });
-
-    } catch (error) {
-      console.error('❌ ERRO AO CRIAR ATIVIDADE:', error);
-      console.error('Stack trace:', error instanceof Error ? error.stack : 'N/A');
-      toast({
-        title: "Erro ao criar atividade",
-        description: error instanceof Error ? error.message : "Tente novamente",
-        variant: "destructive"
-      });
-    } finally {
-      setSalvandoAtividade(false);
-    }
-  };
-
-  // Helper para nome do tipo de atividade
-  const getNomeTipo = (tipo: TipoAtividade) => {
-    switch (tipo) {
-      case 'visita_agendada': return 'Visita Agendada';
-      case 'visita_realizada': return 'Visita Realizada';
-      case 'visita_nao_realizada': return 'Visita Não Realizada';
-      case 'retornar_cliente': return 'Retornar Cliente';
-      case 'reuniao': return 'Reunião';
-      case 'tarefa': return 'Tarefa';
-      case 'outro': return 'Outro';
-      default: return tipo;
-    }
-  };
-
-  // Helper para cor do tipo
-  const getCorTipo = (tipo: TipoAtividade) => {
-    switch (tipo) {
-      case 'visita_agendada': return 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400';
-      case 'visita_realizada': return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
-      case 'visita_nao_realizada': return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
-      case 'retornar_cliente': return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
-      case 'reuniao': return 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400';
-      case 'tarefa': return 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400';
-      default: return 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400';
-    }
-  };
-
-  // Carregar atividades quando o modal abrir
-  useEffect(() => {
-    if (isOpen && lead?.id) {
-      carregarAtividadesDoLead();
-    }
-  }, [isOpen, lead?.id]);
-  
   // Buscar imóvel quando o modal abrir.
   // Catálogo do tenant (XML + imoveis_locais). O kenloService que ficava aqui
   // lia um XML estático de outra base e dizia "não encontrado" para código que
@@ -904,75 +660,36 @@ export const LeadDetailsModal = ({
             </div>
           </div>
 
-          {/* Seção de Atividades - Só aparece se o lead já foi assumido */}
-          {podecriarAtividade && (
-          <div className="border-t pt-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <h4 className="font-bold text-foreground flex items-center gap-2">
-                <ClipboardList className="h-5 w-5 text-green-500" />
-                Atividades
-              </h4>
-              <Button
-                size="sm"
-                onClick={() => setCriarAtividadeOpen(true)}
-                className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white font-semibold gap-2"
-              >
-                <CalendarPlus className="h-4 w-4" />
-                Criar Atividade
-              </Button>
+          {/* Atividades — mesma section do card do lead no Kanban. O Bolsão
+              identifica lead por inteiro próprio (`bolsao.id`); quando a linha
+              espelha um lead do CRM, `source_lead_id` dá o uuid e o vínculo vira
+              a FK de verdade. */}
+          {podecriarAtividade && user?.email && tenantId && tenantId !== 'owner' && (
+            <div className="border-t pt-4">
+              <AtividadesLeadSection
+                vinculo={
+                  lead.source_lead_id
+                    ? { coluna: 'lead_uuid', valor: lead.source_lead_id }
+                    : { coluna: 'lead_id', valor: lead.id }
+                }
+                leadNome={lead.nomedolead}
+                leadTelefone={lead.lead}
+                tenantId={tenantId}
+                corretorEmail={user.email}
+                imovelRef={lead.codigo}
+                onCriada={async (tipo) => {
+                  const etapa = etapaAposAtividade(tipo, lead.status);
+                  if (!etapa || !onAtualizarStatusLead) return;
+                  await onAtualizarStatusLead(lead.id, etapa);
+                  toast({
+                    title: '📍 Lead movido!',
+                    description: 'Lead movido para etapa "Visita Agendada"',
+                    className: 'bg-blue-500/10 border-blue-500/50',
+                  });
+                }}
+                ativo={isOpen}
+              />
             </div>
-
-            {/* Lista de Atividades */}
-            {carregandoAtividades ? (
-              <div className="flex items-center justify-center py-4">
-                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground mr-2" />
-                <span className="text-muted-foreground text-sm">Carregando atividades...</span>
-              </div>
-            ) : atividades.length === 0 ? (
-              <div className="text-center py-6 bg-muted/30 rounded-lg border border-dashed border-muted-foreground/20">
-                <CalendarPlus className="h-8 w-8 text-muted-foreground/50 mx-auto mb-2" />
-                <p className="text-muted-foreground text-sm">Nenhuma atividade registrada</p>
-                <p className="text-muted-foreground text-xs mt-1">Clique em "Criar Atividade" para adicionar</p>
-              </div>
-            ) : (
-              <div className="space-y-2 max-h-48 overflow-y-auto">
-                {atividades.map((atividade) => (
-                  <div
-                    key={atividade.id}
-                    className="p-3 bg-muted/30 rounded-lg border border-muted-foreground/10 hover:border-muted-foreground/20 transition-colors"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-semibold text-sm text-foreground truncate">
-                            {atividade.titulo}
-                          </span>
-                          <Badge className={`text-[10px] px-1.5 py-0 ${getCorTipo(atividade.tipo)}`}>
-                            {getNomeTipo(atividade.tipo)}
-                          </Badge>
-                        </div>
-                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                          <span className="flex items-center gap-1">
-                            <Calendar className="h-3 w-3" />
-                            {atividade.data.toLocaleDateString('pt-BR')}
-                          </span>
-                          {atividade.horario && (
-                            <span className="flex items-center gap-1">
-                              <Clock className="h-3 w-3" />
-                              {atividade.horario}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      {atividade.status === 'concluido' && (
-                        <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
           )}
 
           {/* Botões de Ação */}
@@ -1051,240 +768,6 @@ export const LeadDetailsModal = ({
       </DialogContent>
 
       {/* Modal de Criar Atividade */}
-      <Dialog open={criarAtividadeOpen} onOpenChange={setCriarAtividadeOpen}>
-        <DialogContent
-          className="max-w-lg max-h-[90vh] overflow-y-auto border border-border shadow-2xl bg-background"
-        >
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-lg">
-              <CalendarPlus className="h-5 w-5 text-green-500" />
-              Criar Atividade
-            </DialogTitle>
-            <DialogDescription>
-              Adicione uma nova atividade para {lead?.nomedolead || 'este lead'}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 mt-4">
-            {/* Informações do Lead (Imutável) */}
-            <div className="p-3 bg-muted/50 rounded-lg border border-muted-foreground/10">
-              <div className="flex items-center gap-2 mb-2">
-                <User className="h-4 w-4 text-blue-500" />
-                <span className="text-sm font-semibold text-foreground">Lead Vinculado</span>
-                <Badge variant="outline" className="text-[10px] ml-auto">Fixo</Badge>
-              </div>
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                <div>
-                  <span className="text-muted-foreground text-xs">Nome:</span>
-                  <p className="font-medium text-foreground truncate">{lead?.nomedolead || 'Sem nome'}</p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground text-xs">Telefone:</span>
-                  <p className="font-medium text-foreground">{lead?.lead || '-'}</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Imóvel (Editável com ComboBox) */}
-            <div className="space-y-2">
-              <Label className="text-sm font-semibold text-foreground flex items-center gap-2">
-                <Home className="h-3.5 w-3.5 text-green-500" />
-                Imóvel
-                <Badge variant="outline" className="text-[10px] ml-1">Editável</Badge>
-              </Label>
-              <ImoveisComboBox
-                imoveis={imoveis}
-                value={novaAtividade.imovelCodigo}
-                onChange={(value, imovelSelecionado) => {
-                  setNovaAtividade({
-                    ...novaAtividade,
-                    imovelCodigo: value,
-                    imovelTitulo: imovelSelecionado?.titulo || value
-                  });
-                }}
-                placeholder="Selecione ou busque um imóvel"
-                emptyText="Nenhum imóvel encontrado"
-              />
-              {/* Preview do imóvel selecionado */}
-              {novaAtividade.imovelCodigo && (() => {
-                const imovelPreview = imoveis.find(i => i.referencia === novaAtividade.imovelCodigo);
-                if (!imovelPreview) return null;
-                return (
-                  <div className="mt-2 p-3 bg-muted/30 rounded-lg border border-muted-foreground/10 flex items-center gap-3">
-                    {/* Foto do imóvel */}
-                    <div className="w-14 h-14 rounded-lg bg-gray-200 dark:bg-gray-700 flex-shrink-0 overflow-hidden">
-                      {imovelPreview.fotos && imovelPreview.fotos.length > 0 ? (
-                        <img
-                          src={imovelPreview.fotos[0]}
-                          alt={imovelPreview.titulo}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <Home className="h-6 w-6 text-gray-400 dark:text-slate-500" />
-                        </div>
-                      )}
-                    </div>
-                    {/* Info do imóvel */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-foreground text-sm">
-                          {imovelPreview.referencia}
-                        </span>
-                        <Badge variant="outline" className="text-[10px]">
-                          {imovelPreview.tipoSimplificado}
-                        </Badge>
-                      </div>
-                      <p className="text-xs text-muted-foreground truncate mt-0.5">
-                        {imovelPreview.bairro} • {imovelPreview.cidade}
-                      </p>
-                      {imovelPreview.valor > 0 && (
-                        <p className="text-xs font-medium text-green-600 dark:text-green-400 mt-0.5">
-                          {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(imovelPreview.valor)}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-
-            {/* Título */}
-            <div className="space-y-2">
-              <Label htmlFor="titulo-atividade" className="text-sm font-semibold text-foreground flex items-center gap-2">
-                <span className="w-1.5 h-1.5 bg-red-500 rounded-full"></span>
-                Título
-              </Label>
-              <Input
-                id="titulo-atividade"
-                placeholder="Ex: Ligar para cliente"
-                value={novaAtividade.titulo}
-                onChange={(e) => setNovaAtividade({ ...novaAtividade, titulo: e.target.value })}
-                className="h-11"
-              />
-            </div>
-
-            {/* Tipo de Atividade */}
-            <div className="space-y-2">
-              <Label htmlFor="tipo-atividade" className="text-sm font-semibold text-foreground flex items-center gap-2">
-                <span className="w-1.5 h-1.5 bg-red-500 rounded-full"></span>
-                Atividade
-              </Label>
-              <div className="relative">
-                <select
-                  id="tipo-atividade"
-                  value={novaAtividade.tipo}
-                  onChange={(e) => setNovaAtividade({ ...novaAtividade, tipo: e.target.value as TipoAtividade })}
-                  className="h-11 w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gradient-to-r from-gray-50 to-white dark:from-gray-800 dark:to-gray-800/80 px-4 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 cursor-pointer transition-all duration-200 shadow-sm hover:shadow-lg appearance-none dark:border-slate-800 dark:text-slate-100"
-                >
-                  <option value="outro">🔧 Outro</option>
-                  <option value="visita_agendada">📅 Visita Agendada</option>
-                  <option value="visita_realizada">✅ Visita Realizada</option>
-                  <option value="visita_nao_realizada">❌ Visita Não Realizada</option>
-                  <option value="retornar_cliente">📞 Retornar para o Cliente</option>
-                  <option value="reuniao">👥 Reunião</option>
-                  <option value="tarefa">📋 Tarefa</option>
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none dark:text-slate-500" />
-              </div>
-            </div>
-
-            {/* Data e Horário */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label htmlFor="data-atividade" className="text-sm font-semibold text-foreground flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 bg-red-500 rounded-full"></span>
-                  Data
-                </Label>
-                <Input
-                  id="data-atividade"
-                  type="date"
-                  value={novaAtividade.data}
-                  onChange={(e) => setNovaAtividade({ ...novaAtividade, data: e.target.value })}
-                  className="h-11"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="horario-atividade" className="text-sm font-semibold text-foreground flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 bg-red-500 rounded-full"></span>
-                  Horário
-                </Label>
-                <Input
-                  id="horario-atividade"
-                  type="time"
-                  value={novaAtividade.horario}
-                  onChange={(e) => setNovaAtividade({ ...novaAtividade, horario: e.target.value })}
-                  className="h-11"
-                />
-              </div>
-            </div>
-
-            {/* Prioridade */}
-            <div className="space-y-2">
-              <Label htmlFor="prioridade-atividade" className="text-sm font-semibold text-foreground flex items-center gap-2">
-                <Flag className="h-3.5 w-3.5 text-gray-500 dark:text-slate-400" />
-                Prioridade
-              </Label>
-              <div className="relative">
-                <select
-                  id="prioridade-atividade"
-                  value={novaAtividade.prioridade}
-                  onChange={(e) => setNovaAtividade({ ...novaAtividade, prioridade: e.target.value as 'alta' | 'media' | 'baixa' })}
-                  className="h-11 w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gradient-to-r from-gray-50 to-white dark:from-gray-800 dark:to-gray-800/80 px-4 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 cursor-pointer transition-all duration-200 shadow-sm appearance-none dark:border-slate-800 dark:text-slate-100"
-                >
-                  <option value="baixa">🟢 Baixa</option>
-                  <option value="media">🟡 Média</option>
-                  <option value="alta">🔴 Alta</option>
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none dark:text-slate-500" />
-              </div>
-            </div>
-
-            {/* Descrição */}
-            <div className="space-y-2">
-              <Label htmlFor="descricao-atividade" className="text-sm font-semibold text-foreground">
-                Descrição (opcional)
-              </Label>
-              <Textarea
-                id="descricao-atividade"
-                placeholder="Detalhes adicionais sobre a atividade..."
-                value={novaAtividade.descricao}
-                onChange={(e) => setNovaAtividade({ ...novaAtividade, descricao: e.target.value })}
-                className="min-h-[80px] resize-none"
-              />
-            </div>
-
-            {/* Botões */}
-            <div className="flex gap-3 pt-2">
-              <Button
-                onClick={handleCriarAtividade}
-                disabled={salvandoAtividade}
-                className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white font-bold"
-              >
-                {salvandoAtividade ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Salvando...
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle className="h-4 w-4 mr-2" />
-                    Criar Atividade
-                  </>
-                )}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => setCriarAtividadeOpen(false)}
-                disabled={salvandoAtividade}
-              >
-                Cancelar
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
       {/* Modal de Envio de Recomendações */}
       {lead && mostrarRecomendacoes && (
         <EnviarRecomendacoesModal

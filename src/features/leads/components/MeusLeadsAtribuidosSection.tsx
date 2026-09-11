@@ -16,7 +16,6 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { useDebounce } from '../hooks/useDebounce';
-import { LeadDetailsModal } from './LeadDetailsModal';
 import { ClassificacaoDots } from './ClassificacaoBadge';
 import { filtrarPorAtuacao, opcoesFiltroBolsao } from '../utils/classificarLead';
 import { PreferenciasBadges } from './PreferenciasLead';
@@ -80,7 +79,6 @@ import {
 } from '../services/tenantBolsaoConfigService';
 import { useRegisterNovoActions } from '@/contexts/NovoActionsContext';
 import { triggerSantaAngelaSyncOnView } from '@/features/settings/services/santaAngelaIntegrationService';
-import type { BolsaoLead } from '../services/bolsaoService';
 import {
   Dialog,
   DialogContent,
@@ -652,8 +650,6 @@ export const MeusLeadsAtribuidosSection = ({
   
   const [meusLeads, setMeusLeads] = useState<KanbanLead[]>([]);
   const [loading, setLoading] = useState(true);
-  const [leadSelecionado, setLeadSelecionado] = useState<KanbanLead | null>(null);
-  const [modalAberto, setModalAberto] = useState(false);
   const [leadParaArquivar, setLeadParaArquivar] = useState<KanbanLead | null>(null);
   const [motivoArquivamento, setMotivoArquivamento] = useState('');
   const [motivoPredefinido, setMotivoPredefinido] = useState<string>('ja_fechou_outro');
@@ -1432,7 +1428,6 @@ const handleDragEnd = useCallback(async (event: DragEndEvent) => {
         </div>
       </div>
       
-      {/* Modal de Detalhes do Lead */}
       {/* Modal "Criar Lead" — abre sem sair do Kanban */}
       <CriarLeadQuickModal
         isOpen={createModalStage !== null}
@@ -1454,70 +1449,6 @@ const handleDragEnd = useCallback(async (event: DragEndEvent) => {
           setMotivoArquivamento('');
           setMotivoPredefinido('sem_interesse');
           setEditingLead(null);
-        }}
-      />
-
-      <LeadDetailsModal
-        lead={leadSelecionado as unknown as BolsaoLead | null}
-        isOpen={modalAberto}
-        onClose={() => {
-          setModalAberto(false);
-          setLeadSelecionado(null);
-        }}
-        onAssumirLead={async () => {
-          // Não permite assumir aqui pois já está atribuído
-        }}
-        onConfirmarAtendimento={async () => {
-          // Não usa mais este botão, agora é pelo drag and drop
-        }}
-        onArquivarLead={(lead) => {
-          setLeadParaArquivar(lead as unknown as KanbanLead);
-          setMotivoArquivamento('');
-          setModalAberto(false);
-        }}
-        isAssumindoLead={false}
-        isConfirmandoLead={false}
-        isAdmin={isAdmin}
-        isCorretor={isCorretor}
-        currentCorretor={scope.email?.split('@')[0] || ''}
-        onAtualizarStatusLead={async (leadId: number, novoStatus: string) => {
-          try {
-            const result = await atualizarStatusLeadCRM(String(leadId), novoStatus);
-            if (!result.success) {
-              throw new Error(result.message || 'Falha ao atualizar status');
-            }
-
-            // Atualizar estado local
-            setMeusLeads(prevLeads =>
-              prevLeads.map(l =>
-                l.id === String(leadId) ? { ...l, status: novoStatus } : l
-              )
-            );
-
-            // Sincroniza a proposta vinculada (se houver). Status pré-proposta
-            // (e.g. "Novos Leads") retorna null e o sync é pulado.
-            const propostaStage = leadStatusToPropostaStage(novoStatus);
-            if (propostaStage && tenantId && tenantId !== 'owner') {
-              try {
-                await syncProposalStageFromLead(String(leadId), tenantId, propostaStage, novoStatus);
-              } catch (syncErr) {
-                console.warn('Lead movido, mas proposta não sincronizou:', syncErr);
-              }
-            }
-
-            toast({
-              title: "✅ Status atualizado!",
-              description: `Lead movido para ${kanbanColumns.find(c => c.id === novoStatus)?.title || novoStatus}`,
-              className: "bg-green-500/10 border-green-500/50"
-            });
-          } catch (error) {
-            console.error('Erro ao atualizar status:', error);
-            toast({
-              title: "Erro ao atualizar status",
-              description: String(error),
-              variant: "destructive"
-            });
-          }
         }}
       />
 
