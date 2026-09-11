@@ -17,6 +17,7 @@ import { loadMetaEnv } from './metaConfig.js';
 import { createMetaGraphClient } from './graphClient.js';
 import { createMetaConfigResolver, CONFIG_TABLE } from './configResolver.js';
 import { normalizeLeadgen } from './normalizer.js';
+import { enriquecerComCodigoLancamento } from '../lancamentoAnuncios.js';
 import { getDeletedTenantIds } from '../utils/tenantSoftDelete.js';
 
 const noopLogger = { info() {}, warn() {}, error() {} };
@@ -138,10 +139,24 @@ export function createMetaLeadgenProcessor({
       return fetched.retriable ? retryOrFail(event, motivo) : fail(event, motivo);
     }
 
-    const payload = normalizeLeadgen(fetched.lead, {
+    const bruto = normalizeLeadgen(fetched.lead, {
       leadgenId: event.leadgen_id,
       pageId: event.page_id, formId: event.form_id, adId: event.ad_id,
     });
+
+    // O formulário da Meta NÃO carrega o imóvel: o anunciante amarra um
+    // formulário a um empreendimento ("[CAST] Reserva Castanheira"), e essa
+    // amarração só existe no nome, que nem chega aqui. Sem código, todo lead
+    // pago entrava com property_code nulo e classificação `indefinido`.
+    // Reusa o de-para do ZAP (`lancamento_anuncios`) com o form_id no lugar do
+    // originListingId — mesma pergunta ("que anúncio é este?"), e de brinde o
+    // trigger de classificação já reconhece o código como lançamento. Campanha
+    // nova é um INSERT na tabela, sem deploy.
+    // Falha aberta, como no ZAP: erro de banco devolve null e o lead entra sem
+    // código. Enriquecimento não pode custar um lead.
+    const payload = await enriquecerComCodigoLancamento(
+      supabase, event.tenant_id, { originListingId: event.form_id }, bruto,
+    );
 
     let resp;
     try {

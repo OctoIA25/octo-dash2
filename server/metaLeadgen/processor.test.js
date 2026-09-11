@@ -25,6 +25,7 @@ function fakeSupabase({
   apiKey = 'octo_key_123', apiKeyError = null,
   pending = [], existingLead = false, leadCheckError = null,
   activeTenants = ['t1'], deletedTenants = [], configError = null,
+  lancamentoCodigo = null, lancamentoError = null,
 } = {}) {
   const updates = [];
   const tabelas = [];
@@ -48,6 +49,14 @@ function fakeSupabase({
         const q = {
           select() { return q; },
           eq: async () => ({ data: activeTenants.map((id) => ({ tenant_id: id })), error: configError }),
+        };
+        return q;
+      }
+      // De-para form_id -> código do lançamento (lancamentoAnuncios.js).
+      if (table === 'lancamento_anuncios') {
+        const q = {
+          select() { return q; }, eq() { return q; },
+          maybeSingle: async () => ({ data: lancamentoCodigo ? { codigo: lancamentoCodigo } : null, error: lancamentoError }),
         };
         return q;
       }
@@ -116,6 +125,31 @@ describe('processEvent', () => {
     expect(body.phone).toBe('+5511999998888');
     expect(body.raw_data.meta.leadgen_id).toBe('lg-1');
     expect(body.source).toBeUndefined();
+  });
+
+  // O formulário da Meta não carrega o imóvel: sem o de-para o lead pago entra
+  // com property_code nulo e classificação `indefinido`.
+  it('carimba o lançamento do de-para pelo form_id', async () => {
+    const supabase = fakeSupabase({ lancamentoCodigo: 'RESERVA CASTANHEIRA' });
+    const fetchImpl = vi.fn(async () => ({ ok: true, status: 201, json: async () => ({}) }));
+    await make({ supabase, fetchImpl }).processEvent(EVENT);
+    const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
+    expect(body.property_code).toBe('RESERVA CASTANHEIRA');
+    expect(body.interest_reference).toBe('RESERVA CASTANHEIRA');
+    // Lead de lançamento não pode cair na roleta de imóvel pronto.
+    expect(body.atuacao).toBe('lancamentos');
+  });
+
+  // Falha aberta: formulário fora do de-para (ou erro de banco) não pode
+  // custar o lead — ele entra sem código, como entrava antes.
+  it('sem de-para, o lead entra sem código', async () => {
+    const supabase = fakeSupabase({ lancamentoError: { code: '42P01', message: 'relation does not exist' } });
+    const fetchImpl = vi.fn(async () => ({ ok: true, status: 201, json: async () => ({}) }));
+    const r = await make({ supabase, fetchImpl }).processEvent(EVENT);
+    const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
+    expect(r.status).toBe('done');
+    expect(body.property_code).toBeUndefined();
+    expect(body.name).toBe('Maria');
   });
 
   it('erro permanente do Graph marca failed sem retry', async () => {
