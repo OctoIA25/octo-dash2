@@ -19,6 +19,7 @@ import { Lock } from 'lucide-react';
 import { getDailySessionId } from '@/utils/snowflakeId';
 import { UsuariosSection } from '@/components/sections/UsuariosSection';
 import { DEFAULT_BOLSAO_CONFIG, TenantBolsaoConfig, fetchTenantBolsaoConfig, saveTenantBolsaoConfig } from '@/features/leads/services/tenantBolsaoConfigService';
+import { updateMemberWhatsappPhones } from '@/features/corretores/services/tenantMembersService';
 import {
   TenantLeadLimitConfig,
   DEFAULT_LEAD_LIMIT_CONFIG,
@@ -100,6 +101,35 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isSavingPassword, setIsSavingPassword] = useState(false);
   const [isSavingOwnProfile, setIsSavingOwnProfile] = useState(false);
+
+  // O Telefone do Perfil é o MESMO número de Gestão de Equipe
+  // (tenant_memberships.permissions.whatsapp_phones). O campo era decorativo:
+  // nunca lia nem gravava nada, então o que o admin setava lá nunca aparecia aqui.
+  const [membershipId, setMembershipId] = useState<string | null>(null);
+  const [phonesOriginais, setPhonesOriginais] = useState<string[]>([]);
+
+  useEffect(() => {
+    const tenantId = user?.tenantId;
+    if (!user?.id || !tenantId || tenantId === 'owner') return;
+    let ativo = true;
+    (async () => {
+      // Caminho JSON em vez do jsonb inteiro: permissions.photo pode ser um data-URI de MBs.
+      const { data, error } = await supabase
+        .from('tenant_memberships')
+        .select('id, phones:permissions->whatsapp_phones')
+        .eq('tenant_id', tenantId)
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (!ativo || error || !data) return;
+      const phones = Array.isArray((data as any).phones)
+        ? ((data as any).phones as unknown[]).filter((p): p is string => typeof p === 'string')
+        : [];
+      setMembershipId((data as any).id);
+      setPhonesOriginais(phones);
+      if (phones[0]) setProfileData((prev) => ({ ...prev, phone: phones[0] }));
+    })();
+    return () => { ativo = false; };
+  }, [user?.id, user?.tenantId]);
 
   // Estados para configurações gerais
   const [generalSettings, setGeneralSettings] = useState({
@@ -205,6 +235,22 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
           toast({ title: 'Erro ao atualizar email', description: error.message, variant: 'destructive', duration: 4000 });
           return;
         }
+      }
+
+      const phone = profileData.phone.trim();
+      if (membershipId && phone !== (phonesOriginais[0] ?? '')) {
+        if (phone && phone.replace(/\D/g, '').length < 10) {
+          toast({ title: 'Telefone incompleto', description: 'Use DDD + número.', variant: 'destructive', duration: 3000 });
+          return;
+        }
+        // Preserva os demais números do membro — o Perfil só edita o primeiro.
+        const novos = [phone, ...phonesOriginais.slice(1)].filter(Boolean);
+        const result = await updateMemberWhatsappPhones(membershipId, novos);
+        if (!result.success) {
+          toast({ title: 'Erro ao salvar telefone', description: result.error, variant: 'destructive', duration: 4000 });
+          return;
+        }
+        setPhonesOriginais(novos);
       }
 
       toast({
