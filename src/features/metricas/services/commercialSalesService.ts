@@ -679,6 +679,57 @@ export async function ratearComissaoDoCorretor(
 }
 
 /**
+ * Rateio Lotus de um CONJUNTO de vendas — agrupa por corretor, rateia cada bolo
+ * com o mesmo motor do ranking e soma. Uma leitura de resolver só, em vez de
+ * uma por corretor.
+ *
+ * O rateio NÃO é linear no total do tenant (cada nível tem sua tabela), então
+ * não dá para ratear a soma: tem que ser por corretor e somar depois.
+ *
+ * `semRateio` conta os corretores que o motor bloqueou (nível ou Líder Direto
+ * não cadastrado). A comissão deles fica de fora dos dois totais — a tela
+ * precisa dizer que o número é parcial, como o rodapé do ranking já faz.
+ *
+ * `resolverIndisponivel` avisa que a leitura de membros falhou. Aí TODO mundo
+ * cai em `semRateio` sem que ninguém esteja de fato sem cadastro, e a tela tem
+ * que dizer outra coisa — senão manda o gestor procurar um erro que não existe.
+ */
+export async function ratearComissaoDasVendas(
+  tenantId: string,
+  vendas: VendaAssinada[],
+): Promise<{ corretor: number; imobiliaria: number; semRateio: number; resolverIndisponivel: boolean }> {
+  const resolver = await buscarResolverUsuariosComerciais(tenantId);
+
+  // Mesma pré-resolução do ranking: venda sem `agent_user_id` mas com nome que
+  // casa com um membro entra no bolo da mesma pessoa, senão o rateio sai por
+  // duas linhas e o nível aplicado é o errado.
+  const vendasResolvidas = vendas.map((venda) => ({
+    ...venda,
+    agentUserId:
+      venda.agentUserId || resolver.byName.get(normalizeCommercialKey(venda.agentNome))?.userId || null,
+  }));
+
+  return agruparPorCorretor(vendasResolvidas).reduce(
+    (acc, corretor) => {
+      const match =
+        (corretor.agentUserId ? resolver.byId.get(corretor.agentUserId) : undefined) ||
+        resolver.byName.get(normalizeCommercialKey(corretor.agentNome)) ||
+        null;
+      const rateio = ratearComissao(corretor.vgc, match, resolver.byId);
+
+      return rateio
+        ? {
+            ...acc,
+            corretor: acc.corretor + rateio.corretor,
+            imobiliaria: acc.imobiliaria + rateio.imobiliaria,
+          }
+        : { ...acc, semRateio: acc.semRateio + 1 };
+    },
+    { corretor: 0, imobiliaria: 0, semRateio: 0, resolverIndisponivel: resolver.indisponivel },
+  );
+}
+
+/**
  * Ranking de corretores pela comissão das vendas assinadas.
  *
  * Ordenado pela parte DO CORRETOR (rateio Lotus), como a aba RANKING da
@@ -840,12 +891,55 @@ function normalizeCommercialKey(value: unknown): string {
     .replace(/\s+/g, ' ');
 }
 
-async function buscarResolverUsuariosComerciais(tenantId: string) {
-  const empty = {
+/**
+ * Cache curto do resolver de usuários.
+ *
+ * `tenant_memberships` é lido com `select('*')` e vem estourando o statement
+ * timeout do Postgres (57014) quando a mesma tela pede rateio por vários
+ * caminhos ao mesmo tempo — ranking, card do líquido e métricas individuais
+ * disparavam uma leitura cada. Guardar a PROMISE dedupa as concorrentes; 60s é
+ * curto o bastante para uma edição de nível/Líder Direto aparecer no próximo
+ * refresh da tela.
+ *
+ * ponytail: cache em memória do módulo. `limparCacheResolverComercial()` é a
+ * saída de emergência — a Gestão de Equipe pode chamá-lo depois de salvar
+ * nível/líder se 60s de dado velho incomodar.
+ */
+const RESOLVER_TTL_MS = 60_000;
+const resolverCache = new Map<string, { em: number; promessa: Promise<ResolverUsuariosComerciais> }>();
+
+type ResolverUsuariosComerciais = Awaited<ReturnType<typeof carregarResolverUsuariosComerciais>>;
+
+/** Descarta o cache do resolver (edição de nível/Líder Direto, e os testes). */
+export function limparCacheResolverComercial() {
+  resolverCache.clear();
+}
+
+function buscarResolverUsuariosComerciais(tenantId: string): Promise<ResolverUsuariosComerciais> {
+  const cacheado = resolverCache.get(tenantId);
+  if (cacheado && Date.now() - cacheado.em < RESOLVER_TTL_MS) return cacheado.promessa;
+
+  const promessa = carregarResolverUsuariosComerciais(tenantId);
+  // Falha não fica cacheada: a leitura de membros é fail-soft (devolve resolver
+  // VAZIO quando dá timeout), e cachear isso seria 60s de tela sem rateio.
+  promessa
+    .then((resolver) => { if (resolver.byId.size === 0) resolverCache.delete(tenantId); })
+    .catch(() => resolverCache.delete(tenantId));
+  resolverCache.set(tenantId, { em: Date.now(), promessa });
+
+  return promessa;
+}
+
+async function carregarResolverUsuariosComerciais(tenantId: string) {
+  // `indisponivel` separa os dois vazios que a tela precisa contar de formas
+  // diferentes: "o tenant não tem membro cadastrado" × "a leitura de membros
+  // falhou". Sem isso, uma falha de rede/RLS vira acusação de cadastro.
+  const vazio = (indisponivel: boolean) => ({
     byEmail: new Map<string, CommercialSalesUserMatch>(),
     byName: new Map<string, CommercialSalesUserMatch>(),
     byId: new Map<string, CommercialSalesUserMatch>(),
-  };
+    indisponivel,
+  });
 
   const { data: memberships, error: membershipsError } = await supabase
     .from('tenant_memberships' as any)
@@ -854,14 +948,14 @@ async function buscarResolverUsuariosComerciais(tenantId: string) {
 
   if (membershipsError) {
     console.warn('[commercialSalesService] Erro ao buscar membros do tenant:', membershipsError);
-    return empty;
+    return vazio(true);
   }
 
   const memberRows = ((memberships || []) as CommercialSalesTenantMember[])
     .filter((member) => member.user_id && member.status !== 'inactive');
   const userIds = [...new Set(memberRows.map((member) => member.user_id))];
 
-  if (userIds.length === 0) return empty;
+  if (userIds.length === 0) return vazio(false);
 
   const { data: profiles, error: profilesError } = await supabase
     .from('user_profiles' as any)
@@ -919,7 +1013,7 @@ async function buscarResolverUsuariosComerciais(tenantId: string) {
     addAlias(byEmail, member.user_email, match);
   });
 
-  return { byEmail, byName, byId };
+  return { byEmail, byName, byId, indisponivel: false };
 }
 
 function resolverUsuarioVendaComercial(

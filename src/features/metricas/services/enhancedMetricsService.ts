@@ -11,8 +11,6 @@ import {
   calcularProgressoVisual,
   formatarVariacaoPercentual,
   calcularVariacoesKPIs,
-  calcularTaxaConversao,
-  calcularTaxaAtendimento,
   type DistribuicaoPercentual,
   type VariacoesPercentuais as VariacoesPercentuaisType
 } from './percentageService';
@@ -228,79 +226,6 @@ export async function buscarEvolucaoAtivacoes(tenantId: string): Promise<Evoluca
 // Buscar métricas gerais (compatível com service existente)
 export async function buscarMetricasGerais() {
   return buscarMetricasGeraisCentral();
-}
-
-// Buscar métricas de conversão em tempo real
-export async function buscarMetricasConversao(tenantId: string) {
-  try {
-    const { data: leads, error } = await supabase
-      .from('leads')
-      .select('etapa_atual, created_at, assigned_agent_name, first_response_at, final_sale_value')
-      .eq('tenant_id', tenantId)
-      .is('archived_at', null);
-
-    if (error) throw error;
-
-    if (!leads || leads.length === 0) {
-      return {
-        taxaConversaoGeral: 0,
-        taxaAtendimento: 0,
-        totalLeads: 0,
-        leadsConvertidos: 0,
-        leadsAtendidos: 0,
-        conversaoPorEtapa: []
-      };
-    }
-
-    const totalLeads = leads.length;
-    
-    // Definir estágios do funil
-    const estagios = [
-      { nome: 'Lead', condicao: (l: any) => true },
-      { nome: 'Interação', condicao: (l: any) => l.first_response_at || l.etapa_atual?.includes('Interação') },
-      { nome: 'Reunião', condicao: (l: any) => l.etapa_atual?.includes('Reunião') || l.etapa_atual?.includes('Visita') },
-      { nome: 'Venda', condicao: (l: any) => l.etapa_atual?.includes('Venda') || l.etapa_atual?.includes('Concluído') || l.final_sale_value > 0 }
-    ];
-
-    // Calcular quantidade por estágio
-    const conversaoPorEtapa = estagios.map(estagio => {
-      const quantidade = leads.filter(estagio.condicao).length;
-      const taxaConversao = estagio.nome === 'Lead' ? 100 : calcularTaxaConversao(quantidade, totalLeads);
-      
-      return {
-        etapa: estagio.nome,
-        quantidade,
-        taxa: taxaConversao
-      };
-    });
-
-    // Calcular métricas gerais
-    const leadsConvertidos = conversaoPorEtapa[3]?.quantidade || 0; // Vendas
-    const leadsAtendidos = conversaoPorEtapa[1]?.quantidade || 0; // Interações
-    
-    const taxaConversaoGeral = calcularTaxaConversao(leadsConvertidos, totalLeads);
-    const taxaAtendimento = calcularTaxaAtendimento(leadsAtendidos, totalLeads);
-
-    return {
-      taxaConversaoGeral,
-      taxaAtendimento,
-      totalLeads,
-      leadsConvertidos,
-      leadsAtendidos,
-      conversaoPorEtapa
-    };
-
-  } catch (error) {
-    console.error('Erro ao buscar métricas de conversão:', error);
-    return {
-      taxaConversaoGeral: 0,
-      taxaAtendimento: 0,
-      totalLeads: 0,
-      leadsConvertidos: 0,
-      leadsAtendidos: 0,
-      conversaoPorEtapa: []
-    };
-  }
 }
 
 // Buscar todas as métricas de corretores (compatibilidade)
