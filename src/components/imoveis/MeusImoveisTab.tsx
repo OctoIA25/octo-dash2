@@ -452,15 +452,19 @@ export const MeusImoveisTab = ({ allImoveis, onViewDetails, onPropertyCreated }:
 
   // Filtrar imóveis que o corretor é responsável (XML + Locais)
   const imoveisBase = useMemo(() => {
-    const isOwner = systemRole?.toLowerCase() === 'owner';
     const meusCodigos = new Set(assignments.map(a => a.property_code.toUpperCase()));
 
-    // Owner vê todos os imóveis do tenant, mesmo sem registro em imoveis_corretores.
-    const imoveisXml = isOwner
+    // Gestão vê todos os imóveis do tenant, mesmo sem registro em imoveis_corretores
+    // — o MESMO `isManager` que loadAssignments usa para carregar as atribuições do
+    // tenant inteiro. Enquanto o gate daqui era só `owner`, a aba ficava vazia em
+    // tenant sem XML: `imoveis_corretores` só é escrita pelo sync do XML, então sem
+    // XML nenhum código é atribuído e a interseção descartava todo o catálogo —
+    // inclusive os imóveis que a própria gestora cadastrou à mão.
+    const imoveisXml = isManager
       ? allImoveis
       : allImoveis.filter(imovel => meusCodigos.has(imovel.referencia?.toUpperCase()));
 
-    const imoveisLocaisConvertidos = (isOwner
+    const imoveisLocaisConvertidos = (isManager
       ? imoveisLocais
       : imoveisLocais.filter(local => meusCodigos.has(local.codigo_imovel.toUpperCase()))
     ).map(convertLocalToImovel);
@@ -475,7 +479,7 @@ export const MeusImoveisTab = ({ allImoveis, onViewDetails, onPropertyCreated }:
     
     // Combinar: XML primeiro, depois locais (que não duplicam)
     return [...imoveisXml, ...imoveisLocaisSemDuplicata];
-  }, [allImoveis, assignments, imoveisLocais, systemRole]);
+  }, [allImoveis, assignments, imoveisLocais, isManager]);
 
   const meusImoveis = useMemo(() => {
     let filtered = imoveisBase;
@@ -652,7 +656,9 @@ export const MeusImoveisTab = ({ allImoveis, onViewDetails, onPropertyCreated }:
         <div>
           <h2 className="text-xl font-semibold text-text-primary">Prontos</h2>
           <p className="text-text-secondary text-sm">
-            {assignments.length} código{assignments.length !== 1 ? 's' : ''} atribuído{assignments.length !== 1 ? 's' : ''} a você
+            {isManager
+              ? `${imoveisBase.length} imóve${imoveisBase.length !== 1 ? 'is' : 'l'} da imobiliária`
+              : `${assignments.length} código${assignments.length !== 1 ? 's' : ''} atribuído${assignments.length !== 1 ? 's' : ''} a você`}
           </p>
         </div>
         <div className="flex gap-2">
