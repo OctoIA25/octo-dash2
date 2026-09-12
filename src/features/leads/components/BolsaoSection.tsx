@@ -272,20 +272,21 @@ const BolsaoSectionContent = (props: BolsaoSectionProps) => {
 
   useEffect(() => { carregarAnunciosPendentes(); }, [carregarAnunciosPendentes]);
 
-  // O card do Bolsão não carrega o id do anúncio — carrega o `codigo`, que para
-  // estes leads é o código do portal ('110D1GD'), único por anúncio. É por ele
-  // que o aviso encontra o lead.
-  const anuncioPorCodigo = useMemo(() => {
+  // O card do Bolsão não carrega o id do anúncio, e o CÓDIGO não serve de chave:
+  // o lead de anúncio desconhecido entra sem código (semCodigoDoCatalogo) e o do
+  // Meta nunca teve nenhum — casar por código deixava 7 leads pagos sem aviso.
+  // O servidor devolve quais leads são de cada anúncio; a chave é o id do lead.
+  const anuncioPorLead = useMemo(() => {
     const mapa = new Map<string, AnuncioPendente>();
     for (const anuncio of anunciosPendentes) {
-      if (anuncio.codigoNoPortal) mapa.set(anuncio.codigoNoPortal.toUpperCase(), anuncio);
+      for (const leadId of anuncio.leadIds || []) mapa.set(leadId, anuncio);
     }
     return mapa;
   }, [anunciosPendentes]);
 
   const anuncioDoLead = useCallback(
-    (codigo: string | null) => (codigo ? anuncioPorCodigo.get(codigo.trim().toUpperCase()) ?? null : null),
-    [anuncioPorCodigo],
+    (lead: BolsaoLead) => (lead.source_lead_id ? anuncioPorLead.get(lead.source_lead_id) ?? null : null),
+    [anuncioPorLead],
   );
 
   const confirmarAmarracao = useCallback(async (codigo: string) => {
@@ -1478,10 +1479,16 @@ const BolsaoSectionContent = (props: BolsaoSectionProps) => {
               <LeadMiniCard
                 key={lead.id}
                 lead={lead}
-                anuncioNaoIdentificado={Boolean(anuncioDoLead(lead.codigo))}
+                // Aqui o aviso vem SÓ da lista do servidor, nunca de "não tem
+                // código": `ocultarImovelDoBolsao` zera o `codigo` do corretor
+                // de propósito (senão o Bolsão vira garimpo), e a heurística
+                // acusaria todo lead de portal como não identificado. Nas telas
+                // onde o código aparece de verdade — Meus Leads, tabela de
+                // gestão — quem decide é `anuncioNaoIdentificado`.
+                anuncioNaoIdentificado={Boolean(anuncioDoLead(lead))}
                 onIdentificarAnuncio={
-                  canManageBolsaoConfig && anuncioDoLead(lead.codigo)
-                    ? () => setAnuncioSelecionado(anuncioDoLead(lead.codigo))
+                  canManageBolsaoConfig && anuncioDoLead(lead)
+                    ? () => setAnuncioSelecionado(anuncioDoLead(lead))
                     : undefined
                 }
                 onClick={() => {

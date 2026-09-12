@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { ClassificacaoBadge } from "./ClassificacaoBadge";
+import { anuncioNaoIdentificado } from "../utils/anuncioDoPortal";
 
 // 📋 Consulte context.md para: estrutura do Supabase, campos de leads, cores de status
 interface LeadsTableProps {
@@ -300,22 +301,17 @@ export const LeadsTable = ({ leads, newLeadsCount = 0, showGetAllButton = false,
     navigate(url);
   };
 
-  // Função para filtrar código do imóvel - apenas os que têm números
-  const getValidPropertyCode = (codigo?: string) => {
-    if (!codigo || codigo.trim() === '') return null;
-    
-    // Verificar se contém pelo menos um número
-    const hasNumber = /\d/.test(codigo);
-    
-    // Verificar se não é apenas uma string (como "bairro")
-    const isOnlyString = /^[a-zA-ZÀ-ÿ\s]+$/.test(codigo);
-    
-    if (hasNumber && !isOnlyString) {
-      return codigo.trim();
-    }
-    
-    return null;
-  };
+  /**
+   * O código do imóvel do lead, ou null.
+   *
+   * Havia aqui um palpite de FORMATO ("tem dígito e não é só letra") que existia
+   * para barrar o lixo que o portal mandava — e errava dos dois lados: deixava
+   * passar 'I7V1GD' (id do anúncio, virava link para uma página vazia) e barrava
+   * 'RESERVA CASTANHEIRA', que é lançamento de verdade. Desde
+   * server/lancamentoAnuncios.js (`semCodigoDoCatalogo`) o que chega em
+   * `property_code` já é código nosso, e não há mais o que adivinhar.
+   */
+  const getPropertyCode = (codigo?: string) => codigo?.trim() || null;
 
   // Função para verificar se tem visita agendada
   const hasScheduledVisit = (lead: ProcessedLead) => {
@@ -492,7 +488,16 @@ export const LeadsTable = ({ leads, newLeadsCount = 0, showGetAllButton = false,
 
                   {/* Imóvel */}
                   <td className="py-4 px-4 text-center">
-                    {getValidPropertyCode(lead.codigo_imovel) ? (
+                    {anuncioNaoIdentificado(lead) ? (
+                      // Lead de portal sem código: o anúncio não foi
+                      // identificado. Um '-' aqui esconderia a pendência.
+                      <span
+                        className="text-xs text-amber-600 dark:text-amber-400"
+                        title="O anúncio que gerou este lead não foi publicado pela dash. Identifique em Leads › Bolsão."
+                      >
+                        Não identificado
+                      </span>
+                    ) : getPropertyCode(lead.codigo_imovel) ? (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -502,17 +507,15 @@ export const LeadsTable = ({ leads, newLeadsCount = 0, showGetAllButton = false,
                           navigate(`/imovel/${lead.codigo_imovel}`);
                         }}
                         className="h-auto px-2 py-1 text-xs text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 font-medium group"
-                        title={`Ver imóvel ${getValidPropertyCode(lead.codigo_imovel)}`}
+                        title={`Ver imóvel ${getPropertyCode(lead.codigo_imovel)}`}
                       >
                         <span className="font-mono mr-1">
-                          {getValidPropertyCode(lead.codigo_imovel)}
+                          {getPropertyCode(lead.codigo_imovel)}
                         </span>
                         <ExternalLink className="h-3 w-3 opacity-50 group-hover:opacity-100 transition-opacity" />
                       </Button>
                     ) : (
-                      <span className="text-xs font-mono text-gray-500 dark:text-slate-400">
-                        {lead.codigo_imovel || '-'}
-                      </span>
+                      <span className="text-xs font-mono text-gray-500 dark:text-slate-400">-</span>
                     )}
                   </td>
                   

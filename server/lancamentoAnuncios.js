@@ -17,7 +17,12 @@
  * Fica fora das rotas de propósito: proxy-production.js e api-server.js têm
  * cópias do normalizador do ZAP, e divergência entre as duas já custou caro
  * neste repo. Mesma razão de existir de leadClassification.js.
+ *
+ * Este é também o único funil por onde ZAP, Grupo OLX e Meta Lead Ads passam, e
+ * por isso é aqui que se decide o que NÃO é código nosso — ver
+ * `semCodigoDoCatalogo` no fim do arquivo.
  */
+import { notificarUmaVez } from './notificacoes.js';
 
 /** `originListingId` no topo do body é como o Grupo OLX manda; as outras duas formas são defensivas. */
 export const extrairOriginListingId = (body = {}) => {
@@ -73,10 +78,10 @@ export async function resolverCodigoLancamento(supabase, tenantId, body) {
  * `eh_codigo_catalogo` que a classificação usa, para não existirem duas noções
  * de "está no catálogo" divergindo em silêncio.
  *
- * FALHA FECHADA, ao contrário do lookup do de-para: erro aqui devolve `false` e
- * o lead segue com `atuacao = 'lancamentos'`, que é o comportamento que existia
- * antes desta mudança. Errar para o lado do status quo é mais barato que soltar
- * um lead de lançamento na roleta de imóvel pronto.
+ * Três respostas, não duas: `true`, `false` e `null` para "não deu para saber".
+ * Quem chama escolhe o lado seguro, e os dois lados são opostos — a `atuacao`
+ * erra para lançamento (status quo), o descarte do código erra para manter o
+ * código (nunca apagar por causa de um erro de banco).
  */
 async function ehCodigoDoCatalogo(supabase, tenantId, codigo) {
   const { data, error } = await supabase.rpc('eh_codigo_catalogo', {
@@ -88,7 +93,7 @@ async function ehCodigoDoCatalogo(supabase, tenantId, codigo) {
     console.error('❌ [lancamentoAnuncios] eh_codigo_catalogo falhou:', {
       code: error.code, message: error.message, details: error.details, hint: error.hint,
     });
-    return false;
+    return null;
   }
 
   return data === true;
@@ -108,12 +113,12 @@ async function ehCodigoDoCatalogo(supabase, tenantId, codigo) {
  */
 export async function enriquecerComCodigoLancamento(supabase, tenantId, rawBody, leadNormalizado) {
   const codigo = await resolverCodigoLancamento(supabase, tenantId, rawBody);
-  if (!codigo) return leadNormalizado;
+  if (!codigo) return semCodigoDoCatalogo(supabase, tenantId, rawBody, leadNormalizado);
 
   const doCatalogo = await ehCodigoDoCatalogo(supabase, tenantId, codigo);
   console.log(
     `🏗️  Anúncio identificado: ${extrairOriginListingId(rawBody)} → ${codigo}`
-    + ` (${doCatalogo ? 'imóvel do catálogo' : 'lançamento'})`,
+    + ` (${doCatalogo === true ? 'imóvel do catálogo' : 'lançamento'})`,
   );
 
   return {
@@ -121,6 +126,82 @@ export async function enriquecerComCodigoLancamento(supabase, tenantId, rawBody,
     property_code: codigo,
     interest_reference: codigo,
     interest_type: 'property',
-    ...(doCatalogo ? {} : { atuacao: 'lancamentos' }),
+    ...(doCatalogo === true ? {} : { atuacao: 'lancamentos' }),
   };
+}
+
+/**
+ * O de-para não conhece o anúncio. Aqui se decide o que fazer com o código que o
+ * PORTAL mandou — e a resposta é: só vale se for código nosso.
+ *
+ * POR QUE
+ * `clientListingId` é o id do anúncio no publicador. Quando o anúncio saiu do
+ * nosso feed VRSync ele É o `codigo_imovel` (AP679, CA0056). Quando foi publicado
+ * por fora, o portal inventa um id ('I7V1GD') que não é imóvel nenhum — e ele ia
+ * para `leads.property_code` como se fosse. O corretor via um código que não
+ * existe, clicava e caía numa página em branco; o termo de comissão imprimia a
+ * "unidade"; o relatório contava um imóvel fantasma.
+ *
+ * Sem código, o lead diz a verdade — "não sabemos qual imóvel é" — e a tela de
+ * pendência do Bolsão continua sabendo qual anúncio é, porque lê o id do anúncio
+ * de `raw_data`, não daqui.
+ *
+ * NÃO ADIVINHA NADA (mesma regra da 78b153b): não há tentativa de casar endereço
+ * nem bairro. Ou o código é do catálogo, ou o lead entra sem código.
+ *
+ * FALHA ABERTA em tudo: erro de banco mantém o código como estava, e o aviso ao
+ * admin nunca derruba a entrada do lead.
+ */
+async function semCodigoDoCatalogo(supabase, tenantId, rawBody, leadNormalizado) {
+  // Código explícito no body vence, pela mesma razão que já vence o de-para:
+  // quem manda `property_code` sabe o que quer.
+  if (!tenantId || temCodigoExplicito(rawBody)) return leadNormalizado;
+
+  const doPortal = String(leadNormalizado?.property_code ?? '').trim();
+  let lead = leadNormalizado;
+
+  if (doPortal) {
+    // `false` explícito, não `!doCatalogo`: `null` é "não deu para saber", e um
+    // erro de banco não pode apagar o código de um imóvel que existe.
+    if ((await ehCodigoDoCatalogo(supabase, tenantId, doPortal)) !== false) return leadNormalizado;
+    console.log(`🚫 Código do portal descartado: '${doPortal}' não é imóvel deste tenant`);
+    lead = { ...leadNormalizado, property_code: null, interest_reference: null, interest_type: null };
+  }
+
+  await avisarAnuncioDesconhecido(supabase, tenantId, rawBody, lead);
+  return lead;
+}
+
+/**
+ * Um sino para o admin quando aparece anúncio que ninguém identificou.
+ *
+ * Uma vez por (tenant, anúncio) — os 8 anúncios abertos da Lótus somam 21 leads,
+ * e 21 sinos seriam ruído, não aviso. A dedupe é a `chave` em metadata, a mesma
+ * mecânica dos jobs de recrutamento (server/notificacoes.js).
+ *
+ * Sem o id do anúncio não há o que avisar nem como deduplicar: lead de portal
+ * sem anúncio nenhum é outro problema, e um sino por lead seria exatamente o
+ * ruído que a chave existe para evitar.
+ */
+async function avisarAnuncioDesconhecido(supabase, tenantId, rawBody, lead) {
+  const anuncio = extrairOriginListingId(rawBody);
+  if (!anuncio) return;
+
+  const portal = lead?.portal || lead?.source || 'portal';
+  try {
+    const avisou = await notificarUmaVez(supabase, {
+      tenantId,
+      chave: `anuncio_desconhecido:${anuncio}`,
+      titulo: 'Anúncio sem imóvel identificado',
+      corpo: `O anúncio ${anuncio} (${portal}) mandou lead e não bate com nenhum imóvel do cadastro.`
+        + ' Identifique em Leads › Bolsão para os próximos já entrarem certos.',
+      linkType: 'bolsao',
+      linkId: anuncio,
+      extras: { origin_listing_id: anuncio, portal },
+    });
+    if (avisou) console.log(`🔔 Anúncio desconhecido avisado ao admin: ${anuncio} (${portal})`);
+  } catch (err) {
+    // Aviso não pode custar um lead. Mesma regra do lookup do de-para.
+    console.error('❌ [lancamentoAnuncios] aviso de anúncio desconhecido falhou:', err?.message);
+  }
 }

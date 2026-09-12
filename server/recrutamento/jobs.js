@@ -18,6 +18,7 @@
  * chave em metadata e não é repetido.
  */
 import { recordHeartbeat } from '../observability/heartbeat.js';
+import { notificarUmaVez } from '../notificacoes.js';
 
 const MOTIVO_PRAZO = 'nao_pagou_matricula';
 const MOTIVO_SUMIU = 'sumiu';
@@ -27,49 +28,25 @@ const LOTE = 200;
 const isoDoDia = (now) => new Date(now).toISOString().slice(0, 10);
 const horasAtras = (now, h) => new Date(now() - h * 3_600_000).toISOString();
 
-/** Admin/owner do tenant — quem toca recrutamento hoje. */
-async function destinatarios(supabase, tenantId) {
-  const { data, error } = await supabase
-    .from('tenant_memberships')
-    .select('user_id')
-    .eq('tenant_id', tenantId)
-    .in('role', ['admin', 'owner']);
-  if (error) throw error;
-  return (data || []).map((m) => m.user_id).filter(Boolean);
-}
-
 /**
  * Notificação in-app, uma vez só por chave. A chave é o que impede o job de
  * 5 minutos de avisar a mesma coisa 288 vezes por dia.
+ *
+ * O par destinatário+dedupe mora em ../notificacoes.js desde que a entrada de
+ * lead de portal passou a precisar do mesmo. Aqui fica só o que é do
+ * recrutamento: o link para o candidato e o nome do job em metadata.
  */
-async function notificar(supabase, { tenantId, chave, titulo, corpo, candidatoId, extras = {} }) {
-  const { data: jaExiste, error: erroBusca } = await supabase
-    .from('notifications')
-    .select('id')
-    .eq('tenant_id', tenantId)
-    .contains('metadata', { chave })
-    .limit(1);
-  if (erroBusca) throw erroBusca;
-  if (jaExiste && jaExiste.length > 0) return false;
-
-  const destinos = await destinatarios(supabase, tenantId);
-  if (destinos.length === 0) return false;
-
-  const { error } = await supabase.from('notifications').insert(
-    destinos.map((userId) => ({
-      tenant_id: tenantId,
-      user_id: userId,
-      title: titulo,
-      body: corpo,
-      type: 'warning',
-      link_type: 'recrutamento',
-      link_id: candidatoId,
-      metadata: { chave, job: chave.split(':')[0], ...extras },
-    })),
-  );
-  if (error) throw error;
-  return true;
-}
+const notificar = (supabase, { tenantId, chave, titulo, corpo, candidatoId, extras = {} }) =>
+  notificarUmaVez(supabase, {
+    tenantId,
+    chave,
+    titulo,
+    corpo,
+    tipo: 'warning',
+    linkType: 'recrutamento',
+    linkId: candidatoId,
+    extras: { job: chave.split(':')[0], ...extras },
+  });
 
 /** 1 · SLA de primeiro contato: candidatura sem contato há mais de 1 hora. */
 export async function slaPrimeiroContato(supabase, { now = Date.now } = {}) {

@@ -140,6 +140,31 @@ describe('listarAnunciosDesconhecidos', () => {
     expect(r.anuncios).toEqual([]);
   });
 
+  // Desde `semCodigoDoCatalogo` o lead de anúncio desconhecido entra com
+  // property_code nulo. Se a conferência de catálogo lesse a coluna, o anúncio
+  // do NOSSO feed cujo lead já foi limpo entraria na lista como pendência.
+  it('confere o catálogo pelo que o portal mandou, não pelo que ficou gravado', async () => {
+    const doFeed = lead({ property_code: null, extra: {
+      custom_fields: { raw_data: { original_request: { originListingId: '2905488323', clientListingId: 'AP679' } } },
+    } });
+    const supabase = fakeSupabase({ leads: [doFeed], catalogo: true });
+    const r = await listarAnunciosDesconhecidos(supabase, 't1');
+    expect(supabase.rpcs).toMatchObject([{ fn: 'eh_codigo_catalogo', args: { p_codigo: 'AP679' } }]);
+    expect(r.anuncios).toEqual([]);
+  });
+
+  // O card do Bolsão não tem o id do anúncio, e o código deixou de servir de
+  // chave (é nulo nos novos e some no backfill dos antigos). Quem liga um ao
+  // outro é o id do lead.
+  it('devolve quais leads são de cada anúncio', async () => {
+    const supabase = fakeSupabase({
+      leads: [lead(), lead({ id: 'lead-2' }), leadMeta({ id: 'meta-9' })],
+    });
+    const r = await listarAnunciosDesconhecidos(supabase, 't1');
+    expect(r.anuncios.find((a) => a.originListingId === '2894853981').leadIds).toEqual(['lead-1', 'lead-2']);
+    expect(r.anuncios.find((a) => a.originListingId === '2512857375884799').leadIds).toEqual(['meta-9']);
+  });
+
   it('confere o catálogo uma vez por código, não por lead', async () => {
     const supabase = fakeSupabase({ leads: [lead(), lead({ id: 'lead-2' }), lead({ id: 'lead-3' })] });
     await listarAnunciosDesconhecidos(supabase, 't1');

@@ -19,9 +19,15 @@ async function authHeaders(): Promise<Record<string, string>> {
 
 export interface AnuncioPendente {
   originListingId: string;
-  /** O código que o portal mandou — é ele que aparece hoje no card do lead. */
+  /**
+   * O id do anúncio no publicador ('I7V1GD'). Só para a tela mostrar o que o
+   * portal mandou — NÃO serve de chave: desde `semCodigoDoCatalogo` ele não é
+   * mais gravado no lead, e o lead do Meta nunca teve nenhum.
+   */
   codigoNoPortal: string | null;
   totalLeads: number;
+  /** Os leads deste anúncio (`leads.id`). É por aqui que o card acha o aviso. */
+  leadIds: string[];
   ultimoLeadEm: string;
   /** Endereço/preço que veio na mensagem do lead. Clique-no-WhatsApp não tem. */
   dica: string | null;

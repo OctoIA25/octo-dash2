@@ -75,12 +75,21 @@ export async function listarAnunciosDesconhecidos(supabase, tenantId, { limite =
 
     const atual = porAnuncio.get(anuncio) || {
       originListingId: anuncio,
-      codigoNoPortal: lead.property_code || null,
+      // O que o PORTAL mandou, não o que ficou gravado: desde
+      // `semCodigoDoCatalogo` o lead de anúncio desconhecido entra com
+      // `property_code` nulo, e ler daqui deixaria a conferência de catálogo
+      // (abaixo) cega justamente para o anúncio que saiu do nosso feed.
+      codigoNoPortal: request.clientListingId || lead.property_code || null,
       totalLeads: 0,
+      // Quais leads são deste anúncio. É por aqui que a tela encontra o card —
+      // o código não serve mais de chave: ou é nulo, ou é o mesmo id do portal
+      // em anúncios diferentes. Leads do Meta nunca tiveram código nenhum.
+      leadIds: [],
       ultimoLeadEm: lead.created_at,
       dica: null,
     };
     atual.totalLeads += 1;
+    atual.leadIds.push(lead.id);
     // A dica vem do primeiro lead que tiver endereço; clique-no-WhatsApp não tem.
     atual.dica = atual.dica || extrairDica(request.message);
     porAnuncio.set(anuncio, atual);

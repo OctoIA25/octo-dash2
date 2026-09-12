@@ -39,25 +39,57 @@ const payloadReal = {
 };
 
 /**
- * Supabase de mentira: o caminho from→select→eq→eq→maybeSingle do de-para, mais
- * o `rpc` de eh_codigo_catalogo. `catalogo` default false = código de
- * lançamento, que é o caso da maioria dos testes.
+ * Supabase de mentira: o caminho from→select→eq→eq→maybeSingle do de-para, o
+ * `rpc` de eh_codigo_catalogo e o par notifications/tenant_memberships do aviso
+ * (server/notificacoes.js). `catalogo` default false = código de lançamento, que
+ * é o caso da maioria dos testes.
+ *
+ * `filtros` só registra a consulta do de-para — é dela que os asserts falam.
  */
-const fakeSupabase = (resultado, catalogo = { data: false, error: null }) => {
+const fakeSupabase = (resultado, catalogo = { data: false, error: null }, { jaAvisado = false } = {}) => {
   const filtros = {};
   const rpcs = [];
-  const chain = {
-    select: () => chain,
-    eq: (col, val) => { filtros[col] = val; return chain; },
+  const notificacoes = [];
+
+  const deParaChain = {
+    select: () => deParaChain,
+    eq: (col, val) => { filtros[col] = val; return deParaChain; },
     maybeSingle: async () => resultado,
   };
+
+  // A dedupe e os destinatários terminam em `await` sobre a própria cadeia.
+  const listaChain = (data) => {
+    const chain = {
+      select: () => chain,
+      eq: () => chain,
+      in: () => chain,
+      contains: () => chain,
+      limit: () => chain,
+      then: (resolve) => resolve({ data, error: null }),
+    };
+    return chain;
+  };
+
+  const tabelas = {
+    lancamento_anuncios: () => deParaChain,
+    notifications: () => ({
+      ...listaChain(jaAvisado ? [{ id: 1 }] : []),
+      insert: async (linhas) => { notificacoes.push(...linhas); return { error: null }; },
+    }),
+    tenant_memberships: () => listaChain([{ user_id: 'admin-1' }, { user_id: 'admin-2' }]),
+  };
+
   return {
     supabase: {
-      from: (t) => { filtros.__tabela = t; return chain; },
+      from: (t) => {
+        if (t === 'lancamento_anuncios') filtros.__tabela = t;
+        return (tabelas[t] || (() => deParaChain))();
+      },
       rpc: async (fn, args) => { rpcs.push({ fn, args }); return catalogo; },
     },
     filtros,
     rpcs,
+    notificacoes,
   };
 };
 
@@ -155,8 +187,8 @@ describe('enriquecerComCodigoLancamento', () => {
     expect(out.atuacao).toBeUndefined();
   });
 
-  it('sem casamento, devolve o lead intacto (mesma referência)', async () => {
-    const { supabase } = fakeSupabase({ data: null, error: null });
+  it('sem casamento e com código do catálogo, devolve o lead intacto (mesma referência)', async () => {
+    const { supabase } = fakeSupabase({ data: null, error: null }, { data: true, error: null });
     const out = await enriquecerComCodigoLancamento(supabase, 'tenant-1', payloadReal, normalizado);
     expect(out).toBe(normalizado);
   });
@@ -193,6 +225,118 @@ describe('enriquecerComCodigoLancamento', () => {
     expect(erro).toHaveBeenCalled();
     log.mockRestore();
     erro.mockRestore();
+  });
+});
+
+/**
+ * O anúncio publicado por fora do nosso feed devolve um id do portal ('I7V1GD')
+ * que não é imóvel nenhum. Gravá-lo em `property_code` é mentir para o corretor,
+ * para o termo de comissão e para o relatório.
+ */
+describe('código do portal que não é do catálogo', () => {
+  const doPortal = { name: 'Wanderson', property_code: 'I7V1GD', interest_reference: 'I7V1GD', portal: 'ZAP Imóveis' };
+  const semDePara = { data: null, error: null };
+  const foraDoCatalogo = { data: false, error: null };
+  const silencio = () => [
+    vi.spyOn(console, 'log').mockImplementation(() => {}),
+    vi.spyOn(console, 'error').mockImplementation(() => {}),
+  ];
+
+  it('descarta o código e não inventa nenhum outro', async () => {
+    const spies = silencio();
+    const { supabase } = fakeSupabase(semDePara, foraDoCatalogo);
+    const out = await enriquecerComCodigoLancamento(supabase, 'tenant-1', payloadReal, doPortal);
+    expect(out).toMatchObject({
+      property_code: null, interest_reference: null, interest_type: null, name: 'Wanderson',
+    });
+    spies.forEach((s) => s.mockRestore());
+  });
+
+  it('pergunta ao catálogo pelo código do PORTAL, não pelo do de-para', async () => {
+    const spies = silencio();
+    const { supabase, rpcs } = fakeSupabase(semDePara, foraDoCatalogo);
+    await enriquecerComCodigoLancamento(supabase, 'tenant-1', payloadReal, doPortal);
+    expect(rpcs).toEqual([{ fn: 'eh_codigo_catalogo', args: { p_tenant: 'tenant-1', p_codigo: 'I7V1GD' } }]);
+    spies.forEach((s) => s.mockRestore());
+  });
+
+  // AP679 e CA0056 chegam do ZAP porque saíram do nosso feed VRSync: o
+  // clientListingId É o codigo_imovel. Descartá-los quebraria o caso que funciona.
+  it('código que É do catálogo fica onde está', async () => {
+    const doFeed = { ...doPortal, property_code: 'AP679', interest_reference: 'AP679' };
+    const { supabase } = fakeSupabase(semDePara, { data: true, error: null });
+    const out = await enriquecerComCodigoLancamento(supabase, 'tenant-1', payloadReal, doFeed);
+    expect(out.property_code).toBe('AP679');
+  });
+
+  // `null` é "não deu para saber" — apagar por causa de um 42883 tiraria o imóvel
+  // de um lead que estava certo. Erra para o lado de manter.
+  it('erro na checagem falha ABERTA: mantém o código', async () => {
+    const spies = silencio();
+    const { supabase } = fakeSupabase(semDePara, { data: null, error: { code: '42883', message: 'nope' } });
+    const out = await enriquecerComCodigoLancamento(supabase, 'tenant-1', payloadReal, doPortal);
+    expect(out.property_code).toBe('I7V1GD');
+    spies.forEach((s) => s.mockRestore());
+  });
+
+  it('código explícito no body é intocável — quem manda property_code sabe o que quer', async () => {
+    const naoDeviaChamar = { from: () => { throw new Error('não deveria consultar'); }, rpc: () => { throw new Error('não deveria consultar'); } };
+    const body = { ...payloadReal, property_code: 'AP1139' };
+    const out = await enriquecerComCodigoLancamento(naoDeviaChamar, 'tenant-1', body, doPortal);
+    expect(out).toBe(doPortal);
+  });
+
+  it('avisa o admin uma vez por anúncio, com o id do anúncio na chave', async () => {
+    const spies = silencio();
+    const { supabase, notificacoes } = fakeSupabase(semDePara, foraDoCatalogo);
+    await enriquecerComCodigoLancamento(supabase, 'tenant-1', payloadReal, doPortal);
+    expect(notificacoes).toHaveLength(2); // um por admin do tenant
+    expect(notificacoes[0]).toMatchObject({
+      tenant_id: 'tenant-1',
+      link_id: '2894694297',
+      metadata: expect.objectContaining({ chave: 'anuncio_desconhecido:2894694297' }),
+    });
+    expect(notificacoes[0].body).toContain('2894694297');
+    spies.forEach((s) => s.mockRestore());
+  });
+
+  it('anúncio já avisado não vira um segundo sino', async () => {
+    const spies = silencio();
+    const { supabase, notificacoes } = fakeSupabase(semDePara, foraDoCatalogo, { jaAvisado: true });
+    await enriquecerComCodigoLancamento(supabase, 'tenant-1', payloadReal, doPortal);
+    expect(notificacoes).toHaveLength(0);
+    spies.forEach((s) => s.mockRestore());
+  });
+
+  // O formulário do Meta entra sem código nenhum: não há o que descartar, mas o
+  // anúncio segue desconhecido e é justamente o ponto cego que o aviso fecha.
+  it('lead do Meta sem código também avisa', async () => {
+    const spies = silencio();
+    const { supabase, notificacoes, rpcs } = fakeSupabase(semDePara, foraDoCatalogo);
+    const doMeta = { name: 'Lead Meta', property_code: null, portal: 'Instagram' };
+    const out = await enriquecerComCodigoLancamento(supabase, 'tenant-1', { originListingId: '2512857375884799' }, doMeta);
+    expect(out).toBe(doMeta);
+    expect(rpcs).toHaveLength(0); // sem código, não há o que perguntar ao catálogo
+    expect(notificacoes[0].metadata.chave).toBe('anuncio_desconhecido:2512857375884799');
+    spies.forEach((s) => s.mockRestore());
+  });
+
+  it('falha do aviso não derruba o lead', async () => {
+    const spies = silencio();
+    const { supabase } = fakeSupabase(semDePara, foraDoCatalogo);
+    const original = supabase.from;
+    supabase.from = (t) => (t === 'notifications' ? { select: () => { throw new Error('banco fora'); } } : original(t));
+    const out = await enriquecerComCodigoLancamento(supabase, 'tenant-1', payloadReal, doPortal);
+    expect(out.property_code).toBeNull();
+    spies.forEach((s) => s.mockRestore());
+  });
+
+  it('sem id de anúncio não há o que avisar (um sino por lead seria o ruído)', async () => {
+    const spies = silencio();
+    const { supabase, notificacoes } = fakeSupabase(semDePara, foraDoCatalogo);
+    await enriquecerComCodigoLancamento(supabase, 'tenant-1', { clientListingId: 'I7V1GD' }, doPortal);
+    expect(notificacoes).toHaveLength(0);
+    spies.forEach((s) => s.mockRestore());
   });
 });
 

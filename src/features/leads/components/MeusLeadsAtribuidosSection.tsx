@@ -18,6 +18,7 @@ import { Input } from '@/components/ui/input';
 import { useDebounce } from '../hooks/useDebounce';
 import { ClassificacaoDots } from './ClassificacaoBadge';
 import { filtrarPorAtuacao, opcoesFiltroBolsao, classificacoesDe } from '../utils/classificarLead';
+import { anuncioNaoIdentificado } from '../utils/anuncioDoPortal';
 import { PreferenciasBadges } from './PreferenciasLead';
 import {
   Select,
@@ -378,9 +379,18 @@ export const KanbanCardContent = memo(({ lead, onClick, mostrarCorretor, isOverl
       <div className="mb-2 pt-2 border-t border-slate-100 dark:border-slate-800 space-y-0.5">
         <div className="flex items-center gap-1.5">
           <Home className="h-3 w-3 text-slate-400 dark:text-slate-500 shrink-0" />
-          <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 font-mono">
-            {lead.codigo || '—'}
-          </p>
+          {/* Anúncio de portal sem código não é "lead sem imóvel": é imóvel que
+              ninguém identificou. Um '—' aqui esconderia a pendência, e o id do
+              portal ('I7V1GD') mentia que era código de imóvel. */}
+          {anuncioNaoIdentificado(lead) ? (
+            <p className="text-xs font-medium text-amber-600 dark:text-amber-400 truncate">
+              Imóvel não identificado
+            </p>
+          ) : (
+            <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 font-mono">
+              {lead.codigo || '—'}
+            </p>
+          )}
         </div>
         {telefone && (
           <div className="flex items-center justify-between gap-1.5">
