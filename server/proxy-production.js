@@ -796,6 +796,17 @@ const mapTemperatureToCRM = (temp) => {
 };
 
 /**
+ * Só as chaves que o lead novo realmente trouxe. No revive, campo ausente
+ * significa "o payload não trouxe", nunca "apague o que já havia": sem isto,
+ * quem já era lead com `property_code` ('RESERVA CASTANHEIRA', 'L014') e
+ * voltasse por um anúncio fora do de-para perdia o código — e o trigger de
+ * reclassificação, que roda neste mesmo UPDATE, ainda rebaixava a classificação
+ * para 'indefinido'. Vale para o corretor atribuído pela mesma razão.
+ * `false`/`0`/`''` passam: são valor, não ausência.
+ */
+const semNulos = (obj) => Object.fromEntries(Object.entries(obj).filter(([, v]) => v != null));
+
+/**
  * Insere um lead no CRM. Se já existir um lead com o mesmo (tenant_id, phone)
  * — constraint unique_phone_per_tenant — em vez de falhar, "revive" o lead
  * existente: atualiza com as novas informações e o traz para o topo da lista
@@ -819,7 +830,7 @@ const insertOrReviveLead = async (crmLeadData) => {
   const { tenant_id, phone, created_at, ...rest } = crmLeadData;
   const { data: revived, error: reviveError } = await supabase
     .from('leads')
-    .update({ ...rest, created_at: now, updated_at: now })
+    .update({ ...semNulos(rest), created_at: now, updated_at: now })
     .eq('tenant_id', tenant_id)
     .eq('phone', phone)
     .select()
