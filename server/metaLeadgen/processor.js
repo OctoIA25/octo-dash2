@@ -22,6 +22,20 @@ import { getDeletedTenantIds } from '../utils/tenantSoftDelete.js';
 
 const noopLogger = { info() {}, warn() {}, error() {} };
 const EVENTS_TABLE = 'meta_leadgen_events';
+
+/**
+ * Lead de teste do "Testar formulário" do Gerenciador da Meta. Toda resposta vem
+ * como '<test lead: dummy data for {pergunta}>' e o e-mail é test@meta.com.
+ *
+ * Sem este corte ele entra como lead real: o normalizador descarta o telefone
+ * (não tem dígito), mas o NOME passa, a rota aceita, e o teste do anunciante cai
+ * na roleta, ocupa o board de um corretor e conta na métrica. Aconteceu duas
+ * vezes em 11/set/2026 (forms Santorini e Allegrato).
+ */
+const ehLeadDeTeste = (lead) =>
+  lead?.email === 'test@meta.com'
+  || Object.values(lead?.raw_data?.fields || {}).some((v) =>
+    String(Array.isArray(v) ? v[0] : v).startsWith('<test lead:'));
 const RETRIABLE_HTTP = new Set([408, 429, 500, 502, 503, 504]);
 
 export function createMetaLeadgenProcessor({
@@ -143,6 +157,13 @@ export function createMetaLeadgenProcessor({
       leadgenId: event.leadgen_id,
       pageId: event.page_id, formId: event.form_id, adId: event.ad_id,
     });
+
+    // `done`, não `failed`: o evento fez o que tinha de fazer, não há nada a
+    // reprocessar. `failed` deixaria a fila acusando erro que não existe.
+    if (ehLeadDeTeste(bruto)) {
+      logger.info(`[meta-leadgen] evento ${event.id} descartado — lead de teste do formulário ${event.form_id}`);
+      return markDone(event);
+    }
 
     // O formulário da Meta NÃO carrega o imóvel: o anunciante amarra um
     // formulário a um empreendimento ("[CAST] Reserva Castanheira"), e essa

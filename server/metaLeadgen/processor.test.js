@@ -400,3 +400,44 @@ describe('processPending — elegibilidade de tenant', () => {
     expect(supabase.tabelas).not.toContain('meta_leadgen_events');
   });
 });
+
+// O "Testar formulário" do Gerenciador da Meta emite um lead com todas as
+// respostas em '<test lead: dummy data for ...>'. O normalizador descarta o
+// telefone (sem dígito), mas o nome passa — e em 11/set/2026 dois testes do
+// anunciante entraram no funil como lead real, caíram na roleta e contaram na
+// métrica.
+describe('lead de teste da Meta', () => {
+  const testLead = {
+    id: 'lg-teste', platform: 'fb', created_time: '2026-09-11T17:29:05+0000',
+    field_data: [
+      { name: 'Nome Completo', values: ['<test lead: dummy data for Nome Completo>'] },
+      { name: 'Whatsapp', values: ['<test lead: dummy data for Whatsapp>'] },
+      { name: 'email', values: ['test@meta.com'] },
+    ],
+  };
+
+  it('não vira lead: descarta antes do POST e marca done', async () => {
+    const supabase = fakeSupabase();
+    const fetchImpl = vi.fn(async () => ({ ok: true, status: 201, json: async () => ({}) }));
+    const graphClient = { fetchLead: async () => ({ ok: true, lead: testLead }) };
+    const r = await make({ supabase, fetchImpl, graphClient }).processEvent(EVENT);
+    expect(r.status).toBe('done');
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('reconhece pelo marcador da resposta mesmo sem o e-mail de teste', async () => {
+    const semEmail = { ...testLead, field_data: testLead.field_data.slice(0, 2) };
+    const fetchImpl = vi.fn(async () => ({ ok: true, status: 201, json: async () => ({}) }));
+    const graphClient = { fetchLead: async () => ({ ok: true, lead: semEmail }) };
+    const r = await make({ fetchImpl, graphClient }).processEvent(EVENT);
+    expect(r.status).toBe('done');
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('lead real continua entrando', async () => {
+    const fetchImpl = vi.fn(async () => ({ ok: true, status: 201, json: async () => ({}) }));
+    const r = await make({ fetchImpl }).processEvent(EVENT);
+    expect(r.status).toBe('done');
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+});
