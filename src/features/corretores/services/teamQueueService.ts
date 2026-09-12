@@ -19,6 +19,7 @@ import {
   fetchLeadLimitConfig,
   checkBrokerEligibility,
   getBrokerLeadCountsBatch,
+  DEFAULT_LEAD_LIMIT_CONFIG,
   BrokerLeadLimitOverride,
   BrokerLeadCounts,
 } from './tenantLeadLimitService';
@@ -322,10 +323,17 @@ export async function redistributeLeadToTeamQueue(
         );
       });
 
-      if (limitConfig && (limitConfig.lead_limit_enabled || hasRelevantOverride)) {
+      // Tenant que nunca abriu a tela de limites não tem linha em
+      // tenant_lead_limit_config, e fetchLeadLimitConfig devolve null. Desistir no
+      // null ignorava o override individual — o captador voltava a ser candidato
+      // na redistribuição por equipe. O default só serve de moldura: quem decide
+      // continua sendo checkBrokerEligibility, que lê receives_auto_leads primeiro.
+      const cfg = limitConfig ?? { tenant_id: tenantId, ...DEFAULT_LEAD_LIMIT_CONFIG };
+
+      if (cfg.lead_limit_enabled || hasRelevantOverride) {
         // Só busca contagens se algum check de limite realmente vai usar.
         const needsCounts =
-          limitConfig.lead_limit_enabled ||
+          cfg.lead_limit_enabled ||
           notTriedCandidates.some(
             (c) => c.leadLimitOverride?.lead_limit_enabled === true
           );
@@ -333,18 +341,22 @@ export async function redistributeLeadToTeamQueue(
         const counts = needsCounts
           ? await getBrokerLeadCountsBatch(
               tenantId,
-              limitConfig.pending_statuses,
+              cfg.pending_statuses,
               notTriedCandidates.map((c) => c.user_id)
             )
           : {};
-        leadCountsByBroker = counts;
+        // `{}` NÃO é nullish: passar o objeto vazio adiante fazia o pickCandidate
+        // pular a própria busca (`precomputedCounts ?? getBrokerLeadCountsBatch`) e
+        // ver carga 0 para todo mundo — a ordem 'balanced' virava rotação por
+        // recência. Só pré-computa quem realmente contou.
+        leadCountsByBroker = needsCounts ? counts : undefined;
 
         const eligibilityResults = await Promise.all(
           notTriedCandidates.map(async (c) => {
             const result = await checkBrokerEligibility(
               tenantId,
               c.user_id,
-              limitConfig,
+              cfg,
               c.leadLimitOverride,
               counts[c.user_id] ?? { active_leads: 0, pending_response_leads: 0 }
             );

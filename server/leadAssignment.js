@@ -294,20 +294,24 @@ export function createLeadAssignment({ supabase }) {
     // corretor pode ser checado 2x (ex.: attendedBy no limite → roleta).
     return memo(cache, `limit_check:${brokerId}`, async () => {
       try {
-        // 1. Buscar config global do tenant
-        const cfg = await getLeadLimitConfig(tenantId, cache);
-
-        if (!cfg || !cfg.lead_limit_enabled) return { eligible: true };
-
-        // 2. Buscar override do corretor em tenant_memberships.permissions->lead_limit
+        // 1. Override do corretor em tenant_memberships.permissions->lead_limit.
+        // Vem ANTES da config global de propósito: "não recebe leads automáticos"
+        // (captador, pausa) é decisão sobre a PESSOA e não tem relação com limite
+        // de carteira. Enquanto esta checagem vivia depois do early-return de
+        // `lead_limit_enabled` — cujo default de coluna é false e que tenant nenhum
+        // semeia —, marcar alguém não o tirava de nada.
         const membership = await getBrokerMembership(tenantId, brokerId, cache);
 
         const override = membership?.permissions?.lead_limit || {};
 
-        // Pausado: não recebe leads automáticos
         if (override.receives_auto_leads === false) {
-          return { eligible: false, reason: `Corretor ${brokerId} pausado para recebimento automático` };
+          return { eligible: false, reason: `Corretor ${brokerId} não recebe leads automáticos` };
         }
+
+        // 2. Config global do tenant. Daqui para baixo é só limite de carteira.
+        const cfg = await getLeadLimitConfig(tenantId, cache);
+
+        if (!cfg || !cfg.lead_limit_enabled) return { eligible: true };
 
         // Isento: sem limite
         if (override.limit_exempt === true) return { eligible: true };
@@ -461,12 +465,13 @@ export function createLeadAssignment({ supabase }) {
 
       // 1. FONTE PRIMÁRIA: participantes ativos da roleta. A config de limite é
       // independente → busca em paralelo (e fica memoizada para o filtro abaixo).
-      const [{ data: participantes, error: participantesError }, limitCfg] = await Promise.all([
+      const [{ data: participantes, error: participantesError }] = await Promise.all([
         supabase
           .from('roleta_participantes')
           .select('broker_id, broker_name, broker_email, broker_phone')
           .eq('tenant_id', tenantId)
           .eq('is_active', true),
+        // Só para pré-aquecer o memo: o filtro abaixo roda sempre e pede a config.
         getLeadLimitConfig(tenantId, cache),
       ]);
 
@@ -548,44 +553,46 @@ export function createLeadAssignment({ supabase }) {
         }
       }
 
-      // Filtrar corretores bloqueados por limite de leads
-      if (limitCfg?.lead_limit_enabled) {
-        const filtrarElegiveis = async (lista) => {
-          await preloadMemberships(tenantId, lista, cache);
+      // Filtrar quem não pode receber: pausa/captador valem sempre, contagem de
+      // carteira só quando o limite global está ligado (checkBrokerLeadLimitForTenant
+      // decide). Antes este bloco inteiro vivia dentro de
+      // `if (limitCfg?.lead_limit_enabled)`, então no estado padrão a roleta podia
+      // devolver justamente quem o pipeline do imóvel acabara de recusar.
+      const filtrarElegiveis = async (lista) => {
+        await preloadMemberships(tenantId, lista, cache);
 
-          // Checagens em paralelo (antes: loop serializado, ~4 queries por corretor).
-          // Promise.all preserva a ordem — a lista elegível sai na MESMA ordem do
-          // loop antigo, então o round-robin não muda.
-          const checks = await Promise.all(
-            lista.map(b => checkBrokerLeadLimitForTenant(tenantId, b.id || b.auth_user_id, cache))
-          );
+        // Checagens em paralelo (antes: loop serializado, ~4 queries por corretor).
+        // Promise.all preserva a ordem — a lista elegível sai na MESMA ordem do
+        // loop antigo, então o round-robin não muda.
+        const checks = await Promise.all(
+          lista.map(b => checkBrokerLeadLimitForTenant(tenantId, b.id || b.auth_user_id, cache))
+        );
 
-          return lista.filter((b, i) => {
-            if (checks[i].eligible) return true;
-            console.log(`⚠️ Roleta: ${b.name} ignorado — ${checks[i].reason}`);
-            return false;
-          });
-        };
+        return lista.filter((b, i) => {
+          if (checks[i].eligible) return true;
+          console.log(`⚠️ Roleta: ${b.name} ignorado — ${checks[i].reason}`);
+          return false;
+        });
+      };
 
-        let eligibleList = await filtrarElegiveis(brokerList);
+      let eligibleList = await filtrarElegiveis(brokerList);
 
-        // Fail-open: o filtro de atuação não pode transformar "os poucos do pool
-        // estreitado estão ocupados" em lead perdido. Reavalia o pool inteiro
-        // antes de desistir — memberships e checagens de limite já feitas saem
-        // do cache da requisição, então a 2ª passada não gera query nova.
-        if (eligibleList.length === 0 && poolEstreitado) {
-          console.log(`⚠️ Roleta: todo o pool ${atuacao} no limite — reavaliando o pool inteiro`);
-          brokerList = poolCompleto;
-          eligibleList = await filtrarElegiveis(poolCompleto);
-        }
-
-        if (eligibleList.length === 0) {
-          console.log('⚠️ Roleta: todos os corretores estão no limite de leads');
-          return null;
-        }
-        brokerList = eligibleList;
-        console.log(`🎰 Roleta após filtro de limite: ${brokerList.length} corretor(es) elegível(is)`);
+      // Fail-open: o filtro de atuação não pode transformar "os poucos do pool
+      // estreitado estão ocupados" em lead perdido. Reavalia o pool inteiro
+      // antes de desistir — memberships e checagens de limite já feitas saem
+      // do cache da requisição, então a 2ª passada não gera query nova.
+      if (eligibleList.length === 0 && poolEstreitado) {
+        console.log(`⚠️ Roleta: todo o pool ${atuacao} no limite — reavaliando o pool inteiro`);
+        brokerList = poolCompleto;
+        eligibleList = await filtrarElegiveis(poolCompleto);
       }
+
+      if (eligibleList.length === 0) {
+        console.log('⚠️ Roleta: todos os corretores estão no limite de leads');
+        return null;
+      }
+      brokerList = eligibleList;
+      console.log(`🎰 Roleta após filtro de limite: ${brokerList.length} corretor(es) elegível(is)`);
 
       // Estado da roleta por tenant E por pool (round-robin). Um índice único
       // para pools de tamanhos diferentes faria o rodízio repetir e pular

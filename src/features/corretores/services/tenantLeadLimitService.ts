@@ -26,6 +26,13 @@ export interface BrokerLeadLimitOverride {
   custom_max_active_leads?: number | null;
   custom_max_pending_response_leads?: number | null;
   receives_auto_leads?: boolean;
+  /**
+   * Por que a pessoa não recebe lead automático. SÓ rótulo: quem bloqueia é
+   * `receives_auto_leads === false`, em todos os caminhos (inclusive no Postgres).
+   * Ausente = linha legada, a tela mostra "Pausado" — captador é só quem foi
+   * marcado como tal.
+   */
+  motivo?: 'captador' | 'pausa';
   limit_exempt?: boolean;
   custom_exclusive_timeout_minutes?: number | null;
   custom_general_timeout_minutes?: number | null;

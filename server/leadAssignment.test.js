@@ -300,14 +300,31 @@ describe('limites de leads por corretor', () => {
     expect(await la.getNextBrokerFromRoleta(TENANT)).toBeNull();
   });
 
-  it('config desativada → nenhuma query de contagem/membership', async () => {
+  it('config desativada → sem contagem de leads, mas a pausa ainda é consultada', async () => {
     const { la, countQueries } = setup({
       participantes: [participante(1, 'Ana')],
       limitConfig: { lead_limit_enabled: false },
     });
     expect((await la.getNextBrokerFromRoleta(TENANT)).name).toBe('Ana');
     expect(countQueries('leads')).toBe(0);
-    expect(countQueries('tenant_memberships')).toBe(0);
+    // 1 query em lote de memberships: é ela que diz quem não recebe lead
+    // automático (captador/pausa), e isso não depende do limite estar ligado.
+    expect(countQueries('tenant_memberships')).toBe(1);
+  });
+
+  it('captador não recebe lead mesmo com o limite global desligado', async () => {
+    // Estado DEFAULT do banco: tenant_lead_limit_config.lead_limit_enabled é
+    // false e nenhum tenant semeia a linha. Era aqui que marcar o captador não
+    // o tirava de nada.
+    const { la, countQueries } = setup({
+      participantes: [participante(1, 'Ana'), participante(2, 'Bia')],
+      limitConfig: { lead_limit_enabled: false },
+      memberships: [
+        { user_id: uuid(1), permissions: { lead_limit: { receives_auto_leads: false, motivo: 'captador' } } },
+      ],
+    });
+    expect((await la.getNextBrokerFromRoleta(TENANT)).name).toBe('Bia');
+    expect(countQueries('leads')).toBe(0);
   });
 
   it('sem config → fail-open (elegível)', async () => {

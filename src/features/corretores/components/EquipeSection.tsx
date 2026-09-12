@@ -1398,11 +1398,16 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                           {atuacaoResumo(atuacoesDe(tenantMember?.permissions))}
                         </span>
                       )}
-                      {/* Limit indicators */}
-                      {isPaused && !isExempt && (
-                        <Ban className="h-3 w-3 text-slate-400" aria-label="Pausado" />
+                      {/* Limit indicators. A pausa vem ANTES da isenção porque é essa a
+                          ordem do servidor (leadAssignment.js checa receives_auto_leads
+                          antes de limit_exempt): com o ícone de "Sem limite" ganhando,
+                          a tela dizia que o corretor recebia e o servidor não mandava. */}
+                      {isPaused && (
+                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                          {brokerOverride?.motivo === 'captador' ? 'Captador' : 'Pausado'}
+                        </span>
                       )}
-                      {isExempt && (
+                      {isExempt && !isPaused && (
                         <Info className="h-3 w-3 text-blue-400" aria-label="Sem limite" />
                       )}
                       {isBlocked && !isPaused && !isExempt && (
@@ -2685,6 +2690,69 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
               </div>
             )}
 
+            {/* Recebimento de Leads — vale SEMPRE, independente do limite global.
+                Viveu dentro do bloco de limite, logo abaixo do aviso "Configure o
+                limite global primeiro", e isso fazia o gestor crer que marcar aqui
+                não fazia nada — o que de fato era verdade até o gate do servidor
+                deixar de depender de lead_limit_enabled. */}
+            <div className="space-y-3">
+              <h3 className="font-semibold text-gray-900 dark:text-slate-100 flex items-center gap-2">
+                <Ban className="h-4 w-4 text-slate-500" />
+                Recebimento de Leads
+              </h3>
+
+              <label className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                editBrokerOverride.receives_auto_leads === false
+                  ? 'bg-gray-50 dark:bg-slate-950 border-gray-400'
+                  : 'bg-gray-50 dark:bg-slate-950 border-gray-200 dark:border-slate-800 hover:bg-gray-100 dark:hover:bg-slate-800'
+              }`}>
+                <input
+                  type="checkbox"
+                  checked={editBrokerOverride.receives_auto_leads === false}
+                  onChange={(e) => setEditBrokerOverride(prev => ({
+                    ...prev,
+                    receives_auto_leads: e.target.checked ? false : undefined,
+                    // Desmarcar limpa o motivo junto, senão sobra rótulo órfão: o
+                    // save grava o objeto inteiro de lead_limit.
+                    motivo: e.target.checked ? prev.motivo : undefined,
+                  }))}
+                  className="h-4 w-4 text-gray-600 dark:text-slate-400 rounded border-gray-300"
+                />
+                <div className="flex-1">
+                  <span className="text-sm font-medium text-gray-800 dark:text-slate-200">Não recebe leads automáticos</span>
+                  <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
+                    Fica fora da roleta, da redistribuição por expiração e do lead do
+                    imóvel que ele captou. Continua podendo assumir lead do Bolsão por
+                    conta própria — com o limite de carteira ligado, o Bolsão ainda o barra.
+                  </p>
+                </div>
+              </label>
+
+              {editBrokerOverride.receives_auto_leads === false && (
+                <div className="pl-3 space-y-2">
+                  <p className="text-xs text-gray-600 dark:text-slate-400 font-medium">
+                    Motivo (aparece na lista da equipe)
+                  </p>
+                  {([
+                    { valor: 'captador', titulo: 'Captador', ajuda: 'Função permanente: capta imóvel, não atende cliente.' },
+                    { valor: 'pausa', titulo: 'Pausa temporária', ajuda: 'Férias, afastamento, carteira cheia.' },
+                  ] as const).map((opcao) => (
+                    <label key={opcao.valor} className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="motivo-nao-recebe"
+                        checked={editBrokerOverride.motivo === opcao.valor}
+                        onChange={() => setEditBrokerOverride(prev => ({ ...prev, motivo: opcao.valor }))}
+                        className="h-4 w-4 border-gray-300"
+                      />
+                      <span className="text-sm text-gray-800 dark:text-slate-200">{opcao.titulo}</span>
+                      <span className="text-xs text-gray-500 dark:text-slate-400">{opcao.ajuda}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* Limite de Leads — Override por Corretor */}
             <div className="space-y-3">
               <h3 className="font-semibold text-gray-900 dark:text-slate-100 flex items-center gap-2">
@@ -2696,29 +2764,6 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                   Configure o limite global primeiro na tela de Gestão de Equipe.
                 </p>
               )}
-
-              {/* Pausar recebimento automático */}
-              <label className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
-                editBrokerOverride.receives_auto_leads === false
-                  ? 'bg-gray-50 dark:bg-slate-950 border-gray-400'
-                  : 'bg-gray-50 dark:bg-slate-950 border-gray-200 dark:border-slate-800 hover:bg-gray-100 dark:hover:bg-slate-800'
-              }`}>
-                <input
-                  type="checkbox"
-                  checked={editBrokerOverride.receives_auto_leads === false}
-                  onChange={(e) => setEditBrokerOverride(prev => ({
-                    ...prev,
-                    receives_auto_leads: e.target.checked ? false : undefined
-                  }))}
-                  className="h-4 w-4 text-gray-600 dark:text-slate-400 rounded border-gray-300"
-                />
-                <div className="flex-1">
-                  <span className="text-sm font-medium text-gray-800 dark:text-slate-200">Pausar recebimento automático</span>
-                  <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
-                    Este corretor não receberá leads via roleta ou atribuição automática.
-                  </p>
-                </div>
-              </label>
 
               {/* Isento de limite */}
               <label className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${

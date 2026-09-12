@@ -87,4 +87,38 @@ describe('brokerAssigner', () => {
     expect(a[0].attended_by_id).toBe('broker-tenant-A');
     expect(b[0].attended_by_id).toBe('broker-tenant-B');
   });
+
+  it('captador não fica com o lead do imóvel que ele captou', async () => {
+    // O sync entrega o lead ao corretor cadastrado no imóvel — que é o captador,
+    // por projeto. Marcado como "não recebe lead automático", a linha tem de sair
+    // SEM corretor para a distribuição normal decidir.
+    const byCode = vi.fn().mockResolvedValue({ id: 'captador-1', nome: 'Bete' });
+    const recebe = vi.fn().mockResolvedValue(false);
+    const assigner = createBrokerAssigner({
+      getCorretorByPropertyCode: byCode,
+      findCorretorInSystem: vi.fn(),
+      recebeLeadAutomatico: recebe,
+    });
+
+    const out = await assigner.assign('t1', [{ interest_reference: 'IM-1', attended_by_name: 'Bete' }]);
+
+    expect(out[0].attended_by_id).toBeNull();
+    // o nome também: o espelho do bolsão copia attended_by_name para
+    // corretor_responsavel, então deixá-lo entregaria o lead por outra porta.
+    expect(out[0].attended_by_name).toBeNull();
+    expect(recebe).toHaveBeenCalledWith('t1', 'captador-1');
+  });
+
+  it('checagem de "recebe lead" é memoizada por corretor', async () => {
+    const recebe = vi.fn().mockResolvedValue(true);
+    const assigner = createBrokerAssigner({
+      getCorretorByPropertyCode: vi.fn().mockResolvedValue({ id: 'c1', nome: 'Ana' }),
+      findCorretorInSystem: vi.fn(),
+      recebeLeadAutomatico: recebe,
+    });
+
+    await assigner.assign('t1', [{ interest_reference: 'IM-1' }, { interest_reference: 'IM-2' }]);
+
+    expect(recebe).toHaveBeenCalledTimes(1);
+  });
 });

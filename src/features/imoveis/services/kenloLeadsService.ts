@@ -406,6 +406,25 @@ export const saveKenloLeads = async (
       corretorPorNomeCache.set(nome, encontrado);
       return encontrado;
     };
+    // Mesma marca que a roleta e o Postgres leem (permissions->lead_limit->
+    // receives_auto_leads). Fail-open em erro ou membership ausente: lead sem dono
+    // é pior que lead misroteado.
+    const recebeAutoCache = new Map<string, boolean>();
+    const recebeLeadAutomatico = async (userId: string) => {
+      if (recebeAutoCache.has(userId)) return recebeAutoCache.get(userId)!;
+      const { data, error } = await supabase
+        .from('tenant_memberships')
+        .select('permissions')
+        .eq('tenant_id', tenantId)
+        .eq('user_id', userId)
+        .maybeSingle();
+      const recebe =
+        error || !data
+          ? true
+          : (data.permissions as Record<string, any>)?.lead_limit?.receives_auto_leads !== false;
+      recebeAutoCache.set(userId, recebe);
+      return recebe;
+    };
 
     for (const leadData of leadsToInsert) {
       let corretorId: string | null = null;
@@ -455,6 +474,17 @@ export const saveKenloLeads = async (
         }
       }
       
+      // Captador não fica com o lead do imóvel que ele captou: a linha segue SEM
+      // corretor e a distribuição normal decide. Limpa o NOME também — o espelho
+      // do bolsão copia attended_by_name para corretor_responsavel
+      // (20260427_mirror_leads_and_kenlo_into_bolsao.sql:205). Gêmeo do gate em
+      // server/kenlo/brokerAssigner.js.
+      if (corretorId && !(await recebeLeadAutomatico(corretorId))) {
+        leadData.attended_by_name = null;
+        (leadData as any).attended_by_id = null;
+        continue;
+      }
+
       // Atualizar dados do lead
       if (corretorNome) {
         leadData.attended_by_name = corretorNome;

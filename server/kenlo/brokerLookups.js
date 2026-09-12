@@ -98,5 +98,24 @@ export function makeBrokerLookups(supabase) {
     }
   }
 
-  return { getCorretorByPropertyCode, findCorretorInSystem };
+  /**
+   * O corretor recebe lead automático? Lê o MESMO
+   * tenant_memberships.permissions->lead_limit->receives_auto_leads que a roleta do
+   * Express e as funções de escolha do Postgres leem — uma marca só, não uma
+   * segunda verdade. Fail-open (true) em erro, membership ausente ou id não-uuid:
+   * lead sem dono é pior que lead misroteado.
+   */
+  async function recebeLeadAutomatico(tenantId, brokerId) {
+    if (!tenantId || !brokerId) return true;
+    const { data, error } = await supabase
+      .from('tenant_memberships')
+      .select('permissions')
+      .eq('tenant_id', tenantId)
+      .eq('user_id', brokerId)
+      .maybeSingle();
+    if (error || !data) return true;
+    return data.permissions?.lead_limit?.receives_auto_leads !== false;
+  }
+
+  return { getCorretorByPropertyCode, findCorretorInSystem, recebeLeadAutomatico };
 }
