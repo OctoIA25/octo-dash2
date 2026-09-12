@@ -71,7 +71,36 @@ const fakeSupabase = ({
   };
 };
 
+/** Lead do Meta Lead Ads: o anúncio é o `form_id`, e não há `original_request`. */
+const leadMeta = (over = {}) => ({
+  id: over.id || 'meta-1',
+  created_at: over.created_at || '2026-09-11T23:09:02Z',
+  source: over.source || 'Instagram',
+  property_code: over.property_code ?? null,
+  classification_source: over.classification_source ?? 'automatic',
+  custom_fields: { raw_data: { meta: { form_id: over.form_id ?? '2512857375884799' } } },
+});
+
 describe('listarAnunciosDesconhecidos', () => {
+  // O buraco que deixou 5 formulários ativos da Lótus invisíveis: lead pago do
+  // Meta sem código não aparecia em lugar nenhum porque a tela só olhava ZAP/OLX.
+  it('formulário do Meta fora do de-para vira pendência', async () => {
+    const supabase = fakeSupabase({ leads: [leadMeta(), leadMeta({ id: 'meta-2' })] });
+    const r = await listarAnunciosDesconhecidos(supabase, 't1');
+    expect(r.anuncios).toMatchObject([
+      { originListingId: '2512857375884799', codigoNoPortal: null, totalLeads: 2, dica: null },
+    ]);
+  });
+
+  it('formulário do Meta já mapeado não é pendência', async () => {
+    const supabase = fakeSupabase({
+      leads: [leadMeta({ form_id: '1050767041092494' })],
+      depara: [{ origin_listing_id: '1050767041092494', codigo: 'RESERVA CASTANHEIRA' }],
+    });
+    const r = await listarAnunciosDesconhecidos(supabase, 't1');
+    expect(r.anuncios).toEqual([]);
+  });
+
   it('agrupa por anúncio, conta leads e extrai o endereço da mensagem', async () => {
     const supabase = fakeSupabase({ leads: [lead(), lead({ id: 'lead-2', created_at: '2026-09-06T10:00:00Z' })] });
     const r = await listarAnunciosDesconhecidos(supabase, 't1');
@@ -142,6 +171,16 @@ describe('listarAnunciosDesconhecidos', () => {
 
 describe('amarrarAnuncio', () => {
   const log = () => vi.spyOn(console, 'log').mockImplementation(() => {});
+
+  it('amarrar formulário do Meta reprocessa os leads pagos daquele form', async () => {
+    const l = log();
+    const supabase = fakeSupabase({ leads: [leadMeta(), leadMeta({ id: 'meta-2', form_id: 'outro' })] });
+    const r = await amarrarAnuncio(supabase, { tenantId: 't1', originListingId: '2512857375884799', codigo: 'allegrato' });
+    expect(r).toMatchObject({ ok: true, codigo: 'ALLEGRATO', leadsAtualizados: 1 });
+    expect(supabase.updates).toHaveLength(1);
+    expect(supabase.updates[0]).toMatchObject({ id: 'meta-1', patch: { property_code: 'ALLEGRATO' } });
+    l.mockRestore();
+  });
 
   it('grava o de-para com o código em MAIÚSCULO e reprocessa os leads do anúncio', async () => {
     const l = log();

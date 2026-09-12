@@ -28,6 +28,23 @@ const extrairDica = (mensagem) => {
 const requestDoLead = (lead) => lead?.custom_fields?.raw_data?.original_request || {};
 
 /**
+ * Que anúncio é este lead. ZAP/OLX mandam o id em `original_request`; o Meta
+ * Lead Ads manda o `form_id` — e o form_id JÁ é a chave do de-para desde a
+ * 20260910 (ver lancamentoAnuncios.js). Sem esta linha o formulário que ninguém
+ * mapeou some: o lead entra sem código, e a tela que existe para gritar
+ * "anúncio desconhecido" não olhava para o Meta. Foi assim que cinco
+ * formulários ativos da Lótus passaram meses invisíveis.
+ */
+const anuncioDoLead = (lead) =>
+  extrairOriginListingId(requestDoLead(lead))
+  || lead?.custom_fields?.raw_data?.meta?.form_id
+  || null;
+
+/** Origens que carregam id de anúncio. Filtra na consulta para o teto de leads valer. */
+const FONTES_COM_ANUNCIO =
+  'source.ilike.%zap%,source.ilike.%olx%,source.ilike.%instagram%,source.ilike.%facebook%';
+
+/**
  * Lista os anúncios sem identificação, do mais barulhento para o mais quieto.
  *
  * Dois filtros, nesta ordem, porque são baratos em ordens diferentes: primeiro
@@ -41,7 +58,7 @@ export async function listarAnunciosDesconhecidos(supabase, tenantId, { limite =
     .from('leads')
     .select('id, created_at, property_code, source, custom_fields')
     .eq('tenant_id', tenantId)
-    .or('source.ilike.%zap%,source.ilike.%olx%')
+    .or(FONTES_COM_ANUNCIO)
     .order('created_at', { ascending: false })
     .limit(limite);
 
@@ -52,9 +69,9 @@ export async function listarAnunciosDesconhecidos(supabase, tenantId, { limite =
 
   const porAnuncio = new Map();
   for (const lead of leads || []) {
-    const request = requestDoLead(lead);
-    const anuncio = extrairOriginListingId(request);
+    const anuncio = anuncioDoLead(lead);
     if (!anuncio) continue;
+    const request = requestDoLead(lead);
 
     const atual = porAnuncio.get(anuncio) || {
       originListingId: anuncio,
@@ -145,7 +162,7 @@ export async function amarrarAnuncio(supabase, { tenantId, originListingId, codi
     .from('leads')
     .select('id, source, property_code, classification_source, custom_fields')
     .eq('tenant_id', tenantId)
-    .or('source.ilike.%zap%,source.ilike.%olx%')
+    .or(FONTES_COM_ANUNCIO)
     .order('created_at', { ascending: false })
     .limit(TETO_LEADS);
 
@@ -157,7 +174,7 @@ export async function amarrarAnuncio(supabase, { tenantId, originListingId, codi
   }
 
   const doAnuncio = (leads || []).filter(
-    (lead) => extrairOriginListingId(requestDoLead(lead)) === anuncio,
+    (lead) => anuncioDoLead(lead) === anuncio,
   );
 
   let atualizados = 0;
