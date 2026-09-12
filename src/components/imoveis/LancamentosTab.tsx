@@ -29,6 +29,7 @@ interface Lancamento {
   id: string;
   tenant_id: string;
   nome: string;
+  codigos: string[] | null;
   descricao: string | null;
   book_pdf: string | null;
   book_pdf_filename: string | null;
@@ -194,7 +195,17 @@ export function LancamentosTab() {
                   </button>
                 </div>
                 <div className="p-3">
-                  <h3 className="font-semibold text-text-primary truncate">{l.nome}</h3>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <h3 className="font-semibold text-text-primary truncate">{l.nome}</h3>
+                    {l.codigos?.length ? (
+                      <span
+                        title={l.codigos.join(', ')}
+                        className="shrink-0 max-w-[45%] truncate font-mono text-[10px] font-semibold text-text-secondary border border-border rounded px-1.5 py-0.5"
+                      >
+                        {l.codigos.join(' · ')}
+                      </span>
+                    ) : null}
+                  </div>
                   <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-text-secondary">
                     <span className="inline-flex items-center gap-1">
                       <ImageIcon className="h-3.5 w-3.5" />

@@ -30,6 +30,8 @@ interface Lancamento {
   tenant_id: string;
   updated_at: string | null;
   nome: string;
+  /** Códigos do empreendimento na planilha da equipe (L0NN), um por anúncio. */
+  codigos: string[] | null;
   descricao: string | null;
   endereco_plantao: string | null;
   site_url: string | null;
@@ -47,6 +49,11 @@ interface Lancamento {
   exclusivo: boolean;
   publicar_site: boolean;
 }
+
+/** 'l012, L023 L025' -> ['L012','L023','L025']. Vírgula, ponto-e-vírgula ou espaço. */
+const parseCodigos = (texto: string): string[] => [
+  ...new Set(texto.toUpperCase().split(/[,;\s]+/).filter(Boolean)),
+];
 
 const MAX_PDF_MB = 200;
 const BUCKET = 'lancamentos-arquivos';
@@ -107,6 +114,7 @@ export const LancamentoViewPage = () => {
 
   const [nome, setNome] = useState('');
   const [editandoNome, setEditandoNome] = useState(false);
+  const [codigos, setCodigos] = useState('');
   const [descricao, setDescricao] = useState('');
   const [enderecoPlantao, setEnderecoPlantao] = useState('');
   const [siteUrl, setSiteUrl] = useState('');
@@ -152,6 +160,7 @@ export const LancamentoViewPage = () => {
     };
     setLancamento(normalized);
     setNome(normalized.nome);
+    setCodigos((normalized.codigos ?? []).join(', '));
     setDescricao(normalized.descricao ?? '');
     setEnderecoPlantao(normalized.endereco_plantao ?? '');
     setSiteUrl(normalized.site_url ?? '');
@@ -217,9 +226,37 @@ export const LancamentoViewPage = () => {
       alert('O link do site do lançamento é inválido. Use um endereço como https://seusite.com.br/lancamento.');
       return;
     }
+    // Maiúsculo sem espaço: é assim que o código chega no lead (a rota
+    // POST /api/v1/leads normaliza) e é assim que o lookup compara.
+    const listaCodigos = parseCodigos(codigos);
     setIsSaving(true);
 
     try {
+      // 0) Código é de um empreendimento só. Coluna de array não tem índice
+      //    único, então a checagem é aqui — erro na cara de quem digitou, em vez
+      //    de dois cadastros disputando o mesmo lead. Se a consulta falhar,
+      //    segue o save: o lookup ainda se recusa a linkar código ambíguo.
+      if (listaCodigos.length) {
+        const { data: conflitos } = await supabase
+          .from('lancamentos')
+          .select('nome, codigos')
+          .eq('tenant_id', tenantId)
+          .neq('id', id)
+          .overlaps('codigos', listaCodigos);
+
+        const conflito = conflitos?.[0];
+        if (conflito) {
+          const repetidos = (conflito.codigos ?? []).filter((c: string) =>
+            listaCodigos.includes(c),
+          );
+          alert(
+            `${repetidos.join(', ')} já está no lançamento "${conflito.nome}". Cada código pertence a um único empreendimento.`,
+          );
+          setIsSaving(false);
+          return;
+        }
+      }
+
       // 1) PDF: se há um pendente (selecionado nesta sessão), envia pro Storage.
       let bookPdfUrl = bookPdf;
       let bookPdfName = bookFilename;
@@ -269,6 +306,7 @@ export const LancamentoViewPage = () => {
         .from('lancamentos')
         .update({
           nome: nomeTrim,
+          codigos: listaCodigos.length ? listaCodigos : null,
           descricao: descricao || null,
           endereco_plantao: enderecoPlantao.trim() || null,
           site_url: siteUrlNormalizado,
@@ -305,6 +343,7 @@ export const LancamentoViewPage = () => {
       setBookFilename(bookPdfName);
       setFotos(fotosFinais);
       setSiteUrl(siteUrlNormalizado ?? '');
+      setCodigos(listaCodigos.join(', '));
       setEditandoNome(false);
       setSavedAt(new Date());
     } catch (err) {
@@ -420,6 +459,26 @@ export const LancamentoViewPage = () => {
           </Button>
         </div>
       </div>
+
+      <section className="rounded-xl border border-border bg-card p-5 space-y-3">
+        <div>
+          <label htmlFor="lanc-codigos" className="text-lg font-semibold text-text-primary">
+            Códigos do lançamento
+          </label>
+          <p className="text-xs text-text-secondary mt-1">
+            Os códigos deste empreendimento na planilha da equipe (ex.: L014). É por eles que o
+            lead vindo do portal encontra este cadastro. Um código por anúncio: o mesmo
+            empreendimento anunciado em várias tipologias tem vários — separe por vírgula.
+          </p>
+        </div>
+        <Input
+          id="lanc-codigos"
+          className="max-w-md font-mono uppercase"
+          placeholder="Ex: L012, L023, L025"
+          value={codigos}
+          onChange={(e) => setCodigos(e.target.value)}
+        />
+      </section>
 
       <section className="rounded-xl border border-border bg-card p-5 space-y-3">
         <div className="flex items-center gap-2">

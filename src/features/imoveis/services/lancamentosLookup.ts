@@ -4,18 +4,17 @@
  * Lead de lançamento não traz código de catálogo: o Meta manda o nome do
  * empreendimento em `property_code` ('RESERVA CASTANHEIRA', 'RESIDENCIAL
  * VIGORE') e o ZAP manda o código interno da equipe ('L014', via
- * `lancamento_anuncios`). Só o primeiro caso tem como virar link — `lancamentos`
- * não guarda o L0NN, então é pelo nome que dá para casar.
- *
- * ponytail: casamento por nome normalizado, sem tabela de de-para. Se um dia
- * `lancamentos` ganhar a coluna `codigo` (L0NN), o lookup passa a ser por ela e
- * o nome vira só o fallback.
+ * `lancamento_anuncios`). Os dois casam aqui: primeiro por `lancamentos.codigos`
+ * — os L0NN da planilha, preenchidos no cadastro do lançamento —, depois pelo
+ * nome normalizado, que é o único jeito de resolver o que o Meta manda.
  */
 import { supabase } from '@/lib/supabaseClient';
 
 export interface LancamentoRef {
   id: string;
   nome: string;
+  /** Códigos da planilha da equipe (L0NN), um por anúncio no portal. */
+  codigos?: string[] | null;
 }
 
 /** Maiúsculas, sem acento, só letras/números separados por espaço. */
@@ -28,8 +27,9 @@ const normalizar = (texto: string) =>
     .trim();
 
 /**
- * O lançamento cujo nome é o código, ou o final/início dele — 'RESIDENCIAL
- * VIGORE' é o 'Vigóre'. A comparação é por palavra inteira de propósito:
+ * O lançamento com aquele código, ou aquele cujo nome é o código — 'RESIDENCIAL
+ * VIGORE' é o 'Vigóre'. O código vem primeiro: é identificação, o nome é
+ * heurística. A comparação por nome é por palavra inteira de propósito:
  * `includes` solto casaria 'Epic' dentro de qualquer palavra e mandaria o
  * corretor para o empreendimento errado.
  */
@@ -39,6 +39,16 @@ export function acharLancamentoPorCodigo(
 ): LancamentoRef | undefined {
   const alvo = normalizar(codigo);
   if (!alvo) return undefined;
+
+  // Código é igualdade, nunca sufixo: 'L1' não pode virar 'L14'.
+  const porCodigo = lancamentos.filter((l) =>
+    (l.codigos ?? []).some((c) => normalizar(c) === alvo),
+  );
+  // Dois cadastros com o mesmo código é erro de digitação, e nenhum banco
+  // segura isso em coluna de array. Aqui a saída é não linkar nada: código
+  // ambíguo volta cru na tela, que é melhor que apontar para o errado.
+  if (porCodigo.length === 1) return porCodigo[0];
+  if (porCodigo.length > 1) return undefined;
 
   // Nome mais longo primeiro: entre 'Vila Itália' e 'Vila', ganha o específico.
   return [...lancamentos]
@@ -50,11 +60,11 @@ export function acharLancamentoPorCodigo(
     });
 }
 
-/** Lançamentos do tenant (id + nome). RLS já limita ao tenant do usuário. */
+/** Lançamentos do tenant (id, nome, códigos). RLS já limita ao tenant do usuário. */
 export async function fetchLancamentosRef(tenantId: string): Promise<LancamentoRef[]> {
   const { data, error } = await supabase
     .from('lancamentos')
-    .select('id, nome')
+    .select('id, nome, codigos')
     .eq('tenant_id', tenantId);
 
   if (error) {
