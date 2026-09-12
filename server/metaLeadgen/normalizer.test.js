@@ -104,6 +104,8 @@ describe('normalizeLeadgen', () => {
       page_id: 'p1',
       form_id: 'f1',
       ad_id: 'a1',
+      campaign_id: null,
+      adset_id: null,
       created_time: '2026-08-06T12:00:00+0000',
       platform: 'fb',
     });
@@ -243,5 +245,20 @@ describe('normalizeLeadgen', () => {
       });
       expect(normalizeLeadgen(ambos, CTX).phone).toBe('+5511111111111');
     });
+  });
+
+  // O de-para é chaveado por form_id, mas quem nomeia o empreendimento é a
+  // campanha. O Graph já devolve campaign_id/adset_id e eles eram descartados:
+  // auditar "que anúncio é este lead?" obrigava a abrir a Meta Ads API à mão.
+  it('guarda campaign_id e adset_id no rastro do lead', () => {
+    const r = normalizeLeadgen(lead({ campaign_id: '52571127506556', adset_id: '52571127508756' }), CTX);
+    expect(r.raw_data.meta.campaign_id).toBe('52571127506556');
+    expect(r.raw_data.meta.adset_id).toBe('52571127508756');
+  });
+
+  it('sem campanha na resposta do Graph, os dois ficam null', () => {
+    const r = normalizeLeadgen(lead({}), CTX);
+    expect(r.raw_data.meta.campaign_id).toBeNull();
+    expect(r.raw_data.meta.adset_id).toBeNull();
   });
 });

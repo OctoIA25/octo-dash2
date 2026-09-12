@@ -110,6 +110,13 @@ export function normalizeLeadgen(lead = {}, ctx = {}) {
         page_id: ctx.pageId ?? null,
         form_id: ctx.formId ?? lead.form_id ?? null,
         ad_id: ctx.adId ?? lead.ad_id ?? null,
+        // O de-para é chaveado por form_id, mas quem NOMEIA o empreendimento é a
+        // campanha ('[CAST] Reserva Castanheira', '[Allegrato] Leads'). O Graph
+        // já devolve os dois (FIELDS em graphClient.js) e eles eram jogados fora:
+        // auditar "que anúncio é este lead?" obrigava a abrir a Meta Ads API à
+        // mão. Ficam só como rastro — a chave do de-para continua sendo o form.
+        campaign_id: lead.campaign_id ?? null,
+        adset_id: lead.adset_id ?? null,
         created_time: lead.created_time ?? null,
         platform: lead.platform ?? null,
       },
