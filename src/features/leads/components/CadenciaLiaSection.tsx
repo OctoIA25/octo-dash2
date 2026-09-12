@@ -208,7 +208,7 @@ export const CadenciaLiaSection = ({ cadencia, carregando, erro }: Props) => {
 const Cabecalho = ({ total }: { total?: number }) => (
   <p className="flex items-center gap-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
     <Bot className="w-3.5 h-3.5" />
-    Cadência da LIA
+    Régua de Relacionamento
     {total != null && <span className="font-normal normal-case tracking-normal text-slate-400">({total})</span>}
   </p>
 );

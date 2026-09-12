@@ -12,10 +12,18 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
 const catalogo = vi.fn();
 const interesses = vi.fn();
+const lancamentos = vi.fn();
 
 vi.mock('@/features/imoveis/services/catalogoImoveisService', () => ({
   fetchCatalogoImoveis: (...args: unknown[]) => catalogo(...args),
 }));
+
+vi.mock('@/features/imoveis/services/lancamentosLookup', async () => {
+  const real = await vi.importActual<typeof import('@/features/imoveis/services/lancamentosLookup')>(
+    '@/features/imoveis/services/lancamentosLookup',
+  );
+  return { ...real, fetchLancamentosRef: (...args: unknown[]) => lancamentos(...args) };
+});
 
 vi.mock('../services/leadsService', async () => {
   const real = await vi.importActual<typeof import('../services/leadsService')>('../services/leadsService');
@@ -37,6 +45,14 @@ vi.mock('@/lib/supabaseClient', () => {
     },
   };
 });
+
+// O modal de detalhes real depende de react-query/auth; aqui só interessa que
+// o clique no card leve o imóvel certo até ele.
+vi.mock('@/components/imoveis/ImovelDetalhesModal', () => ({
+  ImovelDetalhesModal: ({ imovel }: { imovel: { referencia: string } | null }) => (
+    <div>detalhes:{imovel?.referencia}</div>
+  ),
+}));
 
 vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: vi.fn() }) }));
 vi.mock('@/lib/leadsEventEmitter', () => ({ leadsEventEmitter: { emit: vi.fn() } }));
@@ -69,6 +85,8 @@ const CA054 = {
 beforeEach(() => {
   catalogo.mockReset();
   interesses.mockReset();
+  lancamentos.mockReset();
+  lancamentos.mockResolvedValue([]);
   interesses.mockResolvedValue([{ codigo: 'CA054', portal: 'Imovelweb', data: '2026-09-10' }]);
 });
 
@@ -99,6 +117,29 @@ describe('Imóveis de interesse — catálogo', () => {
     await abrirSecao();
 
     await waitFor(() => expect(catalogo).toHaveBeenCalledWith('t1'));
+  });
+
+  it('clicar no imóvel de interesse abre os detalhes do imóvel', async () => {
+    catalogo.mockResolvedValue([CA054]);
+
+    await abrirSecao();
+
+    const card = await screen.findByTitle('Ver imóvel CA054');
+    fireEvent.click(card);
+
+    expect(screen.getByText('detalhes:CA054')).toBeInTheDocument();
+  });
+
+  it('imóvel de lançamento aponta para a página do lançamento', async () => {
+    catalogo.mockResolvedValue([]);
+    interesses.mockResolvedValue([{ codigo: 'RESERVA CASTANHEIRA', portal: 'Facebook', data: '2026-09-10' }]);
+    lancamentos.mockResolvedValue([{ id: 'lanc-1', nome: 'Reserva Castanheira' }]);
+
+    await abrirSecao();
+
+    const link = await screen.findByTitle('Ver lançamento Reserva Castanheira');
+    expect(link).toHaveAttribute('href', '/imoveis/lancamentos/lanc-1');
+    expect(screen.queryByText('Não encontrado no catálogo')).not.toBeInTheDocument();
   });
 
   it('código que não existe em nenhuma das duas fontes segue avisando', async () => {

@@ -17,7 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { useDebounce } from '../hooks/useDebounce';
 import { ClassificacaoDots } from './ClassificacaoBadge';
-import { filtrarPorAtuacao, opcoesFiltroBolsao } from '../utils/classificarLead';
+import { filtrarPorAtuacao, opcoesFiltroBolsao, classificacoesDe } from '../utils/classificarLead';
 import { PreferenciasBadges } from './PreferenciasLead';
 import {
   Select,
@@ -1040,9 +1040,15 @@ export const MeusLeadsAtribuidosSection = ({
     }
 
     if (filtroTipo !== 'todos') {
-      const tipo = String((leadRecord.tipo_negocio ?? leadRecord.finalidade ?? '')).toLowerCase();
-      if (filtroTipo === 'venda' && tipo !== 'venda') return false;
-      if (filtroTipo === 'locacao' && tipo !== 'locação' && tipo !== 'locacao') return false;
+      // Lançamento/Pronto vêm da classificação (text[], migration 20260818),
+      // não de tipo_negocio — são eixos diferentes do mesmo lead.
+      if (filtroTipo === 'lancamento' || filtroTipo === 'pronto') {
+        if (!classificacoesDe(leadRecord.classification as Parameters<typeof classificacoesDe>[0]).includes(filtroTipo)) return false;
+      } else {
+        const tipo = String((leadRecord.tipo_negocio ?? leadRecord.finalidade ?? '')).toLowerCase();
+        if (filtroTipo === 'venda' && tipo !== 'venda') return false;
+        if (filtroTipo === 'locacao' && tipo !== 'locação' && tipo !== 'locacao') return false;
+      }
     }
 
     if (!leadCasaCanal(lead, filtroPortal)) return false;
@@ -1225,6 +1231,8 @@ const handleDragEnd = useCallback(async (event: DragEndEvent) => {
             <SelectItem value="todos">Todos tipos</SelectItem>
             <SelectItem value="venda">Venda</SelectItem>
             <SelectItem value="locacao">Locação</SelectItem>
+            <SelectItem value="lancamento">Lançamento</SelectItem>
+            <SelectItem value="pronto">Pronto</SelectItem>
           </SelectContent>
         </Select>
 
@@ -1444,6 +1452,9 @@ const handleDragEnd = useCallback(async (event: DragEndEvent) => {
         tenantId={tenantId}
         editingLead={editingLead}
         leadType={leadType}
+        // Corretor edita os leads que aparecem aqui: esta lista é carregada
+        // por assigned_agent_id/nome dele (ver carregarMeusLeads).
+        permitirEdicao
         onArquivar={(lead) => {
           setLeadParaArquivar(lead);
           setMotivoArquivamento('');

@@ -32,6 +32,12 @@ import { useCadenciaLead } from '../hooks/useCadenciaLead';
 import { HistoricoLeadSection } from './HistoricoLeadSection';
 import { useHistoricoLead } from '../hooks/useHistoricoLead';
 import { fetchCatalogoImoveis } from '@/features/imoveis/services/catalogoImoveisService';
+import { ImovelDetalhesModal } from '@/components/imoveis/ImovelDetalhesModal';
+import {
+  acharLancamentoPorCodigo,
+  fetchLancamentosRef,
+  type LancamentoRef,
+} from '@/features/imoveis/services/lancamentosLookup';
 import type { Imovel } from '@/features/imoveis/services/kenloService';
 
 interface CriarLeadQuickModalProps {
@@ -46,6 +52,14 @@ interface CriarLeadQuickModalProps {
   leadType?: LeadType;
   /** Mostra "Arquivar" no rodapé (só em modo edição). O pai abre o dialog de motivo. */
   onArquivar?: (lead: KanbanLead) => void;
+  /**
+   * Libera a edição para quem não é gestão. Quem passa isto é o pai que JÁ
+   * garantiu a posse do lead — "Meus Leads" do corretor só carrega leads
+   * atribuídos a ele (assigned_agent_id / assigned_agent_name). O KanbanLead
+   * não carrega assigned_agent_id, então a posse não dá para reconferir aqui.
+   * RLS de `leads`/`kenlo_leads` já limita o UPDATE ao tenant do usuário.
+   */
+  permitirEdicao?: boolean;
 }
 
 interface LeadForm {
@@ -110,6 +124,7 @@ export const CriarLeadQuickModal = ({
   stageHint,
   leadType = LEAD_TYPE_INTERESSADO,
   onArquivar,
+  permitirEdicao = false,
 }: CriarLeadQuickModalProps) => {
   const isEditMode = Boolean(editingLead);
   const isProprietario = leadType === LEAD_TYPE_PROPRIETARIO;
@@ -121,8 +136,15 @@ export const CriarLeadQuickModal = ({
   // tem um imóvel só, que já está no campo "Código do Imóvel" acima.
   const [imoveisInteresse, setImoveisInteresse] = useState<ImovelInteresse[] | null>(null);
   const [catalogo, setCatalogo] = useState<Imovel[]>([]);
+  // Lançamento não está no catálogo: o código do lead é o NOME do
+  // empreendimento ('RESERVA CASTANHEIRA'). Ver lancamentosLookup.
+  const [lancamentos, setLancamentos] = useState<LancamentoRef[]>([]);
   const [carregandoInteresses, setCarregandoInteresses] = useState(false);
   const [verImoveisInteresse, setVerImoveisInteresse] = useState(false);
+  // Imóvel aberto a partir da lista de interesses. Modal em cima do modal (o
+  // Dialog fica em z-[9999], acima deste portal) para não perder a edição do
+  // lead em andamento.
+  const [imovelAberto, setImovelAberto] = useState<Imovel | null>(null);
   // Cadência da LIA: só faz sentido em lead que já existe. O hook não dispara
   // no modo criar nem com o modal fechado — o Kanban abre e fecha isto o tempo
   // todo e cada abertura seria uma requisição.
@@ -140,11 +162,12 @@ export const CriarLeadQuickModal = ({
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
 
-  // Apenas gestores podem criar/editar leads. Não-gestores abrem o modal
-  // em modo somente leitura.
+  // Gestão edita qualquer lead. Corretor só edita os próprios — e a posse é
+  // atestada pelo pai via `permitirEdicao` (ver prop). Criar lead segue só para
+  // gestão. Sem nenhum dos dois, o modal abre em somente leitura.
   const { isGestao, user } = useAuthContext();
   const userEmail = user?.email || '';
-  const canEdit = isGestao;
+  const canEdit = isGestao || (isEditMode && permitirEdicao);
 
   // Sem telefone válido ou sem permissão 'chat' o campo não renderiza — a
   // seção inteira sai junto, senão sobraria um rótulo órfão.
@@ -223,12 +246,14 @@ export const CriarLeadQuickModal = ({
     try {
       // Catálogo = XML do tenant + imoveis_locais. Ler só o XML fazia todo imóvel
       // cadastrado na mão (CA054 e afins) cair em "Não encontrado no catálogo".
-      const [lista, interesses] = await Promise.all([
+      const [lista, interesses, lancs] = await Promise.all([
         fetchCatalogoImoveis(tenantId),
         fetchImoveisDeInteresse(tenantId, phoneVariants(telefone)),
+        fetchLancamentosRef(tenantId),
       ]);
       setCatalogo(lista);
       setImoveisInteresse(interesses);
+      setLancamentos(lancs);
     } catch (err) {
       console.error('Erro ao buscar imóveis de interesse:', err);
       setImoveisInteresse([]);
@@ -244,7 +269,7 @@ export const CriarLeadQuickModal = ({
 
   const handleSubmit = async () => {
     if (!canEdit) {
-      setError('Apenas gestores podem criar ou editar leads.');
+      setError('Você não tem permissão para editar este lead.');
       return;
     }
     if (!form.name.trim()) {
@@ -407,7 +432,7 @@ export const CriarLeadQuickModal = ({
           <div className="flex-1 px-5 py-4 overflow-y-auto bg-slate-50/50 dark:bg-slate-950/40">
             {!canEdit && (
               <p className="mb-4 text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 rounded-lg px-3 py-2">
-                Somente gestores podem editar leads. Você está visualizando em modo somente leitura.
+                Você está visualizando em modo somente leitura.
               </p>
             )}
 
@@ -616,15 +641,18 @@ export const CriarLeadQuickModal = ({
                         );
                         const ehDesteLead =
                           (editingLead?.codigo || '').trim().toUpperCase() === chave;
-                        return (
-                          <div
-                            key={chave}
-                            className={`px-3 py-2.5 rounded-lg border ${
-                              ehDesteLead
-                                ? 'border-blue-300 bg-blue-50/60 dark:border-blue-800 dark:bg-blue-950/30'
-                                : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900'
-                            }`}
-                          >
+                        // Lançamento: o código do lead é o nome do
+                        // empreendimento, nunca uma referência do catálogo.
+                        const lancamento = doCatalogo
+                          ? undefined
+                          : acharLancamentoPorCodigo(item.codigo, lancamentos);
+                        const classe = `px-3 py-2.5 rounded-lg border ${
+                          ehDesteLead
+                            ? 'border-blue-300 bg-blue-50/60 dark:border-blue-800 dark:bg-blue-950/30'
+                            : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900'
+                        } ${doCatalogo || lancamento ? 'cursor-pointer hover:border-blue-400 dark:hover:border-blue-600' : ''}`;
+                        const conteudo = (
+                          <>
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
                                 <div className="flex items-center gap-1.5 flex-wrap">
@@ -652,6 +680,10 @@ export const CriarLeadQuickModal = ({
                                       {doCatalogo.bairro}, {doCatalogo.cidade}
                                     </p>
                                   </>
+                                ) : lancamento ? (
+                                  <p className="text-xs text-slate-700 dark:text-slate-200 truncate mt-0.5">
+                                    Lançamento: {lancamento.nome}
+                                  </p>
                                 ) : (
                                   <p className="text-[11px] text-slate-400 mt-0.5">
                                     Não encontrado no catálogo
@@ -674,6 +706,47 @@ export const CriarLeadQuickModal = ({
                                 </p>
                               </div>
                             </div>
+                          </>
+                        );
+
+                        // ponytail: aba nova, como o link "abrir conversa" logo
+                        // acima — a página do lançamento não cabe em modal e o
+                        // corretor perderia a edição do lead em andamento.
+                        if (lancamento) {
+                          return (
+                            <a
+                              key={chave}
+                              href={`/imoveis/lancamentos/${lancamento.id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title={`Ver lançamento ${lancamento.nome}`}
+                              className={`block ${classe}`}
+                            >
+                              {conteudo}
+                            </a>
+                          );
+                        }
+
+                        return (
+                          <div
+                            key={chave}
+                            role={doCatalogo ? 'button' : undefined}
+                            tabIndex={doCatalogo ? 0 : undefined}
+                            onClick={doCatalogo ? () => setImovelAberto(doCatalogo) : undefined}
+                            onKeyDown={
+                              doCatalogo
+                                ? (e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                      e.preventDefault();
+                                      setImovelAberto(doCatalogo);
+                                    }
+                                  }
+                                : undefined
+                            }
+                            title={doCatalogo ? `Ver imóvel ${item.codigo}` : undefined}
+                            className={classe}
+                          >
+                            {conteudo}
                           </div>
                         );
                       })}
@@ -848,6 +921,16 @@ export const CriarLeadQuickModal = ({
           </div>
         </div>
       </div>
+
+      {/* Só monta quando há imóvel: o modal usa react-query (captadores) e não
+          vale pagar hook/query em toda abertura do cadastro de lead. */}
+      {imovelAberto && (
+        <ImovelDetalhesModal
+          imovel={imovelAberto}
+          open
+          onOpenChange={(aberto) => { if (!aberto) setImovelAberto(null); }}
+        />
+      )}
     </>,
     document.body
   );

@@ -32,7 +32,7 @@ interface Props {
 const Evento = ({ ev }: { ev: EventoLead }) => {
   const { titulo, detalhe, dot } = descreverEvento(ev);
   return (
-    <li className="relative pl-5 pb-3 last:pb-0">
+    <li className="relative pl-5 pb-3 last:pb-0 before:absolute before:left-1 before:top-0 before:bottom-0 before:w-px before:bg-slate-200 dark:before:bg-slate-700">
       <span className="absolute left-0 top-[5px] w-2 h-2 rounded-full ring-2 ring-white dark:ring-slate-900">
         <span
           className={`block w-2 h-2 rounded-full ${dot} ${ev.derivado ? 'opacity-50' : ''}`}
@@ -118,7 +118,7 @@ const Conteudo = ({ historico, carregando, erro }: Pick<Props, 'historico' | 'ca
 
   return (
     <>
-      <ul className="max-h-72 overflow-y-auto pr-1 border-l border-slate-200 dark:border-slate-700 ml-1">
+      <ul className="max-h-72 overflow-y-auto pr-1 ml-1">
         {historico.eventos.map((ev) => (
           <Evento key={ev.id} ev={ev} />
         ))}
