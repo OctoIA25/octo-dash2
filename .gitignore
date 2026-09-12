@@ -53,3 +53,6 @@ n8n/
 
 # graphify tool cache
 graphify-out/
+
+# Saída do Playwright MCP: snapshot do DOM do CRM logado (leva dado de cliente)
+.playwright-mcp/
