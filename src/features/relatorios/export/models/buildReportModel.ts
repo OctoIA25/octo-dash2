@@ -86,6 +86,7 @@ function buildMetricas(src: MetricasSource, base: Base): ReportModel {
           { label: 'Vendas assinadas', value: formatNumber(k.vendasAssinadas) },
           { label: 'VGV', value: k.vgvFormatado },
           { label: 'Comissão (VGC)', value: k.vgcFormatado },
+          { label: 'Líquido imobiliária', value: k.liquidoImobiliariaFormatado },
           { label: 'Ticket médio', value: k.ticketMedioFormatado },
         ],
       },

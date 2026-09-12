@@ -75,6 +75,7 @@ import { EnpsCorretoresSection } from '../enps/EnpsCorretoresSection';
 import { buildCorretorMetricasCompletas } from '../utils/buildCorretorMetricasCompletas';
 import {
   buscarFinanceiroVendasComerciaisComFallback,
+  ratearComissaoDasVendas,
   type CommercialSalesFinanceSummary,
 } from '@/features/metricas/services/commercialSalesService';
 import { FinanceiroTab } from '../components/FinanceiroTab';
@@ -737,6 +738,11 @@ export const RelatoriosPage = () => {
     };
   }, []);
 
+  /**
+   * Pódio: os três primeiros da MESMA ordem da tabela — pela parte do corretor
+   * no rateio Lotus. O valor exibido tem que ser esse também; enquanto era o
+   * VGC, o 1º lugar podia aparecer com número (e barra) menor que o 2º.
+   */
   const top3MetricasIndividuais = useMemo(() => rankingMetricasIndividuais.slice(0, 3), [rankingMetricasIndividuais]);
 
   /**
@@ -761,7 +767,7 @@ export const RelatoriosPage = () => {
   }, [rankingMetricasIndividuais]);
 
   const top3PodiumHeights = useMemo(() => {
-    const values = top3MetricasIndividuais.map((x) => x.valorComissao);
+    const values = top3MetricasIndividuais.map((x) => x.comissaoCorretor ?? 0);
     const max = Math.max(1, ...values);
 
     const heightFor = (value: number, min: number, maxH: number) => {
@@ -770,9 +776,9 @@ export const RelatoriosPage = () => {
     };
 
     return {
-      first: top3MetricasIndividuais[0] ? heightFor(top3MetricasIndividuais[0].valorComissao, 260, 420) : 380,
-      second: top3MetricasIndividuais[1] ? heightFor(top3MetricasIndividuais[1].valorComissao, 220, 360) : 280,
-      third: top3MetricasIndividuais[2] ? heightFor(top3MetricasIndividuais[2].valorComissao, 200, 330) : 250,
+      first: top3MetricasIndividuais[0] ? heightFor(top3MetricasIndividuais[0].comissaoCorretor ?? 0, 260, 420) : 380,
+      second: top3MetricasIndividuais[1] ? heightFor(top3MetricasIndividuais[1].comissaoCorretor ?? 0, 220, 360) : 280,
+      third: top3MetricasIndividuais[2] ? heightFor(top3MetricasIndividuais[2].comissaoCorretor ?? 0, 200, 330) : 250,
     };
   }, [top3MetricasIndividuais]);
 
@@ -1002,16 +1008,58 @@ export const RelatoriosPage = () => {
   const leadsEquipe = useMemo(() => filtrarPorEquipe(allLeadsEarly), [filtrarPorEquipe, allLeadsEarly]);
   const convertidosEquipe = useMemo(() => filtrarPorEquipe(convertidosEarly), [filtrarPorEquipe, convertidosEarly]);
 
-  // As propostas assinadas do período só são buscadas quando há equipe escolhida:
-  // sem filtro os cards continuam vindo prontos do servidor (`kpisRelatorios`).
+  // As propostas assinadas do período. Servem a dois consumidores da aba
+  // Métricas: os cards quando há equipe escolhida (aí o VGV/VGC é recalculado
+  // aqui) e o rateio Lotus do card "Líquido imobiliária", que precisa da venda
+  // por corretor — `kpisRelatorios` só traz o bolo somado.
   useEffect(() => {
-    if (!tenantId || tenantId === 'owner' || !equipeSelecionada) return;
+    if (!tenantId || tenantId === 'owner' || activeSubArea !== 'metricas') return;
     let ativo = true;
     buscarVendasAssinadas(tenantId, dataInicial, dataFinal)
       .then((vendas) => { if (ativo) setVendasDoPeriodo(vendas); })
       .catch((error) => console.error('Erro ao carregar vendas do período:', error));
     return () => { ativo = false; };
-  }, [tenantId, dataInicial, dataFinal, equipeSelecionada]);
+  }, [tenantId, dataInicial, dataFinal, activeSubArea]);
+
+  /** As vendas que os cards estão mostrando: do tenant ou só as da equipe. */
+  const vendasVisiveis = useMemo(() => {
+    if (!vendasDoPeriodo) return null;
+    if (!equipeSelecionada) return vendasDoPeriodo;
+    return vendasDoPeriodo.filter((venda) => resolverEquipeDoLead(teamResolver!, {
+      assigned_agent_id: venda.agentUserId,
+      assigned_agent_name: venda.agentNome,
+    })?.id === equipeSelecionada.id);
+  }, [vendasDoPeriodo, equipeSelecionada, teamResolver]);
+
+  /**
+   * Rateio Lotus do período — o mesmo motor do ranking, para o card do líquido
+   * não discordar da tabela logo ao lado. Fica em estado porque o rateio lê o
+   * nível/Líder Direto de cada corretor no banco.
+   */
+  const [rateioPeriodo, setRateioPeriodo] = useState<
+    { corretor: number; imobiliaria: number; semRateio: number; resolverIndisponivel: boolean } | null
+  >(null);
+  useEffect(() => {
+    if (!tenantId || tenantId === 'owner' || !vendasVisiveis) return;
+    let ativo = true;
+    setRateioPeriodo(null); // some com o número velho enquanto o novo não chega
+    ratearComissaoDasVendas(tenantId, vendasVisiveis)
+      .then((rateio) => { if (ativo) setRateioPeriodo(rateio); })
+      .catch((error) => console.error('Erro ao ratear comissão do período:', error));
+    return () => { ativo = false; };
+  }, [tenantId, vendasVisiveis]);
+
+  /**
+   * O líquido só é um número quando ALGUÉM foi rateado. Se todo corretor do
+   * período caiu em `semRateio` — ninguém com nível cadastrado, ou a leitura de
+   * `tenant_memberships` falhou (ela dá timeout de vez em quando) — R$ 0,00
+   * seria afirmar que a imobiliária não ficou com nada. Aí o card mostra "—".
+   */
+  const liquidoImobiliaria = useMemo(() => {
+    if (!rateioPeriodo) return null;
+    const rateado = rateioPeriodo.corretor + rateioPeriodo.imobiliaria > 0;
+    return rateioPeriodo.semRateio > 0 && !rateado ? null : rateioPeriodo.imobiliaria;
+  }, [rateioPeriodo]);
 
   /**
    * KPIs do topo. Sem filtro são os do servidor (tenant inteiro). Com equipe
@@ -1026,12 +1074,7 @@ export const RelatoriosPage = () => {
       (lead) => lead.data_entrada >= dataInicial && lead.data_entrada <= dataFinal,
     ).length;
 
-    const vendasDaEquipe = vendasDoPeriodo.filter((venda) => resolverEquipeDoLead(teamResolver!, {
-      assigned_agent_id: venda.agentUserId,
-      assigned_agent_name: venda.agentNome,
-    })?.id === equipeSelecionada.id);
-
-    const totais = somarVendas(vendasDaEquipe);
+    const totais = somarVendas(vendasVisiveis ?? []);
 
     return {
       ...kpisRelatorios,
@@ -1041,7 +1084,7 @@ export const RelatoriosPage = () => {
       vgc: totais.vgc,
       ticketMedio: totais.vendas > 0 ? totais.vgv / totais.vendas : 0,
     };
-  }, [equipeSelecionada, kpisRelatorios, vendasDoPeriodo, leadsEquipe, dataInicial, dataFinal, teamResolver]);
+  }, [equipeSelecionada, kpisRelatorios, vendasDoPeriodo, vendasVisiveis, leadsEquipe, dataInicial, dataFinal]);
 
   const openChartModal = (
     chart:
@@ -1679,6 +1722,7 @@ export const RelatoriosPage = () => {
         vendasAssinadas: kpisVisiveis?.vendasAssinadas ?? 0,
         vgvFormatado: formatCompactCurrencyBRL(kpisVisiveis?.vgv ?? 0),
         vgcFormatado: formatCompactCurrencyBRL(kpisVisiveis?.vgc ?? 0),
+        liquidoImobiliariaFormatado: liquidoImobiliaria === null ? '—' : formatCompactCurrencyBRL(liquidoImobiliaria),
         ticketMedioFormatado: formatCompactCurrencyBRL(kpisVisiveis?.ticketMedio ?? 0),
       },
       charts: {
@@ -1745,7 +1789,7 @@ export const RelatoriosPage = () => {
   }), [
     dataInicial, dataFinal, kpisCalculados,
     leadsPorCanalData, leadsPorOrigemData, leadsTotalOrigemData, leadsConvertidosOrigemData, leadsConvertidosCanalData, motivosArquivamentoData,
-    activeMetricasSubArea, kpisVisiveis, formatCompactCurrencyBRL,
+    activeMetricasSubArea, kpisVisiveis, liquidoImobiliaria, formatCompactCurrencyBRL,
     leadsPorEquipeData, tempoRespostaChartData, taxaConversaoChartData, leadsInteragidosUsuarioData, tempoInteracaoData, atividadesAbertoData, leadsConvertidosUsuarioData,
     rankingMetricasIndividuais, activeMetricasIndSubArea, metricasIndCorretor, metricasIndComissaoMetasView, metricasIndLeadsView, metricasIndVendasView,
     leadsPorFonteData, leadsPorImovelData, vendasPorFonteData,
@@ -2107,7 +2151,7 @@ export const RelatoriosPage = () => {
           {activeMetricasSubArea === 'visao-geral' && (
             <>
               {/* KPIs Cards - Métricas */}
-              <div data-export-layout="kpis" className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
+              <div data-export-layout="kpis" className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
                 <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-4 hover:shadow-md transition-shadow">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
@@ -2156,6 +2200,23 @@ export const RelatoriosPage = () => {
                   </div>
                 </div>
 
+                {/* O VGC ao lado é o bolo inteiro da venda; aqui é o que sobra
+                    para a imobiliária depois do rateio Lotus — mesmo motor e
+                    mesmo número da coluna "Líquido imobiliária" do ranking. */}
+                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-4 hover:shadow-md transition-shadow">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-teal-100 flex items-center justify-center">
+                      <DollarSign className="h-5 w-5 text-teal-600" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Líquido imobiliária</p>
+                      <p className="text-xl font-bold text-gray-900 dark:text-slate-100">
+                        {liquidoImobiliaria === null ? '—' : formatCompactCurrencyBRL(liquidoImobiliaria)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-4 hover:shadow-md transition-shadow">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center">
@@ -2168,6 +2229,25 @@ export const RelatoriosPage = () => {
                   </div>
                 </div>
               </div>
+
+              {/* Sem a guarda de `liquidoImobiliaria !== null`: quando TODOS os
+                  corretores estão sem nível, o card mostra "—" e é justamente
+                  aí que o motivo precisa aparecer. E o motivo tem duas caras —
+                  cadastro incompleto × membros que não puderam ser lidos. */}
+              {rateioPeriodo?.resolverIndisponivel ? (
+                <p className="-mt-3 mb-6 px-1 text-xs text-gray-500 dark:text-slate-400">
+                  Não foi possível ler os membros da imobiliária agora, então o rateio não foi calculado.
+                  O líquido volta ao atualizar a página — se insistir, é a leitura de equipe que está falhando,
+                  não o cadastro.
+                </p>
+              ) : rateioPeriodo && rateioPeriodo.semRateio > 0 ? (
+                <p className="-mt-3 mb-6 px-1 text-xs text-gray-500 dark:text-slate-400">
+                  {rateioPeriodo.semRateio === 1
+                    ? '1 corretor está sem nível de comissionamento ou Líder Direto cadastrado'
+                    : `${rateioPeriodo.semRateio} corretores estão sem nível de comissionamento ou Líder Direto cadastrado`}
+                  {' '}em Gestão de Equipe — a comissão deles não entra no líquido da imobiliária.
+                </p>
+              ) : null}
 
               {/* Grid de Gráficos - Métricas (Gestão de Equipe) */}
               <div data-export-layout="charts" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -2423,9 +2503,11 @@ export const RelatoriosPage = () => {
                                 style={{ height: top3PodiumHeights.second }}
                               >
                                 <div className="text-2xl font-extrabold tracking-tight leading-none text-sky-950">
-                                  {(top3MetricasIndividuais[1].valorComissao / 1000).toFixed(2)} Mil
+                                  {top3MetricasIndividuais[1].comissaoCorretor == null
+                                    ? '—'
+                                    : `${(top3MetricasIndividuais[1].comissaoCorretor / 1000).toFixed(2)} Mil`}
                                 </div>
-                                <div className="text-xs mt-1 text-sky-900">Comissão</div>
+                                <div className="text-xs mt-1 text-sky-900">Comissão do corretor</div>
                               </div>
                             </div>
                           )}
@@ -2449,9 +2531,11 @@ export const RelatoriosPage = () => {
                                 style={{ height: top3PodiumHeights.first }}
                               >
                                 <div className="text-3xl font-extrabold tracking-tight leading-none text-blue-950">
-                                  {(top3MetricasIndividuais[0].valorComissao / 1000).toFixed(2)} Mil
+                                  {top3MetricasIndividuais[0].comissaoCorretor == null
+                                    ? '—'
+                                    : `${(top3MetricasIndividuais[0].comissaoCorretor / 1000).toFixed(2)} Mil`}
                                 </div>
-                                <div className="text-xs mt-1 text-blue-900">Comissão</div>
+                                <div className="text-xs mt-1 text-blue-900">Comissão do corretor</div>
                               </div>
                             </div>
                           )}
@@ -2475,9 +2559,11 @@ export const RelatoriosPage = () => {
                                 style={{ height: top3PodiumHeights.third }}
                               >
                                 <div className="text-2xl font-extrabold tracking-tight leading-none text-indigo-950">
-                                  {(top3MetricasIndividuais[2].valorComissao / 1000).toFixed(2)} Mil
+                                  {top3MetricasIndividuais[2].comissaoCorretor == null
+                                    ? '—'
+                                    : `${(top3MetricasIndividuais[2].comissaoCorretor / 1000).toFixed(2)} Mil`}
                                 </div>
-                                <div className="text-xs mt-1 text-indigo-900">Comissão</div>
+                                <div className="text-xs mt-1 text-indigo-900">Comissão do corretor</div>
                               </div>
                             </div>
                           )}

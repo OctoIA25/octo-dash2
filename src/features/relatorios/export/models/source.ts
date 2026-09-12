@@ -61,6 +61,8 @@ export interface MetricasSource {
     vendasAssinadas: number;
     vgvFormatado: string;
     vgcFormatado: string;
+    /** Rateio Lotus: o que sobra para a imobiliária. '—' quando ainda carrega. */
+    liquidoImobiliariaFormatado: string;
     ticketMedioFormatado: string;
   };
   charts: {
