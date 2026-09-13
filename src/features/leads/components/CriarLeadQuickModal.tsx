@@ -26,6 +26,7 @@ import {
   type LeadType,
 } from '../services/leadsService';
 import { phoneVariants } from '@/features/chat/services/chatService';
+import { fetchCorretoresDisponiveis, type CorretorDisponivel } from '../services/roletaService';
 import { CadenciaLiaSection } from './CadenciaLiaSection';
 import { AtividadesLeadSection } from './AtividadesLeadSection';
 import { useCadenciaLead } from '../hooks/useCadenciaLead';
@@ -158,6 +159,12 @@ export const CriarLeadQuickModal = ({
     tenantId,
     isOpen && isEditMode && verHistorico,
   );
+  // Corretor responsável. O KanbanLead só traz o NOME de quem atende
+  // (`corretor_responsavel`), nunca o user_id — então "atual" é texto e o
+  // seletor guarda o user_id do DESTINO; vazio = mantém quem está.
+  const corretorAtual = (editingLead?.corretor_responsavel || editingLead?.corretor || '').trim();
+  const [corretores, setCorretores] = useState<CorretorDisponivel[]>([]);
+  const [destinoId, setDestinoId] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
@@ -168,6 +175,9 @@ export const CriarLeadQuickModal = ({
   const { isGestao, user } = useAuthContext();
   const userEmail = user?.email || '';
   const canEdit = isGestao || (isEditMode && permitirEdicao);
+  // Transferir é da gestão: `isGestao` cobre admin, gestor (team_leader) e owner
+  // — ver AuthContext, onde membership.role != 'corretor' mapeia para 'gestao'.
+  const podeTransferir = isEditMode && isGestao;
 
   // Sem telefone válido ou sem permissão 'chat' o campo não renderiza — a
   // seção inteira sai junto, senão sobraria um rótulo órfão.
@@ -185,10 +195,25 @@ export const CriarLeadQuickModal = ({
       setForm(EMPTY_FORM);
     }
     setError(null);
+    setDestinoId('');
     // Outro lead, outro histórico: fecha e descarta o que estava carregado.
     setImoveisInteresse(null);
     setVerImoveisInteresse(false);
   }, [isOpen, editingLead]);
+
+  // Destinos da transferência. Mesma fonte da roleta (tenant_memberships +
+  // user_profiles) para o nome gravado em `assigned_agent_name` bater com o que
+  // roleta e bolsão gravam — é por nome que kenlo_leads e o espelho casam.
+  useEffect(() => {
+    if (!isOpen || !podeTransferir || !tenantId || tenantId === 'owner') return;
+    let cancelado = false;
+    fetchCorretoresDisponiveis(tenantId).then((lista) => {
+      if (!cancelado) setCorretores(lista);
+    });
+    return () => {
+      cancelado = true;
+    };
+  }, [isOpen, podeTransferir, tenantId]);
 
   // Hidrata o CPF da tabela-fonte (mesma ordem do UPDATE: leads → kenlo_leads).
   // Fora do select do Kanban de propósito: coluna nova no hot path derrubaria a
@@ -222,6 +247,7 @@ export const CriarLeadQuickModal = ({
 
   const reset = () => {
     setForm(EMPTY_FORM);
+    setDestinoId('');
     setError(null);
     setIsSubmitting(false);
   };
@@ -290,6 +316,12 @@ export const CriarLeadQuickModal = ({
 
     try {
       if (isEditMode && editingLead) {
+        // Transferência: só a gestão escolhe destino, e as colunas de atribuição
+        // só entram no payload quando alguém foi escolhido — um save comum não
+        // pode reescrever a atribuição (o trigger tr_leads_assigned_at zeraria o
+        // cronômetro do bolsão a cada edição de nome ou temperatura).
+        const destino = podeTransferir ? corretores.find((c) => c.id === destinoId) ?? null : null;
+
         // UPDATE — respeita RLS via tenant_memberships / assigned_agent_id
         const updatePayload = {
           name: form.name.trim(),
@@ -308,6 +340,11 @@ export const CriarLeadQuickModal = ({
           // cpf só entra quando a seção Documentação está visível — para leads em
           // etapas anteriores o campo nem existe na tela e o valor salvo é preservado.
           ...(showDocumentacao ? { cpf: form.cpf.trim() || null } : {}),
+          // `assigned_at` NÃO vai aqui: o trigger tr_leads_assigned_at carimba
+          // now() sozinho quando o corretor muda, reiniciando o prazo do bolsão
+          // para quem recebeu. O guard tr_leads_zz_assignee_guard confere que o
+          // destino é membro do tenant.
+          ...(destino ? { assigned_agent_id: destino.id, assigned_agent_name: destino.name } : {}),
           updated_at: new Date().toISOString(),
         };
 
@@ -331,6 +368,8 @@ export const CriarLeadQuickModal = ({
             classification: form.classification,
             preferences: form.preferences.length ? form.preferences : null,
             ...(showDocumentacao ? { cpf: form.cpf.trim() || null } : {}),
+            // kenlo_leads não tem assigned_agent_id — a atribuição é o nome.
+            ...(destino ? { attended_by_name: destino.name } : {}),
             updated_at: new Date().toISOString(),
           };
           const { error: kenloError } = await supabase
@@ -343,7 +382,32 @@ export const CriarLeadQuickModal = ({
           throw new Error(updateError.message);
         }
 
-        toast({ title: `✅ ${typeLabel} atualizado`, description: `${form.name.trim()} foi salvo.` });
+        if (destino) {
+          // O espelho em `bolsao` NÃO é atualizado por trigger quando o corretor
+          // muda (só em INSERT e em mudança de status), e é dele que a roleta lê
+          // quem já tem o lead (pick_roleta_broker_excluding) e que o Bolsão lê
+          // para listar os leads de um corretor. Sem isto o corretor anterior
+          // continuaria lá e poderia receber o lead de volta na expiração.
+          const { error: espelhoError } = await supabase
+            .from('bolsao')
+            .update({
+              corretor_responsavel: destino.name,
+              numero_corretor_responsavel: destino.phone ?? null,
+              data_atribuicao: new Date().toISOString(),
+            })
+            .eq(editingLead.source_kenlo_id ? 'source_kenlo_id' : 'source_lead_id', editingLead.id);
+          // Espelho desatualizado não invalida a transferência: a fonte já mudou.
+          if (espelhoError) {
+            console.warn('Espelho do bolsão não atualizado na transferência:', espelhoError.message);
+          }
+        }
+
+        toast({
+          title: `✅ ${typeLabel} atualizado`,
+          description: destino
+            ? `${form.name.trim()} transferido para ${destino.name}.`
+            : `${form.name.trim()} foi salvo.`,
+        });
       } else {
         // INSERT
         const { data: authData } = await supabase.auth.getUser();
@@ -490,6 +554,53 @@ export const CriarLeadQuickModal = ({
                 </div>
               )}
             </div>
+
+            {/* Seção: Corretor responsável — com quem o lead está agora. A gestão
+                troca o responsável por aqui (salva junto com o resto do
+                formulário); para o corretor é somente leitura. */}
+            {isEditMode && (
+              <div className="mb-5">
+                <SectionTitle>Corretor responsável</SectionTitle>
+                {podeTransferir ? (
+                  <>
+                    <label
+                      htmlFor="lead-corretor-responsavel"
+                      className="flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5"
+                    >
+                      <UserIcon className="w-4 h-4 text-slate-400" />
+                      Transferir para
+                    </label>
+                    <select
+                      id="lead-corretor-responsavel"
+                      value={destinoId}
+                      onChange={(e) => setDestinoId(e.target.value)}
+                      disabled={!canEdit}
+                      className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      <option value="">{corretorAtual || 'Não atribuído'} (atual)</option>
+                      {corretores
+                        .filter((c) => c.name.trim().toLowerCase() !== corretorAtual.toLowerCase())
+                        .map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                    </select>
+                    {destinoId && (
+                      <p className="mt-1.5 text-[11px] text-amber-600 dark:text-amber-400">
+                        Ao salvar, o lead sai da carteira de {corretorAtual || 'ninguém'} e entra na de{' '}
+                        {corretores.find((c) => c.id === destinoId)?.name}.
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <p className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-slate-100">
+                    <UserIcon className="w-4 h-4 text-slate-400 shrink-0" />
+                    {corretorAtual || 'Não atribuído'}
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Seção: Interesse */}
             <SectionTitle>Interesse</SectionTitle>
