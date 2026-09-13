@@ -658,34 +658,45 @@ export async function buscarVendasPorFaixa(
 // Evolução da carteira de imóveis
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Um mês da série da carteira. `carteira` é o saldo ao FIM do mês. */
+/**
+ * Um mês da série da carteira. `carteira` (quantidade) e `valor` (soma do valor
+ * de venda) são o saldo ao FIM do mês; entradas/saídas são a movimentação do mês.
+ */
 export interface CarteiraMes {
   mes: string;
   ano: number;
   entradas: number;
   saidas: number;
   carteira: number;
+  valor: number;
+}
+
+/** Entrada ou saída de um imóvel da carteira: quando e com que valor de venda. */
+export interface MovimentoCarteira {
+  data: string;
+  valor: number;
 }
 
 const chaveMes = (d: Date) => `${d.getFullYear()}-${d.getMonth() + 1}`;
 
 /**
- * Monta a série da carteira a partir das datas de entrada e de saída.
+ * Monta a série da carteira a partir das entradas e saídas.
  *
  * Separada da query para poder ser testada sem banco. O saldo de cada mês é
  * acumulado (entradas − saídas) sobre um saldo inicial: tudo que entrou e saiu
  * ANTES da janela vira o ponto de partida, senão o primeiro mês do gráfico
- * começaria em zero e a linha inteira mentiria.
+ * começaria em zero e a linha inteira mentiria. Quantidade e valor seguem a
+ * mesma conta.
  */
 export function montarEvolucaoCarteira(
-  entradas: string[],
-  saidas: string[],
+  entradas: MovimentoCarteira[],
+  saidas: MovimentoCarteira[],
   meses = 12,
   hoje: Date = new Date()
 ): CarteiraMes[] {
   const primeiroMes = new Date(hoje.getFullYear(), hoje.getMonth() - (meses - 1), 1);
 
-  const buckets = new Map<string, CarteiraMes>();
+  const buckets = new Map<string, CarteiraMes & { delta: number }>();
   for (let i = 0; i < meses; i++) {
     const d = new Date(primeiroMes.getFullYear(), primeiroMes.getMonth() + i, 1);
     buckets.set(chaveMes(d), {
@@ -694,33 +705,40 @@ export function montarEvolucaoCarteira(
       entradas: 0,
       saidas: 0,
       carteira: 0,
+      valor: 0,
+      delta: 0,
     });
   }
 
   let saldoInicial = 0;
-  const acumular = (datas: string[], campo: 'entradas' | 'saidas', sinal: 1 | -1) => {
-    for (const iso of datas) {
-      const d = new Date(iso);
+  let valorInicial = 0;
+  const acumular = (movimentos: MovimentoCarteira[], campo: 'entradas' | 'saidas', sinal: 1 | -1) => {
+    for (const { data, valor } of movimentos) {
+      const d = new Date(data);
       if (Number.isNaN(d.getTime())) continue;
+      const v = Number.isFinite(valor) ? valor * sinal : 0;
       if (d < primeiroMes) {
         saldoInicial += sinal;
+        valorInicial += v;
         continue;
       }
       // Data fora da janela pela frente (relógio adiantado) não entra em mês nenhum.
       const bucket = buckets.get(chaveMes(d));
-      if (bucket) bucket[campo] += 1;
+      if (!bucket) continue;
+      bucket[campo] += 1;
+      bucket.delta += v;
     }
   };
   acumular(entradas, 'entradas', 1);
   acumular(saidas, 'saidas', -1);
 
   let saldo = saldoInicial;
-  for (const bucket of buckets.values()) {
-    saldo += bucket.entradas - bucket.saidas;
-    bucket.carteira = saldo;
-  }
-
-  return [...buckets.values()];
+  let valor = valorInicial;
+  return [...buckets.values()].map(({ delta, ...mes }) => {
+    saldo += mes.entradas - mes.saidas;
+    valor += delta;
+    return { ...mes, carteira: saldo, valor };
+  });
 }
 
 /**
@@ -765,7 +783,8 @@ async function lerPaginado<T>(
 }
 
 /**
- * Evolução da carteira de imóveis mês a mês (entradas, saídas e saldo).
+ * Evolução da carteira de imóveis mês a mês (entradas, saídas, quantidade e
+ * valor em carteira).
  *
  * Carteira = linhas de `imoveis_locais`, a mesma definição de "imóveis ativos"
  * que os KPIs usam (`countImoveisAtivos` no servidor) — não existe baixa lógica
@@ -775,21 +794,27 @@ async function lerPaginado<T>(
  * lugar onde o imóvel apagado deixa rastro, e a ENTRADA de `created_at`: das
  * linhas vivas direto, e das apagadas pelo evento 'criado' do mesmo log.
  *
+ * Valor = `valor_venda`. Imóvel vivo usa o valor atual; apagado, o que o log
+ * gravou na exclusão (`alteracoes.valor_venda.de`, desde 20260912_log_valor_na_exclusao).
+ *
  * ponytail: o log só existe desde 17/08/2026. Imóvel apagado antes disso não
  * tem evento 'criado' — entra como saldo anterior à janela, que é a verdade
  * mais próxima (ele já existia). E imóvel que nasceu E morreu antes do log é
  * invisível: some dos dois lados, então só subestima meses antigos e nunca o
- * saldo atual, que bate com a contagem da tabela.
+ * saldo atual, que bate com a contagem da tabela. Mesma ideia no valor:
+ * exclusão sem valor gravado entra com 0, e reajuste de preço não é
+ * reconstruído mês a mês (o log de 'editado' tem o histórico, se um dia importar).
  */
 export async function buscarEvolucaoCarteira(
   tenantId: string,
   meses: number = 12
 ): Promise<CarteiraMes[]> {
+  // `valor_venda` só vem preenchido em 'excluido'; em 'criado' é null e ninguém lê.
   const lerLog = (acao: 'criado' | 'excluido', filtrarIds?: string[]) =>
-    lerPaginado<{ imovel_id: string; created_at: string }>((de, ate) => {
+    lerPaginado<{ imovel_id: string; created_at: string; valor_venda: unknown }>((de, ate) => {
       let query = supabase
         .from('imoveis_locais_log')
-        .select('imovel_id, created_at')
+        .select('imovel_id, created_at, valor_venda:alteracoes->valor_venda->de')
         .eq('tenant_id', tenantId)
         .eq('acao', acao);
       if (filtrarIds) query = query.in('imovel_id', filtrarIds);
@@ -798,10 +823,10 @@ export async function buscarEvolucaoCarteira(
     });
 
   const [vivos, exclusoes] = await Promise.all([
-    lerPaginado<{ id: string; created_at: string | null }>((de, ate) =>
+    lerPaginado<{ id: string; created_at: string | null; valor_venda: number | null }>((de, ate) =>
       supabase
         .from('imoveis_locais')
-        .select('id, created_at')
+        .select('id, created_at, valor_venda')
         .eq('tenant_id', tenantId)
         .order('created_at')
         .range(de, ate)
@@ -810,26 +835,30 @@ export async function buscarEvolucaoCarteira(
     // saídas a curva ainda é a carteira, só sem as baixas.
     lerLog('excluido').catch((erro) => {
       console.warn('[carteira] saídas indisponíveis, série segue só com entradas:', erro);
-      return [] as Array<{ imovel_id: string; created_at: string }>;
+      return [] as Array<{ imovel_id: string; created_at: string; valor_venda: unknown }>;
     }),
   ]);
 
-  const entradas: string[] = [];
+  const entradas: MovimentoCarteira[] = [];
   for (const imovel of vivos) {
-    if (imovel.created_at) entradas.push(imovel.created_at);
+    if (imovel.created_at) entradas.push({ data: imovel.created_at, valor: Number(imovel.valor_venda) || 0 });
   }
 
+  const saidas: MovimentoCarteira[] = [];
   if (exclusoes.length > 0) {
     // Só as criações dos que saíram: as dos vivos já vieram da própria tabela.
     // ponytail: um `in` por id; se um dia forem milhares de exclusões a URL
     // estoura e o caminho é ler o log de 'criado' inteiro, paginado.
     const criacoes = await lerLog('criado', exclusoes.map((e) => e.imovel_id));
     const criadoEm = new Map(criacoes.map((c) => [c.imovel_id, c.created_at]));
-    // Sem evento 'criado' (imóvel anterior ao log): conta como saldo anterior.
-    for (const saida of exclusoes) {
-      entradas.push(criadoEm.get(saida.imovel_id) ?? '1970-01-01T00:00:00.000Z');
+    for (const exclusao of exclusoes) {
+      // Entra com o mesmo valor com que sai: senão o valor da carteira desce abaixo do real.
+      const valor = Number(exclusao.valor_venda) || 0;
+      saidas.push({ data: exclusao.created_at, valor });
+      // Sem evento 'criado' (imóvel anterior ao log): conta como saldo anterior.
+      entradas.push({ data: criadoEm.get(exclusao.imovel_id) ?? '1970-01-01T00:00:00.000Z', valor });
     }
   }
 
-  return montarEvolucaoCarteira(entradas, exclusoes.map((e) => e.created_at), meses);
+  return montarEvolucaoCarteira(entradas, saidas, meses);
 }

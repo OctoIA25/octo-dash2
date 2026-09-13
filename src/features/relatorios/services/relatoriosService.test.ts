@@ -251,19 +251,24 @@ describe('buscarVendasPorFaixa', () => {
 
 describe('montarEvolucaoCarteira', () => {
   const HOJE = new Date(2026, 8, 9); // 09/09/2026
+  const mov = (data: string, valor = 0) => ({ data, valor });
 
   it('devolve os N meses da janela, mesmo os sem movimento', () => {
     const serie = montarEvolucaoCarteira([], [], 12, HOJE);
     expect(serie).toHaveLength(12);
     expect(serie[0].mes).toBe('Out');
     expect(serie[11].mes).toBe('Set');
-    expect(serie.every((m) => m.carteira === 0)).toBe(true);
+    expect(serie.every((m) => m.carteira === 0 && m.valor === 0)).toBe(true);
   });
 
-  it('acumula: carteira do mês = saldo do mês anterior + entradas - saídas', () => {
+  it('acumula: carteira do mês = saldo do mês anterior + entradas - saídas, em quantidade e valor', () => {
     const serie = montarEvolucaoCarteira(
-      ['2026-07-10T12:00:00Z', '2026-07-20T12:00:00Z', '2026-08-05T12:00:00Z'],
-      ['2026-08-15T12:00:00Z'],
+      [
+        mov('2026-07-10T12:00:00Z', 500_000),
+        mov('2026-07-20T12:00:00Z', 800_000),
+        mov('2026-08-05T12:00:00Z', 1_200_000),
+      ],
+      [mov('2026-08-15T12:00:00Z', 500_000)],
       12,
       HOJE,
     );
@@ -271,19 +276,19 @@ describe('montarEvolucaoCarteira', () => {
     const ago = serie.find((m) => m.mes === 'Ago')!;
     const set = serie.find((m) => m.mes === 'Set')!;
 
-    expect(jul).toMatchObject({ entradas: 2, saidas: 0, carteira: 2 });
-    expect(ago).toMatchObject({ entradas: 1, saidas: 1, carteira: 2 });
-    expect(set).toMatchObject({ entradas: 0, saidas: 0, carteira: 2 }); // saldo não zera em mês parado
+    expect(jul).toMatchObject({ entradas: 2, saidas: 0, carteira: 2, valor: 1_300_000 });
+    expect(ago).toMatchObject({ entradas: 1, saidas: 1, carteira: 2, valor: 2_000_000 });
+    expect(set).toMatchObject({ entradas: 0, saidas: 0, carteira: 2, valor: 2_000_000 }); // saldo não zera em mês parado
   });
 
   it('o que entrou antes da janela vira saldo inicial em vez de sumir', () => {
     const serie = montarEvolucaoCarteira(
-      ['2020-01-01T00:00:00Z', '2020-02-01T00:00:00Z'],
-      ['2019-05-01T00:00:00Z'],
+      [mov('2020-01-01T00:00:00Z', 300_000), mov('2020-02-01T00:00:00Z', 700_000)],
+      [mov('2019-05-01T00:00:00Z', 300_000)],
       12,
       HOJE,
     );
-    expect(serie[0]).toMatchObject({ entradas: 0, saidas: 0, carteira: 1 });
+    expect(serie[0]).toMatchObject({ entradas: 0, saidas: 0, carteira: 1, valor: 700_000 });
   });
 });
 

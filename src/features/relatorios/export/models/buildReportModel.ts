@@ -250,7 +250,8 @@ function buildImoveis(src: ImoveisSource, base: Base): ReportModel {
     chart('imv-imoveis', 'Imóveis de Maior Interesse', 'graficos', c.imoveis),
     chart('imv-faixa', 'Vendas por Faixa de Valor (12 meses)', 'graficos', c.faixa),
     chart('imv-exclusivo', 'Distribuição Exclusivo/Ficha', 'graficos', c.exclusivo),
-    chart('imv-carteira', 'Evolução da Carteira (12 meses)', 'graficos', c.carteira),
+    chart('imv-carteira', 'Evolução da Carteira — Quantidade (12 meses)', 'graficos', c.carteira),
+    chart('imv-carteira-valor', 'Evolução da Carteira — Valor de Venda (12 meses)', 'graficos', c.carteiraValor),
   ];
 
   if (f && f.monthly.length > 0) {

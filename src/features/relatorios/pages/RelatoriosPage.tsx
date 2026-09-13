@@ -1572,43 +1572,60 @@ export const RelatoriosPage = () => {
 
   // Evolução da carteira: o saldo é a linha; entradas/saídas ficam no tooltip.
   // Plotar os três juntos achataria a linha do saldo (dezenas) contra
-  // movimentações que são de unidades.
-  const carteiraChartData = useMemo(() => ({
-    labels: evolucaoCarteira.map((m) => `${m.mes}/${String(m.ano).slice(2)}`),
-    datasets: [
-      {
-        label: 'Em carteira',
-        data: evolucaoCarteira.map((m) => m.carteira),
-        borderColor: 'rgb(37, 99, 235)',
-        backgroundColor: 'rgba(37, 99, 235, 0.12)',
-        fill: true,
-        tension: 0.3,
-        pointRadius: 3,
-      },
-    ],
-  }), [evolucaoCarteira]);
+  // movimentações que são de unidades. Quantidade e valor são dois gráficos, não
+  // dois eixos no mesmo: escalas diferentes num eixo duplo sugerem correlação
+  // que depende só de onde cada eixo começa.
+  const carteiraCharts = useMemo(() => {
+    const labels = evolucaoCarteira.map((m) => `${m.mes}/${String(m.ano).slice(2)}`);
+    const linha = (label: string, data: number[]) => ({
+      labels,
+      datasets: [
+        {
+          label,
+          data,
+          borderColor: 'rgb(37, 99, 235)',
+          backgroundColor: 'rgba(37, 99, 235, 0.12)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 3,
+        },
+      ],
+    });
+    return {
+      quantidade: linha('Em carteira', evolucaoCarteira.map((m) => m.carteira)),
+      valor: linha('Valor em carteira', evolucaoCarteira.map((m) => m.valor)),
+    };
+  }, [evolucaoCarteira]);
 
-  const carteiraChartOptions = useMemo(() => ({
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: { display: false },
-      tooltip: {
-        callbacks: {
-          label: (ctx: { parsed: { y: number } }) => `${ctx.parsed.y} imóveis em carteira`,
-          afterLabel: (ctx: { dataIndex: number }) => {
-            const mes = evolucaoCarteira[ctx.dataIndex];
-            if (!mes) return '';
-            return `+${mes.entradas} entradas / -${mes.saidas} saídas`;
+  const carteiraChartOptions = useMemo(() => {
+    const movimentacao = (ctx: { dataIndex: number }) => {
+      const mes = evolucaoCarteira[ctx.dataIndex];
+      if (!mes) return '';
+      return `+${mes.entradas} entradas / -${mes.saidas} saídas`;
+    };
+    const base = (label: (y: number) => string, tick: (y: number) => string) => ({
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index' as const, intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx: { parsed: { y: number } }) => label(ctx.parsed.y),
+            afterLabel: movimentacao,
           },
         },
       },
-    },
-    scales: {
-      x: { grid: { display: false }, ticks: { color: '#6B7280', font: { size: 10 } } },
-      y: { beginAtZero: true, ticks: { color: '#6B7280', precision: 0 } },
-    },
-  }), [evolucaoCarteira]);
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#6B7280', font: { size: 10 } } },
+        y: { beginAtZero: true, ticks: { color: '#6B7280', precision: 0, callback: (v: number | string) => tick(Number(v)) } },
+      },
+    });
+    return {
+      quantidade: base((y) => `${y} imóveis em carteira`, (y) => y.toLocaleString('pt-BR')),
+      valor: base((y) => `${formatCurrencyBRL.format(y)} em carteira`, formatCompactCurrencyBRL),
+    };
+  }, [evolucaoCarteira, formatCurrencyBRL, formatCompactCurrencyBRL]);
 
   // 14. Imóveis mais procurados (dados reais)
   const imovelCounts = useMemo(() => {
@@ -1787,7 +1804,8 @@ export const RelatoriosPage = () => {
         faixa: fromChartJs(vendasFaixaChartData, 'bar'),
         exclusivo: fromChartJs(distribuicaoExclusivoFichaChartData, 'stackedBar'),
         // O exportador não desenha linha; no PDF/Excel o saldo vira barra por mês.
-        carteira: fromChartJs(carteiraChartData, 'bar'),
+        carteira: fromChartJs(carteiraCharts.quantidade, 'bar'),
+        carteiraValor: fromChartJs(carteiraCharts.valor, 'bar', 'currency'),
       },
     },
     financeiro: { resumo: financeiroResumoExport },
@@ -1798,7 +1816,7 @@ export const RelatoriosPage = () => {
     leadsPorEquipeData, tempoRespostaChartData, taxaConversaoChartData, leadsInteragidosUsuarioData, tempoInteracaoData, atividadesAbertoData, leadsConvertidosUsuarioData,
     rankingMetricasIndividuais, activeMetricasIndSubArea, metricasIndCorretor, metricasIndComissaoMetasView, metricasIndLeadsView, metricasIndVendasView,
     leadsPorFonteData, leadsPorImovelData, vendasPorFonteData,
-    financeiroImoveis, vgvChartData, vgcChartData, imoveisInteresseData, vendasFaixaChartData, distribuicaoExclusivoFichaChartData, carteiraChartData,
+    financeiroImoveis, vgvChartData, vgcChartData, imoveisInteresseData, vendasFaixaChartData, distribuicaoExclusivoFichaChartData, carteiraCharts,
     financeiroResumoExport,
   ]);
 
@@ -3394,17 +3412,32 @@ export const RelatoriosPage = () => {
           <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-5 mb-6">
             <h3 className="text-sm font-semibold text-gray-800 mb-1">Evolução da Carteira (12 meses)</h3>
             <p className="text-xs text-gray-500 dark:text-slate-400 mb-4">
-              Imóveis cadastrados ao fim de cada mês (entradas menos saídas). Passe o mouse para ver a movimentação do mês.
+              Imóveis cadastrados ao fim de cada mês (entradas menos saídas) e a soma dos seus valores de venda. Passe o mouse para ver a movimentação do mês.
             </p>
-            <div className="h-[280px]">
-              {evolucaoCarteira.length > 0 ? (
-                <Line data={carteiraChartData} options={carteiraChartOptions} />
-              ) : (
-                <div className="h-full flex items-center justify-center text-sm text-gray-400">
-                  Sem dados de carteira.
+            {evolucaoCarteira.length > 0 ? (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div>
+                  <p className="text-xs font-medium text-gray-600 dark:text-slate-300 mb-2">
+                    Quantidade · {evolucaoCarteira[evolucaoCarteira.length - 1].carteira.toLocaleString('pt-BR')} imóveis
+                  </p>
+                  <div className="h-[260px]">
+                    <Line data={carteiraCharts.quantidade} options={carteiraChartOptions.quantidade} />
+                  </div>
                 </div>
-              )}
-            </div>
+                <div>
+                  <p className="text-xs font-medium text-gray-600 dark:text-slate-300 mb-2">
+                    Valor de venda · {formatCompactCurrencyBRL(evolucaoCarteira[evolucaoCarteira.length - 1].valor)}
+                  </p>
+                  <div className="h-[260px]">
+                    <Line data={carteiraCharts.valor} options={carteiraChartOptions.valor} />
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="h-[260px] flex items-center justify-center text-sm text-gray-400">
+                Sem dados de carteira.
+              </div>
+            )}
           </div>
 
           {/* Grid de Gráficos - Imóveis */}
