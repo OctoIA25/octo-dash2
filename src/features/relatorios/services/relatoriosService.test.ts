@@ -64,7 +64,7 @@ vi.mock('@/features/metricas/services/vendasAssinadasService', async (importOrig
   return { ...real, buscarVendasAssinadas: async () => vendasFake };
 });
 
-import { buscarKPIsGerais, buscarVendasPorFaixa, montarEvolucaoCarteira } from './relatoriosService';
+import { buscarKPIsGerais, buscarVendasPorFaixa, contarImoveisPorExclusividade, montarEvolucaoCarteira } from './relatoriosService';
 
 const TENANT = '33bf7e62-78ea-44fb-a047-c7b13d9a9d7f';
 const INICIO = '2026-08-01';
@@ -284,5 +284,31 @@ describe('montarEvolucaoCarteira', () => {
       HOJE,
     );
     expect(serie[0]).toMatchObject({ entradas: 0, saidas: 0, carteira: 1 });
+  });
+});
+
+/**
+ * Regressão do gráfico "Distribuição Exclusivo/Ficha" da aba Imóveis: contava
+ * leads de Proprietário nas etapas do kanban (funil sem uso → zero fixo). A
+ * exclusividade mora no imóvel, `imoveis_locais.exclusivo`.
+ */
+describe('contarImoveisPorExclusividade', () => {
+  it('conta imóveis do tenant por exclusivo, no banco', async () => {
+    respostas = [{ count: 2, error: null }, { count: 20, error: null }];
+
+    await expect(contarImoveisPorExclusividade(TENANT)).resolves.toEqual({ exclusivos: 2, ficha: 20 });
+
+    expect(queries.map((q) => q.table)).toEqual(['imoveis_locais', 'imoveis_locais']);
+    queries.forEach((q) => {
+      expect(q.opts).toMatchObject({ count: 'exact', head: true });
+      expect(filtroDe(q, 'tenant_id')?.val).toBe(TENANT);
+    });
+    expect(queries.map((q) => filtroDe(q, 'exclusivo')?.val)).toEqual([true, false]);
+  });
+
+  it('propaga erro do banco em vez de devolver zeros', async () => {
+    respostas = [{ count: 2, error: null }, { error: { code: '42501', message: 'permission denied' } }];
+
+    await expect(contarImoveisPorExclusividade(TENANT)).rejects.toMatchObject({ code: '42501' });
   });
 });

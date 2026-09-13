@@ -49,7 +49,6 @@ import { useImovelTipoMap } from '@/features/leads/hooks/useImovelTipoMap';
 import { useAuth } from '@/hooks/useAuth';
 import { fetchTenantMembers, type TenantMember } from '@/features/corretores/services/tenantMembersService';
 import { LEAD_TYPE_INTERESSADO, LEAD_TYPE_PROPRIETARIO } from '@/features/leads/services/leadsService';
-import { countProprietariosInStage } from '@/features/leads/utils/funnelStages';
 import { ProcessedLead, canonicalizeOrigemLeads } from '@/data/realLeadsProcessor';
 import { getRankingColor } from '@/utils/colors';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -65,7 +64,7 @@ import {
   somarVendas,
   type VendaAssinada,
 } from '@/features/metricas/services/vendasAssinadasService';
-import { buscarEvolucaoCarteira, type CarteiraMes } from '../services/relatoriosService';
+import { buscarEvolucaoCarteira, contarImoveisPorExclusividade, type CarteiraMes } from '../services/relatoriosService';
 import { useRelatorios } from '../hooks/useRelatorios';
 import { useLeadSourceChannels } from '../hooks/useLeadSourceChannels';
 
@@ -282,6 +281,7 @@ export const RelatoriosPage = () => {
   const [rankingCurrentPage, setRankingCurrentPage] = useState<number>(1);
   const [financeiroImoveis, setFinanceiroImoveis] = useState<CommercialSalesFinanceSummary | null>(null);
   const [evolucaoCarteira, setEvolucaoCarteira] = useState<CarteiraMes[]>([]);
+  const [exclusividadeImoveis, setExclusividadeImoveis] = useState({ exclusivos: 0, ficha: 0 });
   const rankingItemsPerPage = 10;
 
   // Reset page when period or filters change
@@ -356,7 +356,20 @@ export const RelatoriosPage = () => {
       }
     };
 
+    // Independente da carteira: falha numa não zera o outro gráfico.
+    const loadExclusividade = async () => {
+      if (!tenantId || tenantId === 'owner' || activeSubArea !== 'imoveis') return;
+      try {
+        const contagem = await contarImoveisPorExclusividade(tenantId);
+        if (mounted) setExclusividadeImoveis(contagem);
+      } catch (error) {
+        console.error('Erro ao carregar exclusividade dos imóveis:', error);
+        if (mounted) setExclusividadeImoveis({ exclusivos: 0, ficha: 0 });
+      }
+    };
+
     loadCarteira();
+    loadExclusividade();
     return () => {
       mounted = false;
     };
@@ -1503,26 +1516,18 @@ export const RelatoriosPage = () => {
     };
   }, [leadsEquipe, convertidosEquipe, origemTop.labels]);
 
-  // 12. Exclusivo vs Ficha — captação, então só o funil de Proprietário conta.
-  //
-  // Antes o filtro era `etapa_atual.includes('exclusivo')` sobre TODOS os leads,
-  // e errava três vezes: "Não Exclusivo" contém "exclusivo" e caía como
-  // exclusivo; interessado não tem etapa de exclusividade, então engordava a
-  // "Ficha"; e o fallback `|| allLeads.length` inventava a barra quando não
-  // havia dado. "Exclusivo" e "Não Exclusivo" são etapas reais do funil de
-  // Proprietário (PROPRIETARIO_STAGE_ORDER) — a contagem é a mesma do funil.
-  const exclusivoCount = countProprietariosInStage(processedLeadsProprietario, 'Exclusivo');
-  const naoExclusivoCount = countProprietariosInStage(processedLeadsProprietario, 'Não Exclusivo');
-
-  const distribuicaoExclusivoFichaChartData = {
+  // 12. Exclusivo vs Ficha — imóveis da carteira pela flag `imoveis_locais.exclusivo`
+  // (ver contarImoveisPorExclusividade). Contar leads de Proprietário por etapa do
+  // kanban dava zero: esse funil não é usado, os imóveis exclusivos sim.
+  const distribuicaoExclusivoFichaChartData = useMemo(() => ({
     labels: ['Exclusivo', 'Ficha'],
     datasets: [{
-      label: 'Proprietários',
-      data: [exclusivoCount, naoExclusivoCount],
+      label: 'Imóveis',
+      data: [exclusividadeImoveis.exclusivos, exclusividadeImoveis.ficha],
       backgroundColor: [CHART_COLORS.primaryLight, CHART_COLORS.primaryDark],
       borderRadius: 6,
     }]
-  };
+  }), [exclusividadeImoveis]);
 
   const financeiroImoveisMensal = useMemo(() => {
     return financeiroImoveis?.monthly ?? [
@@ -3440,7 +3445,7 @@ export const RelatoriosPage = () => {
             {/* 5. Distribuição Exclusivo/Ficha */}
             <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-5">
               <h3 className="text-sm font-semibold text-gray-800 mb-4">Distribuição Exclusivo/Ficha</h3>
-              <p className="text-xs text-gray-500 dark:text-slate-400 -mt-3 mb-3">Etapa de captação dos leads de Proprietário.</p>
+              <p className="text-xs text-gray-500 dark:text-slate-400 -mt-3 mb-3">Imóveis cadastrados, exclusivos e em ficha.</p>
               <div className="h-[280px]">
                 <Bar data={distribuicaoExclusivoFichaChartData} options={stackedBarOptions} />
               </div>

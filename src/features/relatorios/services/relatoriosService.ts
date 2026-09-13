@@ -723,6 +723,32 @@ export function montarEvolucaoCarteira(
   return [...buckets.values()];
 }
 
+/**
+ * Imóveis da carteira por exclusividade: `exclusivo = true` é Exclusivo, o resto
+ * é Ficha (a coluna é NOT NULL, default false).
+ *
+ * Mesma carteira de `buscarEvolucaoCarteira` — todas as linhas de
+ * `imoveis_locais` do tenant. Antes o gráfico contava leads de Proprietário nas
+ * etapas "Exclusivo"/"Não Exclusivo" do kanban, funil que ninguém usa: zero fixo
+ * com imóveis exclusivos cadastrados. Conta no banco (head), sem o corte de 1000.
+ */
+export async function contarImoveisPorExclusividade(
+  tenantId: string
+): Promise<{ exclusivos: number; ficha: number }> {
+  const contar = (exclusivo: boolean) =>
+    supabase
+      .from('imoveis_locais')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', tenantId)
+      .eq('exclusivo', exclusivo);
+
+  const [exclusivos, ficha] = await Promise.all([contar(true), contar(false)]);
+  const erro = exclusivos.error ?? ficha.error;
+  if (erro) throw erro;
+
+  return { exclusivos: exclusivos.count ?? 0, ficha: ficha.count ?? 0 };
+}
+
 /** Lê todas as páginas de uma consulta — sem o laço, o PostgREST corta em 1000 sem avisar. */
 async function lerPaginado<T>(
   pagina: (de: number, ate: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>
