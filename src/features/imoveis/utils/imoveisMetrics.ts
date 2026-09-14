@@ -7,6 +7,8 @@ export interface ImoveisMetrics {
   terrenos: number;
   comerciais: number;
   rurais: number;
+  /** tipoSimplificado 'outro' (prédio, hotel, tipos da XML sem prefixo conhecido). */
+  outros: number;
   venda: number;
   locacao: number;
   vendaLocacao: number;
@@ -29,6 +31,7 @@ export function computeImoveisMetrics(imoveis: Imovel[]): ImoveisMetrics {
     terrenos: 0,
     comerciais: 0,
     rurais: 0,
+    outros: 0,
     venda: 0,
     locacao: 0,
     vendaLocacao: 0,
@@ -47,6 +50,7 @@ export function computeImoveisMetrics(imoveis: Imovel[]): ImoveisMetrics {
       case 'terreno': metrics.terrenos++; break;
       case 'comercial': metrics.comerciais++; break;
       case 'rural': metrics.rurais++; break;
+      case 'outro': metrics.outros++; break;
     }
 
     if (imovel.finalidade === 'venda' || imovel.finalidade === 'venda_locacao') metrics.venda++;

@@ -1,10 +1,15 @@
 /**
  * 🏠 Formulário de Criação de Imóvel
  * Inspirado no layout do Kenlo, adaptado ao design system OctoDash
- * Apenas o código do imóvel é obrigatório
+ *
+ * Três modos: novo (ainda não salvo), rascunho (status `rascunho`, com
+ * autosave) e publicado (edição). Rascunho exige só o tipo (gera o código);
+ * publicar segue validarPublicacaoImovel.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { toast } from 'sonner';
+import { format, parseISO } from 'date-fns';
 import { useAuth } from '@/hooks/useAuth';
 import { useCaptadores } from '@/features/imoveis/hooks/useCaptadores';
 import { buscarCep, formatarCepExibicao, validarCep } from '@/services/viaCepService';
@@ -16,7 +21,10 @@ import { formatCurrency, parseCurrency } from '@/features/imoveis/utils/buildEdi
 import { FotosUploader } from './FotosUploader';
 import { PropertyCompleteness } from './PropertyCompleteness';
 import { isHttpUrl, normalizeYouTubeUrl } from '@/features/imoveis/utils/mediaUrls';
-import type { CompletenessSection } from '@/features/imoveis/utils/propertyCompleteness';
+import { validarPublicacaoImovel } from '@/features/imoveis/utils/validarPublicacaoImovel';
+import { formularioAlterado } from '@/features/imoveis/utils/formularioAlterado';
+import { STATUS_RASCUNHO, type StatusAprovacaoImovel } from '@/features/imoveis/utils/rascunho';
+import { excluirRascunho } from '@/features/imoveis/services/rascunhosService';
 import { ProprietarioAutocomplete } from './ProprietarioAutocomplete';
 import { ImovelDuplicadoDialog } from './ImovelDuplicadoDialog';
 import { ImovelHistorico } from './ImovelHistorico';
@@ -49,6 +57,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   User,
@@ -81,7 +99,8 @@ import {
   Sparkles,
   Lock,
   History,
-  KeyRound
+  KeyRound,
+  FilePen
 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { sendMessageToAgent } from '@/features/agentes-ia/services/agentWebhookService';
@@ -102,14 +121,59 @@ interface CriarImovelFormProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
-  initialData?: Partial<ImovelFormData> & { codigo_imovel?: string; status_aprovacao?: string; exclusivo?: 'sim' | 'nao' };
+  initialData?: Partial<ImovelFormData> & {
+    codigo_imovel?: string;
+    status_aprovacao?: StatusAprovacaoImovel;
+    exclusivo?: Exclusividade;
+    /** Só leitura: "Último salvamento" do rascunho. */
+    updated_at?: string | null;
+    /** Só leitura: autor do rascunho — é quem recebe a atribuição ao publicar. */
+    criado_por?: string | null;
+  };
   isEdit?: boolean;
 }
+
+/** Linha já gravada em imoveis_locais. `null` no estado = cadastro novo, ainda não salvo. */
+interface RegistroSalvo {
+  status: StatusAprovacaoImovel;
+  atualizadoEm: string | null;
+}
+
+interface EstadoAutosave {
+  estado: 'ocioso' | 'salvando' | 'salvo' | 'erro';
+  em?: string;
+  mensagem?: string;
+}
+
+const AUTOSAVE_MS = 5000;
+
+/** O update condicional do rascunho não achou a linha: publicada ou excluída em outra tela. */
+class RascunhoIndisponivelError extends Error {}
+
+const mensagemDeErro = (err: unknown): string =>
+  (err as { message?: string } | null)?.message || '';
+
+const formatarDataHora = (iso: string, padrao = "dd/MM/yyyy 'às' HH:mm"): string => {
+  try {
+    return format(parseISO(iso), padrao);
+  } catch {
+    return iso;
+  }
+};
+
+type Exclusividade = 'sim' | 'nao' | 'indiferente';
+
+/** `exclusivo` no banco: NULL é "Indiferente" (migration 20260914_exclusivo_indiferente). */
+const EXCLUSIVO_NO_BANCO: Record<Exclusividade, boolean | null> = {
+  sim: true,
+  nao: false,
+  indiferente: null,
+};
 
 interface ImovelFormData {
   // Obrigatório
   codigo_imovel: string;
-  exclusivo: 'sim' | 'nao';
+  exclusivo: Exclusividade;
   
   // Proprietário
   proprietario_nome: string;
@@ -469,8 +533,30 @@ export const CriarImovelForm = ({
   // Código gerado automaticamente
   const [codigoGerado, setCodigoGerado] = useState<string>('');
   const [isGeneratingCodigo, setIsGeneratingCodigo] = useState(false);
-  const [editStatusAprovacao, setEditStatusAprovacao] = useState<string | null>(null);
-  
+  const [registro, setRegistro] = useState<RegistroSalvo | null>(null);
+  const persistido = registro !== null;
+  const modoRascunho = registro?.status === STATUS_RASCUNHO;
+  const modoPublicado = persistido && !modoRascunho;
+
+  // Base do "tem alteração não salva?": o que foi carregado ou o último salvamento.
+  const [baseline, setBaseline] = useState<ImovelFormData>(initialFormData);
+  const [salvandoRascunho, setSalvandoRascunho] = useState(false);
+  const [autosave, setAutosave] = useState<EstadoAutosave>({ estado: 'ocioso' });
+  // A linha deixou de ser rascunho (publicada/excluída em outra tela): autosave para.
+  const [rascunhoIndisponivel, setRascunhoIndisponivel] = useState(false);
+  const [confirmarSaida, setConfirmarSaida] = useState(false);
+  const [confirmarExclusao, setConfirmarExclusao] = useState(false);
+  const [excluindoRascunho, setExcluindoRascunho] = useState(false);
+  // Um save por vez (rascunho, autosave, publicação ou exclusão).
+  const salvandoRef = useRef(false);
+  // Muda a cada abertura/fechamento: resposta de save que chega depois é descartada.
+  const sessaoRef = useRef(0);
+  // Snapshot cujo save falhou: o autosave não repete (nem re-sobe fotos) até o usuário mexer.
+  const autosaveFalhouRef = useRef<ImovelFormData | null>(null);
+  // A publicação já gravou imoveis_locais mas a atribuição falhou: o próximo
+  // clique (a linha já é publicada) refaz a atribuição.
+  const atribuicaoPendenteRef = useRef(false);
+
   // Condomínios do banco
   const [condominios, setCondominios] = useState<CondominioOption[]>([]);
   const [isLoadingCondominios, setIsLoadingCondominios] = useState(false);
@@ -524,6 +610,8 @@ export const CriarImovelForm = ({
     if (!cond) return;
     if (formData.condominio !== cond.nome) {
       setFormData(prev => ({ ...prev, condominio: cond.nome }));
+      // Nome resolvido pela carga, não pelo usuário: não conta como alteração.
+      setBaseline(prev => (prev.condominio_id === cond.id ? { ...prev, condominio: cond.nome } : prev));
     }
     setMetragensDisponiveis(cond.metragens_disponiveis || []);
   }, [condominios, formData.condominio_id, formData.condominio, isOpen]);
@@ -599,32 +687,46 @@ export const CriarImovelForm = ({
     }
   };
 
-  // Regenerar código quando tipo mudar
+  // Regenerar código quando tipo mudar. Depois do primeiro save (rascunho) o
+  // código é o da linha gravada e não muda mais.
   useEffect(() => {
-    if (isEdit) return;
+    if (isEdit || persistido) return;
     if (formData.tipo && isOpen) {
       generateCodigoImovel(formData.tipo);
     } else {
       setCodigoGerado('');
     }
-  }, [formData.tipo, tenantId, isOpen, isEdit]);
+  }, [formData.tipo, tenantId, isOpen, isEdit, persistido]);
 
   useEffect(() => {
     if (isOpen) {
+      sessaoRef.current += 1;
+      autosaveFalhouRef.current = null;
+      atribuicaoPendenteRef.current = false;
       if (isEdit && initialData) {
-        setFormData({
+        const dados = {
           ...initialFormData,
           ...initialData,
           fotos: initialData.fotos || [],
           caracteristicas: initialData.caracteristicas || [],
-        });
+        };
+        setFormData(dados);
+        setBaseline(dados);
         setCodigoGerado(initialData.codigo_imovel || '');
-        setEditStatusAprovacao(initialData.status_aprovacao || null);
+        setRegistro({
+          status: initialData.status_aprovacao || 'aguardando',
+          atualizadoEm: initialData.updated_at ?? null,
+        });
       } else {
         setFormData(initialFormData);
+        setBaseline(initialFormData);
         setCodigoGerado('');
-        setEditStatusAprovacao(null);
+        setRegistro(null);
       }
+      setAutosave({ estado: 'ocioso' });
+      setRascunhoIndisponivel(false);
+      setConfirmarSaida(false);
+      setConfirmarExclusao(false);
       setSubmitStatus('idle');
       setSubmitMessage('');
     }
@@ -652,7 +754,7 @@ export const CriarImovelForm = ({
 
   // Clique num card do completômetro: abre a seção e rola até ela.
   // O scroll espera o próximo frame porque o conteúdo só existe depois de abrir.
-  const focusSection = (section: CompletenessSection) => {
+  const focusSection = (section: keyof typeof openSections) => {
     setOpenSections(prev => ({ ...prev, [section]: true }));
     requestAnimationFrame(() => {
       document.getElementById(`secao-${section}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -821,145 +923,234 @@ export const CriarImovelForm = ({
     }));
   };
 
-  const handleSubmit = async (skipDuplicidadeCheck = false) => {
-    // Validar tipo obrigatório (necessário para gerar código)
-    if (!formData.tipo) {
-      setSubmitStatus('error');
-      setSubmitMessage('Selecione o tipo do imóvel para gerar o código automaticamente');
-      return;
+  const exibirErro = (mensagem: string) => {
+    setSubmitStatus('error');
+    setSubmitMessage(mensagem);
+  };
+
+  /**
+   * Primeiro save de um cadastro novo (rascunho ou publicação): o código gerado
+   * ainda está livre? São as checagens de sempre, mais o rascunho — ele reserva
+   * o código só em imoveis_locais (sem atribuição), e sem isto o upsert gravaria
+   * por cima do rascunho de outra pessoa.
+   */
+  const conflitoDeCodigo = async (codigo: string): Promise<string | null> => {
+    const { data: existingAssignment, error: assignmentFetchError } = await supabase
+      .from('imoveis_corretores')
+      .select('id, corretor_id, corretor_nome')
+      .eq('tenant_id', tenantId)
+      .eq('codigo_imovel', codigo)
+      .maybeSingle();
+
+    if (assignmentFetchError) throw assignmentFetchError;
+
+    const { data: existingLocal, error: localFetchError } = await supabase
+      .from('imoveis_locais')
+      .select('id, status_aprovacao')
+      .eq('tenant_id', tenantId)
+      .eq('codigo_imovel', codigo)
+      .maybeSingle();
+
+    if (localFetchError) throw localFetchError;
+
+    if (existingLocal?.status_aprovacao === STATUS_RASCUNHO) {
+      return `Código ${codigo} já está reservado por outro rascunho. Gere um novo código.`;
     }
 
-    if (!codigoGerado) {
-      setSubmitStatus('error');
-      setSubmitMessage('Aguarde a geração do código do imóvel');
+    if (existingAssignment && (existingLocal || existingAssignment.corretor_id !== user?.id)) {
+      return `Código ${codigo} já existe (atribuído a ${existingAssignment.corretor_nome || 'outro corretor'})`;
+    }
+
+    return null;
+  };
+
+  /**
+   * Salva como rascunho (botão ou autosave). Exige só tipo + código; não passa
+   * pela validação de publicação, não checa duplicidade e não cria a atribuição
+   * em imoveis_corretores (isso fica para a publicação). O formulário continua aberto.
+   */
+  const salvarRascunho = async (automatico = false) => {
+    if (salvandoRef.current) return;
+
+    if (!formData.tipo || !codigoGerado) {
+      if (!automatico) {
+        exibirErro('Selecione o tipo do imóvel para salvar o rascunho — o código é gerado a partir dele.');
+      }
       return;
     }
 
     if (!tenantId || !user?.id) {
-      setSubmitStatus('error');
-      setSubmitMessage('Erro de autenticação. Recarregue a página.');
+      if (!automatico) exibirErro('Erro de autenticação. Recarregue a página.');
       return;
     }
 
-    // Todo imóvel precisa de proprietário identificado.
-    if (!formData.proprietario_nome.trim()) {
-      setOpenSections(prev => ({ ...prev, proprietario: true }));
-      setSubmitStatus('error');
-      setSubmitMessage('Informe o nome do proprietário. O campo é obrigatório.');
+    const sessao = sessaoRef.current;
+    const snapshot = formData;
+    salvandoRef.current = true;
+    setSalvandoRascunho(true);
+    if (automatico) setAutosave({ estado: 'salvando' });
+
+    try {
+      if (!registro) {
+        const conflito = await conflitoDeCodigo(codigoGerado);
+        if (conflito) {
+          exibirErro(conflito);
+          return;
+        }
+      }
+
+      const atualizadoEm = await saveImovelLocal(codigoGerado, STATUS_RASCUNHO);
+      if (sessao !== sessaoRef.current) return;
+
+      setRegistro({ status: STATUS_RASCUNHO, atualizadoEm });
+      if (automatico) {
+        setAutosave({ estado: 'salvo', em: atualizadoEm || new Date().toISOString() });
+      } else {
+        setAutosave({ estado: 'ocioso' });
+        setSubmitStatus('idle');
+        setSubmitMessage('');
+        toast.success(`Rascunho ${codigoGerado} salvo`);
+      }
+    } catch (err) {
+      console.error('❌ Erro ao salvar rascunho:', err);
+      if (sessao !== sessaoRef.current) return;
+      autosaveFalhouRef.current = snapshot;
+
+      if (err instanceof RascunhoIndisponivelError) {
+        setRascunhoIndisponivel(true);
+        setAutosave({ estado: 'erro', mensagem: 'Salvamento automático interrompido.' });
+        exibirErro(err.message);
+      } else if (automatico) {
+        setAutosave({
+          estado: 'erro',
+          mensagem: `Não foi possível salvar automaticamente${mensagemDeErro(err) ? `: ${mensagemDeErro(err)}` : '.'}`,
+        });
+      } else {
+        exibirErro(mensagemDeErro(err) || 'Erro ao salvar o rascunho. Tente novamente.');
+      }
+    } finally {
+      salvandoRef.current = false;
+      setSalvandoRascunho(false);
+    }
+  };
+
+  /**
+   * Publica (cadastro novo ou rascunho → aguardando aprovação) ou salva a edição
+   * de um imóvel já publicado, mantendo o status dele. Valida tudo antes.
+   */
+  const publicar = async (skipDuplicidadeCheck = false) => {
+    if (salvandoRef.current) return;
+
+    const problemas = validarPublicacaoImovel(formData, { codigoGerado, podeEditarCaptador });
+    if (problemas.length > 0) {
+      exibirErro(
+        `Não foi possível ${modoPublicado ? 'salvar' : 'publicar'} o imóvel.\n` +
+        `Preencha os seguintes campos:\n${problemas.map((p) => `- ${p.mensagem}`).join('\n')}`,
+      );
+      setOpenSections(prev => ({ ...prev, ...Object.fromEntries(problemas.map((p) => [p.secao, true])) }));
+      focusSection(problemas[0].secao);
       return;
     }
 
-    // CEP é obrigatório: os feeds de portais (ZAP/OLX) rejeitam imóvel sem CEP
-    if (!validarCep(formData.cep)) {
-      setOpenSections(prev => ({ ...prev, localizacao: true }));
-      setSubmitStatus('error');
-      setSubmitMessage('Informe o CEP do imóvel (8 dígitos). É obrigatório para publicar nos portais.');
+    if (!tenantId || !user?.id) {
+      exibirErro('Erro de autenticação. Recarregue a página.');
       return;
     }
 
-    // Captador principal é obrigatório para quem pode defini-lo (o 2º é
-    // opcional). Quem não pode editar captador salva sem tocar no campo.
-    if (podeEditarCaptador && !formData.captador_id) {
-      setOpenSections(prev => ({ ...prev, comissoes: true }));
-      setSubmitStatus('error');
-      setSubmitMessage('Selecione o corretor captador. O campo é obrigatório (o 2º captador é opcional).');
-      return;
-    }
+    const sessao = sessaoRef.current;
+    const codigoNormalizado = codigoGerado;
+    // Cadastro novo e rascunho viram "aguardando" e ganham a atribuição; o
+    // publicado mantém o status (o trigger guarda a aprovação no banco).
+    const criando = !registro || registro.status === STATUS_RASCUNHO || atribuicaoPendenteRef.current;
+    const status: StatusAprovacaoImovel = criando ? 'aguardando' : registro.status;
 
-    // Validar link de vídeo: se preenchido, precisa ser um YouTube válido
-    if (formData.link_video.trim() && !normalizeYouTubeUrl(formData.link_video)) {
-      setSubmitStatus('error');
-      setSubmitMessage('Link de vídeo inválido. Use um link do YouTube ou deixe em branco.');
-      return;
-    }
-
-    // Validar tour virtual: se preenchido, precisa ser uma URL http(s)
-    if (formData.tour_virtual.trim() && !isHttpUrl(formData.tour_virtual)) {
-      setSubmitStatus('error');
-      setSubmitMessage('Tour virtual inválido. Use uma URL http(s) ou deixe em branco.');
-      return;
-    }
-
+    salvandoRef.current = true;
     setIsSubmitting(true);
     setSubmitStatus('idle');
     setSubmitMessage('');
 
-    // Usar código gerado automaticamente
-    const codigoNormalizado = codigoGerado;
-
-    // Verificação de imóvel duplicado para o mesmo proprietário
-    if (!skipDuplicidadeCheck && formData.proprietario_nome.trim().length >= 2) {
-      try {
-        const duplicados = await verificarImovelDuplicado({
-          tenantId,
-          proprietarioNome: formData.proprietario_nome,
-          proprietarioTelefone:
-            formData.proprietario_celular || formData.proprietario_tel_residencial || null,
-          proprietarioEmail: formData.proprietario_email || null,
-          tipo: formData.tipo || null,
-          logradouro: formData.logradouro || null,
-          numero: formData.numero || null,
-          cep: formData.cep || null,
-          bairro: formData.bairro || null,
-          cidade: formData.cidade || null,
-          areaTotal: parseFloat(formData.area_total) || null,
-          quartos: parseInt(formData.quartos) || null,
-          banheiros: parseInt(formData.banheiros) || null,
-          ignorarCodigo: isEdit ? codigoNormalizado : null,
-        });
-
-        if (duplicados.length > 0) {
-          setDuplicadosDetectados(duplicados);
-          setShowDuplicadoDialog(true);
-          setIsSubmitting(false);
-          return;
-        }
-      } catch (err) {
-        console.warn('[CriarImovelForm] falha ao verificar duplicidade:', err);
-        // Não bloqueia o cadastro caso a verificação falhe
-      }
-    }
-
     try {
+      // Verificação de imóvel duplicado para o mesmo proprietário
+      if (!skipDuplicidadeCheck && formData.proprietario_nome.trim().length >= 2) {
+        try {
+          const duplicados = await verificarImovelDuplicado({
+            tenantId,
+            proprietarioNome: formData.proprietario_nome,
+            proprietarioTelefone:
+              formData.proprietario_celular || formData.proprietario_tel_residencial || null,
+            proprietarioEmail: formData.proprietario_email || null,
+            tipo: formData.tipo || null,
+            logradouro: formData.logradouro || null,
+            numero: formData.numero || null,
+            cep: formData.cep || null,
+            bairro: formData.bairro || null,
+            cidade: formData.cidade || null,
+            areaTotal: parseFloat(formData.area_total) || null,
+            quartos: parseInt(formData.quartos) || null,
+            banheiros: parseInt(formData.banheiros) || null,
+            // Linha já gravada (rascunho incluso) não pode acusar a si mesma.
+            ignorarCodigo: registro ? codigoNormalizado : null,
+          });
+
+          if (duplicados.length > 0) {
+            setDuplicadosDetectados(duplicados);
+            setShowDuplicadoDialog(true);
+            return;
+          }
+        } catch (err) {
+          console.warn('[CriarImovelForm] falha ao verificar duplicidade:', err);
+          // Não bloqueia o cadastro caso a verificação falhe
+        }
+      }
+
       // Preparar dados do corretor
       const corretorNome = user.name || user.email?.split('@')[0] || 'Corretor';
       const corretorTelefone = user.telefone ? String(user.telefone).replace(/\D/g, '') : null;
+      let atualizadoEm: string | null;
 
-      if (!isEdit) {
-        const { data: existingAssignment, error: assignmentFetchError } = await supabase
-          .from('imoveis_corretores')
-          .select('id, corretor_id, corretor_nome')
-          .eq('tenant_id', tenantId)
-          .eq('codigo_imovel', codigoNormalizado)
-          .maybeSingle();
-
-        if (assignmentFetchError) throw assignmentFetchError;
-
-        const { data: existingLocal, error: localFetchError } = await supabase
-          .from('imoveis_locais')
-          .select('id')
-          .eq('tenant_id', tenantId)
-          .eq('codigo_imovel', codigoNormalizado)
-          .maybeSingle();
-
-        if (localFetchError) throw localFetchError;
-
-        if (existingAssignment && existingLocal) {
-          setSubmitStatus('error');
-          setSubmitMessage(`Código ${codigoNormalizado} já existe (atribuído a ${existingAssignment.corretor_nome || 'outro corretor'})`);
-          setIsSubmitting(false);
-          return;
+      if (criando) {
+        if (!registro) {
+          const conflito = await conflitoDeCodigo(codigoNormalizado);
+          if (conflito) {
+            exibirErro(conflito);
+            return;
+          }
         }
 
-        if (existingAssignment && existingAssignment.corretor_id !== user.id) {
-          setSubmitStatus('error');
-          setSubmitMessage(`Código ${codigoNormalizado} já existe (atribuído a ${existingAssignment.corretor_nome || 'outro corretor'})`);
-          setIsSubmitting(false);
-          return;
+        // Rascunho de outra pessoa: a atribuição é do autor, não de quem publica —
+        // senão o autor perde o imóvel em Meus Imóveis e os leads (que casam por
+        // nome/e-mail/telefone) vão para quem publicou. Resolvido antes de gravar
+        // para uma falha aqui não deixar nada pela metade.
+        const autorId = (isEdit && initialData?.criado_por) || user.id;
+        let atribuicao = {
+          corretor_id: user.id,
+          corretor_nome: corretorNome,
+          corretor_email: user.email || null,
+          corretor_telefone: corretorTelefone,
+        };
+        if (autorId !== user.id) {
+          const { data: autor, error: autorError } = await supabase
+            .from('tenant_brokers')
+            .select('name, email, phone')
+            .eq('tenant_id', tenantId)
+            .eq('auth_user_id', autorId)
+            .limit(1)
+            .maybeSingle();
+          if (autorError) throw autorError;
+          atribuicao = {
+            corretor_id: autorId,
+            corretor_nome: autor?.name || captadores.find((c) => c.user_id === autorId)?.nome || 'Corretor',
+            corretor_email: autor?.email || null,
+            corretor_telefone: autor?.phone ? String(autor.phone).replace(/\D/g, '') : null,
+          };
         }
 
         // Salvar detalhes completos antes de criar/regularizar a atribuição.
-        await saveImovelLocal(codigoNormalizado);
+        atualizadoEm = await saveImovelLocal(codigoNormalizado, status);
+        // A linha já é publicada: se a atribuição falhar, o retry não pode mais
+        // passar pelo update condicional do rascunho (casaria 0 linhas).
+        atribuicaoPendenteRef.current = true;
+        if (sessao === sessaoRef.current) setRegistro({ status, atualizadoEm });
 
         // Criar ou completar registro na tabela imoveis_corretores
         const { error: upsertAssignmentError } = await supabase
@@ -967,44 +1158,51 @@ export const CriarImovelForm = ({
           .upsert({
             tenant_id: tenantId,
             codigo_imovel: codigoNormalizado,
-            exclusivo: formData.exclusivo === 'sim',
-            corretor_id: user.id,
-            corretor_nome: corretorNome,
-            corretor_email: user.email || null,
-            corretor_telefone: corretorTelefone,
+            exclusivo: EXCLUSIVO_NO_BANCO[formData.exclusivo],
+            ...atribuicao,
           }, { onConflict: 'tenant_id,codigo_imovel' });
 
         if (upsertAssignmentError) throw upsertAssignmentError;
+        atribuicaoPendenteRef.current = false;
       } else {
         const { error: updateBrokerError } = await supabase
           .from('imoveis_corretores')
-          .update({ exclusivo: formData.exclusivo === 'sim' })
+          .update({ exclusivo: EXCLUSIVO_NO_BANCO[formData.exclusivo] })
           .eq('tenant_id', tenantId)
           .eq('codigo_imovel', codigoNormalizado);
 
         if (updateBrokerError) throw updateBrokerError;
 
         // Salvar detalhes completos do imóvel na tabela imoveis_locais
-        await saveImovelLocal(codigoNormalizado);
+        atualizadoEm = await saveImovelLocal(codigoNormalizado, status);
       }
 
+      if (sessao !== sessaoRef.current) return;
+      setRegistro({ status, atualizadoEm });
       setSubmitStatus('success');
-      setSubmitMessage(isEdit ? `Imóvel ${codigoNormalizado} atualizado com sucesso!` : `Imóvel ${codigoNormalizado} criado com sucesso!`);
+      setSubmitMessage(
+        modoPublicado
+          ? `Imóvel ${codigoNormalizado} atualizado com sucesso!`
+          : modoRascunho
+            ? `Imóvel ${codigoNormalizado} publicado com sucesso!`
+            : `Imóvel ${codigoNormalizado} criado com sucesso!`,
+      );
 
       // Fechar após delay
       setTimeout(() => {
-        setFormData(initialFormData);
-        setCodigoGerado('');
-        setEditStatusAprovacao(null);
         onSuccess();
-        onClose();
+        if (sessao === sessaoRef.current) fechar();
       }, 1500);
 
-    } catch (err: any) {
+    } catch (err) {
       console.error('❌ Erro ao criar imóvel:', err);
-      setSubmitStatus('error');
-      setSubmitMessage(err.message || 'Erro ao criar imóvel. Tente novamente.');
+      if (sessao === sessaoRef.current) {
+        // Publicado/aprovado/excluído em outra tela: nada foi gravado aqui e os botões travam.
+        if (err instanceof RascunhoIndisponivelError) setRascunhoIndisponivel(true);
+        exibirErro(mensagemDeErro(err) || 'Erro ao criar imóvel. Tente novamente.');
+      }
     } finally {
+      salvandoRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -1020,7 +1218,10 @@ export const CriarImovelForm = ({
     return 'outro';
   };
 
-  const saveImovelLocal = async (codigoImovel: string) => {
+  /** Grava o payload inteiro em imoveis_locais. Devolve o `updated_at` gravado. */
+  const saveImovelLocal = async (codigoImovel: string, status: StatusAprovacaoImovel): Promise<string | null> => {
+    const sessao = sessaoRef.current;
+    const snapshot = formData;
     // Sobe pro Storage as fotos que ainda estão em data URL (base64).
     // Necessário pra feeds externos (ZAP/OLX) que só aceitam https?:// nas <Media>.
     const fotosNormalizadas = normalizeFotos(formData.fotos);
@@ -1041,7 +1242,9 @@ export const CriarImovelForm = ({
       ? fotosComUrls.map((f) => (f.id ? { ...f, url: watermarkPhotoUrl(f.id) } : f))
       : fotosComUrls;
 
-    // Gerar título automático se não preenchido
+    // Gerar título automático se não preenchido. Rascunho grava só o que foi
+    // digitado: o automático congelaria "Apartamento" antes de existir endereço
+    // e, ao reabrir o rascunho, voltaria no campo como se o usuário o tivesse digitado.
     const tituloAuto = formData.titulo ||
       `${formData.tipo || 'Imóvel'} ${formData.bairro ? `- ${formData.bairro}` : ''} ${formData.cidade ? `- ${formData.cidade}` : ''}`;
     
@@ -1056,8 +1259,8 @@ export const CriarImovelForm = ({
     const imovelLocal = {
       tenant_id: tenantId,
       codigo_imovel: codigoImovel,
-      exclusivo: formData.exclusivo === 'sim',
-      titulo: tituloAuto.trim(),
+      exclusivo: EXCLUSIVO_NO_BANCO[formData.exclusivo],
+      titulo: status === STATUS_RASCUNHO ? formData.titulo.trim() || null : tituloAuto.trim(),
       tipo: formData.tipo || null,
       tipo_simplificado: getTipoSimplificado(formData.tipo || ''),
       finalidade: finalidadeExibicao,
@@ -1089,16 +1292,21 @@ export const CriarImovelForm = ({
       sem_marca_dagua: formData.sem_marca_dagua,
       ...splitCaracteristicas(formData.caracteristicas || []),
       aceita_troca: formData.aceita_troca === 'sim',
-      link_video: normalizeYouTubeUrl(formData.link_video) || null,
-      tour_virtual: isHttpUrl(formData.tour_virtual) ? formData.tour_virtual.trim() : null,
+      // Rascunho guarda o link como digitado (mesmo incompleto); o formato só é exigido ao publicar.
+      link_video: status === STATUS_RASCUNHO
+        ? formData.link_video.trim() || null
+        : normalizeYouTubeUrl(formData.link_video) || null,
+      tour_virtual: status === STATUS_RASCUNHO
+        ? formData.tour_virtual.trim() || null
+        : isHttpUrl(formData.tour_virtual) ? formData.tour_virtual.trim() : null,
       proprietario_nome: formData.proprietario_nome || null,
       proprietario_telefone: formData.proprietario_celular || formData.proprietario_tel_residencial || null,
       proprietario_tel_residencial: formData.proprietario_tel_residencial || null,
       proprietario_tel_comercial: formData.proprietario_tel_comercial || null,
       proprietario_email: formData.proprietario_email || null,
-      // Só no cadastro: no upsert de edição isto sobrescrevia o autor original
+      // Só no primeiro save: no upsert de edição isto sobrescrevia o autor original
       // pelo editor, e com ele o dono perdia o próprio gate de podeEditarImovel.
-      ...(isEdit ? {} : { criado_por: user?.id || null }),
+      ...(persistido ? {} : { criado_por: user?.id || null }),
       obs_interna: formData.obs_interna || null,
       // Estes 16 a tela sempre coletou e o save jogava fora — as colunas só
       // existem a partir de 20260909_imovel_campos_do_formulario.sql.
@@ -1135,13 +1343,25 @@ export const CriarImovelForm = ({
             captador_2_id: formData.captador_2_id || null,
           }
         : {}),
-      status_aprovacao: isEdit ? editStatusAprovacao || 'aguardando' : 'aguardando',
+      status_aprovacao: status,
     };
 
-
-    const { error } = await supabase
-      .from('imoveis_locais')
-      .upsert(imovelLocal, { onConflict: 'tenant_id,codigo_imovel' });
+    // Rascunho já gravado é salvo — e publicado — com update condicional: se outra
+    // tela publicou, aprovou ou excluiu a linha, nada casa. O rascunho não rebaixa
+    // o imóvel publicado, não sobrescreve os dados dele nem ressuscita o excluído.
+    const salvandoSobreRascunho = registro?.status === STATUS_RASCUNHO;
+    const { data, error } = salvandoSobreRascunho
+      ? await supabase
+          .from('imoveis_locais')
+          .update(imovelLocal)
+          .eq('tenant_id', tenantId)
+          .eq('codigo_imovel', codigoImovel)
+          .eq('status_aprovacao', STATUS_RASCUNHO)
+          .select('updated_at')
+      : await supabase
+          .from('imoveis_locais')
+          .upsert(imovelLocal, { onConflict: 'tenant_id,codigo_imovel' })
+          .select('updated_at');
 
     if (error) {
       console.error('❌ Erro ao salvar imóvel local:', error.message, error.code, error.details);
@@ -1150,15 +1370,104 @@ export const CriarImovelForm = ({
       }
       throw error;
     }
-    
+
+    if (salvandoSobreRascunho && !data?.length) {
+      throw new RascunhoIndisponivelError(
+        'Este cadastro não é mais um rascunho: foi publicado ou excluído em outra tela. As alterações feitas aqui não foram salvas.',
+      );
+    }
+
+    if (sessao === sessaoRef.current) {
+      // As fotos em base64 viraram URL no upload: devolve as URLs ao formulário
+      // para o próximo save (autosave) não subir tudo de novo. A troca é por URL
+      // de origem, então foto incluída, removida ou legendada durante o save
+      // continua como o usuário deixou — e o formulário segue "alterado".
+      const salvas = new Map(fotosNormalizadas.map((f, i) => [f.url, fotosFinal[i]]));
+      const comFotosSalvas = (dados: ImovelFormData): ImovelFormData => ({
+        ...dados,
+        fotos: dados.fotos.map((f) => {
+          const salva = salvas.get(f.url);
+          return salva ? { ...f, url: salva.url, id: salva.id } : f;
+        }),
+      });
+      setFormData(comFotosSalvas);
+      setBaseline(comFotosSalvas(snapshot));
+    }
+
+    return data?.[0]?.updated_at ?? null;
   };
 
-  const handleClose = () => {
+  const fechar = () => {
+    sessaoRef.current += 1;
     setFormData(initialFormData);
+    setBaseline(initialFormData);
+    setConfirmarSaida(false);
     setSubmitStatus('idle');
     setSubmitMessage('');
     onClose();
   };
+
+  // Há alteração ainda não gravada desde a carga ou o último save?
+  const alterado = isOpen && formularioAlterado(formData, baseline);
+
+  // ESC, clique fora, X e "Cancelar" passam por aqui.
+  const handleClose = () => {
+    // Com gravação em curso, fechar descartaria o onSuccess de algo que vai ser gravado mesmo assim.
+    if (salvandoRef.current) return;
+    if (alterado) {
+      setConfirmarSaida(true);
+      return;
+    }
+    fechar();
+  };
+
+  const excluirRascunhoAtual = async () => {
+    if (!tenantId || salvandoRef.current) return;
+    salvandoRef.current = true;
+    setExcluindoRascunho(true);
+    try {
+      await excluirRascunho(tenantId, codigoGerado);
+      toast.success(`Rascunho ${codigoGerado} excluído`);
+      setConfirmarExclusao(false);
+      onSuccess();
+      fechar();
+    } catch (err) {
+      toast.error('Não foi possível excluir o rascunho', { description: mensagemDeErro(err) });
+    } finally {
+      salvandoRef.current = false;
+      setExcluindoRascunho(false);
+    }
+  };
+
+  // RF-14: autosave só do rascunho já gravado, 5 s depois da última alteração
+  // (formData nas deps reinicia a contagem), nunca com outro save ou diálogo aberto.
+  const podeAutosalvar =
+    alterado && modoRascunho && !rascunhoIndisponivel &&
+    !salvandoRascunho && !isSubmitting && !excluindoRascunho &&
+    !confirmarSaida && !confirmarExclusao && !showDuplicadoDialog;
+  const salvarRascunhoRef = useRef(salvarRascunho);
+  salvarRascunhoRef.current = salvarRascunho;
+
+  useEffect(() => {
+    if (!podeAutosalvar || formData === autosaveFalhouRef.current) return;
+    const timer = setTimeout(() => void salvarRascunhoRef.current(true), AUTOSAVE_MS);
+    return () => clearTimeout(timer);
+  }, [formData, podeAutosalvar]);
+
+  // Recarregar ou fechar a aba com alteração pendente: o navegador pergunta antes.
+  // ponytail: o Voltar do navegador (troca de rota) não é interceptado — sem data
+  // router não há useBlocker. Se o app migrar para createBrowserRouter, bloquear aqui.
+  useEffect(() => {
+    if (!alterado) return;
+    const avisar = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', avisar);
+    return () => window.removeEventListener('beforeunload', avisar);
+  }, [alterado]);
+
+  const ocupado = isSubmitting || salvandoRascunho || excluindoRascunho;
 
   const getTipoIcon = (tipo: string) => {
     const t = tipo.toLowerCase();
@@ -1177,11 +1486,43 @@ export const CriarImovelForm = ({
         <DialogHeader className="border-b pb-4">
           <DialogTitle className="flex items-center gap-2 text-xl">
             <Building2 className="h-6 w-6 text-primary" />
-            Novo Imóvel
+            {modoRascunho ? 'Rascunho de imóvel' : modoPublicado ? 'Editar Imóvel' : 'Novo Imóvel'}
+            {modoRascunho && (
+              <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/30">
+                Rascunho
+              </Badge>
+            )}
           </DialogTitle>
           <p className="text-sm text-text-secondary mt-1">
-            Cadastre um novo imóvel. Proprietário, tipo e CEP são obrigatórios (o código é gerado automaticamente).
+            {modoPublicado
+              ? 'Tipo e CEP são obrigatórios.'
+              : 'Salve como rascunho a qualquer momento (basta o tipo). Para publicar, proprietário, tipo e CEP são obrigatórios (o código é gerado automaticamente).'}
           </p>
+          {modoRascunho && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground mt-1">
+              {registro.atualizadoEm && (
+                <span>Último salvamento: {formatarDataHora(registro.atualizadoEm)}</span>
+              )}
+              {autosave.estado === 'salvando' && (
+                <span className="flex items-center gap-1">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Salvando…
+                </span>
+              )}
+              {autosave.estado === 'salvo' && autosave.em && (
+                <span className="flex items-center gap-1 text-green-600">
+                  <CheckCircle className="h-3 w-3" />
+                  Salvo automaticamente às {formatarDataHora(autosave.em, 'HH:mm')}
+                </span>
+              )}
+              {autosave.estado === 'erro' && (
+                <span className="flex items-center gap-1 text-red-600">
+                  <AlertCircle className="h-3 w-3" />
+                  {autosave.mensagem}
+                </span>
+              )}
+            </div>
+          )}
         </DialogHeader>
 
         <Tabs defaultValue="dados" className="py-4">
@@ -1216,12 +1557,13 @@ export const CriarImovelForm = ({
                   <span className="text-muted-foreground">Selecione o tipo do imóvel</span>
                 )}
               </div>
-              {codigoGerado && (
+              {/* Linha já gravada: o código é o dela, trocar criaria outro imóvel. */}
+              {codigoGerado && !persistido && (
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => generateCodigoImovel(formData.tipo, true)}
-                  disabled={isGeneratingCodigo}
+                  disabled={isGeneratingCodigo || ocupado}
                   title="Regenerar código"
                 >
                   <Loader2 className={`h-4 w-4 ${isGeneratingCodigo ? 'animate-spin' : ''}`} />
@@ -1238,17 +1580,18 @@ export const CriarImovelForm = ({
 
           {/* Status de Submissão */}
           {submitMessage && (
-            <div className={`flex items-center gap-2 p-3 rounded-lg ${
+            <div className={`flex items-start gap-2 p-3 rounded-lg ${
               submitStatus === 'success' 
                 ? 'bg-green-500/10 text-green-600 border border-green-500/20' 
                 : 'bg-red-500/10 text-red-600 border border-red-500/20'
             }`}>
               {submitStatus === 'success' ? (
-                <CheckCircle className="h-5 w-5" />
+                <CheckCircle className="h-5 w-5 shrink-0" />
               ) : (
-                <AlertCircle className="h-5 w-5" />
+                <AlertCircle className="h-5 w-5 shrink-0" />
               )}
-              <span>{submitMessage}</span>
+              {/* A validação da publicação lista um campo por linha. */}
+              <span className="whitespace-pre-line">{submitMessage}</span>
             </div>
           )}
 
@@ -1351,7 +1694,7 @@ export const CriarImovelForm = ({
                   <Label>Exclusividade</Label>
                   <Select
                     value={formData.exclusivo}
-                    onValueChange={(value: 'sim' | 'nao') => handleInputChange('exclusivo', value)}
+                    onValueChange={(value: Exclusividade) => handleInputChange('exclusivo', value)}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Selecione a exclusividade" />
@@ -1359,6 +1702,7 @@ export const CriarImovelForm = ({
                     <SelectContent>
                       <SelectItem value="nao">Não exclusivo</SelectItem>
                       <SelectItem value="sim">Exclusivo</SelectItem>
+                      <SelectItem value="indiferente">Indiferente</SelectItem>
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-muted-foreground">
@@ -1388,12 +1732,15 @@ export const CriarImovelForm = ({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-card/50 rounded-lg border">
                 <div className="space-y-2">
                   <Label>Finalidade</Label>
+                  {/* Travados durante o save: o código sai do tipo, e trocá-lo no meio
+                      deixaria o formulário com um código diferente da linha gravada. */}
                   <Select
                     value={formData.finalidade}
                     onValueChange={(value) => {
                       handleInputChange('finalidade', value);
                       handleInputChange('tipo', ''); // Reset tipo
                     }}
+                    disabled={ocupado}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Selecione a finalidade" />
@@ -1413,7 +1760,7 @@ export const CriarImovelForm = ({
                   <Select
                     value={formData.tipo}
                     onValueChange={(value) => handleInputChange('tipo', value)}
-                    disabled={!formData.finalidade}
+                    disabled={!formData.finalidade || ocupado}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder={formData.finalidade ? "Selecione o tipo" : "Selecione a finalidade primeiro"} />
@@ -2041,7 +2388,7 @@ export const CriarImovelForm = ({
           </Collapsible>
 
           {/* Seção: Comissões e Condições */}
-          <Collapsible open={openSections.comissoes} onOpenChange={() => toggleSection('comissoes')}>
+          <Collapsible id="secao-comissoes" open={openSections.comissoes} onOpenChange={() => toggleSection('comissoes')}>
             <CollapsibleTrigger className="flex items-center justify-between w-full p-3 bg-card rounded-lg border hover:bg-accent/50 transition-colors">
               <div className="flex items-center gap-2">
                 <DollarSign className="h-5 w-5 text-amber-500" />
@@ -2454,12 +2801,39 @@ export const CriarImovelForm = ({
         </Tabs>
 
         {/* Botões de Ação */}
-        <div className="flex items-center justify-end gap-3 pt-4 border-t">
-          <Button variant="outline" onClick={handleClose} disabled={isSubmitting}>
-            <X className="h-4 w-4 mr-2" />
-            Cancelar
-          </Button>
-          <Button onClick={() => handleSubmit()} disabled={isSubmitting || !codigoGerado || !formData.tipo}>
+        <div className="flex flex-wrap items-center justify-end gap-3 pt-4 border-t">
+          {modoRascunho ? (
+            <Button
+              variant="outline"
+              className="sm:mr-auto text-red-600 hover:text-red-700"
+              onClick={() => setConfirmarExclusao(true)}
+              disabled={ocupado}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Excluir rascunho
+            </Button>
+          ) : (
+            <Button variant="outline" onClick={handleClose} disabled={ocupado}>
+              <X className="h-4 w-4 mr-2" />
+              Cancelar
+            </Button>
+          )}
+          {!modoPublicado && (
+            <Button
+              variant="outline"
+              onClick={() => void salvarRascunho()}
+              disabled={ocupado || isGeneratingCodigo || rascunhoIndisponivel}
+            >
+              {salvandoRascunho ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <FilePen className="h-4 w-4 mr-2" />
+              )}
+              Salvar rascunho
+            </Button>
+          )}
+          {/* Rascunho que outra tela publicou/excluiu: publicar daqui sobrescreveria a linha. */}
+          <Button onClick={() => void publicar()} disabled={ocupado || rascunhoIndisponivel}>
             {isSubmitting ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -2468,7 +2842,7 @@ export const CriarImovelForm = ({
             ) : (
               <>
                 <Save className="h-4 w-4 mr-2" />
-                Salvar Imóvel
+                {modoPublicado ? 'Salvar Imóvel' : 'Publicar imóvel'}
               </>
             )}
           </Button>
@@ -2487,9 +2861,52 @@ export const CriarImovelForm = ({
       onConfirm={() => {
         setShowDuplicadoDialog(false);
         setDuplicadosDetectados([]);
-        handleSubmit(true);
+        void publicar(true);
       }}
     />
+
+    {/* z-[10000]: acima do DialogContent (z-[9999]), como o ImovelDuplicadoDialog.
+        Clique e ESC ficam só no alerta (camada mais alta do Radix). */}
+    <AlertDialog open={confirmarSaida} onOpenChange={setConfirmarSaida}>
+      <AlertDialogContent className="z-[10000]">
+        <AlertDialogHeader>
+          <AlertDialogTitle>Sair sem salvar?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Existem alterações que ainda não foram salvas. Deseja sair mesmo assim?
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Continuar editando</AlertDialogCancel>
+          <AlertDialogAction className="bg-red-600 text-white hover:bg-red-700" onClick={fechar}>
+            Sair sem salvar
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
+    <AlertDialog
+      open={confirmarExclusao}
+      onOpenChange={(aberto) => { if (!excluindoRascunho) setConfirmarExclusao(aberto); }}
+    >
+      <AlertDialogContent className="z-[10000]">
+        <AlertDialogHeader>
+          <AlertDialogTitle>Excluir rascunho</AlertDialogTitle>
+          <AlertDialogDescription>
+            Deseja excluir este rascunho? As informações preenchidas serão perdidas.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={excluindoRascunho}>Cancelar</AlertDialogCancel>
+          <AlertDialogAction
+            className="bg-red-600 text-white hover:bg-red-700"
+            disabled={excluindoRascunho || salvandoRascunho}
+            onClick={(e) => { e.preventDefault(); void excluirRascunhoAtual(); }}
+          >
+            {excluindoRascunho ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Excluindo…</> : 'Excluir rascunho'}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
     </>
   );
 };

@@ -8,7 +8,7 @@ import type { Imovel } from '../services/kenloService';
 function referenceMetrics(imoveis: Imovel[]): ImoveisMetrics {
   if (!imoveis || imoveis.length === 0) {
     return {
-      total: 0, casas: 0, apartamentos: 0, terrenos: 0, comerciais: 0, rurais: 0,
+      total: 0, casas: 0, apartamentos: 0, terrenos: 0, comerciais: 0, rurais: 0, outros: 0,
       venda: 0, locacao: 0, vendaLocacao: 0, valorTotalVenda: 0, valorTotalLocacao: 0,
     };
   }
@@ -19,6 +19,7 @@ function referenceMetrics(imoveis: Imovel[]): ImoveisMetrics {
     terrenos: imoveis.filter((i) => i.tipoSimplificado === 'terreno').length,
     comerciais: imoveis.filter((i) => i.tipoSimplificado === 'comercial').length,
     rurais: imoveis.filter((i) => i.tipoSimplificado === 'rural').length,
+    outros: imoveis.filter((i) => i.tipoSimplificado === 'outro').length,
     venda: imoveis.filter((i) => i.finalidade === 'venda' || i.finalidade === 'venda_locacao').length,
     locacao: imoveis.filter((i) => i.finalidade === 'locacao' || i.finalidade === 'venda_locacao').length,
     vendaLocacao: imoveis.filter((i) => i.finalidade === 'venda_locacao').length,
@@ -53,7 +54,7 @@ describe('computeImoveisMetrics — equivalência com o cálculo original', () =
     ];
     // locacao conta 'locacao' OU 'venda_locacao' → casa-locacao + apto-venda_locacao + outro-locacao = 3
     expect(computeImoveisMetrics(imoveis)).toEqual({
-      total: 5, casas: 2, apartamentos: 1, terrenos: 1, comerciais: 0, rurais: 0,
+      total: 5, casas: 2, apartamentos: 1, terrenos: 1, comerciais: 0, rurais: 0, outros: 1,
       venda: 3, locacao: 3, vendaLocacao: 1, valorTotalVenda: 600, valorTotalLocacao: 90,
     });
   });

@@ -9,12 +9,15 @@
  * Precedência (a mesma de sempre):
  * - o XML é a base do registro que existe nas duas fontes;
  * - fotos do cadastro local vencem as do XML quando o corretor subiu as suas;
- * - `captador_id` e `updated_at` são do cadastro local — o XML não os tem;
- * - imóvel só local entra no fim da lista.
+ * - `captador_id`, `updated_at`, destaques e `status_aprovacao` são do cadastro
+ *   local — o XML não os tem;
+ * - imóvel só local entra no fim da lista;
+ * - rascunho não é imóvel do catálogo: sai antes do merge (nem sobrepõe o XML).
  */
 
 import type { Imovel } from '@/features/imoveis/services/kenloService';
 import { convertLocalToImovel, type ImovelLocalConvertivel } from './convertLocalToImovel';
+import { ehRascunho } from './rascunho';
 
 /**
  * Códigos chegam com caixa e espaços variados (lead digitado, portal, XML), daí
@@ -28,7 +31,7 @@ export const mergeCatalogoImoveis = (
   imoveisXml: Imovel[],
   imoveisLocais: ImovelLocalConvertivel[],
 ): Imovel[] => {
-  const locaisConvertidos = imoveisLocais.map(convertLocalToImovel);
+  const locaisConvertidos = imoveisLocais.filter((local) => !ehRascunho(local)).map(convertLocalToImovel);
 
   const localPorCodigo = new Map<string, Imovel>();
   for (const local of locaisConvertidos) {
@@ -52,6 +55,9 @@ export const mergeCatalogoImoveis = (
       // O ajuste acontece no cadastro local, mesmo quando o imóvel também vem
       // do XML — sem isso o duplicado nunca seria avaliado como desatualizado.
       updated_at: local.updated_at,
+      destaque: local.destaque,
+      super_destaque: local.super_destaque,
+      status_aprovacao: local.status_aprovacao,
     };
   });
 

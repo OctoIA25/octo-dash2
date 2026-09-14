@@ -6,6 +6,7 @@
  */
 
 import { supabase } from '@/lib/supabaseClient';
+import { STATUS_RASCUNHO } from '@/features/imoveis/utils/rascunho';
 
 export interface ProprietarioImovelLite {
   codigo_imovel: string;
@@ -297,7 +298,8 @@ const chaveAgrupamento = (nome: string, telefone: string | null, email: string |
 /**
  * Lê todos os imóveis do tenant que têm proprietário preenchido e agrupa por
  * pessoa. Fonte única: o cadastro de imóveis (CriarImovelForm) — não há tabela
- * própria de proprietários.
+ * própria de proprietários. Rascunho fica de fora: a planilha é de imóveis
+ * cadastrados (autocomplete e aviso de duplicata continuam vendo rascunho).
  *
  * ponytail: PostgREST corta em 1000 linhas sem erro, por isso o loop de páginas.
  */
@@ -315,6 +317,7 @@ export async function listarProprietarios(tenantId: string): Promise<Proprietari
       .select(colunas)
       .eq('tenant_id', tenantId)
       .not('proprietario_nome', 'is', null)
+      .neq('status_aprovacao', STATUS_RASCUNHO)
       .order('created_at', { ascending: false })
       .range(pagina * PAGINA, pagina * PAGINA + PAGINA - 1);
 

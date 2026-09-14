@@ -41,6 +41,9 @@ vi.mock('@/lib/supabaseClient', () => {
       gte(col: string, val: unknown) { q.filters.push({ op: 'gte', col, val }); return chain; },
       is(col: string, val: unknown) { q.filters.push({ op: 'is', col, val }); return chain; },
       lte(col: string, val: unknown) { q.filters.push({ op: 'lte', col, val }); return chain; },
+      neq(col: string, val: unknown) { q.filters.push({ op: 'neq', col, val }); return chain; },
+      in(col: string, val: unknown) { q.filters.push({ op: 'in', col, val }); return chain; },
+      range() { return chain; },
       not(col: string, op: string, val: unknown) { q.filters.push({ op: `not.${op}`, col, val }); return chain; },
       order() { q.ordered = true; return chain; },
       limit(n: number) { q.limit = n; return chain; },
@@ -64,7 +67,7 @@ vi.mock('@/features/metricas/services/vendasAssinadasService', async (importOrig
   return { ...real, buscarVendasAssinadas: async () => vendasFake };
 });
 
-import { buscarKPIsGerais, buscarVendasPorFaixa, contarImoveisPorExclusividade, montarEvolucaoCarteira } from './relatoriosService';
+import { buscarEvolucaoCarteira, buscarKPIsGerais, buscarVendasPorFaixa, contarImoveisPorExclusividade, montarEvolucaoCarteira } from './relatoriosService';
 
 const TENANT = '33bf7e62-78ea-44fb-a047-c7b13d9a9d7f';
 const INICIO = '2026-08-01';
@@ -292,6 +295,31 @@ describe('montarEvolucaoCarteira', () => {
   });
 });
 
+describe('buscarEvolucaoCarteira', () => {
+  it('rascunho não entra: nem a linha viva, nem o log de código que hoje é rascunho', async () => {
+    const agora = new Date().toISOString();
+    respostas = [
+      // 0: imoveis_locais
+      { data: [
+        { id: 'a', codigo_imovel: 'AP0001', status_aprovacao: 'aprovado', created_at: agora, valor_venda: 100 },
+        { id: 'b', codigo_imovel: 'AP0002', status_aprovacao: 'rascunho', created_at: agora, valor_venda: 999 },
+      ], error: null },
+      // 1: log 'excluido' — AP0002 é o rascunho anterior, apagado e recriado com o mesmo código
+      { data: [
+        { imovel_id: 'x', codigo_imovel: 'AP0002', created_at: agora, valor_venda: 50 },
+        { imovel_id: 'y', codigo_imovel: 'CA0001', created_at: agora, valor_venda: 200 },
+      ], error: null },
+      // 2: log 'criado' dos que saíram
+      { data: [{ imovel_id: 'y', codigo_imovel: 'CA0001', created_at: agora, valor_venda: null }], error: null },
+    ];
+
+    const serie = await buscarEvolucaoCarteira(TENANT);
+
+    expect(serie[serie.length - 1]).toMatchObject({ entradas: 2, saidas: 1, carteira: 1, valor: 100 });
+    expect(filtroDe(queries[2], 'imovel_id')).toEqual({ op: 'in', col: 'imovel_id', val: ['y'] });
+  });
+});
+
 /**
  * Regressão do gráfico "Distribuição Exclusivo/Ficha" da aba Imóveis: contava
  * leads de Proprietário nas etapas do kanban (funil sem uso → zero fixo). A
@@ -307,8 +335,14 @@ describe('contarImoveisPorExclusividade', () => {
     queries.forEach((q) => {
       expect(q.opts).toMatchObject({ count: 'exact', head: true });
       expect(filtroDe(q, 'tenant_id')?.val).toBe(TENANT);
+      // Rascunho é cadastro incompleto, não carteira.
+      expect(filtroDe(q, 'status_aprovacao')).toEqual({ op: 'neq', col: 'status_aprovacao', val: 'rascunho' });
     });
-    expect(queries.map((q) => filtroDe(q, 'exclusivo')?.val)).toEqual([true, false]);
+    // Ficha = IS NOT TRUE: com `= false` o "Indiferente" (NULL) sumiria dos dois lados.
+    expect(queries.map((q) => filtroDe(q, 'exclusivo'))).toEqual([
+      { op: 'eq', col: 'exclusivo', val: true },
+      { op: 'not.is', col: 'exclusivo', val: true },
+    ]);
   });
 
   it('propaga erro do banco em vez de devolver zeros', async () => {

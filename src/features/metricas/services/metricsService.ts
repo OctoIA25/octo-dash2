@@ -7,6 +7,7 @@
 
 import { calcularMetricasCorretores, CorretorMetrica } from '@/features/leads/services/bolsaoService';
 import { supabase } from '@/lib/supabaseClient';
+import { STATUS_RASCUNHO } from '@/features/imoveis/utils/rascunho';
 import { canonicalizeFonteCounts } from '@/data/realLeadsProcessor';
 import { useAuth } from '@/hooks/useAuth';
 import { useAuthContext } from '@/contexts/AuthContext';
@@ -351,6 +352,7 @@ export async function buscarEvolucaoAtivacoes(tenantId?: string): Promise<{ mes:
       .from('imoveis_locais' as any)
       .select('created_at')
       .eq('tenant_id', tenantId)
+      .neq('status_aprovacao', STATUS_RASCUNHO) // rascunho ainda não é ativação
       .gte('created_at', seisMesesAtras.toISOString())
       .order('created_at', { ascending: true });
 

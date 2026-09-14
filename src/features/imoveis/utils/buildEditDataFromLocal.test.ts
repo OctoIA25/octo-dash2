@@ -33,6 +33,11 @@ describe('buildEditDataFromLocal', () => {
     expect(data.exclusivo).toBe('sim');
   });
 
+  it('exclusivo NULL no banco volta como "indiferente", não como "nao"', () => {
+    expect(buildEditDataFromLocal({ ...linha, exclusivo: null }).exclusivo).toBe('indiferente');
+    expect(buildEditDataFromLocal({ ...linha, exclusivo: false }).exclusivo).toBe('nao');
+  });
+
   // Antes a whitelist mandava String(768.68) = "768.68" e parseCurrency lia o
   // "." como separador de milhar: 768,68 virava 76868 a cada salvamento.
   it('devolve valor em máscara pt-BR, e o parser do formulário volta ao mesmo número', () => {
@@ -87,6 +92,24 @@ describe('buildEditDataFromLocal', () => {
     expect(data.pais).toBe('Brasil');
     expect(data.placa_local).toBe('nao');
     expect(data.midia_origem).toBe('');
+  });
+
+  // O rascunho mostra "Último salvamento" e o formulário decide o modo pelo status.
+  it('repassa updated_at e o status rascunho', () => {
+    const data = buildEditDataFromLocal({
+      ...linha,
+      status_aprovacao: 'rascunho',
+      updated_at: '2026-09-14T13:05:00+00:00',
+    });
+    expect(data.status_aprovacao).toBe('rascunho');
+    expect(data.updated_at).toBe('2026-09-14T13:05:00+00:00');
+    expect(buildEditDataFromLocal(linha).updated_at).toBeNull();
+  });
+
+  // Quem publica o rascunho de outra pessoa atribui o imóvel ao autor.
+  it('repassa criado_por (só leitura)', () => {
+    expect(buildEditDataFromLocal({ ...linha, criado_por: 'autor-1' }).criado_por).toBe('autor-1');
+    expect(buildEditDataFromLocal(linha).criado_por).toBeNull();
   });
 
   it('linha vazia não inventa valor', () => {

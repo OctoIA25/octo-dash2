@@ -75,4 +75,26 @@ describe('convertLocalToImovel', () => {
     expect(imovel.valor_locacao).toBe(0);
     expect(imovel.valor_condominio).toBe(0);
   });
+
+  // O filtro Destaque e a exportação leem daqui — o conversor antigo descartava.
+  it('carrega destaque, super destaque e status de aprovação do cadastro local', () => {
+    const imovel = convertLocalToImovel({
+      ...base,
+      destaque: true,
+      super_destaque: true,
+      status_aprovacao: 'aprovado',
+    });
+
+    expect(imovel.destaque).toBe(true);
+    expect(imovel.super_destaque).toBe(true);
+    expect(imovel.status_aprovacao).toBe('aprovado');
+  });
+
+  it('sem as colunas, os destaques viram false e o status null', () => {
+    const imovel = convertLocalToImovel(base);
+
+    expect(imovel.destaque).toBe(false);
+    expect(imovel.super_destaque).toBe(false);
+    expect(imovel.status_aprovacao).toBeNull();
+  });
 });

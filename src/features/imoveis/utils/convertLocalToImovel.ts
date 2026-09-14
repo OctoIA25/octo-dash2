@@ -48,6 +48,9 @@ export interface ImovelLocalConvertivel {
   captador_id?: string | null;
   /** Último ajuste no cadastro — base da regra de imóvel desatualizado. */
   updated_at?: string | null;
+  destaque?: boolean | null;
+  super_destaque?: boolean | null;
+  status_aprovacao?: string | null;
 }
 
 /** "790.000" nunca aparece se o valor seguir string: toLocaleString não formata texto. */
@@ -79,6 +82,9 @@ export const convertLocalToImovel = (local: ImovelLocalConvertivel): Imovel => (
   descricao: local.descricao || '',
   captador_id: local.captador_id ?? null,
   updated_at: local.updated_at ?? null,
+  destaque: local.destaque === true,
+  super_destaque: local.super_destaque === true,
+  status_aprovacao: local.status_aprovacao ?? null,
   fotos: Array.isArray(local.fotos) ? normalizeFotos(local.fotos).map((foto) => foto.url) : [],
   videos: [],
   area_comum: [],

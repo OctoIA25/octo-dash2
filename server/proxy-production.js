@@ -18,6 +18,7 @@ import cors from 'cors';
 import compression from 'compression';
 import crypto from 'crypto';
 import { createZapConfigResolver, extractZapPhotoUrls } from './zap/index.js';
+import { registerImoveisExportRoutes, EXPORTAR_PATH, exportarJsonParser } from './imoveis/exportRoutes.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
@@ -120,6 +121,9 @@ const corsOptions = {
 // compressíveis e respostas que já têm Content-Encoding.
 app.use(compression());
 app.use(cors(corsOptions));
+// Exportação do catálogo: parser próprio de 10 MB ANTES do global, que aceita 50 MB
+// para todas as rotas; o global pula corpo já lido. Ver server/imoveis/exportRoutes.js.
+app.use(EXPORTAR_PATH, exportarJsonParser);
 // verify: guarda os bytes crus do corpo. O X-Hub-Signature-256 da Meta é HMAC
 // sobre os bytes EXATOS — re-serializar o objeto já parseado muda espaçamento e
 // ordem de chaves, e a assinatura nunca mais confere.
@@ -1279,6 +1283,8 @@ const getZapFeedListings = async (tenantId, { includeAllStatuses = false } = {})
       updated_at
     `)
     .eq('tenant_id', tenantId)
+    // Rascunho nunca vai a portal — nem com ?status=all/include_pending (diagnóstico).
+    .neq('status_aprovacao', 'rascunho')
     .order('updated_at', { ascending: false });
 
   if (!includeAllStatuses) {
@@ -1354,6 +1360,8 @@ const getZapFeedDebugInfo = async (tenantId) => {
       updated_at
     `)
     .eq('tenant_id', tenantId)
+    // O /debug devolve amostras (título, preços): rascunho fica de fora como no feed.
+    .neq('status_aprovacao', 'rascunho')
     .order('updated_at', { ascending: false });
 
   if (error) throw error;
@@ -4953,6 +4961,10 @@ if (process.env.SANTA_ANGELA_SYNC_SCHEDULER === '1') {
 // validateZapFeedAccess para que um save invalide o cache do feed na hora.
 import { registerZapRoutes } from './zap/index.js';
 registerZapRoutes(app, supabase, { resolver: zapConfigResolver });
+
+// Exportação XLSX do catálogo (owner/admin/team_leader). Espelha o api-server.js.
+// Registrar ANTES do 404 catch-all de /api/v1/*.
+registerImoveisExportRoutes(app, supabase);
 
 // Contact2Sale — CRM principal alternativo ao Kenlo (config cifrada por tenant;
 // ativação desativa o Kenlo — exclusividade D2). Runner ÚNICO compartilhado entre

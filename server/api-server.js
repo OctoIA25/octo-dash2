@@ -12,6 +12,7 @@ import { criarKenloXmlProxyRouter } from './kenloXmlProxy.js';
 import { countLeadsPerBroker } from './brokerLeadStats.js';
 import { createWorker } from './watermark/worker.js';
 import { createZapConfigResolver, registerZapRoutes, extractZapPhotoUrls } from './zap/index.js';
+import { registerImoveisExportRoutes, EXPORTAR_PATH, exportarJsonParser } from './imoveis/exportRoutes.js';
 import { createLeadAssignment } from './leadAssignment.js';
 import { handleClassificationPatch } from './leadClassification.js';
 import { avisoValorLancamento } from './lancamentoValor.js';
@@ -37,6 +38,9 @@ const corsOptions = {
 
 // Middleware
 app.use(cors(corsOptions));
+// Exportação do catálogo: parser próprio de 10 MB ANTES do global (limite padrão
+// de 100 KB); o global pula corpo já lido. Ver server/imoveis/exportRoutes.js.
+app.use(EXPORTAR_PATH, exportarJsonParser);
 // verify: ver comentário em proxy-production.js — necessário para validar a
 // assinatura do webhook da Meta.
 app.use(express.json({
@@ -588,6 +592,8 @@ const getZapFeedListings = async (tenantId, { includeAllStatuses = false } = {})
       updated_at
     `)
     .eq('tenant_id', tenantId)
+    // Rascunho nunca vai a portal — nem com ?status=all/include_pending (diagnóstico).
+    .neq('status_aprovacao', 'rascunho')
     .order('updated_at', { ascending: false });
 
   if (!includeAllStatuses) {
@@ -661,6 +667,8 @@ const getZapFeedDebugInfo = async (tenantId) => {
       updated_at
     `)
     .eq('tenant_id', tenantId)
+    // O /debug devolve amostras (título, preços): rascunho fica de fora como no feed.
+    .neq('status_aprovacao', 'rascunho')
     .order('updated_at', { ascending: false });
 
   if (error) throw error;
@@ -3960,6 +3968,9 @@ registerLeadEventsRoutes(app, supabase);
 
 // Rotas owner/admin da config ZAP por tenant — mesmo resolver do feed (save invalida cache).
 registerZapRoutes(app, supabase, { resolver: zapConfigResolver });
+
+// Exportação XLSX do catálogo (owner/admin/team_leader). Registrar ANTES do 404 catch-all.
+registerImoveisExportRoutes(app, supabase);
 
 // Contact2Sale — CRM principal alternativo ao Kenlo. Registrar ANTES do 404 catch-all.
 import { registerContact2SaleRoutes, makeC2sRunner, createC2sConfigResolver, createC2sApiClient } from './contact2sale/index.js';

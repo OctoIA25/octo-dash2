@@ -4,12 +4,14 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 let paginas: { data: unknown[] | null; error: { code: string; message: string } | null }[] = [];
 let chamada = 0;
 let colunasPedidas: string[] = [];
+let neqs: unknown[][] = [];
 
 vi.mock('@/lib/supabaseClient', () => {
   const query = (colunas: string) => {
     colunasPedidas.push(colunas);
     const chain: Record<string, unknown> = {};
     for (const m of ['eq', 'not', 'order']) chain[m] = () => chain;
+    chain.neq = (...args: unknown[]) => { neqs.push(args); return chain; };
     chain.range = async () => paginas[chamada++] ?? { data: [], error: null };
     return chain;
   };
@@ -30,7 +32,7 @@ const imovel = (over: Record<string, unknown>) => ({
   ...over,
 });
 
-beforeEach(() => { paginas = []; chamada = 0; colunasPedidas = []; });
+beforeEach(() => { paginas = []; chamada = 0; colunasPedidas = []; neqs = []; });
 
 describe('listarProprietarios', () => {
   it('agrupa imóveis do mesmo telefone mesmo com o nome digitado diferente', async () => {
@@ -61,6 +63,12 @@ describe('listarProprietarios', () => {
 
     expect(chamada).toBe(2);
     expect(donos.map((d) => d.total_imoveis).sort((a, b) => b - a)).toEqual([1000, 1]);
+  });
+
+  it('não lista imóvel em rascunho (cadastro incompleto)', async () => {
+    await listarProprietarios('t1');
+
+    expect(neqs).toEqual([['status_aprovacao', 'rascunho']]);
   });
 
   it('refaz a consulta sem os telefones extras se a migration ainda não rodou', async () => {

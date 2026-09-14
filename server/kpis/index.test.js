@@ -16,6 +16,8 @@ function makeSupabase({ memberships = [], tenants = [], leads = [], dashboardKpi
       _filters: {},
       select() { return node; },
       eq(col, val) { node._filters[col] = val; return node; },
+      neq() { return node; },
+      not(col, op, val) { node._filters[col] = `not.${op}.${val}`; return node; },
       in(col, vals) { node._filters[col] = vals; return node; },
       is() { return node; },
       gte() { return node; },
@@ -50,9 +52,9 @@ function makeSupabase({ memberships = [], tenants = [], leads = [], dashboardKpi
         }
         if (table === 'dashboard_kpis') return resolve({ data: dashboardKpis, error: null });
         if (table === 'imoveis_locais') {
-          // countCaptacao: filtra exclusivo true/false; countImoveisAtivos: sem esse filtro.
+          // countCaptacao: exclusivo = true / IS NOT TRUE; countImoveisAtivos: sem esse filtro.
           if (node._filters.exclusivo === true) return resolve({ count: imoveisExclusivos, error: null });
-          if (node._filters.exclusivo === false) return resolve({ count: imoveisSemExcl, error: null });
+          if (node._filters.exclusivo === 'not.is.true') return resolve({ count: imoveisSemExcl, error: null });
           return resolve({ count: imoveisExclusivos + imoveisSemExcl, error: null });
         }
         if (table === 'goals') return resolve({ data: [], error: null });

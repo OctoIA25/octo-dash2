@@ -15,6 +15,7 @@ import { CondominiosTab } from '@/components/imoveis/CondominiosTab';
 import { LancamentosTab } from '@/components/imoveis/LancamentosTab';
 import { ConstrutorasTab } from '@/components/imoveis/ConstrutorasTab';
 import { AnunciosSemImovelTab } from '@/components/imoveis/AnunciosSemImovelTab';
+import { RascunhosTab } from '@/components/imoveis/RascunhosTab';
 import { CriarImovelForm } from '@/components/imoveis/CriarImovelForm';
 import { ImovelDetalhesModal } from '@/components/imoveis/ImovelDetalhesModal';
 import { buildEditDataFromLocal } from '@/features/imoveis/utils/buildEditDataFromLocal';
@@ -22,6 +23,10 @@ import { Imovel } from '../services/kenloService';
 import { resolverCaptador, matchCaptadorFilter, CAPTADOR_FILTRO_TODOS, CAPTADOR_FILTRO_SEM } from '../utils/captador';
 import { mergeCatalogoImoveis } from '../utils/mergeCatalogoImoveis';
 import { isDesatualizado } from '../utils/desatualizado';
+import { computeImoveisMetrics } from '../utils/imoveisMetrics';
+import { NIVEIS_DESTAQUE, correspondeAoDestaque, type NivelDestaque } from '../utils/destaque';
+import { ehRascunho } from '../utils/rascunho';
+import { exportarCatalogo } from '../services/catalogoExportService';
 import { useCaptadores, mapCaptadoresPorId } from '../hooks/useCaptadores';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/hooks/useAuth';
@@ -30,6 +35,13 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { OctoDashLoader } from '@/components/ui/OctoDashLoader';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { toast } from 'sonner';
 
 const ImoveisMapPage = lazy(() => import('./ImoveisMapPage'));
 import { 
@@ -41,7 +53,10 @@ import {
   Key,
   X,
   SlidersHorizontal,
-  User
+  User,
+  Download,
+  Loader2,
+  ChevronDown
 } from 'lucide-react';
 import {
   Select,
@@ -268,7 +283,6 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
   
   const { 
     imoveis: imoveisXml, 
-    metrics: metricsXml, 
     isLoading, 
     error, 
     refetch,
@@ -308,7 +322,7 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
   const [iptuItrFilter, setIptuItrFilter] = useState<string>('todos');
   const [tipoComissaoFilter, setTipoComissaoFilter] = useState<string>('todos');
   const [financiamentoFilter, setFinanciamentoFilter] = useState<string>('todos');
-  const [destaqueFilter, setDestaqueFilter] = useState<string>('todos');
+  const [destaqueFilter, setDestaqueFilter] = useState<NivelDestaque[]>([]);
   const [desatualizadoFilter, setDesatualizadoFilter] = useState<string>('todos');
   const [customFilters, setCustomFilters] = useState<CustomFilter[]>([]);
   const [filterSelectorKey, setFilterSelectorKey] = useState(0);
@@ -359,7 +373,9 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
         return;
       }
       
-      setImoveisLocais(data || []);
+      // Rascunho tem aba própria: fora daqui não entra no catálogo, nos bairros,
+      // na edição pelo modal nem no excluir do card.
+      setImoveisLocais((data || []).filter((local) => !ehRascunho(local)));
     } catch (err) {
       console.error('Erro ao carregar imóveis locais:', err);
     }
@@ -402,27 +418,6 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
         .sort((a, b) => a.localeCompare(b, 'pt-BR')),
     [imoveis],
   );
-
-  // Métricas precisam considerar também os imóveis cadastrados localmente
-  const metrics = useMemo(() => {
-    if (!imoveis || imoveis.length === 0) {
-      return metricsXml;
-    }
-
-    return {
-      total: imoveis.length,
-      casas: imoveis.filter(i => i.tipoSimplificado === 'casa').length,
-      apartamentos: imoveis.filter(i => i.tipoSimplificado === 'apartamento').length,
-      terrenos: imoveis.filter(i => i.tipoSimplificado === 'terreno').length,
-      comerciais: imoveis.filter(i => i.tipoSimplificado === 'comercial').length,
-      rurais: imoveis.filter(i => i.tipoSimplificado === 'rural').length,
-      venda: imoveis.filter(i => i.finalidade === 'venda' || i.finalidade === 'venda_locacao').length,
-      locacao: imoveis.filter(i => i.finalidade === 'locacao' || i.finalidade === 'venda_locacao').length,
-      vendaLocacao: imoveis.filter(i => i.finalidade === 'venda_locacao').length,
-      valorTotalVenda: imoveis.reduce((sum, i) => sum + (i.valor_venda || 0), 0),
-      valorTotalLocacao: imoveis.reduce((sum, i) => sum + (i.valor_locacao || 0), 0)
-    };
-  }, [imoveis, metricsXml]);
 
   // Combinar bairros
   const bairros = useMemo(() => {
@@ -676,10 +671,8 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
       );
     }
 
-    if (destaqueFilter !== 'todos') {
-      filtered = filtered.filter((i) =>
-        matchesBooleanFilter(getImovelValue(i, 'destaque') ?? getImovelValue(i, 'super_destaque'), destaqueFilter)
-      );
+    if (destaqueFilter.length > 0) {
+      filtered = filtered.filter((i) => correspondeAoDestaque(i, destaqueFilter));
     }
 
     if (desatualizadoFilter !== 'todos') {
@@ -765,6 +758,35 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
     customFilters
   ]);
 
+  // KPIs da mesma lista exibida (todos os filtros, sem paginação): 0 resultados
+  // mostram zeros, não o total da base.
+  const metrics = useMemo(() => computeImoveisMetrics(imoveisFiltrados), [imoveisFiltrados]);
+
+  // Exportação: só gestão (admin/líder) e owner impersonando um tenant. O
+  // servidor confere o papel de novo — isto é só UX. useAuth legado: team_leader
+  // tem isAdmin=false aqui, daí o systemRole explícito.
+  const podeExportar =
+    Boolean(tenantId) && tenantId !== 'owner' &&
+    ['owner', 'admin', 'team_leader'].includes(user?.systemRole ?? '');
+  const [exportando, setExportando] = useState(false);
+
+  const handleExportar = async () => {
+    // Enquanto o XML carrega a lista só tem os imóveis locais: exportaria parcial.
+    if (!tenantId || isLoading) return;
+    const lista = imoveisFiltrados;
+    setExportando(true);
+    try {
+      await exportarCatalogo(tenantId, lista);
+      toast.success(`${lista.length} ${lista.length === 1 ? 'imóvel exportado' : 'imóveis exportados'}`);
+    } catch (err) {
+      toast.error('Falha ao exportar', {
+        description: err instanceof Error ? err.message : 'Tente novamente.',
+      });
+    } finally {
+      setExportando(false);
+    }
+  };
+
   // Contador do filtro: quantos imóveis passaram de 3 meses sem ajuste.
   const totalDesatualizados = useMemo(
     () => imoveis.filter((i) => isDesatualizado(i.updated_at)).length,
@@ -794,7 +816,7 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
     setIptuItrFilter('todos');
     setTipoComissaoFilter('todos');
     setFinanciamentoFilter('todos');
-    setDestaqueFilter('todos');
+    setDestaqueFilter([]);
     setDesatualizadoFilter('todos');
     setCustomFilters([]);
     setFilterSelectorKey(prev => prev + 1);
@@ -811,6 +833,9 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
     }]);
     setFilterSelectorKey(prev => prev + 1);
   };
+
+  // Na ordem da lista, não na ordem em que foram marcados.
+  const rotuloDestaque = NIVEIS_DESTAQUE.filter((n) => destaqueFilter.includes(n.value)).map((n) => n.label).join(', ');
 
   // Verificar se há filtros ativos
   const temFiltrosAtivos =
@@ -835,7 +860,7 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
     iptuItrFilter !== 'todos' ||
     tipoComissaoFilter !== 'todos' ||
     financiamentoFilter !== 'todos' ||
-    destaqueFilter !== 'todos' ||
+    destaqueFilter.length > 0 ||
     desatualizadoFilter !== 'todos' ||
     customFilters.some(cf => !!cf.value);
 
@@ -957,6 +982,14 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
 
         <TabsContent value="construtoras">
           <ConstrutorasTab />
+        </TabsContent>
+
+        <TabsContent value="rascunhos">
+          <RascunhosTab
+            equipeUserIds={equipeUserIds}
+            equipeEmails={equipeEmails}
+            onPublicado={reloadCatalogoBanco}
+          />
         </TabsContent>
 
         <TabsContent value="anuncios-sem-imovel">
@@ -1216,16 +1249,31 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
               </SelectContent>
             </Select>
 
-            <Select value={destaqueFilter} onValueChange={setDestaqueFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="Destaque" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="todos">Destaque</SelectItem>
-                <SelectItem value="sim">Em destaque</SelectItem>
-                <SelectItem value="nao">Sem destaque</SelectItem>
-              </SelectContent>
-            </Select>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="h-10 w-full justify-between px-3 font-normal">
+                  <span className="truncate">{rotuloDestaque || 'Destaque'}</span>
+                  <ChevronDown className="h-4 w-4 opacity-50 shrink-0" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)]">
+                {NIVEIS_DESTAQUE.map((nivel) => (
+                  <DropdownMenuCheckboxItem
+                    key={nivel.value}
+                    checked={destaqueFilter.includes(nivel.value)}
+                    // Mantém o menu aberto para marcar mais de um nível.
+                    onSelect={(e) => e.preventDefault()}
+                    onCheckedChange={(marcado) =>
+                      setDestaqueFilter((prev) =>
+                        marcado ? [...prev, nivel.value] : prev.filter((v) => v !== nivel.value)
+                      )
+                    }
+                  >
+                    {nivel.label}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             <Select value={desatualizadoFilter} onValueChange={setDesatualizadoFilter}>
               <SelectTrigger>
@@ -1459,10 +1507,10 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
                   <X className="h-3 w-3 ml-1 cursor-pointer" onClick={() => setFinanciamentoFilter('todos')} />
                 </Badge>
               )}
-              {destaqueFilter !== 'todos' && (
+              {destaqueFilter.length > 0 && (
                 <Badge variant="secondary">
-                  Destaque: {destaqueFilter}
-                  <X className="h-3 w-3 ml-1 cursor-pointer" onClick={() => setDestaqueFilter('todos')} />
+                  Destaque: {rotuloDestaque}
+                  <X className="h-3 w-3 ml-1 cursor-pointer" onClick={() => setDestaqueFilter([])} />
                 </Badge>
               )}
               {desatualizadoFilter !== 'todos' && (
@@ -1498,6 +1546,18 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
           </p>
 
           <div className="flex items-center gap-2">
+            {podeExportar && (
+              <Button
+                variant="outline"
+                onClick={() => void handleExportar()}
+                disabled={exportando || isLoading || imoveisFiltrados.length === 0}
+              >
+                {exportando
+                  ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  : <Download className="h-4 w-4 mr-2" />}
+                Exportar
+              </Button>
+            )}
             <Button
               variant="outline"
               onClick={() => setIsCriarImovelOpen(true)}

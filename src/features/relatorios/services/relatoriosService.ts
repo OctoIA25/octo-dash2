@@ -6,6 +6,7 @@
 import { supabase } from '@/lib/supabaseClient';
 import { canonicalizeFonteCounts } from '@/data/realLeadsProcessor';
 import { ratearComissaoDoCorretor } from '@/features/metricas/services/commercialSalesService';
+import { ehRascunho, STATUS_RASCUNHO } from '@/features/imoveis/utils/rascunho';
 import {
   buscarVendasAssinadas as buscarVendasAssinadasProposals,
   agruparPorCorretor,
@@ -743,24 +744,27 @@ export function montarEvolucaoCarteira(
 
 /**
  * Imóveis da carteira por exclusividade: `exclusivo = true` é Exclusivo, o resto
- * é Ficha (a coluna é NOT NULL, default false).
+ * é Ficha — inclusive "Indiferente" (NULL), por isso `IS NOT TRUE` e não `= false`.
  *
- * Mesma carteira de `buscarEvolucaoCarteira` — todas as linhas de
- * `imoveis_locais` do tenant. Antes o gráfico contava leads de Proprietário nas
+ * Mesma carteira de `buscarEvolucaoCarteira` — as linhas de `imoveis_locais` do
+ * tenant, menos rascunho. Antes o gráfico contava leads de Proprietário nas
  * etapas "Exclusivo"/"Não Exclusivo" do kanban, funil que ninguém usa: zero fixo
  * com imóveis exclusivos cadastrados. Conta no banco (head), sem o corte de 1000.
  */
 export async function contarImoveisPorExclusividade(
   tenantId: string
 ): Promise<{ exclusivos: number; ficha: number }> {
-  const contar = (exclusivo: boolean) =>
+  const base = () =>
     supabase
       .from('imoveis_locais')
       .select('id', { count: 'exact', head: true })
       .eq('tenant_id', tenantId)
-      .eq('exclusivo', exclusivo);
+      .neq('status_aprovacao', STATUS_RASCUNHO);
 
-  const [exclusivos, ficha] = await Promise.all([contar(true), contar(false)]);
+  const [exclusivos, ficha] = await Promise.all([
+    base().eq('exclusivo', true),
+    base().not('exclusivo', 'is', true),
+  ]);
   const erro = exclusivos.error ?? ficha.error;
   if (erro) throw erro;
 
@@ -786,7 +790,7 @@ async function lerPaginado<T>(
  * Evolução da carteira de imóveis mês a mês (entradas, saídas, quantidade e
  * valor em carteira).
  *
- * Carteira = linhas de `imoveis_locais`, a mesma definição de "imóveis ativos"
+ * Carteira = linhas de `imoveis_locais` fora de rascunho, a mesma definição de "imóveis ativos"
  * que os KPIs usam (`countImoveisAtivos` no servidor) — não existe baixa lógica
  * na tabela: sair da carteira é a linha ser apagada.
  *
@@ -811,10 +815,10 @@ export async function buscarEvolucaoCarteira(
 ): Promise<CarteiraMes[]> {
   // `valor_venda` só vem preenchido em 'excluido'; em 'criado' é null e ninguém lê.
   const lerLog = (acao: 'criado' | 'excluido', filtrarIds?: string[]) =>
-    lerPaginado<{ imovel_id: string; created_at: string; valor_venda: unknown }>((de, ate) => {
+    lerPaginado<{ imovel_id: string; codigo_imovel: string; created_at: string; valor_venda: unknown }>((de, ate) => {
       let query = supabase
         .from('imoveis_locais_log')
-        .select('imovel_id, created_at, valor_venda:alteracoes->valor_venda->de')
+        .select('imovel_id, codigo_imovel, created_at, valor_venda:alteracoes->valor_venda->de')
         .eq('tenant_id', tenantId)
         .eq('acao', acao);
       if (filtrarIds) query = query.in('imovel_id', filtrarIds);
@@ -822,11 +826,17 @@ export async function buscarEvolucaoCarteira(
       return query.order('created_at').range(de, ate);
     });
 
-  const [vivos, exclusoes] = await Promise.all([
-    lerPaginado<{ id: string; created_at: string | null; valor_venda: number | null }>((de, ate) =>
+  const [linhas, todasExclusoes] = await Promise.all([
+    lerPaginado<{
+      id: string;
+      codigo_imovel: string;
+      status_aprovacao: string | null;
+      created_at: string | null;
+      valor_venda: number | null;
+    }>((de, ate) =>
       supabase
         .from('imoveis_locais')
-        .select('id, created_at, valor_venda')
+        .select('id, codigo_imovel, status_aprovacao, created_at, valor_venda')
         .eq('tenant_id', tenantId)
         .order('created_at')
         .range(de, ate)
@@ -835,9 +845,20 @@ export async function buscarEvolucaoCarteira(
     // saídas a curva ainda é a carteira, só sem as baixas.
     lerLog('excluido').catch((erro) => {
       console.warn('[carteira] saídas indisponíveis, série segue só com entradas:', erro);
-      return [] as Array<{ imovel_id: string; created_at: string; valor_venda: unknown }>;
+      return [] as Array<{ imovel_id: string; codigo_imovel: string; created_at: string; valor_venda: unknown }>;
     }),
   ]);
+
+  // Rascunho não é carteira: sai a linha viva e o log de código que hoje é
+  // rascunho (rascunho apagado e recriado — o gerador reusa o maior número livre).
+  // Filtro no cliente porque a mesma leitura dá os códigos em rascunho.
+  // ponytail: 'criado'/'excluido' não guardam status, então rascunho apagado de
+  // vez é indistinguível de imóvel apagado e entra como entrada + saída; e imóvel
+  // apagado cujo código um rascunho reusou some do histórico até a publicação.
+  // Exato só gravando `status_aprovacao` no evento 'excluido' do trigger de log.
+  const codigosRascunho = new Set(linhas.filter(ehRascunho).map((l) => l.codigo_imovel));
+  const vivos = linhas.filter((l) => !ehRascunho(l));
+  const exclusoes = todasExclusoes.filter((e) => !codigosRascunho.has(e.codigo_imovel));
 
   const entradas: MovimentoCarteira[] = [];
   for (const imovel of vivos) {

@@ -3,7 +3,7 @@
  * espera em modo edição — e as funções de moeda que fazem a volta.
  *
  * Por que isto existe numa casa só: o save do formulário manda o payload
- * INTEIRO (`.upsert()` em CriarImovelForm), então TODO campo que a edição não
+ * INTEIRO (`.upsert()`/`.update()` em CriarImovelForm), então TODO campo que a edição não
  * recarregar volta com o default e APAGA o valor salvo. Enquanto isto era uma
  * whitelist copiada em ImoveisPage e MeusImoveisTab, cada campo novo nascia com
  * esse bug: aconteceu com CEP, com proprietário e, em 09/2026, com
@@ -25,6 +25,7 @@ import {
   TIPOS_TEMPORADA,
   TIPOS_CORPORATIVA,
 } from '@/lib/tiposImovel';
+import type { StatusAprovacaoImovel } from './rascunho';
 
 /** Máscara do input: recebe o que foi digitado e devolve "1.234,56". */
 export const formatCurrency = (value: string): string => {
@@ -70,10 +71,11 @@ export function categoriaDoTipo(tipo?: string | null): CategoriaTipo {
 }
 
 /**
- * Campos do formulário que o `.upsert()` de CriarImovelForm persiste. Todo
- * campo daqui PRECISA sair de `buildEditDataFromLocal`, senão a edição o apaga
- * — é o que o teste desta pasta garante. Ao acrescentar coluna ao payload,
- * acrescente aqui e carregue no builder.
+ * Campos do formulário que o save de CriarImovelForm persiste (payload inteiro:
+ * `.upsert()`, ou `.update()` no rascunho já salvo). Todo campo daqui PRECISA
+ * sair de `buildEditDataFromLocal`, senão a edição o apaga — é o que o teste
+ * desta pasta garante. Ao acrescentar coluna ao payload, acrescente aqui e
+ * carregue no builder. Campos só de leitura (`updated_at`, `criado_por`) não entram.
  */
 export const CAMPOS_PERSISTIDOS = [
   'codigo_imovel', 'exclusivo', 'titulo', 'tipo', 'logradouro', 'numero', 'complemento',
@@ -131,7 +133,7 @@ export interface ImovelLocalRow {
   aceita_troca?: boolean | null;
   link_video?: string | null;
   tour_virtual?: string | null;
-  status_aprovacao?: 'aprovado' | 'nao_aprovado' | 'aguardando';
+  status_aprovacao?: StatusAprovacaoImovel;
   captador_id?: string | null;
   captador_2_id?: string | null;
   obs_interna?: string | null;
@@ -160,6 +162,10 @@ export interface ImovelLocalRow {
   aprovado_ambiental?: string | null;
   projeto_aprovado?: string | null;
   obs_documentacao?: string | null;
+  /** Carimbado pelo trigger; o formulário mostra como "Último salvamento" do rascunho. */
+  updated_at?: string | null;
+  /** Autor da linha; ao publicar um rascunho, a atribuição vai para ele. */
+  criado_por?: string | null;
 }
 
 export const buildEditDataFromLocal = (local: ImovelLocalRow) => {
@@ -168,7 +174,9 @@ export const buildEditDataFromLocal = (local: ImovelLocalRow) => {
     tipo: local.tipo || '',
     // Categoria do tipo, não a coluna `finalidade` do banco. Ver categoriaDoTipo.
     finalidade: categoriaDoTipo(local.tipo),
-    exclusivo: (local.exclusivo ? 'sim' : 'nao') as 'sim' | 'nao',
+    // NULL no banco = "Indiferente"; ausente (coluna não selecionada) = não exclusivo.
+    exclusivo: (local.exclusivo === null ? 'indiferente' : local.exclusivo ? 'sim' : 'nao') as
+      'sim' | 'nao' | 'indiferente',
     bairro: local.bairro || '',
     cidade: local.cidade || '',
     estado: local.estado || 'SP',
@@ -208,6 +216,11 @@ export const buildEditDataFromLocal = (local: ImovelLocalRow) => {
     link_video: local.link_video || '',
     tour_virtual: local.tour_virtual || '',
     status_aprovacao: local.status_aprovacao,
+    // Só leitura (não vai no payload): "Último salvamento" no cabeçalho do rascunho.
+    updated_at: local.updated_at ?? null,
+    // Só leitura (o form só grava criado_por no primeiro save): quem publica um
+    // rascunho alheio atribui o imóvel ao autor, não a si mesmo.
+    criado_por: local.criado_por ?? null,
     captador_id: local.captador_id || '',
     captador_2_id: local.captador_2_id || '',
     obs_interna: local.obs_interna || '',

@@ -13,6 +13,7 @@ import { CriarImovelForm } from './CriarImovelForm';
 import { type FotoInput } from './fotos-helpers';
 import { buildEditDataFromLocal } from '@/features/imoveis/utils/buildEditDataFromLocal';
 import { convertLocalToImovel } from '@/features/imoveis/utils/convertLocalToImovel';
+import { ehRascunho } from '@/features/imoveis/utils/rascunho';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -243,7 +244,9 @@ export const MeusImoveisTab = ({ allImoveis, onViewDetails, onPropertyCreated }:
         return;
       }
       
-      setImoveisLocais(data || []);
+      // Rascunho não é imóvel pronto: mora na aba Rascunhos. Sai aqui para não
+      // aparecer na lista nem ganhar botão de aprovar/excluir (gestão e corretor).
+      setImoveisLocais((data || []).filter((local) => !ehRascunho(local)));
     } catch (err) {
       console.error('Erro ao carregar imóveis locais:', err);
     }

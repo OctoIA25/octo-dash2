@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabaseClient';
+import { STATUS_RASCUNHO } from '@/features/imoveis/utils/rascunho';
 
 const CACHE_DURATION = 5 * 60 * 1000;
 const DEFAULT_TEAM_COLOR = '#6b7280';
@@ -535,7 +536,8 @@ async function countImoveisAtivos(tenantId: string, dataFim?: Date): Promise<num
   let query = supabase
     .from('imoveis_locais' as any)
     .select('id', { count: 'exact', head: true })
-    .eq('tenant_id', tenantId);
+    .eq('tenant_id', tenantId)
+    .neq('status_aprovacao', STATUS_RASCUNHO); // rascunho não é imóvel ativo
 
   if (dataFim) {
     query = query.lt('created_at', dataFim.toISOString());

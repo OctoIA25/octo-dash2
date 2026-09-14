@@ -102,7 +102,7 @@ export function blocoImoveis(linhas: ProprietarioRow[]): Block {
         i.vagas ?? 0,
         moeda(i.valor_venda ?? 0),
         moeda(i.valor_locacao ?? 0),
-        i.exclusivo ? 'Sim' : 'Não',
+        i.exclusivo === null ? 'Indiferente' : i.exclusivo ? 'Sim' : 'Não',
         i.status_aprovacao ?? '',
         data(i.created_at),
       ]),

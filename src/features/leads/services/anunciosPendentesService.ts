@@ -8,6 +8,7 @@
  * zapIntegrationService.
  */
 import { supabase } from '@/lib/supabaseClient';
+import { STATUS_RASCUNHO } from '@/features/imoveis/utils/rascunho';
 import { montarOpcoesDeAmarracao, type OpcaoDeAmarracao } from '../utils/opcoesDeAmarracao';
 
 async function authHeaders(): Promise<Record<string, string>> {
@@ -81,13 +82,14 @@ export async function amarrarAnuncio(
 }
 
 /**
- * Opções da aba "Anúncios sem imóvel": só o que existe no cadastro. Os dois
- * selects mantêm o `.eq('tenant_id')` explícito além da RLS, como as outras
- * leituras destas tabelas.
+ * Opções da aba "Anúncios sem imóvel": só o que existe no cadastro (rascunho
+ * não conta). Os dois selects mantêm o `.eq('tenant_id')` explícito além da
+ * RLS, como as outras leituras destas tabelas.
  */
 export async function fetchOpcoesDeAmarracao(tenantId: string): Promise<OpcaoDeAmarracao[]> {
   const [imoveis, lancamentos] = await Promise.all([
-    supabase.from('imoveis_locais').select('codigo_imovel, titulo, bairro').eq('tenant_id', tenantId).order('codigo_imovel'),
+    supabase.from('imoveis_locais').select('codigo_imovel, titulo, bairro').eq('tenant_id', tenantId)
+      .neq('status_aprovacao', STATUS_RASCUNHO).order('codigo_imovel'),
     supabase.from('lancamentos').select('nome, codigos').eq('tenant_id', tenantId).order('nome'),
   ]);
   if (imoveis.error) console.error('[anunciosPendentes] erro ao ler imoveis_locais:', imoveis.error.code, imoveis.error.message);
@@ -107,6 +109,7 @@ export async function fetchOpcoesDeCodigo(
     .from('imoveis_locais')
     .select('codigo_imovel, titulo, bairro')
     .eq('tenant_id', tenantId)
+    .neq('status_aprovacao', STATUS_RASCUNHO)
     .order('codigo_imovel');
 
   if (error) {

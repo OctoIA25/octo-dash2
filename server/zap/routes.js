@@ -45,7 +45,7 @@ function makeRequireOwner(supabase) {
 // Owner (qualquer tenant) OU admin/team_leader do tenant em req.body.tenantId.
 // O isolamento vem do filtro tenant_id+user_id: um admin nunca resolve membership
 // de outro tenant, então nunca gerencia a integração de outra imobiliária.
-function makeRequireOwnerOrTenantAdmin(supabase) {
+export function makeRequireOwnerOrTenantAdmin(supabase) {
   return async function requireOwnerOrTenantAdmin(req, res, next) {
     try {
       const user = await authenticate(supabase, req, res);

@@ -39,6 +39,14 @@ export interface Imovel {
    * corretor do XML) e não devem ser exibidos junto do nome.
    */
   corretorContatoDaXml?: boolean;
+  /**
+   * Publicação na web do cadastro local (`imoveis_locais`). Os dois podem ser
+   * true ao mesmo tempo. Imóvel só do XML não tem nenhum dos três — o XML não
+   * traz destaque nem aprovação.
+   */
+  destaque?: boolean;
+  super_destaque?: boolean;
+  status_aprovacao?: string | null;
   valor_venda: number;
   valor_locacao: number;
   finalidade: 'venda' | 'locacao' | 'venda_locacao';

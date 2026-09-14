@@ -17,6 +17,7 @@
  */
 
 import { supabase } from '@/lib/supabaseClient';
+import { STATUS_RASCUNHO } from '@/features/imoveis/utils/rascunho';
 import { fetchGoals } from '@/features/metas/services/goalsService';
 import { buildGoalViews, selectActiveIndividualGoals } from '@/features/metas/domain/metrics';
 import { formatGoalValue } from '@/features/metas/domain/format';
@@ -236,7 +237,9 @@ async function countImoveisAtivos(tenantId: string): Promise<number> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .from('imoveis_locais' as any)
     .select('id', { count: 'exact', head: true })
-    .eq('tenant_id', tenantId);
+    .eq('tenant_id', tenantId)
+    // Rascunho é cadastro incompleto, não imóvel ativo.
+    .neq('status_aprovacao', STATUS_RASCUNHO);
   if (error) return 0;
   return count ?? 0;
 }

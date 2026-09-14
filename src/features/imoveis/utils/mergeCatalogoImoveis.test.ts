@@ -107,4 +107,50 @@ describe('mergeCatalogoImoveis', () => {
 
     expect(catalogo.map((i) => i.referencia)).toEqual(['CA054']);
   });
+
+  it('imóvel só local leva destaques e status de aprovação', () => {
+    const [, imovel] = mergeCatalogoImoveis(
+      [doXml()],
+      [local({ destaque: false, super_destaque: true, status_aprovacao: 'aguardando' })],
+    );
+
+    expect(imovel.referencia).toBe('CA054');
+    expect(imovel.destaque).toBe(false);
+    expect(imovel.super_destaque).toBe(true);
+    expect(imovel.status_aprovacao).toBe('aguardando');
+  });
+
+  it('duplicado XML + local recebe destaques e status do cadastro local', () => {
+    const [imovel] = mergeCatalogoImoveis(
+      [doXml()],
+      [local({ codigo_imovel: 'AP0001', destaque: true, super_destaque: true, status_aprovacao: 'aprovado' })],
+    );
+
+    expect(imovel.titulo).toBe('Apto do XML');
+    expect(imovel.destaque).toBe(true);
+    expect(imovel.super_destaque).toBe(true);
+    expect(imovel.status_aprovacao).toBe('aprovado');
+  });
+
+  it('imóvel só do XML segue sem destaque nem status', () => {
+    const [imovel] = mergeCatalogoImoveis([doXml()], []);
+
+    expect(imovel.destaque).toBeUndefined();
+    expect(imovel.super_destaque).toBeUndefined();
+    expect(imovel.status_aprovacao).toBeUndefined();
+  });
+
+  it('descarta rascunhos: não entram na lista nem sobrepõem o registro do XML', () => {
+    const catalogo = mergeCatalogoImoveis(
+      [doXml()],
+      [
+        local({ status_aprovacao: 'rascunho' }),
+        local({ codigo_imovel: 'AP0001', fotos: ['rascunho.jpg'], destaque: true, status_aprovacao: 'rascunho' }),
+      ],
+    );
+
+    expect(catalogo.map((i) => i.referencia)).toEqual(['AP0001']);
+    expect(catalogo[0].fotos).toEqual(['xml-1.jpg']);
+    expect(catalogo[0].destaque).toBeUndefined();
+  });
 });

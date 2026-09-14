@@ -96,6 +96,7 @@ export const formatarValor = (
   valor: unknown,
   nomePorId: Record<string, string> = {}
 ): string => {
+  if (campo === 'exclusivo' && valor === null) return 'Indiferente';
   if (valor === null || valor === undefined || valor === '') return 'vazio';
   // Mesmo fallback do autor da linha: sem nome no mapa, "Usuário" diz mais que um UUID.
   if (CAMPOS_PESSOA.has(campo)) return nomePorId[String(valor)] || 'Usuário';

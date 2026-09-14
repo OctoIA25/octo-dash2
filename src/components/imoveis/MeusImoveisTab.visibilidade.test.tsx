@@ -13,6 +13,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 const h = vi.hoisted(() => ({
   role: 'admin' as string,
   atribuicoes: [] as Array<Record<string, unknown>>,
+  locais: [] as Array<Record<string, unknown>>,
 }));
 
 vi.mock('@/hooks/useAuth', () => ({
@@ -36,7 +37,7 @@ vi.mock('@/lib/supabaseClient', () => {
   };
   return {
     supabase: {
-      from: (t: string) => tabela(t === 'imoveis_corretores' ? h.atribuicoes : [LOCAL]),
+      from: (t: string) => tabela(t === 'imoveis_corretores' ? h.atribuicoes : h.locais),
     },
   };
 });
@@ -75,6 +76,7 @@ import { MeusImoveisTab } from './MeusImoveisTab';
 
 beforeEach(() => {
   h.atribuicoes = [];
+  h.locais = [LOCAL];
 });
 
 describe('Visibilidade da aba Prontos', () => {
@@ -96,6 +98,16 @@ describe('Visibilidade da aba Prontos', () => {
     montar();
     await waitFor(() => expect(screen.getByText(/ainda não tem imóveis atribuídos/i)).toBeInTheDocument());
     expect(screen.queryByText('card:AP0688')).not.toBeInTheDocument();
+  });
+
+  it('rascunho não é listado, nem para a gestão', async () => {
+    h.role = 'admin';
+    // Fora do catálogo do pai: o merge já descarta rascunho, ele só viria de imoveis_locais.
+    h.locais = [LOCAL, { ...LOCAL, id: 'l2', codigo_imovel: 'CA0001', titulo: 'Casa rascunho', status_aprovacao: 'rascunho' }];
+    montar();
+    expect(await screen.findByText('card:AP0688')).toBeInTheDocument();
+    expect(screen.queryByText('card:CA0001')).not.toBeInTheDocument();
+    expect(screen.getByText(/1 imóvel da imobiliária/)).toBeInTheDocument();
   });
 
   it('corretor com o código atribuído vê o imóvel', async () => {

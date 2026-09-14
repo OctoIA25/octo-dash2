@@ -43,6 +43,7 @@ import {
   History,
   Megaphone,
   HelpCircle,
+  FilePen,
 } from 'lucide-react';
 
 interface Tab {
@@ -184,6 +185,7 @@ const TAB_CONFIGS: TabConfig[] = [
     tabs: [
       { id: 'catalogo', label: 'Catálogo Completo', icon: Home, href: '/imoveis?tab=catalogo', isQuery: true },
       { id: 'meus-imoveis', label: 'Prontos', icon: User, href: '/imoveis?tab=meus-imoveis', isQuery: true },
+      { id: 'rascunhos', label: 'Rascunhos', icon: FilePen, href: '/imoveis?tab=rascunhos', isQuery: true },
       { id: 'condominios', label: 'Condomínios', icon: Building2, href: '/imoveis?tab=condominios', isQuery: true },
       { id: 'lancamentos', label: 'Lançamentos', icon: Sparkles, href: '/imoveis?tab=lancamentos', isQuery: true },
       { id: 'anuncios-sem-imovel', label: 'Anúncios sem imóvel', icon: HelpCircle, href: '/imoveis?tab=anuncios-sem-imovel', isQuery: true },

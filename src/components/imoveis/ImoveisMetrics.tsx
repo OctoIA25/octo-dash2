@@ -5,7 +5,7 @@
  */
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Home, Building2, LandPlot, Store, TreePine, Tag, Key, TrendingUp } from 'lucide-react';
+import { Home, Building2, LandPlot, Store, TreePine, Shapes, Tag, Key, TrendingUp } from 'lucide-react';
 import { ImoveisMetrics as IMetrics } from '@/features/imoveis/hooks/useImoveisData';
 import { CHART_COLORS } from '@/utils/chartColors';
 
@@ -36,6 +36,7 @@ export const ImoveisMetrics = ({ metrics, isLoading }: ImoveisMetricsProps) => {
     metrics.terrenos,
     metrics.comerciais,
     metrics.rurais,
+    metrics.outros,
     metrics.venda,
     metrics.locacao,
     metrics.valorTotalVenda / 100000 // Normalizar para comparação
@@ -87,6 +88,12 @@ export const ImoveisMetrics = ({ metrics, isLoading }: ImoveisMetricsProps) => {
       ...getColorForValue(metrics.rurais)
     },
     {
+      title: 'Outros',
+      value: formatNumber(metrics.outros),
+      icon: Shapes,
+      ...getColorForValue(metrics.outros)
+    },
+    {
       title: 'À Venda',
       value: formatNumber(metrics.venda),
       icon: Tag,
@@ -109,7 +116,7 @@ export const ImoveisMetrics = ({ metrics, isLoading }: ImoveisMetricsProps) => {
   if (isLoading) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-6">
-        {Array.from({ length: 8 }).map((_, i) => (
+        {Array.from({ length: 10 }).map((_, i) => (
           <Card key={i} className="animate-pulse">
             <CardHeader className="pb-2">
               <div className="h-4 bg-gray-300 rounded w-24"></div>

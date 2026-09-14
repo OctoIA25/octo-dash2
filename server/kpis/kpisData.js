@@ -99,12 +99,13 @@ export async function fetchCommercialTotals(supabase, { tenantId, period }) {
   return { vgv, vgc };
 }
 
-/** Conta imóveis ativos do tenant (agregação no banco; não traz linhas). */
+/** Conta imóveis ativos do tenant (agregação no banco; não traz linhas). Rascunho não conta. */
 export async function countImoveisAtivos(supabase, { tenantId }) {
   const { count, error } = await supabase
     .from('imoveis_locais')
     .select('id', { count: 'exact', head: true })
-    .eq('tenant_id', tenantId);
+    .eq('tenant_id', tenantId)
+    .neq('status_aprovacao', 'rascunho');
   if (error) {
     // Imóveis é um KPI auxiliar: falha aqui não deve derrubar o painel inteiro.
     console.error('[kpis] falha ao contar imóveis ativos:', error.message);
@@ -123,12 +124,15 @@ export async function countCaptacao(supabase, { tenantId, period }) {
     .from('imoveis_locais')
     .select('id', { count: 'exact', head: true })
     .eq('tenant_id', tenantId)
+    // Rascunho não é captação. Depois de publicado conta pelo created_at, a data do rascunho.
+    .neq('status_aprovacao', 'rascunho')
     .gte('created_at', dayStartUtc(period.startDate))
     .lte('created_at', dayEndUtc(period.endDate));
 
   const [exc, sem] = await Promise.all([
     base().eq('exclusivo', true),
-    base().eq('exclusivo', false),
+    // IS NOT TRUE: "Indiferente" (NULL) conta como sem exclusividade.
+    base().not('exclusivo', 'is', true),
   ]);
 
   if (exc.error || sem.error) {
