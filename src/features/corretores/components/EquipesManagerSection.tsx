@@ -245,9 +245,11 @@ export const EquipesManagerSection = () => {
   };
 
   // ---------------------------------------------------------------------------
-  // Líderes disponíveis (role = team_leader)
+  // Gestores disponíveis: líderes e admins (admin também pode gerir uma equipe)
   // ---------------------------------------------------------------------------
-  const teamLeaders = allMembers.filter((m) => m.role === 'team_leader');
+  const teamLeaders = allMembers.filter((m) => m.role === 'team_leader' || m.role === 'admin');
+  const isLiderDaEquipe = (m: TeamMember) =>
+    m.role === 'team_leader' || !!selectedTeam?.leader_user_ids.includes(m.user_id);
 
   // ---------------------------------------------------------------------------
   // Render
@@ -627,11 +629,13 @@ export const EquipesManagerSection = () => {
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0 ml-2">
                         <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-                          member.role === 'team_leader'
+                          isLiderDaEquipe(member)
                             ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300'
-                            : 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'
+                            : member.role === 'admin'
+                              ? 'bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300'
+                              : 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'
                         }`}>
-                          {member.role === 'team_leader' ? 'Líder' : 'Corretor'}
+                          {isLiderDaEquipe(member) ? 'Líder' : member.role === 'admin' ? 'Admin' : 'Corretor'}
                         </span>
                         {canManage && (
                           <button

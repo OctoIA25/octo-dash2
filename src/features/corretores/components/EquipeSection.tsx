@@ -739,7 +739,8 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
 
       // Sincronizar equipes que este membro lidera
       const currentlyLed = teams.filter((t) => t.leader_user_ids.includes(editingMember.user_id)).map((t) => t.id);
-      const shouldLead = editRole === 'team_leader' ? editLeadsTeamIds : [];
+      // Admin também pode ser gestor de equipe; só corretor perde a gestão ao salvar.
+      const shouldLead = editRole === 'corretor' ? [] : editLeadsTeamIds;
 
       const toAdd = shouldLead.filter((id) => !currentlyLed.includes(id));
       const toRemove = currentlyLed.filter((id) => !shouldLead.includes(id));
@@ -2028,7 +2029,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                 </SelectContent>
               </Select>
 
-              {editRole === 'team_leader' && (
+              {editRole !== 'corretor' && (
                 <div className="mt-4">
                   <Label className="text-xs text-gray-600 dark:text-slate-400 mb-2 block">
                     Equipes que este gestor lidera (pode selecionar várias)
@@ -2673,7 +2674,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                     <SelectContent>
                       <SelectItem value="__none__">Nenhum (sem fila de equipe)</SelectItem>
                       {tenantMembers
-                        .filter((m) => m.role === 'team_leader')
+                        .filter((m) => m.role === 'team_leader' || m.role === 'admin')
                         .map((leader) => (
                           <SelectItem key={leader.user_id} value={leader.user_id}>
                             {leader.email}

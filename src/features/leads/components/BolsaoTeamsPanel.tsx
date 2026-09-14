@@ -245,7 +245,7 @@ export const BolsaoTeamsPanel = ({ tenantId, isAdmin, teamQueueEnabled }: Bolsao
                                     <p className="text-[12.5px] font-semibold text-slate-900 dark:text-slate-100 truncate">{m.name}</p>
                                     <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{m.email}</p>
                                   </div>
-                                  {m.role === 'team_leader' && (
+                                  {(m.role === 'team_leader' || team.leader_user_ids.includes(m.user_id)) && (
                                     <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 font-semibold uppercase tracking-wider">
                                       Líder
                                     </span>
