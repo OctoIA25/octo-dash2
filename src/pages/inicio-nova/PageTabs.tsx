@@ -42,6 +42,7 @@ import {
   Rocket,
   History,
   Megaphone,
+  HelpCircle,
 } from 'lucide-react';
 
 interface Tab {
@@ -185,6 +186,7 @@ const TAB_CONFIGS: TabConfig[] = [
       { id: 'meus-imoveis', label: 'Prontos', icon: User, href: '/imoveis?tab=meus-imoveis', isQuery: true },
       { id: 'condominios', label: 'Condomínios', icon: Building2, href: '/imoveis?tab=condominios', isQuery: true },
       { id: 'lancamentos', label: 'Lançamentos', icon: Sparkles, href: '/imoveis?tab=lancamentos', isQuery: true },
+      { id: 'anuncios-sem-imovel', label: 'Anúncios sem imóvel', icon: HelpCircle, href: '/imoveis?tab=anuncios-sem-imovel', isQuery: true },
       { id: 'construtoras', label: 'Construtoras', icon: Building2, href: '/imoveis?tab=construtoras', isQuery: true },
       { id: 'mapa-imoveis', label: 'Mapa de Imóveis', icon: MapPin, href: '/imoveis?tab=mapa-imoveis', isQuery: true },
     ],
@@ -284,6 +286,10 @@ export function PageTabs() {
       cfg = { ...baseCfg, tabs: baseCfg.tabs.filter((t) => t.id !== 'equipes' || teamQueueEnabled) };
     } else if (baseCfg.basePath === '/agentes-ia') {
       cfg = { ...baseCfg, tabs: baseCfg.tabs.filter((t) => t.id !== 'telemetria' || isGestao || isOwner) };
+    } else if (baseCfg.basePath === '/imoveis') {
+      // Amarrar anúncio vale para os leads de todos os corretores: só gestão
+      // (a rota do servidor exige admin/líder; isto é só UX).
+      cfg = { ...baseCfg, tabs: baseCfg.tabs.filter((t) => t.id !== 'anuncios-sem-imovel' || isGestao || isOwner) };
     }
 
     let activeId: string | null = null;

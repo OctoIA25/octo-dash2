@@ -56,7 +56,7 @@ export async function listarAnunciosDesconhecidos(supabase, tenantId, { limite =
 
   const { data: leads, error } = await supabase
     .from('leads')
-    .select('id, created_at, property_code, source, custom_fields')
+    .select('id, created_at, name, status, assigned_agent_name, archived_at, comments, property_code, source, custom_fields')
     .eq('tenant_id', tenantId)
     .or(FONTES_COM_ANUNCIO)
     .order('created_at', { ascending: false })
@@ -85,11 +85,26 @@ export async function listarAnunciosDesconhecidos(supabase, tenantId, { limite =
       // o código não serve mais de chave: ou é nulo, ou é o mesmo id do portal
       // em anúncios diferentes. Leads do Meta nunca tiveram código nenhum.
       leadIds: [],
+      // Com quais leads o anúncio veio — é o que a pessoa confere antes de
+      // amarrar, na aba "Anúncios sem imóvel".
+      leads: [],
+      portal: lead.source || null,
       ultimoLeadEm: lead.created_at,
       dica: null,
     };
     atual.totalLeads += 1;
     atual.leadIds.push(lead.id);
+    atual.leads.push({
+      id: lead.id,
+      nome: lead.name || null,
+      criadoEm: lead.created_at,
+      corretor: lead.assigned_agent_name || null,
+      status: lead.status || null,
+      arquivado: Boolean(lead.archived_at),
+      // ZAP/OLX: o texto que o portal monta (tipo, preço, endereço). Meta: as
+      // respostas do formulário, que o processor grava em `comments`.
+      mensagem: String(request.message || lead.comments || '').trim().slice(0, 500) || null,
+    });
     // A dica vem do primeiro lead que tiver endereço; clique-no-WhatsApp não tem.
     atual.dica = atual.dica || extrairDica(request.message);
     porAnuncio.set(anuncio, atual);
@@ -140,6 +155,42 @@ export async function listarAnunciosDesconhecidos(supabase, tenantId, { limite =
 }
 
 /**
+ * O código escolhido existe? Imóvel do catálogo (a mesma `eh_codigo_catalogo`
+ * da entrada do lead), código de lançamento (`lancamentos.codigos`) ou o nome
+ * de lançamento sem código — o formato que o de-para do Meta já usa
+ * ('ALLEGRATO').
+ *
+ * Existe porque o campo antigo aceitava texto livre: um erro de digitação virava
+ * o imóvel de todos os leads do anúncio, e dos próximos. Três respostas: `null`
+ * é "não deu para conferir", e quem chama NÃO grava — amarrar errado espalha o
+ * erro, não amarrar só adia.
+ */
+async function codigoExisteNoCadastro(supabase, tenantId, codigo) {
+  const { data: doCatalogo, error: erroRpc } = await supabase.rpc('eh_codigo_catalogo', {
+    p_tenant: tenantId, p_codigo: codigo,
+  });
+  if (erroRpc) {
+    console.error('❌ [anunciosPendentes] eh_codigo_catalogo falhou:', erroRpc.message);
+    return null;
+  }
+  if (doCatalogo === true) return true;
+
+  // ponytail: ~50 lançamentos por tenant, conferidos em memória. Se a tabela
+  // crescer muito, um filtro `codigos.cs.{X}` + ilike no nome resolve no banco.
+  const { data: lancamentos, error } = await supabase
+    .from('lancamentos')
+    .select('nome, codigos')
+    .eq('tenant_id', tenantId);
+  if (error) {
+    console.error('❌ [anunciosPendentes] leitura de lançamentos falhou:', error.message);
+    return null;
+  }
+  const normaliza = (v) => String(v ?? '').trim().toUpperCase();
+  return (lancamentos || []).some((l) =>
+    normaliza(l.nome) === codigo || (l.codigos || []).some((c) => normaliza(c) === codigo));
+}
+
+/**
  * Amarra o anúncio a um código e conserta os leads que já entraram por ele.
  *
  * A classificação é recalculada pela MESMA função do banco que o trigger de
@@ -154,6 +205,10 @@ export async function amarrarAnuncio(supabase, { tenantId, originListingId, codi
   if (!tenantId) return { ok: false, error: 'tenantId obrigatório' };
   if (!anuncio) return { ok: false, error: 'originListingId obrigatório' };
   if (!codigoNormalizado) return { ok: false, error: 'codigo obrigatório' };
+
+  const existe = await codigoExisteNoCadastro(supabase, tenantId, codigoNormalizado);
+  if (existe === null) return { ok: false, error: 'não foi possível conferir o código — nada foi gravado' };
+  if (!existe) return { ok: false, error: `'${codigoNormalizado}' não é imóvel nem lançamento cadastrado` };
 
   const { error: erroUpsert } = await supabase
     .from('lancamento_anuncios')

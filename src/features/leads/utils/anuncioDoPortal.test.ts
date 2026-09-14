@@ -1,5 +1,28 @@
 import { describe, it, expect } from 'vitest';
-import { anuncioNaoIdentificado } from './anuncioDoPortal';
+import { anuncioNaoIdentificado, linkDoAnuncioNoPortal } from './anuncioDoPortal';
+
+describe('linkDoAnuncioNoPortal', () => {
+  // Conferido no navegador em 14/set: /imovel/id-{id}/ abre o anúncio sem o slug.
+  it('anúncio do ZAP/OLX abre pelo id', () => {
+    expect(linkDoAnuncioNoPortal('ZAP Imóveis', '2894853981'))
+      .toBe('https://www.zapimoveis.com.br/imovel/id-2894853981/');
+    expect(linkDoAnuncioNoPortal('Grupo OLX', ' 2902348318 '))
+      .toBe('https://www.zapimoveis.com.br/imovel/id-2902348318/');
+  });
+
+  // O form_id do Meta também é só dígito, mas não tem página pública.
+  it('formulário do Meta não tem link', () => {
+    expect(linkDoAnuncioNoPortal('Instagram', '2512857375884799')).toBeNull();
+    expect(linkDoAnuncioNoPortal('Facebook', '1050767041092494')).toBeNull();
+  });
+
+  // O id vem do payload do portal: só dígitos viram URL.
+  it('id que não é só dígito não vira link', () => {
+    expect(linkDoAnuncioNoPortal('ZAP Imóveis', '110D1GD')).toBeNull();
+    expect(linkDoAnuncioNoPortal('ZAP Imóveis', '123/../x')).toBeNull();
+    expect(linkDoAnuncioNoPortal(null, '2894853981')).toBeNull();
+  });
+});
 
 describe('anuncioNaoIdentificado', () => {
   it('lead de portal sem código: o anúncio não foi identificado', () => {

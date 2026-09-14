@@ -15,6 +15,11 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const lead = (over = {}) => ({
   id: over.id || 'lead-1',
   created_at: over.created_at || '2026-09-07T12:00:00Z',
+  name: over.name ?? 'Maria',
+  status: over.status ?? 'Novos Leads',
+  assigned_agent_name: 'assigned_agent_name' in over ? over.assigned_agent_name : 'João Corretor',
+  archived_at: over.archived_at ?? null,
+  comments: over.comments ?? null,
   source: 'ZAP Imóveis',
   property_code: over.property_code ?? '110D1GD',
   classification_source: over.classification_source ?? 'automatic',
@@ -38,6 +43,7 @@ const lead = (over = {}) => ({
 const fakeSupabase = ({
   leads = [], leadsError = null, depara = [], deparaError = null,
   catalogo = false, catalogoError = null, classificacao = ['pronto'],
+  lancamentos = [], lancamentosError = null,
 } = {}) => {
   const updates = [];
   const upserts = [];
@@ -45,6 +51,10 @@ const fakeSupabase = ({
   return {
     updates, upserts, rpcs,
     from(tabela) {
+      if (tabela === 'lancamentos') {
+        const q = { select: () => q, eq: async () => ({ data: lancamentos, error: lancamentosError }) };
+        return q;
+      }
       if (tabela === 'lancamento_anuncios') {
         const q = {
           select: () => q,
@@ -165,6 +175,38 @@ describe('listarAnunciosDesconhecidos', () => {
     expect(r.anuncios.find((a) => a.originListingId === '2512857375884799').leadIds).toEqual(['meta-9']);
   });
 
+  // A tela "Anúncios sem imóvel" mostra com quais leads o anúncio veio, para
+  // quem vai amarrar conferir antes — sem isso a escolha é no escuro.
+  it('mostra os leads de cada anúncio para conferência', async () => {
+    const supabase = fakeSupabase({
+      leads: [
+        lead(),
+        lead({ id: 'lead-2', name: 'Pedro', assigned_agent_name: null, archived_at: '2026-09-10T00:00:00Z' }),
+        leadMeta({ id: 'meta-1' }),
+      ],
+    });
+    const r = await listarAnunciosDesconhecidos(supabase, 't1');
+    const zap = r.anuncios.find((a) => a.originListingId === '2894853981');
+    expect(zap.portal).toBe('ZAP Imóveis');
+    expect(zap.leads).toEqual([
+      expect.objectContaining({
+        id: 'lead-1', nome: 'Maria', criadoEm: '2026-09-07T12:00:00Z',
+        corretor: 'João Corretor', status: 'Novos Leads', arquivado: false,
+      }),
+      expect.objectContaining({ id: 'lead-2', nome: 'Pedro', corretor: null, arquivado: true }),
+    ]);
+    expect(zap.leads[0].mensagem).toContain('Rua Engenheiro José Maria da Silva Velho, 71');
+  });
+
+  // Lead do Meta não tem `original_request`: o que a pessoa respondeu no
+  // formulário vai para `comments`, e é isso que ajuda a conferir.
+  it('lead do Meta mostra as respostas do formulário como mensagem', async () => {
+    const meta = { ...leadMeta(), name: 'Ana', comments: 'Empreendimento: Allegrato' };
+    const supabase = fakeSupabase({ leads: [meta] });
+    const r = await listarAnunciosDesconhecidos(supabase, 't1');
+    expect(r.anuncios[0].leads[0]).toMatchObject({ nome: 'Ana', mensagem: 'Empreendimento: Allegrato' });
+  });
+
   it('confere o catálogo uma vez por código, não por lead', async () => {
     const supabase = fakeSupabase({ leads: [lead(), lead({ id: 'lead-2' }), lead({ id: 'lead-3' })] });
     await listarAnunciosDesconhecidos(supabase, 't1');
@@ -197,9 +239,56 @@ describe('listarAnunciosDesconhecidos', () => {
 describe('amarrarAnuncio', () => {
   const log = () => vi.spyOn(console, 'log').mockImplementation(() => {});
 
+  // O campo antigo aceitava qualquer texto: um erro de digitação virava o
+  // "imóvel" de todos os leads do anúncio, e dos próximos também.
+  it('recusa código que não existe no cadastro de imóveis nem de lançamentos', async () => {
+    const supabase = fakeSupabase({
+      leads: [lead()], catalogo: false, lancamentos: [{ nome: 'Gioviale', codigos: ['L014'] }],
+    });
+    const r = await amarrarAnuncio(supabase, { tenantId: 't1', originListingId: '2894853981', codigo: 'L41' });
+    expect(r).toMatchObject({ ok: false });
+    expect(supabase.upserts).toEqual([]);
+    expect(supabase.updates).toEqual([]);
+  });
+
+  it('aceita código de lançamento cadastrado', async () => {
+    const l = log();
+    const supabase = fakeSupabase({ leads: [lead()], lancamentos: [{ nome: 'Gioviale', codigos: ['L014'] }] });
+    const r = await amarrarAnuncio(supabase, { tenantId: 't1', originListingId: '2894853981', codigo: 'l014' });
+    expect(r).toMatchObject({ ok: true, codigo: 'L014', leadsAtualizados: 1 });
+    l.mockRestore();
+  });
+
+  // Mesmo formato do de-para do Meta ('ALLEGRATO'): lançamento sem código é
+  // amarrado pelo nome, que é por onde o card do lead encontra o empreendimento.
+  it('aceita o nome de lançamento que ainda não tem código', async () => {
+    const l = log();
+    const supabase = fakeSupabase({ leads: [lead()], lancamentos: [{ nome: ' Anhangabaú Design ', codigos: null }] });
+    const r = await amarrarAnuncio(supabase, {
+      tenantId: 't1', originListingId: '2894853981', codigo: 'ANHANGABAÚ DESIGN',
+    });
+    expect(r).toMatchObject({ ok: true, codigo: 'ANHANGABAÚ DESIGN' });
+    expect(supabase.upserts[0].linha.codigo).toBe('ANHANGABAÚ DESIGN');
+    l.mockRestore();
+  });
+
+  // Falha fechada: sem conseguir conferir, não grava — amarrar errado espalha
+  // o erro para todos os leads do anúncio; não amarrar só adia.
+  it('erro ao conferir o código não grava nada', async () => {
+    const erro = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const supabase = fakeSupabase({ leads: [lead()], catalogoError: { message: 'timeout' } });
+    const r = await amarrarAnuncio(supabase, { tenantId: 't1', originListingId: '2894853981', codigo: 'AP001' });
+    expect(r).toMatchObject({ ok: false });
+    expect(supabase.upserts).toEqual([]);
+    erro.mockRestore();
+  });
+
   it('amarrar formulário do Meta reprocessa os leads pagos daquele form', async () => {
     const l = log();
-    const supabase = fakeSupabase({ leads: [leadMeta(), leadMeta({ id: 'meta-2', form_id: 'outro' })] });
+    const supabase = fakeSupabase({
+      leads: [leadMeta(), leadMeta({ id: 'meta-2', form_id: 'outro' })],
+      lancamentos: [{ nome: 'Allegrato', codigos: null }],
+    });
     const r = await amarrarAnuncio(supabase, { tenantId: 't1', originListingId: '2512857375884799', codigo: 'allegrato' });
     expect(r).toMatchObject({ ok: true, codigo: 'ALLEGRATO', leadsAtualizados: 1 });
     expect(supabase.updates).toHaveLength(1);
@@ -209,7 +298,7 @@ describe('amarrarAnuncio', () => {
 
   it('grava o de-para com o código em MAIÚSCULO e reprocessa os leads do anúncio', async () => {
     const l = log();
-    const supabase = fakeSupabase({ leads: [lead(), lead({ id: 'lead-2', anuncio: 'outro' })] });
+    const supabase = fakeSupabase({ leads: [lead(), lead({ id: 'lead-2', anuncio: 'outro' })], catalogo: true });
     const r = await amarrarAnuncio(supabase, { tenantId: 't1', originListingId: '2894853981', codigo: ' ap001 ' });
 
     expect(r).toMatchObject({ ok: true, codigo: 'AP001', leadsAtualizados: 1 });
@@ -225,7 +314,7 @@ describe('amarrarAnuncio', () => {
 
   it('a classificação vem da função do banco, não de regra local', async () => {
     const l = log();
-    const supabase = fakeSupabase({ leads: [lead()], classificacao: ['pronto'] });
+    const supabase = fakeSupabase({ leads: [lead()], classificacao: ['pronto'], catalogo: true });
     await amarrarAnuncio(supabase, { tenantId: 't1', originListingId: '2894853981', codigo: 'AP001' });
     expect(supabase.rpcs).toContainEqual({
       fn: 'classificar_lead_com_lancamento',
@@ -237,7 +326,7 @@ describe('amarrarAnuncio', () => {
 
   it('decisão de humano/Lia é intocável: recebe o código, não a classificação', async () => {
     const l = log();
-    const supabase = fakeSupabase({ leads: [lead({ classification_source: 'dashboard' })] });
+    const supabase = fakeSupabase({ leads: [lead({ classification_source: 'dashboard' })], catalogo: true });
     await amarrarAnuncio(supabase, { tenantId: 't1', originListingId: '2894853981', codigo: 'AP001' });
     expect(supabase.updates[0].patch).toEqual({ property_code: 'AP001' });
     expect(supabase.rpcs.some((c) => c.fn === 'classificar_lead_com_lancamento')).toBe(false);
@@ -255,7 +344,7 @@ describe('amarrarAnuncio', () => {
 
   it('falha ao reprocessar não desfaz o de-para — lead novo já entra certo', async () => {
     const erro = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const supabase = fakeSupabase({ leadsError: { message: 'timeout' } });
+    const supabase = fakeSupabase({ leadsError: { message: 'timeout' }, lancamentos: [{ nome: 'Novo', codigos: ['L040'] }] });
     const r = await amarrarAnuncio(supabase, { tenantId: 't1', originListingId: '123', codigo: 'L040' });
     expect(r.ok).toBe(true);
     expect(r.aviso).toBeTruthy();

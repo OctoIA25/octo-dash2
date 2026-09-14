@@ -8,6 +8,7 @@
  * zapIntegrationService.
  */
 import { supabase } from '@/lib/supabaseClient';
+import { montarOpcoesDeAmarracao, type OpcaoDeAmarracao } from '../utils/opcoesDeAmarracao';
 
 async function authHeaders(): Promise<Record<string, string>> {
   const { data: { session } } = await supabase.auth.getSession();
@@ -17,8 +18,23 @@ async function authHeaders(): Promise<Record<string, string>> {
   };
 }
 
+/** Um lead que chegou pelo anúncio — o que se confere antes de amarrar. */
+export interface LeadDoAnuncio {
+  id: string;
+  nome: string | null;
+  criadoEm: string;
+  corretor: string | null;
+  status: string | null;
+  arquivado: boolean;
+  /** Texto do portal (tipo, preço, endereço) ou respostas do formulário do Meta. */
+  mensagem: string | null;
+}
+
 export interface AnuncioPendente {
   originListingId: string;
+  /** `source` do lead: 'ZAP Imóveis', 'Grupo OLX', 'Instagram', 'Facebook'. */
+  portal: string | null;
+  leads: LeadDoAnuncio[];
   /**
    * O id do anúncio no publicador ('I7V1GD'). Só para a tela mostrar o que o
    * portal mandou — NÃO serve de chave: desde `semCodigoDoCatalogo` ele não é
@@ -62,6 +78,21 @@ export async function amarrarAnuncio(
   });
   const json = await res.json().catch(() => ({}));
   return { ok: res.ok && json.ok, leadsAtualizados: json.leadsAtualizados, error: json.error };
+}
+
+/**
+ * Opções da aba "Anúncios sem imóvel": só o que existe no cadastro. Os dois
+ * selects mantêm o `.eq('tenant_id')` explícito além da RLS, como as outras
+ * leituras destas tabelas.
+ */
+export async function fetchOpcoesDeAmarracao(tenantId: string): Promise<OpcaoDeAmarracao[]> {
+  const [imoveis, lancamentos] = await Promise.all([
+    supabase.from('imoveis_locais').select('codigo_imovel, titulo, bairro').eq('tenant_id', tenantId).order('codigo_imovel'),
+    supabase.from('lancamentos').select('nome, codigos').eq('tenant_id', tenantId).order('nome'),
+  ]);
+  if (imoveis.error) console.error('[anunciosPendentes] erro ao ler imoveis_locais:', imoveis.error.code, imoveis.error.message);
+  if (lancamentos.error) console.error('[anunciosPendentes] erro ao ler lancamentos:', lancamentos.error.code, lancamentos.error.message);
+  return montarOpcoesDeAmarracao(imoveis.data ?? [], lancamentos.data ?? []);
 }
 
 /**

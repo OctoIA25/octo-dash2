@@ -14,6 +14,7 @@ import { MeusImoveisTab } from '@/components/imoveis/MeusImoveisTab';
 import { CondominiosTab } from '@/components/imoveis/CondominiosTab';
 import { LancamentosTab } from '@/components/imoveis/LancamentosTab';
 import { ConstrutorasTab } from '@/components/imoveis/ConstrutorasTab';
+import { AnunciosSemImovelTab } from '@/components/imoveis/AnunciosSemImovelTab';
 import { CriarImovelForm } from '@/components/imoveis/CriarImovelForm';
 import { ImovelDetalhesModal } from '@/components/imoveis/ImovelDetalhesModal';
 import { buildEditDataFromLocal } from '@/features/imoveis/utils/buildEditDataFromLocal';
@@ -956,6 +957,10 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
 
         <TabsContent value="construtoras">
           <ConstrutorasTab />
+        </TabsContent>
+
+        <TabsContent value="anuncios-sem-imovel">
+          <AnunciosSemImovelTab />
         </TabsContent>
 
         <TabsContent value="catalogo">

@@ -47,3 +47,19 @@ export function anuncioNaoIdentificado(lead: LeadComAnuncio | null | undefined):
   if (codigo) return false;
   return PORTAIS_COM_ANUNCIO.test(String(lead.portal ?? lead.source ?? lead.origem_lead ?? ''));
 }
+
+/**
+ * Link público do anúncio no ZAP, para quem vai identificar abrir e ver o imóvel.
+ *
+ * ZAP e Grupo OLX usam o mesmo `originListingId`, e o site abre o anúncio só
+ * pelo id: /imovel/id-{id}/ (conferido no navegador em 14/set/2026 — o slug da
+ * URL completa não é obrigatório). O formulário do Meta também tem id numérico,
+ * mas não tem página pública, por isso a origem é conferida.
+ *
+ * O id vem do payload do portal: só dígitos viram URL.
+ */
+export function linkDoAnuncioNoPortal(portal: string | null | undefined, originListingId: string): string | null {
+  if (!/zap|olx/i.test(String(portal ?? ''))) return null;
+  const id = String(originListingId ?? '').trim();
+  return /^\d+$/.test(id) ? `https://www.zapimoveis.com.br/imovel/id-${id}/` : null;
+}
