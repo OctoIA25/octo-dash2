@@ -6,7 +6,6 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -52,12 +51,6 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
 
-interface RecrutamentoPageProps {
-  leads: ProcessedLead[];
-  onRefresh?: () => void;
-  isRefreshing?: boolean;
-}
-
 interface Candidato {
   id: string | number;
   nome: string;
@@ -79,7 +72,7 @@ interface Candidato {
   }[];
 }
 
-export const RecrutamentoPage = ({ leads, onRefresh, isRefreshing }: RecrutamentoPageProps) => {
+export const RecrutamentoPage = () => {
   const { user, tenantId } = useAuth();
 
   // Use recruitment hook with real data

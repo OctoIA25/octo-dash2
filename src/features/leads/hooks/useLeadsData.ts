@@ -335,7 +335,9 @@ export const useLeadsData = ({ enabled = true }: UseLeadsDataOptions = {}): Lead
       // CRÍTICO: Atualização harmônica APENAS do estado React - NUNCA recarregar página
       // Usar requestAnimationFrame para atualização suave
       requestAnimationFrame(() => {
-        if (JSON.stringify(leads) !== JSON.stringify(processedLeads)) {
+        // `leads` aqui é sempre o [] inicial (useCallback sem deps): comparar por
+        // JSON só distinguia lista vazia, serializando o tenant inteiro na main thread.
+        if (processedLeads.length > 0) {
           setLeads(processedLeads);
           
           // Extrair equipes automaticamente dos dados do Supabase
@@ -468,7 +470,9 @@ export const useLeadsData = ({ enabled = true }: UseLeadsDataOptions = {}): Lead
 
   // Buscar dados na inicialização - APENAS SUPABASE VIA API KEY - OTIMIZADO
   useEffect(() => {
-    if (!enabled) return;
+    // Varredura já em voo nesta instância (ligar/desligar entre abas): o abort não
+    // chega ao fetch, então religar abriria outra varredura concorrente.
+    if (!enabled || abortControllerRef.current) return;
     if (DEBUG_LOGS) console.log(' Inicializando dados do Supabase...');
     if (DEBUG_LOGS) console.log(' Conectando diretamente ao banco PostgreSQL via API KEY');
 
@@ -540,17 +544,13 @@ export const useLeadsData = ({ enabled = true }: UseLeadsDataOptions = {}): Lead
       }
     };
 
-    // Agendar atualizações automáticas apenas depois da primeira carga
-    if (hasInitialData) {
+    // Agendar atualizações automáticas apenas depois da primeira carga e só enquanto ligado
+    if (enabled && hasInitialData) {
       if (DEBUG_LOGS) console.log('⏰ Iniciando sistema de auto-update...');
       if (DEBUG_LOGS) console.log(`📊 Dados iniciais: ${leads.length} leads`);
-      
-      // Primeira execução em 10 segundos para dar tempo de carregar
-      setTimeout(() => {
-        if (DEBUG_LOGS) console.log('🚀 Primeira execução do auto-update Supabase...');
-        autoUpdate();
-      }, 10000);
-      
+
+      // Sem disparo extra aos 10 s: a carga ao ligar já vem do effect de inicialização
+      // e, com varredura lenta, ele abria uma segunda varredura concorrente.
       // ⏰ ATUALIZAÇÃO AUTOMÁTICA: A CADA 5 MINUTOS — cada tick com cache expirado
       // dispara a varredura paginada completa; 60s por aba foi amplificador do 28/jul
       interval = setInterval(autoUpdate, 300000);
@@ -575,7 +575,7 @@ export const useLeadsData = ({ enabled = true }: UseLeadsDataOptions = {}): Lead
         abortControllerRef.current.abort();
       }
     };
-  }, [hasInitialData]); // Remover fetchLeadsData das dependências para evitar loops
+  }, [hasInitialData, enabled]); // Remover fetchLeadsData das dependências para evitar loops
 
   return {
     leads,

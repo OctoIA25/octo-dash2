@@ -25,8 +25,9 @@ export const AdminDashboard = () => {
     }
   }, [navigate, searchParams]);
   
-  // Buscar leads para a aba de Corretores
-  const { leads } = useLeadsData();
+  // Leads só para a aba Acessos e Permissões — a varredura do tenant inteiro não
+  // roda nas outras abas (a padrão é Tarefas).
+  const { leads } = useLeadsData({ enabled: activeTab === 'acessos-permissoes' });
 
   return (
     <div className="w-full min-h-screen overflow-x-hidden">

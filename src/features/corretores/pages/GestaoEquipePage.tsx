@@ -8,17 +8,10 @@
  */
 
 import { useEffect, Suspense } from 'react';
-import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { AdminDashboard } from '@/components/AdminDashboard';
 import { OctoDashLoader } from '@/components/ui/OctoDashLoader';
 import { ErrorBoundary } from '@/shared/components/ErrorBoundary';
 import { SidebarProvider } from '@/contexts/SidebarContext';
-
-interface GestaoEquipePageProps {
-  leads: ProcessedLead[];
-  onRefresh?: () => void;
-  isRefreshing?: boolean;
-}
 
 const LoadingFallback = () => (
   <div className="w-full h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--bg-primary)' }}>
@@ -26,7 +19,7 @@ const LoadingFallback = () => (
   </div>
 );
 
-export const GestaoEquipePage = ({ leads, onRefresh, isRefreshing }: GestaoEquipePageProps) => {
+export const GestaoEquipePage = () => {
   // Sincronizar com localStorage
   useEffect(() => {
     localStorage.setItem('selectedSection', 'gestao-equipe');

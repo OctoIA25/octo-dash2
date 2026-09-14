@@ -4,10 +4,10 @@
  * Gerencia sidebar e renderização de páginas por rota
  */
 
-import React, { Suspense, useState, useCallback, useMemo } from 'react';
+import { Suspense, useCallback, useMemo } from 'react';
 import { lazyWithRetry } from '@/lib/lazyWithRetry';
 import { RouteErrorBoundary } from '@/shared/components/RouteErrorBoundary';
-import { Routes, Route, Navigate, useOutletContext, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { NovoLayout } from './inicio-nova/NovoLayout';
 import { InicioNovaPage } from './inicio-nova/InicioNovaPage';
 import { EnpsPendingBanner } from '@/features/enps/components/EnpsPendingBanner';
@@ -23,12 +23,12 @@ import {
 
 const DEBUG_LOGS = import.meta.env?.VITE_DEBUG_LOGS === 'true';
 
-// Únicas rotas que consomem o `leads` deste layout (recebem por prop). As demais
-// — Início, Meus Leads, Métricas, Imóveis... — fazem o próprio fetch e nunca leem
-// este array. Como `useLeadsData` varre o tenant inteiro em kenlo_leads (dezenas de
-// milhares de linhas, ~2 páginas por vez), rodá-lo fora destas rotas era puro
-// desperdício: dezenas de idas ao banco por navegação, sem nada consumindo.
-const ROTAS_QUE_USAM_LEADS_DO_LAYOUT = ['/recrutamento', '/gestao-equipe', '/bolsao', '/configuracoes'];
+// Única rota que consome o `leads` deste layout (Configurações → Canais de Lead).
+// As demais — Início, Meus Leads, Gestão de Equipe, Bolsão... — fazem o próprio
+// fetch e nunca leem este array. Como `useLeadsData` varre o tenant inteiro em
+// kenlo_leads (dezenas de milhares de linhas, ~2 páginas por vez), rodá-lo fora
+// daqui era puro desperdício: dezenas de idas ao banco por navegação.
+const ROTAS_QUE_USAM_LEADS_DO_LAYOUT = ['/configuracoes'];
 
 const SIDEBAR_PERMISSION_ORDER: SidebarPermission[] = [
   'leads',
@@ -134,41 +134,12 @@ const DashboardLayout = () => {
 
   // Hook de dados - só busca nas rotas que realmente consomem este `leads`.
   const rotaUsaLeadsDoLayout = ROTAS_QUE_USAM_LEADS_DO_LAYOUT.some((r) => location.pathname.startsWith(r));
-  const { leads, isLoading, lastUpdate, newLeadsCount, error, refetch, isRefetching } = useLeadsData({
+  const { leads, isLoading, error } = useLeadsData({
     enabled: rotaUsaLeadsDoLayout,
   });
 
   if (DEBUG_LOGS) console.log(' DashboardLayout - dados:', { leadsCount: leads?.length, isLoading, error: error?.substring(0, 50) });
-  
-  // Estados para controle da atualização
-  const [isDirectUpdating, setIsDirectUpdating] = useState(false);
-  
-  // Função para atualizar dados do Supabase
-  const handleDirectSupabaseCall = useCallback(async (e?: React.MouseEvent) => {
-    if (e) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
-    
-    if (isDirectUpdating) return;
 
-    if (DEBUG_LOGS) console.log(' Botão de refresh clicado - atualizando do Supabase');
-    
-    try {
-      setIsDirectUpdating(true);
-      await refetch();
-      if (DEBUG_LOGS) console.log(' Dados atualizados via refetch principal!');
-    } catch (error) {
-      console.error(' Erro ao atualizar dados:', error);
-    } finally {
-      setTimeout(() => {
-        setIsDirectUpdating(false);
-      }, 1000);
-    }
-  }, [isDirectUpdating, refetch]);
-
-  // Garantir que sempre temos dados para exibir
-  const safeLeads = leads.length > 0 ? leads : [];
   const allowedSidebarPermissions = useMemo(() => {
     const userSidebarPermissions = user?.sidebarPermissions ?? [];
     const tenantAllowedFeatures = user?.tenantAllowedFeatures;
@@ -217,8 +188,8 @@ const DashboardLayout = () => {
   }, [allowedSidebarPermissions]);
 
   // O loader de tela cheia só faz sentido para as rotas que REALMENTE consomem o
-  // `leads` deste layout por prop (recebem safeLeads). As demais (Início, Meus Leads,
-  // Métricas, Imóveis, etc.) fazem seu próprio fetch e têm loading interno — prendê-las
+  // `leads` deste layout por prop. As demais (Início, Meus Leads, Métricas, Imóveis,
+  // etc.) fazem seu próprio fetch e têm loading interno — prendê-las
   // a este gate as deixa ~segundos em "Carregando CRM..." esperando dados que não usam.
   if (isLoading && leads.length === 0 && !error && rotaUsaLeadsDoLayout) {
     return (
@@ -229,11 +200,7 @@ const DashboardLayout = () => {
   }
 
   return (
-    <NovoLayout
-      leads={safeLeads}
-      onRefresh={handleDirectSupabaseCall}
-      isRefreshing={isDirectUpdating || isRefetching}
-    >
+    <NovoLayout>
       <EnpsPendingBanner />
       <RouteErrorBoundary>
       <Suspense fallback={<PageLoader />}>
@@ -296,11 +263,7 @@ const DashboardLayout = () => {
             path="recrutamento" 
             element={
               canAccess('recrutamento') ? (
-                <RecrutamentoPage 
-                  leads={safeLeads}
-                  onRefresh={handleDirectSupabaseCall}
-                  isRefreshing={isDirectUpdating || isRefetching}
-                />
+                <RecrutamentoPage />
               ) : (
                 <Navigate to={defaultAllowedRoute} replace />
               )
@@ -311,11 +274,7 @@ const DashboardLayout = () => {
             path="gestao-equipe" 
             element={
               canAccess('gestao-equipe') ? (
-                <GestaoEquipePage 
-                  leads={safeLeads}
-                  onRefresh={handleDirectSupabaseCall}
-                  isRefreshing={isDirectUpdating || isRefetching}
-                />
+                <GestaoEquipePage />
               ) : (
                 <Navigate to={defaultAllowedRoute} replace />
               )
@@ -326,11 +285,7 @@ const DashboardLayout = () => {
             path="bolsao" 
             element={
               canAccess('metricas') ? (
-                <BolsaoPage 
-                  leads={safeLeads}
-                  onRefresh={handleDirectSupabaseCall}
-                  isRefreshing={isDirectUpdating || isRefetching}
-                />
+                <BolsaoPage />
               ) : (
                 <Navigate to={defaultAllowedRoute} replace />
               )

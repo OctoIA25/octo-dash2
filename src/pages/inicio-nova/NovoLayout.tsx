@@ -1,13 +1,10 @@
 /**
  * NovoLayout - Wrapper de layout novo usado por todas as rotas do CRM
- * Preserva o OutletContext (leads, onRefresh, isRefreshing) usado pelas páginas existentes.
  */
 
 import React, { useEffect } from 'react';
-import { Outlet } from 'react-router-dom';
 import { NovaSidebar } from './NovaSidebar';
 import { NovoHeader } from './NovoHeader';
-import type { ProcessedLead } from '@/data/realLeadsProcessor';
 import { HeaderSlotProvider } from '@/contexts/HeaderSlotContext';
 import { NovoActionsProvider } from '@/contexts/NovoActionsContext';
 import { ViewAsProvider } from '@/contexts/ViewAsContext';
@@ -15,21 +12,11 @@ import { SupportButton } from '@/components/support/SupportButton';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { SupportService } from '@/components/support/SupportService';
 
-export interface NovoLayoutContext {
-  leads: ProcessedLead[];
-  onRefresh?: () => void;
-  isRefreshing?: boolean;
-}
-
 interface NovoLayoutProps {
-  leads: ProcessedLead[];
-  onRefresh?: () => void;
-  isRefreshing?: boolean;
   children?: React.ReactNode;
 }
 
-export function NovoLayout({ leads, onRefresh, isRefreshing, children }: NovoLayoutProps) {
-  const context: NovoLayoutContext = { leads, onRefresh, isRefreshing };
+export function NovoLayout({ children }: NovoLayoutProps) {
   const { tenantId, user } = useAuthContext();
 
   useEffect(() => {
@@ -55,7 +42,7 @@ export function NovoLayout({ leads, onRefresh, isRefreshing, children }: NovoLay
             <NovoHeader />
 
             <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden">
-              {children ? children : <Outlet context={context} />}
+              {children}
             </main>
           </div>
           <SupportButton
