@@ -23,6 +23,7 @@ import { toast } from 'sonner';
 import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { useAuth } from "@/hooks/useAuth";
 import { podeAlterarTelefoneDe } from '../domain/memberPhonePermission';
+import { garantirFotoNoStorage } from '../services/memberPhotoService';
 import { fetchTenantMembers, createTenantMember, updateMemberRole, removeTenantMember, updateMemberPermissions, updateMemberWhatsappPhones, updateMemberLeader, deleteMemberCompletely, adminUpdateMemberPassword, adminUpdateMemberEmail, type TenantMember } from '../services/tenantMembersService';
 import { fetchTeams, toggleTeamLeader, type Team } from '../services/teamsManagementService';
 import { fetchMemberDados, saveMemberDados, EMPTY_MEMBER_DADOS, type MemberDados } from '../services/memberDadosService';
@@ -376,6 +377,16 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
 
     setIsCreatingMember(true);
     try {
+      // Foto vai para o Storage e `permissions.photo` guarda só o link (ver
+      // memberPhotoService). Falha no envio interrompe: nada é criado.
+      let fotoNovoMembro: string | null;
+      try {
+        fotoNovoMembro = await garantirFotoNoStorage(tenantId!, newMemberPhoto);
+      } catch (erroFoto) {
+        toast.error(erroFoto instanceof Error ? erroFoto.message : 'Não foi possível enviar a foto');
+        return;
+      }
+
       // Converter permissões em array de sidebar permissions (ver nota em
       // handleSavePermissions sobre as abas sem checkbox).
       const sidebarPerms = comPermissoesNaoEditaveis(
@@ -389,7 +400,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
         role: newMemberRole,
         name: `${newMemberName} ${newMemberSurname}`.trim() || undefined,
         team: newMemberTeam || undefined,
-        permissions: { ...permissions, photo: newMemberPhoto || null, atuacao: newMemberAtuacao } as any,
+        permissions: { ...permissions, photo: fotoNovoMembro, atuacao: newMemberAtuacao } as any,
         sidebarPermissions: sidebarPerms as any,
         creci: newMemberCreci.trim() || undefined,
       };
@@ -681,6 +692,16 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
 
     setIsSavingPermissions(true);
     try {
+      // Foto nova, ou antiga ainda em data-URI, vai para o Storage; link já
+      // migrado volta igual. Falha no envio interrompe: nada é salvo.
+      let fotoMembro: string | null;
+      try {
+        fotoMembro = await garantirFotoNoStorage(editingMember.tenant_id, editMemberPhoto);
+      } catch (erroFoto) {
+        toast.error(erroFoto instanceof Error ? erroFoto.message : 'Não foi possível enviar a foto');
+        return;
+      }
+
       // Converter permissões em array de sidebar_permissions. As abas sem checkbox
       // (WhatsApp, Comunicação, Metas...) não podem ser deduzidas daqui — sem
       // comPermissoesNaoEditaveis, cada salvamento as apagava do membro.
@@ -691,7 +712,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
       
       const newPermissions = {
         ...editingMember.permissions,
-        photo: editMemberPhoto || null,
+        photo: fotoMembro,
         whatsapp_phones: whatsappPhones,
         sidebar_permissions: sidebarPerms,
         sub_permissions: editSubPermissions,

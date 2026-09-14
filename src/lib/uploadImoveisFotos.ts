@@ -12,9 +12,9 @@ const EXT_BY_MIME: Record<string, string> = {
   'image/gif': 'gif',
 };
 
-const isDataUrl = (url: string) => /^data:image\//i.test(url);
+export const isDataUrl = (url: string) => /^data:image\//i.test(url);
 
-const parseDataUrl = (dataUrl: string): { blob: Blob; ext: string } | null => {
+export const parseDataUrl = (dataUrl: string): { blob: Blob; ext: string } | null => {
   const match = dataUrl.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
   if (!match) return null;
   const mime = match[1].toLowerCase();
