@@ -369,34 +369,40 @@ export const LeadDetailsModal = ({
 
           {/* Informações Principais */}
           <div className="space-y-4">
-            {/* Contato do Lead */}
-            <div className="bg-muted/50 p-4 rounded-lg">
-              <div className="flex items-center gap-2 mb-2">
-                <Phone className="h-5 w-5 text-blue-500" />
-                <span className="font-bold text-sm text-muted-foreground">Contato do Lead</span>
-              </div>
-              <p className="text-lg font-bold text-foreground">
-                {formatarTelefone(lead.lead)}
-              </p>
-            </div>
+            {/* Contato e conversa só com telefone: o Bolsão tira o número de
+                propósito (ninguém chama o lead sem assumir). */}
+            {lead.lead && (
+              <>
+                {/* Contato do Lead */}
+                <div className="bg-muted/50 p-4 rounded-lg">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Phone className="h-5 w-5 text-blue-500" />
+                    <span className="font-bold text-sm text-muted-foreground">Contato do Lead</span>
+                  </div>
+                  <p className="text-lg font-bold text-foreground">
+                    {formatarTelefone(lead.lead)}
+                  </p>
+                </div>
 
-            {/* Conversa WhatsApp — deep-link para o chat da Lia com este lead. */}
-            <div className="bg-muted/50 p-4 rounded-lg">
-              <div className="flex items-center gap-2 mb-2">
-                <MessageSquare className="h-5 w-5 text-emerald-500" />
-                <span className="font-bold text-sm text-muted-foreground">Conversa WhatsApp</span>
-              </div>
-              {chatPath ? (
-                <Link
-                  to={chatPath}
-                  className="text-lg font-bold text-emerald-600 dark:text-emerald-400 hover:underline"
-                >
-                  Abrir conversa
-                </Link>
-              ) : (
-                <p className="text-sm text-muted-foreground">Sem conversa disponível</p>
-              )}
-            </div>
+                {/* Conversa WhatsApp — deep-link para o chat da Lia com este lead. */}
+                <div className="bg-muted/50 p-4 rounded-lg">
+                  <div className="flex items-center gap-2 mb-2">
+                    <MessageSquare className="h-5 w-5 text-emerald-500" />
+                    <span className="font-bold text-sm text-muted-foreground">Conversa WhatsApp</span>
+                  </div>
+                  {chatPath ? (
+                    <Link
+                      to={chatPath}
+                      className="text-lg font-bold text-emerald-600 dark:text-emerald-400 hover:underline"
+                    >
+                      Abrir conversa
+                    </Link>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Sem conversa disponível</p>
+                  )}
+                </div>
+              </>
+            )}
 
             {/* Código do Imóvel */}
             <div className="bg-muted/50 p-4 rounded-lg">

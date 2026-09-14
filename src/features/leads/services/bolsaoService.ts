@@ -61,6 +61,10 @@ export function pgrstLiteral(value: string): string {
 /**
  * Busca leads disponíveis no Bolsão
  * Leads disponíveis são aqueles com status "bolsao" (expirados sem atendimento)
+ * que ninguém pegou ainda. `status` sozinho não basta: os triggers de etapa
+ * (tg_leads_status_to_bolsao / tg_kenlo_leads_stage_to_bolsao) marcam
+ * `atendido` mas mantêm status 'bolsao', e a transferência pelo modal do lead
+ * grava `corretor_responsavel` sem mexer no status.
  */
 export async function fetchBolsaoLeads(tenantId: string): Promise<BolsaoLead[]> {
   try {
@@ -68,6 +72,8 @@ export async function fetchBolsaoLeads(tenantId: string): Promise<BolsaoLead[]> 
       .from(BOLSAO_TABLE)
       .select('*')
       .eq('status', 'bolsao')
+      .or('atendido.is.null,atendido.eq.false')
+      .is('corretor_responsavel', null)
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: true });
     
