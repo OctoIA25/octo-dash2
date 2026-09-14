@@ -46,7 +46,7 @@ test.describe('cadastro de imóvel pelo gestor', () => {
     await expect(page.getByText(/pode alterar o captador/)).toHaveCount(0);
   });
 
-  test('salvar sem proprietário é bloqueado e abre a seção Proprietário', async ({ page }) => {
+  test('publicar sem proprietário é bloqueado e abre a seção Proprietário', async ({ page }) => {
     await escolher(page, 'Finalidade');
     await escolher(page, 'Tipo');
     await expect(page.getByRole('dialog').getByText(/^[A-Z]{2}\d+$/)).toBeVisible();
@@ -55,9 +55,10 @@ test.describe('cadastro de imóvel pelo gestor', () => {
     await page.getByRole('button', { name: /Comissões e Condições/ }).click();
     await escolher(page, 'Corretor Captador *');
 
-    await page.getByRole('button', { name: 'Salvar Imóvel' }).click();
+    // Imóvel novo publica (o rascunho é outro botão); a validação lista todos os campos faltando.
+    await page.getByRole('button', { name: 'Publicar imóvel' }).click();
 
-    await expect(page.getByText('Informe o nome do proprietário. O campo é obrigatório.')).toBeVisible();
+    await expect(page.getByText(/Preencha os seguintes campos:[\s\S]*- Nome do proprietário/)).toBeVisible();
     await expect(page.getByPlaceholder('Nome completo')).toBeVisible();
   });
 });
