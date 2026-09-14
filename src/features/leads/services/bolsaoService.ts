@@ -6,8 +6,6 @@
  */
 
 import { supabase } from '@/lib/supabaseClient';
-import { fetchTenantBolsaoConfig } from './tenantBolsaoConfigService';
-import { redistributeLeadToTeamQueue } from '@/features/corretores/services/teamQueueService';
 import type { ValorClassificacao } from '@/features/leads/utils/classificarLead';
 
 /**
@@ -91,8 +89,8 @@ export async function fetchBolsaoLeads(tenantId: string): Promise<BolsaoLead[]> 
 
 /**
  * Busca todos os leads que passaram pelo Bolsão em algum momento.
- * Critério: `data_expiracao IS NOT NULL` — só é setado por `moverLeadParaBolsao`,
- * portanto identifica de forma confiável leads que cairam no pool.
+ * Critério: `data_expiracao IS NOT NULL` — só o `expire_bolsao_leads()` (pg_cron)
+ * seta, ao mover pro pool; portanto identifica de forma confiável leads que cairam no pool.
  * Inclui status atuais 'bolsao', 'assumido', 'atendido', 'finalizado'.
  */
 export async function fetchTodosLeadsBolsao(tenantId: string): Promise<BolsaoLead[]> {
@@ -190,105 +188,6 @@ export async function fetchListaCorretores(): Promise<string[]> {
 }
 
 /**
- * Verifica e move leads expirados para o Bolsão considerando imóvel exclusivo ou não exclusivo
- */
-export async function verificarLeadsExpirados(): Promise<number> {
-  try {
-    const { data: leadsExpirados, error } = await supabase
-      .from(BOLSAO_TABLE)
-      .select('*')
-      .eq('status', 'novo')
-      .or('atendido.eq.false,atendido.is.null')
-      .not('corretor', 'is', null);
-
-    // Leads em "Visita Agendada" (stage já avançado no funil) nunca expiram —
-    // ficam com o corretor captador independente do tempo.
-    const VISITA_AGENDADA_STAGES = new Set([
-      'visit_scheduled',
-      'visita_agendada',
-      'Visita Agendada',
-      'qualified',
-    ]);
-    const bolsaoIds = (leadsExpirados || []).map((l: any) => l.id);
-    const stagesMap = new Map<number, string>();
-    if (bolsaoIds.length > 0) {
-      const { data: kenloRows } = await (supabase as any)
-        .from('kenlo_leads')
-        .select('id, stage')
-        .in('id', bolsaoIds);
-      (kenloRows || []).forEach((r: any) => stagesMap.set(r.id, r.stage));
-    }
-    
-    if (error) throw error;
-    if (!leadsExpirados || leadsExpirados.length === 0) return 0;
-    
-    let movidosComSucesso = 0;
-    // Cache de config por tenant — evita N+1 quando vários leads do mesmo
-    // tenant expiram na mesma execução.
-    const configCache = new Map<string, Awaited<ReturnType<typeof fetchTenantBolsaoConfig>>>();
-
-    for (const lead of leadsExpirados) {
-      const tenantId = lead.tenant_id;
-      if (!tenantId) continue;
-
-      // Pula leads em visita agendada — ficam com o corretor captador
-      const stage = stagesMap.get(lead.id);
-      if (stage && VISITA_AGENDADA_STAGES.has(stage)) {
-        continue;
-      }
-
-      let config = configCache.get(tenantId);
-      if (!config) {
-        config = await fetchTenantBolsaoConfig(tenantId);
-        configCache.set(tenantId, config);
-      }
-      const limiteMinutos = lead.is_exclusive
-        ? config.tempoExpiracaoExclusivo
-        : config.tempoExpiracaoNaoExclusivo;
-
-      const createdAt = new Date(lead.created_at);
-      const agora = new Date();
-      const diffMinutos = Math.floor((agora.getTime() - createdAt.getTime()) / 60000);
-
-      if (diffMinutos < limiteMinutos) {
-        continue;
-      }
-
-      // Tentar redistribuição via fila da equipe antes do Bolsão geral (se habilitado)
-      if (config.teamQueueEnabled) {
-        const currentCorretor =
-          lead.corretor_responsavel || lead.corretor || null;
-        const attemptNumber = ((lead as any).queue_attempt ?? 0) + 1;
-
-        const queueResult = await redistributeLeadToTeamQueue(
-          lead.id,
-          tenantId,
-          (lead as any).original_corretor_user_id ?? null,
-          currentCorretor,
-          attemptNumber,
-          config.teamQueueOrder
-        );
-
-        if (queueResult.redistributed) {
-          // Lead foi redistribuído para a equipe — não vai ao Bolsão geral
-          movidosComSucesso++;
-          continue;
-        }
-      }
-
-      // Nenhum membro elegível na equipe — mover para Bolsão geral
-      const movido = await moverLeadParaBolsao(lead.id);
-      if (movido) movidosComSucesso++;
-    }
-    
-    return movidosComSucesso;
-  } catch (error) {
-    console.error('❌ Erro ao verificar leads expirados:', error);
-    return 0;
-  }
-}
-
-/**
  * Marca um lead como atendido pelo corretor
  */
 export async function confirmarAtendimentoLead(leadId: number): Promise<{ success: boolean; message: string }> {
@@ -308,31 +207,6 @@ export async function confirmarAtendimentoLead(leadId: number): Promise<{ succes
   } catch (error) {
     console.error(`❌ Erro ao confirmar atendimento:`, error);
     return { success: false, message: 'Erro ao confirmar atendimento.' };
-  }
-}
-
-/**
- * Move um lead específico para o Bolsão
- */
-export async function moverLeadParaBolsao(leadId: number): Promise<boolean> {
-  try {
-    const { error } = await supabase
-      .from(BOLSAO_TABLE)
-      .update({
-        status: 'bolsao',
-        atendido: false,
-        corretor_responsavel: null,
-        numero_corretor_responsavel: null,
-        data_atendimento: null,
-        data_expiracao: new Date().toISOString()
-      })
-      .eq('id', leadId);
-    
-    if (error) throw error;
-    return true;
-  } catch (error) {
-    console.error(`❌ Erro ao mover lead ${leadId}:`, error);
-    return false;
   }
 }
 

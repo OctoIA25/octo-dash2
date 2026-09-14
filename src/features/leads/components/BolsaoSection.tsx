@@ -43,7 +43,6 @@ import {
   assumirLeadDoBolsao, 
   BolsaoLead,
   verificarTabelaBolsao,
-  verificarLeadsExpirados,
   confirmarAtendimentoLead,
   calcularMetricasCorretores,
   CorretorMetrica
@@ -591,41 +590,8 @@ const BolsaoSectionContent = (props: BolsaoSectionProps) => {
     loadConfig();
   }, [tenantId]);
 
-  // Verificar leads expirados (usa configuração e horário de funcionamento)
-  useEffect(() => {
-    const verificarExpiracao = async () => {
-      // Só verificar se estiver no horário de funcionamento
-      const agora = new Date();
-      const estaNoExpediente = estaNoHorarioFuncionamento(agora);
-      
-      if (!estaNoExpediente) {
-        return;
-      }
-      
-      
-      const leadsMovidos = await verificarLeadsExpirados();
-      
-      if (leadsMovidos > 0 && config.notificarExpiracao) {
-        toast({
-          title: "⏰ Leads Expirados",
-          description: `${leadsMovidos} lead(s) foram movidos para o Bolsão conforme a regra de tempo configurada para imóveis exclusivos e não exclusivos.`,
-          variant: "default"
-        });
-        
-        // Recarregar dados após mover leads
-        carregarLeads();
-      }
-    };
-    
-    // Executar imediatamente
-    verificarExpiracao();
-    
-    // Verificar baseado na configuração
-    const intervaloMs = config.intervaloVerificacao * 1000;
-    const interval = setInterval(verificarExpiracao, intervaloMs);
-    
-    return () => clearInterval(interval);
-  }, [config.intervaloVerificacao, config.notificarExpiracao, config.horarioFuncionamento]);
+  // A expiração roda só no Postgres: pg_cron 'bolsao-expire-every-minute' chama
+  // `expire_bolsao_leads()`. A tela apenas recarrega (auto-refresh abaixo).
 
   // Carregar dados do Bolsão (usa configuração de auto-refresh)
   useEffect(() => {
