@@ -71,7 +71,8 @@ function mapTenantMemberRow(
     (Array.isArray(member.sidebar_permissions) ? member.sidebar_permissions : undefined) ||
     (Array.isArray(rawPermissions?.sidebar_permissions) ? rawPermissions.sidebar_permissions : undefined);
   const team = (member.team as TeamColor | undefined) || (rawPermissions?.team as TeamColor | undefined);
-  const email = member.email || member.name || member.user_email || member.user_id || '';
+  // Nunca o user_id: sem e-mail o membro sai da lista em vez de aparecer como UUID.
+  const email = member.email || member.name || member.user_email || '';
 
   if (!String(email).trim()) return null;
   if (String(email).trim().toLowerCase() === 'email não disponível') return null;
@@ -108,8 +109,24 @@ async function fetchTenantMembersDirectly(tenantId: string): Promise<TenantMembe
     return [];
   }
 
+  // tenant_memberships não tem e-mail; tenant_brokers tem, e a RLS deixa o membro
+  // ler os brokers do próprio tenant.
+  const emailPorUserId = new Map<string, string>();
+  const userIds = (data || []).map((member: { user_id: string }) => member.user_id);
+  if (userIds.length > 0) {
+    const { data: brokers, error: brokersError } = await supabase
+      .from('tenant_brokers')
+      .select('auth_user_id, email')
+      .eq('tenant_id', tenantId)
+      .in('auth_user_id', userIds);
+    if (brokersError) console.error('Erro ao buscar e-mails em tenant_brokers:', brokersError);
+    (brokers || []).forEach((b: { auth_user_id: string | null; email: string | null }) => {
+      if (b.auth_user_id && b.email) emailPorUserId.set(b.auth_user_id, b.email);
+    });
+  }
+
   return (data || [])
-    .map((member: any) => mapTenantMemberRow(member))
+    .map((member: any) => mapTenantMemberRow({ ...member, email: emailPorUserId.get(member.user_id) }))
     .filter((member): member is TenantMember => Boolean(member));
 }
 
