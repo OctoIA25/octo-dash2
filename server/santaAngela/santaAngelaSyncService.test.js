@@ -140,20 +140,22 @@ it('syncTenant: UPDATE de lead existente NÃO reescreve assigned_at (não reinic
   expect('updated_at' in leadsUpdate.payload).toBe(true);
 });
 
-it('syncTenant: origem vence — status e corretor são atualizados no lead existente', async () => {
-  // Cenário do enunciado: João entra Novo/sem corretor; depois a origem manda
-  // EM ATENDIMENTO / Carlos. O UPDATE deve gravar status e assigned_agent_name.
+it('syncTenant: status da origem é atualizado; corretor NÃO (quem distribui é o Octo)', async () => {
+  // Incidente 13/09 (CELMA REGINA): o bolsão deu o lead ao Fábio (assigned_agent_id)
+  // e a origem passou a dizer FLAVIA CEOLIN. Gravar só o nome deixava o lead
+  // visível para o Fábio com o nome da Flavia.
   const { supabase, state } = makeSupabase({
-    existing: [{ phone: 'X', source_lead_id: 'joao', status: 'Novos Leads', assigned_agent_name: null }],
+    existing: [{ phone: 'X', source_lead_id: 'joao', status: 'Novos Leads', assigned_agent_name: 'Fábio' }],
   });
   const svc = createSantaAngelaSyncService({ supabase,
     apiClient: okClient([{ id: 'joao', nome: 'João', celular: 'X',
-      situacaocadastropessoa_titulo: 'EM ATENDIMENTO', corretor_nome: 'Carlos' }]) });
+      situacaocadastropessoa_titulo: 'EM ATENDIMENTO', corretor_nome: 'FLAVIA CEOLIN' }]) });
   const r = await svc.syncTenant('t1');
   expect(r.updatedLeads).toBe(1);
   const leadsUpdate = state.updated.find((u) => u.table === 'leads');
   expect(leadsUpdate.payload.status).toBe('Interação'); // EM ATENDIMENTO → Interação
-  expect(leadsUpdate.payload.assigned_agent_name).toBe('Carlos');
+  expect('assigned_agent_name' in leadsUpdate.payload).toBe(false);
+  expect('assigned_agent_id' in leadsUpdate.payload).toBe(false);
 });
 
 it('syncTenant: dirty-check — nada mudou ⇒ nenhum UPDATE em leads (evita escrita inútil no polling)', async () => {
@@ -168,17 +170,16 @@ it('syncTenant: dirty-check — nada mudou ⇒ nenhum UPDATE em leads (evita esc
   expect(state.updated.find((u) => u.table === 'leads')).toBeUndefined(); // não escreveu na tabela leads
 });
 
-it('syncTenant: atualização parcial — só status muda, corretor permanece', async () => {
+it('syncTenant: só o corretor mudou na origem ⇒ nenhum UPDATE em leads', async () => {
   const { supabase, state } = makeSupabase({
-    existing: [{ phone: 'X', source_lead_id: 'joao', status: 'Novos Leads', assigned_agent_name: 'Carlos' }],
+    existing: [{ phone: 'X', source_lead_id: 'joao', status: 'Interação', assigned_agent_name: 'Fábio' }],
   });
   const svc = createSantaAngelaSyncService({ supabase,
     apiClient: okClient([{ id: 'joao', nome: 'João', celular: 'X',
-      situacaocadastropessoa_titulo: 'EM ATENDIMENTO', corretor_nome: 'Carlos' }]) });
-  await svc.syncTenant('t1');
-  const leadsUpdate = state.updated.find((u) => u.table === 'leads');
-  expect(leadsUpdate.payload.status).toBe('Interação');
-  expect(leadsUpdate.payload.assigned_agent_name).toBe('Carlos'); // inalterado, mas re-gravado (origem vence)
+      situacaocadastropessoa_titulo: 'EM ATENDIMENTO', corretor_nome: 'JAPI LEADS' }]) });
+  const r = await svc.syncTenant('t1');
+  expect(r.updatedLeads).toBe(0);
+  expect(state.updated.find((u) => u.table === 'leads')).toBeUndefined();
 });
 
 it('syncTenant falha da API => success=false', async () => {

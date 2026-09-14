@@ -4,8 +4,8 @@
  * agora server-side (supabase service role). Atualiza last_sync_at/leads_count.
  *
  * IDEMPOTÊNCIA — rodar o mesmo lead N vezes não duplica nem corrompe:
- *   - chave natural = source_lead_id. Existe → UPDATE (origem vence: status e
- *     corretor refletem a Santa Ângela), mas com dirty-check: só grava se algum
+ *   - chave natural = source_lead_id. Existe → UPDATE (status reflete a Santa
+ *     Ângela; o corretor é do Octo), mas com dirty-check: só grava se algum
  *     campo realmente mudou, então re-rodar com o mesmo payload é no-op.
  *   - não existe → INSERT; telefone já usado sob OUTRO source_id → pula (não
  *     viola unique_phone_per_tenant).
@@ -64,7 +64,7 @@ export function createSantaAngelaSyncService({
     const data = [];
     for (let from = 0; ; from += 1000) {
       const { data: page, error } = await supabase
-        .from('leads').select('phone, source_lead_id, status, assigned_agent_name, property_code')
+        .from('leads').select('phone, source_lead_id, status, property_code')
         .eq('tenant_id', tenantId).eq('source', 'Santa Angela')
         .order('id').range(from, from + 999);
       if (error) { logger.warn(`[santa-angela] erro lendo existentes: ${error.message}`); return null; }
@@ -76,12 +76,11 @@ export function createSantaAngelaSyncService({
     // contra uma saLead.id ausente (causaria falso "update" / .eq sem alvo).
     const sourceIdSet = new Set((data || []).map((l) => l.source_lead_id).filter(Boolean));
     // Estado atual por source_lead_id: alimenta o dirty-check do updateExisting,
-    // pra só gravar quando status/corretor da origem realmente mudaram.
+    // pra só gravar quando status/imóvel da origem realmente mudaram.
     const bySourceId = new Map((data || [])
       .filter((l) => l.source_lead_id)
       .map((l) => [l.source_lead_id, {
         status: l.status,
-        assigned_agent_name: l.assigned_agent_name,
         property_code: l.property_code,
       }]));
     return { phoneSet, sourceIdSet, bySourceId };
@@ -102,31 +101,27 @@ export function createSantaAngelaSyncService({
     return false;
   }
 
-  // Origem vence: status e corretor refletem a Santa Ângela. Mas só gravamos
-  // quando ALGO mudou (dirty-check contra `current`), por dois motivos:
-  //   1) o polling de 60s faz leads recentes reaparecerem na 1ª página e caírem
-  //      aqui a cada ciclo — UPDATE incondicional seria escrita inútil em escala;
-  //   2) o trigger tg_update_leads_assigned_at reseta assigned_at sempre que
-  //      assigned_agent_name muda (IS DISTINCT FROM). Regravar o MESMO corretor
-  //      não dispara o trigger, mas o dirty-check garante que nem chegamos a
-  //      gravar — assigned_at só reinicia numa troca real de corretor (que é o
-  //      comportamento correto: nova atribuição reinicia o countdown do bolsão).
+  // Status reflete a Santa Ângela; o CORRETOR não. Quem distribui lead existente
+  // é o Octo (roleta/bolsão/transferência), e ele grava assigned_agent_id e
+  // assigned_agent_name juntos. O sync gravava só o nome: em 13/09 o bolsão deu
+  // um lead ao Fábio, a origem passou a dizer FLAVIA CEOLIN, e o lead ficou
+  // visível para o Fábio (filtro por id) com o nome da Flavia — 300 leads assim.
+  // O corretor da origem segue em custom_fields.santa_angela_corretor_nome.
+  //
+  // Dirty-check contra `current`: o polling de 60s faz leads recentes
+  // reaparecerem na 1ª página a cada ciclo — UPDATE incondicional seria escrita
+  // inútil em escala.
   // Retorna 'updated' | 'unchanged' | 'error'.
   async function updateExisting(lead, tenantId, current) {
-    const next = { status: lead.status, assigned_agent_name: lead.assigned_agent_name };
     // property_code só entra quando temos um valor NOVO: o detalhe do prospect pode
     // falhar (400 de carteira alheia) e null não pode apagar um código já gravado.
     const fillsPropertyCode = Boolean(lead.property_code) && lead.property_code !== current?.property_code;
-    const changed = !current
-      || current.status !== next.status
-      || current.assigned_agent_name !== next.assigned_agent_name
-      || fillsPropertyCode;
+    const changed = !current || current.status !== lead.status || fillsPropertyCode;
     if (!changed) return 'unchanged';
 
     const { error } = await supabase.from('leads')
       .update({
-        status: next.status,
-        assigned_agent_name: next.assigned_agent_name,
+        status: lead.status,
         custom_fields: lead.custom_fields,
         ...(fillsPropertyCode ? { property_code: lead.property_code } : {}),
         updated_at: new Date().toISOString(),
