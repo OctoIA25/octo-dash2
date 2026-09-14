@@ -450,7 +450,8 @@ export const CriarImovelForm = ({
   const { user, tenantId: authTenantId } = useAuth();
   const tenantId = authTenantId || user?.tenantId;
   const { data: captadores = [] } = useCaptadores(tenantId);
-  const isManager = ['admin', 'owner'].includes(user?.systemRole?.toLowerCase() || '');
+  // Gestor (team_leader) edita tudo que o captador edita, captadores incluídos.
+  const isManager = ['admin', 'owner', 'team_leader'].includes(user?.systemRole?.toLowerCase() || '');
   // O captador ATUAL do imóvel também pode alterar os captadores (comparado
   // contra initialData, não formData: a permissão vem do que está salvo).
   // O trigger tg_guard_captador aplica a mesma regra no banco.
@@ -840,6 +841,14 @@ export const CriarImovelForm = ({
       return;
     }
 
+    // Todo imóvel precisa de proprietário identificado.
+    if (!formData.proprietario_nome.trim()) {
+      setOpenSections(prev => ({ ...prev, proprietario: true }));
+      setSubmitStatus('error');
+      setSubmitMessage('Informe o nome do proprietário. O campo é obrigatório.');
+      return;
+    }
+
     // CEP é obrigatório: os feeds de portais (ZAP/OLX) rejeitam imóvel sem CEP
     if (!validarCep(formData.cep)) {
       setOpenSections(prev => ({ ...prev, localizacao: true }));
@@ -1115,7 +1124,7 @@ export const CriarImovelForm = ({
       // quando esta coluna muda.
       chave_com: formData.chave_com || null,
       // Os captadores só entram no payload para quem pode defini-los
-      // (diretoria/admin ou o captador atual). Upsert vira INSERT ... ON
+      // (diretoria/admin/gestor ou o captador atual). Upsert vira INSERT ... ON
       // CONFLICT DO UPDATE: colunas ausentes do payload ficam fora do SET e
       // mantêm o valor já salvo. Omitir aqui é o que faz um corretor comum
       // conseguir salvar outros campos sem precisar (nem poder) tocar no
@@ -1137,7 +1146,7 @@ export const CriarImovelForm = ({
     if (error) {
       console.error('❌ Erro ao salvar imóvel local:', error.message, error.code, error.details);
       if (error.code === '42501') {
-        throw new Error('Somente diretoria, administrador ou o captador atual pode definir o captador do imóvel.');
+        throw new Error('Somente diretoria, administrador, gestor ou o captador atual pode definir o captador do imóvel.');
       }
       throw error;
     }
@@ -1171,7 +1180,7 @@ export const CriarImovelForm = ({
             Novo Imóvel
           </DialogTitle>
           <p className="text-sm text-text-secondary mt-1">
-            Cadastre um novo imóvel. Tipo e CEP são obrigatórios (o código é gerado automaticamente).
+            Cadastre um novo imóvel. Proprietário, tipo e CEP são obrigatórios (o código é gerado automaticamente).
           </p>
         </DialogHeader>
 
@@ -1258,7 +1267,7 @@ export const CriarImovelForm = ({
             <CollapsibleContent className="pt-3 space-y-3">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4 bg-card/50 rounded-lg border">
                 <div className="space-y-2 md:col-span-2 lg:col-span-3">
-                  <Label>Nome do Proprietário</Label>
+                  <Label>Nome do Proprietário *</Label>
                   <ProprietarioAutocomplete
                     tenantId={tenantId}
                     value={formData.proprietario_nome}
@@ -2079,7 +2088,7 @@ export const CriarImovelForm = ({
                   </Select>
                   {!podeEditarCaptador && (
                     <p className="text-xs text-text-secondary">
-                      Somente diretoria, administrador ou o captador atual pode alterar o captador.
+                      Somente diretoria, administrador, gestor ou o captador atual pode alterar o captador.
                     </p>
                   )}
                 </div>
