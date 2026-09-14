@@ -293,3 +293,70 @@ describe('§3.8 — Cenário H, indicação entre corretores (v1.5)', () => {
     expect(soma).toBeCloseTo(33333.33, 2);
   });
 });
+
+describe('comissão de captador (10% da comissão total, opcional)', () => {
+  it('captador leva 10% do total; os 90% seguem o split normal', () => {
+    // Exemplo 1 sobre 9.000 em vez de 10.000.
+    const r = calcularComissao({
+      tipo: 'revenda',
+      comissaoTotal: 10000,
+      captacao: andre,
+      intermediacao: { nome: 'Erick', nivel: 'pleno', liderDireto: andre },
+      captador: 'Carla',
+    });
+    expect(r.bloqueio).toBeNull();
+    expect(recebe(r, 'Carla')).toBe(1000);
+    expect(recebe(r, 'Andre')).toBe(3375);
+    expect(recebe(r, 'Erick')).toBe(2025);
+    expect(recebe(r, 'Lotus')).toBe(3600);
+  });
+
+  it('lançamento também aceita captador', () => {
+    const r = calcularComissao({
+      tipo: 'lancamento',
+      comissaoTotal: 5000,
+      intermediacao: { nome: 'Ana', nivel: 'junior', liderDireto: pedro },
+      captador: 'Carla',
+    });
+    expect(recebe(r, 'Carla')).toBe(500);
+    expect(recebe(r, 'Ana')).toBe(1800);
+    expect(recebe(r, 'Pedro')).toBe(900);
+    expect(recebe(r, 'Lotus')).toBe(1800);
+  });
+
+  it('captador que também é corretor aparece em linhas separadas', () => {
+    const r = calcularComissao({ tipo: 'lancamento', comissaoTotal: 10000, intermediacao: andre, captador: 'Andre' });
+    const doAndre = totaisPorParte(r).filter((t) => t.parte === 'Andre');
+    expect(doAndre.map((t) => [t.papel, t.valor])).toEqual([['corretor', 5400], ['captador', 1000]]);
+  });
+
+  it('captador em branco é ignorado', () => {
+    const r = calcularComissao({ tipo: 'lancamento', comissaoTotal: 8000, intermediacao: andre, captador: '  ' });
+    expect(r.linhas.some((l) => l.papel === 'captador')).toBe(false);
+    expect(recebe(r, 'Andre')).toBe(4800);
+  });
+
+  it('captador com parceria externa bloqueia (L003)', () => {
+    const r = calcularComissao({
+      tipo: 'lancamento',
+      comissaoTotal: 100000,
+      intermediacao: andre,
+      parceiro: { tipo: 'imobiliaria', nome: 'Imob X', contratoFormal: true },
+      captador: 'Carla',
+    });
+    expect(r.bloqueio?.codigo).toBe('L003');
+  });
+
+  it('fecha 100% com captador + indicação', () => {
+    const r = calcularComissao({
+      tipo: 'revenda',
+      comissaoTotal: 33333.33,
+      captacao: { nome: 'Humberto', nivel: 'junior', liderDireto: pedro },
+      intermediacao: { nome: 'Lara', nivel: 'estagiario', liderDireto: pedro },
+      indicacao: { indicador: 'Humberto', tipo: 'cliente_comprador' },
+      captador: 'Carla',
+    });
+    expect(r.bloqueio).toBeNull();
+    expect(r.linhas.reduce((acc, l) => acc + l.valor, 0)).toBeCloseTo(33333.33, 2);
+  });
+});

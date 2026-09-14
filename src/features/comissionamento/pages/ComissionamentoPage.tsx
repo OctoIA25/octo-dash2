@@ -19,6 +19,7 @@ import { Switch } from '@/components/ui/switch';
 import { useAuth } from '@/hooks/useAuth';
 import { useCaptadores, type Captador } from '@/features/imoveis/hooks/useCaptadores';
 import {
+  CAPTADOR_PCT,
   NIVEIS,
   calcularComissao,
   totaisPorParte,
@@ -46,6 +47,7 @@ const PAPEL_LABEL: Record<Papel, string> = {
   lotus: 'Casa',
   parceiro: 'Parceiro externo',
   indicador: 'Indicador',
+  captador: 'Captador',
 };
 
 /** Rascunho de um corretor no formulário. Nome vazio = ponta sem corretor. */
@@ -69,6 +71,8 @@ interface OperacaoDraft {
   temIndicacao: boolean;
   indicadorNome: string;
   indicacaoTipo: IndicacaoTipo;
+  temCaptador: boolean;
+  captadorNome: string;
 }
 
 const corretorVazio = (): CorretorDraft => ({ nome: '', nivel: 'junior', liderNome: '', liderNivel: 'coordenador' });
@@ -86,6 +90,8 @@ const operacaoVazia = (): OperacaoDraft => ({
   temIndicacao: false,
   indicadorNome: '',
   indicacaoTipo: 'cliente_comprador',
+  temCaptador: false,
+  captadorNome: '',
 });
 
 const toCorretor = (draft: CorretorDraft): Corretor | null => {
@@ -116,6 +122,7 @@ const toOperacao = (draft: OperacaoDraft): Operacao => ({
           tipo: draft.tipo === 'lancamento' ? 'cliente_comprador' : draft.indicacaoTipo,
         }
       : null,
+  captador: draft.temCaptador ? draft.captadorNome.trim() || null : null,
 });
 
 const CARD = 'rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4';
@@ -309,6 +316,29 @@ function OperacaoForm({
       )}
 
       <div className="border-t border-slate-100 dark:border-slate-800 pt-3 space-y-3">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <Switch checked={value.temCaptador} onCheckedChange={(v) => onChange({ temCaptador: v })} />
+          <span className="text-[12.5px] font-semibold text-slate-700 dark:text-slate-200">Comissão de captador ({CAPTADOR_PCT}%)</span>
+        </label>
+
+        {value.temCaptador && (
+          <div className="space-y-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <Label className="text-[11.5px] text-slate-500">Captador</Label>
+                <PessoaSelect
+                  value={value.captadorNome}
+                  onChange={(captadorNome) => onChange({ captadorNome })}
+                  vazioLabel="Quem captou"
+                />
+              </div>
+            </div>
+            <p className="text-[11.5px] text-slate-500 dark:text-slate-400">
+              O captador recebe {CAPTADOR_PCT}% da comissão total. Os outros {100 - CAPTADOR_PCT}% são divididos normalmente entre as pontas.
+            </p>
+          </div>
+        )}
+
         <label className="flex items-center gap-2 cursor-pointer">
           <Switch checked={value.temIndicacao} onCheckedChange={(v) => onChange({ temIndicacao: v })} />
           <span className="text-[12.5px] font-semibold text-slate-700 dark:text-slate-200">Houve indicação entre corretores</span>

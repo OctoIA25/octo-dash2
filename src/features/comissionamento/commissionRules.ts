@@ -69,6 +69,9 @@ export interface Indicacao {
 /** Transferência da indicação: 10 pontos percentuais da ponta indicada (§3.8). */
 export const INDICACAO_PP = 10;
 
+/** Comissão de captador: % da comissão total, opcional por operação. */
+export const CAPTADOR_PCT = 10;
+
 export interface Operacao {
   tipo: 'revenda' | 'lancamento';
   comissaoTotal: number;
@@ -80,6 +83,13 @@ export interface Operacao {
   pontaDaLotus?: 'captacao' | 'intermediacao';
   /** Indicação entre corretores (§3.8) — no máximo uma por operação, sem cadeia. */
   indicacao?: Indicacao | null;
+  /**
+   * Nome do captador. Leva CAPTADOR_PCT da comissão total, tirados ANTES da
+   * divisão em pontas — corretor, líder e casa dividem os 90% restantes.
+   * ponytail: quem paga os 10% não está na spec; "antes da divisão" é o rateio
+   * neutro. Se o broker definir outro pagador, muda só em calcularOperacao.
+   */
+  captador?: string | null;
 }
 
 export interface Permuta {
@@ -92,7 +102,7 @@ export interface Permuta {
 
 export type Entrada = Operacao | Permuta;
 
-export type Papel = 'corretor' | 'lider' | 'lotus' | 'parceiro' | 'indicador';
+export type Papel = 'corretor' | 'lider' | 'lotus' | 'parceiro' | 'indicador' | 'captador';
 
 export interface LinhaComissao {
   parte: string;
@@ -330,6 +340,19 @@ function calcularOperacao(op: Operacao, prefixo = ''): ResultadoComissao {
   const divisao = definirPontas(op);
   if (divisao.bloqueio) return { total, cenario, linhas: [], bloqueio: divisao.bloqueio };
 
+  const captador = op.captador?.trim() || null;
+  if (captador && op.parceiro) {
+    // O split com o parceiro é contratual: tirar os 10% antes reduziria a parte dele.
+    return {
+      total,
+      cenario,
+      linhas: [],
+      bloqueio: bloqueio('L003', `Comissão de captador (${captador}) em operação com parceria externa. Validar com o broker.`),
+    };
+  }
+  const valorCaptador = captador ? (total * CAPTADOR_PCT) / 100 : 0;
+  const base = total - valorCaptador;
+
   const indicacao = op.indicacao ?? null;
   // cliente_vendedor → Captação; cliente_comprador → Intermediação. O prefixo
   // casa também com as pontas de parceria ("Intermediação — Lotus" etc.);
@@ -337,9 +360,11 @@ function calcularOperacao(op: Operacao, prefixo = ''): ResultadoComissao {
   const pontaIndicada = indicacao ? (indicacao.tipo === 'cliente_vendedor' ? 'Captação' : 'Intermediação') : null;
   let indicacaoAplicada = false;
 
-  const linhas: LinhaComissao[] = [];
+  const linhas: LinhaComissao[] = captador
+    ? [{ parte: captador, papel: 'captador', ponta: nomear('Comissão total'), percentual: CAPTADOR_PCT, valor: valorCaptador }]
+    : [];
   for (const ponta of divisao.pontas) {
-    const valorPonta = (total * ponta.percentual) / 100;
+    const valorPonta = (base * ponta.percentual) / 100;
     const nome = nomear(ponta.nome);
 
     if (ponta.parceiro) {
@@ -427,9 +452,9 @@ export function totaisPorParte(
   for (const linha of resultado.linhas) {
     // Uma pessoa pode aparecer como corretor numa ponta e como líder na outra:
     // agrupa pelo nome e mantém o papel mais "alto" que ela exerceu.
-    // EXCEÇÃO (§3.8): a linha de indicador fica separada mesmo que a pessoa já
+    // EXCEÇÃO (§3.8): as linhas de indicador e de captador ficam separadas mesmo que a pessoa já
     // apareça como corretor em outra ponta — a folha distingue as naturezas.
-    const chave = linha.papel === 'indicador' ? `${linha.parte} indicador` : linha.parte;
+    const chave = linha.papel === 'indicador' || linha.papel === 'captador' ? `${linha.parte} ${linha.papel}` : linha.parte;
     const atual = acumulado.get(chave);
     if (atual) {
       atual.valor += linha.valor;
