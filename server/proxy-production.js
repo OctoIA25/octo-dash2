@@ -15,6 +15,7 @@
 
 import express from 'express';
 import cors from 'cors';
+import compression from 'compression';
 import crypto from 'crypto';
 import { createZapConfigResolver, extractZapPhotoUrls } from './zap/index.js';
 import path from 'path';
@@ -115,6 +116,9 @@ const corsOptions = {
   },
 };
 
+// Compressão (br/gzip) das respostas de texto; o filtro padrão pula tipos não
+// compressíveis e respostas que já têm Content-Encoding.
+app.use(compression());
 app.use(cors(corsOptions));
 // verify: guarda os bytes crus do corpo. O X-Hub-Signature-256 da Meta é HMAC
 // sobre os bytes EXATOS — re-serializar o objeto já parseado muda espaçamento e
