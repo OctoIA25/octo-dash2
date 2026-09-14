@@ -19,6 +19,8 @@ export interface TenantBolsaoConfig {
   intervaloAutoRefresh: number;
   disponibilidadeLead: 'todos' | 'equipe';
   roletaEnabled: boolean;
+  /** false quando quem distribui é externo (Lia): o Octo não atribui nem repassa lead. Só leitura aqui — muda via banco. */
+  autoDistributionEnabled: boolean;
   teamQueueEnabled: boolean;
   teamQueueOrder: TeamQueueOrder;
   horarioFuncionamento: {
@@ -42,6 +44,7 @@ export const DEFAULT_BOLSAO_CONFIG: TenantBolsaoConfig = {
   intervaloAutoRefresh: 30,
   disponibilidadeLead: 'todos',
   roletaEnabled: true,
+  autoDistributionEnabled: true,
   teamQueueEnabled: false,
   teamQueueOrder: 'balanced' as TeamQueueOrder,
   horarioFuncionamento: {
@@ -87,7 +90,7 @@ export async function fetchTenantBolsaoConfig(tenantId: string): Promise<TenantB
 
   const { data, error } = await supabase
     .from('tenant_bolsao_config')
-    .select('bolsao_enabled, tempo_expiracao_exclusivo, tempo_expiracao_nao_exclusivo, intervalo_verificacao, notificar_expiracao, auto_refresh, intervalo_auto_refresh, disponibilidade_lead, horario_funcionamento, team_queue_enabled, team_queue_order, roleta_enabled')
+    .select('bolsao_enabled, tempo_expiracao_exclusivo, tempo_expiracao_nao_exclusivo, intervalo_verificacao, notificar_expiracao, auto_refresh, intervalo_auto_refresh, disponibilidade_lead, horario_funcionamento, team_queue_enabled, team_queue_order, roleta_enabled, auto_distribution_enabled')
     .eq('tenant_id', tenantId)
     .maybeSingle();
 
@@ -106,6 +109,7 @@ export async function fetchTenantBolsaoConfig(tenantId: string): Promise<TenantB
     intervaloAutoRefresh: data.intervalo_auto_refresh,
     disponibilidadeLead: data.disponibilidade_lead,
     roletaEnabled: (data as any).roleta_enabled ?? true,
+    autoDistributionEnabled: data.auto_distribution_enabled ?? true,
     teamQueueEnabled: data.team_queue_enabled ?? false,
     teamQueueOrder: (data.team_queue_order as TeamQueueOrder) ?? 'balanced',
     horarioFuncionamento: data.horario_funcionamento

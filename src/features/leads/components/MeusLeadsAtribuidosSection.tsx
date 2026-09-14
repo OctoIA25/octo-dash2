@@ -262,6 +262,8 @@ const BolsaoCountdownLine = memo(({
   nowMs: number;
 }) => {
   if (!lead.participa_bolsao) return null;
+  // Distribuição externa (Lia): o lead não expira para ninguém.
+  if (!config.autoDistributionEnabled) return null;
   // status do KanbanLead vem como slug ("novos-leads", "interacao", etc.)
   if (lead.status !== 'novos-leads') return null;
   // Cronômetro reseta a cada redistribuição via roleta — usa assigned_at

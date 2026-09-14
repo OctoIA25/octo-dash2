@@ -66,6 +66,8 @@ function createFakeSupabase(db) {
         return { data: db.imovelCorretor ?? null, error: null };
       case 'imoveis_locais':
         return { data: db.imovelLocal ?? null, error: null };
+      case 'tenant_bolsao_config':
+        return { data: db.bolsaoConfig ?? null, error: null };
       default:
         return { data: null, error: null };
     }
@@ -242,6 +244,21 @@ describe('distribuição — prioridade de resolveBrokerForLead', () => {
     const { broker, method } = await la.resolveBrokerForLead('CA0001', TENANT);
     expect(method).toBe('roleta');
     expect(broker.name).toBe('Roleta Rita');
+  });
+
+  // Tenant em que a Lia distribui: nem o corretor do imóvel nem a roleta.
+  it('distribuição automática desligada: lead sem corretor, nem do imóvel', async () => {
+    const { la, countQueries } = setup({
+      ...aclDb,
+      bolsaoConfig: { auto_distribution_enabled: false },
+      propertyCache: { agent_name: 'Gil', agent_email: null, agent_phone: null, main_photo: null },
+    });
+    const { broker, method } = await la.resolveBrokerForLead('CA0001', TENANT, {
+      attendedBy: [{ name: 'Gil', email: 'gil@x.com' }],
+    });
+    expect(broker).toBeNull();
+    expect(method).toBeNull();
+    expect(countQueries('roleta_participantes')).toBe(0);
   });
 });
 
@@ -449,6 +466,7 @@ describe('round-trips do pipeline (regressão de queries)', () => {
     expect(countQueries('imoveis_locais')).toBe(1);
     expect(countQueries('tenant_lead_limit_config')).toBe(1);
     expect(countQueries('roleta_participantes')).toBe(1);
+    expect(countQueries('tenant_bolsao_config')).toBe(1);
 
     // Memberships: 1 query batch (.in) — zero queries individuais por corretor.
     const batch = (q) => q.filters.some((f) => f.op === 'in' && f.col === 'user_id');
@@ -459,8 +477,9 @@ describe('round-trips do pipeline (regressão de queries)', () => {
     // Contagens de limite: 2 por corretor (carteira + pendência), em paralelo.
     expect(countQueries('leads')).toBe(2 * N);
 
-    // Total: 6 + 2N (antes da otimização: ~8 + 4N, todas sequenciais).
-    expect(queries.length).toBe(6 + 2 * N);
+    // Total: 7 + 2N — a 7ª é a trava de distribuição externa (antes da
+    // otimização: ~8 + 4N, todas sequenciais).
+    expect(queries.length).toBe(7 + 2 * N);
   });
 
   it('ACL é carregado 1 única vez mesmo com múltiplas buscas por identificador', async () => {

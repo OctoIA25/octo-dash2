@@ -84,6 +84,19 @@ export function createLeadAssignment({ supabase }) {
       return data ?? null;
     });
 
+  // false quando o tenant terceirizou a distribuição (a Lia, na Lotus). Sem
+  // linha ou erro de leitura → ligada, como sempre foi. Mesma coluna que o
+  // trigger de roleta e o expire_bolsao_leads leem (20260914_lia_distribui_leads).
+  const isAutoDistributionEnabled = (tenantId, cache) =>
+    memo(cache, 'tenant_bolsao_config', async () => {
+      const { data } = await supabase
+        .from('tenant_bolsao_config')
+        .select('auto_distribution_enabled')
+        .eq('tenant_id', tenantId)
+        .maybeSingle();
+      return data?.auto_distribution_enabled !== false;
+    });
+
   const getBrokerMembership = (tenantId, brokerId, cache) =>
     memo(cache, `membership:${brokerId}`, async () => {
       const { data } = await supabase
@@ -635,6 +648,13 @@ export function createLeadAssignment({ supabase }) {
   const resolveBrokerForLead = async (propertyCode, tenantId, rawData = null, cache = createLeadLookupCache(), { atuacao } = {}) => {
     let broker = null;
     let method = null;
+
+    // 0. Distribuição externa: o lead entra sem corretor e quem escolhe é a Lia.
+    // Vale também para o corretor do imóvel — não só para a roleta.
+    if (!(await isAutoDistributionEnabled(tenantId, cache))) {
+      console.log(`⏸️ Distribuição automática desligada no tenant ${tenantId} — lead entra sem corretor`);
+      return { broker: null, method: null };
+    }
 
     // 1. Verificar se veio com attendedBy do Kenlo
     if (rawData?.attendedBy && Array.isArray(rawData.attendedBy) && rawData.attendedBy.length > 0) {
