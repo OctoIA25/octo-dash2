@@ -113,16 +113,18 @@ async function fetchTodosRoletaParticipantes(tenantId: string): Promise<RoletaPa
  */
 export async function fetchCorretoresDisponiveis(tenantId: string): Promise<CorretorDisponivel[]> {
   try {
-    // Buscar de tenant_memberships (usuários com acesso ao sistema)
-    const { data: members, error: membersError } = await supabase
-      .from('tenant_memberships')
-      .select('user_id, role')
-      .eq('tenant_id', tenantId)
-      .in('role', ['corretor', 'team_leader']);
-    
+    // Membros via RPC, não SELECT direto: a RLS de tenant_memberships só mostra
+    // a própria linha ao gestor (team_leader). A RPC escopa admin → tenant todo,
+    // gestor → a própria equipe.
+    const { data: todosMembros, error: membersError } = await supabase
+      .rpc('get_tenant_members', { p_tenant_id: tenantId });
+
     if (membersError) {
-      console.warn('⚠️ Erro ao buscar tenant_memberships:', membersError.message);
+      console.warn('⚠️ Erro ao buscar membros do tenant:', membersError.message);
     }
+
+    const members = ((todosMembros || []) as { user_id: string | null; role: string }[])
+      .filter(m => m.role === 'corretor' || m.role === 'team_leader');
     
     // Buscar dados dos usuários via user_profiles
     const memberUserIds = (members || [])
