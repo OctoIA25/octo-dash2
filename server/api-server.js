@@ -940,6 +940,12 @@ const pickNestedText = (source, paths) => pickFirstNonEmpty(
 );
 
 const extractZapPhone = (payload) => {
+  // Mesma regra do proxy-production.js: `phone` do Grupo OLX vem SEM DDD; o
+  // completo está em `phoneNumber`, e o DDD à parte em `ddd`.
+  const fullPhone = pickNestedText(payload, ['phoneNumber', 'lead.phoneNumber', 'customer.phoneNumber']);
+  if (fullPhone) return fullPhone;
+
+  const ddd = pickNestedText(payload, ['ddd', 'lead.ddd', 'customer.ddd']);
   const rawPhone = pickNestedText(payload, [
     'phone',
     'telefone',
@@ -951,9 +957,8 @@ const extractZapPhone = (payload) => {
     'contact.telefone',
     'client.phone',
     'client.telefone',
-    'phoneNumber',
   ]);
-  if (rawPhone) return rawPhone;
+  if (rawPhone) return ddd && rawPhone.replace(/\D/g, '').length <= 9 ? `${ddd}${rawPhone}` : rawPhone;
 
   const collections = [
     payload?.phones,

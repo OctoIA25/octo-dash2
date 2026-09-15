@@ -1489,6 +1489,13 @@ const pickNestedText = (source, paths) => pickFirstNonEmpty(
 );
 
 const extractZapPhone = (payload) => {
+  // O Grupo OLX manda `phone` SEM DDD (o DDD vem à parte em `ddd`) e o número
+  // completo em `phoneNumber`. Lendo `phone` primeiro, o lead entrava sem DDD e
+  // sumia o link da conversa. Completo primeiro; senão, DDD + número.
+  const fullPhone = pickNestedText(payload, ['phoneNumber', 'lead.phoneNumber', 'customer.phoneNumber']);
+  if (fullPhone) return fullPhone;
+
+  const ddd = pickNestedText(payload, ['ddd', 'lead.ddd', 'customer.ddd']);
   const rawPhone = pickNestedText(payload, [
     'phone',
     'telefone',
@@ -1506,12 +1513,9 @@ const extractZapPhone = (payload) => {
     'person.telefone',
     'buyer.phone',
     'buyer.telefone',
-    'phoneNumber',
-    'lead.phoneNumber',
-    'customer.phoneNumber',
   ]);
 
-  if (rawPhone) return rawPhone;
+  if (rawPhone) return ddd && rawPhone.replace(/\D/g, '').length <= 9 ? `${ddd}${rawPhone}` : rawPhone;
 
   const phoneCollections = [
     payload?.phones,
