@@ -5,6 +5,7 @@
 import { supabase } from '@/lib/supabaseClient';
 import type { ImovelLocalRow } from '../utils/buildEditDataFromLocal';
 import { STATUS_RASCUNHO } from '../utils/rascunho';
+import { COLUNAS_IMOVEL_LOCAL } from './imoveisLocaisService';
 
 export interface RascunhoImovel extends ImovelLocalRow {
   id: string;
@@ -18,7 +19,7 @@ export interface RascunhoImovel extends ImovelLocalRow {
 export const listarRascunhos = async (tenantId: string): Promise<RascunhoImovel[]> => {
   const { data, error } = await supabase
     .from('imoveis_locais')
-    .select('*')
+    .select(COLUNAS_IMOVEL_LOCAL)
     .eq('tenant_id', tenantId)
     .eq('status_aprovacao', STATUS_RASCUNHO)
     .order('updated_at', { ascending: false });

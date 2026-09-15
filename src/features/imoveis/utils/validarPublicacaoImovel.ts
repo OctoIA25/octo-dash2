@@ -4,6 +4,10 @@
  * vez, para a tela listar tudo que falta em vez de um erro por clique.
  *
  * Rascunho não passa por aqui: para salvar rascunho basta tipo + código.
+ *
+ * Proprietário e endereço têm a mesma regra no banco (tg_valida_publicacao_imovel,
+ * migration 20260915): aqui é para listar tudo antes de enviar; lá é a garantia.
+ * Ao mudar um lado, mude o outro.
  */
 import { validarCep } from '@/services/viaCepService';
 import { isHttpUrl, normalizeYouTubeUrl } from './mediaUrls';
@@ -12,15 +16,26 @@ import { isHttpUrl, normalizeYouTubeUrl } from './mediaUrls';
 export type SecaoPublicacao = 'proprietario' | 'estrutura' | 'localizacao' | 'comissoes' | 'midia';
 
 export interface ProblemaPublicacao {
-  campo: 'proprietario_nome' | 'tipo' | 'codigo' | 'cep' | 'captador_id' | 'link_video' | 'tour_virtual';
+  campo:
+    | 'proprietario_nome' | 'proprietario_contato' | 'tipo' | 'codigo' | 'cep' | 'logradouro' | 'numero'
+    | 'bairro' | 'cidade' | 'estado' | 'captador_id' | 'link_video' | 'tour_virtual';
   mensagem: string;
   secao: SecaoPublicacao;
 }
 
 export interface DadosPublicacao {
   proprietario_nome: string;
+  proprietario_celular: string;
+  proprietario_tel_residencial: string;
+  proprietario_tel_comercial: string;
+  proprietario_email: string;
   tipo: string;
   cep: string;
+  logradouro: string;
+  numero: string;
+  bairro: string;
+  cidade: string;
+  estado: string;
   captador_id: string;
   link_video: string;
   tour_virtual: string;
@@ -28,13 +43,35 @@ export interface DadosPublicacao {
 
 export const validarPublicacaoImovel = (
   dados: DadosPublicacao,
-  { codigoGerado, podeEditarCaptador }: { codigoGerado: string; podeEditarCaptador: boolean },
+  {
+    codigoGerado,
+    podeEditarCaptador,
+    validarProprietario = true,
+  }: {
+    codigoGerado: string;
+    podeEditarCaptador: boolean;
+    /**
+     * false para quem edita sem poder ver o proprietário: o formulário não tem os
+     * dados para conferir, e o banco valida o que está gravado.
+     */
+    validarProprietario?: boolean;
+  },
 ): ProblemaPublicacao[] => {
   const problemas: ProblemaPublicacao[] = [];
+  const vazio = (valor: string) => !valor.trim();
 
-  // Todo imóvel publicado precisa de proprietário identificado.
-  if (!dados.proprietario_nome.trim()) {
-    problemas.push({ campo: 'proprietario_nome', mensagem: 'Nome do proprietário', secao: 'proprietario' });
+  // Todo imóvel publicado precisa de proprietário identificado e contatável.
+  if (validarProprietario) {
+    if (vazio(dados.proprietario_nome)) {
+      problemas.push({ campo: 'proprietario_nome', mensagem: 'Nome do proprietário', secao: 'proprietario' });
+    }
+    const contatos = [
+      dados.proprietario_celular, dados.proprietario_tel_residencial,
+      dados.proprietario_tel_comercial, dados.proprietario_email,
+    ];
+    if (contatos.every(vazio)) {
+      problemas.push({ campo: 'proprietario_contato', mensagem: 'Telefone ou e-mail do proprietário', secao: 'proprietario' });
+    }
   }
 
   if (!dados.tipo) {
@@ -47,6 +84,12 @@ export const validarPublicacaoImovel = (
   // Os feeds de portais (ZAP/OLX) rejeitam imóvel sem CEP.
   if (!validarCep(dados.cep)) {
     problemas.push({ campo: 'cep', mensagem: 'CEP (8 dígitos)', secao: 'localizacao' });
+  }
+  const endereco = [
+    ['logradouro', 'Logradouro'], ['numero', 'Número'], ['bairro', 'Bairro'], ['cidade', 'Cidade'], ['estado', 'Estado'],
+  ] as const;
+  for (const [campo, mensagem] of endereco) {
+    if (vazio(dados[campo])) problemas.push({ campo, mensagem, secao: 'localizacao' });
   }
 
   // Só cobra de quem pode definir o captador; os demais salvam sem tocar no campo.

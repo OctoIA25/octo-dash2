@@ -36,7 +36,6 @@ import {
 import type { Imovel } from '@/features/imoveis/services/kenloService';
 import { useAuth } from '@/hooks/useAuth';
 import { getFotoCapaUrl, getFotoUrl, type FotoInput } from './fotos-helpers';
-import { podeEditarImovel } from '@/features/imoveis/utils/podeEditarImovel';
 import { useCaptadores, mapCaptadoresPorId } from '@/features/imoveis/hooks/useCaptadores';
 import { ImovelHistorico } from './ImovelHistorico';
 
@@ -45,24 +44,17 @@ interface ImovelDetalhesModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /**
-   * Quando true, o imóvel possui registro local editável. O botão "Editar" só
-   * aparece se, além disso, o usuário for diretoria (owner), administrador,
-   * gestor com atuação que cobre a finalidade do imóvel, o captador (corretor
-   * responsável) ou quem cadastrou o imóvel.
+   * Mostra o botão "Editar". Vem do banco (RPC imoveis_editaveis → imovel_autoriza):
+   * imóvel local que o usuário pode editar — captador, gestão responsável ou
+   * administração. O modal não decide permissão.
    */
-  canEdit?: boolean;
+  podeEditar?: boolean;
+  /** O imóvel tem cadastro em `imoveis_locais` — só esses têm histórico de alterações. */
+  temRegistroLocal?: boolean;
   onEditar?: () => void;
   obsInterna?: string | null;
-  /** `imoveis_locais.criado_por` — corretor que cadastrou o imóvel. */
-  criadoPor?: string | null;
-  /** `imoveis_locais.captador_id` — atribuição manual (owner/admin). */
-  captadorId?: string | null;
   /** `imoveis_locais.captador_2_id` — 2º captador (opcional). */
   captador2Id?: string | null;
-  /** user_ids da equipe do gestor logado (inclui ele). Só relevante p/ team_leader. */
-  equipeUserIds?: string[] | null;
-  /** e-mails da equipe do gestor logado (inclui ele). Só relevante p/ team_leader. */
-  equipeEmails?: string[] | null;
 }
 
 const formatCurrency = (value: number) => {
@@ -125,16 +117,13 @@ export const ImovelDetalhesModal = ({
   imovel,
   open,
   onOpenChange,
-  canEdit = false,
+  podeEditar = false,
+  temRegistroLocal = false,
   onEditar,
   obsInterna,
-  criadoPor,
-  captadorId,
   captador2Id,
-  equipeUserIds,
-  equipeEmails,
 }: ImovelDetalhesModalProps) => {
-  const { user, isOwner, tenantId: authTenantId } = useAuth();
+  const { user, tenantId: authTenantId } = useAuth();
   const [mostrarLogs, setMostrarLogs] = useState(false);
   // Nome do 2º captador (atribuição manual). React Query dedupe: o mesmo
   // fetch já roda na página que abre este modal.
@@ -143,22 +132,6 @@ export const ImovelDetalhesModal = ({
   if (!imovel) return null;
 
   const captador2Nome = captador2Id ? mapCaptadoresPorId(captadoresLista)[captador2Id] : null;
-
-  const podeEditar = podeEditarImovel({
-    temRegistroLocal: canEdit,
-    isPlatformOwner: isOwner,
-    systemRole: user?.systemRole,
-    userId: user?.id,
-    userEmail: user?.email,
-    captadorEmail: imovel.corretor_email,
-    captadorId,
-    captador2Id,
-    criadoPor,
-    finalidade: imovel.finalidade,
-    permissions: user?.permissions,
-    equipeUserIds,
-    equipeEmails,
-  });
 
   const fotos = (imovel.fotos || []) as FotoInput[];
   const capa = getFotoCapaUrl(fotos);
@@ -393,7 +366,7 @@ export const ImovelDetalhesModal = ({
           )}
 
           {/* Logs de alterações — só existem para imóveis com registro local. */}
-          {canEdit && mostrarLogs && (
+          {temRegistroLocal && mostrarLogs && (
             <div>
               <SectionTitle>Logs de alterações</SectionTitle>
               <ImovelHistorico
@@ -410,7 +383,7 @@ export const ImovelDetalhesModal = ({
           <DialogClose asChild>
             <Button variant="outline">Fechar</Button>
           </DialogClose>
-          {canEdit && (
+          {temRegistroLocal && (
             <Button variant="outline" onClick={() => setMostrarLogs((v) => !v)}>
               <History className="h-4 w-4 mr-2" />
               {mostrarLogs ? 'Ocultar logs' : 'Logs de alterações'}

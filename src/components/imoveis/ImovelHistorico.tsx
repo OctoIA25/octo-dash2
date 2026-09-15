@@ -56,8 +56,12 @@ const ROTULOS: Record<string, string> = {
   aceita_troca: 'Aceita troca',
   link_video: 'Vídeo',
   tour_virtual: 'Tour virtual',
+  // Desde 20260915 o banco grava "oculto" no lugar do valor destes campos: o
+  // histórico mostra que mudou e quem mudou, sem o dado pessoal.
   proprietario_nome: 'Proprietário',
   proprietario_telefone: 'Telefone do proprietário',
+  proprietario_tel_residencial: 'Tel. residencial do proprietário',
+  proprietario_tel_comercial: 'Tel. comercial do proprietário',
   proprietario_email: 'E-mail do proprietário',
   obs_interna: 'Observação interna',
   captador_id: 'Captador',

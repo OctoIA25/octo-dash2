@@ -27,6 +27,7 @@ import { computeImoveisMetrics } from '../utils/imoveisMetrics';
 import { NIVEIS_DESTAQUE, correspondeAoDestaque, type NivelDestaque } from '../utils/destaque';
 import { ehRascunho } from '../utils/rascunho';
 import { exportarCatalogo } from '../services/catalogoExportService';
+import { buscarCodigosEditaveis, COLUNAS_IMOVEL_LOCAL } from '../services/imoveisLocaisService';
 import { useCaptadores, mapCaptadoresPorId } from '../hooks/useCaptadores';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/hooks/useAuth';
@@ -253,11 +254,6 @@ interface ImovelLocal {
   chave_com?: string | null;
   chave_retirada_em?: string | null;
   obs_interna?: string | null;
-  proprietario_nome?: string | null;
-  proprietario_telefone?: string | null;
-  proprietario_tel_residencial?: string | null;
-  proprietario_tel_comercial?: string | null;
-  proprietario_email?: string | null;
   criado_por?: string | null;
   updated_at?: string | null;
 }
@@ -294,11 +290,9 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
   // Estado para imóveis locais
   const [imoveisLocais, setImoveisLocais] = useState<ImovelLocal[]>([]);
 
-  // Equipe do gestor logado (user_ids + e-mails, incluindo ele mesmo). Define
-  // quais imóveis um team_leader pode editar. Vazio para os demais papéis — o
-  // gate cai no próprio usuário. Ver podeEditarImovel.
-  const [equipeUserIds, setEquipeUserIds] = useState<string[]>([]);
-  const [equipeEmails, setEquipeEmails] = useState<string[]>([]);
+  // Códigos (maiúsculos) que o usuário pode editar/excluir. Quem decide é o banco
+  // (imovel_autoriza): captador, gestão responsável, administração.
+  const [codigosEditaveis, setCodigosEditaveis] = useState<Set<string>>(new Set());
 
   // Estados de filtro
   const [searchTerm, setSearchTerm] = useState('');
@@ -363,19 +357,24 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
     if (!tenantId) return;
     
     try {
-      const { data, error: fetchError } = await supabase
-        .from('imoveis_locais')
-        .select('*')
-        .eq('tenant_id', tenantId)
-        .order('created_at', { ascending: false });
-      
+      const [{ data, error: fetchError }, editaveis] = await Promise.all([
+        supabase
+          .from('imoveis_locais')
+          .select(COLUNAS_IMOVEL_LOCAL)
+          .eq('tenant_id', tenantId)
+          .order('created_at', { ascending: false }),
+        buscarCodigosEditaveis(tenantId),
+      ]);
+      setCodigosEditaveis(editaveis);
+
       if (fetchError) {
+        console.error('Erro ao carregar imóveis locais:', fetchError.code, fetchError.message);
         return;
       }
       
       // Rascunho tem aba própria: fora daqui não entra no catálogo, nos bairros,
       // na edição pelo modal nem no excluir do card.
-      setImoveisLocais((data || []).filter((local) => !ehRascunho(local)));
+      setImoveisLocais(((data || []) as unknown as ImovelLocal[]).filter((local) => !ehRascunho(local)));
     } catch (err) {
       console.error('Erro ao carregar imóveis locais:', err);
     }
@@ -489,6 +488,9 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
       
       if (deleteLocalError) {
         console.error('❌ Erro ao excluir de imoveis_locais:', deleteLocalError.message);
+        // Sem isto a atribuição em imoveis_corretores era apagada mesmo com o imóvel mantido.
+        toast.error('Não foi possível excluir o imóvel', { description: deleteLocalError.message });
+        return;
       }
       
       // Excluir da tabela imoveis_corretores
@@ -512,9 +514,10 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
     }
   };
 
-  // Verificar se um imóvel pode ser excluído (apenas locais)
+  // Excluir: só imóvel local, e só quem pode editá-lo (o banco recusa os demais).
   const canDeleteImovel = (referencia: string): boolean => {
-    return imoveisLocais.some(local => local.codigo_imovel.toUpperCase() === referencia.toUpperCase());
+    const codigo = referencia.toUpperCase();
+    return codigosEditaveis.has(codigo) && imoveisLocais.some(local => local.codigo_imovel.toUpperCase() === codigo);
   };
 
   // Sincronizar com localStorage e carregar imóveis locais
@@ -522,29 +525,6 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
     localStorage.setItem('selectedSection', 'imoveis');
     void reloadCatalogoBanco();
   }, [reloadCatalogoBanco]);
-
-  // Carregar a equipe do gestor: corretores cujo leader_user_id aponta pra ele
-  // (elo canônico de equipe — mesmo usado por fila/roleta/eNPS), mais ele mesmo.
-  useEffect(() => {
-    if (!tenantId || !user?.id || user.systemRole !== 'team_leader') {
-      setEquipeUserIds([]);
-      setEquipeEmails([]);
-      return;
-    }
-    let ativo = true;
-    (async () => {
-      const { data, error } = await supabase
-        .from('tenant_memberships')
-        .select('user_id, email')
-        .eq('tenant_id', tenantId)
-        .eq('leader_user_id', user.id);
-      if (!ativo || error) return;
-      const membros = (data || []) as { user_id: string | null; email: string | null }[];
-      setEquipeUserIds([user.id, ...membros.map((m) => m.user_id).filter(Boolean) as string[]]);
-      setEquipeEmails([user.email, ...membros.map((m) => m.email).filter(Boolean) as string[]]);
-    })();
-    return () => { ativo = false; };
-  }, [tenantId, user?.id, user?.email, user?.systemRole]);
 
   // Filtrar imóveis
   const imoveisFiltrados = useMemo(() => {
@@ -985,11 +965,7 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
         </TabsContent>
 
         <TabsContent value="rascunhos">
-          <RascunhosTab
-            equipeUserIds={equipeUserIds}
-            equipeEmails={equipeEmails}
-            onPublicado={reloadCatalogoBanco}
-          />
+          <RascunhosTab onPublicado={reloadCatalogoBanco} />
         </TabsContent>
 
         <TabsContent value="anuncios-sem-imovel">
@@ -1611,14 +1587,14 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
         imovel={selectedImovel}
         open={showDetails}
         onOpenChange={(o) => { if (!o) closeDetails(); }}
-        canEdit={Boolean(findImovelLocal(selectedImovel?.referencia))}
+        temRegistroLocal={Boolean(findImovelLocal(selectedImovel?.referencia))}
+        podeEditar={Boolean(
+          findImovelLocal(selectedImovel?.referencia) &&
+          codigosEditaveis.has(selectedImovel.referencia.toUpperCase()),
+        )}
         onEditar={handleEditarSelecionado}
         obsInterna={findImovelLocal(selectedImovel?.referencia)?.obs_interna}
-        criadoPor={findImovelLocal(selectedImovel?.referencia)?.criado_por}
-        captadorId={findImovelLocal(selectedImovel?.referencia)?.captador_id}
         captador2Id={findImovelLocal(selectedImovel?.referencia)?.captador_2_id}
-        equipeUserIds={equipeUserIds}
-        equipeEmails={equipeEmails}
       />
     </div>
   );

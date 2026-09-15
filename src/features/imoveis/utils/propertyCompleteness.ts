@@ -46,6 +46,11 @@ export interface PropertyCompletenessInput {
   proprietario_celular?: string;
   proprietario_tel_residencial?: string;
   proprietario_email?: string;
+  /**
+   * Quem edita sem poder ver o proprietário recebe o formulário sem esses dados:
+   * os critérios do proprietário saem da conta em vez de aparecerem como faltando.
+   */
+  proprietarioOculto?: boolean;
   cep?: string;
   logradouro?: string;
   numero?: string;
@@ -211,6 +216,7 @@ const checkInformacoesBasicas = (p: PropertyCompletenessInput): CompletenessChec
     weight: 1,
     done: hasText(p.proprietario_nome),
     section: 'proprietario',
+    applies: !p.proprietarioOculto,
   },
   {
     id: 'proprietario-contato',
@@ -222,6 +228,7 @@ const checkInformacoesBasicas = (p: PropertyCompletenessInput): CompletenessChec
       hasText(p.proprietario_tel_residencial) ||
       hasText(p.proprietario_email),
     section: 'proprietario',
+    applies: !p.proprietarioOculto,
   },
 ];
 

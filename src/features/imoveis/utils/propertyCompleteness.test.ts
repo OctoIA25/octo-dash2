@@ -173,6 +173,12 @@ describe('campos opcionais não impedem 100%', () => {
     expect(categoria(semCondominio, 'preco').percentage).toBe(100);
   });
 
+  it('proprietário oculto (usuário sem permissão) não conta como faltando', () => {
+    const semProprietario = { ...IMOVEL_COMPLETO, proprietario_nome: '', proprietario_celular: '' };
+    expect(categoria(semProprietario, 'basicas').isComplete).toBe(false);
+    expect(categoria({ ...semProprietario, proprietarioOculto: true }, 'basicas').percentage).toBe(100);
+  });
+
   it('cobra condomínio quando o imóvel está vinculado a um', () => {
     const comCondominio = { ...IMOVEL_COMPLETO, valor_condominio: '' };
     expect(categoria(comCondominio, 'preco').isComplete).toBe(false);

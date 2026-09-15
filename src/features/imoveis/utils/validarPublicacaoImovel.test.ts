@@ -3,15 +3,24 @@ import { validarPublicacaoImovel, type DadosPublicacao } from './validarPublicac
 
 const valido: DadosPublicacao = {
   proprietario_nome: 'Maria Souza',
+  proprietario_celular: '(11) 99999-0000',
+  proprietario_tel_residencial: '',
+  proprietario_tel_comercial: '',
+  proprietario_email: '',
   tipo: 'Apartamento',
   cep: '01310-100',
+  logradouro: 'Av. Paulista',
+  numero: '1000',
+  bairro: 'Bela Vista',
+  cidade: 'São Paulo',
+  estado: 'SP',
   captador_id: 'u1',
   link_video: '',
   tour_virtual: '',
 };
 const ctx = { codigoGerado: 'AP0001', podeEditarCaptador: true };
 
-const campos = (dados: Partial<DadosPublicacao>, c: Partial<typeof ctx> = {}) =>
+const campos = (dados: Partial<DadosPublicacao>, c: Partial<typeof ctx & { validarProprietario: boolean }> = {}) =>
   validarPublicacaoImovel({ ...valido, ...dados }, { ...ctx, ...c }).map((p) => p.campo);
 
 describe('validarPublicacaoImovel', () => {
@@ -19,7 +28,7 @@ describe('validarPublicacaoImovel', () => {
     expect(validarPublicacaoImovel(valido, ctx)).toEqual([]);
   });
 
-  it('cobra cada regra existente, com a seção para abrir', () => {
+  it('cobra cada regra, com a seção para abrir', () => {
     expect(validarPublicacaoImovel({ ...valido, tipo: '' }, ctx)).toEqual([
       { campo: 'tipo', mensagem: 'Tipo do imóvel', secao: 'estrutura' },
     ]);
@@ -32,14 +41,42 @@ describe('validarPublicacaoImovel', () => {
     expect(campos({ tour_virtual: 'tour.com/360' })).toEqual(['tour_virtual']);
   });
 
+  it('proprietário sem nenhum contato não publica; qualquer telefone ou o e-mail basta', () => {
+    const semContato = { proprietario_celular: '', proprietario_tel_residencial: ' ', proprietario_tel_comercial: '', proprietario_email: '' };
+    expect(validarPublicacaoImovel({ ...valido, ...semContato }, ctx)).toEqual([
+      { campo: 'proprietario_contato', mensagem: 'Telefone ou e-mail do proprietário', secao: 'proprietario' },
+    ]);
+    expect(campos({ ...semContato, proprietario_tel_comercial: '(11) 3333-0000' })).toEqual([]);
+    expect(campos({ ...semContato, proprietario_email: 'maria@x.com' })).toEqual([]);
+  });
+
+  it('endereço do imóvel é obrigatório campo a campo', () => {
+    expect(campos({ logradouro: '', numero: ' ', bairro: '', cidade: '', estado: '' })).toEqual([
+      'logradouro', 'numero', 'bairro', 'cidade', 'estado',
+    ]);
+    const problemas = validarPublicacaoImovel({ ...valido, numero: '' }, ctx);
+    expect(problemas).toEqual([{ campo: 'numero', mensagem: 'Número', secao: 'localizacao' }]);
+  });
+
   it('devolve todos os problemas juntos, na ordem das seções', () => {
     const problemas = validarPublicacaoImovel(
-      { proprietario_nome: '', tipo: '', cep: '', captador_id: '', link_video: 'x', tour_virtual: 'y' },
+      {
+        ...valido,
+        proprietario_nome: '', proprietario_celular: '', tipo: '', cep: '', logradouro: '',
+        captador_id: '', link_video: 'x', tour_virtual: 'y',
+      },
       { codigoGerado: '', podeEditarCaptador: true },
     );
     // Sem tipo não existe código: não lista "código" como problema separado.
-    expect(problemas.map((p) => p.campo)).toEqual(['proprietario_nome', 'tipo', 'cep', 'captador_id', 'link_video', 'tour_virtual']);
+    expect(problemas.map((p) => p.campo)).toEqual([
+      'proprietario_nome', 'proprietario_contato', 'tipo', 'cep', 'logradouro', 'captador_id', 'link_video', 'tour_virtual',
+    ]);
     expect(problemas[0].secao).toBe('proprietario');
+  });
+
+  it('quem não pode ver o proprietário não é cobrado por ele (o banco valida o gravado)', () => {
+    expect(campos({ proprietario_nome: '', proprietario_celular: '' }, { validarProprietario: false })).toEqual([]);
+    expect(campos({ proprietario_nome: '', cep: '' }, { validarProprietario: false })).toEqual(['cep']);
   });
 
   it('captador só é exigido de quem pode defini-lo', () => {

@@ -39,7 +39,12 @@ vi.mock('@/lib/supabaseClient', () => {
     });
     return self;
   };
-  return { supabase: { from: (t: string) => tabela(t === 'imoveis_locais' ? LOCAIS : []) } };
+  return {
+    supabase: {
+      from: (t: string) => tabela(t === 'imoveis_locais' ? LOCAIS : []),
+      rpc: () => Promise.resolve({ data: [], error: null }),
+    },
+  };
 });
 
 vi.mock('../hooks/useImoveisData', () => ({

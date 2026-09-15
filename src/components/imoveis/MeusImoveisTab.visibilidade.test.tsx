@@ -14,6 +14,8 @@ const h = vi.hoisted(() => ({
   role: 'admin' as string,
   atribuicoes: [] as Array<Record<string, unknown>>,
   locais: [] as Array<Record<string, unknown>>,
+  // Resposta da RPC imoveis_editaveis.
+  editaveis: [] as string[],
 }));
 
 vi.mock('@/hooks/useAuth', () => ({
@@ -38,6 +40,7 @@ vi.mock('@/lib/supabaseClient', () => {
   return {
     supabase: {
       from: (t: string) => tabela(t === 'imoveis_corretores' ? h.atribuicoes : h.locais),
+      rpc: () => Promise.resolve({ data: h.editaveis, error: null }),
     },
   };
 });
@@ -50,7 +53,9 @@ vi.mock('@/features/imoveis/services/xmlSyncService', () => ({
 }));
 vi.mock('./CriarImovelForm', () => ({ CriarImovelForm: () => null }));
 vi.mock('./ImovelCard', () => ({
-  ImovelCard: ({ imovel }: { imovel: { referencia: string } }) => <div>card:{imovel.referencia}</div>,
+  ImovelCard: ({ imovel, canDelete }: { imovel: { referencia: string }; canDelete?: boolean }) => (
+    <div>card:{imovel.referencia}{canDelete ? ':pode-excluir' : ''}</div>
+  ),
 }));
 
 // Imóvel cadastrado à mão por OUTRA pessoa: sem linha em imoveis_corretores.
@@ -77,6 +82,7 @@ import { MeusImoveisTab } from './MeusImoveisTab';
 beforeEach(() => {
   h.atribuicoes = [];
   h.locais = [LOCAL];
+  h.editaveis = [];
 });
 
 describe('Visibilidade da aba Prontos', () => {
@@ -108,6 +114,19 @@ describe('Visibilidade da aba Prontos', () => {
     expect(await screen.findByText('card:AP0688')).toBeInTheDocument();
     expect(screen.queryByText('card:CA0001')).not.toBeInTheDocument();
     expect(screen.getByText(/1 imóvel da imobiliária/)).toBeInTheDocument();
+  });
+
+  it('gestor que aprova só ganha Editar/Excluir quando o banco autoriza a edição', async () => {
+    h.role = 'team_leader';
+    montar();
+    expect(await screen.findByText('card:AP0688')).toBeInTheDocument();
+    expect(screen.getByText('✓ Aprovar')).toBeInTheDocument();
+    expect(screen.queryByText('✎ Editar')).not.toBeInTheDocument();
+
+    h.editaveis = ['AP0688'];
+    montar();
+    expect(await screen.findByText('card:AP0688:pode-excluir')).toBeInTheDocument();
+    expect(screen.getByText('✎ Editar')).toBeInTheDocument();
   });
 
   it('corretor com o código atribuído vê o imóvel', async () => {

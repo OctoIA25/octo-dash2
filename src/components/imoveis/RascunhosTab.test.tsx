@@ -1,6 +1,6 @@
 /**
- * Aba "Rascunhos": quem vê cada rascunho (mesmo gate de edição do cadastro),
- * exclusão com confirmação e retomada do cadastro no formulário.
+ * Aba "Rascunhos": quem vê cada rascunho (o gate de edição decidido no banco,
+ * imoveis_editaveis), exclusão com confirmação e retomada do cadastro no formulário.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -11,6 +11,8 @@ const h = vi.hoisted(() => ({
   listar: vi.fn(),
   excluir: vi.fn(),
   nomes: vi.fn(async () => ({})),
+  // Resposta do banco: códigos que o usuário pode editar.
+  editaveis: vi.fn(async () => new Set<string>()),
 }));
 
 vi.mock('@/contexts/AuthContext', () => ({
@@ -25,6 +27,10 @@ vi.mock('@/features/imoveis/services/rascunhosService', () => ({
   listarRascunhos: h.listar,
   excluirRascunho: h.excluir,
   nomesDosAutores: h.nomes,
+}));
+
+vi.mock('@/features/imoveis/services/imoveisLocaisService', () => ({
+  buscarCodigosEditaveis: h.editaveis,
 }));
 
 vi.mock('@/features/imoveis/hooks/useCaptadores', () => ({
@@ -84,16 +90,25 @@ beforeEach(() => {
   h.listar.mockReset().mockResolvedValue([DA_MARIANA, DE_OUTRO]);
   h.excluir.mockReset().mockResolvedValue(undefined);
   h.nomes.mockReset().mockResolvedValue({});
+  h.editaveis.mockReset().mockResolvedValue(new Set(['CA0001', 'AP0002']));
 });
 
 describe('RascunhosTab', () => {
-  it('corretor vê só os rascunhos que pode editar', async () => {
+  it('mostra só os rascunhos que o banco diz que o usuário pode editar', async () => {
     h.role = 'corretor';
+    h.editaveis.mockResolvedValue(new Set(['CA0001']));
     render(<RascunhosTab />);
     const t = await tabela();
     expect(t.getByText('CA0001')).toBeInTheDocument();
     expect(t.queryByText('AP0002')).not.toBeInTheDocument();
     expect(h.listar).toHaveBeenCalledWith('t1');
+    expect(h.editaveis).toHaveBeenCalledWith('t1');
+  });
+
+  it('sem resposta de editáveis (erro na RPC) não mostra rascunho nenhum', async () => {
+    h.editaveis.mockResolvedValue(new Set());
+    render(<RascunhosTab />);
+    expect(await screen.findByText('Nenhum rascunho')).toBeInTheDocument();
   });
 
   it('administrador vê todos, com responsável, "Sem título" e data da última alteração', async () => {

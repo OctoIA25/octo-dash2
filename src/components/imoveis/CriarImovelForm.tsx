@@ -29,6 +29,7 @@ import { ProprietarioAutocomplete } from './ProprietarioAutocomplete';
 import { ImovelDuplicadoDialog } from './ImovelDuplicadoDialog';
 import { ImovelHistorico } from './ImovelHistorico';
 import {
+  buscarProprietarioDoImovel,
   verificarImovelDuplicado,
   type ImovelDuplicadoMatch,
   type ProprietarioMatch,
@@ -525,6 +526,15 @@ export const CriarImovelForm = ({
   );
   const podeEditarCaptador = isManager || isCaptadorAtual;
 
+  // O proprietário não vem em initialData: a linha de imoveis_locais chega ao
+  // navegador sem proprietario_* (sem SELECT para authenticated). Na edição, a RPC
+  // devolve os dados só para quem pode vê-los. Enquanto não for 'permitido', o
+  // save omite essas colunas — mandar os campos vazios apagaria o proprietário.
+  // Cadastro novo é 'permitido': quem digita é a fonte do dado.
+  const [acessoProprietario, setAcessoProprietario] =
+    useState<'permitido' | 'carregando' | 'negado' | 'erro'>('permitido');
+  const proprietarioLiberado = acessoProprietario === 'permitido';
+
   const [formData, setFormData] = useState<ImovelFormData>(initialFormData);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<'idle' | 'success' | 'error'>('idle');
@@ -731,6 +741,44 @@ export const CriarImovelForm = ({
       setSubmitMessage('');
     }
   }, [initialData, isEdit, isOpen]);
+
+  // Mesmas dependências do efeito acima: toda reabertura recarrega o proprietário
+  // depois de o formulário ser reidratado sem ele.
+  useEffect(() => {
+    const codigo = initialData?.codigo_imovel;
+    if (!isOpen || !isEdit || !codigo || !tenantId) {
+      setAcessoProprietario('permitido');
+      return;
+    }
+    let ativo = true;
+    setAcessoProprietario('carregando');
+    buscarProprietarioDoImovel(tenantId, codigo)
+      .then((proprietario) => {
+        if (!ativo) return;
+        if (!proprietario) {
+          setAcessoProprietario('negado');
+          return;
+        }
+        const campos = {
+          proprietario_nome: proprietario.proprietario_nome || '',
+          proprietario_celular: proprietario.proprietario_telefone || '',
+          proprietario_tel_residencial: proprietario.proprietario_tel_residencial || '',
+          proprietario_tel_comercial: proprietario.proprietario_tel_comercial || '',
+          proprietario_email: proprietario.proprietario_email || '',
+        };
+        // Dado carregado, não digitado: entra também na base do "tem alteração?".
+        setFormData((prev) => ({ ...prev, ...campos }));
+        setBaseline((prev) => ({ ...prev, ...campos }));
+        setAcessoProprietario('permitido');
+      })
+      .catch((err) => {
+        console.error('[CriarImovelForm] falha ao carregar o proprietário:', err);
+        if (ativo) setAcessoProprietario('erro');
+      });
+    return () => {
+      ativo = false;
+    };
+  }, [initialData, isEdit, isOpen, tenantId]);
   
   // Seções colapsáveis
   const [openSections, setOpenSections] = useState({
@@ -957,7 +1005,13 @@ export const CriarImovelForm = ({
       return `Código ${codigo} já está reservado por outro rascunho. Gere um novo código.`;
     }
 
-    if (existingAssignment && (existingLocal || existingAssignment.corretor_id !== user?.id)) {
+    // O primeiro save é INSERT (sem upsert): um imóvel local com este código, de
+    // quem quer que seja, não pode ser sobrescrito por um cadastro novo.
+    if (existingLocal) {
+      return `Código ${codigo} já existe no cadastro de imóveis. Gere um novo código.`;
+    }
+
+    if (existingAssignment && existingAssignment.corretor_id !== user?.id) {
       return `Código ${codigo} já existe (atribuído a ${existingAssignment.corretor_nome || 'outro corretor'})`;
     }
 
@@ -1041,7 +1095,11 @@ export const CriarImovelForm = ({
   const publicar = async (skipDuplicidadeCheck = false) => {
     if (salvandoRef.current) return;
 
-    const problemas = validarPublicacaoImovel(formData, { codigoGerado, podeEditarCaptador });
+    const problemas = validarPublicacaoImovel(formData, {
+      codigoGerado,
+      podeEditarCaptador,
+      validarProprietario: proprietarioLiberado,
+    });
     if (problemas.length > 0) {
       exibirErro(
         `Não foi possível ${modoPublicado ? 'salvar' : 'publicar'} o imóvel.\n` +
@@ -1299,13 +1357,19 @@ export const CriarImovelForm = ({
       tour_virtual: status === STATUS_RASCUNHO
         ? formData.tour_virtual.trim() || null
         : isHttpUrl(formData.tour_virtual) ? formData.tour_virtual.trim() : null,
-      proprietario_nome: formData.proprietario_nome || null,
-      proprietario_telefone: formData.proprietario_celular || formData.proprietario_tel_residencial || null,
-      proprietario_tel_residencial: formData.proprietario_tel_residencial || null,
-      proprietario_tel_comercial: formData.proprietario_tel_comercial || null,
-      proprietario_email: formData.proprietario_email || null,
-      // Só no primeiro save: no upsert de edição isto sobrescrevia o autor original
-      // pelo editor, e com ele o dono perdia o próprio gate de podeEditarImovel.
+      // Só entra no payload quando o formulário tem o proprietário de verdade (ver
+      // acessoProprietario). Ausente, o UPDATE mantém o que está gravado.
+      ...(proprietarioLiberado
+        ? {
+            proprietario_nome: formData.proprietario_nome || null,
+            proprietario_telefone: formData.proprietario_celular || formData.proprietario_tel_residencial || null,
+            proprietario_tel_residencial: formData.proprietario_tel_residencial || null,
+            proprietario_tel_comercial: formData.proprietario_tel_comercial || null,
+            proprietario_email: formData.proprietario_email || null,
+          }
+        : {}),
+      // Só no primeiro save: sem captador definido, quem cadastrou é o captador para
+      // o banco (imovel_autoriza), e trocar o autor é recusado a quem não é admin.
       ...(persistido ? {} : { criado_por: user?.id || null }),
       obs_interna: formData.obs_interna || null,
       // Estes 16 a tela sempre coletou e o save jogava fora — as colunas só
@@ -1332,11 +1396,10 @@ export const CriarImovelForm = ({
       // quando esta coluna muda.
       chave_com: formData.chave_com || null,
       // Os captadores só entram no payload para quem pode defini-los
-      // (diretoria/admin/gestor ou o captador atual). Upsert vira INSERT ... ON
-      // CONFLICT DO UPDATE: colunas ausentes do payload ficam fora do SET e
-      // mantêm o valor já salvo. Omitir aqui é o que faz um corretor comum
-      // conseguir salvar outros campos sem precisar (nem poder) tocar no
-      // captador — o tg_guard_captador libera quando nada mudou.
+      // (diretoria/admin/gestor ou o captador atual). Colunas ausentes do payload
+      // ficam fora do SET do UPDATE e mantêm o valor já salvo. Omitir aqui é o
+      // que faz um corretor comum conseguir salvar outros campos sem precisar
+      // (nem poder) tocar no captador — o tg_guard_captador libera quando nada mudou.
       ...(podeEditarCaptador
         ? {
             captador_id: formData.captador_id || null,
@@ -1349,29 +1412,44 @@ export const CriarImovelForm = ({
     // Rascunho já gravado é salvo — e publicado — com update condicional: se outra
     // tela publicou, aprovou ou excluiu a linha, nada casa. O rascunho não rebaixa
     // o imóvel publicado, não sobrescreve os dados dele nem ressuscita o excluído.
+    // Primeiro save é INSERT e os demais UPDATE — nunca upsert: o ON CONFLICT exige
+    // SELECT nas colunas do proprietário, que o navegador não tem.
     const salvandoSobreRascunho = registro?.status === STATUS_RASCUNHO;
-    const { data, error } = salvandoSobreRascunho
-      ? await supabase
-          .from('imoveis_locais')
-          .update(imovelLocal)
-          .eq('tenant_id', tenantId)
-          .eq('codigo_imovel', codigoImovel)
-          .eq('status_aprovacao', STATUS_RASCUNHO)
-          .select('updated_at')
-      : await supabase
-          .from('imoveis_locais')
-          .upsert(imovelLocal, { onConflict: 'tenant_id,codigo_imovel' })
-          .select('updated_at');
+    const tabela = supabase.from('imoveis_locais');
+    const { data, error } = !persistido
+      ? await tabela.insert(imovelLocal).select('updated_at')
+      : salvandoSobreRascunho
+        ? await tabela
+            .update(imovelLocal)
+            .eq('tenant_id', tenantId)
+            .eq('codigo_imovel', codigoImovel)
+            .eq('status_aprovacao', STATUS_RASCUNHO)
+            .select('updated_at')
+        : await tabela
+            .update(imovelLocal)
+            .eq('tenant_id', tenantId)
+            .eq('codigo_imovel', codigoImovel)
+            .select('updated_at');
 
     if (error) {
       console.error('❌ Erro ao salvar imóvel local:', error.message, error.code, error.details);
-      if (error.code === '42501') {
+      if (error.code === '23505') {
+        throw new Error(`Código ${codigoImovel} já existe no cadastro de imóveis. Gere um novo código.`);
+      }
+      if (error.code === '42501' && /definir o captador/.test(error.message)) {
         throw new Error('Somente diretoria, administrador, gestor ou o captador atual pode definir o captador do imóvel.');
       }
+      // 42501 (sem permissão para editar/alterar o proprietário) e 23514
+      // (proprietário/endereço faltando na publicação) já chegam com a mensagem
+      // pronta dos triggers do banco.
       throw error;
     }
 
-    if (salvandoSobreRascunho && !data?.length) {
+    if (persistido && !data?.length && !salvandoSobreRascunho) {
+      throw new Error(`Imóvel ${codigoImovel} não encontrado: ele pode ter sido excluído em outra tela. Nada foi salvo.`);
+    }
+
+    if (persistido && !data?.length) {
       throw new RascunhoIndisponivelError(
         'Este cadastro não é mais um rascunho: foi publicado ou excluído em outra tela. As alterações feitas aqui não foram salvas.',
       );
@@ -1576,7 +1654,10 @@ export const CriarImovelForm = ({
           </div>
 
           {/* Completude do imóvel — calculada localmente a partir do formulário */}
-          <PropertyCompleteness property={formData} onFocusSection={focusSection} />
+          <PropertyCompleteness
+            property={{ ...formData, proprietarioOculto: !proprietarioLiberado }}
+            onFocusSection={focusSection}
+          />
 
           {/* Status de Submissão */}
           {submitMessage && (
@@ -1609,53 +1690,70 @@ export const CriarImovelForm = ({
             </CollapsibleTrigger>
             <CollapsibleContent className="pt-3 space-y-3">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4 bg-card/50 rounded-lg border">
-                <div className="space-y-2 md:col-span-2 lg:col-span-3">
-                  <Label>Nome do Proprietário *</Label>
-                  <ProprietarioAutocomplete
-                    tenantId={tenantId}
-                    value={formData.proprietario_nome}
-                    onChange={(nome) => handleInputChange('proprietario_nome', nome)}
-                    onSelect={handleProprietarioSelect}
-                    placeholder="Nome completo"
-                  />
-                  <p className="text-[11px] text-muted-foreground">
-                    Digite 2+ letras para ver proprietários já cadastrados. Passe o mouse para ver
-                    os dados salvos; clique para preencher automaticamente.
+                {/* Sem permissão os campos nem são renderizados: o dado não chega ao
+                    navegador (RPC imoveis_proprietarios) e não fica escondido no DOM. */}
+                {proprietarioLiberado ? (
+                  <>
+                    <div className="space-y-2 md:col-span-2 lg:col-span-3">
+                      <Label>Nome do Proprietário *</Label>
+                      <ProprietarioAutocomplete
+                        tenantId={tenantId}
+                        value={formData.proprietario_nome}
+                        onChange={(nome) => handleInputChange('proprietario_nome', nome)}
+                        onSelect={handleProprietarioSelect}
+                        placeholder="Nome completo"
+                      />
+                      <p className="text-[11px] text-muted-foreground">
+                        Digite 2+ letras para ver proprietários já cadastrados. Passe o mouse para ver
+                        os dados salvos; clique para preencher automaticamente.
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Tel. Residencial</Label>
+                      <Input
+                        placeholder="(00) 0000-0000"
+                        value={formData.proprietario_tel_residencial}
+                        onChange={(e) => handleInputChange('proprietario_tel_residencial', e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Tel. Comercial</Label>
+                      <Input
+                        placeholder="(00) 0000-0000"
+                        value={formData.proprietario_tel_comercial}
+                        onChange={(e) => handleInputChange('proprietario_tel_comercial', e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Celular</Label>
+                      <Input
+                        placeholder="(00) 00000-0000"
+                        value={formData.proprietario_celular}
+                        onChange={(e) => handleInputChange('proprietario_celular', e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2 md:col-span-2 lg:col-span-3">
+                      <Label>E-mail</Label>
+                      <Input
+                        type="email"
+                        placeholder="email@exemplo.com"
+                        value={formData.proprietario_email}
+                        onChange={(e) => handleInputChange('proprietario_email', e.target.value)}
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <p
+                    role="status"
+                    className="md:col-span-2 lg:col-span-3 text-sm text-muted-foreground"
+                  >
+                    {acessoProprietario === 'carregando'
+                      ? 'Carregando os dados do proprietário...'
+                      : acessoProprietario === 'erro'
+                        ? 'Não foi possível carregar os dados do proprietário. Eles continuam salvos; reabra o imóvel para tentar de novo.'
+                        : 'Os dados do proprietário são visíveis só para o corretor captador, a gestão de terceiros responsável e a administração.'}
                   </p>
-                </div>
-                <div className="space-y-2">
-                  <Label>Tel. Residencial</Label>
-                  <Input
-                    placeholder="(00) 0000-0000"
-                    value={formData.proprietario_tel_residencial}
-                    onChange={(e) => handleInputChange('proprietario_tel_residencial', e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Tel. Comercial</Label>
-                  <Input
-                    placeholder="(00) 0000-0000"
-                    value={formData.proprietario_tel_comercial}
-                    onChange={(e) => handleInputChange('proprietario_tel_comercial', e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Celular</Label>
-                  <Input
-                    placeholder="(00) 00000-0000"
-                    value={formData.proprietario_celular}
-                    onChange={(e) => handleInputChange('proprietario_celular', e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2 md:col-span-2 lg:col-span-3">
-                  <Label>E-mail</Label>
-                  <Input
-                    type="email"
-                    placeholder="email@exemplo.com"
-                    value={formData.proprietario_email}
-                    onChange={(e) => handleInputChange('proprietario_email', e.target.value)}
-                  />
-                </div>
+                )}
                 <div className="space-y-2">
                   <Label>Mídia de Origem</Label>
                   <Select

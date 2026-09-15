@@ -3,6 +3,11 @@
  *
  * Como não há tabela própria de proprietários, agregamos por (nome, telefone, email)
  * a partir dos imóveis já cadastrados.
+ *
+ * O navegador não lê `proprietario_*` direto da tabela (sem SELECT para
+ * authenticated desde 20260915): os dados vêm das RPCs, que devolvem só os
+ * imóveis cujo proprietário o usuário pode ver — captador, gestor de terceiros
+ * responsável, administração. As colunas do imóvel continuam vindo do select normal.
  */
 
 import { supabase } from '@/lib/supabaseClient';
@@ -43,6 +48,36 @@ export interface ImovelDuplicadoMatch {
   motivo: 'mesmo_endereco' | 'caracteristicas_iguais';
 }
 
+/** Linha da RPC `imoveis_proprietarios`. */
+export interface ProprietarioDoImovel {
+  codigo_imovel: string;
+  proprietario_nome: string | null;
+  proprietario_telefone: string | null;
+  proprietario_tel_residencial: string | null;
+  proprietario_tel_comercial: string | null;
+  proprietario_email: string | null;
+}
+
+/**
+ * Proprietário de um imóvel, se o usuário logado pode vê-lo. `null` = sem
+ * permissão (o banco não devolve a linha). Erro de rede propaga: quem chama
+ * precisa distinguir "não pode" de "não carregou".
+ */
+export async function buscarProprietarioDoImovel(
+  tenantId: string,
+  codigoImovel: string,
+): Promise<ProprietarioDoImovel | null> {
+  const { data, error } = await supabase.rpc('imoveis_proprietarios', {
+    p_tenant_id: tenantId,
+    p_codigo: codigoImovel,
+  });
+  if (error) throw new Error(`Falha ao carregar o proprietário: ${error.message}`);
+  return ((data as ProprietarioDoImovel[] | null) ?? [])[0] ?? null;
+}
+
+const COLUNAS_IMOVEL_LITE =
+  'codigo_imovel, titulo, tipo, bairro, cidade, logradouro, numero, cep, area_total, area_util, quartos, banheiros, vagas';
+
 const normalizar = (s: string | null | undefined): string => (s ?? '').trim().toLowerCase();
 const somenteDigitos = (s: string | null | undefined): string => (s ?? '').replace(/\D/g, '');
 
@@ -62,15 +97,10 @@ export async function buscarProprietariosPorNome(
   const termoLimpo = termo.trim();
   if (!tenantId || termoLimpo.length < 2) return [];
 
-  const { data, error } = await supabase
-    .from('imoveis_locais')
-    .select(
-      'codigo_imovel, titulo, tipo, bairro, cidade, logradouro, numero, cep, area_total, area_util, quartos, banheiros, vagas, proprietario_nome, proprietario_telefone, proprietario_email',
-    )
-    .eq('tenant_id', tenantId)
-    .not('proprietario_nome', 'is', null)
-    .ilike('proprietario_nome', `%${termoLimpo}%`)
-    .order('created_at', { ascending: false })
+  // Só proprietários de imóveis que o usuário pode ver: corretor acha os dele,
+  // não a carteira do tenant inteiro.
+  const { data: donos, error } = await supabase
+    .rpc('imoveis_proprietarios', { p_tenant_id: tenantId, p_busca: termoLimpo })
     .limit(80);
 
   if (error) {
@@ -78,13 +108,31 @@ export async function buscarProprietariosPorNome(
     return [];
   }
 
+  const linhasDonos = (donos as ProprietarioDoImovel[] | null) ?? [];
+  if (linhasDonos.length === 0) return [];
+
+  const { data: imoveis, error: imoveisError } = await supabase
+    .from('imoveis_locais')
+    .select(COLUNAS_IMOVEL_LITE)
+    .eq('tenant_id', tenantId)
+    .in('codigo_imovel', [...new Set(linhasDonos.map((d) => d.codigo_imovel))]);
+
+  if (imoveisError) {
+    console.error('[proprietarioService] erro ao buscar imóveis dos proprietários:', imoveisError.message);
+    return [];
+  }
+
+  const imovelPorCodigo = new Map(
+    ((imoveis as unknown as ProprietarioImovelLite[] | null) ?? []).map((i) => [i.codigo_imovel, i]),
+  );
   const grupos = new Map<string, ProprietarioMatch>();
 
-  for (const row of data ?? []) {
-    const nome = (row.proprietario_nome ?? '').trim();
-    if (!nome) continue;
+  for (const dono of linhasDonos) {
+    const nome = (dono.proprietario_nome ?? '').trim();
+    const row = imovelPorCodigo.get(dono.codigo_imovel);
+    if (!nome || !row) continue;
 
-    const chave = chaveProprietario(nome, row.proprietario_telefone, row.proprietario_email);
+    const chave = chaveProprietario(nome, dono.proprietario_telefone, dono.proprietario_email);
     const imovel: ProprietarioImovelLite = {
       codigo_imovel: row.codigo_imovel,
       titulo: row.titulo,
@@ -108,8 +156,8 @@ export async function buscarProprietariosPorNome(
     } else {
       grupos.set(chave, {
         nome,
-        telefone: row.proprietario_telefone ?? null,
-        email: row.proprietario_email ?? null,
+        telefone: dono.proprietario_telefone ?? null,
+        email: dono.proprietario_email ?? null,
         total_imoveis: 1,
         imoveis: [imovel],
       });
@@ -139,11 +187,14 @@ export interface VerificarDuplicidadeArgs {
   ignorarCodigo?: string | null;
 }
 
-const TOLERANCIA_AREA = 0.05;
-
 /**
  * Verifica se já existe um imóvel com mesmo proprietário e
  * (mesmo endereço) OU (mesmas características principais).
+ *
+ * A comparação roda no banco (RPC `imoveis_duplicados_proprietario`) porque
+ * precisa olhar todos os imóveis do tenant, inclusive os que o usuário não pode
+ * ver o proprietário — e a resposta não traz dado pessoal: só acusa o imóvel
+ * quando nome E endereço/características batem.
  */
 export async function verificarImovelDuplicado(
   args: VerificarDuplicidadeArgs,
@@ -151,91 +202,27 @@ export async function verificarImovelDuplicado(
   const nome = (args.proprietarioNome ?? '').trim();
   if (!args.tenantId || nome.length < 2) return [];
 
-  const { data, error } = await supabase
-    .from('imoveis_locais')
-    .select(
-      'codigo_imovel, titulo, tipo, bairro, cidade, logradouro, numero, cep, area_total, quartos, banheiros, proprietario_nome, proprietario_telefone, proprietario_email',
-    )
-    .eq('tenant_id', args.tenantId)
-    .ilike('proprietario_nome', nome);
+  const { data, error } = await supabase.rpc('imoveis_duplicados_proprietario', {
+    p_tenant_id: args.tenantId,
+    p_proprietario_nome: nome,
+    p_ignorar_codigo: args.ignorarCodigo || null,
+    p_tipo: args.tipo || null,
+    p_logradouro: args.logradouro || null,
+    p_numero: args.numero || null,
+    p_cep: args.cep || null,
+    p_bairro: args.bairro || null,
+    p_cidade: args.cidade || null,
+    p_area_total: args.areaTotal || null,
+    p_quartos: args.quartos || null,
+    p_banheiros: args.banheiros || null,
+  });
 
   if (error) {
     console.error('[proprietarioService] erro ao verificar duplicidade:', error.message);
     return [];
   }
 
-  const telefoneAtual = somenteDigitos(args.proprietarioTelefone);
-  const emailAtual = normalizar(args.proprietarioEmail);
-  const ignorar = normalizar(args.ignorarCodigo);
-
-  const matches: ImovelDuplicadoMatch[] = [];
-
-  for (const row of data ?? []) {
-    if (ignorar && normalizar(row.codigo_imovel) === ignorar) continue;
-
-    const mesmoNome = normalizar(row.proprietario_nome) === normalizar(nome);
-    if (!mesmoNome) continue;
-
-    // Reforço fraco: se ambos tiverem telefone/email e forem diferentes, ainda
-    // tratamos como mesmo proprietário (nome bate). Não filtramos aqui.
-
-    // Critério 1: mesmo endereço (logradouro + número + cep)
-    const enderecoIgual =
-      !!args.logradouro &&
-      !!args.numero &&
-      normalizar(row.logradouro) === normalizar(args.logradouro) &&
-      normalizar(row.numero) === normalizar(args.numero) &&
-      (somenteDigitos(args.cep) === '' || somenteDigitos(args.cep) === somenteDigitos(row.cep));
-
-    if (enderecoIgual) {
-      matches.push({
-        codigo_imovel: row.codigo_imovel,
-        titulo: row.titulo,
-        tipo: row.tipo,
-        bairro: row.bairro,
-        cidade: row.cidade,
-        logradouro: row.logradouro,
-        numero: row.numero,
-        motivo: 'mesmo_endereco',
-      });
-      continue;
-    }
-
-    // Critério 2: características essenciais quase idênticas
-    const tipoIgual = !!args.tipo && normalizar(row.tipo) === normalizar(args.tipo);
-    const bairroIgual = !!args.bairro && normalizar(row.bairro) === normalizar(args.bairro);
-    const cidadeIgual = !!args.cidade && normalizar(row.cidade) === normalizar(args.cidade);
-
-    const areaArgs = args.areaTotal ?? 0;
-    const areaRow = Number(row.area_total ?? 0);
-    const areaProxima =
-      areaArgs > 0 &&
-      areaRow > 0 &&
-      Math.abs(areaArgs - areaRow) / Math.max(areaArgs, areaRow) <= TOLERANCIA_AREA;
-
-    const quartosIgual = (args.quartos ?? 0) > 0 && Number(row.quartos ?? 0) === args.quartos;
-    const banheirosIgual =
-      (args.banheiros ?? 0) > 0 && Number(row.banheiros ?? 0) === args.banheiros;
-
-    if (tipoIgual && bairroIgual && cidadeIgual && areaProxima && quartosIgual && banheirosIgual) {
-      matches.push({
-        codigo_imovel: row.codigo_imovel,
-        titulo: row.titulo,
-        tipo: row.tipo,
-        bairro: row.bairro,
-        cidade: row.cidade,
-        logradouro: row.logradouro,
-        numero: row.numero,
-        motivo: 'caracteristicas_iguais',
-      });
-    }
-
-    // telefoneAtual/emailAtual reservados para futura ponderação por contato
-    void telefoneAtual;
-    void emailAtual;
-  }
-
-  return matches;
+  return (data as ImovelDuplicadoMatch[] | null) ?? [];
 }
 
 // ---------------------------------------------------------------------------
@@ -271,16 +258,26 @@ export interface ProprietarioRow {
   imoveis: ProprietarioImovelRow[];
 }
 
-const COLUNAS_BASE =
+const COLUNAS_IMOVEL =
   'codigo_imovel, titulo, tipo, finalidade, bairro, cidade, logradouro, numero, cep, ' +
   'area_total, area_util, quartos, banheiros, vagas, valor_venda, valor_locacao, ' +
-  'exclusivo, status_aprovacao, created_at, ' +
-  'proprietario_nome, proprietario_telefone, proprietario_email';
-
-/** Colunas adicionadas em 20260904; ausentes até a migration ser aplicada. */
-const COLUNAS_OPCIONAIS = 'proprietario_tel_residencial, proprietario_tel_comercial';
+  'exclusivo, status_aprovacao, created_at';
 
 const PAGINA = 1000;
+
+type Pagina = PromiseLike<{ data: unknown; error: { message: string } | null }>;
+
+/** ponytail: PostgREST corta em 1000 linhas sem erro (tabela e RPC), por isso o loop de páginas. */
+const lerTodasAsPaginas = async <T,>(pagina: (de: number, ate: number) => Pagina): Promise<T[]> => {
+  const linhas: T[] = [];
+  for (let n = 0; ; n += 1) {
+    const { data, error } = await pagina(n * PAGINA, n * PAGINA + PAGINA - 1);
+    if (error) throw error;
+    const lote = (data as T[] | null) ?? [];
+    linhas.push(...lote);
+    if (lote.length < PAGINA) return linhas;
+  }
+};
 
 /**
  * Uma pessoa costuma aparecer em vários imóveis; o telefone é o identificador
@@ -296,55 +293,49 @@ const chaveAgrupamento = (nome: string, telefone: string | null, email: string |
 };
 
 /**
- * Lê todos os imóveis do tenant que têm proprietário preenchido e agrupa por
- * pessoa. Fonte única: o cadastro de imóveis (CriarImovelForm) — não há tabela
- * própria de proprietários. Rascunho fica de fora: a planilha é de imóveis
- * cadastrados (autocomplete e aviso de duplicata continuam vendo rascunho).
- *
- * ponytail: PostgREST corta em 1000 linhas sem erro, por isso o loop de páginas.
+ * Lê os imóveis do tenant com proprietário e agrupa por pessoa. Fonte única: o
+ * cadastro de imóveis (CriarImovelForm) — não há tabela própria de proprietários.
+ * Rascunho fica de fora: a planilha é de imóveis cadastrados. Só entram os
+ * proprietários que a RPC devolve para o usuário logado; a exportação
+ * (proprietariosExport) sai desta mesma lista, então herda a autorização.
  */
 export async function listarProprietarios(tenantId: string): Promise<ProprietarioRow[]> {
   if (!tenantId) return [];
 
-  const linhas: Record<string, unknown>[] = [];
-  // Se a migration dos telefones extras ainda não rodou, o PostgREST devolve
-  // 42703 e derruba a consulta inteira — nesse caso repetimos sem elas.
-  let colunas = `${COLUNAS_BASE}, ${COLUNAS_OPCIONAIS}`;
-
-  for (let pagina = 0; ; pagina += 1) {
-    const { data, error } = await supabase
-      .from('imoveis_locais')
-      .select(colunas)
-      .eq('tenant_id', tenantId)
-      .not('proprietario_nome', 'is', null)
-      .neq('status_aprovacao', STATUS_RASCUNHO)
-      .order('created_at', { ascending: false })
-      .range(pagina * PAGINA, pagina * PAGINA + PAGINA - 1);
-
-    if (error) {
-      if (error.code === '42703' && colunas !== COLUNAS_BASE) {
-        console.warn('[proprietarioService] telefones extras ainda não existem no banco; seguindo sem eles.');
-        colunas = COLUNAS_BASE;
-        pagina -= 1;
-        continue;
-      }
-      console.error('[proprietarioService] erro ao listar:', error.code, error.message, error.details);
-      return [];
-    }
-
-    const lote = (data ?? []) as unknown as Record<string, unknown>[];
-    linhas.push(...lote);
-    if (lote.length < PAGINA) break;
+  let imoveis: Record<string, unknown>[];
+  let donos: ProprietarioDoImovel[];
+  try {
+    [imoveis, donos] = await Promise.all([
+      lerTodasAsPaginas<Record<string, unknown>>((de, ate) =>
+        supabase
+          .from('imoveis_locais')
+          .select(COLUNAS_IMOVEL)
+          .eq('tenant_id', tenantId)
+          .neq('status_aprovacao', STATUS_RASCUNHO)
+          .order('created_at', { ascending: false })
+          .range(de, ate),
+      ),
+      lerTodasAsPaginas<ProprietarioDoImovel>((de, ate) =>
+        supabase.rpc('imoveis_proprietarios', { p_tenant_id: tenantId }).range(de, ate),
+      ),
+    ]);
+  } catch (error) {
+    console.error('[proprietarioService] erro ao listar:', (error as { message?: string })?.message);
+    return [];
   }
+
+  const imovelPorCodigo = new Map(imoveis.map((row) => [String(row.codigo_imovel ?? ''), row]));
 
   const grupos = new Map<string, ProprietarioRow>();
 
-  for (const row of linhas) {
-    const nome = String(row.proprietario_nome ?? '').trim();
-    if (!nome) continue;
+  // A RPC vem da mais recente para a mais antiga (created_at), como a tabela vinha.
+  for (const dono of donos) {
+    const nome = String(dono.proprietario_nome ?? '').trim();
+    const row = imovelPorCodigo.get(dono.codigo_imovel);
+    if (!nome || !row) continue;
 
-    const telefone = (row.proprietario_telefone as string | null) ?? null;
-    const email = (row.proprietario_email as string | null) ?? null;
+    const telefone = dono.proprietario_telefone ?? null;
+    const email = dono.proprietario_email ?? null;
     const chave = chaveAgrupamento(nome, telefone, email);
 
     const imovel: ProprietarioImovelRow = {
@@ -375,8 +366,8 @@ export async function listarProprietarios(tenantId: string): Promise<Proprietari
         chave,
         nome,
         telefone,
-        tel_residencial: (row.proprietario_tel_residencial as string | null) ?? null,
-        tel_comercial: (row.proprietario_tel_comercial as string | null) ?? null,
+        tel_residencial: dono.proprietario_tel_residencial ?? null,
+        tel_comercial: dono.proprietario_tel_comercial ?? null,
         email,
         total_imoveis: 0,
         imoveis_venda: 0,
@@ -396,10 +387,8 @@ export async function listarProprietarios(tenantId: string): Promise<Proprietari
     // e campos vazios no registro novo são completados por registros antigos.
     grupo.telefone = grupo.telefone ?? telefone;
     grupo.email = grupo.email ?? email;
-    grupo.tel_residencial =
-      grupo.tel_residencial ?? ((row.proprietario_tel_residencial as string | null) ?? null);
-    grupo.tel_comercial =
-      grupo.tel_comercial ?? ((row.proprietario_tel_comercial as string | null) ?? null);
+    grupo.tel_residencial = grupo.tel_residencial ?? dono.proprietario_tel_residencial ?? null;
+    grupo.tel_comercial = grupo.tel_comercial ?? dono.proprietario_tel_comercial ?? null;
 
     grupo.total_imoveis += 1;
     if ((imovel.valor_venda ?? 0) > 0) {

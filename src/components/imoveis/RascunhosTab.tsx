@@ -2,10 +2,10 @@
  * Aba "Rascunhos": cadastros de imóvel salvos incompletos (status `rascunho`),
  * que ainda não entraram no fluxo de aprovação.
  *
- * Quem vê cada rascunho é o mesmo gate de edição do resto do cadastro
- * (`podeEditarImovel`): corretor vê os próprios, gestor os da atuação/equipe,
- * administrador todos. Como a RLS é por tenant, o filtro é de UI — igual ao
- * botão "Editar imóvel" do modal de detalhes.
+ * Quem vê cada rascunho é o mesmo gate de edição do resto do cadastro, decidido
+ * no banco (RPC imoveis_editaveis → imovel_autoriza): o autor e o captador veem
+ * os seus, a gestão os da atuação/equipe, a administração todos. Os demais nem
+ * conseguiriam salvar ou excluir — o trigger recusa.
  *
  * "Continuar cadastro" abre o próprio CriarImovelForm (como MeusImoveisTab):
  * lá o rascunho é salvo, publicado ou excluído, então a lista recarrega
@@ -34,14 +34,12 @@ import {
   nomesDosAutores,
   type RascunhoImovel,
 } from '@/features/imoveis/services/rascunhosService';
-import { podeEditarImovel } from '@/features/imoveis/utils/podeEditarImovel';
+import { buscarCodigosEditaveis } from '@/features/imoveis/services/imoveisLocaisService';
 import { buildEditDataFromLocal } from '@/features/imoveis/utils/buildEditDataFromLocal';
 import { mapCaptadoresPorId, useCaptadores } from '@/features/imoveis/hooks/useCaptadores';
 import { CriarImovelForm } from './CriarImovelForm';
 
 export interface RascunhosTabProps {
-  equipeUserIds?: string[];
-  equipeEmails?: string[];
   onPublicado?: () => void;
 }
 
@@ -58,8 +56,8 @@ const dataHora = (iso?: string | null) => formatar(iso, "dd/MM/yyyy 'às' HH:mm"
 
 const mensagemDe = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-export const RascunhosTab = ({ equipeUserIds, equipeEmails, onPublicado }: RascunhosTabProps) => {
-  const { user, tenantId, isOwner } = useAuthContext();
+export const RascunhosTab = ({ onPublicado }: RascunhosTabProps) => {
+  const { tenantId } = useAuthContext();
   // Owner sem impersonation fica no tenant 'owner': não há cadastro para listar.
   const podeUsar = Boolean(tenantId && tenantId !== 'owner');
 
@@ -67,6 +65,7 @@ export const RascunhosTab = ({ equipeUserIds, equipeEmails, onPublicado }: Rascu
   const nomePorId = useMemo(() => mapCaptadoresPorId(captadores), [captadores]);
 
   const [rascunhos, setRascunhos] = useState<RascunhoImovel[]>([]);
+  const [editaveis, setEditaveis] = useState<Set<string>>(new Set());
   const [nomesAutores, setNomesAutores] = useState<Record<string, string>>({});
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
@@ -80,8 +79,9 @@ export const RascunhosTab = ({ equipeUserIds, equipeEmails, onPublicado }: Rascu
     setCarregando(true);
     setErro(null);
     try {
-      const lista = await listarRascunhos(tenantId);
+      const [lista, codigos] = await Promise.all([listarRascunhos(tenantId), buscarCodigosEditaveis(tenantId)]);
       setRascunhos(lista);
+      setEditaveis(codigos);
       setNomesAutores(await nomesDosAutores(tenantId, lista.map((r) => r.criado_por ?? '')));
     } catch (e) {
       setErro(mensagemDe(e));
@@ -94,25 +94,8 @@ export const RascunhosTab = ({ equipeUserIds, equipeEmails, onPublicado }: Rascu
   useEffect(() => { void carregar(); }, [carregar]);
 
   const visiveis = useMemo(
-    () =>
-      rascunhos.filter((r) =>
-        podeEditarImovel({
-          temRegistroLocal: true,
-          isPlatformOwner: isOwner,
-          systemRole: user?.systemRole,
-          userId: user?.id,
-          userEmail: user?.email,
-          // ponytail: sem captadorEmail — rascunho não está no XML, o elo é só por id.
-          captadorId: r.captador_id,
-          captador2Id: r.captador_2_id,
-          criadoPor: r.criado_por,
-          finalidade: r.finalidade,
-          permissions: user?.permissions,
-          equipeUserIds,
-          equipeEmails,
-        }),
-      ),
-    [rascunhos, isOwner, user?.systemRole, user?.id, user?.email, user?.permissions, equipeUserIds, equipeEmails],
+    () => rascunhos.filter((r) => editaveis.has(r.codigo_imovel.toUpperCase())),
+    [rascunhos, editaveis],
   );
 
   const confirmarExclusao = async () => {

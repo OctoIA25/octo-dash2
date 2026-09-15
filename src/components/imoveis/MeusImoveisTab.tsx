@@ -14,6 +14,7 @@ import { type FotoInput } from './fotos-helpers';
 import { buildEditDataFromLocal } from '@/features/imoveis/utils/buildEditDataFromLocal';
 import { convertLocalToImovel } from '@/features/imoveis/utils/convertLocalToImovel';
 import { ehRascunho } from '@/features/imoveis/utils/rascunho';
+import { buscarCodigosEditaveis, COLUNAS_IMOVEL_LOCAL } from '@/features/imoveis/services/imoveisLocaisService';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -113,11 +114,6 @@ interface ImovelLocal {
   chave_com?: string | null;
   chave_retirada_em?: string | null;
   obs_interna?: string | null;
-  proprietario_nome?: string | null;
-  proprietario_telefone?: string | null;
-  proprietario_tel_residencial?: string | null;
-  proprietario_tel_comercial?: string | null;
-  proprietario_email?: string | null;
   updated_at?: string | null;
 }
 
@@ -143,6 +139,8 @@ export const MeusImoveisTab = ({ allImoveis, onViewDetails, onPropertyCreated }:
   
   const [assignments, setAssignments] = useState<PropertyAssignment[]>([]);
   const [imoveisLocais, setImoveisLocais] = useState<ImovelLocal[]>([]);
+  // Códigos (maiúsculos) que o banco deixa este usuário editar/excluir.
+  const [codigosEditaveis, setCodigosEditaveis] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
@@ -234,19 +232,24 @@ export const MeusImoveisTab = ({ allImoveis, onViewDetails, onPropertyCreated }:
     if (!tenantId) return;
     
     try {
-      const { data, error: fetchError } = await supabase
-        .from('imoveis_locais')
-        .select('*')
-        .eq('tenant_id', tenantId)
-        .order('created_at', { ascending: false });
-      
+      const [{ data, error: fetchError }, editaveis] = await Promise.all([
+        supabase
+          .from('imoveis_locais')
+          .select(COLUNAS_IMOVEL_LOCAL)
+          .eq('tenant_id', tenantId)
+          .order('created_at', { ascending: false }),
+        buscarCodigosEditaveis(tenantId),
+      ]);
+      setCodigosEditaveis(editaveis);
+
       if (fetchError) {
+        console.error('Erro ao carregar imóveis locais:', fetchError.code, fetchError.message);
         return;
       }
       
       // Rascunho não é imóvel pronto: mora na aba Rascunhos. Sai aqui para não
       // aparecer na lista nem ganhar botão de aprovar/excluir (gestão e corretor).
-      setImoveisLocais((data || []).filter((local) => !ehRascunho(local)));
+      setImoveisLocais(((data || []) as unknown as ImovelLocal[]).filter((local) => !ehRascunho(local)));
     } catch (err) {
       console.error('Erro ao carregar imóveis locais:', err);
     }
@@ -265,6 +268,10 @@ export const MeusImoveisTab = ({ allImoveis, onViewDetails, onPropertyCreated }:
         .eq('codigo_imovel', referencia);
       
       if (deleteLocalError) {
+        // Sem isto a atribuição em imoveis_corretores era apagada mesmo com o imóvel mantido.
+        console.error('❌ Erro ao excluir de imoveis_locais:', deleteLocalError.message);
+        setError(`Não foi possível excluir o imóvel: ${deleteLocalError.message}`);
+        return;
       }
       
       // Excluir da tabela imoveis_corretores
@@ -289,10 +296,12 @@ export const MeusImoveisTab = ({ allImoveis, onViewDetails, onPropertyCreated }:
     }
   };
 
-  // Verificar se um imóvel pode ser excluído (apenas locais)
-  const canDeleteImovel = (referencia: string): boolean => {
-    return imoveisLocais.some(local => local.codigo_imovel.toUpperCase() === referencia.toUpperCase());
-  };
+  const temRegistroLocal = (referencia: string): boolean =>
+    imoveisLocais.some(local => local.codigo_imovel.toUpperCase() === referencia.toUpperCase());
+
+  // Excluir e editar: imóvel local que o banco deixa este usuário editar.
+  const podeEditarImovel = (referencia: string): boolean =>
+    temRegistroLocal(referencia) && codigosEditaveis.has(referencia.toUpperCase());
 
   // Obter status de aprovação de um imóvel
   const getStatusAprovacao = (referencia: string): StatusAprovacao | null => {
@@ -907,7 +916,8 @@ export const MeusImoveisTab = ({ allImoveis, onViewDetails, onPropertyCreated }:
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {meusImoveis.map(imovel => {
               const statusAprovacao = getStatusAprovacao(imovel.referencia);
-              const isImovelLocal = canDeleteImovel(imovel.referencia);
+              const isImovelLocal = temRegistroLocal(imovel.referencia);
+              const podeEditar = podeEditarImovel(imovel.referencia);
               
               return (
                 <div key={imovel.referencia} className="relative">
@@ -922,7 +932,7 @@ export const MeusImoveisTab = ({ allImoveis, onViewDetails, onPropertyCreated }:
                     imovel={imovel}
                     onViewDetails={onViewDetails}
                     onDelete={handleDeleteImovel}
-                    canDelete={isImovelLocal}
+                    canDelete={podeEditar}
                   />
                   
                   {/* Controles de Aprovação: admin, owner e gestor (team_leader) */}
@@ -971,19 +981,22 @@ export const MeusImoveisTab = ({ allImoveis, onViewDetails, onPropertyCreated }:
                         >
                           ✗ Reprovar
                         </button>
-                        <button
-                          onClick={() => {
-                            const local = imoveisLocais.find(
-                              (l) => l.codigo_imovel.toUpperCase() === imovel.referencia.toUpperCase()
-                            );
-                            if (!local) return;
-                            setEditingImovelData(buildEditDataFromLocal(local));
-                            setIsCriarImovelOpen(true);
-                          }}
-                          className="flex-1 px-2 py-1 text-xs rounded transition-colors bg-blue-500/20 text-blue-400 hover:bg-blue-500/40"
-                        >
-                          ✎ Editar
-                        </button>
+                        {/* Aprovar é de toda a gestão; editar, só de quem o banco autoriza. */}
+                        {podeEditar && (
+                          <button
+                            onClick={() => {
+                              const local = imoveisLocais.find(
+                                (l) => l.codigo_imovel.toUpperCase() === imovel.referencia.toUpperCase()
+                              );
+                              if (!local) return;
+                              setEditingImovelData(buildEditDataFromLocal(local));
+                              setIsCriarImovelOpen(true);
+                            }}
+                            className="flex-1 px-2 py-1 text-xs rounded transition-colors bg-blue-500/20 text-blue-400 hover:bg-blue-500/40"
+                          >
+                            ✎ Editar
+                          </button>
+                        )}
                       </div>
                     </div>
                   )}

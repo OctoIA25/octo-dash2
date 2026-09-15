@@ -20,6 +20,7 @@ import {
 } from './imoveisXmlService';
 import type { ImovelLocalConvertivel } from '../utils/convertLocalToImovel';
 import { mergeCatalogoImoveis } from '../utils/mergeCatalogoImoveis';
+import { COLUNAS_IMOVEL_LOCAL } from './imoveisLocaisService';
 
 /** PostgREST corta em 1000 linhas sem erro, por isso o loop de páginas. */
 const PAGINA = 1000;
@@ -38,9 +39,8 @@ const carregarImoveisXml = async (tenantId: string): Promise<Imovel[]> => {
 };
 
 /**
- * `select('*')` de propósito: a lista de colunas de `imoveis_locais` cresce a
- * cada migration e uma coluna ainda não aplicada em produção derrubaria a
- * consulta inteira com 42703.
+ * Colunas explícitas, sem as do proprietário: `select('*')` dá 42501 desde que
+ * authenticated perdeu SELECT em proprietario_* (ver imoveisLocaisService).
  */
 const fetchImoveisLocais = async (tenantId: string): Promise<ImovelLocalConvertivel[]> => {
   const linhas: ImovelLocalConvertivel[] = [];
@@ -48,7 +48,7 @@ const fetchImoveisLocais = async (tenantId: string): Promise<ImovelLocalConverti
   for (let pagina = 0; ; pagina += 1) {
     const { data, error } = await supabase
       .from('imoveis_locais')
-      .select('*')
+      .select(COLUNAS_IMOVEL_LOCAL)
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false })
       .range(pagina * PAGINA, pagina * PAGINA + PAGINA - 1);
@@ -82,7 +82,7 @@ const buscarImovelLocalPorCodigo = async (
 ): Promise<ImovelLocalConvertivel | null> => {
   const { data, error } = await supabase
     .from('imoveis_locais')
-    .select('*')
+    .select(COLUNAS_IMOVEL_LOCAL)
     .eq('tenant_id', tenantId)
     .ilike('codigo_imovel', escaparLike(codigo))
     .limit(1)
