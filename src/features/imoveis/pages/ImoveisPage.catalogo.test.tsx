@@ -5,7 +5,7 @@
  * exportação precisa olhar o systemRole, senão o líder perde o botão.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 const h = vi.hoisted(() => ({
@@ -109,6 +109,31 @@ describe('Catálogo de imóveis', () => {
     montar();
     await screen.findByText('card:CA0001');
     expect(screen.queryByRole('button', { name: /exportar/i })).not.toBeInTheDocument();
+  });
+
+  // Regressão: o card mostrava o código, o campo prometia "Código", e só o
+  // Ctrl+F do navegador achava o imóvel — a busca não olhava a referência.
+  it.each(['CA0001', 'ca0001'])('busca pelo código exibido no card acha o imóvel: %s', async (termo) => {
+    montar();
+    await screen.findByText('card:CA0001');
+    fireEvent.change(screen.getByPlaceholderText(/código, título/i), { target: { value: termo } });
+    expect(screen.getByText('card:CA0001')).toBeInTheDocument();
+  });
+
+  it('busca sem correspondência mostra o estado vazio', async () => {
+    montar();
+    await screen.findByText('card:CA0001');
+    fireEvent.change(screen.getByPlaceholderText(/código, título/i), { target: { value: 'ZZ9999' } });
+    expect(screen.queryByText('card:CA0001')).not.toBeInTheDocument();
+    expect(screen.getByText(/nenhum imóvel encontrado/i)).toBeInTheDocument();
+  });
+
+  it('busca respeita os outros filtros ativos', async () => {
+    montar();
+    await screen.findByText('card:CA0001');
+    fireEvent.change(screen.getByPlaceholderText(/código, título/i), { target: { value: 'CA0001' } });
+    fireEvent.change(screen.getByPlaceholderText(/referência\(s\)/i), { target: { value: 'AP0022' } });
+    expect(screen.queryByText('card:CA0001')).not.toBeInTheDocument();
   });
 
   it('owner sem impersonar tenant não vê o botão Exportar', async () => {

@@ -21,6 +21,7 @@ import { ImovelDetalhesModal } from '@/components/imoveis/ImovelDetalhesModal';
 import { buildEditDataFromLocal } from '@/features/imoveis/utils/buildEditDataFromLocal';
 import { Imovel } from '../services/kenloService';
 import { resolverCaptador, matchCaptadorFilter, CAPTADOR_FILTRO_TODOS, CAPTADOR_FILTRO_SEM } from '../utils/captador';
+import { imovelCasaBusca } from '../utils/buscaImovel';
 import { mergeCatalogoImoveis } from '../utils/mergeCatalogoImoveis';
 import { isDesatualizado } from '../utils/desatualizado';
 import { computeImoveisMetrics } from '../utils/imoveisMetrics';
@@ -530,14 +531,8 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
   const imoveisFiltrados = useMemo(() => {
     let filtered = imoveis;
 
-    // Filtro por busca (título, referência, bairro)
     if (searchTerm) {
-      const search = searchTerm.toLowerCase();
-      filtered = filtered.filter(i => 
-        i.titulo.toLowerCase().includes(search) ||
-        i.bairro.toLowerCase().includes(search) ||
-        i.descricao.toLowerCase().includes(search)
-      );
+      filtered = filtered.filter((i) => imovelCasaBusca(i, searchTerm));
     }
 
     if (referenciaFilter) {
