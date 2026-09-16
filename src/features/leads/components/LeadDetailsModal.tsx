@@ -582,48 +582,6 @@ export const LeadDetailsModal = ({
             </div>
           )}
 
-          {/* Informações do Corretor */}
-          <div className="border-t pt-4 space-y-3">
-            <h4 className="font-bold text-foreground flex items-center gap-2">
-              <User className="h-5 w-5 text-blue-500" />
-              Informações do Corretor
-            </h4>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {/* Corretor Original */}
-              <div>
-                <p className="text-xs text-muted-foreground mb-1">Corretor Original</p>
-                <p className="text-sm font-semibold text-foreground">
-                  {lead.corretor || '-'}
-                </p>
-              </div>
-
-              {/* Telefone do Corretor Original */}
-              <div>
-                <p className="text-xs text-muted-foreground mb-1">Telefone Original</p>
-                <p className="text-sm font-semibold text-foreground">
-                  {formatarTelefone(lead.numerocorretor)}
-                </p>
-              </div>
-
-              {/* Corretor Responsável */}
-              <div>
-                <p className="text-xs text-muted-foreground mb-1">Corretor Responsável</p>
-                <p className="text-sm font-semibold text-foreground">
-                  {lead.corretor_responsavel || 'Não atribuído'}
-                </p>
-              </div>
-
-              {/* Telefone do Responsável */}
-              <div>
-                <p className="text-xs text-muted-foreground mb-1">Telefone Responsável</p>
-                <p className="text-sm font-semibold text-foreground">
-                  {formatarTelefone(lead.numero_corretor_responsavel)}
-                </p>
-              </div>
-            </div>
-          </div>
-
           {/* Datas */}
           <div className="border-t pt-4 space-y-3">
             <h4 className="font-bold text-foreground flex items-center gap-2">

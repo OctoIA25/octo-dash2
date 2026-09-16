@@ -8,7 +8,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { Phone, Building2, Clock, User, Maximize2, CheckCircle, Loader2, MessageCircle, Hand, HelpCircle } from 'lucide-react';
+import { Phone, Building2, Clock, Maximize2, CheckCircle, Loader2, MessageCircle, Hand, HelpCircle } from 'lucide-react';
 import { BolsaoLead } from '@/features/leads/services/bolsaoService';
 import { ClassificacaoDots, CLASSIFICACAO_ESTILOS } from '@/features/leads/components/ClassificacaoBadge';
 import { classificacoesDe, type TipoLead } from '@/features/leads/utils/classificarLead';
@@ -209,14 +209,6 @@ export const LeadMiniCard = ({
               </div>
             )}
 
-            {/* Corretor Responsável ou Original */}
-            <div className="flex items-center gap-2 text-sm">
-              <User className="h-4 w-4 text-orange-500 flex-shrink-0" />
-              <span className="text-muted-foreground truncate text-xs">
-                {lead.corretor_responsavel || lead.corretor || 'Não atribuído'}
-              </span>
-            </div>
-            
             {/* Botões de Ação */}
             {!lead.atendido && (mostrarBotaoAssumir || mostrarBotaoMensagem || mostrarBotaoConfirmar) && (
               <div className="pt-3 border-t space-y-2">
