@@ -25,9 +25,6 @@ async function login(page: Page) {
   await page.getByRole('button', { name: /entrar/i }).click();
   // Sem networkidle: o app faz polling e a rede nunca fica ociosa.
   await expect(page.getByPlaceholder(/seu@email\.com/i)).toHaveCount(0, { timeout: 30_000 });
-  // O CriarImovelForm ainda usa o useAuth legado: recarregar a página antes deste
-  // cache existir deixa o formulário sem tenantId e o código do imóvel não é gerado.
-  await page.waitForFunction(() => localStorage.getItem('auth-state-cache') !== null, null, { timeout: 30_000 });
 }
 
 async function abrirAbaRascunhos(page: Page) {

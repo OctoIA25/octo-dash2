@@ -26,7 +26,7 @@ const h = vi.hoisted(() => ({
   proprietario: null as Record<string, unknown> | null,
 }));
 
-vi.mock('@/hooks/useAuth', () => ({ useAuth: () => h.auth }));
+vi.mock('@/contexts/AuthContext', () => ({ useAuthContext: () => h.auth }));
 vi.mock('@/features/imoveis/hooks/useCaptadores', () => ({
   useCaptadores: () => ({ data: [{ user_id: 'u1', nome: 'Ana' }] }),
 }));

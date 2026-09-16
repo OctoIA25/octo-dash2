@@ -10,7 +10,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { format, parseISO } from 'date-fns';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuthContext } from '@/contexts/AuthContext';
 import { useCaptadores } from '@/features/imoveis/hooks/useCaptadores';
 import { buscarCep, formatarCepExibicao, validarCep } from '@/services/viaCepService';
 import { supabase } from '@/lib/supabaseClient';
@@ -512,7 +512,7 @@ export const CriarImovelForm = ({
   initialData,
   isEdit = false,
 }: CriarImovelFormProps) => {
-  const { user, tenantId: authTenantId } = useAuth();
+  const { user, tenantId: authTenantId } = useAuthContext();
   const tenantId = authTenantId || user?.tenantId;
   const { data: captadores = [] } = useCaptadores(tenantId);
   // Gestor (team_leader) edita tudo que o captador edita, captadores incluídos.
@@ -1163,7 +1163,6 @@ export const CriarImovelForm = ({
 
       // Preparar dados do corretor
       const corretorNome = user.name || user.email?.split('@')[0] || 'Corretor';
-      const corretorTelefone = user.telefone ? String(user.telefone).replace(/\D/g, '') : null;
       let atualizadoEm: string | null;
 
       if (criando) {
@@ -1184,7 +1183,8 @@ export const CriarImovelForm = ({
           corretor_id: user.id,
           corretor_nome: corretorNome,
           corretor_email: user.email || null,
-          corretor_telefone: corretorTelefone,
+          // A sessão não traz telefone (o useAuth legado declarava, mas nunca preenchia).
+          corretor_telefone: null as string | null,
         };
         if (autorId !== user.id) {
           const { data: autor, error: autorError } = await supabase
