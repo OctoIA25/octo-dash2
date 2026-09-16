@@ -4946,6 +4946,12 @@ registerLiaCadenciaRoutes(app, supabase);
 import { registerLeadEventsRoutes } from './leadEvents/index.js';
 registerLeadEventsRoutes(app, supabase);
 
+// Cadência do corretor — os 10 quadrados do modal do lead (canal, resultado,
+// próximo toque). Leitura e escrita pelo servidor porque lead_toques tem RLS
+// sem policy; a permissão é a mesma da cadência da LIA.
+import { registerLeadToquesRoutes } from './leadToques/index.js';
+registerLeadToquesRoutes(app, supabase);
+
 // Os 5 jobs da spec (§9): SLA de 1h, confirmação D-1, prazo de matrícula,
 // resgate por silêncio e marcos atrasados. Flag-gated para rodar em UM
 // processo. Enquanto a Lia não existe, o que iria ao candidato vira

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useMemo, useState, ReactNode, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { toast } from '@/hooks/use-toast';
 import {
   fetchNotificationsForUser,
   markNotificationAsRead as apiMarkAsRead,
@@ -8,6 +9,9 @@ import {
   createNotification as apiCreateNotification,
   type CreateNotificationInput,
 } from '@/features/notificacoes/services/notificationsService';
+
+/** Tipo gravado por public.avisar_proximos_toques() (20260916_lead_toques_aviso_e_atraso.sql). */
+const TIPO_AVISO_TOQUE = 'cadencia_toque';
 
 export type NotificationItem = {
   id: string;
@@ -136,6 +140,11 @@ export const NotificationsProvider = ({ children }: { children: ReactNode }) => 
           setNotifications((prev) =>
             prev.some((n) => n.id === row.id) ? prev : [mapRowToItem(row), ...prev]
           );
+          // Hora do próximo toque (cron avisar_proximos_toques): só o sininho
+          // mudando de número passa batido — o aviso precisa ser visto na hora.
+          if (row.type === TIPO_AVISO_TOQUE) {
+            toast({ title: row.title, description: row.body ?? undefined, duration: 60_000 });
+          }
         }
       )
       .subscribe();

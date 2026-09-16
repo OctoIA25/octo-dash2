@@ -15,7 +15,7 @@ import { useEffect, useState } from 'react';
 import { fetchCadenciaDoLead, type Cadencia } from '../services/cadenciaService';
 
 const TENANT_DE_TESTE = 'tenant-area-de-teste';
-const tenantReal = (t?: string | null) => Boolean(t && t !== 'owner' && t !== TENANT_DE_TESTE);
+export const tenantReal = (t?: string | null) => Boolean(t && t !== 'owner' && t !== TENANT_DE_TESTE);
 
 export function useCadenciaLead(leadId?: string | null, tenantId?: string | null, ativo = true) {
   const [cadencia, setCadencia] = useState<Cadencia | undefined>(undefined);

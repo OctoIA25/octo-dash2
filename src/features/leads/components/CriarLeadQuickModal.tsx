@@ -28,6 +28,7 @@ import {
 import { phoneVariants } from '@/features/chat/services/chatService';
 import { fetchCorretoresDisponiveis, type CorretorDisponivel } from '../services/roletaService';
 import { CadenciaLiaSection } from './CadenciaLiaSection';
+import { CadenciaToquesSection } from './CadenciaToquesSection';
 import { AtividadesLeadSection } from './AtividadesLeadSection';
 import { useCadenciaLead } from '../hooks/useCadenciaLead';
 import { HistoricoLeadSection } from './HistoricoLeadSection';
@@ -865,6 +866,19 @@ export const CriarLeadQuickModal = ({
                   )
                 )}
               </div>
+            )}
+
+            {/* Seção: Cadência — 10 quadrados, um por toque com o cliente
+                (LIA + corretor). Cor = canal, ícone = resultado. Os envios da
+                LIA vêm da cadência já carregada acima, sem nova consulta. */}
+            {isEditMode && editingLead && (
+              <CadenciaToquesSection
+                leadId={editingLead.id}
+                tenantId={tenantId}
+                userId={user?.id}
+                timelineLia={cadenciaLead.cadencia?.timeline}
+                ativo={isOpen}
+              />
             )}
 
             {/* Seção: Atividades — o que está marcado para este lead e o que

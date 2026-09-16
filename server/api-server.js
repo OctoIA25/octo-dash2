@@ -3971,6 +3971,12 @@ registerLiaCadenciaRoutes(app, supabase);
 import { registerLeadEventsRoutes } from './leadEvents/index.js';
 registerLeadEventsRoutes(app, supabase);
 
+// Cadência do corretor — os 10 quadrados do modal do lead (canal, resultado,
+// próximo toque). Leitura e escrita pelo servidor porque lead_toques tem RLS
+// sem policy; a permissão é a mesma da cadência da LIA.
+import { registerLeadToquesRoutes } from './leadToques/index.js';
+registerLeadToquesRoutes(app, supabase);
+
 // Rotas owner/admin da config ZAP por tenant — mesmo resolver do feed (save invalida cache).
 registerZapRoutes(app, supabase, { resolver: zapConfigResolver });
 
