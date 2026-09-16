@@ -1660,7 +1660,6 @@ const BolsaoSectionContent = (props: BolsaoSectionProps) => {
               <th className="px-4 py-3 text-left text-sm font-bold text-foreground uppercase tracking-wider whitespace-nowrap">Tempo Restante</th>
               <th className="px-4 py-3 text-left text-sm font-bold text-foreground uppercase tracking-wider whitespace-nowrap">Atendido</th>
               <th className="px-4 py-3 text-left text-sm font-bold text-foreground uppercase tracking-wider whitespace-nowrap">Código Imóvel</th>
-              <th className="px-4 py-3 text-left text-sm font-bold text-foreground uppercase tracking-wider whitespace-nowrap">Corretor Original</th>
               <th className="px-4 py-3 text-left text-sm font-bold text-foreground uppercase tracking-wider whitespace-nowrap">Corretor Responsável</th>
               <th className="px-4 py-3 text-left text-sm font-bold text-foreground uppercase tracking-wider whitespace-nowrap">Data Atribuição</th>
               <th className="px-4 py-3 text-left text-sm font-bold text-foreground uppercase tracking-wider whitespace-nowrap">Data Atendimento</th>
@@ -1669,7 +1668,7 @@ const BolsaoSectionContent = (props: BolsaoSectionProps) => {
           <tbody>
             {leadsFiltrados.length === 0 ? (
               <tr>
-                <td colSpan={12} className="px-4 py-16 text-center">
+                <td colSpan={11} className="px-4 py-16 text-center">
                   <div className="flex flex-col items-center justify-center gap-3">
                     <AlertCircle className="h-12 w-12 text-muted-foreground" />
                     <p className="text-lg font-semibold text-foreground">Nenhum lead encontrado</p>
@@ -1899,20 +1898,6 @@ const BolsaoSectionContent = (props: BolsaoSectionProps) => {
                     )}
                   </td>
                   
-                  {/* Corretor Original */}
-                  <td className="px-4 py-4">
-                    {lead.corretor ? (
-                      <div className="flex items-center gap-2">
-                        <User className="h-4 w-4 text-purple-600 dark:text-purple-400 flex-shrink-0" />
-                        <span className="text-foreground">
-                          {lead.corretor}
-                        </span>
-            </div>
-                    ) : (
-                      <span className="text-muted-foreground italic">-</span>
-                    )}
-                  </td>
-                  
                   {/* Corretor Responsável */}
                   <td className="px-4 py-4">
                     {lead.corretor_responsavel ? (
@@ -2066,35 +2051,6 @@ const BolsaoSectionContent = (props: BolsaoSectionProps) => {
                     </div>
             )}
             
-            {/* Grid 2 colunas */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {/* Corretor */}
-              {lead.corretor && (
-                <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 border hover:border-purple-500/40 transition-colors">
-                  <div className="flex-shrink-0 w-10 h-10 bg-purple-500/20 rounded-lg flex items-center justify-center">
-                    <User className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-                      </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm text-muted-foreground mb-0.5">Corretor</div>
-                    <div className="text-base font-semibold text-foreground break-words">{lead.corretor}</div>
-                    </div>
-                    </div>
-              )}
-              
-              {/* Tel. Corretor */}
-              {lead.numerocorretor && (
-                <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 border hover:border-blue-500/40 transition-colors">
-                  <div className="flex-shrink-0 w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center">
-                    <Phone className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm text-muted-foreground mb-0.5">Tel. Corretor</div>
-                    <div className="text-base font-semibold text-foreground font-mono break-words">{formatarTelefone(lead.numerocorretor)}</div>
-                  </div>
-                </div>
-              )}
-          </div>
-
             {/* Data entrada */}
             <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 border hover:border-orange-500/40 transition-colors">
               <div className="flex-shrink-0 w-10 h-10 bg-orange-500/20 rounded-lg flex items-center justify-center">
