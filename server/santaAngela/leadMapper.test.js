@@ -1,10 +1,18 @@
 import { describe, it, expect } from 'vitest';
-import { mapSantaAngelaToLead, mapAssignedAgentName } from './leadMapper.js';
+import { mapSantaAngelaToLead } from './leadMapper.js';
 
-it('mapAssignedAgentName ignora "JAPI LEADS" e trim', () => {
-  expect(mapAssignedAgentName('  JAPI LEADS ')).toBe(null);
-  expect(mapAssignedAgentName('  Ana  ')).toBe('Ana');
-  expect(mapAssignedAgentName(null)).toBe(null);
+// O lead importado nunca sai com nome de corretor: assigned_agent_id é sempre
+// null aqui, e nome SEM id faz tg_assign_roleta_to_leads dar early-return — o
+// lead fica fora de qualquer distribuição. Foi assim que 506 leads "LOTUS LEADS"
+// pararam: o mapper só descartava a string "JAPI LEADS", escrita à mão.
+it('nunca grava corretor, nem placeholder nem gente de verdade', () => {
+  for (const corretor of ['LOTUS LEADS', '  JAPI LEADS ', 'Ana', '  FERNANDA SOUZA  ', null]) {
+    const lead = mapSantaAngelaToLead({ id: 'x', nome: 'F', corretor_nome: corretor }, 't');
+    expect(lead.assigned_agent_name).toBe(null);
+    expect(lead.assigned_agent_id).toBe(null);
+    // e o nome da origem não se perde: fica onde serve para conferência
+    expect(lead.custom_fields.santa_angela_corretor_nome).toBe(corretor);
+  }
 });
 
 it('mapSantaAngelaToLead mapeia campos e status', () => {
@@ -19,7 +27,8 @@ it('mapSantaAngelaToLead mapeia campos e status', () => {
   expect(lead.source_lead_id).toBe('x1');
   expect(lead.phone).toBe('11999');
   expect(lead.status).toBe('Interação');
-  expect(lead.assigned_agent_name).toBe('Ana');
+  expect(lead.assigned_agent_name).toBe(null);
+  expect(lead.custom_fields.santa_angela_corretor_nome).toBe('Ana');
   expect(lead.tags).toEqual(['Santa Angela', 'Site']);
   expect(lead.custom_fields.santa_angela_situacao).toBe('EM ATENDIMENTO');
 });

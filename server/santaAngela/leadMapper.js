@@ -2,12 +2,6 @@
  * Mapeia um lead da API Santa Ângela para o formato da tabela `leads`.
  * Portado de src/features/imoveis/services/santaAngelaSyncService.ts (lógica preservada).
  */
-export function mapAssignedAgentName(corretorNome) {
-  const name = (corretorNome ?? '').trim();
-  if (!name) return null;
-  return name.toUpperCase() === 'JAPI LEADS' ? null : name;
-}
-
 /**
  * `empreendimento` vem do detalhe do prospect (/prospects/{id} → empreendimento_id)
  * cruzado com /empreendimentos. É a ÚNICA fonte de imóvel dessa API: o grid não
@@ -56,7 +50,15 @@ export function mapSantaAngelaToLead(saLead, tenantId, empreendimento = null) {
     property_code: empreendimento?.nome || null,
     property_type: null, // saLead.tipo é tipo de PESSOA, não de imóvel
     assigned_agent_id: null,
-    assigned_agent_name: mapAssignedAgentName(saLead.corretor_nome),
+    // O sync NÃO grava corretor — mesma regra já aplicada ao updateExisting em
+    // 13/09: quem distribui é o Octo, e ele grava id e nome juntos. Aqui o id é
+    // sempre null, então qualquer nome gravado seria nome SEM id, e é isso que
+    // faz `tg_assign_roleta_to_leads` dar early-return: o lead nunca entra em
+    // distribuição nenhuma. Foi o que aconteceu com os 506 "LOTUS LEADS", que o
+    // antigo mapAssignedAgentName deixava passar porque só descartava a string
+    // "JAPI LEADS", escrita à mão. O corretor da origem continua em
+    // custom_fields.santa_angela_corretor_nome, que é onde ele serve para algo.
+    assigned_agent_name: null,
     tags: ['Santa Angela', saLead.midia_titulo || 'Outros'],
     custom_fields: {
       santa_angela_cpfcnpj: saLead.cpfcnpj,
