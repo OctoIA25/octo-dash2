@@ -95,6 +95,7 @@ import { DEFAULT_BOLSAO_CONFIG, TenantBolsaoConfig, fetchTenantBolsaoConfig, sav
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { avisoTelefone, linkWhatsapp } from '@/lib/contato';
 
 interface BolsaoSectionProps {}
 
@@ -1466,10 +1467,18 @@ const BolsaoSectionContent = (props: BolsaoSectionProps) => {
                   setModalAberto(true);
                 }}
                 onEnviarMensagem={(telefone: string) => {
-                  // Abrir WhatsApp Web com o número
-                  const telefoneFormatado = telefone.replace(/\D/g, '');
-                  const urlWhatsApp = `https://wa.me/55${telefoneFormatado}`;
-                  window.open(urlWhatsApp, '_blank');
+                  // Antes prefixava '55' sempre: quem já estava gravado com DDI
+                  // virava 5555…, um número que não existe.
+                  const link = linkWhatsapp(telefone);
+                  if (!link) {
+                    toast({
+                      title: 'Telefone inválido',
+                      description: `${avisoTelefone(telefone) ?? 'Telefone ausente'} — não dá para abrir o WhatsApp deste lead.`,
+                      variant: 'destructive',
+                    });
+                    return;
+                  }
+                  window.open(link, '_blank');
                 }}
                 onConfirmarAtendimento={async (leadId: number) => {
                   setConfirmandoLead(leadId);

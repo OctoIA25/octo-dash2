@@ -25,6 +25,7 @@ const CINZA = 'bg-slate-300 dark:bg-slate-600';
 
 const ESTILO_POR_TIPO: Record<string, string> = {
   'lead.created': 'bg-blue-500',
+  'lead.nova_entrada': 'bg-cyan-500',
   'lead.assigned': 'bg-violet-500',
   'lead.attended': 'bg-emerald-500',
   'lead.stage_changed': 'bg-blue-500',
@@ -62,6 +63,24 @@ export function descreverEvento(ev: EventoLead): EventoDescrito {
   switch (ev.tipo) {
     case 'lead.created':
       return { dot, titulo: 'Lead criado', detalhe: ev.para ? `via ${ev.para}` : null };
+
+    // Uma entrada nova (formulário, portal) caiu neste lead em vez de virar
+    // uma segunda ficha. O telefone entra COMO CHEGOU: é o que explica por que
+    // a dedup precisou existir, e ajuda quando o número veio torto.
+    case 'lead.nova_entrada': {
+      const divergencias = Array.isArray(ev.metadata?.divergencias) ? ev.metadata.divergencias : [];
+      const imovel = typeof ev.metadata?.property_code === 'string' ? `imóvel ${ev.metadata.property_code}` : null;
+      const telefone = typeof ev.metadata?.telefone_recebido === 'string' ? ev.metadata.telefone_recebido : null;
+      return {
+        dot,
+        titulo: ev.para ? `Nova entrada por ${ev.para}` : 'Nova entrada neste lead',
+        detalhe: juntar(
+          imovel,
+          telefone ? `telefone recebido: ${telefone}` : null,
+          divergencias.includes('email') ? 'e-mail diferente do cadastrado' : null,
+        ),
+      };
+    }
 
     case 'lead.assigned':
       return {

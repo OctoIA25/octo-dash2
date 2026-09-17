@@ -58,10 +58,12 @@ describe('migração enqueue_lead_revived_webhook', () => {
     expect(sql).not.toMatch(/CREATE TRIGGER[\s\S]*?ON public\.kenlo_leads/);
   });
 
-  it('insertOrReviveLead continua reescrevendo created_at — é o sinal do trigger', () => {
+  // O UPDATE saiu de insertOrReviveLead para reviveLead quando o dedup por
+  // chave canônica entrou (17/09); o invariante é o mesmo.
+  it('o revive continua reescrevendo created_at — é o sinal do trigger', () => {
     const body = server.slice(
-      server.indexOf('const insertOrReviveLead'),
-      server.indexOf('const insertOrReviveLead') + 1500,
+      server.indexOf('const reviveLead'),
+      server.indexOf('const reviveLead') + 1500,
     );
     expect(body).toMatch(/\.update\(\{[^}]*created_at: now/);
     expect(body).toContain("from('leads')");

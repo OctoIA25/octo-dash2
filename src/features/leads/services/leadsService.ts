@@ -10,6 +10,7 @@
 import { supabase } from '@/lib/supabaseClient';
 import { leadsEventEmitter } from '@/lib/leadsEventEmitter';
 import type { ValorClassificacao } from '@/features/leads/utils/classificarLead';
+import { chaveTelefone, classificarEmail } from '@/lib/contato';
 
 /**
  * Interface para leads do CRM/Kanban
@@ -1015,4 +1016,83 @@ export async function fetchImoveisDeInteresse(
   }
 
   return [...porCodigo.values()].sort((a, b) => (b.data ?? '').localeCompare(a.data ?? ''));
+}
+
+/** Outra ficha do mesmo contato, para o aviso de possível duplicidade. */
+export interface FichaDuplicada {
+  id: string;
+  nome: string;
+  corretor: string | null;
+  /** Para a tela saber se a outra ficha é do próprio corretor que está olhando. */
+  corretorId: string | null;
+  status: string;
+  criadoEm: string;
+  /** O que bateu: o número (mesma pessoa) ou só o e-mail (investigar). */
+  porQue: 'telefone' | 'email';
+}
+
+/**
+ * Outras fichas do MESMO contato no tenant.
+ *
+ * POR QUE EXISTE. A maior parte dos leads duplicados nasce fora daqui: a Lia
+ * (n8n) insere direto na tabela e, quando o wa_id vem sem o 9º dígito, não
+ * encontra a ficha anterior dela mesma — em 17/09/2026 eram 156 grupos, 142
+ * deles com a Lia. Enquanto a origem não é corrigida, a dash pelo menos mostra
+ * ao corretor que a pessoa já está na base.
+ *
+ * Telefone é chave forte (mesmo número = mesma pessoa); e-mail é só sinal,
+ * porque duas pessoas dividem endereço (casal, família) e o negócio pediu para
+ * investigar antes de mesclar. Telefone inválido/incompleto não busca nada:
+ * '+5519' agruparia gente sem relação nenhuma.
+ */
+export async function fetchFichasDuplicadas(
+  tenantId: string,
+  leadId: string,
+  telefone: string | null | undefined,
+  email: string | null | undefined,
+): Promise<FichaDuplicada[]> {
+  if (!tenantId || tenantId === 'owner' || !leadId) return [];
+
+  const chave = chaveTelefone(telefone);
+  const emailNormalizado = classificarEmail(email).status === 'invalido'
+    ? null
+    : classificarEmail(email).normalizado;
+
+  const colunas = 'id,name,assigned_agent_id,assigned_agent_name,status,created_at';
+  const base = () => supabase
+    .from(LEADS_TABLE)
+    .select(colunas)
+    .eq('tenant_id', tenantId)
+    .neq('id', leadId)
+    .is('archived_at', null)
+    .order('created_at', { ascending: false })
+    .limit(5);
+
+  const [porTelefone, porEmail] = await Promise.all([
+    chave ? base().eq('phone_key', chave) : Promise.resolve({ data: [], error: null }),
+    // `.eq()` manda o valor como parâmetro: e-mail com vírgula/parêntese não
+    // altera o filtro. Se um dia isto virar `.or(...)`, o valor precisa passar
+    // por escape antes — é string concatenada lá.
+    emailNormalizado ? base().eq('email', emailNormalizado) : Promise.resolve({ data: [], error: null }),
+  ]);
+
+  if (porTelefone.error) console.error('❌ Fichas duplicadas (telefone):', porTelefone.error);
+  if (porEmail.error) console.error('❌ Fichas duplicadas (e-mail):', porEmail.error);
+
+  const monta = (linhas: Record<string, unknown>[], porQue: FichaDuplicada['porQue']): FichaDuplicada[] =>
+    linhas.map((r) => ({
+      id: String(r.id),
+      nome: String(r.name ?? 'Sem nome'),
+      corretor: (r.assigned_agent_name as string) ?? null,
+      corretorId: (r.assigned_agent_id as string) ?? null,
+      status: String(r.status ?? ''),
+      criadoEm: String(r.created_at ?? ''),
+      porQue,
+    }));
+
+  // O telefone vence: se a mesma ficha bate pelos dois, o motivo mais forte é o
+  // que o corretor precisa ver.
+  const fichas = monta(porTelefone.data ?? [], 'telefone');
+  const jaListadas = new Set(fichas.map((f) => f.id));
+  return [...fichas, ...monta(porEmail.data ?? [], 'email').filter((f) => !jaListadas.has(f.id))];
 }

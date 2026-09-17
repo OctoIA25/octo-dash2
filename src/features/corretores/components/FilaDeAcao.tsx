@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { AlertCircle, CheckCircle2, MessageCircle, RefreshCw } from 'lucide-react';
 import { recruitmentService, type ItemFilaAcao } from '../services/recruitmentService';
 import { descreveMotivoFila, diasDesde } from '../domain/recruitmentStages';
+import { avisoTelefone, linkWhatsapp } from '@/lib/contato';
 
 /**
  * A fila de ação — "a tela que o Erick abre de manhã. Substitui procurar
@@ -102,16 +103,24 @@ export const FilaDeAcao = ({ tenantId }: { tenantId?: string }) => {
                     </div>
                   </div>
 
-                  <Button asChild variant="outline" size="sm">
-                    <a
-                      href={`https://wa.me/${item.telefone}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <MessageCircle className="mr-1.5 h-3.5 w-3.5" />
-                      WhatsApp
-                    </a>
-                  </Button>
+                  {/* Sem link quando o número não passa na validação: o href
+                      cru mandava a máscara "(19) 99999-9999" para o wa.me. */}
+                  {linkWhatsapp(item.telefone) ? (
+                    <Button asChild variant="outline" size="sm">
+                      <a
+                        href={linkWhatsapp(item.telefone) as string}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <MessageCircle className="mr-1.5 h-3.5 w-3.5" />
+                        WhatsApp
+                      </a>
+                    </Button>
+                  ) : (
+                    <span className="text-xs text-amber-700 dark:text-amber-400">
+                      {avisoTelefone(item.telefone) ?? 'Sem telefone'}
+                    </span>
+                  )}
                 </li>
               );
             })}

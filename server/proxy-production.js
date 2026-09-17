@@ -33,6 +33,11 @@ import { createWorker } from './watermark/worker.js';
 import { promises } from 'dns';
 import { assertSafeHttpUrl, parseHttpUrl } from './security/ssrfGuard.js';
 import { normalizePhone, phonesMatch } from './utils/phone.js';
+import {
+  COLUNAS_LEAD_DEDUP, buscarLeadPeloTelefone, patchDeReentrada,
+  divergenciasDeContato, eventoDeReentrada,
+} from './leadDedup.js';
+import { gravarEvento } from './leadEvents/query.js';
 import { createWebhookDispatcher } from './webhookDispatch.js';
 import { computeNextAttempt, MAX_WEBHOOK_ATTEMPTS } from './webhookRetry.js';
 import { getDeletedTenantIds } from './utils/tenantSoftDelete.js';
@@ -804,26 +809,58 @@ const mapTemperatureToCRM = (temp) => {
 };
 
 /**
- * Só as chaves que o lead novo realmente trouxe. No revive, campo ausente
- * significa "o payload não trouxe", nunca "apague o que já havia": sem isto,
- * quem já era lead com `property_code` ('RESERVA CASTANHEIRA', 'L014') e
- * voltasse por um anúncio fora do de-para perdia o código — e o trigger de
- * reclassificação, que roda neste mesmo UPDATE, ainda rebaixava a classificação
- * para 'indefinido'. Vale para o corretor atribuído pela mesma razão.
- * `false`/`0`/`''` passam: são valor, não ausência.
+ * Revive o lead que já existe: atualiza com o que a entrada nova trouxe, traz
+ * para o topo da lista (created_at/updated_at = agora) e registra o aviso no
+ * histórico do lead. Trata o caso de um lead antigo que voltou a ter interesse.
  */
-const semNulos = (obj) => Object.fromEntries(Object.entries(obj).filter(([, v]) => v != null));
+const reviveLead = async (existente, crmLeadData, opts = {}) => {
+  const now = new Date().toISOString();
+  const divergencias = divergenciasDeContato(existente, crmLeadData);
+  const { data: revived, error: reviveError } = await supabase
+    .from('leads')
+    .update({ ...patchDeReentrada(existente, crmLeadData, opts), created_at: now, updated_at: now })
+    .eq('tenant_id', crmLeadData.tenant_id)
+    .eq('id', existente.id)
+    .select()
+    .single();
+
+  if (reviveError) throw reviveError;
+
+  // O aviso é o que sobra da entrada que não virou lead: portal, anúncio e o
+  // telefone NO FORMATO em que chegou. Nunca derruba a entrada do lead.
+  try {
+    await gravarEvento(
+      supabase,
+      crmLeadData.tenant_id,
+      { id: revived.id, tabela: 'leads' },
+      eventoDeReentrada({ existente, novo: crmLeadData, divergencias }),
+    );
+  } catch (eventoError) {
+    console.error('❌ aviso de nova entrada não registrado:', eventoError.message);
+  }
+
+  return { data: revived, revived: true };
+};
 
 /**
- * Insere um lead no CRM. Se já existir um lead com o mesmo (tenant_id, phone)
- * — constraint unique_phone_per_tenant — em vez de falhar, "revive" o lead
- * existente: atualiza com as novas informações e o traz para o topo da lista
- * (created_at/updated_at = agora). Trata o caso de um lead antigo que voltou a
- * ter interesse.
+ * Insere um lead no CRM, sem criar segunda ficha para quem já é lead.
+ *
+ * DEDUP ANTES DO INSERT. O mesmo número chega em formatos diferentes de cada
+ * origem ("+55 19 99999-9999" do formulário, "19999999999" do ZAP, wa_id sem o
+ * 9º dígito). A constraint unique_phone_per_tenant só pega string idêntica, e
+ * era assim que nascia a ficha repetida: a busca aqui é pela chave canônica
+ * (leads.phone_key), que enxerga os dois como o mesmo lead.
+ *
+ * A constraint continua sendo a rede de baixo — é ela que decide quem ganha
+ * quando duas entradas do MESMO formato chegam ao mesmo tempo (a corrida entre
+ * formatos diferentes ainda escapa; ver 20260917_leads_phone_key.sql).
  *
  * @returns {{ data: object, revived: boolean }}
  */
-const insertOrReviveLead = async (crmLeadData) => {
+const insertOrReviveLead = async (crmLeadData, opts = {}) => {
+  const jaExiste = await buscarLeadPeloTelefone(supabase, crmLeadData.tenant_id, crmLeadData.phone);
+  if (jaExiste) return reviveLead(jaExiste, crmLeadData, opts);
+
   const { data, error } = await supabase
     .from('leads')
     .insert(crmLeadData)
@@ -833,19 +870,15 @@ const insertOrReviveLead = async (crmLeadData) => {
   if (!error) return { data, revived: false };
   if (error.code !== '23505') throw error;
 
-  // Conflito de telefone: revive o lead existente desse tenant.
-  const now = new Date().toISOString();
-  const { tenant_id, phone, created_at, ...rest } = crmLeadData;
-  const { data: revived, error: reviveError } = await supabase
-    .from('leads')
-    .update({ ...semNulos(rest), created_at: now, updated_at: now })
-    .eq('tenant_id', tenant_id)
-    .eq('phone', phone)
-    .select()
-    .single();
+  // Conflito de telefone: ou é corrida, ou o lead está gravado num formato que
+  // a chave não alcança (linha antiga mascarada). Busca pelas duas formas.
+  const { tenant_id, phone } = crmLeadData;
+  const existente = await buscarLeadPeloTelefone(supabase, tenant_id, phone)
+    ?? (await supabase.from('leads').select(COLUNAS_LEAD_DEDUP)
+      .eq('tenant_id', tenant_id).eq('phone', phone).maybeSingle()).data;
 
-  if (reviveError) throw reviveError;
-  return { data: revived, revived: true };
+  if (!existente) throw error;
+  return reviveLead(existente, crmLeadData, opts);
 };
 
 
@@ -3383,7 +3416,10 @@ app.post('/api/v1/leads/roleta', validateApiKey, async (req, res) => {
 
     let crmData;
     try {
-      const result = await insertOrReviveLead(crmLeadData);
+      // Roleta FORÇADA: distribuir é o pedido de quem chamou, então aqui o
+      // corretor sorteado vale mesmo para lead que já existia — é a única
+      // rota em que a reentrada muda o dono.
+      const result = await insertOrReviveLead(crmLeadData, { forcarAtribuicao: true });
       crmData = result.data;
       const action = result.revived ? 'reativado (topo da lista)' : 'criado';
       console.log(`✅ Lead roleta ${action} no Kanban: ${crmData.id} → ${assignedBroker} (${kanbanStatus})`);

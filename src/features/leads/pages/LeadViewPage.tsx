@@ -34,6 +34,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { updateLead } from '../services/updateLeadService';
 import { formatCurrency } from '@/utils/dateUtils';
 import { useToast } from '@/hooks/use-toast';
+import { avisoTelefone, linkWhatsapp } from '@/lib/contato';
 
 type TabType = 'geral' | 'conversa' | 'imovel' | 'historico';
 
@@ -238,15 +239,22 @@ export const LeadViewPage = () => {
                         corretor_responsavel: currentCorretor || 'Administrador'
                       });
                       
-                      // Formatar número de telefone
-                      const phoneNumber = lead.telefone?.replace(/\D/g, '') || '';
-                      
+                      // Telefone validado: número incompleto ou inválido abria
+                      // uma conversa com outra pessoa (ou com ninguém).
+                      const link = linkWhatsapp(lead.telefone);
+                      if (!link) {
+                        toast({
+                          title: 'Telefone inválido',
+                          description: `${avisoTelefone(lead.telefone) ?? 'Telefone ausente'} — confira o cadastro do lead.`,
+                          variant: 'destructive',
+                        });
+                        return;
+                      }
+
                       // Mensagem padrão
                       const message = `Olá ${lead.nome_lead}! Aqui é ${currentCorretor || 'da Imobiliária'}. Vi seu interesse e gostaria de conversar com você sobre imóveis. Podemos conversar?`;
-                      
-                      // Abrir WhatsApp
-                      const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
-                      window.open(whatsappUrl, '_blank');
+
+                      window.open(`${link}?text=${encodeURIComponent(message)}`, '_blank');
                       
                       toast({
                         title: "WhatsApp aberto!",

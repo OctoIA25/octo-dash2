@@ -20,6 +20,7 @@
  */
 import crypto from 'node:crypto';
 import { mapSantaAngelaToLead } from './leadMapper.js';
+import { chaveTelefone } from '../utils/phone.js';
 import { getDeletedTenantIds } from '../utils/tenantSoftDelete.js';
 
 const noopLogger = { info() {}, warn() {}, error() {} };
@@ -71,7 +72,10 @@ export function createSantaAngelaSyncService({
       data.push(...(page || []));
       if (!page || page.length < 1000) break;
     }
-    const phoneSet = new Set((data || []).map((l) => l.phone).filter(Boolean));
+    // Chave canônica, não a string: a origem manda "+19984287733" para o
+    // número que o portal gravou como "+5519984287733" — comparando texto, o
+    // mesmo lead entrava duas vezes (era a segunda ficha do Reinaldo, 13/09).
+    const phoneSet = new Set((data || []).map((l) => chaveTelefone(l.phone)).filter(Boolean));
     // filter(Boolean): um source_lead_id nulo no banco não pode virar match
     // contra uma saLead.id ausente (causaria falso "update" / .eq sem alvo).
     const sourceIdSet = new Set((data || []).map((l) => l.source_lead_id).filter(Boolean));
@@ -230,7 +234,7 @@ export function createSantaAngelaSyncService({
       const mapped = mapSantaAngelaToLead(saLead, tenantId, empreendimento);
       if (saLead.id && sourceIdSet.has(saLead.id)) {
         if (await updateExisting(mapped, tenantId, current) === 'updated') result.updatedLeads++;
-      } else if (mapped.phone && phoneSet.has(mapped.phone)) {
+      } else if (chaveTelefone(mapped.phone) && phoneSet.has(chaveTelefone(mapped.phone))) {
         // pula: telefone já existe sob outro source_id (evita violar unique_phone_per_tenant)
       } else {
         const lead = historical
@@ -242,7 +246,7 @@ export function createSantaAngelaSyncService({
           result.errors++;
         } else if (await insertNew(lead, { phoneNullFallback: !historical })) {
           result.newLeads++;
-          if (mapped.phone) phoneSet.add(mapped.phone); // dedup intra-ciclo (full traz a base inteira)
+          if (chaveTelefone(mapped.phone)) phoneSet.add(chaveTelefone(mapped.phone)); // dedup intra-ciclo (full traz a base inteira)
         } else {
           // Insert rejeitado (ex.: status fora de leads_status_check) é PERDA de
           // lead — conta como erro para aparecer no log do ciclo em vez de sumir.

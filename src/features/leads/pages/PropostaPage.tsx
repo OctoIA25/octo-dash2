@@ -122,6 +122,7 @@ import { ImoveisComboBox } from '@/components/ui/imovel-combobox';
 import { useImoveisData } from '@/features/imoveis/hooks/useImoveisData';
 import type { SystemRole } from '@/contexts/AuthContext';
 import type { Imovel } from '@/features/imoveis/services/kenloService';
+import { avisoTelefone, linkWhatsapp } from '@/lib/contato';
 
 const PROPOSAL_STAGES = [
   {
@@ -3401,9 +3402,17 @@ export const PropostaPage = ({
   const sendInviteByWhatsapp = () => {
     if (!selectedProposal) return;
     const { whatsappPhone } = getInviteRecipients();
-    const phone = whatsappPhone.length >= 10 ? `55${whatsappPhone.replace(/^55/, '')}` : '';
+    const link = linkWhatsapp(whatsappPhone);
+    if (!link) {
+      toast({
+        title: 'Telefone inválido',
+        description: `${avisoTelefone(whatsappPhone) ?? 'Telefone ausente'} — o convite não pode ser enviado por WhatsApp.`,
+        variant: 'destructive',
+      });
+      return;
+    }
     const message = encodeURIComponent(buildInviteMessage());
-    window.open(`https://wa.me/${phone}?text=${message}`, '_blank', 'noopener,noreferrer');
+    window.open(`${link}?text=${message}`, '_blank', 'noopener,noreferrer');
     registerInviteAction('whatsapp');
   };
 

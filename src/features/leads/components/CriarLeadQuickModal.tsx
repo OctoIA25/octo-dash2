@@ -26,7 +26,9 @@ import {
   type LeadType,
 } from '../services/leadsService';
 import { phoneVariants } from '@/features/chat/services/chatService';
+import { avisoEmail, avisoTelefone, chaveTelefone, classificarEmail, classificarTelefone } from '@/lib/contato';
 import { fetchCorretoresDisponiveis, type CorretorDisponivel } from '../services/roletaService';
+import { fetchFichasDuplicadas, type FichaDuplicada } from '../services/leadsService';
 import { CadenciaLiaSection } from './CadenciaLiaSection';
 import { CadenciaToquesSection } from './CadenciaToquesSection';
 import { AtividadesLeadSection } from './AtividadesLeadSection';
@@ -144,6 +146,7 @@ export const CriarLeadQuickModal = ({
   const [lancamentos, setLancamentos] = useState<LancamentoRef[]>([]);
   const [carregandoInteresses, setCarregandoInteresses] = useState(false);
   const [verImoveisInteresse, setVerImoveisInteresse] = useState(false);
+  const [fichasDuplicadas, setFichasDuplicadas] = useState<FichaDuplicada[]>([]);
   // Imóvel aberto a partir da lista de interesses. Modal em cima do modal (o
   // Dialog fica em z-[9999], acima deste portal) para não perder a edição do
   // lead em andamento.
@@ -245,6 +248,26 @@ export const CriarLeadQuickModal = ({
     };
   }, [isOpen, editingLead]);
 
+  /**
+   * Outras fichas do mesmo contato. A maior parte dos duplicados é criada fora
+   * da dash (ver fetchFichasDuplicadas); aqui o corretor pelo menos descobre
+   * que a pessoa já está na base antes de tratar as duas como clientes
+   * diferentes.
+   */
+  useEffect(() => {
+    if (!isOpen || !isEditMode || !editingLead?.id || !tenantId) {
+      setFichasDuplicadas([]);
+      return;
+    }
+    let ativo = true;
+    fetchFichasDuplicadas(tenantId, editingLead.id, form.phone, form.email)
+      .then((fichas) => { if (ativo) setFichasDuplicadas(fichas); })
+      .catch((err) => console.error('Erro ao buscar fichas duplicadas:', err));
+    return () => { ativo = false; };
+    // Reconsulta quando o contato muda: corrigir o telefone pode revelar (ou
+    // resolver) a duplicidade.
+  }, [isOpen, isEditMode, editingLead?.id, tenantId, form.phone, form.email]);
+
   if (!isOpen) return null;
 
   const reset = () => {
@@ -308,6 +331,19 @@ export const CriarLeadQuickModal = ({
       setError('Telefone é obrigatório');
       return;
     }
+    // Telefone que não dá para discar não entra: vira lead que ninguém atende e,
+    // por não ter chave, nem duplicata o sistema consegue reconhecer depois.
+    const telefone = classificarTelefone(form.phone);
+    if (form.phone.trim() && (telefone.status === 'incompleto' || telefone.status === 'invalido')) {
+      setError(telefone.status === 'incompleto'
+        ? 'Telefone incompleto — confira o número antes de salvar.'
+        : 'Telefone inválido — confira DDD e quantidade de dígitos.');
+      return;
+    }
+    if (form.email.trim() && classificarEmail(form.email).status === 'invalido') {
+      setError('E-mail inválido — confira o endereço.');
+      return;
+    }
     if (!tenantId) {
       setError('Tenant não identificado. Faça login novamente.');
       return;
@@ -317,6 +353,56 @@ export const CriarLeadQuickModal = ({
     setError(null);
 
     try {
+      // Duplicidade ANTES de gravar: o mesmo número em outro formato é a mesma
+      // pessoa, e a trava do banco (unique_phone_per_tenant) só pega string
+      // idêntica. Vale na criação e na edição — trocar o telefone de um lead
+      // para o de outro criaria duas fichas da mesma pessoa do mesmo jeito.
+      const chave = chaveTelefone(form.phone);
+      if (chave) {
+        // Consulta que falha (banco atrás do código, rede) NÃO pode impedir o
+        // corretor de salvar: sem ela o comportamento volta a ser o de antes,
+        // com a trava do banco pegando o telefone em formato idêntico.
+        const jaExiste = await (async () => {
+          try {
+            let busca = supabase
+              .from('leads')
+              .select('id, name, assigned_agent_id, assigned_agent_name, status')
+              .eq('tenant_id', tenantId)
+              .eq('phone_key', chave);
+            if (editingLead?.id) busca = busca.neq('id', editingLead.id);
+
+            const { data, error } = await busca.order('created_at', { ascending: false }).limit(1).maybeSingle();
+            // O postgrest resolve com erro em vez de lançar: sem olhar o
+            // `error` aqui, a checagem ficaria desligada em silêncio (ex.:
+            // migration do phone_key ainda não aplicada).
+            if (error) console.error('Erro ao checar telefone duplicado:', error);
+            return data;
+          } catch (err) {
+            console.error('Erro ao checar telefone duplicado:', err);
+            return null;
+          }
+        })();
+
+        if (jaExiste) {
+          // Quem é o dono do lead do COLEGA é informação da gestão: a RLS
+          // libera o tenant inteiro e o recorte "corretor vê só os leads dele"
+          // mora na aplicação — dizer o nome entregaria a carteira do colega.
+          // O lead do próprio corretor ele já vê na lista dele, então nesse
+          // caso o detalhe é o que ajuda a achar a ficha.
+          const ehMinha = Boolean(jaExiste.assigned_agent_id) && jaExiste.assigned_agent_id === user?.id;
+          const comQuem = jaExiste.assigned_agent_name ? ` com ${jaExiste.assigned_agent_name}` : '';
+          if (isGestao) {
+            setError(`Este telefone já é do lead "${jaExiste.name}"${comQuem} (${jaExiste.status}). Procure por ele na lista em vez de criar outro.`);
+          } else if (ehMinha) {
+            setError(`Este telefone já é do lead "${jaExiste.name}" (${jaExiste.status}). Procure por ele na sua lista em vez de criar outro.`);
+          } else {
+            setError('Este telefone já está cadastrado na imobiliária. Fale com a gestão antes de cadastrar de novo.');
+          }
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
       if (isEditMode && editingLead) {
         // Transferência: só a gestão escolhe destino, e as colunas de atribuição
         // só entram no payload quando alguém foi escolhido — um save comum não
@@ -502,6 +588,39 @@ export const CriarLeadQuickModal = ({
               </p>
             )}
 
+            {fichasDuplicadas.length > 0 && (
+              <div className="mb-4 text-xs text-orange-800 dark:text-orange-300 bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-900 rounded-lg px-3 py-2">
+                <p className="font-medium mb-1">
+                  {fichasDuplicadas.length === 1 ? 'Existe outra ficha' : `Existem ${fichasDuplicadas.length} outras fichas`} deste contato:
+                </p>
+                {/* A ficha de um COLEGA aparece só como sinal: nome e dono são
+                    informação da gestão. A ficha do próprio corretor aparece
+                    inteira — ela já está na lista dele. */}
+                <ul className="space-y-0.5">
+                  {fichasDuplicadas.map((ficha) => {
+                    const oQueBateu = ficha.porQue === 'telefone' ? 'mesmo telefone' : 'mesmo e-mail';
+                    const ehMinha = Boolean(ficha.corretorId) && ficha.corretorId === user?.id;
+                    if (isGestao) {
+                      return (
+                        <li key={ficha.id}>
+                          {ficha.nome}
+                          {ficha.corretor ? ` — ${ficha.corretor}` : ' — sem corretor'}
+                          {` (${ficha.status}, ${oQueBateu})`}
+                        </li>
+                      );
+                    }
+                    return (
+                      <li key={ficha.id}>
+                        {ehMinha
+                          ? `${ficha.nome} (${ficha.status}, ${oQueBateu}) — está na sua lista`
+                          : `Outro cadastro com o ${oQueBateu} — fale com a gestão`}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+
             {/* Com o card largo, o formulário vira duas colunas em telas
                 grandes; abaixo de `lg` volta a ser uma coluna só, na mesma
                 ordem de leitura. */}
@@ -528,6 +647,7 @@ export const CriarLeadQuickModal = ({
                   value={form.phone}
                   onChange={(v) => setForm((f) => ({ ...f, phone: v }))}
                   disabled={!canEdit}
+                  aviso={avisoTelefone(form.phone)}
                 />
                 <Field
                   icon={<Mail className="w-4 h-4 text-slate-400" />}
@@ -537,6 +657,7 @@ export const CriarLeadQuickModal = ({
                   value={form.email}
                   onChange={(v) => setForm((f) => ({ ...f, email: v }))}
                   disabled={!canEdit}
+                  aviso={avisoEmail(form.email)}
                 />
               </div>
 
@@ -1077,9 +1198,11 @@ interface FieldProps {
   onChange: (v: string) => void;
   mono?: boolean;
   disabled?: boolean;
+  /** Aviso de dado inválido/incompleto, mostrado abaixo do campo. */
+  aviso?: string | null;
 }
 
-const Field = ({ icon, label, type, placeholder, value, onChange, mono, disabled }: FieldProps) => (
+const Field = ({ icon, label, type, placeholder, value, onChange, mono, disabled, aviso }: FieldProps) => (
   <div>
     <label className="flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
       {icon}
@@ -1091,7 +1214,10 @@ const Field = ({ icon, label, type, placeholder, value, onChange, mono, disabled
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
       disabled={disabled}
-      className={`w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all disabled:opacity-60 disabled:cursor-not-allowed ${mono ? 'font-mono' : ''}`}
+      className={`w-full px-3 py-2 bg-white dark:bg-slate-900 border rounded-lg text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all disabled:opacity-60 disabled:cursor-not-allowed ${aviso ? 'border-amber-400 dark:border-amber-600' : 'border-slate-200 dark:border-slate-700'} ${mono ? 'font-mono' : ''}`}
     />
+    {aviso && (
+      <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">{aviso}</p>
+    )}
   </div>
 );
