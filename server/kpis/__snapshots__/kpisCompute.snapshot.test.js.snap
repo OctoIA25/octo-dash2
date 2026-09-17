@@ -163,11 +163,17 @@ exports[`buildOverview — regressão do modo legado (sem config) > snapshot dos
       {
         "conversionFromPrevious": null,
         "count": 1,
-        "label": "Visita",
+        "label": "Visita Agendada",
         "percentOfTotal": 25,
       },
       {
-        "conversionFromPrevious": 100,
+        "conversionFromPrevious": 0,
+        "count": 0,
+        "label": "Visita Realizada",
+        "percentOfTotal": 0,
+      },
+      {
+        "conversionFromPrevious": null,
         "count": 1,
         "label": "Proposta",
         "percentOfTotal": 25,

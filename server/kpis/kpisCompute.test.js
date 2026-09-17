@@ -21,7 +21,8 @@ describe('classifyStage — etapas mutuamente exclusivas', () => {
     expect(classifyStage('Novos Leads')).toBe('Novos Leads');
     expect(classifyStage('Em Atendimento')).toBe('Em Atendimento');
     expect(classifyStage('Interação')).toBe('Em Atendimento');
-    expect(classifyStage('Visita Agendada')).toBe('Visita');
+    expect(classifyStage('Visita Agendada')).toBe('Visita Agendada');
+    expect(classifyStage('Visita Realizada')).toBe('Visita Realizada');
     expect(classifyStage('Proposta Enviada')).toBe('Proposta');
     expect(classifyStage('Negociação')).toBe('Proposta');
     expect(classifyStage('Proposta Assinada')).toBe('Fechamento');
@@ -35,8 +36,33 @@ describe('classifyStage — etapas mutuamente exclusivas', () => {
   });
 
   it('um lead em Fechamento NÃO é classificado também como Visita', () => {
-    // "Visita Realizada → Fechamento" não deve cair na faixa de Visita.
-    expect(classifyStage('Fechamento')).not.toBe('Visita');
+    expect(classifyStage('Fechamento')).not.toBe('Visita Agendada');
+    expect(classifyStage('Fechamento')).not.toBe('Visita Realizada');
+  });
+
+  // Decisão de 17/09: "Visitas" deixou de ser um contador só. A aba KPIs somava
+  // as duas etapas sob o rótulo "Visita" enquanto o Funil as mostrava separadas
+  // — era daí que vinha o "0 numa tela e 7 em outra". A `leads.visit_date`, que
+  // seria a outra fonte, está vazia em 100% dos leads e não entra mais na conta.
+  it('agendada e realizada são etapas distintas', () => {
+    expect(classifyStage('Visita Agendada')).not.toBe(classifyStage('Visita Realizada'));
+  });
+});
+
+describe('conversão para visita — o contador que quebra em silêncio', () => {
+  // countVisitaOuAlem() casa o rótulo de classifyStage contra um Set literal.
+  // Separar "Visita" em duas etapas sem ajustar esse Set faria a conversão cair
+  // para zero sem erro nenhum. Este teste é a trava.
+  const lead = (o) => ({ status: 'Novos Leads', source: 'Site', final_sale_value: 0, ...o });
+
+  it('conta agendada e realizada como "chegou a visita ou além"', () => {
+    const current = [lead({ status: 'Visita Agendada' }), lead({ status: 'Visita Realizada' })];
+    expect(nativeCardValues(current, [], COUNTS0).conversaoVisita.rawValue).toBe(100);
+  });
+
+  it('não conta quem ainda não chegou lá', () => {
+    const current = [lead({ status: 'Novos Leads' }), lead({ status: 'Visita Agendada' })];
+    expect(nativeCardValues(current, [], COUNTS0).conversaoVisita.rawValue).toBe(50);
   });
 });
 
@@ -296,7 +322,10 @@ describe('buildOverview — shape completo', () => {
     });
     expect(overview.period.label).toBe('Junho/2026');
     expect(overview.cards).toHaveLength(6);
-    expect(overview.funnel.stages).toHaveLength(5);
+    // 6 desde 17/09: visita agendada e realizada deixaram de somar num rótulo só.
+    expect(overview.funnel.stages.map((s) => s.label)).toEqual([
+      'Novos Leads', 'Em Atendimento', 'Visita Agendada', 'Visita Realizada', 'Proposta', 'Fechamento',
+    ]);
     expect(overview.sources[0].fonte).toBe('Zap');
     expect(overview.goals).toHaveLength(1);
     expect(overview.commercial).toHaveLength(2);

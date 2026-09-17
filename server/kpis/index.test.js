@@ -143,7 +143,7 @@ describe('makeKpisHandler', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body.ok).toBe(true);
     expect(res.body.overview.cards).toHaveLength(6);
-    expect(res.body.overview.funnel.stages).toHaveLength(5);
+    expect(res.body.overview.funnel.stages).toHaveLength(6); // visita agendada + realizada
     expect(Array.isArray(res.body.overview.sources)).toBe(true);
     expect(res.body.overview.priceRanges).toHaveLength(3);
   });

@@ -56,7 +56,10 @@ interface LeadRow {
 const FUNNEL_ORDER: Array<{ label: string; matches: (etapa: string) => boolean }> = [
   { label: 'Novos Leads', matches: (e) => e === '' || e.includes('novo') },
   { label: 'Em Atendimento', matches: (e) => e.includes('atendimento') || e.includes('interaç') || e.includes('interac') },
-  { label: 'Visita', matches: (e) => e.includes('visita') },
+  // Espelha server/kpis/kpisCompute.js. Agendada e realizada são etapas
+  // distintas desde 17/09; a ordem importa, o loop vai de baixo para cima.
+  { label: 'Visita Agendada', matches: (e) => e.includes('visita') },
+  { label: 'Visita Realizada', matches: (e) => e.includes('visita') && e.includes('realiz') },
   { label: 'Proposta', matches: (e) => e.includes('proposta') || e.includes('negocia') },
   { label: 'Fechamento', matches: (e) => e.includes('assinad') || e.includes('fecha') || e.includes('finaliz') },
 ];

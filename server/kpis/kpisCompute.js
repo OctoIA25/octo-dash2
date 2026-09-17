@@ -22,7 +22,12 @@ const round1 = (n) => Math.round(n * 10) / 10;
 const FUNNEL_ORDER = [
   { label: 'Novos Leads', matches: (e) => e === '' || e.includes('novo') },
   { label: 'Em Atendimento', matches: (e) => e.includes('atendimento') || e.includes('interaç') || e.includes('interac') },
-  { label: 'Visita', matches: (e) => e.includes('visita') },
+  // Agendada e realizada são etapas distintas desde 17/09: somar as duas sob
+  // um rótulo só era a origem do "Visitas 0 numa tela e 7 em outra". A ordem
+  // importa — o loop percorre de baixo para cima, então 'Visita Realizada'
+  // precisa vir depois para ser testada primeiro.
+  { label: 'Visita Agendada', matches: (e) => e.includes('visita') },
+  { label: 'Visita Realizada', matches: (e) => e.includes('visita') && e.includes('realiz') },
   { label: 'Proposta', matches: (e) => e.includes('proposta') || e.includes('negocia') },
   { label: 'Fechamento', matches: (e) => e.includes('assinad') || e.includes('fecha') || e.includes('finaliz') },
 ];
@@ -162,9 +167,9 @@ function formatMinutes(min) {
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
-/** Conta leads que chegaram a 'Visita' ou além (Visita, Proposta, Fechamento). */
+/** Conta leads que chegaram à visita ou além (agendada, realizada, proposta, fechamento). */
 function countVisitaOuAlem(leads) {
-  const ALEM = new Set(['Visita', 'Proposta', 'Fechamento']);
+  const ALEM = new Set(['Visita Agendada', 'Visita Realizada', 'Proposta', 'Fechamento']);
   let n = 0;
   for (const lead of leads) {
     if (ALEM.has(classifyStage(leadStage(lead)))) n += 1;
