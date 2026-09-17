@@ -60,22 +60,26 @@ describe('countLeadsInStage (regressão das regras existentes)', () => {
     expect(countLeadsInStage(leads, 'Novos Leads')).toBe(3);
   });
 
-  it('"Visita Agendada" inclui Data_visita preenchida, exceto quando já é Visita Realizada', () => {
+  // Até 17/09 o Funil também olhava Data_visita e Imovel_visitado. Os dois
+  // derivam de `leads.visit_date`, vazia em 100% dos 5.202 leads da base: as
+  // condições nunca eram verdadeiras e só davam a impressão de existir uma
+  // segunda fonte para o mesmo número. A etapa passou a ser a única fonte.
+  it('"Visita Agendada" ignora Data_visita — a etapa é a única fonte', () => {
     const leads = [
       makeLead({ etapa_atual: 'Visita Agendada' }),
       makeLead({ etapa_atual: 'Interação', Data_visita: '2026-01-10' }),
-      makeLead({ etapa_atual: 'Visita Realizada', Data_visita: '2026-01-10' }), // não conta
+      makeLead({ etapa_atual: 'Visita Realizada', Data_visita: '2026-01-10' }),
     ];
-    expect(countLeadsInStage(leads, 'Visita Agendada')).toBe(2);
+    expect(countLeadsInStage(leads, 'Visita Agendada')).toBe(1);
   });
 
-  it('"Visita Realizada" inclui Imovel_visitado === "Sim"', () => {
+  it('"Visita Realizada" ignora Imovel_visitado — a etapa é a única fonte', () => {
     const leads = [
       makeLead({ etapa_atual: 'Visita Realizada' }),
       makeLead({ etapa_atual: 'Interação', Imovel_visitado: 'Sim' }),
       makeLead({ etapa_atual: 'Interação', Imovel_visitado: 'Não' }),
     ];
-    expect(countLeadsInStage(leads, 'Visita Realizada')).toBe(2);
+    expect(countLeadsInStage(leads, 'Visita Realizada')).toBe(1);
   });
 
   it('"Bolsão" inclui leads sem codigo_imovel', () => {

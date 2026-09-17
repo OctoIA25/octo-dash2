@@ -55,10 +55,11 @@ export const AtendimentoFunnelChart = ({ leads }: AtendimentoFunnelChartProps) =
           ).length;
         
         case 'Visita Realizada':
+          // `Imovel_visitado` saiu em 17/09: deriva de `leads.visit_date`, vazia
+          // em 100% dos leads, então era 'Não' para todo lead de produção.
           return safeLeads.filter(l => 
             l.etapa_atual === 'Visita Realizada' ||
-            l.etapa_atual === 'Visita realizada' ||
-            l.Imovel_visitado === 'Sim'
+            l.etapa_atual === 'Visita realizada'
           ).length;
         
         case 'Negociação':

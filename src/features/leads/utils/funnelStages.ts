@@ -129,11 +129,12 @@ export function countLeadsInStage(leads: ProcessedLead[], stage: string): number
     case 'Interação':
       return safeLeads.filter((l) => l.etapa_atual === 'Interação').length;
     case 'Visita Agendada':
+      // A etapa é a única fonte. `Data_visita` saiu daqui em 17/09: ela deriva de
+      // `leads.visit_date`, que está vazia em 100% dos leads da base, então a
+      // condição nunca era verdadeira — só dava a impressão de haver uma segunda
+      // fonte para o mesmo número.
       return safeLeads.filter(
-        (l) =>
-          l.etapa_atual === 'Visita Agendada' ||
-          l.etapa_atual === 'Visita agendada' ||
-          (l.Data_visita && l.Data_visita.trim() !== '' && l.etapa_atual !== 'Visita Realizada')
+        (l) => l.etapa_atual === 'Visita Agendada' || l.etapa_atual === 'Visita agendada'
       ).length;
     case 'Bolsão':
       // Leads no bolsão = leads sem imóvel definido ou aguardando atribuição
@@ -147,11 +148,10 @@ export function countLeadsInStage(leads: ProcessedLead[], stage: string): number
           l.codigo_imovel.trim() === ''
       ).length;
     case 'Visita Realizada':
+      // `Imovel_visitado` saiu pelo mesmo motivo: deriva de `visit_date` (sempre
+      // nulo), então era 'Não' para todo lead de produção.
       return safeLeads.filter(
-        (l) =>
-          l.etapa_atual === 'Visita Realizada' ||
-          l.etapa_atual === 'Visita realizada' ||
-          l.Imovel_visitado === 'Sim'
+        (l) => l.etapa_atual === 'Visita Realizada' || l.etapa_atual === 'Visita realizada'
       ).length;
     case 'Negociação':
       return safeLeads.filter(
