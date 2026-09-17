@@ -1409,6 +1409,8 @@ const handleDragEnd = useCallback(async (event: DragEndEvent) => {
         tenantId={tenantId}
         stageHint={createModalStage || undefined}
         leadType={leadType}
+        // Corretor cria lead aqui: o INSERT atribui a ele mesmo.
+        permitirEdicao
       />
 
       {/* Modal "Editar Lead" — reutiliza o mesmo componente em modo edit */}

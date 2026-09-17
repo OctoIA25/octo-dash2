@@ -3,16 +3,22 @@
  *
  * Corretor edita os PRÓPRIOS leads — a posse é atestada pelo pai
  * (`permitirEdicao`), porque "Meus Leads" só carrega leads atribuídos a ele.
- * Sem esse sinal o modal continua somente leitura, e criar lead segue sendo
- * exclusividade da gestão (o INSERT não é liberado por `permitirEdicao`).
+ * O mesmo sinal libera o corretor a criar lead, atribuído a ele mesmo.
+ * Sem esse sinal o modal continua somente leitura.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+
+const inserts = vi.hoisted(() => [] as Record<string, unknown>[]);
 
 vi.mock('@/lib/supabaseClient', () => {
   const chain = () => {
     const self = {
       update: () => self,
+      insert: async (payload: Record<string, unknown>) => {
+        inserts.push(payload);
+        return { error: null };
+      },
       eq: () => self,
       select: async () => ({ data: [{ id: 'lead-1' }], error: null }),
       maybeSingle: async () => ({ data: null, error: null }),
@@ -22,7 +28,7 @@ vi.mock('@/lib/supabaseClient', () => {
   return {
     supabase: {
       from: () => chain(),
-      auth: { getUser: async () => ({ data: { user: { id: 'u1' } } }) },
+      auth: { getUser: async () => ({ data: { user: { id: 'u1', email: 'ana@x.com' } } }) },
     },
   };
 });
@@ -62,8 +68,17 @@ describe('Permissão de edição no CriarLeadQuickModal', () => {
     expect(screen.queryByRole('button', { name: /Salvar/ })).not.toBeInTheDocument();
   });
 
-  it('criar lead continua fechado para o corretor', () => {
+  it('corretor com o sinal do pai cria lead atribuído a ele mesmo', async () => {
     render(<CriarLeadQuickModal {...props} permitirEdicao />);
+    fireEvent.change(campoNome(), { target: { value: 'Beltrano' } });
+    fireEvent.change(screen.getByPlaceholderText('(11) 99999-9999'), { target: { value: '11988887777' } });
+    fireEvent.click(screen.getByRole('button', { name: /Criar Lead/ }));
+    await waitFor(() => expect(inserts).toHaveLength(1));
+    expect(inserts[0]).toMatchObject({ tenant_id: 't1', name: 'Beltrano', assigned_agent_id: 'u1' });
+  });
+
+  it('sem o sinal do pai, criar lead fica fechado para o corretor', () => {
+    render(<CriarLeadQuickModal {...props} />);
     expect(campoNome().disabled).toBe(true);
     expect(screen.queryByRole('button', { name: /Criar/ })).not.toBeInTheDocument();
   });

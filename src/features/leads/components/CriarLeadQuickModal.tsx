@@ -55,11 +55,12 @@ interface CriarLeadQuickModalProps {
   /** Mostra "Arquivar" no rodapé (só em modo edição). O pai abre o dialog de motivo. */
   onArquivar?: (lead: KanbanLead) => void;
   /**
-   * Libera a edição para quem não é gestão. Quem passa isto é o pai que JÁ
+   * Libera criar/editar para quem não é gestão. Quem passa isto é o pai que JÁ
    * garantiu a posse do lead — "Meus Leads" do corretor só carrega leads
    * atribuídos a ele (assigned_agent_id / assigned_agent_name). O KanbanLead
    * não carrega assigned_agent_id, então a posse não dá para reconferir aqui.
-   * RLS de `leads`/`kenlo_leads` já limita o UPDATE ao tenant do usuário.
+   * No criar, o INSERT atribui o lead a quem criou (a roleta não sobrescreve).
+   * RLS de `leads`/`kenlo_leads` já limita INSERT/UPDATE ao tenant do usuário.
    */
   permitirEdicao?: boolean;
 }
@@ -170,12 +171,12 @@ export const CriarLeadQuickModal = ({
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
 
-  // Gestão edita qualquer lead. Corretor só edita os próprios — e a posse é
-  // atestada pelo pai via `permitirEdicao` (ver prop). Criar lead segue só para
-  // gestão. Sem nenhum dos dois, o modal abre em somente leitura.
+  // Gestão cria e edita qualquer lead. Corretor cria (para si) e edita os
+  // próprios quando o pai libera via `permitirEdicao` (ver prop). Sem nenhum
+  // dos dois, o modal abre em somente leitura.
   const { isGestao, user } = useAuthContext();
   const userEmail = user?.email || '';
-  const canEdit = isGestao || (isEditMode && permitirEdicao);
+  const canEdit = isGestao || permitirEdicao;
   // Transferir é da gestão: `isGestao` cobre admin, gestor (team_leader) e owner
   // — ver AuthContext, onde membership.role != 'corretor' mapeia para 'gestao'.
   const podeTransferir = isEditMode && isGestao;
