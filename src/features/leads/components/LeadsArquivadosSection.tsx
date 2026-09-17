@@ -180,12 +180,12 @@ export const LeadsArquivadosSection = () => {
       let kenloData: KanbanLead[] = [];
 
       if (isAdmin) {
-        crmData = await fetchTodosLeadsArquivadosCRM();
+        crmData = await fetchTodosLeadsArquivadosCRM(tenantId);
         if (tenantId) {
           kenloData = await fetchKenloLeadsArquivados(tenantId);
         }
       } else if (userId) {
-        crmData = await fetchLeadsArquivadosDoCorretor(userId);
+        crmData = await fetchLeadsArquivadosDoCorretor(userId, tenantId);
         if (tenantId) {
           kenloData = await fetchKenloLeadsArquivados(tenantId);
         }

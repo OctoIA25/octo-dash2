@@ -758,16 +758,21 @@ export async function arquivarLeadCRM(
 /**
  * Busca leads arquivados do corretor logado
  * @param userId - ID do usuário logado (auth.uid)
+ * @param tenantId - tenant da sessão. A conta owner é membro de vários tenants
+ *   (e tem bypass na leads_select_policy), então sem este filtro ela mistura
+ *   arquivados de imobiliárias diferentes na mesma lista.
  */
-export async function fetchLeadsArquivadosDoCorretor(userId: string): Promise<KanbanLead[]> {
+export async function fetchLeadsArquivadosDoCorretor(userId: string, tenantId?: string): Promise<KanbanLead[]> {
   try {
-    
-    const { data, error } = await supabase
+    let q = supabase
       .from(LEADS_TABLE)
       .select('*')
       .eq('assigned_agent_id', userId)
       .not('archived_at', 'is', null)
       .order('archived_at', { ascending: false });
+    if (tenantId) q = q.eq('tenant_id', tenantId);
+
+    const { data, error } = await q;
     
     if (error) throw error;
     
@@ -781,15 +786,20 @@ export async function fetchLeadsArquivadosDoCorretor(userId: string): Promise<Ka
 
 /**
  * Busca TODOS os leads arquivados do tenant (para Admin/Gestão)
+ * @param tenantId - tenant da sessão. Sem ele a consulta pega os arquivados de
+ *   todos os tenants que a RLS deixar passar — o que, para a conta owner, são
+ *   todos. Mesma regra das outras listagens deste arquivo.
  */
-export async function fetchTodosLeadsArquivadosCRM(): Promise<KanbanLead[]> {
+export async function fetchTodosLeadsArquivadosCRM(tenantId?: string): Promise<KanbanLead[]> {
   try {
-    
-    const { data, error } = await supabase
+    let q = supabase
       .from(LEADS_TABLE)
       .select('*')
       .not('archived_at', 'is', null)
       .order('archived_at', { ascending: false });
+    if (tenantId) q = q.eq('tenant_id', tenantId);
+
+    const { data, error } = await q;
     
     if (error) throw error;
     
