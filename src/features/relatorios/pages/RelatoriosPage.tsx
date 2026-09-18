@@ -578,7 +578,8 @@ export const RelatoriosPage = () => {
       return {
         totalLeads: 0,
         leadsRecebidos: 0,
-        visitas: 0,
+        visitasAgendadas: 0,
+        visitasRealizadas: 0,
         porFonte: emptyFonte,
         porImovel: emptyImovel,
       };
@@ -1778,7 +1779,8 @@ export const RelatoriosPage = () => {
       leads: {
         totalLeads: metricasIndLeadsView.totalLeads,
         leadsRecebidos: metricasIndLeadsView.leadsRecebidos,
-        visitas: metricasIndLeadsView.visitas,
+        visitasAgendadas: metricasIndLeadsView.visitasAgendadas,
+        visitasRealizadas: metricasIndLeadsView.visitasRealizadas,
       },
       vendas: {
         vendasTotal: metricasIndVendasView.vendasTotal,
@@ -2937,7 +2939,7 @@ export const RelatoriosPage = () => {
 
                             <div className="rounded-xl bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 p-5">
                               <div className="text-sm font-semibold text-gray-800">Funil do corretor</div>
-                              <div className="mt-4 grid grid-cols-2 gap-3 items-end">
+                              <div className="mt-4 grid grid-cols-3 gap-3 items-end">
                                 <div className="text-center">
                                   <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">Leads</div>
                                   <div className="mt-2 h-32 rounded-xl bg-emerald-50 border border-emerald-200 flex items-end justify-center pb-3 font-extrabold text-emerald-700">
@@ -2945,9 +2947,15 @@ export const RelatoriosPage = () => {
                                   </div>
                                 </div>
                                 <div className="text-center">
-                                  <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">Visitas</div>
+                                  <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">Visitas agendadas</div>
                                   <div className="mt-2 h-32 rounded-xl bg-blue-50 border border-blue-200 flex items-end justify-center pb-3 font-extrabold text-blue-700">
-                                    {metricasIndLeadsView.visitas}
+                                    {metricasIndLeadsView.visitasAgendadas}
+                                  </div>
+                                </div>
+                                <div className="text-center">
+                                  <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">Visitas realizadas</div>
+                                  <div className="mt-2 h-32 rounded-xl bg-indigo-50 border border-indigo-200 flex items-end justify-center pb-3 font-extrabold text-indigo-700">
+                                    {metricasIndLeadsView.visitasRealizadas}
                                   </div>
                                 </div>
                               </div>
@@ -3065,10 +3073,14 @@ export const RelatoriosPage = () => {
                         <div className="mt-3 h-10 rounded-lg bg-blue-50 border border-blue-200 flex items-center px-4">
                           <div className="text-sm font-semibold text-blue-700">{metricasIndLeadsView.leadsRecebidos}</div>
                         </div>
-                        <div className="mt-3 grid grid-cols-2 gap-3">
+                        <div className="mt-3 grid grid-cols-3 gap-3">
                           <div className="rounded-lg bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 p-3">
-                            <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">Visitas</div>
-                            <div className="mt-2 text-xl font-extrabold text-gray-900 dark:text-slate-100">{metricasIndLeadsView.visitas}</div>
+                            <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">Visitas agendadas</div>
+                            <div className="mt-2 text-xl font-extrabold text-gray-900 dark:text-slate-100">{metricasIndLeadsView.visitasAgendadas}</div>
+                          </div>
+                          <div className="rounded-lg bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 p-3">
+                            <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">Visitas realizadas</div>
+                            <div className="mt-2 text-xl font-extrabold text-gray-900 dark:text-slate-100">{metricasIndLeadsView.visitasRealizadas}</div>
                           </div>
                           <div className="rounded-lg bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 p-3">
                             <div className="text-xs text-gray-500 dark:text-slate-400 font-medium">Vendas realizadas</div>

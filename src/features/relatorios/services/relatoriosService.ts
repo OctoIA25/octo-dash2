@@ -199,8 +199,13 @@ export interface KPIsGerais {
 export interface MetricasIndividuaisLeads {
   totalLeads: number;
   leadsRecebidos: number;
-  /** Leads com `visit_date` preenchido — o fato da visita, não a etapa atual. */
-  visitas: number;
+  /**
+   * Contados pela ETAPA do lead (`leads.status`), separados desde 17/09.
+   * Antes vinham de `visit_date`, que está vazia em 100% dos leads da base —
+   * o card era zero fixo para todo corretor enquanto os KPIs mostravam 7.
+   */
+  visitasAgendadas: number;
+  visitasRealizadas: number;
   /** Tempo médio de 1ª resposta DESTE corretor, em minutos. */
   tempoMedioRespostaMin: number;
   porFonte: Array<{ label: string; value: number }>;
@@ -426,7 +431,7 @@ export async function buscarMetricasIndividuaisLeads(
     assigned_agent_name: string | null;
     source: string | null;
     property_code: string | null;
-    visit_date: string | null;
+    status: string | null;
     created_at: string | null;
     first_response_at: string | null;
   }> = [];
@@ -436,7 +441,7 @@ export async function buscarMetricasIndividuaisLeads(
   for (let page = 0; ; page += 1) {
     let query = supabase
       .from('leads')
-      .select('assigned_agent_name, source, property_code, visit_date, created_at, first_response_at')
+      .select('assigned_agent_name, source, property_code, status, created_at, first_response_at')
       .eq('tenant_id', tenantId)
       .gte('created_at', di)
       .lte('created_at', df)
@@ -453,7 +458,10 @@ export async function buscarMetricasIndividuaisLeads(
   }
 
   const totalLeads = leads.length;
-  const visitas = leads.filter(l => Boolean(l.visit_date)).length;
+  // A etapa é a única fonte da visita (mesma regra de server/kpis/kpisCompute.js).
+  const etapaDe = (l: { status: string | null }) => (l.status || '').toLowerCase();
+  const visitasAgendadas = leads.filter(l => etapaDe(l).includes('visita') && !etapaDe(l).includes('realiz')).length;
+  const visitasRealizadas = leads.filter(l => etapaDe(l).includes('visita') && etapaDe(l).includes('realiz')).length;
 
   // Tempo de resposta DO CORRETOR. Antes a tela mostrava a média do tenant
   // inteiro dentro do painel individual — número certo, dono errado.
@@ -490,7 +498,8 @@ export async function buscarMetricasIndividuaisLeads(
   return {
     totalLeads,
     leadsRecebidos: totalLeads,
-    visitas,
+    visitasAgendadas,
+    visitasRealizadas,
     tempoMedioRespostaMin,
     porFonte,
     porImovel

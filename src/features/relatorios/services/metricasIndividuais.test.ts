@@ -88,7 +88,7 @@ const lead = (over: Partial<Record<string, unknown>> = {}) => ({
   assigned_agent_name: CORRETOR,
   source: 'Site',
   property_code: 'A1',
-  visit_date: null,
+  status: null,
   created_at: null,
   first_response_at: null,
   ...over,
@@ -104,18 +104,26 @@ describe('buscarMetricasIndividuaisLeads', () => {
     }
   });
 
-  it('conta visita pelo fato (visit_date), não pela etapa', async () => {
+  // Invertido em 17/09. A versão anterior contava por `visit_date` para fugir de
+  // `etapa_atual`, que não existe em `leads`. Mas `visit_date` está vazia em 100%
+  // dos 5.202 leads da base: o card era zero fixo para todo corretor enquanto a
+  // aba KPIs, que lê a etapa, mostrava 7. A coluna de etapa que existe é `status`.
+  it('conta visita pela etapa, separando agendada de realizada', async () => {
     respostaPorTabela = {
       leads: [[
-        lead({ property_code: 'A1', visit_date: '2026-08-10' }),
-        lead({ property_code: 'A2' }),
+        lead({ property_code: 'A1', status: 'Visita Agendada' }),
+        lead({ property_code: 'A2', status: 'Visita Realizada' }),
+        lead({ property_code: 'A3', status: 'Interação' }),
+        // visit_date preenchida não conta mais: a etapa é a única fonte
+        lead({ property_code: 'A4', status: 'Novos Leads', visit_date: '2026-08-10' }),
       ]],
     };
 
     const m = await buscarMetricasIndividuaisLeads(TENANT, CORRETOR, DE, ATE);
 
-    expect(m.totalLeads).toBe(2);
-    expect(m.visitas).toBe(1);
+    expect(m.totalLeads).toBe(4);
+    expect(m.visitasAgendadas).toBe(1);
+    expect(m.visitasRealizadas).toBe(1);
   });
 
   it('pagina: 1000 linhas na primeira página não param a leitura', async () => {
@@ -265,10 +273,10 @@ describe('reconciliação: soma dos individuais x total', () => {
   const CORRETORES = ['Fernanda Souza', 'Fábio Gonçalves', 'Flavia Ceolin'];
 
   const LEADS_DO_TENANT = [
-    lead({ assigned_agent_name: 'FERNANDA SOUZA', visit_date: '2026-08-02' }),
+    lead({ assigned_agent_name: 'FERNANDA SOUZA', status: 'Visita Agendada' }),
     lead({ assigned_agent_name: 'Fernanda Souza' }),
     lead({ assigned_agent_name: 'FABIO GONCALVES' }),
-    lead({ assigned_agent_name: 'FLAVIA CEOLIN', visit_date: '2026-08-05' }),
+    lead({ assigned_agent_name: 'FLAVIA CEOLIN', status: 'Visita Realizada' }),
     lead({ assigned_agent_name: 'Flavia Ceolin' }),
   ];
 
@@ -289,7 +297,7 @@ describe('reconciliação: soma dos individuais x total', () => {
       respostaPorTabela = { leads: [LEADS_DO_TENANT] };
       const l = await buscarMetricasIndividuaisLeads(TENANT, corretor, DE, ATE);
       leadsSomados += l.leadsRecebidos;
-      visitasSomadas += l.visitas;
+      visitasSomadas += l.visitasAgendadas + l.visitasRealizadas;
 
       queries.length = 0;
       respostaPorTabela = { leads: [[]] };
@@ -300,7 +308,9 @@ describe('reconciliação: soma dos individuais x total', () => {
     }
 
     expect(leadsSomados).toBe(LEADS_DO_TENANT.length);
-    expect(visitasSomadas).toBe(LEADS_DO_TENANT.filter((x) => x.visit_date).length);
+    expect(visitasSomadas).toBe(
+      LEADS_DO_TENANT.filter((x) => String(x.status ?? '').toLowerCase().includes('visita')).length,
+    );
     expect(vendasSomadas).toBe(VENDAS_DO_TENANT.length);
     expect(vgvSomado).toBe(VENDAS_DO_TENANT.reduce((s, x) => s + x.vgv, 0));
   });

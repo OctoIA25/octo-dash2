@@ -168,7 +168,8 @@ function buildMetricasIndividuais(src: MetricasIndividuaisSource, base: Base): R
         items: [
           { label: 'Total de leads', value: formatNumber(L.totalLeads) },
           { label: 'Leads recebidos', value: formatNumber(L.leadsRecebidos) },
-          { label: 'Visitas', value: formatNumber(L.visitas) },
+          { label: 'Visitas agendadas', value: formatNumber(L.visitasAgendadas) },
+          { label: 'Visitas realizadas', value: formatNumber(L.visitasRealizadas) },
         ],
       },
       chart('mi-leads-fonte', 'Leads por Fonte', 'leads', c.leadsFonte),

@@ -32,7 +32,10 @@ export function buildCorretorMetricasCompletas(params: {
   } = params;
 
   const lr = leads?.leadsRecebidos ?? 0;
-  const visitas = leads?.visitas ?? 0;
+  // Para taxa de conversão vale "chegou à visita", agendada ou realizada — é a
+  // mesma noção do countVisitaOuAlem() do servidor. Separar as duas só faz
+  // sentido nos contadores, não no denominador da conversão.
+  const visitas = (leads?.visitasAgendadas ?? 0) + (leads?.visitasRealizadas ?? 0);
   // Fonte única: proposta assinada. O `Math.max` com a etapa do funil saiu junto
   // com a coluna `etapa_atual`, que não existe em `leads`.
   const vendasRealizadas = vendas?.vendasTotal ?? 0;

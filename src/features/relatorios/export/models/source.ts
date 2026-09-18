@@ -89,7 +89,8 @@ export interface MetricasIndividuaisSource {
   leads: {
     totalLeads: number;
     leadsRecebidos: number;
-    visitas: number;
+    visitasAgendadas: number;
+    visitasRealizadas: number;
   };
   vendas: {
     vendasTotal: number;
