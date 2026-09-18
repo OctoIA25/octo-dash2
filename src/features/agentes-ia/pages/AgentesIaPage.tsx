@@ -5,6 +5,7 @@
  */
 
 import { useParams, useNavigate } from 'react-router-dom';
+import { useAuthContext } from '@/contexts/AuthContext';
 import { useEffect, useState } from 'react';
 import { CaioKotlerChat } from '../components/CaioKotlerChat';
 import { ElaineChat } from '../components/ElaineChat';
@@ -67,7 +68,7 @@ Estrutura:
 [0:04–0:15] Diferencial visual + Ação: descreva movimento do corretor (abrir porta, caminhar, virar câmera) e o áudio.
 [0:16–0:40] História/Explicação + Benefício: conecte com o estilo de vida desejado.
 [0:41–0:45] CTA urgente: ex. "Chama no DM e agenda".
-Inclua tom sugerido [emocional/aspiracional/humorado/informativo], sugestão de trilha, e legenda do post (a legenda — não o áudio — deve conter o slogan da Japi).`,
+Inclua tom sugerido [emocional/aspiracional/humorado/informativo], sugestão de trilha, e legenda do post (a legenda — não o áudio — deve conter o slogan da imobiliária).`,
 
   'campanhas': `Marketing, gere 3 ideias de campanhas/pautas para [MÊS/TEMA] com objetivo [VENDAS / CAPTAÇÃO / LOCAÇÃO / BRANDING], cada uma com estilo diferente (Emocional / Humor/Identificação / Institucional-Dados). Para cada campanha, traga:
 Nome e Tema Criativo
@@ -261,6 +262,10 @@ export const AgentesIaPage = () => {
 
   // Autenticação e verificação de testes
   const { user, isCorretor, isGestao, isOwner, isLoading: authLoading, corretores } = useAuth();
+  // P0.8 — a tela dizia "Imobiliária Japi" para TODA imobiliária. O nome do
+  // tenant vem do contexto; sem ele, o texto fica genérico em vez de nomear a
+  // imobiliária errada.
+  const { tenantName } = useAuthContext();
   const [testesCompletos, setTestesCompletos] = useState<boolean | null>(null);
   const [loadingTestes, setLoadingTestes] = useState(true);
   const [testeAtual, setTesteAtual] = useState<'disc' | 'eneagrama' | 'mbti' | null>(null);
@@ -1737,7 +1742,9 @@ export const AgentesIaPage = () => {
                 </span>
               </h3>
               <p className={`${isDarkMode ? 'text-white' : 'text-gray-600'} text-xs leading-relaxed`}>
-                <span className={`${isDarkMode ? 'text-blue-400 font-semibold' : 'text-blue-600 font-bold'}`}>Agente de IA oficial da Imobiliária Japi</span>, 
+                <span className={`${isDarkMode ? 'text-blue-400 font-semibold' : 'text-blue-600 font-bold'}`}>
+                  {tenantName ? `Agente de IA oficial da ${tenantName}` : 'Agente de IA oficial da imobiliária'}
+                </span>, 
                 braço direito dos corretores. Combino copywriting, social media, roteiros virais e análise criativa.
               </p>
             </div>

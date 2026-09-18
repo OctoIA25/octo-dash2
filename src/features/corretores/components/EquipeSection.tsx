@@ -1132,7 +1132,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                           />
                           <span className="text-xs text-gray-500 dark:text-slate-400 whitespace-nowrap">min</span>
                         </div>
-                        <p className="text-xs text-gray-400 dark:text-slate-500">Ex.: Japi = 30 min</p>
+                        <p className="text-xs text-gray-400 dark:text-slate-500">Ex.: 30 min</p>
                       </div>
                       <div className="space-y-1">
                         <Label className="text-xs text-gray-700 dark:text-slate-300 flex items-center gap-1.5">
@@ -1150,7 +1150,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                           />
                           <span className="text-xs text-gray-500 dark:text-slate-400 whitespace-nowrap">min</span>
                         </div>
-                        <p className="text-xs text-gray-400 dark:text-slate-500">Ex.: Japi = 5 min</p>
+                        <p className="text-xs text-gray-400 dark:text-slate-500">Ex.: 5 min</p>
                       </div>
                     </div>
                   </div>

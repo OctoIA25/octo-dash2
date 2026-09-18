@@ -25,8 +25,6 @@ import {
   Calendar as CalendarIcon,
   MoreVertical,
   ChevronRight,
-  Sparkles,
-  Bot,
   Hand,
 } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
@@ -332,31 +330,23 @@ function RankingCard({ items, onViewAll }: { items: RankingItem[]; onViewAll: ()
   );
 }
 
-// =================== AI SUGGESTION ===================
-function AiSuggestionCard({ lead }: { lead?: ProcessedLead }) {
-  return (
-    <div className="relative rounded-xl bg-gradient-to-br from-blue-600 to-blue-700 p-4 text-white overflow-hidden">
-      <div className="flex items-center gap-1.5 mb-2 relative z-10">
-        <Sparkles className="w-3.5 h-3.5 text-blue-100" strokeWidth={2} />
-        <h3 className="text-[11.5px] font-semibold uppercase tracking-wider text-blue-100">Sugestão da IA</h3>
-      </div>
-      <p className="text-[12px] leading-relaxed text-blue-50 mb-3 relative z-10">
-        {lead
-          ? 'Este lead tem perfil de comprador premium. Recomendo contato nas próximas 2 horas.'
-          : 'Analise seus leads e veja recomendações personalizadas.'}
-      </p>
-      {lead && (
-        <button
-          type="button"
-          className="relative z-10 w-full px-2.5 py-1.5 bg-white/15 hover:bg-white/25 border border-white/20 rounded-md text-[11.5px] font-semibold text-white transition-colors backdrop-blur-sm"
-        >
-          Ver lead recomendado
-        </button>
-      )}
-      <Bot className="absolute -bottom-3 -right-3 w-20 h-20 text-white/15" strokeWidth={1.3} />
-    </div>
-  );
-}
+/*
+  O card "Sugestão da IA" saiu daqui em 18/09 (P0.8 do plano).
+
+  Ele não era uma sugestão: o texto era o MESMO para qualquer lead —
+  "Este lead tem perfil de comprador premium. Recomendo contato nas próximas
+  2 horas." — e o botão "Ver lead recomendado" não tinha ação nenhuma.
+
+  A escolha do lead também não escolhia: ordenava os leads quentes por
+  `valor_imovel`, que é `leads.property_value`, preenchida em ZERO das 5.235
+  linhas. Com a chave de ordenação sempre igual, saía um lead arbitrário — e
+  sobre ele a tela afirmava um perfil que ninguém calculou.
+
+  Não há motor de recomendação por lead no sistema (`server/recommendations`
+  é o agente de recuperação, outro assunto). Manter uma casca dizendo "sem
+  recomendação" sustentaria a impressão de que a função existe; quando ela
+  existir, o card volta ligado a ela.
+*/
 
 // =================== MAIN PAGE ===================
 type TabKey = 'todos' | 'nao-responderam' | 'esfriando';
@@ -613,10 +603,6 @@ export function InicioNovaPage() {
       .sort((a, b) => b.volume - a.volume);
   }, [leads]);
 
-  const aiLead = useMemo(() => {
-    const hot = leads.filter((l) => (l.status_temperatura || '').toLowerCase() === 'quente');
-    return [...hot].sort((a, b) => (b.valor_imovel || 0) - (a.valor_imovel || 0))[0];
-  }, [leads]);
 
   // Switch de conteúdo baseado na aba da Início
   const ANIM = 'animate-in fade-in-0 slide-in-from-bottom-3 duration-300 ease-out';
@@ -846,7 +832,6 @@ export function InicioNovaPage() {
                   onViewFull={() => navigate('/metricas/cliente-interessado')}
                 />
                 <RankingCard items={ranking} onViewAll={() => navigate('/gestao-equipe')} />
-                <AiSuggestionCard lead={aiLead} />
               </div>
             </div>
 

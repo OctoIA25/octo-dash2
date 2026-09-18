@@ -103,7 +103,6 @@ import { CorretorMetricCard } from '@/components/metrics/individual';
 
 import {
 
-  corretoresData,
 
   equipesOptions,
 
@@ -470,12 +469,14 @@ export const MetricsDashboard = () => {
 
 
 
-            const template = corretoresData.find(
-
-              (c) => normalizeNome(c.nome) === normalizeNome(row.corretor)
-
-            );
-
+            /*
+              P0.8 — aqui havia uma busca da equipe no conjunto de
+              DEMONSTRAÇÃO: se um corretor real tivesse o mesmo nome de um dos
+              três inventados (Felipe Martins, Mariana Mamede, Felipe
+              Camargo), ele herdava a equipe deles. '—' é honesto; equipe de
+              mentira não é. A equipe de verdade sai de
+              `buscarMapaEquipesPorTenant`, e ligá-la aqui é trabalho à parte.
+            */
 
 
             return buildCorretorMetricasCompletas({
@@ -484,7 +485,7 @@ export const MetricsDashboard = () => {
 
               rankingPosicao: row.ranking,
 
-              equipe: template?.equipe ?? '—',
+              equipe: '—',
 
               leads,
 
@@ -492,7 +493,9 @@ export const MetricsDashboard = () => {
 
               gestaoAtivaRanking: row.gestaoAtiva,
 
-              tempoMedioRespostaMin: 0,
+              // `null`, não 0: zero minuto seria "respondeu instantaneamente".
+              // A mediana de verdade vem de outro caminho nesta tela.
+              tempoMedioRespostaMin: null,
 
             });
 
@@ -682,28 +685,20 @@ export const MetricsDashboard = () => {
     }
 
 
-    return corretoresData.map((corretor) => {
+    /*
+      P0.8 — este ramo devolvia `corretoresData`: três corretores INVENTADOS
+      (Felipe Martins, Mariana Mamede, Felipe Camargo), com números também
+      inventados, vindos do conjunto de demonstração de 2024.
 
-      const tempoReal = metricasCorretoresReais.get(corretor.nome);
+      Ele é alcançado quando `corretoresIndividuaisReais` ainda é `null` — ou
+      seja, enquanto a busca não respondeu E também quando ela falha. Um
+      gestor abrindo a tela via nomes que não trabalham na imobiliária dele,
+      indistinguíveis dos corretores reais.
 
-
-
-      return {
-
-        ...corretor,
-
-        kpis: {
-
-          ...corretor.kpis,
-
-          tempoMedioResposta: tempoReal ?? corretor.kpis.tempoMedioResposta,
-
-        },
-
-      };
-
-    });
-
+      Lista vazia é a resposta honesta enquanto não há dado: é o mesmo retorno
+      que o ramo de cima já usa quando a busca volta sem ninguém.
+    */
+    return [];
   }, [corretoresIndividuaisReais, metricasCorretoresReais]);
 
 
