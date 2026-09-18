@@ -306,6 +306,17 @@ export interface ProcessedLead {
   data_entrada: string;
   status_temperatura: string; // Pode ser string vazia
   etapa_atual: string; // Pode ser string vazia
+  /**
+   * `leads.property_type` cru, sem inferência.
+   *
+   * Existe ao lado de `tipo_negocio` porque aquele campo NUNCA é nulo: quando
+   * a coluna está vazia, o mapeamento assume 'Venda'. Isso apaga a diferença
+   * entre "é venda" e "não sabemos". Em produção a coluna está vazia em 100%
+   * dos 5.234 leads, então hoje todo lead é 'Venda' por omissão — e a sub-aba
+   * de Locação mostrava uma parede de zeros que se lê como "não temos
+   * locação", quando o certo é "o sistema não registra isso".
+   */
+  property_type?: string | null;
   codigo_imovel: string; // Pode ser string vazia
   valor_imovel: number;
   tipo_negocio: string; // Pode ser string vazia

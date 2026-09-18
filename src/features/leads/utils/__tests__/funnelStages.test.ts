@@ -4,6 +4,7 @@ import { computeFunnelStages, countLeadsInStage, getFunnelStageOrder, isEtapaVis
   isEtapaFechamento,
   isEtapaPreAtendimento,
   temCorretor,
+  baseDistingueVendaDeLocacao,
 } from '@/features/leads/utils/funnelStages';
 
 /**
@@ -378,5 +379,38 @@ describe('temCorretor', () => {
     expect(temCorretor({ assigned_agent_id: null, corretor_responsavel: '' })).toBe(false);
     expect(temCorretor({ assigned_agent_id: null, corretor_responsavel: '   ' })).toBe(false);
     expect(temCorretor({})).toBe(false);
+  });
+});
+
+describe('baseDistingueVendaDeLocacao', () => {
+  /**
+   * Em produção `property_type` está vazia em 100% dos 5.234 leads, e não há
+   * segunda fonte: só 12 leads casam com um imóvel pelo código, e os 29
+   * imóveis cadastrados têm todos `finalidade = 'venda'`. Medido em 18/09/2026.
+   */
+  it('base sem property_type nenhum: nao distingue', () => {
+    expect(baseDistingueVendaDeLocacao([
+      { property_type: null }, { property_type: '' }, { property_type: '   ' }, {},
+    ])).toBe(false);
+  });
+
+  it('um lead com property_type ja basta para a aba voltar a medir', () => {
+    expect(baseDistingueVendaDeLocacao([
+      { property_type: null }, { property_type: 'Locação' },
+    ])).toBe(true);
+  });
+
+  // `tipo_negocio` não responde isto: ele assume 'Venda' quando não sabe, então
+  // quem perguntar a ele ouve sempre "sim, é venda". Por isso a função olha a
+  // coluna crua, e não o campo derivado.
+  it('nao se deixa enganar por tipo_negocio derivado', () => {
+    const leadSemInfo = { property_type: null, tipo_negocio: 'Venda' } as { property_type: string | null };
+    expect(baseDistingueVendaDeLocacao([leadSemInfo])).toBe(false);
+  });
+
+  it('lista vazia ou nula nao quebra', () => {
+    expect(baseDistingueVendaDeLocacao([])).toBe(false);
+    expect(baseDistingueVendaDeLocacao(null)).toBe(false);
+    expect(baseDistingueVendaDeLocacao(undefined)).toBe(false);
   });
 });

@@ -216,6 +216,27 @@ export function contarVisitasAgendadasPara(
 }
 
 /**
+ * A base consegue distinguir venda de locação?
+ *
+ * O único sinal é `leads.property_type`, e ele está vazio em 100% dos 5.234
+ * leads em produção (medido em 18/09/2026). Não há segunda fonte: só 12 leads
+ * casam com um imóvel pelo código, e os 29 imóveis cadastrados têm todos
+ * `finalidade = 'venda'`.
+ *
+ * `tipo_negocio` não serve para responder isto, porque ele assume 'Venda'
+ * quando não sabe — quem perguntar a ele recebe sempre "sim, é venda".
+ *
+ * Quem consome usa isto para mostrar "Sem dados" em vez de zeros: uma tela de
+ * Locação zerada afirma que a imobiliária não tem locação, quando o certo é
+ * que o sistema nunca registrou essa informação.
+ */
+export function baseDistingueVendaDeLocacao(
+  leads: Array<{ property_type?: string | null }> | null | undefined,
+): boolean {
+  return (leads || []).some((l) => (l.property_type || '').trim() !== '');
+}
+
+/**
  * Conta quantos leads pertencem a uma etapa específica do funil.
  *
  * As regras de pertencimento são exatamente as mesmas usadas historicamente

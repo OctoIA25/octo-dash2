@@ -538,6 +538,7 @@ export function crmLeadToProcessedLead(crmLead: Partial<CRMLead>, index: number 
     codigo_imovel: crmLead.property_code || '',
     valor_imovel: crmLead.property_value || 0,
     tipo_negocio: tipoNegocio,
+    property_type: crmLead.property_type ?? null,
     tipo_lead: tipoLead,
     corretor_responsavel: crmLead.assigned_agent_name || 'Não atribuído',
     assigned_agent_id: crmLead.assigned_agent_id ?? null,

@@ -28,6 +28,7 @@ import { PreAtendimentoFunnelChart } from '@/features/leads/components/PreAtendi
 import { AtendimentoFunnelChart } from '@/features/leads/components/AtendimentoFunnelChart';
 // Novo componente de performance com bolhas
 import {
+  baseDistingueVendaDeLocacao,
   countProprietariosInStage,
   isEtapaFechamento,
   isEtapaPreAtendimento,
@@ -339,6 +340,19 @@ export const MainMetricsSection = ({
   const dynamicMetrics = useMemo(() => {
     // Filtrar leads baseado no geralBusinessFilter quando estiver na aba GERAL
     let allLeads = leads || [];
+
+    /*
+      A tela está pedindo LOCAÇÃO, e a base não sabe dizer o que é locação?
+      Avaliado ANTES dos filtros: depois deles a lista está vazia e não dá mais
+      para distinguir "não há locação" de "não dá para saber". O único sinal é
+      `property_type`, vazio em 100% dos leads em produção — sem isto, a
+      sub-aba mostra uma parede de zeros que se lê como "a imobiliária não faz
+      locação".
+    */
+    const pedindoLocacao =
+      (activeClienteInteressadoSubSection === 'geral' && geralBusinessFilter === 'locacao') ||
+      (activeSection === 'proprietarios' && activeProprietariosSubSection === 'locatario');
+    const semComoClassificar = pedindoLocacao && !baseDistingueVendaDeLocacao(allLeads);
     
     // Se estiver na aba GERAL (Cliente Interessado), aplicar filtro de tipo de negócio
     if (activeClienteInteressadoSubSection === 'geral' && geralBusinessFilter !== 'todos') {
@@ -413,11 +427,12 @@ export const MainMetricsSection = ({
         };
       }
       
+      // `semDados` distingue "medimos e deu zero" de "não dá para medir".
       return {
-        metric1: { value: 0, label: emptyLabel, color: 'green' },
-        metric2: { value: 0, label: 'Interações', color: 'purple' },
-        metric3: { value: 0, label: 'Visitas', color: 'blue' },
-        metric4: { value: 0, label: emptyEncaminhadosLabel, color: 'orange' }
+        metric1: { value: 0, label: emptyLabel, color: 'green', semDados: semComoClassificar },
+        metric2: { value: 0, label: 'Interações', color: 'purple', semDados: semComoClassificar },
+        metric3: { value: 0, label: 'Visitas', color: 'blue', semDados: semComoClassificar },
+        metric4: { value: 0, label: emptyEncaminhadosLabel, color: 'orange', semDados: semComoClassificar }
       };
     }
 
@@ -1237,6 +1252,14 @@ export const MainMetricsSection = ({
               >
                 <CardContent className="p-5">
                   <div className="text-center space-y-2">
+                    {(metric as { semDados?: boolean }).semDados ? (
+                      <div
+                        className="text-2xl font-bold text-slate-400 dark:text-slate-500"
+                        title="O sistema não registra se o lead é de venda ou de locação — não há como medir esta aba."
+                      >
+                        Sem dados
+                      </div>
+                    ) : (
                     <AnimatedNumber
                       value={metric.value}
                       className={`text-2xl font-bold transition-all duration-500 ${
@@ -1248,6 +1271,7 @@ export const MainMetricsSection = ({
                         metric.color === 'emerald' ? 'text-emerald-600 dark:text-emerald-400' : 'text-emerald-600 dark:text-emerald-400'
                       }`}
                     />
+                    )}
                     <p className="text-text-secondary dark:text-gray-300 text-sm font-semibold">{metric.label}</p>
                   </div>
                 </CardContent>
