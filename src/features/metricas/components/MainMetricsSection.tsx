@@ -12,24 +12,14 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { EnhancedFunnelChart } from '@/features/leads/components/EnhancedFunnelChart';
 import { SectionMetrics } from './SectionMetrics';
-import { LeadsChartsSection } from '@/features/leads/components/LeadsChartsSection';
 import { LeadsMetricsChart } from '@/features/leads/components/LeadsMetricsChart';
-import { LeadsConversionChart } from '@/features/leads/components/LeadsConversionChart';
 import { LeadsTemperatureChart } from '@/features/leads/components/LeadsTemperatureChart';
-import { LeadsOriginChart } from '@/features/leads/components/LeadsOriginChart';
-import { LeadsPerformanceChart } from '@/features/leads/components/LeadsPerformanceChart';
-import { ImoveisSimpleChart } from '@/features/imoveis/components/ImoveisSimpleChart';
-import { RelatorioGeralChart } from './RelatorioGeralChart';
 import { MonthlyReport } from './MonthlyReport';
 import { AnimatedNumber } from '@/shared/components/AnimatedNumber';
 import { ErrorBoundary } from '@/shared/components/ErrorBoundary';
 import { BairrosChart } from '@/features/imoveis/components/BairrosChart';
 import { EstudoMercadoChart } from '@/features/estudo-mercado/components/EstudoMercadoChart';
 import { TaxaExclusividadeChart } from '@/features/corretores/components/TaxaExclusividadeChart';
-import { LeadsTabOptimized } from '@/features/leads/components/LeadsTabOptimized';
-import { CorretoresTabOptimized } from '@/features/corretores/components/CorretoresTabOptimized';
-import { ImoveisTabOptimized } from '@/features/imoveis/components/ImoveisTabOptimized';
-import { RelatorioTabOptimized } from './RelatorioTabOptimized';
 // Novos componentes de funil dividido
 import { LeadsFunnelChart } from '@/features/leads/components/LeadsFunnelChart';
 import { VendedoresFunnelChart } from '@/features/corretores/components/VendedoresFunnelChart';
@@ -46,14 +36,8 @@ import { VendedoresTemperaturaChart } from '@/features/corretores/components/Ven
 // Novos gráficos de corretores
 // Novos gráficos de imóveis
 import { ImoveisPortfolioChart } from '@/features/imoveis/components/ImoveisPortfolioChart';
-import { ImoveisRegionChart } from '@/features/imoveis/components/ImoveisRegionChart';
-import { ImoveisValueChart } from '@/features/imoveis/components/ImoveisValueChart';
-import { ImoveisTrendChart } from '@/features/imoveis/components/ImoveisTrendChart';
 // Removido: ImoveisMarketAnalysis (backup em branch backup/analise-mercado-imobiliario)
 // Novos gráficos gerais
-import { GeralOverviewChart } from '@/features/leads/components/GeralOverviewChart';
-import { GeralFunnelAdvancedChart } from '@/features/leads/components/GeralFunnelAdvancedChart';
-import { GeralTimelineChart } from '@/features/leads/components/GeralTimelineChart';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { NotionTabs } from '@/components/ui/NotionTabs';

@@ -14,7 +14,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ChevronLeft, ChevronRight, MessageCircle, Calendar, Home, ExternalLink, Database, RefreshCw, UserPlus, Check, X, Users } from "lucide-react";
 import { ProcessedLead } from "@/data/realLeadsProcessor";
-// import { ExportButton } from "@/components/ExportButton"; // Removido - usando apenas ExportSpreadsheet
 import { formatCurrency } from "@/utils/metrics";
 import { ExportSpreadsheet } from "@/components/ExportSpreadsheet";
 import { useState, useMemo } from "react";
