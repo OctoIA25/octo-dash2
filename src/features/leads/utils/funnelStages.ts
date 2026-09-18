@@ -142,6 +142,56 @@ export function isEtapaVisita(etapa: string | null | undefined): boolean {
 }
 
 /**
+ * Negócio fechado. Espelha a etapa 'Fechamento' de `FUNNEL_ORDER` em
+ * server/kpis/kpisCompute.js.
+ *
+ * Existe porque os cards de "Negócios Fechados", "Pipeline" e "Taxa de
+ * Conversão" da tela de Métricas comparavam a etapa com `'Negócio Fechado'` e
+ * `'Finalizado'` — duas strings que NÃO existem em `leads.status`. O
+ * vocabulário gravado pelo kanban é 'Novos Leads', 'Interação', 'Negociação',
+ * 'Visita Agendada', 'Visita Realizada', 'Proposta Enviada' e 'Proposta
+ * Assinada'. A terceira condição era `final_sale_value > 0`, coluna vazia em
+ * produção. Os três cards eram zero estrutural: nenhuma das pernas podia ser
+ * verdadeira.
+ */
+export function isEtapaFechamento(etapa: string | null | undefined): boolean {
+  const e = normalizarEtapa(etapa);
+  return e.includes('assinad') || e.includes('fecha') || e.includes('finaliz');
+}
+
+/**
+ * Lead ainda no começo do funil: entrou e não passou da conversa.
+ *
+ * O card "Pré-Atendimento" comparava a etapa com 'Pré-Atendimento',
+ * 'Aguardando Atendimento' e 'Novo Lead' — nenhuma das três existe na base —
+ * mais 'Interação'. Resultado: dos 1.660 leads da Lotus ele mostrava 1.004,
+ * deixando de fora os 596 que estão em 'Novos Leads', que é justamente a
+ * etapa de entrada.
+ */
+export function isEtapaPreAtendimento(etapa: string | null | undefined): boolean {
+  const e = normalizarEtapa(etapa);
+  if (isEtapaVisita(e) || isEtapaFechamento(e)) return false;
+  return e === '' || e.includes('novo') || e.includes('atendimento')
+    || e.includes('interaç') || e.includes('interac');
+}
+
+/**
+ * O lead tem corretor de verdade.
+ *
+ * `corretor_responsavel` NUNCA é vazio no ProcessedLead: quando não há nome,
+ * o mapeamento grava o texto 'Não atribuído' (leadsMetricsService.ts:541).
+ * Quem testar só por string preenchida conta todo mundo como atribuído.
+ */
+export function temCorretor(lead: {
+  assigned_agent_id?: string | null;
+  corretor_responsavel?: string | null;
+}): boolean {
+  if (lead.assigned_agent_id) return true;
+  const nome = (lead.corretor_responsavel || '').trim();
+  return nome !== '' && nome.toLowerCase() !== 'não atribuído' && nome.toLowerCase() !== 'nao atribuido';
+}
+
+/**
  * Visitas agendadas para um dia — a ÚNICA leitura legítima de `Data_visita` que
  * sobra no aplicativo.
  *

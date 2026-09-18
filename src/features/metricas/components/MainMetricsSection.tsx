@@ -27,7 +27,14 @@ import { VendedoresFunnelChart } from '@/features/corretores/components/Vendedor
 import { PreAtendimentoFunnelChart } from '@/features/leads/components/PreAtendimentoFunnelChart';
 import { AtendimentoFunnelChart } from '@/features/leads/components/AtendimentoFunnelChart';
 // Novo componente de performance com bolhas
-import { countProprietariosInStage, isEtapaVisitaAgendada, isEtapaVisitaRealizada } from '@/features/leads/utils/funnelStages';
+import {
+  countProprietariosInStage,
+  isEtapaFechamento,
+  isEtapaPreAtendimento,
+  isEtapaVisitaAgendada,
+  isEtapaVisitaRealizada,
+  temCorretor,
+} from '@/features/leads/utils/funnelStages';
 import { FunnelStagesBubbleChart } from '@/features/leads/components/FunnelStagesBubbleChart';
 // Novos gráficos de vendedores
 import { VendedoresValoresChart } from '@/features/corretores/components/VendedoresValoresChart';
@@ -436,32 +443,30 @@ export const MainMetricsSection = ({
       lead.etapa_atual === 'Em Negociação' || lead.etapa_atual === 'Negociação'
     ).length;
     
-    // Nova métrica: Negócios Fechados - TOTAL GERAL
-    const negociosFechados = allLeads.filter(lead => 
-      lead.etapa_atual === 'Negócio Fechado' || 
-      lead.etapa_atual === 'Finalizado' ||
-      (lead.valor_final_venda && lead.valor_final_venda > 0)
-    ).length;
-    
-    // Pré-Atendimento - leads aguardando triagem/primeiro contato
-    const preAtendimento = allLeads.filter(lead => 
-      lead.etapa_atual === 'Pré-Atendimento' ||
-      lead.etapa_atual === 'Aguardando Atendimento' ||
-      lead.etapa_atual === 'Novo Lead' ||
-      lead.etapa_atual === 'Interação' ||
-      lead.etapa_atual === 'Interacao'
-    ).length;
-    
-    // Leads Encaminhados - TODOS os leads foram encaminhados ao sistema
-    const leadsEncaminhados = totalLeads;
-    
-    // Pipeline de negócios fechados (valor total) - USANDO TODOS OS LEADS
+    // Negócios Fechados. Comparava a etapa com 'Negócio Fechado' e
+    // 'Finalizado' — duas strings que NÃO existem em `leads.status` — mais
+    // `final_sale_value > 0`, coluna vazia em produção. As três pernas eram
+    // impossíveis e o card era zero estrutural. A regra agora é a mesma do
+    // servidor (isEtapaFechamento).
+    const negociosFechados = allLeads.filter(lead => isEtapaFechamento(lead.etapa_atual)).length;
+
+    // Pré-Atendimento. Comparava com 'Pré-Atendimento', 'Aguardando
+    // Atendimento' e 'Novo Lead', nenhuma existente na base: dos 1.660 leads
+    // da Lotus mostrava 1.004 e deixava de fora os 596 em 'Novos Leads', que
+    // é a etapa de entrada.
+    const preAtendimento = allLeads.filter(lead => isEtapaPreAtendimento(lead.etapa_atual)).length;
+
+    // Leads Encaminhados. Era literalmente `totalLeads`, com o comentário
+    // "TODOS os leads foram encaminhados ao sistema" — mas o card se chama
+    // "Encaminhados Aos Corretores". Na Imobiliária Japi ele anunciava 2.553
+    // encaminhados com ZERO leads tendo corretor; na Área de Teste, 954
+    // contra zero.
+    const leadsEncaminhados = allLeads.filter(temCorretor).length;
+
+    // Pipeline de negócios fechados (valor total). Mesmas três pernas
+    // impossíveis do card acima — era sempre R$ 0.
     const pipelineFechado = allLeads
-      .filter(lead => 
-        lead.etapa_atual === 'Negócio Fechado' || 
-        lead.etapa_atual === 'Finalizado' ||
-        (lead.valor_final_venda && lead.valor_final_venda > 0)
-      )
+      .filter(lead => isEtapaFechamento(lead.etapa_atual))
       .reduce((acc, lead) => acc + (lead.valor_final_venda || lead.valor_imovel || 0), 0);
     
     // Taxa de conversão geral - BASEADA EM TODOS OS LEADS
@@ -496,7 +501,8 @@ export const MainMetricsSection = ({
       if (currentVendaSubTab === 'comprador') {
         return 'Clientes Compradores';
       } else if (currentVendaSubTab === 'vendedor') {
-        return 'Clientes Inquilinos';
+        // Era 'Clientes Inquilinos' — rótulo de locação na sub-aba de venda.
+        return 'Clientes Vendedores';
       }
       return 'Clientes Interessados';
     };

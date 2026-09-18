@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { ProcessedLead } from '@/data/realLeadsProcessor';
-import { computeFunnelStages, countLeadsInStage, getFunnelStageOrder, isEtapaVisita, isEtapaVisitaAgendada, isEtapaVisitaRealizada, contarVisitasAgendadasPara } from '@/features/leads/utils/funnelStages';
+import { computeFunnelStages, countLeadsInStage, getFunnelStageOrder, isEtapaVisita, isEtapaVisitaAgendada, isEtapaVisitaRealizada, contarVisitasAgendadasPara,
+  isEtapaFechamento,
+  isEtapaPreAtendimento,
+  temCorretor,
+} from '@/features/leads/utils/funnelStages';
 
 /**
  * Fábrica mínima de ProcessedLead para testes (apenas campos relevantes ao
@@ -279,5 +283,100 @@ describe('visitas agendadas para um dia', () => {
     expect(contarVisitasAgendadasPara([], '2026-09-18')).toBeNull();
     expect(contarVisitasAgendadasPara(null, '2026-09-18')).toBeNull();
     expect(contarVisitasAgendadasPara(undefined, '2026-09-18')).toBeNull();
+  });
+});
+
+/**
+ * As etapas que EXISTEM de verdade em `leads.status`, medidas em produção em
+ * 18/09/2026 nos 5.234 leads da base:
+ *
+ *   Novos Leads 4.147 · Interação 1.017 · Negociação 47 · Visita Agendada 12
+ *   Proposta Enviada 5 · Proposta Assinada 4 · Novos Proprietários 1
+ *   Visita Realizada 1
+ *
+ * Os testes abaixo usam esse vocabulário, e só ele. Foi por não usá-lo que os
+ * cards da tela de Métricas ficaram errados: eles comparavam a etapa com
+ * 'Pré-Atendimento', 'Aguardando Atendimento', 'Novo Lead', 'Negócio Fechado'
+ * e 'Finalizado' — cinco strings que nunca foram gravadas.
+ */
+const ETAPAS_REAIS = [
+  'Novos Leads', 'Interação', 'Negociação', 'Visita Agendada',
+  'Proposta Enviada', 'Proposta Assinada', 'Novos Proprietários', 'Visita Realizada',
+];
+
+describe('isEtapaFechamento', () => {
+  it('reconhece a etapa de fechamento que a base tem', () => {
+    expect(isEtapaFechamento('Proposta Assinada')).toBe(true);
+  });
+
+  it('nao confunde proposta enviada com assinada', () => {
+    expect(isEtapaFechamento('Proposta Enviada')).toBe(false);
+    expect(isEtapaFechamento('Negociação')).toBe(false);
+  });
+
+  // As strings que o código comparava e que não existem: continuam sendo
+  // reconhecidas se um dia aparecerem, mas não são mais a ÚNICA forma de casar.
+  it('continua aceitando as grafias antigas, se voltarem a existir', () => {
+    expect(isEtapaFechamento('Negócio Fechado')).toBe(true);
+    expect(isEtapaFechamento('Finalizado')).toBe(true);
+  });
+
+  it('exatamente uma etapa real da base e fechamento', () => {
+    expect(ETAPAS_REAIS.filter(isEtapaFechamento)).toEqual(['Proposta Assinada']);
+  });
+});
+
+describe('isEtapaPreAtendimento', () => {
+  // O defeito em uma linha: 'Novos Leads' é a etapa de entrada e ficava DE FORA.
+  it('inclui a etapa de entrada, que e onde estao 4.147 dos 5.234 leads', () => {
+    expect(isEtapaPreAtendimento('Novos Leads')).toBe(true);
+  });
+
+  it('inclui interacao e atendimento', () => {
+    expect(isEtapaPreAtendimento('Interação')).toBe(true);
+    expect(isEtapaPreAtendimento('Em Atendimento')).toBe(true);
+  });
+
+  it('para no momento em que o lead avanca', () => {
+    expect(isEtapaPreAtendimento('Visita Agendada')).toBe(false);
+    expect(isEtapaPreAtendimento('Visita Realizada')).toBe(false);
+    expect(isEtapaPreAtendimento('Proposta Assinada')).toBe(false);
+  });
+
+  it('lead sem etapa conta como recem-chegado, nao como fora do funil', () => {
+    expect(isEtapaPreAtendimento('')).toBe(true);
+    expect(isEtapaPreAtendimento(null)).toBe(true);
+  });
+
+  it('cobre tres das oito etapas reais', () => {
+    expect(ETAPAS_REAIS.filter(isEtapaPreAtendimento).sort())
+      .toEqual(['Interação', 'Novos Leads', 'Novos Proprietários']);
+  });
+});
+
+describe('temCorretor', () => {
+  /**
+   * `corretor_responsavel` NUNCA vem vazio: sem nome, o mapeamento grava o
+   * texto 'Não atribuído'. Testar só por string preenchida conta todo mundo
+   * como atribuído — era o efeito do card "Encaminhados Aos Corretores", que
+   * na Imobiliária Japi anunciava 2.553 com ZERO leads tendo corretor.
+   */
+  it('o sentinel "Não atribuído" nao conta como corretor', () => {
+    expect(temCorretor({ assigned_agent_id: null, corretor_responsavel: 'Não atribuído' })).toBe(false);
+    expect(temCorretor({ assigned_agent_id: null, corretor_responsavel: 'nao atribuido' })).toBe(false);
+  });
+
+  it('id de corretor conta', () => {
+    expect(temCorretor({ assigned_agent_id: 'abc', corretor_responsavel: 'Não atribuído' })).toBe(true);
+  });
+
+  it('nome de verdade conta, mesmo sem id', () => {
+    expect(temCorretor({ assigned_agent_id: null, corretor_responsavel: 'Fernanda Souza' })).toBe(true);
+  });
+
+  it('vazio e espaco em branco nao contam', () => {
+    expect(temCorretor({ assigned_agent_id: null, corretor_responsavel: '' })).toBe(false);
+    expect(temCorretor({ assigned_agent_id: null, corretor_responsavel: '   ' })).toBe(false);
+    expect(temCorretor({})).toBe(false);
   });
 });
