@@ -4,6 +4,7 @@
  */
 
 import { useMemo, useState } from 'react';
+import { contarVisitasAgendadasPara } from '@/features/leads/utils/funnelStages';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { OKRManager } from '@/components/OKRManager';
 import { PDIManager } from '@/components/PDIManager';
@@ -28,7 +29,6 @@ import {
   Hand,
 } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
-import { useEffectiveUser } from '@/contexts/ViewAsContext';
 import { useFeaturedGoal } from '@/features/metas/hooks/useGoals';
 import { formatGoalValue, formatPercent } from '@/features/metas/domain';
 import { useLeadsMetrics } from '@/features/leads/hooks/useLeadsMetrics';
@@ -125,23 +125,30 @@ function KpiCard({ icon: Icon, iconBg, iconColor, label, value, trend, progress,
 // =================== ALERT STRIP ===================
 interface AlertPillProps {
   icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
-  count: number;
+  /** `null` = não há como medir. Diferente de 0, que é "medimos e deu zero". */
+  count: number | null;
   message: string;
+  /** Texto da segunda linha quando `count` é null. Cai em `message` se ausente. */
+  emptyMessage?: string;
   unit: 'leads' | 'visitas';
   bgClass: string;
   iconBg: string;
   iconColor: string;
 }
 
-function AlertPill({ icon: Icon, count, message, unit, bgClass, iconColor }: AlertPillProps) {
+function AlertPill({ icon: Icon, count, message, emptyMessage, unit, bgClass, iconColor }: AlertPillProps) {
+  const semDados = count === null;
+  const plural = unit === 'visitas' ? (count === 1 ? 'visita' : 'visitas') : count === 1 ? 'lead' : 'leads';
   return (
     <div className={`flex items-center gap-3 px-4 py-2.5 rounded-xl border ${bgClass}`}>
       <Icon className={`w-[18px] h-[18px] ${iconColor} shrink-0`} strokeWidth={1.8} />
       <div className="min-w-0">
         <p className="text-[13px] font-semibold text-slate-900 dark:text-slate-100 leading-tight">
-          {count} {unit === 'visitas' ? (count === 1 ? 'visita' : 'visitas') : count === 1 ? 'lead' : 'leads'}
+          {semDados ? 'Sem dados' : `${count} ${plural}`}
         </p>
-        <p className="text-[11px] text-slate-500 dark:text-slate-400 dark:text-slate-400 leading-tight">{message}</p>
+        <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-tight">
+          {semDados ? (emptyMessage ?? message) : message}
+        </p>
       </div>
     </div>
   );
@@ -354,7 +361,6 @@ export function InicioNovaPage() {
   const [searchParams] = useSearchParams();
   const activeInicioTab = searchParams.get('tab') || 'funil';
   const { user, tenantName } = useAuthContext();
-  const scope = useEffectiveUser();
   // `processedLeads` normaliza `leads` + `kenlo_leads` no formato ProcessedLead
   // (etapa_atual, status_temperatura, valor_imovel, corretor_responsavel).
   // `useLeadsMetrics` assina `leadsEventEmitter`, então o Pipeline aqui
@@ -384,17 +390,15 @@ export function InicioNovaPage() {
     };
   }, [featuredGoal]);
 
-  // Saudação segue o usuário VISUALIZADO — é o sinal mais direto de que o
-  // contexto está ativo. Sem contexto, `scope` é o próprio usuário.
   const userName = useMemo(() => {
-    if (!scope.email) return 'Usuário';
-    const prefix = scope.email.split('@')[0].replace(/[._-]/g, ' ');
+    if (!user?.email) return 'Usuário';
+    const prefix = user.email.split('@')[0].replace(/[._-]/g, ' ');
     return prefix
       .split(' ')
       .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
       .join(' ')
       .slice(0, 30);
-  }, [scope.email]);
+  }, [user?.email]);
 
   const userRole = user?.systemRole === 'owner' ? 'Owner' : user?.systemRole === 'admin' ? 'Gestor' : user?.systemRole === 'team_leader' ? 'Líder' : 'Corretor';
 
@@ -535,10 +539,21 @@ export function InicioNovaPage() {
     [leads],
   );
 
-  const visitasHoje = useMemo(() => {
-    const today = new Date().toISOString().split('T')[0];
-    return leads.filter((l) => l.Data_visita === today).length;
-  }, [leads]);
+  /**
+   * "Visitas agendadas para hoje" é a única métrica de visita que não dá para
+   * tirar da etapa do lead: a etapa não carrega data. A fonte é `Data_visita`,
+   * projeção de `leads.visit_date` — e nenhum lead da base tem essa coluna
+   * preenchida, porque nada no sistema a grava.
+   *
+   * Devolve `null` quando NENHUM lead tem data de visita: aí não há como medir, e
+   * o card diz "Sem dados" em vez de afirmar que não há visita hoje. Se algum
+   * lead passar a ter a data, volta a contar sozinho — inclusive devolvendo 0,
+   * que aí significa "medimos, e hoje não tem".
+   */
+  const visitasHoje = useMemo(
+    () => contarVisitasAgendadasPara(leads, new Date().toISOString().split('T')[0]),
+    [leads],
+  );
 
   const proximasAcoes = useMemo(() => {
     const sorted = [...leads].sort((a, b) => {
@@ -752,6 +767,7 @@ export function InicioNovaPage() {
                 icon={CalendarIcon}
                 count={visitasHoje}
                 message="agendadas para hoje"
+                emptyMessage="sobre visitas de hoje"
                 unit="visitas"
                 bgClass="bg-blue-50 dark:bg-blue-950/30 border-blue-100 dark:border-blue-900/50"
                 iconBg="bg-blue-100"

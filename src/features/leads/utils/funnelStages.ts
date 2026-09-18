@@ -142,6 +142,30 @@ export function isEtapaVisita(etapa: string | null | undefined): boolean {
 }
 
 /**
+ * Visitas agendadas para um dia — a ÚNICA leitura legítima de `Data_visita` que
+ * sobra no aplicativo.
+ *
+ * Existe porque esta é a única pergunta sobre visita que a etapa do lead não
+ * responde: a etapa diz "Visita Agendada", não diz para quando. A fonte é
+ * `Data_visita`, projeção de `leads.visit_date`.
+ *
+ * Devolve `null` quando NENHUM lead tem data de visita — aí não há como medir, e
+ * quem exibe deve dizer "Sem dados" em vez de afirmar que não há visita hoje.
+ * Hoje isso é sempre o caso: a coluna está vazia em 100% dos leads e nada no
+ * sistema a grava. Mas a função não assume isso: no dia em que algum lead tiver a
+ * data, ela volta a contar sozinha — inclusive devolvendo 0, que aí significa
+ * "medimos, e hoje não tem".
+ */
+export function contarVisitasAgendadasPara(
+  leads: Array<{ Data_visita?: string | null }> | null | undefined,
+  diaISO: string,
+): number | null {
+  const comData = (leads || []).filter((l) => l.Data_visita && l.Data_visita.trim() !== '');
+  if (comData.length === 0) return null;
+  return comData.filter((l) => l.Data_visita === diaISO).length;
+}
+
+/**
  * Conta quantos leads pertencem a uma etapa específica do funil.
  *
  * As regras de pertencimento são exatamente as mesmas usadas historicamente

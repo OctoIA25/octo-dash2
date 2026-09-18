@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ProcessedLead } from '@/data/realLeadsProcessor';
-import { computeFunnelStages, countLeadsInStage, getFunnelStageOrder, isEtapaVisita, isEtapaVisitaAgendada, isEtapaVisitaRealizada } from '@/features/leads/utils/funnelStages';
+import { computeFunnelStages, countLeadsInStage, getFunnelStageOrder, isEtapaVisita, isEtapaVisitaAgendada, isEtapaVisitaRealizada, contarVisitasAgendadasPara } from '@/features/leads/utils/funnelStages';
 
 /**
  * Fábrica mínima de ProcessedLead para testes (apenas campos relevantes ao
@@ -243,5 +243,41 @@ describe('regra da visita, compartilhada entre as telas', () => {
       expect(isEtapaVisitaAgendada(e) && isEtapaVisitaRealizada(e)).toBe(false);
       expect(isEtapaVisita(e)).toBe(isEtapaVisitaAgendada(e) || isEtapaVisitaRealizada(e));
     }
+  });
+});
+
+
+/**
+ * "Sem dados" e "zero" sao coisas diferentes, e confundi-las foi o que produziu
+ * metade dos problemas deste trabalho: o card dizia 0 visitas e todo mundo lia
+ * "nao houve visita", quando o certo era "nao temos como saber". A coluna
+ * `Data_visita` esta vazia em 100% dos 5.210 leads da base e nada no sistema a
+ * grava, entao hoje a resposta e sempre null.
+ */
+describe('visitas agendadas para um dia', () => {
+  it('devolve null quando nenhum lead tem data — nao da para medir', () => {
+    const leads = [{ Data_visita: null }, { Data_visita: '' }, { Data_visita: '   ' }];
+    expect(contarVisitasAgendadasPara(leads, '2026-09-18')).toBeNull();
+  });
+
+  it('devolve 0 quando ha datas, mas nenhuma e do dia pedido', () => {
+    const leads = [{ Data_visita: '2026-09-17' }, { Data_visita: '2026-09-19' }];
+    expect(contarVisitasAgendadasPara(leads, '2026-09-18')).toBe(0);
+  });
+
+  it('conta as do dia pedido', () => {
+    const leads = [
+      { Data_visita: '2026-09-18' },
+      { Data_visita: '2026-09-18' },
+      { Data_visita: '2026-09-17' },
+      { Data_visita: null },
+    ];
+    expect(contarVisitasAgendadasPara(leads, '2026-09-18')).toBe(2);
+  });
+
+  it('nao quebra com lista vazia nem nula', () => {
+    expect(contarVisitasAgendadasPara([], '2026-09-18')).toBeNull();
+    expect(contarVisitasAgendadasPara(null, '2026-09-18')).toBeNull();
+    expect(contarVisitasAgendadasPara(undefined, '2026-09-18')).toBeNull();
   });
 });
