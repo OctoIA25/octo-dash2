@@ -106,6 +106,18 @@ SELECT pg_temp.checa(
 
 RESET ROLE;
 
-SELECT 'OK: vendas_assinadas - 7 casos passaram' AS resultado;
+SELECT 'OK: vendas_assinadas - 9 casos passaram' AS resultado;
+
+-- O pg_default_acl do Supabase concede arwdDxtm a anon e authenticated em toda
+-- relação nova, views inclusive: sem o REVOKE da migration esta view nascia
+-- legível por `anon`, a chave que vai no bundle do browser. Descoberto em
+-- 18/09/2026 ao testar primeira_interacao, que tinha o mesmo defeito.
+SELECT pg_temp.checa(
+  has_table_privilege('anon', 'public.vendas_assinadas', 'SELECT') IS FALSE,
+  'vendas_assinadas NAO tem GRANT para anon');
+
+SELECT pg_temp.checa(
+  has_table_privilege('authenticated', 'public.vendas_assinadas', 'SELECT') IS TRUE,
+  'vendas_assinadas TEM GRANT para authenticated');
 
 ROLLBACK;

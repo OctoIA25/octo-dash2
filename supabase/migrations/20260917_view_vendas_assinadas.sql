@@ -67,4 +67,13 @@ COMMENT ON VIEW public.vendas_assinadas IS
   'gravada ou derivada (3,5% lançamento / 6% terceiros); data já no fuso de '
   'São Paulo. Substitui a leitura de commercial_sales, congelada em 01/09.';
 
+
+-- ATENÇÃO AO GRANT ABAIXO. O `pg_default_acl` do schema `public` no Supabase
+-- concede `arwdDxtm` a `anon` e `authenticated` em TODA relação nova — views
+-- inclusive. Sem o REVOKE explícito, um `GRANT SELECT TO authenticated,
+-- service_role` não restringe coisa alguma: a view já nasceu legível por
+-- `anon`, que é a chave embarcada no bundle do browser. Medido no ambiente
+-- local em 18/09/2026, com as três views deste plano nascendo `anon_le = t`.
+-- `pg_dump` emite GRANT e nunca REVOKE, então isto também não aparece no dump.
+REVOKE ALL ON public.vendas_assinadas FROM anon, authenticated;
 GRANT SELECT ON public.vendas_assinadas TO authenticated, service_role;
