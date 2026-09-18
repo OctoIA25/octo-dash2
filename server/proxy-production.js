@@ -5070,7 +5070,14 @@ import { registerEnpsRoutes, startEnpsScheduler, makeEnpsRunner } from './enps/i
 const enpsRunner = makeEnpsRunner(supabase);
 registerEnpsRoutes(app, supabase);
 if (process.env.ENPS_SCHEDULER === '1') {
-  startEnpsScheduler(supabase, { runner: enpsRunner });
+  startEnpsScheduler(supabase, { runner: enpsRunner }
+
+// P0.6 — teste diário de consistência dos números. Mesma flag-única dos
+// outros schedulers: dois processos gravariam dois relatórios por dia.
+import { startConsistenciaScheduler } from './consistencia/scheduler.js';
+if (process.env.CONSISTENCIA_SCHEDULER === '1') {
+  startConsistenciaScheduler(supabase);
+});
 }
 
 // REPORT espelho no Google Sheets (docs/superpowers/specs/2026-08-28-report-espelho-drive.md).

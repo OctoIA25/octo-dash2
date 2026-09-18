@@ -72,6 +72,23 @@ export interface IaCard {
 
 export interface JobStatus { ok: boolean; age_s: number | null }
 
+/**
+ * P0.6 — o teste diário de consistência dos números.
+ *
+ * `unknown` cobre DOIS casos que a tela precisa distinguir de "ok": nunca
+ * rodou, e rodou há tempo demais. Um job parado e um job que não achou
+ * problema parecem iguais em qualquer painel que só olhe o veredito.
+ */
+export interface ConsistenciaCard {
+  available: boolean;
+  status: CardStatus;
+  failure_origin: FailureOrigin;
+  /** Horas desde o último relatório. `null` = nunca rodou. */
+  age_h: number | null;
+  falhas: Array<{ nome: string; esperado: unknown; obtido: unknown; detalhe: string }>;
+  resumo: string;
+}
+
 export interface TenantStatus {
   tenantId: string;
   exists: boolean | null;
@@ -83,6 +100,7 @@ export interface TenantStatus {
     webhooks: WebhooksCard;
     whatsapp: WhatsappCard;
     ia: IaCard;
+    consistencia: ConsistenciaCard;
     anthropic: {
       available: boolean;
       status: 'normal' | 'warning' | 'not_configured' | 'insufficient_data' | 'error';

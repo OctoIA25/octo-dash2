@@ -4013,6 +4013,14 @@ if (process.env.ENPS_SCHEDULER === '1') {
   startEnpsScheduler(supabase, { runner: enpsRunner });
 }
 
+// P0.6 — teste diário de consistência dos números. Flag para rodar em UM
+// processo só: dois gravariam dois relatórios por dia e a tela mostraria o que
+// chegasse por último.
+import { startConsistenciaScheduler } from './consistencia/scheduler.js';
+if (process.env.CONSISTENCIA_SCHEDULER === '1') {
+  startConsistenciaScheduler(supabase);
+}
+
 // 404 Handler (DEVE ficar DEPOIS de todas as rotas)
 app.use('/api/v1/*', (req, res) => {
   res.status(404).json({

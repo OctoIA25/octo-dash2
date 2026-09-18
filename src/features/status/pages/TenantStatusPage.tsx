@@ -348,6 +348,34 @@ export default function TenantStatusPage() {
             <Field label="Último erro" value={data.tenant.outbox.last_error} />
           </StatusCard>
 
+          {/*
+            P0.6 — o teste diário que compara os totais. Fica ao lado dos
+            outros cards de saúde de propósito: um número errado é uma falha
+            operacional como qualquer outra, e até 18/09 não havia onde vê-la.
+          */}
+          <StatusCard
+            title="Consistência dos números"
+            status={data.tenant.consistencia?.status ?? 'unknown'}
+            origin={data.tenant.consistencia?.failure_origin ?? null}
+          >
+            <Field label="Situação" value={data.tenant.consistencia?.resumo ?? '—'} />
+            <Field
+              label="Último teste"
+              value={
+                data.tenant.consistencia?.age_h == null
+                  ? 'nunca rodou'
+                  : `há ${data.tenant.consistencia.age_h}h`
+              }
+            />
+            {(data.tenant.consistencia?.falhas ?? []).map((f) => (
+              <Field
+                key={f.nome}
+                label={f.nome}
+                value={`esperado ${String(f.esperado)}, obtido ${String(f.obtido)}${f.detalhe ? ` — ${f.detalhe}` : ''}`}
+              />
+            ))}
+          </StatusCard>
+
           <StatusCard title="Webhooks" status={data.tenant.webhooks.status} origin={data.tenant.webhooks.failure_origin}>
             <Field label="Falhas (24h)" value={data.tenant.webhooks.recent_failures} />
             <Field label="Último erro" value={data.tenant.webhooks.last_error} />

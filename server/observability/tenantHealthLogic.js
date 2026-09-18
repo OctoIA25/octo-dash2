@@ -223,3 +223,53 @@ export function deriveLiaCard(i) {
     qualificacao: { fatos: i.fatos, leads_qualificados: i.leadsQualificados },
   };
 }
+
+/**
+ * P0.6 — o card do teste diário de consistência dos números.
+ *
+ * Três estados que precisam ser DISTINTOS na tela:
+ *   ok        — rodou e todos os números batem;
+ *   error     — rodou e alguma checagem falhou (a tela lista quais);
+ *   unknown   — nunca rodou, ou o último relatório está velho.
+ *
+ * "Velho" importa tanto quanto "falhou": um job morto e um job que não achou
+ * problema parecem iguais na tela, e o segundo é exatamente o que a gente quer
+ * distinguir. Por isso `age_h` sobe junto com o veredito.
+ */
+export function deriveConsistenciaCard(row, now = Date.now(), limiteHoras = 36) {
+  if (!row) {
+    return {
+      available: true, status: 'unknown', failure_origin: null,
+      age_h: null, falhas: [], resumo: 'o teste diário ainda não rodou nesta imobiliária',
+    };
+  }
+
+  const idadeMs = now - new Date(row.executado_em).getTime();
+  const age_h = Number.isFinite(idadeMs) ? Math.round(idadeMs / 3_600_000) : null;
+  const velho = age_h == null || age_h > limiteHoras;
+
+  const falhas = (Array.isArray(row.checagens) ? row.checagens : [])
+    .filter((c) => c && c.ok === false)
+    .map((c) => ({ nome: c.nome, esperado: c.esperado, obtido: c.obtido, detalhe: c.detalhe || '' }));
+
+  if (velho) {
+    return {
+      available: true, status: 'unknown', failure_origin: 'internal', age_h, falhas,
+      // O job parado é um problema em si: sem ele, número errado volta a passar
+      // despercebido pelo tempo que for.
+      resumo: `o último teste tem ${age_h ?? '?'}h — o agendamento pode estar parado`,
+    };
+  }
+
+  if (falhas.length > 0) {
+    return {
+      available: true, status: 'error', failure_origin: 'internal', age_h, falhas,
+      resumo: `${falhas.length} checagem(ns) de número falhando`,
+    };
+  }
+
+  return {
+    available: true, status: 'ok', failure_origin: null, age_h, falhas: [],
+    resumo: 'todos os números batem entre as fontes',
+  };
+}

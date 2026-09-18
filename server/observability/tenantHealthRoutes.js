@@ -16,7 +16,7 @@ import { makeRequireOwner } from '../utils/ownerAuth.js';
 import { JOB_LIMITS } from './healthRoutes.js';
 import {
   deriveSyncCard, deriveOutboxCard, deriveWebhooksCard, deriveWhatsappCard, unavailableCard,
-  deriveLiaCard, deriveAnthropicCard,
+  deriveLiaCard, deriveAnthropicCard, deriveConsistenciaCard,
 } from './tenantHealthLogic.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -76,6 +76,7 @@ export function registerTenantHealthRoutes(app, supabase) {
       liaVisTotal, liaVisConfirmadas,
       liaInteracoes, liaFatos, liaFactsRows,
       anthropicRes,
+      consistenciaRes,
     ] = await Promise.allSettled([
       
       supabase.from('tenant_contact2sale_config').select('status,last_sync_at,sync_state').eq('tenant_id', tenantId).maybeSingle(),
@@ -125,6 +126,16 @@ export function registerTenantHealthRoutes(app, supabase) {
       supabase.from('tenant_anthropic_config')
         .select('status,last_state,last_percentage,last_usage_usd,weekly_limit_usd,last_window_start,last_window_end,last_error,last_synced_at,mode')
         .eq('tenant_id', tenantId).maybeSingle(),
+
+      // P0.6 — último relatório do teste diário de consistência dos números.
+      // Só LEITURA de estado já persistido, como o resto deste endpoint: quem
+      // calcula é o job (server/consistencia), de madrugada.
+      supabase.from('consistencia_diaria')
+        .select('executado_em, ok, checagens')
+        .eq('tenant_id', tenantId)
+        .order('executado_em', { ascending: false })
+        .limit(1)
+        .maybeSingle()
     ]);
 
     // --- Cards por tenant (cada um degrada isolado) ---
@@ -159,6 +170,10 @@ export function registerTenantHealthRoutes(app, supabase) {
           queued: waQueued.value, failed: waFailed.value,
           lastError: waErr.status === 'fulfilled' ? waErr.value : null,
         })
+      : unavailableCard();
+
+    tenant.consistencia = (consistenciaRes.status === 'fulfilled' && !consistenciaRes.value.error)
+      ? deriveConsistenciaCard(consistenciaRes.value.data, now)
       : unavailableCard();
 
     // IA + LIA. Card base (provider/model) degrada junto do api_keys; o bloco lia

@@ -3,6 +3,7 @@ import {
   classifyFailure, parseSyncState, deriveSyncCard,
   deriveOutboxCard, deriveWebhooksCard, deriveWhatsappCard, unavailableCard, deriveLiaCard,
   deriveAnthropicCard,
+  deriveConsistenciaCard,
 } from './tenantHealthLogic.js';
 
 describe('classifyFailure', () => {
@@ -240,5 +241,59 @@ describe('deriveAnthropicCard', () => {
   it('deriveAnthropicCard expõe mode (default api; max passa)', () => {
     expect(deriveAnthropicCard(null).mode).toBe('api');
     expect(deriveAnthropicCard({ last_state: 'normal', mode: 'max' }).mode).toBe('max');
+  });
+});
+
+describe('deriveConsistenciaCard', () => {
+  const AGORA = Date.parse('2026-09-18T12:00:00Z');
+  const hojeCedo = '2026-09-18T06:00:00Z';
+
+  it('nunca rodou: desconhecido, e diz isso', () => {
+    const c = deriveConsistenciaCard(null, AGORA);
+    expect(c.status).toBe('unknown');
+    expect(c.resumo).toContain('ainda não rodou');
+  });
+
+  it('rodou hoje e tudo bate: ok', () => {
+    const c = deriveConsistenciaCard({ executado_em: hojeCedo, ok: true, checagens: [{ nome: 'a', ok: true }] }, AGORA);
+    expect(c.status).toBe('ok');
+    expect(c.falhas).toEqual([]);
+    expect(c.age_h).toBe(6);
+  });
+
+  it('checagem falhando: erro, e a tela recebe QUAIS', () => {
+    const c = deriveConsistenciaCard({
+      executado_em: hojeCedo, ok: false,
+      checagens: [
+        { nome: 'soma das etapas', ok: false, esperado: 1600, obtido: 1004, detalhe: 'diferença de 596 lead(s)' },
+        { nome: 'outra', ok: true },
+      ],
+    }, AGORA);
+    expect(c.status).toBe('error');
+    expect(c.falhas).toHaveLength(1);
+    expect(c.falhas[0]).toMatchObject({ esperado: 1600, obtido: 1004 });
+    expect(c.resumo).toContain('1 checagem');
+  });
+
+  /**
+   * O caso que mais importa: um job PARADO e um job que não achou problema
+   * ficam iguais na tela se ninguém olhar a idade do relatório. Relatório
+   * velho não é "ok", é "não sei".
+   */
+  it('relatorio velho vira desconhecido, mesmo tendo passado', () => {
+    const c = deriveConsistenciaCard({ executado_em: '2026-09-15T06:00:00Z', ok: true, checagens: [] }, AGORA);
+    expect(c.status).toBe('unknown');
+    expect(c.resumo).toContain('agendamento pode estar parado');
+    expect(c.age_h).toBe(78);
+  });
+
+  it('o limite de idade e configuravel', () => {
+    const doisDias = { executado_em: '2026-09-16T12:00:00Z', ok: true, checagens: [] };
+    expect(deriveConsistenciaCard(doisDias, AGORA, 36).status).toBe('unknown');
+    expect(deriveConsistenciaCard(doisDias, AGORA, 72).status).toBe('ok');
+  });
+
+  it('checagens em formato inesperado nao derrubam o card', () => {
+    expect(deriveConsistenciaCard({ executado_em: hojeCedo, ok: true, checagens: null }, AGORA).status).toBe('ok');
   });
 });
