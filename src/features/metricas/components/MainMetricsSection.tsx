@@ -27,7 +27,7 @@ import { VendedoresFunnelChart } from '@/features/corretores/components/Vendedor
 import { PreAtendimentoFunnelChart } from '@/features/leads/components/PreAtendimentoFunnelChart';
 import { AtendimentoFunnelChart } from '@/features/leads/components/AtendimentoFunnelChart';
 // Novo componente de performance com bolhas
-import { countProprietariosInStage, isEtapaVisitaAgendada } from '@/features/leads/utils/funnelStages';
+import { countProprietariosInStage, isEtapaVisitaAgendada, isEtapaVisitaRealizada } from '@/features/leads/utils/funnelStages';
 import { FunnelStagesBubbleChart } from '@/features/leads/components/FunnelStagesBubbleChart';
 // Novos gráficos de vendedores
 import { VendedoresValoresChart } from '@/features/corretores/components/VendedoresValoresChart';
@@ -480,16 +480,6 @@ export const MainMetricsSection = ({
       .map(lead => lead.codigo_imovel))];
     const valorMedio = totalLeads > 0 ? pipelineTotal / totalLeads : 0;
 
-    // Métricas mensais - TOTAL GERAL
-    const currentMonth = new Date().toISOString().slice(0, 7);
-    const leadsDoMes = allLeads.filter(lead => 
-      new Date(lead.data_entrada).toISOString().slice(0, 7) === currentMonth
-    ).length;
-    const visitasDoMes = allLeads.filter(lead => {
-      const leadMonth = new Date(lead.data_entrada).toISOString().slice(0, 7);
-      return leadMonth === currentMonth && lead.Data_visita && lead.Data_visita.trim() !== "";
-    }).length;
-
     // Label dinâmico para o primeiro card baseado na aba ativa
     const getLeadsLabel = () => {
       // Se estiver na aba GERAL, usar geralBusinessFilter
@@ -599,10 +589,9 @@ export const MainMetricsSection = ({
                    tipoLead.includes('proprietario');
           });
           
-          const primeiraVisita = todosProprietarios.filter(lead => 
-            lead.etapa_atual === 'Primeira Visita' ||
-            lead.etapa_atual === 'Visita Agendada' ||
-            (lead.Data_visita && lead.Data_visita.trim() !== "")
+          // isEtapaVisitaAgendada cobre "Primeira Visita" e "Visita Agendada".
+          const primeiraVisita = todosProprietarios.filter(lead =>
+            isEtapaVisitaAgendada(lead.etapa_atual)
           ).length;
           
           const estudoMercado = todosProprietarios.filter(lead => 
@@ -790,9 +779,8 @@ export const MainMetricsSection = ({
       }
 
       case 'geral':
-        const visitasRealizadas = allLeads.filter(lead => 
-          lead.etapa_atual === 'Visita Realizada' || 
-          (lead.Data_visita && lead.Data_visita.trim() !== "" && lead.etapa_atual !== 'Visita Agendada')
+        const visitasRealizadas = allLeads.filter(lead =>
+          isEtapaVisitaRealizada(lead.etapa_atual)
         ).length;
         
         const propostasAssinadas = allLeads.filter(lead => 
