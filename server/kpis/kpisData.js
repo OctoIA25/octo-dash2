@@ -56,12 +56,19 @@ export async function fetchLeads(supabase, { tenantId, period, agentId }) {
 const COMMERCIAL_PAGE_SIZE = 1000;
 
 /**
- * Soma VGV e VGC das vendas comerciais ASSINADAS no período (commercial_sales).
+ * Soma VGV e VGC das vendas ASSINADAS no período.
  *
- * Fonte única dos dois indicadores: a planilha comercial oficial. Filtra por
- * `data_assinatura` (coluna DATE → compara com as datas ISO cruas, sem UTC) e
- * por `is_active` (descarta linhas substituídas em reimportações). Pagina para
- * não sofrer o corte de 1000 linhas do PostgREST.
+ * Fonte única: a view `vendas_assinadas`. Até 17/09 esta função lia
+ * `commercial_sales`, que CONGELOU em 01/09 quando o sync horário da planilha
+ * foi desligado — a aba KPIs mostrava um retrato de 01/09 enquanto o resto da
+ * dash já lia a venda do funil no mesmo dia.
+ *
+ * A view resolve, de uma vez e para os dois lados (servidor e front), três
+ * coisas que antes eram feitas em dois lugares diferentes: a origem
+ * (`proposals` em proposta-assinada), a comissão (gravada, ou 3,5% lançamento /
+ * 6% terceiros) e o fuso — `data_assinatura` já vem como DATE de São Paulo,
+ * então a comparação com as datas ISO do período continua valendo e a venda da
+ * virada do mês não escorrega para o mês seguinte.
  *
  * Retorna { vgv, vgc } (números). Em erro, loga e retorna zeros — VGV/VGC são
  * KPIs auxiliares e não devem derrubar o painel inteiro.
@@ -73,10 +80,9 @@ export async function fetchCommercialTotals(supabase, { tenantId, period }) {
 
   for (;;) {
     const { data, error } = await supabase
-      .from('commercial_sales')
-      .select('valor_vgv,valor_vgc')
+      .from('vendas_assinadas')
+      .select('vgv,vgc')
       .eq('tenant_id', tenantId)
-      .eq('is_active', true)
       .gte('data_assinatura', period.startDate)
       .lte('data_assinatura', period.endDate)
       .range(page * COMMERCIAL_PAGE_SIZE, (page + 1) * COMMERCIAL_PAGE_SIZE - 1);
@@ -88,8 +94,8 @@ export async function fetchCommercialTotals(supabase, { tenantId, period }) {
 
     const rows = data || [];
     for (const row of rows) {
-      vgv += Number(row.valor_vgv) || 0;
-      vgc += Number(row.valor_vgc) || 0;
+      vgv += Number(row.vgv) || 0;
+      vgc += Number(row.vgc) || 0;
     }
 
     if (rows.length < COMMERCIAL_PAGE_SIZE) break;

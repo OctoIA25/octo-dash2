@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { countCaptacao, countCorretoresAtivos, countImoveisAtivos } from './kpisData.js';
+import { countCaptacao, countCorretoresAtivos, countImoveisAtivos, fetchCommercialTotals } from './kpisData.js';
 
 // Mock encadeável (vitest): cada from() tem seus próprios filters; `then`
 // resolve com o que o resolver devolver para (table, filters). Suporta in().
@@ -14,6 +14,7 @@ function makeSupabase(resolver) {
         not(col, op, val) { filters[`${col}__not_${op}`] = val; return builder; },
         in(col, vals) { filters[col] = vals; return builder; },
         gte(col, val) { filters[`${col}__gte`] = val; return builder; },
+        range(from, to) { filters.__range = [from, to]; return builder; },
         lte(col, val) { filters[`${col}__lte`] = val; return builder; },
         then(resolve) { resolve(resolver(table, filters)); },
       };
@@ -73,5 +74,41 @@ describe('countCorretoresAtivos', () => {
   it('erro retorna 0', async () => {
     const supabase = makeSupabase(() => ({ count: null, error: { message: 'boom' } }));
     expect(await countCorretoresAtivos(supabase, { tenantId: 't1' })).toBe(0);
+  });
+});
+
+
+describe('fetchCommercialTotals — VGV e VGC', () => {
+  // Lia até 17/09 a tabela `commercial_sales`, que congelou em 01/09 quando o
+  // sync da planilha foi desligado: a aba KPIs mostrava um retrato velho
+  // enquanto o resto da dash já lia a venda do funil no mesmo dia. A fonte
+  // única passou a ser a view `vendas_assinadas`, que também resolve a comissão
+  // (gravada, ou 3,5% / 6%) e entrega a data já no fuso de São Paulo.
+  it('lê da view vendas_assinadas, não da planilha congelada', async () => {
+    let tabelaConsultada = null;
+    const supabase = makeSupabase((table, f) => {
+      tabelaConsultada = table;
+      expect(f.tenant_id).toBe('t1');
+      expect(f['data_assinatura__gte']).toBe('2026-06-01');
+      expect(f['data_assinatura__lte']).toBe('2026-06-30');
+      return { data: [{ vgv: 100000, vgc: 6000 }, { vgv: 50000, vgc: 1750 }], error: null };
+    });
+
+    const res = await fetchCommercialTotals(supabase, {
+      tenantId: 't1',
+      period: { startDate: '2026-06-01', endDate: '2026-06-30' },
+    });
+
+    expect(tabelaConsultada).toBe('vendas_assinadas');
+    expect(res).toEqual({ vgv: 150000, vgc: 7750 });
+  });
+
+  it('erro de consulta devolve zeros em vez de derrubar o painel', async () => {
+    const supabase = makeSupabase(() => ({ data: null, error: { message: 'boom' } }));
+    const res = await fetchCommercialTotals(supabase, {
+      tenantId: 't1',
+      period: { startDate: '2026-06-01', endDate: '2026-06-30' },
+    });
+    expect(res).toEqual({ vgv: 0, vgc: 0 });
   });
 });
