@@ -5,6 +5,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { InfoMetrica } from '@/features/kpis/components/KpiComponents';
 import { useSearchParams } from 'react-router-dom';
 import {
   Chart as ChartJS,
@@ -2006,7 +2007,10 @@ export const RelatoriosPage = () => {
               <Users className="h-5 w-5 text-blue-600" />
             </div>
             <div>
-              <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Leads Recebidos</p>
+              <div className="flex items-center gap-1.5">
+                <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Leads Recebidos</p>
+                <InfoMetrica metricKey="relatorios.leadsRecebidos" label="Leads Recebidos" />
+              </div>
               <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpiNumero(kpisCalculados?.totalLeadsRecebidos)}</p>
             </div>
           </div>
@@ -2018,7 +2022,10 @@ export const RelatoriosPage = () => {
               <TrendingUp className="h-5 w-5 text-green-600" />
             </div>
             <div>
-              <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Leads Interagidos</p>
+              <div className="flex items-center gap-1.5">
+                <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Leads Interagidos</p>
+                <InfoMetrica metricKey="relatorios.leadsInteragidos" label="Leads Interagidos" />
+              </div>
               <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpiNumero(kpisCalculados?.totalLeadsInteragidos)}</p>
             </div>
           </div>
@@ -2030,7 +2037,10 @@ export const RelatoriosPage = () => {
               <BarChart3 className="h-5 w-5 text-yellow-600" />
             </div>
             <div>
-              <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Leads/dia (média)</p>
+              <div className="flex items-center gap-1.5">
+                <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Leads/dia (média)</p>
+                <InfoMetrica metricKey="relatorios.leadsPorDia" label="Leads/dia (média)" />
+              </div>
               <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpiNumero(kpisCalculados?.mediaLeadsDia)}</p>
             </div>
           </div>
@@ -2042,7 +2052,10 @@ export const RelatoriosPage = () => {
               <Clock className="h-5 w-5 text-purple-600" />
             </div>
             <div>
-              <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Tempo 1ª Interação</p>
+              <div className="flex items-center gap-1.5">
+                <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Tempo 1ª Interação</p>
+                <InfoMetrica metricKey="relatorios.tempoPrimeiraInteracao" label="Tempo 1ª Interação" />
+              </div>
               <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpisCalculados ? formatarMinutos(kpisCalculados.mediaTempoPrimeiraInteracao) : '—'}</p>
             </div>
           </div>
@@ -2054,7 +2067,10 @@ export const RelatoriosPage = () => {
               <CheckCircle2 className="h-5 w-5 text-emerald-600" />
             </div>
             <div>
-              <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Leads Convertidos</p>
+              <div className="flex items-center gap-1.5">
+                <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Leads Convertidos</p>
+                <InfoMetrica metricKey="relatorios.leadsConvertidos" label="Leads Convertidos" />
+              </div>
               <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpiNumero(kpisCalculados?.totalLeadsConvertidos)}</p>
             </div>
           </div>
@@ -2227,7 +2243,10 @@ export const RelatoriosPage = () => {
                       <BarChart3 className="h-5 w-5 text-yellow-600" />
                     </div>
                     <div>
-                      <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">VGV</p>
+                      <div className="flex items-center gap-1.5">
+                <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">VGV</p>
+                <InfoMetrica metricKey="vgv" label="VGV" />
+              </div>
                       <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpisVisiveis ? formatCompactCurrencyBRL(kpisVisiveis.vgv) : '—'}</p>
                     </div>
                   </div>
@@ -2239,7 +2258,10 @@ export const RelatoriosPage = () => {
                       <CheckCircle2 className="h-5 w-5 text-purple-600" />
                     </div>
                     <div>
-                      <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Comissão (VGC)</p>
+                      <div className="flex items-center gap-1.5">
+                <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Comissão (VGC)</p>
+                <InfoMetrica metricKey="vgc" label="Comissão (VGC)" />
+              </div>
                       <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpisVisiveis ? formatCompactCurrencyBRL(kpisVisiveis.vgc) : '—'}</p>
                     </div>
                   </div>
@@ -2268,7 +2290,10 @@ export const RelatoriosPage = () => {
                       <Clock className="h-5 w-5 text-emerald-600" />
                     </div>
                     <div>
-                      <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Ticket Médio</p>
+                      <div className="flex items-center gap-1.5">
+                <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Ticket Médio</p>
+                <InfoMetrica metricKey="ticketMedio" label="Ticket Médio" />
+              </div>
                       <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpisVisiveis ? formatCompactCurrencyBRL(kpisVisiveis.ticketMedio) : '—'}</p>
                     </div>
                   </div>

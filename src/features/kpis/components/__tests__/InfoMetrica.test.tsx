@@ -6,12 +6,11 @@ import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { InfoMetrica, KpiAtualizadoEm } from '../KpiComponents';
 import { KPI_DICIONARIO } from '../../domain/kpiDictionary';
-import type { KpiSummaryCard } from '../../types';
 
-const card = (over: Partial<KpiSummaryCard> = {}): KpiSummaryCard => ({
-  id: 'k1', metricKey: 'totalLeads', source: 'crm', unit: 'count',
-  label: 'Total de Leads', displayOrder: 0, category: 'geral', isFeatured: false,
-  rawValue: 10, displayValue: '10', target: null, progressPercent: null, trend: null,
+const card = (over: { metricKey?: string | null; description?: string } = {}) => ({
+  metricKey: 'totalLeads' as string | null,
+  label: 'Total de Leads',
+  description: undefined as string | undefined,
   ...over,
 });
 
@@ -23,22 +22,22 @@ describe('InfoMetrica', () => {
    * Este teste renderiza SEM provider de propósito.
    */
   it('renderiza sem TooltipProvider acima, sem derrubar a tela', () => {
-    expect(() => render(<InfoMetrica card={card()} />)).not.toThrow();
+    expect(() => render(<InfoMetrica {...card()} />)).not.toThrow();
     expect(screen.getByRole('button', { name: /Total de Leads/i })).toBeTruthy();
   });
 
   it('nao aparece quando nao ha texto para mostrar', () => {
-    const { container } = render(<InfoMetrica card={card({ metricKey: null, description: '' })} />);
+    const { container } = render(<InfoMetrica {...card({ metricKey: null, description: '' })} />);
     expect(container.innerHTML).toBe('');
   });
 
   it('usa o texto do gestor quando ele escreveu', () => {
-    render(<InfoMetrica card={card({ description: 'Regra da casa' })} />);
+    render(<InfoMetrica {...card({ description: 'Regra da casa' })} />);
     expect(screen.getByRole('button').getAttribute('aria-label')).toContain('Total de Leads');
   });
 
   it('o dicionario cobre a metrica nativa mesmo sem texto do gestor', () => {
-    const { container } = render(<InfoMetrica card={card({ description: '' })} />);
+    const { container } = render(<InfoMetrica {...card({ description: '' })} />);
     expect(container.innerHTML).not.toBe('');
     expect(KPI_DICIONARIO.totalLeads.length).toBeGreaterThan(0);
   });

@@ -68,6 +68,49 @@ export const KPI_DICIONARIO: Record<NativeMetricKey, string> = {
 };
 
 /**
+ * Contadores da Dash que NÃO estão no catálogo de KPIs.
+ *
+ * A aba KPIs tem um catálogo fechado (`NATIVE_METRIC_KEYS`); o resto da Dash
+ * tem contadores próprios, com contas próprias. O plano pede legenda "em toda
+ * a Dash, com texto vindo do dicionário de métricas" — um dicionário só —,
+ * então eles moram aqui, com a mesma exigência: de qual evento até qual
+ * evento, sobre quais registros, e o que aparece sem amostra.
+ *
+ * A chave é prefixada pela tela para não colidir com o catálogo nativo.
+ */
+export const DICIONARIO_DASH: Record<string, string> = {
+  'inicio.leadsNoFunil':
+    'Total de leads da imobiliária no funil, em qualquer etapa, sem os arquivados. ATENÇÃO: não é do mês — é a base inteira. A variação ao lado, essa sim, compara os últimos 7 dias com os 7 anteriores.',
+
+  'inicio.conversaoBase':
+    'Percentual dos leads que chegaram a fechamento — status contendo "assinada", "fechamento" ou "contrato". ATENÇÃO: é sobre a base inteira, não sobre o mês. Até 18/09 este card se chamava "Conversão do Mês" e mostrava exatamente este mesmo número, que nunca foi mensal.',
+
+  'inicio.metaMensal':
+    'A meta que está destacada na aba Metas, com o quanto já foi realizado. Sem nenhuma meta destacada, o card mostra um traço e convida a destacar uma — não mostra zero, que pareceria meta não cumprida.',
+
+  'inicio.aguardandoResposta':
+    'Leads marcados como quentes que entraram nas últimas 24 horas. É uma fila de urgência, não um indicador de desempenho.',
+
+  'inicio.podemEsfriar':
+    'Leads com temperatura marcada como morna, em qualquer data de entrada — a contagem não olha o período. A temperatura hoje é marcada à mão pelo corretor; quando o score de 0 a 100 entrar (P1.7 do plano), ela passa a ser derivada dele.',
+
+  'relatorios.leadsRecebidos':
+    'Leads criados dentro do período escolhido no filtro de datas, contados pela data de criação. A contagem é feita no banco — a tela não baixa as linhas para contar, senão pararia em 1.000 e o número empacaria.',
+
+  'relatorios.leadsInteragidos':
+    'Leads do período que a LIA chegou a contatar pelo WhatsApp. Até 18/09 contava lead cujo card tinha saído da primeira coluna do kanban, que é outra coisa e cobria 2,4% da base. Quando a leitura falha, o card mostra "Sem dados" em vez de zero.',
+
+  'relatorios.leadsPorDia':
+    'Leads recebidos no período divididos pelos dias do período. É contagem por dia, não percentual.',
+
+  'relatorios.tempoPrimeiraInteracao':
+    'Mediana do tempo entre o lead entrar na base e a LIA enviar a primeira mensagem no WhatsApp, dentro do período. Mediana e não média: um punhado de leads recontatados semanas depois desloca a média em horas. Período sem lead contatado mostra "Sem dados".',
+
+  'relatorios.leadsConvertidos':
+    'Leads DISTINTOS do período com proposta assinada. Um lead com duas propostas assinadas conta uma vez — por isso este número pode ser menor que o de vendas. Não sai de `final_sale_value`, coluna vazia em produção.',
+};
+
+/**
  * O texto do (i) de um card.
  *
  * A descrição escrita pelo gestor ganha quando existe — é a tela dele. Sem ela,
@@ -81,5 +124,5 @@ export function descricaoDaMetrica(
   const doGestor = (descricaoDoGestor || '').trim();
   if (doGestor) return doGestor;
   if (!metricKey) return null;
-  return KPI_DICIONARIO[metricKey as NativeMetricKey] ?? null;
+  return KPI_DICIONARIO[metricKey as NativeMetricKey] ?? DICIONARIO_DASH[metricKey] ?? null;
 }

@@ -13,8 +13,8 @@ import { monthPeriod, previousMonthPeriod } from '../period';
 import type { KpiPeriod } from '../types';
 import { computeCanManageKpis } from '../admin/hooks/useKpiAdmin';
 import { useAuthContext } from '@/contexts/AuthContext';
-import { useEffectiveUser } from '@/contexts/ViewAsContext';
 import {
+  KpiAtualizadoEm,
   KpiCommercialCharts,
   KpiFunnelCard,
   KpiGoalsCard,
@@ -39,11 +39,9 @@ function isCurrentMonth(period: KpiPeriod): boolean {
 
 export function KpisPage() {
   const [period, setPeriod] = useState<KpiPeriod>(() => monthPeriod());
-  // "Visualizar como": `actingUserId` é null sem contexto ativo (comportamento
-  // padrão). Ele entra na queryKey do useKpis, então o cache nunca mistura os
-  // KPIs de um usuário com os de outro. O servidor revalida quem pode assumir quem.
-  const { actingUserId } = useEffectiveUser();
-  const { data, isLoading, isError, refetch, tenantReady } = useKpis({ period, agentId: actingUserId });
+  // Sem agentId: os KPIs são os do usuário autenticado — que já é o usuário
+  // visualizado quando o "visualizar como" está ativo (ver ViewAsContext).
+  const { data, isLoading, isError, refetch, tenantReady } = useKpis({ period });
   const { isGestao, isOwner } = useAuthContext();
   const navigate = useNavigate();
   const canManageKpis = computeCanManageKpis({ isGestao, isOwner });
@@ -118,6 +116,12 @@ export function KpisPage() {
             >
               <RefreshCw className="w-3.5 h-3.5" strokeWidth={2} /> Atualizar
             </button>
+            {/*
+              Ao lado do "Atualizar" de propósito: quem clica ali quer saber se
+              o que está na tela é de agora. Sem o carimbo, um painel servido de
+              cache não tem como ser distinguido de um recém-calculado.
+            */}
+            <KpiAtualizadoEm iso={data?.atualizadoEm} />
             {canManageKpis && (
               <button
                 type="button"

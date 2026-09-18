@@ -4,6 +4,7 @@
  */
 
 import { useMemo, useState, useEffect } from 'react';
+import { InfoMetrica } from '@/features/kpis/components/KpiComponents';
 import { contarVisitasAgendadasPara } from '@/features/leads/utils/funnelStages';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { OKRManager } from '@/components/OKRManager';
@@ -80,9 +81,11 @@ interface KpiCardProps {
   trend?: { value: string; positive: boolean; caption: string };
   progress?: { pct: number; caption: string; barColor: string };
   onClick?: () => void;
+  /** Chave no dicionário de métricas — o texto do (i). */
+  dicionario?: string;
 }
 
-function KpiCard({ icon: Icon, iconBg, iconColor, label, value, trend, progress, onClick }: KpiCardProps) {
+function KpiCard({ icon: Icon, iconBg, iconColor, label, value, trend, progress, onClick, dicionario }: KpiCardProps) {
   const Wrapper: React.ElementType = onClick ? 'button' : 'div';
   return (
     <Wrapper
@@ -98,6 +101,7 @@ function KpiCard({ icon: Icon, iconBg, iconColor, label, value, trend, progress,
       <div className="flex items-center gap-2 mb-3">
         <Icon className={`w-[18px] h-[18px] ${iconColor}`} strokeWidth={1.6} />
         <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">{label}</p>
+        {dicionario && <InfoMetrica metricKey={dicionario} label={label} />}
       </div>
       <p className="text-[26px] font-bold text-slate-900 dark:text-slate-100 leading-none mb-2 tracking-tight">{value}</p>
       {trend && (
@@ -708,6 +712,7 @@ export function InicioNovaPage() {
                 label="Leads no Funil"
                 value={leadsNoFunil.toLocaleString('pt-BR')}
                 trend={leadsNoFunilTrend}
+                dicionario="inicio.leadsNoFunil"
                 onClick={() => navigate('/metricas/cliente-interessado')}
               />
               <KpiCard
@@ -716,15 +721,25 @@ export function InicioNovaPage() {
                 iconColor="text-slate-700 dark:text-slate-300"
                 label="Tempo Médio Resposta"
                 value={formatResponseTime(responseTime)}
-                trend={responseTimeTrend ?? {value: '0%', positive: true, caption: 'vs. semana passada'}}
+                // Sem comparação, o card não mostra nenhuma. O fallback que
+                // estava aqui inventava "0% vs. semana passada" — que lê como
+                // "ficou igual", quando o certo é "não dá para comparar".
+                trend={responseTimeTrend ?? undefined}
+                dicionario="tempoMedioResposta"
               />
               <KpiCard
                 icon={TrendingUp}
                 iconBg="bg-transparent"
                 iconColor="text-slate-700 dark:text-slate-300"
-                label="Conversão do Mês"
+                // Renomeado em 18/09. O número sai de `generalMetrics`, que
+                // NÃO recebe período: sempre foi a conversão da base inteira,
+                // nunca do mês. O rótulo é que mentia.
+                label="Conversão da Base"
                 value={`${conversaoMes.toFixed(1)}%`}
-                trend={{ value: '3,1%', positive: false, caption: 'vs. mês anterior' }}
+                // A variação estava CRAVADA no código: `3,1% vs. mês anterior`
+                // aparecia com qualquer dado, em qualquer imobiliária. Some
+                // até existir a conversão do mês anterior para comparar.
+                dicionario="inicio.conversaoBase"
               />
               <KpiCard
                 icon={Target}
@@ -732,6 +747,7 @@ export function InicioNovaPage() {
                 iconColor="text-slate-700 dark:text-slate-300"
                 label="Meta Mensal"
                 value={metaMensal.value}
+                dicionario="inicio.metaMensal"
                 progress={{ pct: metaMensal.pct, caption: metaMensal.caption, barColor: metaMensal.barColor }}
                 onClick={() => navigate('/metas')}
               />

@@ -92,8 +92,19 @@ function OriginBadge({ source }: { source: KpiSummaryCard['source'] }) {
  * das métricas nativas (`kpiDictionary.ts`). KPI manual sem descrição não
  * ganha ícone — melhor nada do que um (i) que abre vazio.
  */
-export function InfoMetrica({ card }: { card: KpiSummaryCard }) {
-  const texto = descricaoDaMetrica(card.metricKey, card.description);
+export function InfoMetrica({
+  metricKey,
+  label,
+  description,
+}: {
+  /** Chave no dicionário de métricas. */
+  metricKey: string | null | undefined;
+  /** Só para o rótulo de acessibilidade ("O que é X"). */
+  label: string;
+  /** Texto que o gestor escreveu; ganha do dicionário quando existe. */
+  description?: string | null;
+}) {
+  const texto = descricaoDaMetrica(metricKey, description);
   if (!texto) return null;
 
   // O provider vem embutido de propósito. Radix estoura "`Tooltip` must be
@@ -105,15 +116,25 @@ export function InfoMetrica({ card }: { card: KpiSummaryCard }) {
     <DicaProvider delayDuration={150}>
       <DicaRoot>
       <DicaGatilho asChild>
-        <button
-          type="button"
-          // `type="button"` porque o card pode estar dentro de um form; sem
-          // isso o clique no (i) submeteria.
-          aria-label={`O que é ${card.label}`}
-          className="shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+        {/*
+          `span` com role, e não `<button>`: alguns cards da Dash são eles
+          próprios um `<button>` (o card inteiro navega ao clique), e botão
+          dentro de botão é HTML inválido — o React avisa e o navegador
+          resolve como quiser. O stopPropagation impede que abrir o (i)
+          também dispare a navegação do card.
+        */}
+        <span
+          role="button"
+          tabIndex={0}
+          aria-label={`O que é ${label}`}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
+          }}
+          className="shrink-0 inline-flex text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-help"
         >
           <Info className="w-3.5 h-3.5" strokeWidth={2} />
-        </button>
+        </span>
       </DicaGatilho>
       <DicaConteudo side="top" className="max-w-[320px] text-[12.5px] leading-relaxed">
         {texto}
@@ -165,7 +186,7 @@ export function KpiHeroCard({
           <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider truncate">
             {card.label}
           </p>
-          <InfoMetrica card={card} />
+          <InfoMetrica metricKey={card.metricKey} label={card.label} description={card.description} />
         </div>
         <OriginBadge source={card.source} />
       </div>
@@ -193,7 +214,7 @@ export function KpiCompactCard({ card }: { card: KpiSummaryCard }) {
       <div className="flex items-center justify-between gap-2 mb-1">
         <div className="flex items-center gap-1.5 min-w-0">
           <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 truncate">{card.label}</p>
-          <InfoMetrica card={card} />
+          <InfoMetrica metricKey={card.metricKey} label={card.label} description={card.description} />
         </div>
         <OriginBadge source={card.source} />
       </div>

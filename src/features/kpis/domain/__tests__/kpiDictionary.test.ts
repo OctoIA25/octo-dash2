@@ -4,7 +4,7 @@
  * dicionário não descreva uma conta que o código não faz mais.
  */
 import { describe, it, expect } from 'vitest';
-import { KPI_DICIONARIO, descricaoDaMetrica } from '../kpiDictionary';
+import { KPI_DICIONARIO, DICIONARIO_DASH, descricaoDaMetrica } from '../kpiDictionary';
 import { NATIVE_METRIC_KEYS } from '../kpiTypes';
 
 describe('KPI_DICIONARIO', () => {
@@ -45,6 +45,31 @@ describe('KPI_DICIONARIO', () => {
   });
 });
 
+describe('DICIONARIO_DASH — contadores fora do catálogo de KPIs', () => {
+  it('cada texto e uma frase de verdade, nao o rotulo repetido', () => {
+    for (const [chave, texto] of Object.entries(DICIONARIO_DASH)) {
+      expect(texto.length, `texto curto demais em ${chave}`).toBeGreaterThan(60);
+    }
+  });
+
+  // Chave prefixada pela tela para não colidir com o catálogo nativo — e o
+  // catálogo tem precedência, então uma colisão silenciaria a entrada daqui.
+  it('nenhuma chave colide com o catalogo nativo', () => {
+    const colisoes = Object.keys(DICIONARIO_DASH).filter((k) => k in KPI_DICIONARIO);
+    expect(colisoes).toEqual([]);
+  });
+
+  // As pegadinhas destas telas, que um gestor descobriria do jeito ruim.
+  it('avisa que os numeros da home nao sao do mes', () => {
+    expect(DICIONARIO_DASH['inicio.leadsNoFunil']).toContain('não é do mês');
+    expect(DICIONARIO_DASH['inicio.conversaoBase']).toContain('não sobre o mês');
+  });
+
+  it('avisa que lead convertido e DISTINTO, nao proposta', () => {
+    expect(DICIONARIO_DASH['relatorios.leadsConvertidos']).toContain('DISTINTOS');
+  });
+});
+
 describe('descricaoDaMetrica', () => {
   it('o texto do gestor ganha do dicionario — a tela e dele', () => {
     expect(descricaoDaMetrica('totalLeads', 'Do meu jeito')).toBe('Do meu jeito');
@@ -60,5 +85,10 @@ describe('descricaoDaMetrica', () => {
   it('KPI manual sem texto devolve null, e o (i) some', () => {
     expect(descricaoDaMetrica(null, '')).toBeNull();
     expect(descricaoDaMetrica('metricaQueNaoExiste', '')).toBeNull();
+  });
+
+  it('acha tambem os contadores das outras telas', () => {
+    expect(descricaoDaMetrica('inicio.conversaoBase', '')).toBe(DICIONARIO_DASH['inicio.conversaoBase']);
+    expect(descricaoDaMetrica('relatorios.leadsRecebidos', '')).toBe(DICIONARIO_DASH['relatorios.leadsRecebidos']);
   });
 });
