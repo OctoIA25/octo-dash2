@@ -117,6 +117,7 @@ import {
   sumParticipations,
 } from '@/features/leads/utils/commissionSplit';
 import { DocumentPreviewDialog } from '@/features/leads/components/DocumentPreviewDialog';
+import { ChecklistDocumentosVenda } from '@/features/leads/components/ChecklistDocumentosVenda';
 import { PdfPreviewDialog } from '@/features/leads/components/PdfPreviewDialog';
 import { ImoveisComboBox } from '@/components/ui/imovel-combobox';
 import { useImoveisData } from '@/features/imoveis/hooks/useImoveisData';
@@ -4799,9 +4800,18 @@ export const PropostaPage = ({
                   </DetailSection>
                 </TabsContent>
 
-                <TabsContent value="certidoes" className="mt-0">
+                <TabsContent value="certidoes" className="mt-0 space-y-4">
                   <DetailSection title="Certidões" icon={ShieldCheck}>
                     <SimpleChecklist items={CERTIFICATE_CHECKLIST} completedCount={selectedProposal.stageId === 'proposta-assinada' ? 4 : 1} />
+                  </DetailSection>
+                  <DetailSection title="Checklist de documentos para venda" icon={ClipboardCheck}>
+                    <ChecklistDocumentosVenda
+                      valores={transactionForm}
+                      onAlternar={(chave, marcar, descricao) => {
+                        updateTransactionForm(selectedProposal, chave, marcar ? new Date().toISOString() : '');
+                        appendHistory(selectedProposal, marcar ? 'Documento marcado' : 'Documento desmarcado', descricao);
+                      }}
+                    />
                   </DetailSection>
                 </TabsContent>
 
