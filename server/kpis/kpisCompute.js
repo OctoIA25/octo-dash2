@@ -52,6 +52,11 @@ export function leadStage(lead) {
 
 /** Variação percentual. `null` quando não há baseline. `lowerIsBetter` inverte o "positivo". */
 export function computeTrend(atual, anterior, lowerIsBetter = false) {
+  // `atual` nulo é "não dá para medir", não é queda: sem esta guarda, uma
+  // métrica que fica sem amostra no período apareceria como -100%.
+  if (atual == null) {
+    return { percent: null, positive: !lowerIsBetter };
+  }
   if (!anterior || anterior === 0) {
     return { percent: null, positive: !lowerIsBetter };
   }
@@ -75,20 +80,32 @@ export function countVendas(leads) {
 }
 
 /** Tempo médio de resposta (min) dos leads com primeira resposta válida (>= 0). */
-export function avgResponseMinutes(leads) {
-  let total = 0;
-  let count = 0;
-  for (const lead of leads) {
-    if (!lead.created_at || !lead.first_response_at) continue;
-    const created = new Date(lead.created_at).getTime();
-    const responded = new Date(lead.first_response_at).getTime();
-    if (!created || !responded || Number.isNaN(created) || Number.isNaN(responded)) continue;
-    const diff = (responded - created) / 60000;
-    if (diff < 0) continue;
-    total += diff;
-    count += 1;
-  }
-  return count > 0 ? total / count : 0;
+/**
+ * Mediana dos minutos até a primeira interação.
+ *
+ * MEDIANA, não média. Nos mesmos dados da Lotus a média dá 2.432 min e a
+ * mediana dá 1,4 min: a média é dominada por uma cauda de leads recontatados
+ * semanas depois, e era ela que fazia o card anunciar 12,9 dias de "tempo de
+ * resposta". O plano do CEO também pede mediana.
+ *
+ * Devolve `null` quando não há amostra. `null` é "não dá para medir" e desce
+ * como "Sem dados"; `0` seria "medimos e deu zero", que é outra afirmação.
+ */
+export function medianMinutes(minutos) {
+  const v = (minutos || [])
+    // O descarte vem ANTES do Number() de propósito: `Number(null)` é 0, e um
+    // nulo virando zero afirmaria que a LIA respondeu instantaneamente. Vale
+    // para '' , false e [] também. String entra porque o PostgREST devolve
+    // coluna `numeric` como texto.
+    .filter((n) => typeof n === 'number' || (typeof n === 'string' && n.trim() !== ''))
+    .map(Number)
+    .filter((n) => Number.isFinite(n) && n >= 0)
+    .sort((a, b) => a - b);
+
+  if (v.length === 0) return null;
+
+  const meio = Math.floor(v.length / 2);
+  return v.length % 2 === 0 ? (v[meio - 1] + v[meio]) / 2 : v[meio];
 }
 
 /** Funil com etapas exclusivas + conversão etapa-a-etapa e geral. */
@@ -183,11 +200,25 @@ export function nativeCardValues(current, previous, counts) {
   const c = counts || {};
   const totalLeads = current.length, totalLeadsPrev = previous.length;
   const vendas = countVendas(current), vendasPrev = countVendas(previous);
-  const respMin = avgResponseMinutes(current), respMinPrev = avgResponseMinutes(previous);
-  const atendidos = current.filter((l) => !!l.first_response_at).length;
-  const taxaAtend = totalLeads > 0 ? round1((atendidos / totalLeads) * 100) : 0;
-  const atendidosPrev = previous.filter((l) => !!l.first_response_at).length;
-  const taxaAtendPrev = totalLeadsPrev > 0 ? round1((atendidosPrev / totalLeadsPrev) * 100) : 0;
+  // Tempo até a primeira interação, dos dois lados, vindo das views.
+  // Antes as três linhas abaixo saíam de `first_response_at`, que marca a saída
+  // do card da primeira coluna do kanban (leadsService.ts:602) e não ter falado
+  // com ninguém. Na Lotus isso dava 41 leads de 1.684, média de 12,9 dias, com
+  // um valor negativo e outro de 203 dias — e a taxa de atendimento, que usa a
+  // mesma coluna, media "% de cards arrastados", não "% de leads atendidos".
+  const amostraLia = Array.isArray(c.interacaoLia) ? c.interacaoLia : null;
+  const amostraLiaPrev = Array.isArray(c.interacaoLiaPrev) ? c.interacaoLiaPrev : null;
+
+  const respMin = medianMinutes(amostraLia), respMinPrev = medianMinutes(amostraLiaPrev);
+  const corretorMin = medianMinutes(c.interacaoCorretor);
+  const corretorMinPrev = medianMinutes(c.interacaoCorretorPrev);
+
+  // Atendido = a LIA falou com o lead. `null` (leitura falhou) vira "Sem dados"
+  // em vez de 0%, que seria afirmar que ninguém foi atendido.
+  const atendidos = amostraLia ? amostraLia.length : null;
+  const taxaAtend = amostraLia && totalLeads > 0 ? round1((atendidos / totalLeads) * 100) : null;
+  const atendidosPrev = amostraLiaPrev ? amostraLiaPrev.length : null;
+  const taxaAtendPrev = amostraLiaPrev && totalLeadsPrev > 0 ? round1((atendidosPrev / totalLeadsPrev) * 100) : null;
 
   const ticket = vendas.qtd > 0 ? vendas.valor / vendas.qtd : 0;
   const ticketPrev = vendasPrev.qtd > 0 ? vendasPrev.valor / vendasPrev.qtd : 0;
@@ -204,7 +235,8 @@ export function nativeCardValues(current, previous, counts) {
     valorVendas:       { rawValue: vendas.valor, displayValue: BRL(vendas.valor), trend: computeTrend(vendas.valor, vendasPrev.valor) },
     imoveisAtivos:     { rawValue: c.imoveisAtivos || 0, displayValue: Number(c.imoveisAtivos || 0).toLocaleString('pt-BR'), trend: null },
     tempoMedioResposta:{ rawValue: respMin, displayValue: formatMinutes(respMin), trend: computeTrend(respMin, respMinPrev, true) },
-    taxaAtendimento:   { rawValue: taxaAtend, displayValue: `${taxaAtend.toFixed(1)}%`, trend: computeTrend(taxaAtend, taxaAtendPrev) },
+    tempoAteCorretor:  { rawValue: corretorMin, displayValue: formatMinutes(corretorMin), trend: computeTrend(corretorMin, corretorMinPrev, true) },
+    taxaAtendimento:   { rawValue: taxaAtend, displayValue: taxaAtend == null ? 'Sem dados' : `${taxaAtend.toFixed(1)}%`, trend: computeTrend(taxaAtend, taxaAtendPrev) },
     // --- novos ---
     vgv:               { rawValue: Number(c.vgv) || 0, displayValue: BRL(c.vgv), trend: computeTrend(Number(c.vgv) || 0, Number(c.vgvPrev) || 0) },
     vgc:               { rawValue: Number(c.vgc) || 0, displayValue: BRL(c.vgc), trend: computeTrend(Number(c.vgc) || 0, Number(c.vgcPrev) || 0) },
@@ -220,9 +252,15 @@ export function nativeCardValues(current, previous, counts) {
   };
 }
 
+// Os 6 cards do modo sem configuração. Métrica nova NÃO entra aqui: `vgv`,
+// `ticketMedio` e `conversaoVisita` existem em nativeCardValues e são ligadas
+// por linha em `dashboard_kpis`. Mexer neste mapa muda o que um tenant sem
+// configuração nenhuma enxerga — `tempoAteCorretor` segue a mesma rota das
+// outras, pela seed.
 const LEGACY_LABELS = {
   totalLeads: 'Total de Leads', vendas: 'Vendas', valorVendas: 'Valor em Vendas',
-  imoveisAtivos: 'Imóveis Ativos', tempoMedioResposta: 'Tempo Médio de Resposta', taxaAtendimento: 'Taxa de Atendimento',
+  imoveisAtivos: 'Imóveis Ativos', tempoMedioResposta: 'Tempo até a LIA responder',
+  taxaAtendimento: 'Taxa de Atendimento',
 };
 
 function clampPercent(target, realized) {

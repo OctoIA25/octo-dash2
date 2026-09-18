@@ -15,7 +15,8 @@ export type KpiStatus = 'active' | 'inactive';
 
 /** Métricas nativas que o servidor sabe calcular (catálogo fechado p/ crm). */
 export const NATIVE_METRIC_KEYS = [
-  'totalLeads', 'vendas', 'valorVendas', 'imoveisAtivos', 'tempoMedioResposta', 'taxaAtendimento',
+  'totalLeads', 'vendas', 'valorVendas', 'imoveisAtivos',
+  'tempoMedioResposta', 'tempoAteCorretor', 'taxaAtendimento',
   'vgv', 'vgc', 'ticketMedio', 'conversaoVisita',
   'captacaoExclusiva', 'captacaoSemExclusividade', 'tamanhoEquipe', 'vendasPorCorretor',
 ] as const;
@@ -27,7 +28,10 @@ export const METRIC_KEY_LABELS: Record<NativeMetricKey, string> = {
   vendas: 'Vendas',
   valorVendas: 'Valor em Vendas',
   imoveisAtivos: 'Imóveis Ativos',
-  tempoMedioResposta: 'Tempo Médio de Resposta',
+  // Renomeado em 18/09: o card media a saída do card da primeira coluna do
+  // kanban, não resposta. A chave fica — está gravada em dashboard_kpis.
+  tempoMedioResposta: 'Tempo até a LIA responder',
+  tempoAteCorretor: 'Tempo até o corretor falar',
   taxaAtendimento: 'Taxa de Atendimento',
   vgv: 'VGV Gerado no Mês',
   vgc: 'VGC Gerado no Mês',

@@ -79,14 +79,14 @@ exports[`buildOverview — regressão do modo legado (sem config) > snapshot dos
     {
       "category": "geral",
       "displayOrder": 4,
-      "displayValue": "32min",
+      "displayValue": "30min",
       "id": "tempoMedioResposta",
       "isFeatured": false,
       "key": "tempoMedioResposta",
-      "label": "Tempo Médio de Resposta",
+      "label": "Tempo até a LIA responder",
       "metricKey": "tempoMedioResposta",
       "progressPercent": null,
-      "rawValue": 31.666666666666668,
+      "rawValue": 30,
       "source": "crm",
       "target": null,
       "trend": {

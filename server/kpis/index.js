@@ -27,6 +27,7 @@ import {
   countCorretoresAtivos,
   countImoveisAtivos,
   fetchCommercialTotals,
+  fetchPrimeiraInteracao,
   fetchGoals,
   fetchLeads,
 } from './kpisData.js';
@@ -161,6 +162,8 @@ export function makeKpisHandler(supabase) {
         goals,
         commercialCurrent,
         commercialPrevious,
+        interacao,
+        interacaoPrev,
         kpis,
         targets,
         values,
@@ -173,6 +176,8 @@ export function makeKpisHandler(supabase) {
         fetchGoals(supabase, { tenantId }),
         fetchCommercialTotals(supabase, { tenantId, period }),
         fetchCommercialTotals(supabase, { tenantId, period: prevPeriod }),
+        fetchPrimeiraInteracao(supabase, { tenantId, period, agentId }),
+        fetchPrimeiraInteracao(supabase, { tenantId, period: prevPeriod, agentId }),
         fetchDashboardKpis(supabase, { tenantId }),
         fetchKpiTargets(supabase, periodScope),
         fetchKpiValues(supabase, periodScope),
@@ -187,6 +192,10 @@ export function makeKpisHandler(supabase) {
         vgc: commercialCurrent.vgc,
         vgvPrev: commercialPrevious.vgv,
         vgcPrev: commercialPrevious.vgc,
+        interacaoLia: interacao.lia,
+        interacaoLiaPrev: interacaoPrev.lia,
+        interacaoCorretor: interacao.corretor,
+        interacaoCorretorPrev: interacaoPrev.corretor,
       };
 
       const overview = buildOverview({

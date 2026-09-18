@@ -3,7 +3,7 @@ import {
   classifyStage,
   computeTrend,
   countVendas,
-  avgResponseMinutes,
+  medianMinutes,
   buildFunnel,
   buildSources,
   buildPriceRanges,
@@ -103,26 +103,51 @@ describe('countVendas — definição única de venda (final_sale_value > 0)', (
   });
 });
 
-describe('avgResponseMinutes', () => {
-  it('média dos tempos válidos', () => {
-    const leads = [
-      { created_at: '2026-06-01T10:00:00Z', first_response_at: '2026-06-01T10:30:00Z' }, // 30min
-      { created_at: '2026-06-01T10:00:00Z', first_response_at: '2026-06-01T11:00:00Z' }, // 60min
-    ];
-    expect(avgResponseMinutes(leads)).toBe(45);
+describe('medianMinutes', () => {
+  it('mediana de uma amostra ímpar', () => {
+    expect(medianMinutes([30, 10, 20])).toBe(20);
   });
 
-  it('ignora tempos negativos (datas inconsistentes)', () => {
-    const leads = [
-      { created_at: '2026-06-01T11:00:00Z', first_response_at: '2026-06-01T10:00:00Z' }, // -60min → ignorado
-      { created_at: '2026-06-01T10:00:00Z', first_response_at: '2026-06-01T10:20:00Z' }, // 20min
-    ];
-    expect(avgResponseMinutes(leads)).toBe(20);
+  it('mediana de uma amostra par é a média dos dois do meio', () => {
+    expect(medianMinutes([10, 20, 30, 40])).toBe(25);
   });
 
-  it('sem respostas válidas → 0', () => {
-    expect(avgResponseMinutes([{ created_at: '2026-06-01T10:00:00Z', first_response_at: null }])).toBe(0);
-    expect(avgResponseMinutes([])).toBe(0);
+  // A razão de ser mediana e não média: um único lead recontatado semanas
+  // depois move a média em horas e não mexe na mediana. Foi essa cauda que
+  // fazia o card da Lotus anunciar 12,9 dias de "tempo de resposta".
+  it('uma cauda longa nao desloca a mediana', () => {
+    expect(medianMinutes([1, 2, 3, 4, 100000])).toBe(3);
+  });
+
+  it('ignora negativos (lead contatado antes do proprio created_at)', () => {
+    expect(medianMinutes([-60, 20])).toBe(20);
+  });
+
+  // `Number(null)` é 0: sem descartar antes do cast, um nulo entrava como
+  // "respondeu em zero minuto" e puxava a mediana para baixo.
+  it('nulo nao vira zero', () => {
+    expect(medianMinutes([null, undefined, '', 10, 20, 30])).toBe(20);
+  });
+
+  it('ignora o que nao e numero', () => {
+    expect(medianMinutes(['x', NaN, false, [], {}, 10, 20, 30])).toBe(20);
+  });
+
+  // PostgREST devolve coluna `numeric` como string.
+  it('aceita numero em string, que e como o PostgREST devolve numeric', () => {
+    expect(medianMinutes(['1.4', '0.3', '2.5'])).toBe(1.4);
+  });
+
+  // `null` e `0` são afirmações diferentes: "não dá para medir" contra
+  // "medimos e deu zero". O card mostra "Sem dados" só no primeiro caso.
+  it('sem amostra devolve null, nao 0', () => {
+    expect(medianMinutes([])).toBeNull();
+    expect(medianMinutes(null)).toBeNull();
+    expect(medianMinutes([-5, -10])).toBeNull();
+  });
+
+  it('zero minuto e uma medicao valida, nao ausencia', () => {
+    expect(medianMinutes([0, 0, 0])).toBe(0);
   });
 });
 
@@ -198,19 +223,42 @@ describe('buildPriceRanges', () => {
 });
 
 describe('buildCards', () => {
-  it('taxa de atendimento sem leads não divide por zero', () => {
+  // Período sem lead nenhum: a taxa não é 0%, é indefinida. Dizer "0,0%" ali
+  // afirma que ninguém foi atendido, quando não havia ninguém para atender.
+  it('taxa de atendimento sem leads diz "Sem dados", nao 0,0%', () => {
     const cards = buildCards([], [], COUNTS0);
     const taxa = cards.find((c) => c.key === 'taxaAtendimento');
-    expect(taxa.displayValue).toBe('0.0%');
+    expect(taxa.displayValue).toBe('Sem dados');
+    expect(taxa.rawValue).toBeNull();
+  });
+
+  it('taxa de atendimento = leads que a LIA contatou sobre o total', () => {
+    const current = [{ created_at: '2026-06-01T10:00:00Z' }, { created_at: '2026-06-01T10:00:00Z' },
+                     { created_at: '2026-06-01T10:00:00Z' }, { created_at: '2026-06-01T10:00:00Z' }];
+    const cards = buildCards(current, [], { ...COUNTS0, interacaoLia: [1, 2, 3] });
+    const taxa = cards.find((c) => c.key === 'taxaAtendimento');
+    expect(taxa.displayValue).toBe('75.0%');
   });
 
   it('tempo de resposta usa lowerIsBetter na variação', () => {
-    const current = [{ created_at: '2026-06-01T10:00:00Z', first_response_at: '2026-06-01T10:10:00Z' }]; // 10min
-    const previous = [{ created_at: '2026-05-01T10:00:00Z', first_response_at: '2026-05-01T10:30:00Z' }]; // 30min
-    const cards = buildCards(current, previous, COUNTS0);
+    // A amostra vem das views agora, por `counts` — não mais de uma coluna do lead.
+    const cards = buildCards([], [], {
+      ...COUNTS0,
+      interacaoLia: [10],      // mediana 10 min neste período
+      interacaoLiaPrev: [30],  // 30 min no anterior
+    });
     const tmr = cards.find((c) => c.key === 'tempoMedioResposta');
     // caiu de 30 para 10 → variação negativa, mas POSITIVA para o negócio
     expect(tmr.trend.positive).toBe(true);
+  });
+
+  it('sem amostra o card diz "Sem dados" e a variacao nao inventa queda', () => {
+    const cards = buildCards([], [], { ...COUNTS0, interacaoLia: [], interacaoLiaPrev: [30] });
+    const tmr = cards.find((c) => c.key === 'tempoMedioResposta');
+    expect(tmr.displayValue).toBe('Sem dados');
+    expect(tmr.rawValue).toBeNull();
+    // sem esta guarda em computeTrend, isto apareceria como -100%
+    expect(tmr.trend.percent).toBeNull();
   });
 });
 

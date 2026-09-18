@@ -17,7 +17,10 @@ const LEADS_PAGE_SIZE = 1000;
 
 // Na tabela `leads`, o estágio do funil é a coluna `status` (não existe
 // `etapa_atual` — esse nome só aparece no ProcessedLead normalizado do front).
-const LEAD_FIELDS = 'status,source,final_sale_value,created_at,first_response_at';
+// `first_response_at` saiu daqui: a coluna é gravada quando o card deixa a
+// primeira coluna do kanban (leadsService.ts:602), não quando alguém fala com o
+// lead. Quem mede interação agora é a view `primeira_interacao`.
+const LEAD_FIELDS = 'status,source,final_sale_value,created_at';
 
 /**
  * Lê todos os leads do período (paginado), escopados por tenant e sem
@@ -51,6 +54,70 @@ export async function fetchLeads(supabase, { tenantId, period, agentId }) {
   }
 
   return rows;
+}
+
+const INTERACAO_PAGE_SIZE = 1000;
+
+/**
+ * Minutos até a primeira interação de cada lead do período, dos dois lados.
+ *
+ * Lê as views `primeira_interacao` (LIA) e `primeira_interacao_corretor`. Os
+ * filtros são os MESMOS de `fetchLeads` — tenant, período por data de criação,
+ * não arquivado e, no escopo individual, o corretor — senão a taxa de
+ * atendimento passa de 100% (arquivado no numerador, fora do denominador) e a
+ * tela de um corretor mostra o tempo do tenant inteiro.
+ *
+ * Devolve os minutos crus, não a mediana: a regra de cálculo mora em
+ * kpisCompute.js, que é puro e testável sem rede.
+ *
+ * Erro de leitura devolve array VAZIO, e quem consome transforma isso em
+ * "Sem dados". Não devolve 0 de propósito: zero minuto é uma medição, ausência
+ * de medição é outra coisa.
+ */
+export async function fetchPrimeiraInteracao(supabase, { tenantId, period, agentId }) {
+  const lerView = async (view) => {
+    const minutos = [];
+    let from = 0;
+
+    for (;;) {
+      let query = supabase
+        .from(view)
+        .select('minutos_ate_primeiro_contato')
+        .eq('tenant_id', tenantId)
+        .is('archived_at', null)
+        .gte('lead_criado_em', dayStartUtc(period.startDate))
+        .lte('lead_criado_em', dayEndUtc(period.endDate))
+        .range(from, from + INTERACAO_PAGE_SIZE - 1);
+
+      if (agentId) {
+        query = query.eq('assigned_agent_id', agentId);
+      }
+
+      const { data, error } = await query;
+      if (error) {
+        console.error(`[kpis] falha ao ler ${view}:`, error.message);
+        return [];
+      }
+
+      const page = data || [];
+      for (const row of page) {
+        const n = Number(row.minutos_ate_primeiro_contato);
+        if (Number.isFinite(n)) minutos.push(n);
+      }
+
+      if (page.length < INTERACAO_PAGE_SIZE) break;
+      from += INTERACAO_PAGE_SIZE;
+    }
+
+    return minutos;
+  };
+
+  const [lia, corretor] = await Promise.all([
+    lerView('primeira_interacao'),
+    lerView('primeira_interacao_corretor'),
+  ]);
+
+  return { lia, corretor };
 }
 
 const COMMERCIAL_PAGE_SIZE = 1000;

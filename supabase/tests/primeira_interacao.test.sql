@@ -42,7 +42,10 @@ INSERT INTO public.tenants (id, code, name) VALUES
 
 INSERT INTO public.tenant_memberships (tenant_id, user_id, role, permissions) VALUES
   ('b1a50000-0000-4000-a000-00000000000a', 'b1a50000-0000-4000-a000-000000000001', 'admin', '{}'),
-  ('b1a50000-0000-4000-a000-00000000000b', 'b1a50000-0000-4000-a000-000000000002', 'admin', '{}');
+  ('b1a50000-0000-4000-a000-00000000000b', 'b1a50000-0000-4000-a000-000000000002', 'admin', '{}'),
+  -- O corretor precisa ser membro: tr_leads_zz_assignee_guard anula em silêncio
+  -- um assigned_agent_id que não pertença ao tenant.
+  ('b1a50000-0000-4000-a000-00000000000a', 'b1a50000-0000-4000-a000-0000000000c1', 'corretor', '{}');
 
 -- Todos os leads nascem no mesmo instante para a conta de minutos ficar óbvia.
 INSERT INTO public.leads (id, tenant_id, name, created_at) VALUES
@@ -122,6 +125,24 @@ SELECT pg_temp.checa(
   (SELECT minutos_ate_primeiro_contato FROM public.primeira_interacao
     WHERE lead_id = 'b1a50000-0000-4000-a000-0000000000e6') = 20,
   'mensagem do corretor nao adianta o relogio da LIA (20 min, nao 5)');
+
+-- As colunas de recorte. A view EXPÕE `archived_at` e `assigned_agent_id`, não
+-- filtra por eles: quem consome recorta igual recorta `leads`. Se elas sumirem,
+-- a taxa de atendimento passa de 100% e a tela do corretor mostra o tenant.
+UPDATE public.leads SET archived_at = '2026-09-02T10:00:00Z', assigned_agent_id = 'b1a50000-0000-4000-a000-0000000000c1'
+ WHERE id = 'b1a50000-0000-4000-a000-0000000000e1';
+
+SELECT pg_temp.checa(
+  (SELECT archived_at IS NOT NULL AND assigned_agent_id = 'b1a50000-0000-4000-a000-0000000000c1'
+     FROM public.primeira_interacao WHERE lead_id = 'b1a50000-0000-4000-a000-0000000000e1'),
+  'view entrega archived_at e assigned_agent_id para quem consome recortar');
+
+SELECT pg_temp.checa(
+  EXISTS (SELECT 1 FROM public.primeira_interacao WHERE lead_id = 'b1a50000-0000-4000-a000-0000000000e1'),
+  'lead arquivado continua na view (quem filtra e o consumidor, nao ela)');
+
+UPDATE public.leads SET archived_at = NULL, assigned_agent_id = NULL
+ WHERE id = 'b1a50000-0000-4000-a000-0000000000e1';
 
 -- ----------------------------------------------------------------------------
 -- O outro lado: primeira_interacao_corretor
@@ -217,4 +238,4 @@ SELECT pg_temp.checa(
 
 ROLLBACK;
 
-\echo 'OK: primeira_interacao — 20 casos passaram.'
+\echo 'OK: primeira_interacao — 22 casos passaram.'

@@ -60,12 +60,22 @@
 -- Sem a view, os consumidores perdem o tempo de primeira interação (mostram
 -- "Sem dados"), não quebram.
 
+-- COLUNAS DE FILTRO. `archived_at` e `assigned_agent_id` vêm junto porque todo
+-- consumidor precisa recortar esta view do mesmo jeito que recorta `leads`:
+-- server/kpis/kpisData.js:26 lê leads com `archived_at IS NULL` e, no escopo
+-- individual, com `assigned_agent_id = <corretor>`. Sem estas colunas a taxa de
+-- atendimento podia passar de 100% (lead arquivado no numerador, fora do
+-- denominador) e a tela de um corretor mostraria o tempo do tenant inteiro.
+-- A view não filtra nada disso sozinha: expõe o fato, quem consome decide.
+
 CREATE OR REPLACE VIEW public.primeira_interacao
 WITH (security_invoker = true) AS
 SELECT
   l.tenant_id,
   l.id                                  AS lead_id,
   l.created_at                          AS lead_criado_em,
+  l.archived_at,
+  l.assigned_agent_id,
   min(m.wa_timestamp)                   AS primeiro_contato_em,
   (EXTRACT(EPOCH FROM (min(m.wa_timestamp) - l.created_at)) / 60)::numeric
                                         AS minutos_ate_primeiro_contato
@@ -78,7 +88,7 @@ JOIN public.whatsapp_messages m
 WHERE m.direction = 'outbound'
   AND m.sent_by_user_id IS NULL         -- sem autor = LIA; com autor = corretor
   AND m.wa_timestamp IS NOT NULL
-GROUP BY l.tenant_id, l.id, l.created_at
+GROUP BY l.tenant_id, l.id, l.created_at, l.archived_at, l.assigned_agent_id
 HAVING min(m.wa_timestamp) >= l.created_at;   -- decisão 3: negativos fora
 
 COMMENT ON VIEW public.primeira_interacao IS
@@ -148,6 +158,8 @@ SELECT
   l.tenant_id,
   l.id                                  AS lead_id,
   l.created_at                          AS lead_criado_em,
+  l.archived_at,
+  l.assigned_agent_id,
   min(ct.em)                            AS primeiro_contato_em,
   (EXTRACT(EPOCH FROM (min(ct.em) - l.created_at)) / 60)::numeric
                                         AS minutos_ate_primeiro_contato
@@ -155,7 +167,7 @@ FROM public.leads l
 JOIN contatos ct
   ON ct.lead_id = l.id::text
  AND ct.tenant_id = l.tenant_id
-GROUP BY l.tenant_id, l.id, l.created_at
+GROUP BY l.tenant_id, l.id, l.created_at, l.archived_at, l.assigned_agent_id
 HAVING min(ct.em) >= l.created_at;
 
 COMMENT ON VIEW public.primeira_interacao_corretor IS
