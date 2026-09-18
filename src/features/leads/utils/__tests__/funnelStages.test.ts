@@ -1,10 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ProcessedLead } from '@/data/realLeadsProcessor';
-import {
-  computeFunnelStages,
-  countLeadsInStage,
-  getFunnelStageOrder,
-} from '@/features/leads/utils/funnelStages';
+import { computeFunnelStages, countLeadsInStage, getFunnelStageOrder, isEtapaVisita, isEtapaVisitaAgendada, isEtapaVisitaRealizada } from '@/features/leads/utils/funnelStages';
 
 /**
  * Fábrica mínima de ProcessedLead para testes (apenas campos relevantes ao
@@ -198,5 +194,54 @@ describe('funil de Cliente Proprietário', () => {
 
     expect(r.data[r.labels.indexOf('Novos Proprietários')]).toBe(2);
     expect(r.naoExclusivo).toBe(1);
+  });
+});
+
+
+/**
+ * A regra de "isto e uma visita" mora aqui e e usada por nove telas: o funil, os
+ * KPIs, Metricas (dois cards e o ranking de corretores), Relatorios, Imoveis e a
+ * tela Inicio. Antes cada uma respondia do seu jeito — algumas pela etapa, outras
+ * pela coluna `visit_date`, vazia em 100% dos 5.210 leads da base.
+ *
+ * Espelha FUNNEL_ORDER de server/kpis/kpisCompute.js de proposito: se as duas
+ * regras divergirem, servidor e front voltam a mostrar numeros diferentes para o
+ * mesmo rotulo, que foi o problema original.
+ */
+describe('regra da visita, compartilhada entre as telas', () => {
+  it('separa agendada de realizada', () => {
+    expect(isEtapaVisitaAgendada('Visita Agendada')).toBe(true);
+    expect(isEtapaVisitaRealizada('Visita Agendada')).toBe(false);
+    expect(isEtapaVisitaRealizada('Visita Realizada')).toBe(true);
+    expect(isEtapaVisitaAgendada('Visita Realizada')).toBe(false);
+  });
+
+  it('as duas somadas sao "chegou a visita" — o denominador das taxas', () => {
+    for (const etapa of ['Visita Agendada', 'Visita Realizada', 'visita realizada']) {
+      expect(isEtapaVisita(etapa)).toBe(true);
+    }
+    for (const etapa of ['Novos Leads', 'Interação', 'Negociação', 'Proposta Assinada']) {
+      expect(isEtapaVisita(etapa)).toBe(false);
+    }
+  });
+
+  it('aceita as grafias que existem na base e nao quebra com vazio', () => {
+    expect(isEtapaVisitaAgendada('visita agendada')).toBe(true);
+    expect(isEtapaVisitaRealizada('  VISITA REALIZADA  ')).toBe(true);
+    for (const vazio of ['', null, undefined]) {
+      expect(isEtapaVisita(vazio)).toBe(false);
+      expect(isEtapaVisitaAgendada(vazio)).toBe(false);
+      expect(isEtapaVisitaRealizada(vazio)).toBe(false);
+    }
+  });
+
+  it('nenhuma etapa pode ser agendada E realizada ao mesmo tempo', () => {
+    // As oito etapas que existem hoje em producao.
+    const etapas = ['Novos Leads', 'Interação', 'Negociação', 'Visita Agendada',
+      'Proposta Enviada', 'Proposta Assinada', 'Visita Realizada', 'Novos Proprietários'];
+    for (const e of etapas) {
+      expect(isEtapaVisitaAgendada(e) && isEtapaVisitaRealizada(e)).toBe(false);
+      expect(isEtapaVisita(e)).toBe(isEtapaVisitaAgendada(e) || isEtapaVisitaRealizada(e));
+    }
   });
 });

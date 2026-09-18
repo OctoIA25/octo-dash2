@@ -37,7 +37,7 @@ import { VendedoresFunnelChart } from '@/features/corretores/components/Vendedor
 import { PreAtendimentoFunnelChart } from '@/features/leads/components/PreAtendimentoFunnelChart';
 import { AtendimentoFunnelChart } from '@/features/leads/components/AtendimentoFunnelChart';
 // Novo componente de performance com bolhas
-import { countProprietariosInStage } from '@/features/leads/utils/funnelStages';
+import { countProprietariosInStage, isEtapaVisitaAgendada } from '@/features/leads/utils/funnelStages';
 import { FunnelStagesBubbleChart } from '@/features/leads/components/FunnelStagesBubbleChart';
 // Novos gráficos de vendedores
 import { VendedoresValoresChart } from '@/features/corretores/components/VendedoresValoresChart';
@@ -437,9 +437,9 @@ export const MainMetricsSection = ({
       lead.etapa_atual === 'Interacao' ||
       lead.etapa_atual === 'Em Atendimento'
     ).length;
-    const visitasAgendadas = allLeads.filter(lead => 
-      lead.Data_visita && lead.Data_visita.trim() !== ""
-    ).length;
+    // Alimenta cinco cards, um deles rotulado "Visitas". Lia só Data_visita,
+    // coluna vazia em 100% dos leads — os cinco mostravam zero.
+    const visitasAgendadas = allLeads.filter(lead => isEtapaVisitaAgendada(lead.etapa_atual)).length;
     
     // Leads no Sistema = todos os leads cadastrados no CRM (todos que estão na tabela)
     // Assumindo que todos os leads vindos do Supabase já estão cadastrados no sistema

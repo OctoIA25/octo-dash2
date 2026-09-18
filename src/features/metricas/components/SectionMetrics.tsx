@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { isEtapaVisita, isEtapaVisitaRealizada } from '@/features/leads/utils/funnelStages';
 import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
@@ -38,11 +39,10 @@ export const SectionMetrics = ({ leads, activeSection }: SectionMetricsProps) =>
       lead.etapa_atual === 'Em Atendimento'
     ).length;
     
-    const visitas = leads.filter(lead => 
-      lead.Data_visita && lead.Data_visita.trim() !== "" ||
-      lead.etapa_atual === 'Visita Agendada' ||
-      lead.etapa_atual === 'Visita Realizada'
-    ).length;
+    // "Chegou à visita", agendada ou realizada — é o denominador das taxas abaixo,
+    // e o rótulo do card diz isso ("Visitas agendadas/realizadas"). A cláusula de
+    // Data_visita saiu: a coluna está vazia em 100% dos leads da base.
+    const visitas = leads.filter(lead => isEtapaVisita(lead.etapa_atual)).length;
     
     const leadNoSistema = leads.filter(lead => 
       lead.etapa_atual !== 'Em Atendimento' && 
@@ -56,10 +56,7 @@ export const SectionMetrics = ({ leads, activeSection }: SectionMetricsProps) =>
     const frios = leads.filter(l => l.status_temperatura === 'Frio').length;
 
     // Métricas de conversão
-    const visitasRealizadas = leads.filter(l => 
-      l.etapa_atual === 'Visita Realizada' ||
-      l.etapa_atual === 'Visita realizada'
-    ).length;
+    const visitasRealizadas = leads.filter(l => isEtapaVisitaRealizada(l.etapa_atual)).length;
     
     const emNegociacao = leads.filter(l => 
       l.etapa_atual === 'Em Negociação' ||
@@ -91,9 +88,9 @@ export const SectionMetrics = ({ leads, activeSection }: SectionMetricsProps) =>
 
     const performanceCorretores = corretoresUnicos.map(corretor => {
       const leadsCorretor = leads.filter(l => l.corretor_responsavel === corretor);
-      const visitasCorretor = leadsCorretor.filter(l => 
-        l.Data_visita && l.Data_visita.trim() !== ""
-      ).length;
+      // Aparece no ranking dos 5 melhores (~L312). Lia só Data_visita, então
+      // mostrava zero para todo corretor.
+      const visitasCorretor = leadsCorretor.filter(l => isEtapaVisita(l.etapa_atual)).length;
       const negociacoesCorretor = leadsCorretor.filter(l => 
         l.etapa_atual === 'Em Negociação' ||
         l.etapa_atual === 'Negociação' ||

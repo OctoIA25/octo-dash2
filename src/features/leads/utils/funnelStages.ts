@@ -111,6 +111,37 @@ export function getFunnelStageOrder(subSection: FunnelSubSection): string[] {
 }
 
 /**
+ * A regra de "isto é uma visita", em um lugar só.
+ *
+ * Existe porque a mesma pergunta é feita em nove telas diferentes, e antes cada
+ * uma respondia do seu jeito — algumas pela etapa, outras pela coluna
+ * `visit_date` (vazia em 100% dos leads da base), várias somando agendada com
+ * realizada sob o rótulo "Visitas". Espelha `FUNNEL_ORDER` de
+ * server/kpis/kpisCompute.js: quem casa "visita" e "realiz" é realizada; quem
+ * casa só "visita" é agendada.
+ *
+ * Recebe a etapa como STRING, não o lead, porque as duas formas do lead convivem
+ * no código: `etapa_atual` no front e `status` na tabela.
+ */
+const normalizarEtapa = (etapa: string | null | undefined): string =>
+  (etapa || '').toLowerCase().trim();
+
+export function isEtapaVisitaRealizada(etapa: string | null | undefined): boolean {
+  const e = normalizarEtapa(etapa);
+  return e.includes('visita') && e.includes('realiz');
+}
+
+export function isEtapaVisitaAgendada(etapa: string | null | undefined): boolean {
+  const e = normalizarEtapa(etapa);
+  return e.includes('visita') && !e.includes('realiz');
+}
+
+/** Chegou à visita, agendada ou realizada. É o denominador das taxas de conversão. */
+export function isEtapaVisita(etapa: string | null | undefined): boolean {
+  return normalizarEtapa(etapa).includes('visita');
+}
+
+/**
  * Conta quantos leads pertencem a uma etapa específica do funil.
  *
  * As regras de pertencimento são exatamente as mesmas usadas historicamente
@@ -133,9 +164,7 @@ export function countLeadsInStage(leads: ProcessedLead[], stage: string): number
       // `leads.visit_date`, que está vazia em 100% dos leads da base, então a
       // condição nunca era verdadeira — só dava a impressão de haver uma segunda
       // fonte para o mesmo número.
-      return safeLeads.filter(
-        (l) => l.etapa_atual === 'Visita Agendada' || l.etapa_atual === 'Visita agendada'
-      ).length;
+      return safeLeads.filter((l) => isEtapaVisitaAgendada(l.etapa_atual)).length;
     case 'Bolsão':
       // Leads no bolsão = leads sem imóvel definido ou aguardando atribuição
       return safeLeads.filter(
@@ -150,9 +179,7 @@ export function countLeadsInStage(leads: ProcessedLead[], stage: string): number
     case 'Visita Realizada':
       // `Imovel_visitado` saiu pelo mesmo motivo: deriva de `visit_date` (sempre
       // nulo), então era 'Não' para todo lead de produção.
-      return safeLeads.filter(
-        (l) => l.etapa_atual === 'Visita Realizada' || l.etapa_atual === 'Visita realizada'
-      ).length;
+      return safeLeads.filter((l) => isEtapaVisitaRealizada(l.etapa_atual)).length;
     case 'Negociação':
       return safeLeads.filter(
         (l) =>
