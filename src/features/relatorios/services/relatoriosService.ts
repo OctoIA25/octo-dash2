@@ -4,6 +4,7 @@
  */
 
 import { supabase } from '@/lib/supabaseClient';
+import { buscarPrimeiraInteracao, medianaMinutos } from '@/features/metricas/services/primeiraInteracaoService';
 import { canonicalizeFonteCounts } from '@/data/realLeadsProcessor';
 import { ratearComissaoDoCorretor } from '@/features/metricas/services/commercialSalesService';
 import { ehRascunho, STATUS_RASCUNHO } from '@/features/imoveis/utils/rascunho';
@@ -182,10 +183,17 @@ export interface MetricasIndividuais {
 
 export interface KPIsGerais {
   totalLeadsRecebidos: number;
-  totalLeadsInteragidos: number;
+  /** Leads que a LIA contatou. `null` quando a leitura da view falhou. */
+  totalLeadsInteragidos: number | null;
   /** Leads recebidos por dia no período — contagem, não percentual. */
   mediaLeadsDia: number;
-  mediaTempoPrimeiraInteracao: number;
+  /**
+   * Mediana de minutos até a LIA responder. `null` = não dá para medir no
+   * período (a tela mostra "Sem dados"); `0` seria uma medição de zero minuto.
+   */
+  mediaTempoPrimeiraInteracao: number | null;
+  /** Base da mediana acima. `null` quando a leitura da view falhou. */
+  leadsComInteracao: number | null;
   totalLeadsConvertidos: number;
   /** Propostas assinadas no período (`proposals`), não leads com valor preenchido. */
   vendasAssinadas: number;
@@ -207,7 +215,8 @@ export interface MetricasIndividuaisLeads {
   visitasAgendadas: number;
   visitasRealizadas: number;
   /** Tempo médio de 1ª resposta DESTE corretor, em minutos. */
-  tempoMedioRespostaMin: number;
+  /** Mediana de minutos até a LIA responder. `null` = sem amostra no período. */
+  tempoMedioRespostaMin: number | null;
   porFonte: Array<{ label: string; value: number }>;
   porImovel: Array<{ label: string; value: number }>;
 }
@@ -242,12 +251,6 @@ export interface MetricasIndividuaisVendas {
 
 // Funções para buscar dados reais
 
-// Amostra do tempo de resposta: os leads respondidos MAIS RECENTES. A média de
-// tempo de primeira resposta não tem como sair de uma COUNT, e o PostgREST corta
-// em 1000 de qualquer jeito — então a janela é explícita e recente, em vez de um
-// pedaço arbitrário do começo da tabela.
-const AMOSTRA_TEMPO_RESPOSTA = 1000;
-
 /** Lote do `.in()` de leads — mesmo limite usado em vendasAssinadasService. */
 const LEADS_BATCH = 200;
 
@@ -278,40 +281,28 @@ export async function buscarKPIsGerais(
       .gte('created_at', de)
       .lte('created_at', ate);
 
-  // As quatro leituras são independentes → uma rodada só.
-  // Antes isto era um `select('*')` de TODOS os leads com os filtros feitos em JS,
-  // sobre duas colunas que não existem na tabela (`first_interaction_at` e
-  // `etapa_atual`): o filtro nunca casava e três destes KPIs eram zero fixo. A
-  // coluna real de resposta é `first_response_at`.
-  const [recebidos, interagidos, amostraResposta, vendas] = await Promise.all([
+  // As três leituras são independentes → uma rodada só.
+  //
+  // "Interagido" e o tempo de interação saíam os dois de `first_response_at`,
+  // que é gravada quando o card deixa a primeira coluna do kanban
+  // (`leadsService.ts:602`) e não quando alguém fala com o lead. Na Lotus isso
+  // dava 41 leads de 1.684, média de 12,9 dias, com um valor negativo e outro
+  // de 203 dias. Os dois agora saem da view `primeira_interacao`, que conta a
+  // primeira mensagem enviada no WhatsApp — dentro de 30 dias ela cobre 264
+  // dos 320 leads da Lotus.
+  //
+  // E MEDIANA, não média: nos mesmos dados a média dá 2.432 min e a mediana
+  // dá 1,2 min, porque um punhado de leads recontatados semanas depois
+  // desloca a média em horas.
+  const [recebidos, interacao, vendas] = await Promise.all([
     noPeriodo(),
-    noPeriodo().not('first_response_at', 'is', null),
-    supabase
-      .from('leads')
-      .select('created_at, first_response_at')
-      .eq('tenant_id', tenantId)
-      .gte('created_at', de)
-      .lte('created_at', ate)
-      .not('first_response_at', 'is', null)
-      .order('created_at', { ascending: false })
-      .limit(AMOSTRA_TEMPO_RESPOSTA),
+    buscarPrimeiraInteracao(tenantId, inicio, fim),
     buscarVendasAssinadasProposals(tenantId, inicio, fim),
   ]);
 
-  const primeiroErro = [recebidos, interagidos, amostraResposta].find(r => r.error)?.error;
-  if (primeiroErro) throw primeiroErro;
+  if (recebidos.error) throw recebidos.error;
 
-  const temposResposta = (amostraResposta.data || [])
-    .map(l => {
-      if (!l.created_at || !l.first_response_at) return 0;
-      const diff = new Date(l.first_response_at).getTime() - new Date(l.created_at).getTime();
-      return Math.floor(diff / (1000 * 60)); // minutos
-    })
-    .filter(t => t > 0);
-
-  const mediaTempoPrimeiraInteracao = temposResposta.length > 0
-    ? Math.round(temposResposta.reduce((a, b) => a + b, 0) / temposResposta.length)
-    : 0;
+  const mediaTempoPrimeiraInteracao = medianaMinutos(interacao.minutos);
 
   const leadsConvertidos = new Set(
     vendas.map(venda => venda.leadId).filter((id): id is string => Boolean(id)),
@@ -320,9 +311,10 @@ export async function buscarKPIsGerais(
 
   return {
     totalLeadsRecebidos: recebidos.count ?? 0,
-    totalLeadsInteragidos: interagidos.count ?? 0,
+    totalLeadsInteragidos: interacao.leadsContatados,
     mediaLeadsDia: Math.round(((recebidos.count ?? 0) / diasNoPeriodo(inicio, fim)) * 10) / 10,
     mediaTempoPrimeiraInteracao,
+    leadsComInteracao: interacao.leadsContatados,
     totalLeadsConvertidos: leadsConvertidos,
     vendasAssinadas: totais.vendas,
     vgv: totais.vgv,
@@ -433,7 +425,6 @@ export async function buscarMetricasIndividuaisLeads(
     property_code: string | null;
     status: string | null;
     created_at: string | null;
-    first_response_at: string | null;
   }> = [];
   // ponytail: por nome, lê os leads do período do tenant inteiro e filtra em JS
   // (maior tenant hoje: ~2,6 mil leads). Se algum passar de dezenas de milhares,
@@ -441,7 +432,7 @@ export async function buscarMetricasIndividuaisLeads(
   for (let page = 0; ; page += 1) {
     let query = supabase
       .from('leads')
-      .select('assigned_agent_name, source, property_code, status, created_at, first_response_at')
+      .select('assigned_agent_name, source, property_code, status, created_at')
       .eq('tenant_id', tenantId)
       .gte('created_at', di)
       .lte('created_at', df)
@@ -463,17 +454,18 @@ export async function buscarMetricasIndividuaisLeads(
   const visitasAgendadas = leads.filter(l => etapaDe(l).includes('visita') && !etapaDe(l).includes('realiz')).length;
   const visitasRealizadas = leads.filter(l => etapaDe(l).includes('visita') && etapaDe(l).includes('realiz')).length;
 
-  // Tempo de resposta DO CORRETOR. Antes a tela mostrava a média do tenant
-  // inteiro dentro do painel individual — número certo, dono errado.
-  const tempos = leads
-    .filter(l => l.created_at && l.first_response_at)
-    .map(l => Math.floor(
-      (new Date(l.first_response_at as string).getTime() - new Date(l.created_at as string).getTime()) / (1000 * 60)
-    ))
-    .filter(t => t > 0);
-  const tempoMedioRespostaMin = tempos.length > 0
-    ? Math.round(tempos.reduce((a, b) => a + b, 0) / tempos.length)
-    : 0;
+  // Tempo de interação DO CORRETOR — a mediana dos leads dele, recortada na
+  // view pelo mesmo `assigned_agent_id`. Antes a tela mostrava a média do
+  // tenant inteiro dentro do painel individual (número certo, dono errado) e,
+  // depois disso, a média sobre `first_response_at`, que marca a saída do card
+  // da primeira coluna do kanban e não ter falado com ninguém.
+  //
+  // Vale registrar o que este número É: o tempo até a LIA responder o lead
+  // deste corretor, não até o corretor falar. O lado do corretor mora em
+  // `primeira_interacao_corretor`, que nasce de `lead_toques` e é server-only
+  // (RLS sem policy) — daqui não dá para ler.
+  const interacao = await buscarPrimeiraInteracao(tenantId, dataInicial, dataFinal, { corretorId });
+  const tempoMedioRespostaMin = medianaMinutos(interacao.minutos);
 
   const fontesCount = canonicalizeFonteCounts(
     leads.map(lead => lead.source || 'Não informado')

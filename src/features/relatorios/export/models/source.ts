@@ -33,7 +33,7 @@ export interface MarketingSource {
     totalLeadsRecebidos: number;
     totalLeadsInteragidos: number;
     mediaLeadsDia: number;
-    mediaTempoPrimeiraInteracao: number;
+    mediaTempoPrimeiraInteracao: number | null;
     totalLeadsConvertidos: number;
   } | null;
   charts: {

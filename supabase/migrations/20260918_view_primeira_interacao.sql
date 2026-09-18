@@ -66,6 +66,14 @@
 -- individual, com `assigned_agent_id = <corretor>`. Sem estas colunas a taxa de
 -- atendimento podia passar de 100% (lead arquivado no numerador, fora do
 -- denominador) e a tela de um corretor mostraria o tempo do tenant inteiro.
+--
+-- `assigned_agent_name` vem junto porque metade das telas identifica o corretor
+-- por NOME, não por id: `leads.assigned_agent_name` guarda a grafia da origem
+-- ("FABIO GONCALVES") e a tela manda a do cadastro ("Fábio Gonçalves"), então
+-- a comparação é normalizada em JS (relatoriosService.ts:28 explica por quê —
+-- um `eq` exato zerava 5 dos 11 corretores do ranking da Lotus). Sem esta
+-- coluna a view não teria por onde ser recortada nesses casos e o painel
+-- individual diria "Sem dados" para todo corretor sem UUID.
 -- A view não filtra nada disso sozinha: expõe o fato, quem consome decide.
 
 CREATE OR REPLACE VIEW public.primeira_interacao
@@ -76,6 +84,7 @@ SELECT
   l.created_at                          AS lead_criado_em,
   l.archived_at,
   l.assigned_agent_id,
+  l.assigned_agent_name,
   min(m.wa_timestamp)                   AS primeiro_contato_em,
   (EXTRACT(EPOCH FROM (min(m.wa_timestamp) - l.created_at)) / 60)::numeric
                                         AS minutos_ate_primeiro_contato
@@ -88,7 +97,7 @@ JOIN public.whatsapp_messages m
 WHERE m.direction = 'outbound'
   AND m.sent_by_user_id IS NULL         -- sem autor = LIA; com autor = corretor
   AND m.wa_timestamp IS NOT NULL
-GROUP BY l.tenant_id, l.id, l.created_at, l.archived_at, l.assigned_agent_id
+GROUP BY l.tenant_id, l.id, l.created_at, l.archived_at, l.assigned_agent_id, l.assigned_agent_name
 HAVING min(m.wa_timestamp) >= l.created_at;   -- decisão 3: negativos fora
 
 COMMENT ON VIEW public.primeira_interacao IS
@@ -160,6 +169,7 @@ SELECT
   l.created_at                          AS lead_criado_em,
   l.archived_at,
   l.assigned_agent_id,
+  l.assigned_agent_name,
   min(ct.em)                            AS primeiro_contato_em,
   (EXTRACT(EPOCH FROM (min(ct.em) - l.created_at)) / 60)::numeric
                                         AS minutos_ate_primeiro_contato
@@ -167,7 +177,7 @@ FROM public.leads l
 JOIN contatos ct
   ON ct.lead_id = l.id::text
  AND ct.tenant_id = l.tenant_id
-GROUP BY l.tenant_id, l.id, l.created_at, l.archived_at, l.assigned_agent_id
+GROUP BY l.tenant_id, l.id, l.created_at, l.archived_at, l.assigned_agent_id, l.assigned_agent_name
 HAVING min(ct.em) >= l.created_at;
 
 COMMENT ON VIEW public.primeira_interacao_corretor IS

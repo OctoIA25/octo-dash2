@@ -64,6 +64,7 @@ import {
   somarVendas,
   type VendaAssinada,
 } from '@/features/metricas/services/vendasAssinadasService';
+import { buscarPrimeiraInteracaoPorCorretor, formatarMinutos, type InteracaoDoCorretor } from '@/features/metricas/services/primeiraInteracaoService';
 import { buscarEvolucaoCarteira, contarImoveisPorExclusividade, type CarteiraMes } from '../services/relatoriosService';
 import { useRelatorios } from '../hooks/useRelatorios';
 import { useLeadSourceChannels } from '../hooks/useLeadSourceChannels';
@@ -881,7 +882,9 @@ export const RelatoriosPage = () => {
       vendas: metricasIndVendas,
       gestaoAtivaRanking: row?.gestaoAtiva ?? 0,
       // Do próprio corretor: antes vinha do KPI do tenant inteiro.
-      tempoMedioRespostaMin: metricasIndLeads?.tempoMedioRespostaMin ?? 0,
+      // `?? 0` aqui transformava ausência de medição em "0min" com anel
+      // verde no card do corretor. null desce inteiro e a tela diz "Sem dados".
+      tempoMedioRespostaMin: metricasIndLeads?.tempoMedioRespostaMin ?? null,
     });
   }, [
     rankingMetricasIndividuais,
@@ -1035,6 +1038,15 @@ export const RelatoriosPage = () => {
     return () => { ativo = false; };
   }, [tenantId, dataInicial, dataFinal, activeSubArea]);
 
+  /**
+   * Tempo até a LIA responder, por corretor. Vem da view `primeira_interacao`.
+   * O gráfico que consome isto calculava `Data_visita - data_entrada` e
+   * chamava de "primeira interação": media tempo até a VISITA e, como
+   * `Data_visita` está vazia em 100% dos leads da base, a barra era zero fixo
+   * para todo corretor.
+   */
+  const [interacaoPorCorretor, setInteracaoPorCorretor] = useState<InteracaoDoCorretor[]>([]);
+
   /** As vendas que os cards estão mostrando: do tenant ou só as da equipe. */
   const vendasVisiveis = useMemo(() => {
     if (!vendasDoPeriodo) return null;
@@ -1151,6 +1163,23 @@ export const RelatoriosPage = () => {
   const allCorretorTop = useMemo(() => topN(allCorretorCounts, 30), [allCorretorCounts]);
   const ALL_CORRETORES = allCorretorTop.labels;
 
+  // Uma leitura só, pela lista COMPLETA de corretores: o gráfico da tela mostra
+  // os 15 primeiros e o do modal mostra todos, e os dois buscavam o mesmo
+  // número por conta própria. Mesma forma de carga das vendas do período.
+  const chaveCorretores = ALL_CORRETORES.join('|');
+  useEffect(() => {
+    if (!tenantId || tenantId === 'owner' || ALL_CORRETORES.length === 0) {
+      setInteracaoPorCorretor([]);
+      return;
+    }
+    let ativo = true;
+    buscarPrimeiraInteracaoPorCorretor(tenantId, dataInicial, dataFinal, ALL_CORRETORES)
+      .then((linhas) => { if (ativo) setInteracaoPorCorretor(linhas); })
+      .catch((error) => console.error('Erro ao carregar tempo de interação por corretor:', error));
+    return () => { ativo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId, dataInicial, dataFinal, chaveCorretores]);
+
   const modalLeadsInteragidosUsuarioData = useMemo(() => ({
     labels: ALL_CORRETORES,
     datasets: [
@@ -1179,31 +1208,20 @@ export const RelatoriosPage = () => {
     }],
   }), [convertidosEquipe, ALL_CORRETORES]);
 
-  const modalTempoInteracaoUsuarioData = useMemo(() => {
-    const temposPorCorretor = ALL_CORRETORES.map(nome => {
-      const leadsDoCorretor = leadsEquipe.filter(l => l.corretor_responsavel === nome);
-      const leadsComInteracao = leadsDoCorretor.filter(l => l.data_entrada && l.Data_visita);
-      
-      if (leadsComInteracao.length === 0) return 0;
-      
-      const tempos = leadsComInteracao.map(l => {
-        const diff = new Date(l.Data_visita).getTime() - new Date(l.data_entrada).getTime();
-        return Math.floor(diff / (1000 * 60)); // Converter para minutos
-      });
-      
-      return Math.round(tempos.reduce((sum, t) => sum + t, 0) / tempos.length);
-    });
-    
-    return {
-      labels: ALL_CORRETORES,
-      datasets: [{
-        label: 'Tempo médio (min)',
-        data: temposPorCorretor,
-        backgroundColor: CHART_COLORS.primary,
-        borderRadius: 6,
-      }]
-    };
-  }, [leadsEquipe, ALL_CORRETORES]);
+  // Versão do modal do mesmo gráfico: lê da mesma carga, pela lista completa.
+  // Antes era uma SEGUNDA cópia do `Data_visita - data_entrada`, no mesmo
+  // arquivo, com o mesmo defeito.
+  const modalTempoInteracaoUsuarioData = useMemo(() => ({
+    labels: ALL_CORRETORES,
+    datasets: [{
+      label: 'Mediana até a LIA responder (min)',
+      data: ALL_CORRETORES.map((nome) =>
+        interacaoPorCorretor.find((i) => i.nome === nome)?.mediana ?? null,
+      ),
+      backgroundColor: CHART_COLORS.primary,
+      borderRadius: 6,
+    }],
+  }), [ALL_CORRETORES, interacaoPorCorretor]);
 
   const modalAtividadesAbertoUsuarioData = useMemo(() => {
     const visitaData = ALL_CORRETORES.map(nome =>
@@ -1384,6 +1402,7 @@ export const RelatoriosPage = () => {
   const corretorTop = useMemo(() => topN(corretorCounts, 15), [corretorCounts]);
   const REAL_CORRETORES = corretorTop.labels;
 
+
   const leadsInteragidosUsuarioData = useMemo(() => {
     const interagidos = REAL_CORRETORES.map(nome => {
       return leadsEquipe.filter(l => l.corretor_responsavel === nome && (l.etapa_atual || '').toLowerCase() !== 'novos leads').length;
@@ -1411,32 +1430,26 @@ export const RelatoriosPage = () => {
     }]
   };
 
-  // 6. Tempo de primeira interação por Usuário (dados reais)
-  const tempoInteracaoData = useMemo(() => {
-    const temposPorCorretor = REAL_CORRETORES.map(nome => {
-      const leadsDoCorretor = leadsEquipe.filter(l => l.corretor_responsavel === nome);
-      const leadsComInteracao = leadsDoCorretor.filter(l => l.data_entrada && l.Data_visita);
-      
-      if (leadsComInteracao.length === 0) return 0;
-      
-      const tempos = leadsComInteracao.map(l => {
-        const diff = new Date(l.Data_visita).getTime() - new Date(l.data_entrada).getTime();
-        return Math.floor(diff / (1000 * 60)); // Converter para minutos
-      });
-      
-      return Math.round(tempos.reduce((sum, t) => sum + t, 0) / tempos.length);
-    });
-    
-    return {
-      labels: REAL_CORRETORES,
-      datasets: [{
-        label: 'Tempo médio (min)',
-        data: temposPorCorretor,
-        backgroundColor: CHART_COLORS.primary,
-        borderRadius: 6,
-      }]
-    };
-  }, [leadsEquipe, REAL_CORRETORES]);
+  // 6. Tempo até a LIA responder, por corretor.
+  //
+  // Antes isto fazia `Data_visita - data_entrada` e chamava de "tempo de
+  // primeira interação": media o tempo até a VISITA, não até alguém falar com
+  // o lead. E `Data_visita` está vazia em 100% dos 5.202 leads da base, então
+  // a barra era zero para todo corretor — um gráfico que nunca mostrou nada.
+  //
+  // Corretor sem nenhum lead contatado no período fica com a barra AUSENTE
+  // (null), não em zero: zero ali leria como "respondeu instantaneamente".
+  const tempoInteracaoData = useMemo(() => ({
+    labels: REAL_CORRETORES,
+    datasets: [{
+      label: 'Mediana até a LIA responder (min)',
+      data: REAL_CORRETORES.map((nome) =>
+        interacaoPorCorretor.find((i) => i.nome === nome)?.mediana ?? null,
+      ),
+      backgroundColor: CHART_COLORS.primary,
+      borderRadius: 6,
+    }],
+  }), [REAL_CORRETORES, interacaoPorCorretor]);
 
   const atividadesAbertoData = useMemo(() => {
     const visitaData = REAL_CORRETORES.map(nome =>
@@ -2030,7 +2043,7 @@ export const RelatoriosPage = () => {
             </div>
             <div>
               <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Tempo 1ª Interação</p>
-              <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpisCalculados ? `${kpisCalculados.mediaTempoPrimeiraInteracao} min` : '—'}</p>
+              <p className="text-xl font-bold text-gray-900 dark:text-slate-100">{kpisCalculados ? formatarMinutos(kpisCalculados.mediaTempoPrimeiraInteracao) : '—'}</p>
             </div>
           </div>
         </div>
@@ -2324,7 +2337,7 @@ export const RelatoriosPage = () => {
                 </div>
 
                 <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-transparent p-5">
-                  <h3 className="text-sm font-semibold text-gray-800 mb-4">Tempo de primeira interação por Usuário</h3>
+                  <h3 className="text-sm font-semibold text-gray-800 mb-4">Tempo até a LIA responder, por corretor</h3>
                   <div className="h-[280px]">
                     <Bar data={tempoInteracaoData} options={defaultBarOptions} />
                   </div>
@@ -2380,7 +2393,7 @@ export const RelatoriosPage = () => {
                       <div>
                         <h3 className="text-base font-semibold text-gray-900 dark:text-slate-100">
                           {activeChartModal === 'leads_interagidos_usuario' && 'Leads interagidos por Usuários (todos os corretores)'}
-                          {activeChartModal === 'tempo_interacao_usuario' && 'Tempo de primeira interação por Usuário (todos os corretores)'}
+                          {activeChartModal === 'tempo_interacao_usuario' && 'Tempo até a LIA responder, por corretor (todos os corretores)'}
                           {activeChartModal === 'atividades_aberto_usuario' && 'Atividades em aberto por Usuário (todos os corretores)'}
                           {activeChartModal === 'leads_convertidos_usuario' && 'Leads convertidos por Usuário (todos os corretores)'}
                         </h3>

@@ -59,10 +59,11 @@ const TETO: Record<string, number> = {
   // --- PENDENTES. Não são permissão: são dívida com dono e motivo.
   // Fixture morto + o campo do tipo. Sai quando o bloco de dados de 2024 for removido.
   'src/data/realLeadsProcessor.ts': 28,
-  // Gráfico "Tempo de primeira interação por Usuário" calcula Data_visita menos
-  // data_entrada — mede tempo até a VISITA e chama de primeira interação. Sai na
-  // fatia da 1ª interação, que já tem decisão: duas métricas, LIA e corretor.
-  'src/features/relatorios/pages/RelatoriosPage.tsx': 4,
+  // RelatoriosPage saiu daqui em 18/09: as DUAS cópias do gráfico "Tempo de
+  // primeira interação por Usuário" (tela e modal) calculavam Data_visita menos
+  // data_entrada — mediam tempo até a VISITA e, como a coluna está vazia em
+  // 100% dos leads, a barra era zero para todo corretor. Agora leem a mediana
+  // da view `primeira_interacao`.
   // Mortos por não serem alcançáveis. Saem na fatia que remove Index/MainLayout.
   'src/features/leads/components/LeadsMetricsChart.tsx': 1,
   'src/utils/metrics.ts': 1,

@@ -17,6 +17,7 @@
  */
 
 import { supabase } from '@/lib/supabaseClient';
+import { buscarPrimeiraInteracao, formatarMinutos, medianaMinutos } from '@/features/metricas/services/primeiraInteracaoService';
 import { STATUS_RASCUNHO } from '@/features/imoveis/utils/rascunho';
 import { fetchGoals } from '@/features/metas/services/goalsService';
 import { buildGoalViews, selectActiveIndividualGoals } from '@/features/metas/domain/metrics';
@@ -49,7 +50,6 @@ interface LeadRow {
   source: string | null;
   final_sale_value: number | null;
   created_at: string | null;
-  first_response_at: string | null;
 }
 
 /** Etapas canônicas do funil, do topo à base. Ordem é significativa. */
@@ -91,14 +91,6 @@ function computeTrend(atual: number, anterior: number, lowerIsBetter = false): K
 const BRL = (value: number): string =>
   value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
 
-function formatMinutes(min: number): string {
-  if (min <= 0) return 'Sem dados';
-  if (min < 60) return `${Math.round(min)}min`;
-  const h = Math.floor(min / 60);
-  const m = Math.round(min % 60);
-  return m > 0 ? `${h}h ${m}m` : `${h}h`;
-}
-
 /**
  * Busca todos os leads do período (paginado para evitar o corte silencioso de
  * 1000 linhas do PostgREST). Sempre escopado por tenant e sem arquivados.
@@ -115,7 +107,10 @@ async function fetchLeads(
   for (;;) {
     let query = supabase
       .from('leads')
-      .select('status,source,final_sale_value,created_at,first_response_at')
+      // `first_response_at` saiu do select: quem mede interação é a view
+      // `primeira_interacao`. A coluna marca a saída do card da primeira coluna
+      // do kanban, não uma resposta ao lead.
+      .select('status,source,final_sale_value,created_at')
       .eq('tenant_id', tenantId)
       .is('archived_at', null)
       .gte('created_at', dayStartUtc(period.startDate))
@@ -139,21 +134,22 @@ async function fetchLeads(
   return rows;
 }
 
-/** Tempo médio de resposta (min) dos leads com primeira resposta válida (>= 0). */
-function avgResponseMinutes(leads: LeadRow[]): number {
-  let total = 0;
-  let count = 0;
-  for (const lead of leads) {
-    if (!lead.created_at || !lead.first_response_at) continue;
-    const created = new Date(lead.created_at).getTime();
-    const responded = new Date(lead.first_response_at).getTime();
-    if (!created || !responded) continue;
-    const diff = (responded - created) / 60_000;
-    if (diff < 0) continue;
-    total += diff;
-    count += 1;
-  }
-  return count > 0 ? total / count : 0;
+/**
+ * Amostras de tempo de interação do período e do anterior, já lidas da view.
+ *
+ * Este módulo é o caminho de ROLLBACK documentado em `useKpis.ts:21` — o
+ * dashboard vivo calcula no servidor. Ele precisa ficar em sincronia mesmo sem
+ * ser o caminho padrão: quem virar a chave num incidente não pode receber de
+ * volta o número que esta fatia matou.
+ *
+ * Só o lado da LIA cabe aqui. `primeira_interacao_corretor` nasce de
+ * `lead_toques`, que tem RLS sem policy e devolve 42501 no browser — o card
+ * `tempoAteCorretor` fica sem valor neste caminho, e é melhor ele dizer
+ * "Sem dados" do que inventar um número que a fonte não dá.
+ */
+interface AmostrasInteracao {
+  lia: number[];
+  liaPrev: number[];
 }
 
 function countVendas(leads: LeadRow[]): { qtd: number; valor: number } {
@@ -283,7 +279,8 @@ const LEGACY_LABELS: Record<string, string> = {
   vendas: 'Vendas',
   valorVendas: 'Valor em Vendas',
   imoveisAtivos: 'Imóveis Ativos',
-  tempoMedioResposta: 'Tempo Médio de Resposta',
+  tempoMedioResposta: 'Tempo até a LIA responder',
+  tempoAteCorretor: 'Tempo até o corretor falar',
   taxaAtendimento: 'Taxa de Atendimento',
 };
 
@@ -295,28 +292,34 @@ function nativeCardValues(
   current: LeadRow[],
   previous: LeadRow[],
   imoveisAtivos: number,
-): Record<string, { rawValue: number; displayValue: string; trend: KpiTrend | null }> {
+  interacao: AmostrasInteracao,
+): Record<string, { rawValue: number | null; displayValue: string; trend: KpiTrend | null }> {
   const totalLeads = current.length;
   const totalLeadsPrev = previous.length;
 
   const vendas = countVendas(current);
   const vendasPrev = countVendas(previous);
 
-  const respMin = avgResponseMinutes(current);
-  const respMinPrev = avgResponseMinutes(previous);
+  // Mediana, não média, e da view — não de `first_response_at`, que marca a
+  // saída do card da primeira coluna do kanban. Mesma regra do servidor.
+  const respMin = medianaMinutos(interacao.lia);
+  const respMinPrev = medianaMinutos(interacao.liaPrev);
 
-  const atendidos = current.filter((l) => !!l.first_response_at).length;
-  const taxaAtend = totalLeads > 0 ? round1((atendidos / totalLeads) * 100) : 0;
-  const atendidosPrev = previous.filter((l) => !!l.first_response_at).length;
-  const taxaAtendPrev = totalLeadsPrev > 0 ? round1((atendidosPrev / totalLeadsPrev) * 100) : 0;
+  // Atendido = a LIA falou com o lead.
+  const atendidos = interacao.lia.length;
+  const taxaAtend = totalLeads > 0 ? round1((atendidos / totalLeads) * 100) : null;
+  const atendidosPrev = interacao.liaPrev.length;
+  const taxaAtendPrev = totalLeadsPrev > 0 ? round1((atendidosPrev / totalLeadsPrev) * 100) : null;
 
   return {
     totalLeads:         { rawValue: totalLeads, displayValue: totalLeads.toLocaleString('pt-BR'), trend: computeTrend(totalLeads, totalLeadsPrev) },
     vendas:             { rawValue: vendas.qtd, displayValue: vendas.qtd.toLocaleString('pt-BR'), trend: computeTrend(vendas.qtd, vendasPrev.qtd) },
     valorVendas:        { rawValue: vendas.valor, displayValue: BRL(vendas.valor), trend: computeTrend(vendas.valor, vendasPrev.valor) },
     imoveisAtivos:      { rawValue: imoveisAtivos, displayValue: Number(imoveisAtivos || 0).toLocaleString('pt-BR'), trend: null },
-    tempoMedioResposta: { rawValue: respMin, displayValue: formatMinutes(respMin), trend: computeTrend(respMin, respMinPrev, /* lowerIsBetter */ true) },
-    taxaAtendimento:    { rawValue: taxaAtend, displayValue: `${taxaAtend.toFixed(1)}%`, trend: computeTrend(taxaAtend, taxaAtendPrev) },
+    tempoMedioResposta: { rawValue: respMin, displayValue: formatarMinutos(respMin), trend: computeTrend(respMin, respMinPrev, /* lowerIsBetter */ true) },
+    // Sem fonte no browser (ver AmostrasInteracao). Diz "Sem dados" em vez de 0.
+    tempoAteCorretor:   { rawValue: null, displayValue: 'Sem dados', trend: null },
+    taxaAtendimento:    { rawValue: taxaAtend, displayValue: taxaAtend == null ? 'Sem dados' : `${taxaAtend.toFixed(1)}%`, trend: computeTrend(taxaAtend, taxaAtendPrev) },
   };
 }
 
@@ -348,9 +351,10 @@ function buildCards(
   current: LeadRow[],
   previous: LeadRow[],
   imoveisAtivos: number,
+  interacao: AmostrasInteracao,
   config?: KpiConfig | null,
 ): KpiSummaryCard[] {
-  const native = nativeCardValues(current, previous, imoveisAtivos);
+  const native = nativeCardValues(current, previous, imoveisAtivos, interacao);
 
   // Modo legado: sem config ou lista de KPIs vazia.
   if (!config || !Array.isArray(config.kpis) || config.kpis.length === 0) {
@@ -462,13 +466,15 @@ export const supabaseKpisService: KpisService = {
     // Chave de período para metas/realizado: 1º dia do mês que contém period.startDate.
     const periodStart = normalizePeriodStart(period.startDate, 'month');
 
-    const [current, previous, imoveisAtivos, goals, commCurrent, commPrevious, kpis, targets, values] = await Promise.all([
+    const [current, previous, imoveisAtivos, goals, commCurrent, commPrevious, interacaoAtual, interacaoPrev, kpis, targets, values] = await Promise.all([
       fetchLeads(tenantId, period, agentId),
       fetchLeads(tenantId, prevPeriod, agentId),
       countImoveisAtivos(tenantId),
       buildGoals(tenantId),
       fetchCommercialTotals(tenantId, period),
       fetchCommercialTotals(tenantId, prevPeriod),
+      buscarPrimeiraInteracao(tenantId, period.startDate, period.endDate, { corretorId: agentId }),
+      buscarPrimeiraInteracao(tenantId, prevPeriod.startDate, prevPeriod.endDate, { corretorId: agentId }),
       // fetchKpis LANÇA em erro; aqui um erro de config NÃO pode quebrar o
       // dashboard — degradamos para o modo legado (config vazia → 6 nativos).
       fetchKpis(tenantId).catch(() => []),
@@ -482,7 +488,7 @@ export const supabaseKpisService: KpisService = {
 
     const overview: KpisOverview = {
       period,
-      cards: buildCards(current, previous, imoveisAtivos, config),
+      cards: buildCards(current, previous, imoveisAtivos, { lia: interacaoAtual.minutos, liaPrev: interacaoPrev.minutos }, config),
       funnel: buildFunnel(current),
       sources: buildSources(current),
       priceRanges: buildPriceRanges(current),

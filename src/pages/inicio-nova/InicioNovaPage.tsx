@@ -3,7 +3,7 @@
  * Paleta: slate neutro + accent azul do logo. Sem chroma. Lucide-only, sem emojis.
  */
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { contarVisitasAgendadasPara } from '@/features/leads/utils/funnelStages';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { OKRManager } from '@/components/OKRManager';
@@ -29,6 +29,7 @@ import {
   Hand,
 } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
+import { buscarMinutosPorLead, medianaMinutos } from '@/features/metricas/services/primeiraInteracaoService';
 import { useFeaturedGoal } from '@/features/metas/hooks/useGoals';
 import { formatGoalValue, formatPercent } from '@/features/metas/domain';
 import { useLeadsMetrics } from '@/features/leads/hooks/useLeadsMetrics';
@@ -360,12 +361,31 @@ export function InicioNovaPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const activeInicioTab = searchParams.get('tab') || 'funil';
-  const { user, tenantName } = useAuthContext();
+  const { user, tenantName, tenantId } = useAuthContext();
   // `processedLeads` normaliza `leads` + `kenlo_leads` no formato ProcessedLead
   // (etapa_atual, status_temperatura, valor_imovel, corretor_responsavel).
   // `useLeadsMetrics` assina `leadsEventEmitter`, então o Pipeline aqui
   // re-renderiza automaticamente quando o Kanban move um card.
   const { leads: crmLeads, processedLeads: leads, generalMetrics, isLoading } = useLeadsMetrics();
+
+  /**
+   * Minutos até a LIA falar com cada lead, da view `primeira_interacao`.
+   *
+   * Os dois blocos abaixo faziam `first_response_at - created_at`, e essa
+   * coluna é gravada quando o card deixa a primeira coluna do kanban
+   * (`leadsService.ts:602`) — não quando alguém fala com o lead. Na Lotus isso
+   * cobria 41 de 1.684 leads e dava média de 12,9 dias.
+   */
+  const [minutosPorLead, setMinutosPorLead] = useState<Map<string, number>>(new Map());
+
+  useEffect(() => {
+    if (!tenantId || tenantId === 'owner') return;
+    let ativo = true;
+    buscarMinutosPorLead(tenantId)
+      .then((mapa) => { if (ativo) setMinutosPorLead(mapa); })
+      .catch((erro) => console.error('Erro ao carregar tempo de interação:', erro));
+    return () => { ativo = false; };
+  }, [tenantId]);
 
   const [activeTab, setActiveTab] = useState<TabKey>('todos');
 
@@ -440,27 +460,16 @@ export function InicioNovaPage() {
     };
   }, [crmLeads]);
 
+  // MEDIANA, não média: nos dados da Lotus a média dá 2.432 min e a mediana
+  // 1,4 min, porque um punhado de leads recontatados semanas depois desloca a
+  // média em horas. `null` já descia como "Sem dados" e continua descendo.
   const responseTime = useMemo(() => {
     const tempos = crmLeads
-      .map((lead) => {
-        const createdAt = new Date(lead.created_at).getTime();
-        const firstInteractionAt = lead.first_response_at
-          ? new Date(lead.first_response_at).getTime()
-          : 0;
-        
-        if (!createdAt || !firstInteractionAt) return null;
-        
-        const diffMin = (firstInteractionAt - createdAt) / 60_000;
-        
-        if(diffMin < 0) return null;
-
-        return diffMin;
-      }).filter((value): value is number => value !== null);
-
-      if(tempos.length === 0) return null;
-
-      return Math.round(tempos.reduce((sum, value) => sum + value, 0) / tempos.length);
-  }, [crmLeads]);
+      .map((lead) => minutosPorLead.get(lead.id))
+      .filter((v): v is number => typeof v === 'number');
+    const mediana = medianaMinutos(tempos);
+    return mediana === null ? null : Math.round(mediana);
+  }, [crmLeads, minutosPorLead]);
 
   function formatResponseTime(minutes: number | null): string {
 
@@ -489,25 +498,10 @@ export function InicioNovaPage() {
           const createdAt = new Date(lead.created_at);
           return createdAt >= start && createdAt < end;
         })
-        .map((lead) => {
-          if(!lead.first_response_at) return null;
+        .map((lead) => minutosPorLead.get(lead.id))
+        .filter((v): v is number => typeof v === 'number');
 
-          const createdAt = new Date(lead.created_at).getTime();
-          const firstResponseAt = new Date(lead.first_response_at).getTime();
-
-          const diffMin = (firstResponseAt - createdAt) / 60_000;
-
-          if(diffMin < 0) { 
-            return null;
-          }
-
-          return diffMin;
-        })
-        .filter((value): value is number => value !== null);
-
-        if(tempos.length === 0) return null;
-        
-        return tempos.reduce((sum, value) => sum + value, 0) / tempos.length;
+      return medianaMinutos(tempos);
     };
 
     const atual = getAverageResponseTime(startOfThisWeek, now);
@@ -522,7 +516,7 @@ export function InicioNovaPage() {
       positive: percentual <= 0,
       caption: 'vs. semana passada',
     }
-  }, [crmLeads]);
+  }, [crmLeads, minutosPorLead]);
 
   const nowMs = Date.now();
   const aguardandoResposta = useMemo(

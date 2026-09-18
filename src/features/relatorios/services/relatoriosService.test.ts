@@ -74,10 +74,15 @@ const INICIO = '2026-08-01';
 const FIM = '2026-08-30'; // 30 dias
 const filtroDe = (q: Query, col: string) => q.filters.find((f) => f.col === col);
 
-/** Ordem das leituras em `leads` dentro de buscarKPIsGerais. */
+/**
+ * Ordem das leituras dentro de buscarKPIsGerais. Desde 18/09 são DUAS: a
+ * contagem de recebidos em `leads` e a amostra de interação na view
+ * `primeira_interacao`. As leituras de `first_response_at` sumiram junto com a
+ * coluna — ela marca a saída do card da primeira coluna do kanban, não uma
+ * resposta ao lead.
+ */
 const RECEBIDOS = 0;
-const INTERAGIDOS = 1;
-const AMOSTRA = 2;
+const INTERACAO = 1;
 
 beforeEach(() => {
   queries.length = 0;
@@ -97,12 +102,25 @@ describe('buscarKPIsGerais', () => {
   it('conta no banco em vez de baixar linhas e usar .length', async () => {
     await buscarKPIsGerais(TENANT, INICIO, FIM);
 
-    for (const i of [RECEBIDOS, INTERAGIDOS]) {
-      expect(queries[i].opts).toEqual({ count: 'exact', head: true });
-    }
-    // A única leitura que traz linha é a amostra do tempo de resposta, e ela é limitada.
-    expect(queries[AMOSTRA].opts).toBeNull();
-    expect(queries[AMOSTRA].limit).toBe(1000);
+    expect(queries[RECEBIDOS].opts).toEqual({ count: 'exact', head: true });
+    // A única leitura que traz linha é a amostra da interação, e ela é paginada
+    // (não usa `.limit`, que cortaria em silêncio um tenant grande).
+    expect(queries[INTERACAO].opts).toBeNull();
+    expect(queries[INTERACAO].limit).toBeNull();
+  });
+
+  it('a amostra de interacao vem da view, nao da tabela leads', async () => {
+    await buscarKPIsGerais(TENANT, INICIO, FIM);
+    expect(queries[INTERACAO].table).toBe('primeira_interacao');
+    // A coluna que media card arrastado no kanban não é mais consultada.
+    expect(JSON.stringify(queries)).not.toContain('first_response_at');
+  });
+
+  // A view do corretor nasce de `lead_toques`, que tem RLS sem policy: do
+  // browser ela devolve 42501. Se alguém apontar esta tela para ela, quebra aqui.
+  it('nao tenta ler a view do corretor, que e server-only', async () => {
+    await buscarKPIsGerais(TENANT, INICIO, FIM);
+    expect(queries.map((q) => q.table)).not.toContain('primeira_interacao_corretor');
   });
 
   it('escopa toda leitura pelo tenant', async () => {
@@ -112,22 +130,31 @@ describe('buscarKPIsGerais', () => {
     }
   });
 
-  it('"interagido" é lead com first_response_at preenchido', async () => {
-    await buscarKPIsGerais(TENANT, INICIO, FIM);
-    expect(filtroDe(queries[INTERAGIDOS], 'first_response_at')).toMatchObject({ op: 'not.is', val: null });
+  // "Interagido" passou a ser "a LIA falou com o lead". Antes era "o card saiu
+  // da primeira coluna do kanban", que é outra coisa e cobria 2,4% da base.
+  it('"interagido" e lead que a LIA contatou, contado na view', async () => {
+    respostas = [
+      { count: 100, error: null },
+      { data: [{ minutos_ate_primeiro_contato: 5 }, { minutos_ate_primeiro_contato: 9 }], error: null },
+    ];
+    const kpis = await buscarKPIsGerais(TENANT, INICIO, FIM);
+    expect(kpis.totalLeadsInteragidos).toBe(2);
   });
 
-  it('toda leitura de leads é recortada pelo período', async () => {
+  it('toda leitura é recortada pelo período e pelo não-arquivado', async () => {
     await buscarKPIsGerais(TENANT, INICIO, FIM);
-    for (const q of queries) {
-      expect(filtroDe(q, 'created_at')).toBeDefined();
-      expect(q.filters.some((f) => f.op === 'lte' && f.col === 'created_at')).toBe(true);
-    }
+    expect(filtroDe(queries[RECEBIDOS], 'created_at')).toBeDefined();
+    // Na view a coluna de data chama `lead_criado_em`.
+    expect(filtroDe(queries[INTERACAO], 'lead_criado_em')).toBeDefined();
+    expect(queries[INTERACAO].filters.some((f) => f.op === 'lte' && f.col === 'lead_criado_em')).toBe(true);
+    // Sem este filtro a taxa de atendimento passa de 100%: lead arquivado entra
+    // no numerador e fica fora do denominador.
+    expect(filtroDe(queries[INTERACAO], 'archived_at')).toMatchObject({ op: 'is', val: null });
   });
 
   // `leads.final_sale_value` está vazia em produção: a venda mora em `proposals`.
   it('"convertido" é lead distinto com proposta assinada, não lead com valor preenchido', async () => {
-    respostas = [{ count: 100, error: null }, { count: 40, error: null }, { data: [], error: null }];
+    respostas = [{ count: 100, error: null }, { data: [], error: null }];
     vendasFake = [
       { id: 'p1', leadId: 'lead-a', vgv: 500000, vgc: 30000 },
       { id: 'p2', leadId: 'lead-a', vgv: 300000, vgc: 18000 }, // mesmo lead, 2 propostas
@@ -146,8 +173,7 @@ describe('buscarKPIsGerais', () => {
   it('devolve as contagens do banco, não 1000 truncado', async () => {
     respostas = [
       { count: 1685, error: null },
-      { count: 13, error: null },
-      { data: [], error: null },
+      { data: Array.from({ length: 13 }, () => ({ minutos_ate_primeiro_contato: 7 })), error: null },
     ];
 
     const kpis = await buscarKPIsGerais(TENANT, INICIO, FIM);
@@ -158,43 +184,52 @@ describe('buscarKPIsGerais', () => {
     expect(kpis.mediaLeadsDia).toBe(Math.round((1685 / 30) * 10) / 10);
   });
 
-  it('média de primeira resposta em minutos, ignorando diferença não positiva', async () => {
-    const base = '2026-08-01T10:00:00.000Z';
+  // MEDIANA, não média. Nos dados reais da Lotus a média dá 2.432 min e a
+  // mediana 1,2 min: um punhado de leads recontatados semanas depois desloca a
+  // média em horas e não toca a mediana.
+  it('tempo de interacao e a MEDIANA, nao a media', async () => {
     respostas = [
-      { count: 3, error: null },
-      { count: 3, error: null },
-      {
-        data: [
-          { created_at: base, first_response_at: '2026-08-01T10:10:00.000Z' }, // 10 min
-          { created_at: base, first_response_at: '2026-08-01T10:30:00.000Z' }, // 30 min
-          { created_at: base, first_response_at: '2026-08-01T09:00:00.000Z' }, // negativo → fora
-        ],
-        error: null,
-      },
+      { count: 5, error: null },
+      { data: [1, 2, 3, 4, 100000].map((m) => ({ minutos_ate_primeiro_contato: m })), error: null },
     ];
 
     const kpis = await buscarKPIsGerais(TENANT, INICIO, FIM);
-    expect(kpis.mediaTempoPrimeiraInteracao).toBe(20);
+    expect(kpis.mediaTempoPrimeiraInteracao).toBe(3);        // mediana
+    expect(kpis.mediaTempoPrimeiraInteracao).not.toBe(20002); // a média
   });
 
-  it('sem lead respondido a média é 0, não NaN', async () => {
-    respostas = [
-      { count: 0, error: null }, { count: 0, error: null }, { data: [], error: null },
-    ];
+  // `0` afirmaria resposta instantânea; `null` desce como "Sem dados".
+  it('sem lead contatado o tempo e null, nao 0', async () => {
+    respostas = [{ count: 10, error: null }, { data: [], error: null }];
     const kpis = await buscarKPIsGerais(TENANT, INICIO, FIM);
-    expect(kpis.mediaTempoPrimeiraInteracao).toBe(0);
+    expect(kpis.mediaTempoPrimeiraInteracao).toBeNull();
+    expect(kpis.totalLeadsInteragidos).toBe(0);
   });
 
   // Falha de leitura não pode virar KPI zerado — foi exatamente assim que o bug
   // original passou despercebido.
-  it('propaga erro do banco em vez de devolver zeros', async () => {
+  it('propaga erro da contagem de leads em vez de devolver zeros', async () => {
     respostas = [
-      { count: 10, error: null },
       { count: null as unknown as number, error: { code: '42703', message: 'column does not exist' } },
       { data: [], error: null },
     ];
 
     await expect(buscarKPIsGerais(TENANT, INICIO, FIM)).rejects.toMatchObject({ code: '42703' });
+  });
+
+  // A view degrada diferente da contagem: em vez de derrubar a tela inteira,
+  // devolve `null` e a tela diz "Sem dados". O que ela NÃO pode fazer é
+  // devolver 0, que é um número plausível e esconderia a falha.
+  it('falha ao ler a view vira null, nao zero interagidos', async () => {
+    respostas = [
+      { count: 100, error: null },
+      { data: null, error: { code: '42501', message: 'permission denied' } },
+    ];
+
+    const kpis = await buscarKPIsGerais(TENANT, INICIO, FIM);
+    expect(kpis.totalLeadsRecebidos).toBe(100);
+    expect(kpis.totalLeadsInteragidos).toBeNull();
+    expect(kpis.mediaTempoPrimeiraInteracao).toBeNull();
   });
 });
 

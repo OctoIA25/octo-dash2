@@ -100,7 +100,7 @@ export function useMetricasIndividuaisCorretor(
         leads,
         vendas,
         gestaoAtivaRanking: leads?.totalLeads ?? 0,
-        tempoMedioRespostaMin: leads?.tempoMedioRespostaMin ?? 0,
+        tempoMedioRespostaMin: leads?.tempoMedioRespostaMin ?? null,
       })
     : null;
 

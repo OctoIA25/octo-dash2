@@ -35,6 +35,7 @@ vi.mock('@/lib/supabaseClient', () => {
       gte(col: string, val: unknown) { q.filters.push({ op: 'gte', col, val }); return chain; },
       lte(col: string, val: unknown) { q.filters.push({ op: 'lte', col, val }); return chain; },
       in(col: string, val: unknown) { q.filters.push({ op: 'in', col, val }); return chain; },
+      is(col: string, val: unknown) { q.filters.push({ op: 'is', col, val }); return chain; },
       range(de: number, ate: number) { q.range = [de, ate]; return chain; },
       then(resolve: (v: unknown) => void) {
         const paginas = respostaPorTabela[q.table] ?? [];
@@ -177,18 +178,40 @@ describe('buscarMetricasIndividuaisLeads', () => {
     expect(m.totalLeads).toBe(1);
   });
 
-  it('tempo médio de resposta é do corretor consultado', async () => {
+  // O tempo sai da view `primeira_interacao`, recortada pelo mesmo corretor.
+  // Antes era a média sobre `first_response_at`, coluna gravada quando o card
+  // deixa a primeira coluna do kanban — media arrasto, não conversa.
+  it('tempo de interação é a MEDIANA dos leads do corretor consultado', async () => {
     respostaPorTabela = {
-      leads: [[
-        lead({ property_code: 'A', created_at: '2026-08-01T10:00:00Z', first_response_at: '2026-08-01T10:10:00Z' }),
-        lead({ property_code: 'B', created_at: '2026-08-01T10:00:00Z', first_response_at: '2026-08-01T10:30:00Z' }),
-        lead({ property_code: 'C', created_at: '2026-08-01T10:00:00Z', first_response_at: null }),
+      leads: [[lead({ property_code: 'A' }), lead({ property_code: 'B' }), lead({ property_code: 'C' })]],
+      primeira_interacao: [[
+        { minutos_ate_primeiro_contato: 10,   assigned_agent_name: 'FERNANDA SOUZA' },
+        { minutos_ate_primeiro_contato: 20,   assigned_agent_name: 'Fernanda  Souza' },
+        { minutos_ate_primeiro_contato: 9000, assigned_agent_name: 'Fernanda Souza' }, // a cauda não desloca a mediana
+        { minutos_ate_primeiro_contato: 1,    assigned_agent_name: 'Outro Corretor' }, // não é dele
       ]],
     };
 
     const m = await buscarMetricasIndividuaisLeads(TENANT, CORRETOR, DE, ATE);
 
     expect(m.tempoMedioRespostaMin).toBe(20);
+    const daView = queries.find((q) => q.table === 'primeira_interacao');
+    expect(daView?.filters).toContainEqual({ op: 'is', col: 'archived_at', val: null });
+    // CORRETOR aqui é um NOME. Mandá-lo no `eq` de `assigned_agent_id` não
+    // casaria com nada e o painel diria "Sem dados" — a comparação por nome é
+    // normalizada em JS, como já acontece na leitura de `leads`.
+    expect(daView?.filters.find((f) => f.col === 'assigned_agent_id')).toBeUndefined();
+  });
+
+  // `0` no painel individual seria "o corretor é atendido em zero minuto", com
+  // selo verde "Excelente" no card. `null` desce como "Sem dados".
+  it('corretor sem lead contatado no período devolve null, não 0', async () => {
+    respostaPorTabela = { leads: [[lead({ property_code: 'A' })]], primeira_interacao: [[]] };
+
+
+    const m = await buscarMetricasIndividuaisLeads(TENANT, CORRETOR, DE, ATE);
+
+    expect(m.tempoMedioRespostaMin).toBeNull();
   });
 });
 

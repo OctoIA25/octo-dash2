@@ -8,6 +8,7 @@
  */
 
 import type { ReportModel, ReportSection, ChartSection } from '../types';
+import { formatarMinutos } from '@/features/metricas/services/primeiraInteracaoService';
 import type {
   ReportSource,
   RelatoriosSubArea,
@@ -51,7 +52,7 @@ function buildMarketing(src: MarketingSource, base: Base): ReportModel {
           { label: 'Leads recebidos', value: formatNumber(k?.totalLeadsRecebidos) },
           { label: 'Leads interagidos', value: formatNumber(k?.totalLeadsInteragidos) },
           { label: 'Leads/dia (média)', value: formatNumber(k?.mediaLeadsDia) },
-          { label: 'Tempo 1ª interação', value: k ? `${k.mediaTempoPrimeiraInteracao} min` : '—' },
+          { label: 'Tempo até a LIA responder', value: k ? formatarMinutos(k.mediaTempoPrimeiraInteracao) : '—' },
           { label: 'Leads convertidos', value: formatNumber(k?.totalLeadsConvertidos) },
         ],
       },
@@ -94,7 +95,7 @@ function buildMetricas(src: MetricasSource, base: Base): ReportModel {
       chart('met-tempo-equipe', 'Tempo Médio de Resposta por Equipe', 'equipes', c.tempoEquipe),
       chart('met-conv-equipe', 'Taxa de Conversão por Equipe', 'equipes', c.convEquipe),
       chart('met-leads-usuario', 'Leads interagidos por Usuário', 'usuarios', c.leadsUsuario),
-      chart('met-tempo-usuario', 'Tempo de primeira interação por Usuário', 'usuarios', c.tempoUsuario),
+      chart('met-tempo-usuario', 'Tempo até a LIA responder, por corretor', 'usuarios', c.tempoUsuario),
       chart('met-atividades-usuario', 'Atividades em aberto por Usuário', 'usuarios', c.atividadesUsuario),
       chart('met-conv-usuario', 'Leads convertidos por Usuário', 'usuarios', c.convUsuario),
     );

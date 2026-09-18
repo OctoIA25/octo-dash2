@@ -19,7 +19,7 @@ export function buildCorretorMetricasCompletas(params: {
   leads: MetricasIndividuaisLeads | null;
   vendas: MetricasIndividuaisVendas | null;
   gestaoAtivaRanking: number;
-  tempoMedioRespostaMin?: number;
+  tempoMedioRespostaMin?: number | null;
 }): CorretorMetricasCompletas {
   const {
     nomeCorretor,
@@ -28,7 +28,7 @@ export function buildCorretorMetricasCompletas(params: {
     leads,
     vendas,
     gestaoAtivaRanking,
-    tempoMedioRespostaMin = 0,
+    tempoMedioRespostaMin = null,
   } = params;
 
   const lr = leads?.leadsRecebidos ?? 0;

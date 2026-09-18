@@ -4,6 +4,7 @@
  */
 
 import { memo, useState } from 'react';
+import { formatarMinutos } from '@/features/metricas/services/primeiraInteracaoService';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -304,23 +305,29 @@ export const CorretorMetricCard = memo(({ corretor, isLoading = false }: Correto
                 <Clock className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
               </div>
               <div>
-                <p className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Tempo Médio de Resposta</p>
+                <p className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Tempo até a LIA responder</p>
                 <div className="flex items-center gap-2">
                   <p className="text-xl font-bold text-gray-900 dark:text-white">
-                    {kpis.tempoMedioResposta}<span className="text-xs font-normal text-gray-500 ml-0.5">min</span>
+                    {formatarMinutos(kpis.tempoMedioResposta)}
                   </p>
-                  {kpis.tempoMedioResposta <= 10 && (
+                  {/*
+                    Os selos e o anel só aparecem com amostra. Sem esta guarda,
+                    `null <= 10` é true em JS: um corretor sem nenhum lead
+                    contatado no período ganhava selo verde "Excelente" e anel
+                    cheio — o pior jeito de mostrar ausência de dado.
+                  */}
+                  {kpis.tempoMedioResposta != null && kpis.tempoMedioResposta <= 10 && (
                     <span className="flex items-center gap-1 text-[9px] font-semibold text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900/30 px-1.5 py-0.5 rounded-full">
                       <Zap className="h-2.5 w-2.5" />
                       Excelente
                     </span>
                   )}
-                  {kpis.tempoMedioResposta > 10 && kpis.tempoMedioResposta <= 15 && (
+                  {kpis.tempoMedioResposta != null && kpis.tempoMedioResposta > 10 && kpis.tempoMedioResposta <= 15 && (
                     <span className="flex items-center gap-1 text-[9px] font-semibold text-yellow-600 dark:text-yellow-400 bg-yellow-100 dark:bg-yellow-900/30 px-1.5 py-0.5 rounded-full">
                       Bom
                     </span>
                   )}
-                  {kpis.tempoMedioResposta > 15 && (
+                  {kpis.tempoMedioResposta != null && kpis.tempoMedioResposta > 15 && (
                     <span className="flex items-center gap-1 text-[9px] font-semibold text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30 px-1.5 py-0.5 rounded-full">
                       Atenção
                     </span>
@@ -347,8 +354,12 @@ export const CorretorMetricCard = memo(({ corretor, isLoading = false }: Correto
                   stroke="currentColor"
                   strokeWidth="4"
                   fill="transparent"
-                  strokeDasharray={`${Math.max(0, 100 - (kpis.tempoMedioResposta / 30) * 100) * 1.256} 126`}
-                  className={kpis.tempoMedioResposta <= 10 ? 'text-green-500' : kpis.tempoMedioResposta <= 15 ? 'text-yellow-500' : 'text-red-500'}
+                  strokeDasharray={kpis.tempoMedioResposta == null
+                    ? '0 126'
+                    : `${Math.max(0, 100 - (kpis.tempoMedioResposta / 30) * 100) * 1.256} 126`}
+                  className={kpis.tempoMedioResposta == null
+                    ? 'text-gray-300 dark:text-gray-600'
+                    : kpis.tempoMedioResposta <= 10 ? 'text-green-500' : kpis.tempoMedioResposta <= 15 ? 'text-yellow-500' : 'text-red-500'}
                 />
               </svg>
             </div>

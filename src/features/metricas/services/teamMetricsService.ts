@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabaseClient';
+import { buscarMinutosPorLead } from './primeiraInteracaoService';
 import { STATUS_RASCUNHO } from '@/features/imoveis/utils/rascunho';
 
 const CACHE_DURATION = 5 * 60 * 1000;
@@ -91,7 +92,6 @@ interface LeadMetricRow {
   attended_by_id?: string | null;
   assigned_agent_name?: string | null;
   attended_by_name?: string | null;
-  first_response_at?: string | null;
   final_sale_value?: number | null;
   status?: string | null;
 }
@@ -147,6 +147,11 @@ function round(value: number, decimals = 1): number {
 function percentual(atual: number, anterior: number): number {
   if (anterior === 0) return atual === 0 ? 0 : 100;
   return Math.round(((atual - anterior) / anterior) * 100);
+}
+
+/** Data para a view, que filtra por texto ISO. `undefined` = período aberto. */
+function isoOuNulo(date?: Date | null): string | null {
+  return date ? formatDateOnly(date) : null;
 }
 
 function formatDateOnly(date: Date): string {
@@ -324,16 +329,30 @@ export function resolverEquipeDoLead(
   return null;
 }
 
-export function calcularTempoRespostaLead(lead: Partial<LeadMetricRow>): number | null {
-  const createdAt = toDate(lead.created_at);
-  const responseAt = toDate(lead.first_response_at);
-
-  if (!createdAt || !responseAt) return null;
-
-  const diffMin = (responseAt.getTime() - createdAt.getTime()) / (1000 * 60);
-  if (diffMin < 0 || diffMin > 1440) return null;
-
-  return diffMin;
+/**
+ * Minutos até a LIA falar com o lead, lidos da view `primeira_interacao`.
+ *
+ * Trocou de fonte em 18/09. Antes era `first_response_at - created_at`, e a
+ * coluna é gravada quando o card deixa a primeira coluna do kanban
+ * (`leadsService.ts:602`) — não quando alguém fala com o lead. Duas
+ * consequências que sumiram junto:
+ *
+ * 1. O corte em 1440 minutos. Lead respondido em 25 h devolvia `null`, e como
+ *    as três agregações contam `atendidos` pelo mesmo `null`, ele virava lead
+ *    NÃO ATENDIDO. A taxa de atendimento ficava melhor do que a realidade
+ *    justamente nos casos ruins.
+ * 2. Os negativos e os 203 dias, que a view já descarta na origem.
+ *
+ * `null` = este lead não foi contatado no período. É o que as três agregações
+ * já esperavam, então o formato do retorno não mudou.
+ */
+export function calcularTempoRespostaLead(
+  lead: Partial<LeadMetricRow>,
+  minutosPorLead: Map<string, number>,
+): number | null {
+  if (!lead.id) return null;
+  const minutos = minutosPorLead.get(lead.id);
+  return minutos == null ? null : minutos;
 }
 
 async function buscarLeadsMetricas(
@@ -343,7 +362,7 @@ async function buscarLeadsMetricas(
 ): Promise<LeadMetricRow[]> {
   let query = supabase
     .from('leads' as any)
-    .select('id, created_at, assigned_agent_id, assigned_agent_name, first_response_at, final_sale_value, status, archived_at')
+    .select('id, created_at, assigned_agent_id, assigned_agent_name, final_sale_value, status, archived_at')
     .eq('tenant_id', tenantId);
 
   if (!includeArchived) {
@@ -369,7 +388,10 @@ export async function buscarMetricasCorretoresCentral(
   const resolvedTenantId = await resolveTenantId(tenantId);
   if (!resolvedTenantId) return [];
 
-  const leads = await buscarLeadsMetricas(resolvedTenantId, { dataInicio, dataFim });
+  const [leads, minutosPorLead] = await Promise.all([
+    buscarLeadsMetricas(resolvedTenantId, { dataInicio, dataFim }),
+    buscarMinutosPorLead(resolvedTenantId, isoOuNulo(dataInicio), isoOuNulo(dataFim)),
+  ]);
   const byBroker = new Map<string, {
     total: number;
     responseTotal: number;
@@ -388,7 +410,7 @@ export async function buscarMetricasCorretoresCentral(
       atendidos: 0,
     };
 
-    const responseMinutes = calcularTempoRespostaLead(lead);
+    const responseMinutes = calcularTempoRespostaLead(lead, minutosPorLead);
     current.total += 1;
 
     if (responseMinutes !== null) {
@@ -428,12 +450,15 @@ export async function buscarMetricasGeraisCentral(
     };
   }
 
-  const leads = await buscarLeadsMetricas(resolvedTenantId, { dataInicio, dataFim });
+  const [leads, minutosPorLead] = await Promise.all([
+    buscarLeadsMetricas(resolvedTenantId, { dataInicio, dataFim }),
+    buscarMinutosPorLead(resolvedTenantId, isoOuNulo(dataInicio), isoOuNulo(dataFim)),
+  ]);
   let tempoTotal = 0;
   let leadsComResposta = 0;
 
   leads.forEach((lead) => {
-    const responseMinutes = calcularTempoRespostaLead(lead);
+    const responseMinutes = calcularTempoRespostaLead(lead, minutosPorLead);
     if (responseMinutes === null) return;
     tempoTotal += responseMinutes;
     leadsComResposta += 1;
@@ -454,9 +479,10 @@ export async function buscarMetricasPorEquipeCentral(
   const resolvedTenantId = await resolveTenantId(tenantId);
   if (!resolvedTenantId) return [];
 
-  const [resolver, leads] = await Promise.all([
+  const [resolver, leads, minutosPorLead] = await Promise.all([
     buscarMapaEquipesPorTenant(resolvedTenantId),
     buscarLeadsMetricas(resolvedTenantId, { dataInicio, dataFim }),
+    buscarMinutosPorLead(resolvedTenantId, isoOuNulo(dataInicio), isoOuNulo(dataFim)),
   ]);
 
   const stats = new Map<string, {
@@ -487,7 +513,7 @@ export async function buscarMetricasPorEquipeCentral(
 
     if (lead.assigned_agent_name) current.corretores.add(lead.assigned_agent_name);
 
-    const responseMinutes = calcularTempoRespostaLead(lead);
+    const responseMinutes = calcularTempoRespostaLead(lead, minutosPorLead);
     if (responseMinutes !== null) {
       current.responseTotal += responseMinutes;
       current.responseCount += 1;

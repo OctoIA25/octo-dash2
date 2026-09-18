@@ -67,7 +67,8 @@ export interface CorretorKPIs {
   comissaoTotal: number;
   gestaoAtiva: number;
   percentualAtingimentoMeta: number;
-  tempoMedioResposta: number; // em minutos
+  /** Mediana de minutos até a LIA responder. `null` = sem amostra no período. */
+  tempoMedioResposta: number | null;
 }
 
 export interface FunilVendas {
