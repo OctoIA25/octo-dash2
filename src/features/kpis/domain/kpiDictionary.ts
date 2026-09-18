@@ -106,9 +106,58 @@ export const DICIONARIO_DASH: Record<string, string> = {
   'relatorios.tempoPrimeiraInteracao':
     'Mediana do tempo entre o lead entrar na base e a LIA enviar a primeira mensagem no WhatsApp, dentro do período. Mediana e não média: um punhado de leads recontatados semanas depois desloca a média em horas. Período sem lead contatado mostra "Sem dados".',
 
+  // --- aba Métricas (Comercial › Funil Cliente Interessado / Proprietário).
+  // A chave sai do RÓTULO do card, normalizado — ver `chaveDoRotulo`. Os
+  // cards de lá são montados como dados (`metric1..metric6`), então derivar a
+  // chave do rótulo evita repetir uma chave em vinte objetos.
+  'metricas.pre-atendimento':
+    'Leads que entraram e ainda não passaram da conversa: etapas "Novos Leads", "Em Atendimento" e "Interação". Até 18/09 este card procurava por "Pré-Atendimento" e "Novo Lead", que a base nunca gravou, e deixava de fora os 4.147 leads da etapa de entrada.',
+
+  'metricas.visitas':
+    'Leads cuja etapa é de visita AGENDADA — quem já realizou a visita não entra aqui, aparece em "Visitas Realizadas". ATENÇÃO: o card não olha data; ele conta quem está nessa etapa agora, não as visitas do período.',
+
+  'metricas.visitas-realizadas':
+    'Leads cuja etapa diz que a visita foi realizada. Conta a etapa, não a coluna de data da visita — essa está vazia em 100% dos leads da base e fazia o número ser zero para todo corretor.',
+
+  'metricas.encaminhados-aos-corretores':
+    'Leads que têm corretor de verdade atribuído. Era literalmente o total de leads: na Imobiliária Japi o card anunciava 2.553 encaminhados com ZERO leads tendo corretor. A armadilha é que o campo de corretor nunca vem vazio — sem corretor, o sistema grava o texto "Não atribuído".',
+
+  'metricas.interacoes':
+    'Leads parados na etapa de interação ou atendimento. É contagem de LEADS numa coluna, não de mensagens: um lead com quarenta mensagens conta uma vez, e um lead que já avançou de etapa não conta.',
+
+  'metricas.negocios-fechados':
+    'Leads cuja etapa indica fechamento. Até 18/09 procurava por "Negócio Fechado" e "Finalizado" — duas etapas que não existem na base — mais uma coluna de valor vazia: as três condições eram impossíveis e o card era zero estrutural.',
+
+  'metricas.clientes-interessados':
+    'Todos os leads carregados para esta tela, sem os arquivados. ATENÇÃO: é a base inteira da imobiliária, não o período; e os filtros de equipe e de corretor desta aba afetam os gráficos, não este número.',
+
+  'metricas.valor-total':
+    'Soma do valor dos imóveis dos leads. ATENÇÃO: a coluna de valor do imóvel está preenchida em ZERO das 5.235 linhas da base, então este card mostra "Sem dados" em vez de R$ 0 — zero ali se leria como "a carteira não vale nada".',
+
+  'metricas.valor-medio':
+    'Valor médio dos imóveis dos leads. Mesma coluna vazia de "Valor Total": sem nenhum valor preenchido, o card diz "Sem dados".',
+
   'relatorios.leadsConvertidos':
     'Leads DISTINTOS do período com proposta assinada. Um lead com duas propostas assinadas conta uma vez — por isso este número pode ser menor que o de vendas. Não sai de `final_sale_value`, coluna vazia em produção.',
 };
+
+/**
+ * Chave de dicionário a partir do RÓTULO de um card.
+ *
+ * A aba Métricas monta os cards como dados (`metric1..metric6`), com o rótulo
+ * mudando conforme a sub-aba. Derivar a chave do rótulo evita pendurar uma
+ * chave em cada um dos vinte objetos — e um rótulo sem entrada simplesmente
+ * não ganha (i), que é o comportamento certo.
+ */
+export function chaveDoRotulo(tela: string, rotulo: string): string {
+  const slug = (rotulo || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().trim()
+    .replace(/\(.*?\)/g, '')          // "Valor Total (R$ M)" -> "valor total"
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+  return `${tela}.${slug}`;
+}
 
 /**
  * O texto do (i) de um card.

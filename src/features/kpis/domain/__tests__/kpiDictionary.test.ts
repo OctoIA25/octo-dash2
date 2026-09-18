@@ -4,7 +4,7 @@
  * dicionário não descreva uma conta que o código não faz mais.
  */
 import { describe, it, expect } from 'vitest';
-import { KPI_DICIONARIO, DICIONARIO_DASH, descricaoDaMetrica } from '../kpiDictionary';
+import { KPI_DICIONARIO, DICIONARIO_DASH, chaveDoRotulo, descricaoDaMetrica } from '../kpiDictionary';
 import { NATIVE_METRIC_KEYS } from '../kpiTypes';
 
 describe('KPI_DICIONARIO', () => {
@@ -67,6 +67,42 @@ describe('DICIONARIO_DASH — contadores fora do catálogo de KPIs', () => {
 
   it('avisa que lead convertido e DISTINTO, nao proposta', () => {
     expect(DICIONARIO_DASH['relatorios.leadsConvertidos']).toContain('DISTINTOS');
+  });
+});
+
+describe('chaveDoRotulo', () => {
+  /**
+   * A aba Métricas monta os cards como DADOS (`metric1..metric6`) e o rótulo
+   * muda por sub-aba. A chave sai do rótulo para não pendurar uma constante em
+   * cada um dos vinte objetos — então a normalização precisa ser estável.
+   */
+  it('normaliza acento, caixa e espaco', () => {
+    expect(chaveDoRotulo('metricas', 'Pré-Atendimento')).toBe('metricas.pre-atendimento');
+    expect(chaveDoRotulo('metricas', 'Interações')).toBe('metricas.interacoes');
+    expect(chaveDoRotulo('metricas', 'Encaminhados Aos Corretores')).toBe('metricas.encaminhados-aos-corretores');
+  });
+
+  // "Valor Total (R$ M)" e "Valor Total (R$ K)" são o mesmo indicador em
+  // unidades diferentes: o parêntese sai para os dois caírem na mesma entrada.
+  it('descarta a unidade entre parenteses', () => {
+    expect(chaveDoRotulo('metricas', 'Valor Total (R$ M)')).toBe('metricas.valor-total');
+    expect(chaveDoRotulo('metricas', 'Valor Médio (K)')).toBe('metricas.valor-medio');
+  });
+
+  it('todo rotulo que tem entrada no dicionario e alcancavel pela chave', () => {
+    const rotulos = [
+      'Pré-Atendimento', 'Visitas', 'Visitas Realizadas', 'Encaminhados Aos Corretores',
+      'Interações', 'Negócios Fechados', 'Clientes Interessados', 'Valor Total (R$ M)', 'Valor Médio (K)',
+    ];
+    for (const r of rotulos) {
+      const chave = chaveDoRotulo('metricas', r);
+      expect(descricaoDaMetrica(chave, ''), `sem texto para "${r}" (chave ${chave})`).toBeTruthy();
+    }
+  });
+
+  // Rótulo sem entrada não ganha (i) — melhor nada do que um ícone vazio.
+  it('rotulo desconhecido nao inventa texto', () => {
+    expect(descricaoDaMetrica(chaveDoRotulo('metricas', 'Coisa Nova'), '')).toBeNull();
   });
 });
 

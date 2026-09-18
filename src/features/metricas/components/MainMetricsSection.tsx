@@ -9,6 +9,8 @@
  */
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
+import { InfoMetrica } from '@/features/kpis/components/KpiComponents';
+import { chaveDoRotulo } from '@/features/kpis/domain/kpiDictionary';
 import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { EnhancedFunnelChart } from '@/features/leads/components/EnhancedFunnelChart';
 import { SectionMetrics } from './SectionMetrics';
@@ -1286,7 +1288,13 @@ export const MainMetricsSection = ({
                       }`}
                     />
                     )}
-                    <p className="text-text-secondary dark:text-gray-300 text-sm font-semibold">{metric.label}</p>
+                    <div className="flex items-center justify-center gap-1.5">
+                      <p className="text-text-secondary dark:text-gray-300 text-sm font-semibold">{metric.label}</p>
+                      {/* A chave sai do próprio rótulo: os cards aqui são
+                          dados, e o rótulo muda por sub-aba. Rótulo sem
+                          entrada no dicionário simplesmente não ganha (i). */}
+                      <InfoMetrica metricKey={chaveDoRotulo('metricas', metric.label)} label={metric.label} />
+                    </div>
                   </div>
                 </CardContent>
               </Card>
