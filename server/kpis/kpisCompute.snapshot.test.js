@@ -7,11 +7,15 @@ import { buildOverview } from './kpisCompute.js';
 // de interação vem das views `primeira_interacao*`, por `counts`, e não de uma
 // coluna do lead. Manter a coluna aqui deixaria a fixture mentindo sobre a
 // fonte que o código lê.
+// `final_sale_value` saiu das fixtures junto com a coluna: desde 18/09 a venda
+// vem de `vendas_assinadas`, por `counts`. A coluna está vazia em produção — a
+// Lotus tem 0 preenchidas em 1.685 leads — e mantê-la aqui faria a fixture
+// mentir sobre a fonte que o código lê.
 const FIXED_LEADS = [
-  { status: 'novo',      source: 'Instagram', final_sale_value: 0,       created_at: '2026-06-01T10:00:00Z' },
-  { status: 'proposta',  source: 'Facebook',  final_sale_value: 0,       created_at: '2026-06-02T10:00:00Z' },
-  { status: 'assinado',  source: 'Indicação', final_sale_value: 650000,  created_at: '2026-06-03T10:00:00Z' },
-  { status: 'visita',    source: 'Instagram', final_sale_value: 0,       created_at: '2026-06-04T10:00:00Z' },
+  { status: 'novo',      source: 'Instagram', created_at: '2026-06-01T10:00:00Z' },
+  { status: 'proposta',  source: 'Facebook',  created_at: '2026-06-02T10:00:00Z' },
+  { status: 'assinado',  source: 'Indicação', created_at: '2026-06-03T10:00:00Z' },
+  { status: 'visita',    source: 'Instagram', created_at: '2026-06-04T10:00:00Z' },
 ];
 
 // Três dos quatro leads contatados pela LIA: 30, 60 e 5 minutos → mediana 30,
@@ -23,8 +27,8 @@ describe('buildOverview — regressão do modo legado (sem config)', () => {
   it('snapshot dos números nativos + asserts explícitos', () => {
     const overview = buildOverview({
       period: PERIOD, currentLeads: FIXED_LEADS, previousLeads: [],
-      counts: { imoveisAtivos: 7, captacaoExclusiva: 0, captacaoSemExclusividade: 0, tamanhoEquipe: 0, vgv: 1000, vgc: 30, vgvPrev: 800, vgcPrev: 24, ...FIXED_INTERACAO },
-      goals: [], commercialCurrent: { vgv: 1000, vgc: 30 }, commercialPrevious: { vgv: 800, vgc: 24 },
+      counts: { imoveisAtivos: 7, captacaoExclusiva: 0, captacaoSemExclusividade: 0, tamanhoEquipe: 0, vgv: 650000, vgc: 39000, vendasQtd: 1, vgvPrev: 800, vgcPrev: 24, vendasQtdPrev: 1, ...FIXED_INTERACAO },
+      goals: [], commercialCurrent: { vgv: 650000, vgc: 39000, qtd: 1 }, commercialPrevious: { vgv: 800, vgc: 24, qtd: 1 },
       previousLabel: 'Maio/2026',
       // SEM config → caminho legado, que deve permanecer idêntico ao de hoje.
     });
@@ -34,8 +38,11 @@ describe('buildOverview — regressão do modo legado (sem config)', () => {
     const totalLeads = overview.cards.find((c) => c.metricKey === 'totalLeads');
     expect(totalLeads.rawValue).toBe(4);
     expect(totalLeads.target).toBe(null); // legado não tem meta
+    // Venda vem de `vendas_assinadas`, não de `leads.final_sale_value`.
     const vendas = overview.cards.find((c) => c.metricKey === 'vendas');
     expect(vendas.rawValue).toBe(1);
+    const valor = overview.cards.find((c) => c.metricKey === 'valorVendas');
+    expect(valor.rawValue).toBe(650000);
     // Os dois números que esta fatia trocou de fonte, travados explicitamente.
     const tmr = overview.cards.find((c) => c.metricKey === 'tempoMedioResposta');
     expect(tmr.rawValue).toBe(30);           // mediana de [30, 60, 5]

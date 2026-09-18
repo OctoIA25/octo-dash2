@@ -48,6 +48,12 @@ SELECT
   p.lead_id,
   p.agent_user_id,
   p.agent_name,
+  -- Fonte do lead que originou a venda. Vem junto porque os blocos "negócios
+  -- por fonte" e "faixas de preço" da aba KPIs somavam `leads.final_sale_value`
+  -- para montar o recorte — coluna vazia em produção (0 preenchidas nos 1.685
+  -- leads da Lotus), então os dois apareciam vazios. Com a fonte aqui, eles
+  -- saem da mesma origem do VGV, sem uma segunda consulta.
+  COALESCE(NULLIF(btrim(l.source), ''), 'Outros') AS fonte,
   COALESCE(p.value, 0)::numeric AS vgv,
   (CASE
      WHEN COALESCE(p.commission_total, 0) > 0 THEN p.commission_total

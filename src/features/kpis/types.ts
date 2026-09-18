@@ -41,10 +41,25 @@ export interface KpiSummaryCard {
   category: string;
   /** Destaque (hero) no topo da seção da categoria. */
   isFeatured: boolean;
-  /** Valor numérico bruto (realizado). */
-  rawValue: number;
-  /** Valor já formatado para a tela. */
+  /**
+   * Valor numérico bruto (realizado). `null` = não dá para medir no período,
+   * e aí `displayValue` é "Sem dados". `0` é uma medição de zero — são
+   * afirmações diferentes, e trocar uma pela outra foi o que manteve
+   * contadores zerados passando por corretos.
+   */
+  rawValue: number | null;
+  /** Valor já formatado para a tela; "Sem dados" quando `rawValue` é null. */
   displayValue: string;
+  /**
+   * Texto do (i): o que este número mede, de qual evento até qual evento.
+   *
+   * OPCIONAL de propósito: é a descrição que o GESTOR escreveu em
+   * `dashboard_kpis`, e ele pode não ter escrito nenhuma — hoje as 14 métricas
+   * nativas estão com o campo vazio nos 8 tenants. Ausente aqui, a tela cai no
+   * dicionário de métricas (`kpiDictionary.ts`), que é onde mora a definição
+   * das nativas, presa ao código que as calcula.
+   */
+  description?: string;
   /** Meta do período (null quando não há meta cadastrada). */
   target: number | null;
   /** Progresso vs. meta (0–100, null quando sem meta). */
@@ -112,6 +127,11 @@ export interface KpiCommercialComparison {
 /** Pacote completo consumido pela página de KPIs. */
 export interface KpisOverview {
   period: KpiPeriod;
+  /**
+   * Quando estes números foram calculados (ISO). A tela mostra "atualizado às
+   * hh:mm" — sem isso, um painel servido de cache parece estar ao vivo.
+   */
+  atualizadoEm: string;
   cards: KpiSummaryCard[];
   funnel: KpiFunnel;
   sources: KpiSourceBreakdown[];

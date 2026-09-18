@@ -9,7 +9,7 @@ const OWNER_EMAIL = 'octo.inteligenciaimobiliaria@gmail.com';
  * `tenants` = ids existentes (para o caminho do owner).
  * `leads`/`goals`/`imoveis_locais` retornam vazio por padrão.
  */
-function makeSupabase({ memberships = [], tenants = [], leads = [], dashboardKpis = [], imoveisExclusivos = 0, imoveisSemExcl = 0, corretores = 0 } = {}) {
+function makeSupabase({ memberships = [], tenants = [], leads = [], vendasAssinadas = [], interacaoLia = [], dashboardKpis = [], imoveisExclusivos = 0, imoveisSemExcl = 0, corretores = 0 } = {}) {
   function tableQuery(table) {
     let rangeServed = false;
     const node = {
@@ -24,8 +24,22 @@ function makeSupabase({ memberships = [], tenants = [], leads = [], dashboardKpi
       lte() { return node; },
       order() { return node; },
       range() {
-        // fetchLeads pagina: 1ª página devolve os leads, 2ª devolve vazio (corta o loop).
-        const page = !rangeServed ? leads : [];
+        // Paginação: 1ª página devolve as linhas da tabela, 2ª devolve vazio
+        // (corta o loop).
+        //
+        // O `data` é escolhido POR TABELA. Antes este fake devolvia os `leads`
+        // para qualquer tabela, e o defeito ficou escondido enquanto
+        // fetchCommercialTotals só somava colunas (que vinham `undefined` → 0).
+        // Quando ele passou a CONTAR linhas, o teste viu 2 vendas onde havia 2
+        // leads. Fake que não discrimina a tabela esconde exatamente o tipo de
+        // erro que estes testes existem para pegar.
+        const porTabela = {
+          leads,
+          vendas_assinadas: vendasAssinadas,
+          primeira_interacao: interacaoLia,
+          primeira_interacao_corretor: [],
+        };
+        const page = !rangeServed ? (porTabela[table] ?? []) : [];
         rangeServed = true;
         return Promise.resolve({ data: page, error: null });
       },
@@ -152,9 +166,13 @@ describe('makeKpisHandler', () => {
     const supabase = makeSupabase({
       memberships: [{ user_id: 'u1', tenant_id: 't1' }],
       leads: [
-        { status: 'Proposta Assinada', final_sale_value: 700000, source: 'Zap', created_at: '2026-06-10T12:00:00Z', first_response_at: '2026-06-10T12:05:00Z' },
-        { status: 'Novos Leads', final_sale_value: null, source: 'OLX', created_at: '2026-06-11T12:00:00Z', first_response_at: null },
+        // `final_sale_value` continua preenchido de propósito: ele NÃO pode
+        // entrar na conta de vendas. A coluna está vazia em produção e os
+        // cards que a somavam mostravam zero.
+        { status: 'Proposta Assinada', final_sale_value: 700000, source: 'Zap', created_at: '2026-06-10T12:00:00Z' },
+        { status: 'Novos Leads', final_sale_value: null, source: 'OLX', created_at: '2026-06-11T12:00:00Z' },
       ],
+      vendasAssinadas: [{ vgv: 700000, vgc: 42000 }],
     });
     const req = { userId: 'u1', userEmail: 'corretor@x.com', query: { month: '2026-06-01' } };
     const res = makeRes();
@@ -165,9 +183,10 @@ describe('makeKpisHandler', () => {
     // lead com status 'Proposta Assinada' cai na etapa 'Fechamento'
     const fechamento = ov.funnel.stages.find((s) => s.label === 'Fechamento');
     expect(fechamento.count).toBe(1);
-    // venda contabilizada (final_sale_value > 0)
+    // Venda vem da view `vendas_assinadas`, não de `leads.final_sale_value`.
     const vendas = ov.cards.find((c) => c.key === 'vendas');
     expect(vendas.rawValue).toBe(1);
+    expect(ov.cards.find((c) => c.key === 'valorVendas').rawValue).toBe(700000);
   });
 
   it('propaga 403 quando o usuário não tem tenant', async () => {

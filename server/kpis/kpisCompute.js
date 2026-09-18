@@ -66,20 +66,23 @@ export function computeTrend(atual, anterior, lowerIsBetter = false) {
 }
 
 /** Soma de vendas: quantidade e valor (final_sale_value > 0). */
-export function countVendas(leads) {
-  let qtd = 0;
-  let valor = 0;
-  for (const lead of leads) {
-    const v = Number(lead.final_sale_value) || 0;
-    if (v > 0) {
-      qtd += 1;
-      valor += v;
-    }
-  }
-  return { qtd, valor };
+/**
+ * Vendas do período: quantidade e valor.
+ *
+ * Sai de `vendas_assinadas` (proposta em `proposta-assinada`), a mesma fonte do
+ * card VGV. Antes somava `leads.final_sale_value`, e essa coluna está VAZIA em
+ * produção: na Lotus são 0 preenchidas em 1.685 leads, enquanto a imobiliária
+ * tem 36 propostas assinadas somando R$ 14,4 milhões. O resultado era a aba
+ * KPIs mostrando "Vendas: 0" e "Valor em Vendas: R$ 0" ao lado de um card de
+ * VGV com milhões — dois números da mesma coisa se contradizendo na mesma tela.
+ *
+ * `null` quando a leitura falhou, para virar "Sem dados" em vez de zero.
+ */
+export function vendasDoPeriodo(comercial) {
+  if (!comercial || comercial.qtd == null) return { qtd: null, valor: null };
+  return { qtd: Number(comercial.qtd) || 0, valor: Number(comercial.vgv) || 0 };
 }
 
-/** Tempo médio de resposta (min) dos leads com primeira resposta válida (>= 0). */
 /**
  * Mediana dos minutos até a primeira interação.
  *
@@ -140,27 +143,34 @@ export function buildFunnel(leads) {
  * Negócios fechados por fonte (apenas leads com venda). Canonicaliza a fonte
  * por casefold/trim para não dividir "Zap" e "zap " em duas fatias.
  */
-export function buildSources(leads) {
-  const vendaLeads = leads.filter((l) => (Number(l.final_sale_value) || 0) > 0);
+/**
+ * Negócios fechados por fonte do lead.
+ *
+ * Recebe as VENDAS do período (de `vendas_assinadas`), não os leads. Antes
+ * filtrava `leads.final_sale_value > 0`, e essa coluna está vazia em produção:
+ * o bloco aparecia vazio na aba KPIs enquanto a imobiliária tinha 36 vendas.
+ */
+export function buildSources(vendas) {
   const byCanonical = new Map(); // canonical -> { fonte, quantidade, valor }
-  for (const lead of vendaLeads) {
-    const original = String(lead.source || 'Outros').trim() || 'Outros';
+  for (const venda of vendas || []) {
+    const original = String(venda.fonte || 'Outros').trim() || 'Outros';
     const canonical = original.toLowerCase();
     const entry = byCanonical.get(canonical) || { fonte: original, quantidade: 0, valor: 0 };
     entry.quantidade += 1;
-    entry.valor += Number(lead.final_sale_value) || 0;
+    entry.valor += Number(venda.valor) || 0;
     byCanonical.set(canonical, entry);
   }
   return Array.from(byCanonical.values()).sort((a, b) => b.valor - a.valor);
 }
 
 /** Distribuição de vendas por faixa de preço. */
-export function buildPriceRanges(leads) {
+/** Faixas de preço das VENDAS do período. Mesma troca de fonte de buildSources. */
+export function buildPriceRanges(vendas) {
   let ate500 = 0;
   let de500a1m = 0;
   let acima1m = 0;
-  for (const lead of leads) {
-    const v = Number(lead.final_sale_value) || 0;
+  for (const venda of vendas || []) {
+    const v = Number(venda.valor) || 0;
     if (v <= 0) continue;
     if (v < 500000) ate500 += 1;
     else if (v < 1000000) de500a1m += 1;
@@ -173,11 +183,28 @@ export function buildPriceRanges(leads) {
   ];
 }
 
+/**
+ * "Sem dados" é o que o plano pede no lugar de número errado. Os três
+ * formatadores abaixo tratam `null` como ausência de medição e `0` como
+ * medição de zero — são afirmações diferentes, e trocar uma pela outra foi o
+ * que manteve contadores zerados passando por corretos durante meses.
+ */
+const SEM_DADOS = 'Sem dados';
+
 const BRL = (value) =>
-  Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+  value == null
+    ? SEM_DADOS
+    : Number(value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+
+const contagem = (value) =>
+  value == null ? SEM_DADOS : Number(value).toLocaleString('pt-BR');
+
+const percentual = (value) =>
+  value == null ? SEM_DADOS : `${Number(value).toFixed(1)}%`;
 
 function formatMinutes(min) {
-  if (!min || min <= 0) return 'Sem dados';
+  if (min == null || !Number.isFinite(min) || min < 0) return SEM_DADOS;
+  if (min < 1) return 'menos de 1min';
   if (min < 60) return `${Math.round(min)}min`;
   const h = Math.floor(min / 60);
   const m = Math.round(min % 60);
@@ -199,7 +226,11 @@ function countVisitaOuAlem(leads) {
 export function nativeCardValues(current, previous, counts) {
   const c = counts || {};
   const totalLeads = current.length, totalLeadsPrev = previous.length;
-  const vendas = countVendas(current), vendasPrev = countVendas(previous);
+  // Vendas saem da mesma fonte do VGV. Ver a nota em `vendasDoPeriodo`: a
+  // coluna `leads.final_sale_value` que alimentava estes dois cards está vazia
+  // em produção, e a Lotus exibia "Vendas: 0" com 36 propostas assinadas.
+  const vendas = vendasDoPeriodo({ qtd: c.vendasQtd, vgv: c.vgv });
+  const vendasPrev = vendasDoPeriodo({ qtd: c.vendasQtdPrev, vgv: c.vgvPrev });
   // Tempo até a primeira interação, dos dois lados, vindo das views.
   // Antes as três linhas abaixo saíam de `first_response_at`, que marca a saída
   // do card da primeira coluna do kanban (leadsService.ts:602) e não ter falado
@@ -220,35 +251,41 @@ export function nativeCardValues(current, previous, counts) {
   const atendidosPrev = amostraLiaPrev ? amostraLiaPrev.length : null;
   const taxaAtendPrev = amostraLiaPrev && totalLeadsPrev > 0 ? round1((atendidosPrev / totalLeadsPrev) * 100) : null;
 
-  const ticket = vendas.qtd > 0 ? vendas.valor / vendas.qtd : 0;
-  const ticketPrev = vendasPrev.qtd > 0 ? vendasPrev.valor / vendasPrev.qtd : 0;
+  // Sem venda no período o ticket não é R$ 0, é indefinido — não houve venda
+  // para tirar média de. Mesma distinção do resto desta função.
+  const ticket = vendas.qtd ? vendas.valor / vendas.qtd : null;
+  const ticketPrev = vendasPrev.qtd ? vendasPrev.valor / vendasPrev.qtd : null;
+
   const visitas = countVisitaOuAlem(current);
-  const convVisita = totalLeads > 0 ? round1((visitas / totalLeads) * 100) : 0;
+  const convVisita = totalLeads > 0 ? round1((visitas / totalLeads) * 100) : null;
   const visitasPrev = countVisitaOuAlem(previous);
-  const convVisitaPrev = totalLeadsPrev > 0 ? round1((visitasPrev / totalLeadsPrev) * 100) : 0;
-  const equipe = Number(c.tamanhoEquipe) || 0;
-  const vendasPorCorretor = equipe > 0 ? round1(vendas.qtd / equipe) : 0;
+  const convVisitaPrev = totalLeadsPrev > 0 ? round1((visitasPrev / totalLeadsPrev) * 100) : null;
+
+  // `null` aqui é leitura falhada; `0` é imobiliária sem ninguém cadastrado.
+  const equipe = c.tamanhoEquipe == null ? null : Number(c.tamanhoEquipe);
+  const vendasPorCorretor =
+    equipe && vendas.qtd != null ? round1(vendas.qtd / equipe) : null;
 
   return {
-    totalLeads:        { rawValue: totalLeads, displayValue: totalLeads.toLocaleString('pt-BR'), trend: computeTrend(totalLeads, totalLeadsPrev) },
-    vendas:            { rawValue: vendas.qtd, displayValue: vendas.qtd.toLocaleString('pt-BR'), trend: computeTrend(vendas.qtd, vendasPrev.qtd) },
+    totalLeads:        { rawValue: totalLeads, displayValue: contagem(totalLeads), trend: computeTrend(totalLeads, totalLeadsPrev) },
+    vendas:            { rawValue: vendas.qtd, displayValue: contagem(vendas.qtd), trend: computeTrend(vendas.qtd, vendasPrev.qtd) },
     valorVendas:       { rawValue: vendas.valor, displayValue: BRL(vendas.valor), trend: computeTrend(vendas.valor, vendasPrev.valor) },
-    imoveisAtivos:     { rawValue: c.imoveisAtivos || 0, displayValue: Number(c.imoveisAtivos || 0).toLocaleString('pt-BR'), trend: null },
+    imoveisAtivos:     { rawValue: c.imoveisAtivos ?? null, displayValue: contagem(c.imoveisAtivos ?? null), trend: null },
     tempoMedioResposta:{ rawValue: respMin, displayValue: formatMinutes(respMin), trend: computeTrend(respMin, respMinPrev, true) },
     tempoAteCorretor:  { rawValue: corretorMin, displayValue: formatMinutes(corretorMin), trend: computeTrend(corretorMin, corretorMinPrev, true) },
-    taxaAtendimento:   { rawValue: taxaAtend, displayValue: taxaAtend == null ? 'Sem dados' : `${taxaAtend.toFixed(1)}%`, trend: computeTrend(taxaAtend, taxaAtendPrev) },
+    taxaAtendimento:   { rawValue: taxaAtend, displayValue: percentual(taxaAtend), trend: computeTrend(taxaAtend, taxaAtendPrev) },
     // --- novos ---
-    vgv:               { rawValue: Number(c.vgv) || 0, displayValue: BRL(c.vgv), trend: computeTrend(Number(c.vgv) || 0, Number(c.vgvPrev) || 0) },
-    vgc:               { rawValue: Number(c.vgc) || 0, displayValue: BRL(c.vgc), trend: computeTrend(Number(c.vgc) || 0, Number(c.vgcPrev) || 0) },
+    vgv:               { rawValue: c.vgv ?? null, displayValue: BRL(c.vgv ?? null), trend: computeTrend(c.vgv ?? null, c.vgvPrev ?? null) },
+    vgc:               { rawValue: c.vgc ?? null, displayValue: BRL(c.vgc ?? null), trend: computeTrend(c.vgc ?? null, c.vgcPrev ?? null) },
     ticketMedio:       { rawValue: ticket, displayValue: BRL(ticket), trend: computeTrend(ticket, ticketPrev) },
-    conversaoVisita:   { rawValue: convVisita, displayValue: `${convVisita.toFixed(1)}%`, trend: computeTrend(convVisita, convVisitaPrev) },
-    captacaoExclusiva: { rawValue: c.captacaoExclusiva || 0, displayValue: Number(c.captacaoExclusiva || 0).toLocaleString('pt-BR'), trend: null },
-    captacaoSemExclusividade: { rawValue: c.captacaoSemExclusividade || 0, displayValue: Number(c.captacaoSemExclusividade || 0).toLocaleString('pt-BR'), trend: null },
-    tamanhoEquipe:     { rawValue: equipe, displayValue: equipe.toLocaleString('pt-BR'), trend: null },
+    conversaoVisita:   { rawValue: convVisita, displayValue: percentual(convVisita), trend: computeTrend(convVisita, convVisitaPrev) },
+    captacaoExclusiva: { rawValue: c.captacaoExclusiva ?? null, displayValue: contagem(c.captacaoExclusiva ?? null), trend: null },
+    captacaoSemExclusividade: { rawValue: c.captacaoSemExclusividade ?? null, displayValue: contagem(c.captacaoSemExclusividade ?? null), trend: null },
+    tamanhoEquipe:     { rawValue: equipe, displayValue: contagem(equipe), trend: null },
     // trend: null — não buscamos o tamanho da equipe do mês anterior, então não
     // há baseline confiável para vendas/corretor (computeTrend(x,0) seria sempre
     // null e enganoso). Consistente com as demais métricas só-contagem acima.
-    vendasPorCorretor: { rawValue: vendasPorCorretor, displayValue: vendasPorCorretor.toLocaleString('pt-BR', { maximumFractionDigits: 1 }), trend: null },
+    vendasPorCorretor: { rawValue: vendasPorCorretor, displayValue: vendasPorCorretor == null ? SEM_DADOS : vendasPorCorretor.toLocaleString('pt-BR', { maximumFractionDigits: 1 }), trend: null },
   };
 }
 
@@ -270,8 +307,8 @@ function clampPercent(target, realized) {
 
 function formatByUnit(value, unit) {
   if (unit === 'currency') return BRL(value);
-  if (unit === 'percent') return `${Number(value).toFixed(1)}%`;
-  return Number(value || 0).toLocaleString('pt-BR');
+  if (unit === 'percent') return percentual(value);
+  return contagem(value);
 }
 
 /**
@@ -287,6 +324,9 @@ export function buildCards(current, previous, counts, config) {
   if (!config || !Array.isArray(config.kpis) || config.kpis.length === 0) {
     return Object.keys(LEGACY_LABELS).map((key, i) => ({
       key, id: key, metricKey: key, source: 'crm', unit: 'count',
+      // Vazio: no modo legado não há linha em `dashboard_kpis` onde o gestor
+      // pudesse ter escrito descrição. A tela cai no dicionário pela metricKey.
+      description: '',
       label: LEGACY_LABELS[key], displayOrder: i,
       category: 'geral', isFeatured: false,
       ...native[key],
@@ -315,6 +355,7 @@ export function buildCards(current, previous, counts, config) {
       }
       return {
         id: k.id, metricKey: k.metricKey, source: k.source, unit: k.unit, label: k.name,
+        description: k.description || '',
         displayOrder: k.displayOrder, category: k.categoryId || 'geral', isFeatured: !!k.isFeatured,
         rawValue, displayValue,
         target, progressPercent: clampPercent(target, rawValue), trend,
@@ -378,13 +419,19 @@ export function buildOverview({
   commercialPrevious,
   previousLabel,
   config,
+  atualizadoEm,
 }) {
   return {
     period,
+    // Quando estes números foram calculados. Sem isso, um painel servido de
+    // cache parece estar ao vivo — o plano pede "atualizado às hh:mm".
+    // Recebido de fora em vez de `new Date()` aqui: esta função é pura e é o
+    // que o snapshot de regressão trava.
+    atualizadoEm: atualizadoEm || null,
     cards: buildCards(currentLeads, previousLeads, counts, config),
     funnel: buildFunnel(currentLeads),
-    sources: buildSources(currentLeads),
-    priceRanges: buildPriceRanges(currentLeads),
+    sources: buildSources(commercialCurrent && commercialCurrent.vendas),
+    priceRanges: buildPriceRanges(commercialCurrent && commercialCurrent.vendas),
     goals: Array.isArray(goals) ? goals : [],
     commercial: buildCommercialComparison({
       current: commercialCurrent || { vgv: 0, vgc: 0 },

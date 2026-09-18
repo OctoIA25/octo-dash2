@@ -8,7 +8,14 @@
  * Visual alinhado à InicioNovaPage: slate + accent azul, Lucide, rounded-xl.
  */
 
-import { TrendingUp, TrendingDown } from 'lucide-react';
+import { TrendingUp, TrendingDown, Info } from 'lucide-react';
+import {
+  Tooltip as DicaRoot,
+  TooltipContent as DicaConteudo,
+  TooltipProvider as DicaProvider,
+  TooltipTrigger as DicaGatilho,
+} from '@/components/ui/tooltip';
+import { descricaoDaMetrica } from '../domain/kpiDictionary';
 import {
   Bar,
   BarChart,
@@ -78,6 +85,68 @@ function OriginBadge({ source }: { source: KpiSummaryCard['source'] }) {
  * `valueColor`/`borderColor` (classes Tailwind) vêm da categoria; quando
  * ausentes (uso fora de uma seção colorida), o card cai no slate neutro.
  */
+/**
+ * O (i) de um contador: o que o número mede, de qual evento até qual evento.
+ *
+ * O texto é o que o gestor escreveu em Configurações; sem isso, o dicionário
+ * das métricas nativas (`kpiDictionary.ts`). KPI manual sem descrição não
+ * ganha ícone — melhor nada do que um (i) que abre vazio.
+ */
+export function InfoMetrica({ card }: { card: KpiSummaryCard }) {
+  const texto = descricaoDaMetrica(card.metricKey, card.description);
+  if (!texto) return null;
+
+  // O provider vem embutido de propósito. Radix estoura "`Tooltip` must be
+  // used within `TooltipProvider`" quando não acha um acima, e estes cards são
+  // "burros por design": qualquer tela pode montá-los. Sem isto, um (i) num
+  // card renderizado fora da árvore do App derrubaria a tela inteira. Provider
+  // aninhado é só contexto, e o de cima continua valendo para o resto.
+  return (
+    <DicaProvider delayDuration={150}>
+      <DicaRoot>
+      <DicaGatilho asChild>
+        <button
+          type="button"
+          // `type="button"` porque o card pode estar dentro de um form; sem
+          // isso o clique no (i) submeteria.
+          aria-label={`O que é ${card.label}`}
+          className="shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+        >
+          <Info className="w-3.5 h-3.5" strokeWidth={2} />
+        </button>
+      </DicaGatilho>
+      <DicaConteudo side="top" className="max-w-[320px] text-[12.5px] leading-relaxed">
+        {texto}
+      </DicaConteudo>
+      </DicaRoot>
+    </DicaProvider>
+  );
+}
+
+/**
+ * "atualizado às hh:mm" — o horário em que estes números foram calculados.
+ *
+ * Sem isso, um painel servido de cache parece estar ao vivo. O plano pede este
+ * carimbo junto de "Sem dados em vez de número errado": os dois respondem à
+ * mesma pergunta, "posso confiar no que estou vendo agora?".
+ */
+export function KpiAtualizadoEm({ iso }: { iso?: string | null }) {
+  if (!iso) return null;
+  const quando = new Date(iso);
+  if (Number.isNaN(quando.getTime())) return null;
+
+  return (
+    <span className="text-[11.5px] text-slate-400 dark:text-slate-500 tabular-nums">
+      atualizado às{' '}
+      {quando.toLocaleTimeString('pt-BR', {
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: 'America/Sao_Paulo',
+      })}
+    </span>
+  );
+}
+
 export function KpiHeroCard({
   card,
   valueColor,
@@ -92,9 +161,12 @@ export function KpiHeroCard({
   return (
     <div className={`bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 border-l-[3px] ${border} p-4`}>
       <div className="flex items-center justify-between gap-2 mb-2">
-        <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider truncate">
-          {card.label}
-        </p>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider truncate">
+            {card.label}
+          </p>
+          <InfoMetrica card={card} />
+        </div>
         <OriginBadge source={card.source} />
       </div>
       <p className={`text-[32px] font-bold leading-none mb-2 tracking-tight tabular-nums ${value}`}>
@@ -119,7 +191,10 @@ export function KpiCompactCard({ card }: { card: KpiSummaryCard }) {
   return (
     <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-3">
       <div className="flex items-center justify-between gap-2 mb-1">
-        <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 truncate">{card.label}</p>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 truncate">{card.label}</p>
+          <InfoMetrica card={card} />
+        </div>
         <OriginBadge source={card.source} />
       </div>
       <p className="text-[18px] font-bold text-slate-900 dark:text-slate-100 leading-none tabular-nums">

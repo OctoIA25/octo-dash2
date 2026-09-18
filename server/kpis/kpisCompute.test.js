@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   classifyStage,
   computeTrend,
-  countVendas,
+  vendasDoPeriodo,
   medianMinutes,
   buildFunnel,
   buildSources,
@@ -86,20 +86,25 @@ describe('computeTrend — variação percentual', () => {
   });
 });
 
-describe('countVendas — definição única de venda (final_sale_value > 0)', () => {
-  it('conta só leads com valor de venda positivo', () => {
-    const leads = [
-      { final_sale_value: 500000 },
-      { final_sale_value: 0 },
-      { final_sale_value: null },
-      { final_sale_value: '300000' }, // string numérica
-    ];
-    expect(countVendas(leads)).toEqual({ qtd: 2, valor: 800000 });
+/**
+ * Venda saiu de `leads.final_sale_value` em 18/09. Essa coluna está VAZIA em
+ * produção — 0 preenchidas nos 1.685 leads da Lotus, que tem 36 propostas
+ * assinadas somando R$ 14,4 milhões. A aba KPIs mostrava "Vendas: 0" e
+ * "Valor em Vendas: R$ 0" ao lado de um card de VGV com milhões.
+ */
+describe('vendasDoPeriodo — mesma fonte do VGV', () => {
+  it('usa a quantidade e o valor que vêm da view', () => {
+    expect(vendasDoPeriodo({ qtd: 4, vgv: 800000 })).toEqual({ qtd: 4, valor: 800000 });
   });
 
-  it('zero vendas → {0, 0}', () => {
-    expect(countVendas([{ final_sale_value: null }])).toEqual({ qtd: 0, valor: 0 });
-    expect(countVendas([])).toEqual({ qtd: 0, valor: 0 });
+  it('período sem venda é 0, que é uma medição', () => {
+    expect(vendasDoPeriodo({ qtd: 0, vgv: 0 })).toEqual({ qtd: 0, valor: 0 });
+  });
+
+  // `null` é leitura falhada e vira "Sem dados"; `0` seria "não vendeu nada".
+  it('leitura falhada é null, nao zero', () => {
+    expect(vendasDoPeriodo(null)).toEqual({ qtd: null, valor: null });
+    expect(vendasDoPeriodo({ qtd: null, vgv: null })).toEqual({ qtd: null, valor: null });
   });
 });
 
@@ -191,34 +196,51 @@ describe('buildFunnel — exclusivo + conversões', () => {
   });
 });
 
+// Recebe VENDAS (de `vendas_assinadas`), não leads. Antes filtrava
+// `leads.final_sale_value > 0`, coluna vazia em produção: o bloco aparecia
+// vazio na aba KPIs enquanto a Lotus tinha 36 vendas assinadas.
 describe('buildSources — agrupa por fonte canônica', () => {
   it('une variações de capitalização/espaço da mesma fonte', () => {
-    const leads = [
-      { source: 'Zap', final_sale_value: 100 },
-      { source: 'zap ', final_sale_value: 200 },
-      { source: 'OLX', final_sale_value: 50 },
-      { source: 'Indicação', final_sale_value: 0 }, // sem venda → ignorado
+    const vendas = [
+      { fonte: 'Zap', valor: 100 },
+      { fonte: 'zap ', valor: 200 },
+      { fonte: 'OLX', valor: 50 },
     ];
-    const sources = buildSources(leads);
+    const sources = buildSources(vendas);
     const zap = sources.find((s) => s.fonte.toLowerCase() === 'zap');
     expect(zap.quantidade).toBe(2);
     expect(zap.valor).toBe(300);
-    expect(sources.find((s) => s.fonte === 'Indicação')).toBeUndefined();
+  });
+
+  it('venda sem fonte cai em "Outros", nao some do bloco', () => {
+    const sources = buildSources([{ fonte: null, valor: 100 }, { fonte: '  ', valor: 50 }]);
+    expect(sources).toHaveLength(1);
+    expect(sources[0]).toEqual({ fonte: 'Outros', quantidade: 2, valor: 150 });
+  });
+
+  // Leitura falhada chega como `null` e não pode explodir a montagem do painel.
+  it('sem vendas devolve lista vazia', () => {
+    expect(buildSources(null)).toEqual([]);
+    expect(buildSources([])).toEqual([]);
   });
 });
 
 describe('buildPriceRanges', () => {
   it('classifica vendas por faixa de preço', () => {
     const leads = [
-      { final_sale_value: 400000 },
-      { final_sale_value: 700000 },
-      { final_sale_value: 1500000 },
-      { final_sale_value: 0 }, // ignorado
+      { valor: 400000 },
+      { valor: 700000 },
+      { valor: 1500000 },
+      { valor: 0 }, // ignorado
     ];
     const ranges = buildPriceRanges(leads);
     expect(ranges.find((r) => r.faixa.includes('500 mil')).quantidade).toBeGreaterThanOrEqual(0);
     const total = ranges.reduce((acc, r) => acc + r.quantidade, 0);
     expect(total).toBe(3);
+  });
+
+  it('sem vendas devolve as tres faixas zeradas, nao quebra', () => {
+    expect(buildPriceRanges(null).every((r) => r.quantidade === 0)).toBe(true);
   });
 });
 
@@ -360,12 +382,14 @@ describe('buildOverview — shape completo', () => {
   it('monta o pacote alinhado ao contrato do front', () => {
     const overview = buildOverview({
       period: { startDate: '2026-06-01', endDate: '2026-06-30', label: 'Junho/2026' },
+      // `final_sale_value` continua no lead de propósito: ele NÃO alimenta mais
+      // nada. A fonte da venda (e da fonte do lead) é `vendas_assinadas`.
       currentLeads: [{ status: 'Proposta Assinada', final_sale_value: 500000, source: 'Zap' }],
       previousLeads: [],
       counts: { ...COUNTS0, imoveisAtivos: 12 },
       goals: [{ id: 'g1', name: 'VGV', realizadoDisplay: 'R$ 1', metaDisplay: 'R$ 2', percent: 50 }],
-      commercialCurrent: { vgv: 1800000, vgc: 95000 },
-      commercialPrevious: { vgv: 1200000, vgc: 60000 },
+      commercialCurrent: { vgv: 1800000, vgc: 95000, qtd: 1, vendas: [{ valor: 1800000, fonte: 'Zap' }] },
+      commercialPrevious: { vgv: 1200000, vgc: 60000, qtd: 1, vendas: [{ valor: 1200000, fonte: 'Zap' }] },
       previousLabel: 'Maio/2026',
     });
     expect(overview.period.label).toBe('Junho/2026');
@@ -402,13 +426,27 @@ const lead = (over = {}) => ({
 
 describe('nativeCardValues — novos metricKeys', () => {
   it('ticketMedio = valorVendas / vendas', () => {
-    const native = nativeCardValues([lead({ final_sale_value: 100000 }), lead({ final_sale_value: 300000 })], [], COUNTS0);
+    const native = nativeCardValues([lead()], [], { ...COUNTS0, vendasQtd: 2, vgv: 400000 });
     expect(native.ticketMedio.rawValue).toBe(200000);
   });
 
-  it('ticketMedio = 0 quando não há vendas (sem divisão por zero)', () => {
-    const native = nativeCardValues([lead()], [], COUNTS0);
-    expect(native.ticketMedio.rawValue).toBe(0);
+  // Sem venda no período o ticket não é R$ 0: não houve venda para tirar média.
+  it('ticketMedio sem venda e "Sem dados", nao zero', () => {
+    const native = nativeCardValues([lead()], [], { ...COUNTS0, vendasQtd: 0, vgv: 0 });
+    expect(native.ticketMedio.rawValue).toBeNull();
+    expect(native.ticketMedio.displayValue).toBe('Sem dados');
+  });
+
+  it('vendas e valorVendas saem da view, nao de leads.final_sale_value', () => {
+    // O lead traz valor preenchido de propósito: ele NÃO pode entrar na conta.
+    const native = nativeCardValues([lead({ final_sale_value: 999999 })], [], { ...COUNTS0, vendasQtd: 4, vgv: 800000 });
+    expect(native.vendas.rawValue).toBe(4);
+    expect(native.valorVendas.rawValue).toBe(800000);
+  });
+
+  it('valorVendas e vgv sao o mesmo numero, vindos da mesma fonte', () => {
+    const native = nativeCardValues([lead()], [], { ...COUNTS0, vendasQtd: 4, vgv: 800000 });
+    expect(native.valorVendas.rawValue).toBe(native.vgv.rawValue);
   });
 
   it('conversaoVisita = % de leads em Visita ou além', () => {
@@ -418,14 +456,13 @@ describe('nativeCardValues — novos metricKeys', () => {
   });
 
   it('vendasPorCorretor = vendas / tamanhoEquipe', () => {
-    const current = [lead({ final_sale_value: 1 }), lead({ final_sale_value: 1 }), lead({ final_sale_value: 1 })];
-    const native = nativeCardValues(current, [], { ...COUNTS0, tamanhoEquipe: 2 });
+    const native = nativeCardValues([lead()], [], { ...COUNTS0, vendasQtd: 3, vgv: 3, tamanhoEquipe: 2 });
     expect(native.vendasPorCorretor.rawValue).toBe(1.5);
   });
 
-  it('vendasPorCorretor = 0 quando equipe vazia', () => {
-    const native = nativeCardValues([lead({ final_sale_value: 1 })], [], COUNTS0);
-    expect(native.vendasPorCorretor.rawValue).toBe(0);
+  it('vendasPorCorretor sem equipe e "Sem dados", nao zero', () => {
+    const native = nativeCardValues([lead()], [], { ...COUNTS0, vendasQtd: 1, vgv: 1 });
+    expect(native.vendasPorCorretor.rawValue).toBeNull();
   });
 
   it('captação, equipe, vgv e vgc vêm de counts', () => {

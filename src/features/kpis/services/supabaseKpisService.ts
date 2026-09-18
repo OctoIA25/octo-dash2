@@ -152,18 +152,6 @@ interface AmostrasInteracao {
   liaPrev: number[];
 }
 
-function countVendas(leads: LeadRow[]): { qtd: number; valor: number } {
-  let qtd = 0;
-  let valor = 0;
-  for (const lead of leads) {
-    const v = Number(lead.final_sale_value) || 0;
-    if (v > 0) {
-      qtd += 1;
-      valor += v;
-    }
-  }
-  return { qtd, valor };
-}
 
 function buildFunnel(leads: LeadRow[]): KpiFunnel {
   const total = leads.length;
@@ -192,15 +180,25 @@ function buildFunnel(leads: LeadRow[]): KpiFunnel {
   };
 }
 
-function buildSources(leads: LeadRow[]): KpiSourceBreakdown[] {
-  // Soma valor por fonte apenas dos leads com venda; conta também a quantidade.
-  const vendaLeads = leads.filter((l) => (Number(l.final_sale_value) || 0) > 0);
-  const fonteCounts = canonicalizeFonteCounts(vendaLeads.map((l) => l.source || 'Outros'));
+/** Uma venda do período, como `vendas_assinadas` entrega. */
+interface VendaDoPeriodo { valor: number; fonte: string }
+
+/**
+ * Negócios fechados por fonte do lead.
+ *
+ * Recebe as VENDAS do período, não os leads. Antes filtrava
+ * `leads.final_sale_value > 0`, coluna vazia em produção (0 preenchidas nos
+ * 1.685 leads da Lotus): o bloco aparecia vazio enquanto a imobiliária tinha
+ * 36 vendas assinadas.
+ */
+function buildSources(vendas: VendaDoPeriodo[] | null): KpiSourceBreakdown[] {
+  const vendaLeads = vendas || [];
+  const fonteCounts = canonicalizeFonteCounts(vendaLeads.map((v) => v.fonte || 'Outros'));
 
   const valorPorFonte = new Map<string, number>();
-  for (const lead of vendaLeads) {
-    const fonte = lead.source || 'Outros';
-    valorPorFonte.set(fonte, (valorPorFonte.get(fonte) || 0) + (Number(lead.final_sale_value) || 0));
+  for (const venda of vendaLeads) {
+    const fonte = venda.fonte || 'Outros';
+    valorPorFonte.set(fonte, (valorPorFonte.get(fonte) || 0) + (Number(venda.valor) || 0));
   }
 
   return Array.from(fonteCounts.entries())
@@ -212,12 +210,13 @@ function buildSources(leads: LeadRow[]): KpiSourceBreakdown[] {
     .sort((a, b) => b.valor - a.valor);
 }
 
-function buildPriceRanges(leads: LeadRow[]): KpiPriceRange[] {
+/** Faixas de preço das VENDAS do período. Mesma troca de fonte de buildSources. */
+function buildPriceRanges(vendas: VendaDoPeriodo[] | null): KpiPriceRange[] {
   let ate500 = 0;
   let de500a1m = 0;
   let acima1m = 0;
-  for (const lead of leads) {
-    const v = Number(lead.final_sale_value) || 0;
+  for (const venda of vendas || []) {
+    const v = Number(venda.valor) || 0;
     if (v <= 0) continue;
     if (v < 500_000) ate500 += 1;
     else if (v < 1_000_000) de500a1m += 1;
@@ -288,17 +287,30 @@ const LEGACY_LABELS: Record<string, string> = {
  * Calcula os 6 valores nativos indexados por metricKey.
  * Espelha `nativeCardValues` de server/kpis/kpisCompute.js.
  */
+interface TotaisComerciais {
+  vgv: number | null;
+  vgc: number | null;
+  qtd: number | null;
+  /** Venda a venda — "negócios por fonte" e "faixas de preço" precisam disso. */
+  vendas: VendaDoPeriodo[] | null;
+}
+
 function nativeCardValues(
   current: LeadRow[],
   previous: LeadRow[],
-  imoveisAtivos: number,
+  imoveisAtivos: number | null,
   interacao: AmostrasInteracao,
+  comercial: TotaisComerciais,
+  comercialPrev: TotaisComerciais,
 ): Record<string, { rawValue: number | null; displayValue: string; trend: KpiTrend | null }> {
   const totalLeads = current.length;
   const totalLeadsPrev = previous.length;
 
-  const vendas = countVendas(current);
-  const vendasPrev = countVendas(previous);
+  // Venda sai da mesma fonte do VGV. `leads.final_sale_value` está vazia em
+  // produção — 0 preenchidas nos 1.685 leads da Lotus, que tem 36 propostas
+  // assinadas — e estes dois cards mostravam zero ao lado de um VGV com milhões.
+  const vendas = { qtd: comercial.qtd, valor: comercial.vgv };
+  const vendasPrev = { qtd: comercialPrev.qtd, valor: comercialPrev.vgv };
 
   // Mediana, não média, e da view — não de `first_response_at`, que marca a
   // saída do card da primeira coluna do kanban. Mesma regra do servidor.
@@ -327,6 +339,8 @@ interface KpiConfig {
   kpis: Array<{
     id: string;
     name: string;
+    /** Descrição escrita pelo gestor; vazia na maioria dos tenants hoje. */
+    description?: string;
     source: KpiSummaryCard['source'];
     unit: KpiSummaryCard['unit'];
     metricKey: string | null;
@@ -350,11 +364,13 @@ interface KpiConfig {
 function buildCards(
   current: LeadRow[],
   previous: LeadRow[],
-  imoveisAtivos: number,
+  imoveisAtivos: number | null,
   interacao: AmostrasInteracao,
+  comercial: TotaisComerciais,
+  comercialPrev: TotaisComerciais,
   config?: KpiConfig | null,
 ): KpiSummaryCard[] {
-  const native = nativeCardValues(current, previous, imoveisAtivos, interacao);
+  const native = nativeCardValues(current, previous, imoveisAtivos, interacao, comercial, comercialPrev);
 
   // Modo legado: sem config ou lista de KPIs vazia.
   if (!config || !Array.isArray(config.kpis) || config.kpis.length === 0) {
@@ -363,6 +379,9 @@ function buildCards(
       metricKey: key,
       source: 'crm' as const,
       unit: 'count' as const,
+      // Vazio: no modo legado não há linha em `dashboard_kpis` para o gestor
+      // ter escrito descrição. A tela cai no dicionário pela metricKey.
+      description: '',
       label: LEGACY_LABELS[key],
       displayOrder: i,
       ...(native[key] ?? { rawValue: 0, displayValue: '0', trend: null }),
@@ -405,6 +424,7 @@ function buildCards(
         source: k.source,
         unit: k.unit,
         label: k.name,
+        description: k.description ?? '',
         displayOrder: k.displayOrder,
         rawValue,
         displayValue,
@@ -422,19 +442,46 @@ function buildCards(
  * tabela congelou quando o sync da planilha foi desligado e não recebe mais
  * venda nova. Ver `vendasAssinadasService`.
  */
+/**
+ * VGV, VGC, quantidade e as vendas do período — lidos direto de
+ * `vendas_assinadas`, a mesma fonte do servidor.
+ *
+ * Antes passava por `buscarVendasAssinadas`, que lê `proposals` e recalcula a
+ * comissão em TypeScript. Isso é a segunda escrita da regra de comissão (já
+ * listada como dívida) e, pior aqui, esse caminho não traz a fonte do lead —
+ * sem ela o bloco "negócios por fonte" não tem como ser montado. Caminho de
+ * rollback precisa espelhar o servidor, e o servidor lê a view.
+ */
 async function fetchCommercialTotals(
   tenantId: string,
   period: KpiPeriod,
-): Promise<{ vgv: number; vgc: number }> {
-  try {
-    const vendas = await buscarVendasAssinadas(tenantId, period.startDate, period.endDate);
-    const totais = somarVendas(vendas);
-    return { vgv: totais.vgv, vgc: totais.vgc };
-  } catch {
-    // Card de KPI não derruba a Home: sem dado, mostra zero (comportamento
-    // que a versão anterior já tinha no erro de query).
-    return { vgv: 0, vgc: 0 };
+): Promise<TotaisComerciais> {
+  const { data, error } = await supabase
+    .from('vendas_assinadas')
+    .select('vgv, vgc, fonte')
+    .eq('tenant_id', tenantId)
+    .gte('data_assinatura', period.startDate)
+    .lte('data_assinatura', period.endDate);
+
+  if (error) {
+    // Card de KPI não derruba a Home — mas também não vira zero. Zero é um
+    // número plausível ("não vendeu nada") e esconderia a falha.
+    console.error('[kpis] falha ao ler vendas_assinadas:', error.message);
+    return { vgv: null, vgc: null, qtd: null, vendas: null };
   }
+
+  const linhas = (data || []) as Array<{ vgv: number | string; vgc: number | string; fonte: string | null }>;
+  let vgv = 0;
+  let vgc = 0;
+  const vendas: VendaDoPeriodo[] = [];
+  for (const linha of linhas) {
+    const valor = Number(linha.vgv) || 0;
+    vgv += valor;
+    vgc += Number(linha.vgc) || 0;
+    vendas.push({ valor, fonte: linha.fonte || 'Outros' });
+  }
+
+  return { vgv, vgc, qtd: vendas.length, vendas };
 }
 
 function buildCommercial(
@@ -488,10 +535,15 @@ export const supabaseKpisService: KpisService = {
 
     const overview: KpisOverview = {
       period,
-      cards: buildCards(current, previous, imoveisAtivos, { lia: interacaoAtual.minutos, liaPrev: interacaoPrev.minutos }, config),
+      atualizadoEm: new Date().toISOString(),
+      cards: buildCards(
+        current, previous, imoveisAtivos,
+        { lia: interacaoAtual.minutos, liaPrev: interacaoPrev.minutos },
+        commCurrent, commPrevious, config,
+      ),
       funnel: buildFunnel(current),
-      sources: buildSources(current),
-      priceRanges: buildPriceRanges(current),
+      sources: buildSources(commCurrent.vendas),
+      priceRanges: buildPriceRanges(commCurrent.vendas),
       goals,
       commercial: buildCommercial(commCurrent, commPrevious, period.label, prevPeriod.label),
     };

@@ -190,8 +190,10 @@ export function makeKpisHandler(supabase) {
         tamanhoEquipe,
         vgv: commercialCurrent.vgv,
         vgc: commercialCurrent.vgc,
+        vendasQtd: commercialCurrent.qtd,
         vgvPrev: commercialPrevious.vgv,
         vgcPrev: commercialPrevious.vgc,
+        vendasQtdPrev: commercialPrevious.qtd,
         interacaoLia: interacao.lia,
         interacaoLiaPrev: interacaoPrev.lia,
         interacaoCorretor: interacao.corretor,
@@ -200,6 +202,7 @@ export function makeKpisHandler(supabase) {
 
       const overview = buildOverview({
         period,
+        atualizadoEm: new Date().toISOString(),
         currentLeads,
         previousLeads,
         counts,

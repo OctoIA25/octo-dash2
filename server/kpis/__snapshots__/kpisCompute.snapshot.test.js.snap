@@ -2,9 +2,11 @@
 
 exports[`buildOverview — regressão do modo legado (sem config) > snapshot dos números nativos + asserts explícitos 1`] = `
 {
+  "atualizadoEm": null,
   "cards": [
     {
       "category": "geral",
+      "description": "",
       "displayOrder": 0,
       "displayValue": "4",
       "id": "totalLeads",
@@ -24,6 +26,7 @@ exports[`buildOverview — regressão do modo legado (sem config) > snapshot dos
     },
     {
       "category": "geral",
+      "description": "",
       "displayOrder": 1,
       "displayValue": "1",
       "id": "vendas",
@@ -36,13 +39,14 @@ exports[`buildOverview — regressão do modo legado (sem config) > snapshot dos
       "source": "crm",
       "target": null,
       "trend": {
-        "percent": null,
+        "percent": 0,
         "positive": true,
       },
       "unit": "count",
     },
     {
       "category": "geral",
+      "description": "",
       "displayOrder": 2,
       "displayValue": "R$ 650.000",
       "id": "valorVendas",
@@ -55,13 +59,14 @@ exports[`buildOverview — regressão do modo legado (sem config) > snapshot dos
       "source": "crm",
       "target": null,
       "trend": {
-        "percent": null,
+        "percent": 81150,
         "positive": true,
       },
       "unit": "count",
     },
     {
       "category": "geral",
+      "description": "",
       "displayOrder": 3,
       "displayValue": "7",
       "id": "imoveisAtivos",
@@ -78,6 +83,7 @@ exports[`buildOverview — regressão do modo legado (sem config) > snapshot dos
     },
     {
       "category": "geral",
+      "description": "",
       "displayOrder": 4,
       "displayValue": "30min",
       "id": "tempoMedioResposta",
@@ -97,6 +103,7 @@ exports[`buildOverview — regressão do modo legado (sem config) > snapshot dos
     },
     {
       "category": "geral",
+      "description": "",
       "displayOrder": 5,
       "displayValue": "75.0%",
       "id": "taxaAtendimento",
@@ -117,30 +124,30 @@ exports[`buildOverview — regressão do modo legado (sem config) > snapshot dos
   ],
   "commercial": [
     {
-      "currentDisplay": "R$ 1.000",
+      "currentDisplay": "R$ 650.000",
       "currentLabel": "Junho/2026",
-      "currentValue": 1000,
+      "currentValue": 650000,
       "key": "vgv",
       "label": "VGV",
       "previousDisplay": "R$ 800",
       "previousLabel": "Maio/2026",
       "previousValue": 800,
       "trend": {
-        "percent": 25,
+        "percent": 81150,
         "positive": true,
       },
     },
     {
-      "currentDisplay": "R$ 30",
+      "currentDisplay": "R$ 39.000",
       "currentLabel": "Junho/2026",
-      "currentValue": 30,
+      "currentValue": 39000,
       "key": "vgc",
       "label": "VGC",
       "previousDisplay": "R$ 24",
       "previousLabel": "Maio/2026",
       "previousValue": 24,
       "trend": {
-        "percent": 25,
+        "percent": 162400,
         "positive": true,
       },
     },
@@ -199,19 +206,13 @@ exports[`buildOverview — regressão do modo legado (sem config) > snapshot dos
     },
     {
       "faixa": "R$ 500 mil – 1 mi",
-      "quantidade": 1,
+      "quantidade": 0,
     },
     {
       "faixa": "Acima de R$ 1 mi",
       "quantidade": 0,
     },
   ],
-  "sources": [
-    {
-      "fonte": "Indicação",
-      "quantidade": 1,
-      "valor": 650000,
-    },
-  ],
+  "sources": [],
 }
 `;

@@ -140,15 +140,29 @@ const COMMERCIAL_PAGE_SIZE = 1000;
  * Retorna { vgv, vgc } (números). Em erro, loga e retorna zeros — VGV/VGC são
  * KPIs auxiliares e não devem derrubar o painel inteiro.
  */
+/**
+ * VGV, VGC e a QUANTIDADE de vendas assinadas do período.
+ *
+ * `qtd` passou a sair daqui em 18/09 porque os cards "Vendas" e "Valor em
+ * Vendas" contavam `leads.final_sale_value`, coluna vazia em produção — a
+ * Lotus tem 0 preenchidas em 1.685 leads e 36 propostas assinadas.
+ *
+ * Falha de leitura devolve `null` em tudo, não zeros: zero é um número
+ * plausível e esconderia a falha atrás de um painel que parece certo.
+ */
 export async function fetchCommercialTotals(supabase, { tenantId, period }) {
   let vgv = 0;
   let vgc = 0;
+  // As linhas cruas viajam junto porque os blocos "negócios por fonte" e
+  // "faixas de preço" precisam de venda a venda, não só do total. Eles somavam
+  // `leads.final_sale_value`, coluna vazia em produção, e apareciam zerados.
+  const vendas = [];
   let page = 0;
 
   for (;;) {
     const { data, error } = await supabase
       .from('vendas_assinadas')
-      .select('vgv,vgc')
+      .select('vgv,vgc,fonte')
       .eq('tenant_id', tenantId)
       .gte('data_assinatura', period.startDate)
       .lte('data_assinatura', period.endDate)
@@ -156,20 +170,22 @@ export async function fetchCommercialTotals(supabase, { tenantId, period }) {
 
     if (error) {
       console.error('[kpis] falha ao somar VGV/VGC comerciais:', error.message);
-      return { vgv: 0, vgc: 0 };
+      return { vgv: null, vgc: null, qtd: null, vendas: null };
     }
 
     const rows = data || [];
     for (const row of rows) {
-      vgv += Number(row.vgv) || 0;
+      const valor = Number(row.vgv) || 0;
+      vgv += valor;
       vgc += Number(row.vgc) || 0;
+      vendas.push({ valor, fonte: row.fonte || 'Outros' });
     }
 
     if (rows.length < COMMERCIAL_PAGE_SIZE) break;
     page += 1;
   }
 
-  return { vgv, vgc };
+  return { vgv, vgc, qtd: vendas.length, vendas };
 }
 
 /** Conta imóveis ativos do tenant (agregação no banco; não traz linhas). Rascunho não conta. */
@@ -180,9 +196,11 @@ export async function countImoveisAtivos(supabase, { tenantId }) {
     .eq('tenant_id', tenantId)
     .neq('status_aprovacao', 'rascunho');
   if (error) {
-    // Imóveis é um KPI auxiliar: falha aqui não deve derrubar o painel inteiro.
+    // Falha aqui não derruba o painel — mas também não vira zero. Zero é um
+    // número plausível ("a imobiliária não tem imóvel") e esconderia o erro.
+    // `null` sobe como "Sem dados", que é o que o plano pede.
     console.error('[kpis] falha ao contar imóveis ativos:', error.message);
-    return 0;
+    return null;
   }
   return count || 0;
 }
@@ -209,8 +227,9 @@ export async function countCaptacao(supabase, { tenantId, period }) {
   ]);
 
   if (exc.error || sem.error) {
+    // `null`, não zero: ver a nota em countImoveisAtivos.
     console.error('[kpis] falha ao contar captação:', (exc.error || sem.error).message);
-    return { exclusiva: 0, semExclusividade: 0 };
+    return { exclusiva: null, semExclusividade: null };
   }
   return { exclusiva: exc.count || 0, semExclusividade: sem.count || 0 };
 }
@@ -233,7 +252,8 @@ export async function countCorretoresAtivos(supabase, { tenantId }) {
     // .message do Supabase vem vazio em erros de schema (ex.: coluna inexistente,
     // código 42703); logar code/details/hint expõe a causa raiz.
     console.error('[kpis] falha ao contar corretores:', error.message, error.code, error.details, error.hint);
-    return 0;
+    // `null`, não zero: ver a nota em countImoveisAtivos.
+    return null;
   }
   return count || 0;
 }

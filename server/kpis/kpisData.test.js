@@ -39,10 +39,14 @@ describe('countCaptacao', () => {
     expect(res).toEqual({ exclusiva: 7, semExclusividade: 12 });
   });
 
-  it('erro retorna zeros (não derruba o painel)', async () => {
+  // `null`, não zero. Zero é um número plausível — "a imobiliária não captou
+  // nada", "não tem corretor", "não vendeu" — e esconderia a falha atrás de um
+  // painel que parece certo. O plano pede "Sem dados em vez de número errado",
+  // e `null` é o que vira "Sem dados" na tela.
+  it('erro devolve null, nao zeros', async () => {
     const supabase = makeSupabase(() => ({ count: null, error: { message: 'boom' } }));
     const res = await countCaptacao(supabase, { tenantId: 't1', period: { startDate: '2026-06-01', endDate: '2026-06-30' } });
-    expect(res).toEqual({ exclusiva: 0, semExclusividade: 0 });
+    expect(res).toEqual({ exclusiva: null, semExclusividade: null });
   });
 });
 
@@ -71,9 +75,13 @@ describe('countCorretoresAtivos', () => {
     expect(await countCorretoresAtivos(supabase, { tenantId: 't1' })).toBe(9);
   });
 
-  it('erro retorna 0', async () => {
+  // `null`, não zero. Zero é um número plausível — "a imobiliária não captou
+  // nada", "não tem corretor", "não vendeu" — e esconderia a falha atrás de um
+  // painel que parece certo. O plano pede "Sem dados em vez de número errado",
+  // e `null` é o que vira "Sem dados" na tela.
+  it('erro devolve null, nao 0', async () => {
     const supabase = makeSupabase(() => ({ count: null, error: { message: 'boom' } }));
-    expect(await countCorretoresAtivos(supabase, { tenantId: 't1' })).toBe(0);
+    expect(await countCorretoresAtivos(supabase, { tenantId: 't1' })).toBeNull();
   });
 });
 
@@ -100,15 +108,40 @@ describe('fetchCommercialTotals — VGV e VGC', () => {
     });
 
     expect(tabelaConsultada).toBe('vendas_assinadas');
-    expect(res).toEqual({ vgv: 150000, vgc: 7750 });
+    expect(res.vgv).toBe(150000);
+    expect(res.vgc).toBe(7750);
+    expect(res.qtd).toBe(2);
+    // As linhas cruas viajam junto: "negócios por fonte" e "faixas de preço"
+    // precisam de venda a venda, e antes somavam a coluna vazia dos leads.
+    expect(res.vendas).toEqual([
+      { valor: 100000, fonte: 'Outros' },
+      { valor: 50000, fonte: 'Outros' },
+    ]);
   });
 
-  it('erro de consulta devolve zeros em vez de derrubar o painel', async () => {
+  // `qtd` passou a sair daqui porque os cards "Vendas" e "Valor em Vendas"
+  // contavam `leads.final_sale_value`, coluna vazia em produção: a Lotus tinha
+  // 0 preenchidas em 1.685 leads e 36 propostas assinadas.
+  it('conta quantas vendas assinadas existem no periodo', async () => {
+    const supabase = makeSupabase(() => ({
+      data: [{ vgv: 100000, vgc: 6000 }, { vgv: 50000, vgc: 1750 }], error: null,
+    }));
+    const res = await fetchCommercialTotals(supabase, {
+      tenantId: 't1', period: { startDate: '2026-06-01', endDate: '2026-06-30' },
+    });
+    expect(res.qtd).toBe(2);
+  });
+
+  // `null`, não zero. Zero é um número plausível — "a imobiliária não captou
+  // nada", "não tem corretor", "não vendeu" — e esconderia a falha atrás de um
+  // painel que parece certo. O plano pede "Sem dados em vez de número errado",
+  // e `null` é o que vira "Sem dados" na tela.
+  it('erro de consulta devolve null, nao zeros', async () => {
     const supabase = makeSupabase(() => ({ data: null, error: { message: 'boom' } }));
     const res = await fetchCommercialTotals(supabase, {
       tenantId: 't1',
       period: { startDate: '2026-06-01', endDate: '2026-06-30' },
     });
-    expect(res).toEqual({ vgv: 0, vgc: 0 });
+    expect(res).toEqual({ vgv: null, vgc: null, qtd: null, vendas: null });
   });
 });
