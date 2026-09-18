@@ -5,6 +5,7 @@ import { computeFunnelStages, countLeadsInStage, getFunnelStageOrder, isEtapaVis
   isEtapaPreAtendimento,
   temCorretor,
   baseDistingueVendaDeLocacao,
+  baseTemValorDeImovel,
 } from '@/features/leads/utils/funnelStages';
 
 /**
@@ -412,5 +413,32 @@ describe('baseDistingueVendaDeLocacao', () => {
     expect(baseDistingueVendaDeLocacao([])).toBe(false);
     expect(baseDistingueVendaDeLocacao(null)).toBe(false);
     expect(baseDistingueVendaDeLocacao(undefined)).toBe(false);
+  });
+});
+
+describe('baseTemValorDeImovel', () => {
+  /**
+   * `leads.property_value` (projetado em `valor_imovel`) está preenchido em
+   * ZERO das 5.235 linhas em produção — medido em 18/09/2026 — e o adaptador
+   * do Kenlo crava `property_value: null`. Somar a coluna dá sempre R$ 0, e
+   * R$ 0 num card de pipeline se lê como "a carteira não vale nada".
+   */
+  it('base sem nenhum valor: nao da para somar', () => {
+    expect(baseTemValorDeImovel([
+      { valor_imovel: null }, { valor_imovel: 0 }, { valor_imovel: undefined }, {},
+    ])).toBe(false);
+  });
+
+  it('um imovel com valor ja basta para o card voltar a somar', () => {
+    expect(baseTemValorDeImovel([{ valor_imovel: null }, { valor_imovel: 450000 }])).toBe(true);
+  });
+
+  it('valor zero nao conta como valor', () => {
+    expect(baseTemValorDeImovel([{ valor_imovel: 0 }])).toBe(false);
+  });
+
+  it('lista vazia ou nula nao quebra', () => {
+    expect(baseTemValorDeImovel([])).toBe(false);
+    expect(baseTemValorDeImovel(null)).toBe(false);
   });
 });

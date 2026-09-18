@@ -1,5 +1,7 @@
 import { useMemo } from 'react';
-import { isEtapaVisita, isEtapaVisitaRealizada } from '@/features/leads/utils/funnelStages';
+import { isEtapaVisita, isEtapaVisitaRealizada,
+  temCorretor,
+} from '@/features/leads/utils/funnelStages';
 import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
@@ -82,8 +84,13 @@ export const SectionMetrics = ({ leads, activeSection }: SectionMetricsProps) =>
 
   // Métricas específicas para Corretores
   const corretoresMetrics = useMemo(() => {
+    // `temCorretor` em vez de "string não vazia": `corretor_responsavel` NUNCA
+    // vem vazio — sem corretor, o mapeamento grava o texto 'Não atribuído'
+    // (leadsMetricsService.ts:541). O filtro antigo deixava esse sentinel
+    // entrar no Set e o contava como um corretor: a base tem 33 nomes reais e
+    // o card mostrava 34. O mesmo engano inflava "Encaminhados Aos Corretores".
     const corretoresUnicos = [...new Set(leads
-      .filter(lead => lead.corretor_responsavel && lead.corretor_responsavel.trim() !== "")
+      .filter(temCorretor)
       .map(lead => lead.corretor_responsavel))];
 
     const performanceCorretores = corretoresUnicos.map(corretor => {

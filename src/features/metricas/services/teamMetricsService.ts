@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabaseClient';
-import { buscarMinutosPorLead } from './primeiraInteracaoService';
+import { buscarMinutosPorLead, medianaMinutos } from './primeiraInteracaoService';
 import { STATUS_RASCUNHO } from '@/features/imoveis/utils/rascunho';
 
 const CACHE_DURATION = 5 * 60 * 1000;
@@ -42,7 +42,8 @@ export interface TeamResolver {
 
 export interface TeamResponseMetric {
   equipe: string;
-  tempoMedio: number;
+  /** Mediana de minutos da equipe. `null` = sem amostra no período. */
+  tempoMedio: number | null;
   cor: string;
   corretores: string[];
 }
@@ -56,7 +57,8 @@ export interface TeamLeadsCount {
 export interface BrokerMetric {
   corretor: string;
   totalLeadsAssumidos: number;
-  tempoMedioResposta: number;
+  /** Mediana de minutos até a LIA responder. `null` = sem amostra no período. */
+  tempoMedioResposta: number | null;
   leadsAtendidos: number;
   leadsFinalizados: number;
   taxaAtendimento: number;
@@ -68,7 +70,8 @@ export interface TeamKpis {
   imoveisAtivos: number;
   totalLeadsMes: number;
   valorTotalVendasMes: number;
-  tempoMedioRespostaGeral: number;
+  /** Mediana de minutos até a LIA responder. `null` = sem amostra no período. */
+  tempoMedioRespostaGeral: number | null;
 }
 
 export interface TeamMetricVariations {
@@ -77,7 +80,8 @@ export interface TeamMetricVariations {
   imoveisAtivos: number;
   totalLeadsMes: number;
   valorTotalVendasMes: number;
-  tempoMedioRespostaGeral: number;
+  /** Mediana de minutos até a LIA responder. `null` = sem amostra no período. */
+  tempoMedioRespostaGeral: number | null;
 }
 
 interface ResolverCacheEntry {
@@ -394,8 +398,8 @@ export async function buscarMetricasCorretoresCentral(
   ]);
   const byBroker = new Map<string, {
     total: number;
-    responseTotal: number;
-    responseCount: number;
+    /** Minutos até a LIA responder, lead a lead. Vira MEDIANA, não média. */
+    minutos: number[];
     finalizados: number;
     atendidos: number;
   }>();
@@ -404,8 +408,7 @@ export async function buscarMetricasCorretoresCentral(
     const corretor = (lead.assigned_agent_name || 'Corretor Desconhecido').trim();
     const current = byBroker.get(corretor) || {
       total: 0,
-      responseTotal: 0,
-      responseCount: 0,
+      minutos: [],
       finalizados: 0,
       atendidos: 0,
     };
@@ -414,8 +417,7 @@ export async function buscarMetricasCorretoresCentral(
     current.total += 1;
 
     if (responseMinutes !== null) {
-      current.responseTotal += responseMinutes;
-      current.responseCount += 1;
+      current.minutos.push(responseMinutes);
       current.atendidos += 1;
     }
 
@@ -429,7 +431,7 @@ export async function buscarMetricasCorretoresCentral(
   return Array.from(byBroker.entries()).map(([corretor, data]) => ({
     corretor,
     totalLeadsAssumidos: data.total,
-    tempoMedioResposta: data.responseCount > 0 ? Math.round(data.responseTotal / data.responseCount) : 0,
+    tempoMedioResposta: medianaMinutos(data.minutos),
     leadsAtendidos: data.atendidos,
     leadsFinalizados: data.finalizados,
     taxaAtendimento: data.total > 0 ? round((data.atendidos / data.total) * 100) : 0,
@@ -454,18 +456,24 @@ export async function buscarMetricasGeraisCentral(
     buscarLeadsMetricas(resolvedTenantId, { dataInicio, dataFim }),
     buscarMinutosPorLead(resolvedTenantId, isoOuNulo(dataInicio), isoOuNulo(dataFim)),
   ]);
-  let tempoTotal = 0;
-  let leadsComResposta = 0;
+/*
+  MEDIANA, não média. A fonte já é a view `primeira_interacao`, mas a agregação
+  tinha ficado para trás: nos mesmos dados da Lotus a média dá 2.432 min e a
+  mediana 1,4 min, porque um punhado de leads recontatados semanas depois
+  desloca a média em horas. O resto da Dash já padronizou mediana em 18/09 —
+  estes três acumuladores eram os últimos somando para dividir.
+*/
+  const minutos: number[] = [];
 
   leads.forEach((lead) => {
     const responseMinutes = calcularTempoRespostaLead(lead, minutosPorLead);
     if (responseMinutes === null) return;
-    tempoTotal += responseMinutes;
-    leadsComResposta += 1;
+    minutos.push(responseMinutes);
   });
+  const leadsComResposta = minutos.length;
 
   return {
-    tempoMedioRespostaGeral: leadsComResposta > 0 ? Math.round(tempoTotal / leadsComResposta) : 0,
+    tempoMedioRespostaGeral: medianaMinutos(minutos),
     totalLeadsAssumidos: leads.length,
     taxaAtendimentoGeral: leads.length > 0 ? round((leadsComResposta / leads.length) * 100) : 0,
   };
@@ -487,16 +495,14 @@ export async function buscarMetricasPorEquipeCentral(
 
   const stats = new Map<string, {
     team: TeamMetricInfo;
-    responseTotal: number;
-    responseCount: number;
+    minutos: number[];
     corretores: Set<string>;
   }>();
 
   resolver.teams.forEach((team) => {
     stats.set(team.id, {
       team,
-      responseTotal: 0,
-      responseCount: 0,
+      minutos: [],
       corretores: new Set(resolver.teamMembers.get(team.id) || []),
     });
   });
@@ -506,8 +512,7 @@ export async function buscarMetricasPorEquipeCentral(
 
     const current = stats.get(team.id) || {
       team,
-      responseTotal: 0,
-      responseCount: 0,
+      minutos: [],
       corretores: new Set<string>(),
     };
 
@@ -515,8 +520,7 @@ export async function buscarMetricasPorEquipeCentral(
 
     const responseMinutes = calcularTempoRespostaLead(lead, minutosPorLead);
     if (responseMinutes !== null) {
-      current.responseTotal += responseMinutes;
-      current.responseCount += 1;
+      current.minutos.push(responseMinutes);
     }
 
     stats.set(team.id, current);
@@ -524,7 +528,7 @@ export async function buscarMetricasPorEquipeCentral(
 
   return Array.from(stats.values()).map((data) => ({
     equipe: data.team.name,
-    tempoMedio: data.responseCount > 0 ? round(data.responseTotal / data.responseCount) : 0,
+    tempoMedio: medianaMinutos(data.minutos),
     cor: data.team.color,
     corretores: Array.from(data.corretores).sort(),
   }));

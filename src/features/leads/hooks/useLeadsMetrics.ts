@@ -9,8 +9,15 @@
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useAuth } from '@/hooks/useAuth';
-import { useEffectiveUser } from '@/contexts/ViewAsContext';
+// `useAuthContext`, não o `useAuth` legado. O CLAUDE.md do projeto já manda
+// isso ("não use `useAuth()` diretamente"), e a razão aparece no navegador:
+// o `useAuth` tem estado PRÓPRIO, semeado por um cache em localStorage. Logo
+// depois do login esse cache ainda não existe, então o hook monta sem
+// `tenantId`, a busca de leads cai no early-return e NUNCA é refeita — a tela
+// Início mostrava "0 leads" e "Sem dados" em todo login, até o usuário
+// recarregar a página. Verificado no navegador em 18/09/2026: 0 → 24 leads
+// depois do reload.
+import { useAuthContext } from '@/contexts/AuthContext';
 import { 
   fetchLeadsForMetrics, 
   crmLeadsToProcessedLeads,
@@ -60,7 +67,7 @@ export function useLeadsMetrics(options: UseLeadsMetricsOptions = {}): UseLeadsM
     isOwner, 
     isAdmin: authIsAdmin,
     isGestao
-  } = useAuth();
+  } = useAuthContext();
 
   // Verificação direta se é owner pelo email (fallback para race conditions)
   const isOwnerByEmail = isOwnerEmail(user?.email);
@@ -79,12 +86,10 @@ export function useLeadsMetrics(options: UseLeadsMetricsOptions = {}): UseLeadsM
   const effectiveIsOwner = isOwner || isOwnerByEmail || isOwnerImpersonating;
   const realIsAdmin = effectiveIsOwner || authIsAdmin || isGestao;
 
-  // "Visualizar como": sem contexto ativo, `scope` é o próprio usuário — então
-  // o comportamento padrão não muda. Com contexto, o recorte (todos x só os
-  // próprios) passa a ser o do usuário visualizado.
-  const scope = useEffectiveUser();
-  const isAdmin = scope.isViewingAs ? scope.isAdmin : realIsAdmin;
-  const scopeUserId = scope.id ?? user?.id;
+  // "Visualizar como" não precisa de recorte aqui: a sessão já é a do usuário
+  // visualizado, então `user` E a RLS já são os dele (ver ViewAsContext).
+  const isAdmin = realIsAdmin;
+  const scopeUserId = user?.id;
 
   
   // States

@@ -29,6 +29,7 @@ import { AtendimentoFunnelChart } from '@/features/leads/components/AtendimentoF
 // Novo componente de performance com bolhas
 import {
   baseDistingueVendaDeLocacao,
+  baseTemValorDeImovel,
   countProprietariosInStage,
   isEtapaFechamento,
   isEtapaPreAtendimento,
@@ -488,10 +489,19 @@ export const MainMetricsSection = ({
     const taxaConversao = totalLeads > 0 ? (negociosFechados / totalLeads * 100) : 0;
 
     // Corretores - TOTAL GERAL
+    // `temCorretor` em vez de "string não vazia": `corretor_responsavel` NUNCA
+    // vem vazio — sem corretor, o mapeamento grava o texto 'Não atribuído'
+    // (leadsMetricsService.ts:541). O filtro antigo deixava esse sentinel
+    // entrar no Set e o contava como um corretor: a base tem 33 nomes reais e
+    // o card mostrava 34. O mesmo engano inflava "Encaminhados Aos Corretores".
     const corretoresUnicos = [...new Set(allLeads
-      .filter(lead => lead.corretor_responsavel && lead.corretor_responsavel.trim() !== "")
+      .filter(temCorretor)
       .map(lead => lead.corretor_responsavel))];
     const corretoresAtivos = corretoresUnicos.length;
+    // `valor_imovel` (= leads.property_value) tem ZERO linhas preenchidas em
+    // produção: somá-la dá sempre R$ 0, e R$ 0 se lê como "a carteira não vale
+    // nada". Sem valor nenhum na base, o card diz "Sem dados".
+    const temValor = baseTemValorDeImovel(allLeads);
     const pipelineTotal = allLeads.reduce((acc, lead) => acc + (lead.valor_imovel || 0), 0);
 
     // Imóveis - TOTAL GERAL
@@ -622,7 +632,10 @@ export const MainMetricsSection = ({
             lead.etapa_atual === 'Análise'
           ).length;
           
-          const valorMedioVendedores = todosProprietarios.length > 0 ? 
+          // Mesma coluna vazia do pipeline: sem nenhum valor na base, o card
+          // diz "Sem dados" em vez de R$ 0.
+          const temValorProprietarios = baseTemValorDeImovel(todosProprietarios);
+          const valorMedioVendedores = todosProprietarios.length > 0 ?
             todosProprietarios.reduce((acc, lead) => acc + (lead.valor_imovel || 0), 0) / todosProprietarios.length : 0;
           
           const imoveisAvaliados = todosProprietarios.filter(lead => 
@@ -646,7 +659,8 @@ export const MainMetricsSection = ({
               color: 'red'
             },
             metric4: { 
-              value: Math.round(valorMedioVendedores / 1000), 
+              value: Math.round(valorMedioVendedores / 1000),
+              semDados: !temValorProprietarios, 
               label: 'Valor Médio (K)', 
               color: 'blue'
             }
@@ -695,7 +709,8 @@ export const MainMetricsSection = ({
             color: 'blue'
           },
           metric4: { 
-            value: Math.round(pipelineTotal / 1000000 * 10) / 10, 
+            value: Math.round(pipelineTotal / 1000000 * 10) / 10,
+            semDados: !temValor, 
             label: 'Pipeline (R$ M)', 
             color: 'orange'
           }
@@ -714,7 +729,8 @@ export const MainMetricsSection = ({
             color: 'purple'
           },
           metric3: { 
-            value: Math.round(pipelineTotal / 1000000 * 10) / 10, 
+            value: Math.round(pipelineTotal / 1000000 * 10) / 10,
+            semDados: !temValor, 
             label: 'Valor Total (R$ M)', 
             color: 'blue'
           },

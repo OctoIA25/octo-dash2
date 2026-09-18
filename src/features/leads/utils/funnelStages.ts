@@ -237,6 +237,24 @@ export function baseDistingueVendaDeLocacao(
 }
 
 /**
+ * A base tem valor de imóvel para somar?
+ *
+ * `leads.property_value` (projetado como `valor_imovel`) está preenchido em
+ * ZERO das 5.235 linhas em produção, medido em 18/09/2026 — e o adaptador do
+ * Kenlo crava `property_value: null`. Todo card de pipeline, valor total e
+ * valor médio que soma essa coluna mostra R$ 0, sempre.
+ *
+ * Zero ali não é "a carteira não vale nada": é "ninguém preencheu o valor". A
+ * distinção é a mesma de [[baseDistingueVendaDeLocacao]] — quem consome mostra
+ * "Sem dados" em vez de um número que parece medido.
+ */
+export function baseTemValorDeImovel(
+  leads: Array<{ valor_imovel?: number | null }> | null | undefined,
+): boolean {
+  return (leads || []).some((l) => Number(l.valor_imovel) > 0);
+}
+
+/**
  * Conta quantos leads pertencem a uma etapa específica do funil.
  *
  * As regras de pertencimento são exatamente as mesmas usadas historicamente
