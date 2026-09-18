@@ -1,4 +1,5 @@
 import { useNavigate, useParams, useSearchParams, useLocation } from 'react-router-dom';
+import { isEtapaVisitaRealizada } from '@/features/leads/utils/funnelStages';
 import { linkify } from '../utils/linkify';
 import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { parseConversation } from '@/utils/conversationParser';
@@ -664,11 +665,11 @@ export const LeadViewPage = () => {
                       <span className="text-sm text-[color:var(--text-secondary)]">Imóvel Visitado</span>
                     </div>
                     <span className={`px-3 py-1 rounded-md text-xs font-medium ${
-                      lead.Imovel_visitado === 'Sim' 
+                      isEtapaVisitaRealizada(lead.etapa_atual)
                         ? 'bg-green-500/20 text-green-500 border border-green-500/30'
                         : 'bg-gray-500/20 text-gray-500 border border-gray-500/30'
                     }`}>
-                      {lead.Imovel_visitado || 'Não'}
+                      {isEtapaVisitaRealizada(lead.etapa_atual) ? 'Sim' : 'Não'}
                     </span>
                   </div>
                 </div>

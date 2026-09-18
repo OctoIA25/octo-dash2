@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { isEtapaVisitaRealizada } from '@/features/leads/utils/funnelStages';
 import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { Button } from '@/components/ui/button';
 import { InteractiveButton } from '@/components/ui/interactive-button';
@@ -39,7 +40,9 @@ export const ExportSpreadsheet = ({ leads }: ExportSpreadsheetProps) => {
         'Data Finalização': lead.data_finalizacao || '',
         'Valor Final da Venda': lead.valor_final_venda || '',
         'Data da Visita': lead.Data_visita || '',
-        'Imóvel Visitado': lead.Imovel_visitado || '',
+        // Vem da etapa. `Imovel_visitado` derivava de uma coluna vazia em 100%
+        // dos leads, então esta coluna saía em branco em toda planilha exportada.
+        'Imóvel Visitado': isEtapaVisitaRealizada(lead.etapa_atual) ? 'Sim' : 'Não',
         'Arquivamento': lead.Arquivamento || '',
         'Motivo do Arquivamento': lead.motivo_arquivamento || '',
         'Observações': lead.observacoes || '',

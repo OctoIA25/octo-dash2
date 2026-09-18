@@ -1408,18 +1408,6 @@ export const MainMetricsSection = ({
                 // ficam vazios em vez de mostrar um exemplo fictício.
                 const leadsParaExibir = filteredProprietariosLeads;
 
-                // Métricas específicas para Cliente Proprietário
-                const proprietariosMetrics = {
-                  totalImoveis: leadsParaExibir.length,
-                  imoveisVenda: leadsParaExibir.filter(l => l.tipo_negocio?.toLowerCase().includes('venda')).length,
-                  imoveisLocacao: leadsParaExibir.filter(l => l.tipo_negocio?.toLowerCase().includes('locação') || l.tipo_negocio?.toLowerCase().includes('locacao')).length,
-                  avaliacoesRealizadas: leadsParaExibir.filter(l => l.Imovel_visitado === 'Sim').length,
-                  exclusividades: leadsParaExibir.filter(l => l.observacoes?.toLowerCase().includes('exclusiv')).length,
-                  valorMedioVenda: Math.round(leadsParaExibir.filter(l => l.tipo_negocio?.toLowerCase().includes('venda') && l.valor_imovel).reduce((acc, l) => acc + (l.valor_imovel || 0), 0) / (leadsParaExibir.filter(l => l.tipo_negocio?.toLowerCase().includes('venda') && l.valor_imovel).length || 1)),
-                  valorMedioLocacao: Math.round(leadsParaExibir.filter(l => (l.tipo_negocio?.toLowerCase().includes('locação') || l.tipo_negocio?.toLowerCase().includes('locacao')) && l.valor_imovel).reduce((acc, l) => acc + (l.valor_imovel || 0), 0) / (leadsParaExibir.filter(l => (l.tipo_negocio?.toLowerCase().includes('locação') || l.tipo_negocio?.toLowerCase().includes('locacao')) && l.valor_imovel).length || 1)),
-                  contratosFechados: leadsParaExibir.filter(l => l.etapa_atual?.toLowerCase().includes('fechamento')).length,
-                  taxaConversao: leadsParaExibir.length > 0 ? Math.round((leadsParaExibir.filter(l => l.etapa_atual?.toLowerCase().includes('fechamento')).length / leadsParaExibir.length) * 100) : 0
-                };
 
                 return (
                   <>

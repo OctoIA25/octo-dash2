@@ -9,6 +9,7 @@
  */
 
 import { Card } from "@/components/ui/card";
+import { isEtapaVisitaAgendada, isEtapaVisitaRealizada } from '@/features/leads/utils/funnelStages';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ChevronLeft, ChevronRight, MessageCircle, Calendar, Home, ExternalLink, Database, RefreshCw, UserPlus, Check, X, Users } from "lucide-react";
@@ -313,20 +314,17 @@ export const LeadsTable = ({ leads, newLeadsCount = 0, showGetAllButton = false,
    */
   const getPropertyCode = (codigo?: string) => codigo?.trim() || null;
 
-  // Função para verificar se tem visita agendada
-  const hasScheduledVisit = (lead: ProcessedLead) => {
-    return lead.Data_visita && lead.Data_visita.trim() !== '';
-  };
+  // A etapa é a fonte das duas. Antes vinham de Data_visita e Imovel_visitado,
+  // que derivam de uma coluna vazia em 100% dos leads — as duas eram sempre false.
+  const hasScheduledVisit = (lead: ProcessedLead) => isEtapaVisitaAgendada(lead.etapa_atual);
 
-  // Função para verificar se o imóvel foi visitado
   const wasPropertyVisited = (lead: ProcessedLead) => {
-    const hasVisit = hasScheduledVisit(lead);
-    const wasVisited = lead.Imovel_visitado && 
-      (lead.Imovel_visitado.toLowerCase() === 'sim' || lead.Imovel_visitado.toLowerCase() === 'yes');
-    const notVisitedArchived = lead.motivo_arquivamento && 
+    // O arquivamento por "visita não realizada" continua desfazendo a visita: é
+    // informação que a etapa não carrega.
+    const notVisitedArchived = lead.motivo_arquivamento &&
       lead.motivo_arquivamento.toLowerCase().includes('visita não realizada');
-    
-    return hasVisit && wasVisited && !notVisitedArchived;
+
+    return isEtapaVisitaRealizada(lead.etapa_atual) && !notVisitedArchived;
   };
 
   // Função para determinar o status da visita e cor do calendário

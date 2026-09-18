@@ -1,4 +1,5 @@
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { isEtapaVisitaRealizada } from '@/features/leads/utils/funnelStages';
 import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { parseConversation } from '@/utils/conversationParser';
 import { OctoDashLoader } from '@/components/ui/OctoDashLoader';
@@ -439,11 +440,11 @@ export const ImovelViewPage = () => {
                 <div className="flex items-center justify-between p-4">
                   <span className="text-sm text-white/60">Imóvel Visitado</span>
                   <span className={`px-3 py-1 rounded-md text-xs font-medium ${
-                    imovel.Imovel_visitado === 'Sim' 
+                    isEtapaVisitaRealizada(imovel.etapa_atual)
                       ? 'bg-green-500/20 text-green-400 border border-green-500/30'
                       : 'bg-gray-500/20 text-gray-400 border border-gray-500/30'
                   }`}>
-                    {imovel.Imovel_visitado || 'Não'}
+                    {isEtapaVisitaRealizada(imovel.etapa_atual) ? 'Sim' : 'Não'}
                   </span>
                 </div>
               </div>
