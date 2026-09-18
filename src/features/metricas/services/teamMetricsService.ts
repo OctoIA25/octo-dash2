@@ -600,16 +600,46 @@ export async function buscarKPIsEquipeCentral(
 
   const period = range || getCurrentMonthRange();
 
-  const salesQuery = addDateRange(
+  /*
+    VENDA SAI DE `proposals`, NAO DE `leads`.
+    A consulta anterior tinha tres defeitos encadeados:
+      1. selecionava SO `status` e filtrava `status = 'Proposta Enviada'`;
+      2. depois filtrava esse resultado por `status === 'concluida'` — nenhuma
+         linha podia satisfazer, entao "Vendas Assinadas" era SEMPRE 0;
+      3. e somava `venda.valor_imovel` sobre esse array vazio, de uma coluna
+         que nem estava no select — "Valor Total Vendas" era sempre R$ 0.
+    Ainda media o periodo por `updated_at`, um carimbo que se move a cada
+    alteracao do lead.
+    Na Lotus, mes corrente: Vendas Criadas mostrava 3 (certo: 35) e Vendas
+    Assinadas mostrava 0 (certo: 4).
+  */
+  const criadasQuery = addDateRange(
     supabase
-      .from('leads' as any)
-      .select('status')
-      .eq('tenant_id', resolvedTenantId)
-      .eq('status', 'Proposta Enviada'),
-
+      .from('proposals' as any)
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', resolvedTenantId),
     period,
-    'updated_at'
+    'created_at'
   );
+
+  // `vendas_assinadas` e a mesma fonte que o servidor e o resto da Dash usam,
+  // com a data ja no fuso de Sao Paulo.
+  const assinadasQuery = (() => {
+    let q = supabase
+      .from('vendas_assinadas' as any)
+      .select('vgv')
+      .eq('tenant_id', resolvedTenantId);
+    if (period.dataInicio) q = q.gte('data_assinatura', formatDateOnly(period.dataInicio));
+    if (period.dataFim) {
+      // `getCurrentMonthRange` devolve o dia 1º do mês SEGUINTE com
+      // `exclusiveEnd: true`. Um `lte` aqui contaria as vendas daquele dia 1º
+      // dentro do mês corrente — o mesmo cuidado que `addDateRange` já toma.
+      q = period.exclusiveEnd
+        ? q.lt('data_assinatura', formatDateOnly(period.dataFim))
+        : q.lte('data_assinatura', formatDateOnly(period.dataFim));
+    }
+    return q;
+  })();
 
   const leadsQuery = addDateRange(
     supabase
@@ -621,29 +651,32 @@ export async function buscarKPIsEquipeCentral(
     'created_at'
   );
 
-  const [salesResult, leadsResult, imoveisAtivos, metricasGerais] = await Promise.all([
-    salesQuery,
+  const [criadasResult, assinadasResult, leadsResult, imoveisAtivos, metricasGerais] = await Promise.all([
+    criadasQuery,
+    assinadasQuery,
     leadsQuery,
     countImoveisAtivos(resolvedTenantId, range?.dataFim),
     buscarMetricasGeraisCentral(period.dataInicio, period.dataFim, resolvedTenantId),
   ]);
 
-  if (salesResult.error) {
-    console.error('[teamMetricsService] Erro ao buscar vendas:', salesResult.error);
+  if (criadasResult.error) {
+    console.error('[teamMetricsService] Erro ao contar propostas criadas:', criadasResult.error);
+  }
+  if (assinadasResult.error) {
+    console.error('[teamMetricsService] Erro ao ler vendas_assinadas:', assinadasResult.error);
   }
   if (leadsResult.error) {
     console.error('[teamMetricsService] Erro ao contar leads do período:', leadsResult.error);
   }
 
-  const vendas = (salesResult.data || []) as any[];
-  const vendasAssinadas = vendas.filter((venda) => venda.status === 'concluida');
+  const assinadas = (assinadasResult.data || []) as Array<{ vgv: number | string }>;
 
   return {
-    vendasCriadas: vendas.length,
-    vendasAssinadas: vendasAssinadas.length,
+    vendasCriadas: criadasResult.count || 0,
+    vendasAssinadas: assinadas.length,
     imoveisAtivos,
     totalLeadsMes: leadsResult.count || 0,
-    valorTotalVendasMes: vendasAssinadas.reduce((sum, venda) => sum + Number(venda.valor_imovel || 0), 0),
+    valorTotalVendasMes: assinadas.reduce((soma, v) => soma + (Number(v.vgv) || 0), 0),
     tempoMedioRespostaGeral: metricasGerais.tempoMedioRespostaGeral,
   };
 }
