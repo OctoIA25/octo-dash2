@@ -546,6 +546,68 @@ export async function fetchLeadsDoCorretorPorNome(
  * Busca TODOS os leads em andamento (para Admin)
  * Retorna leads de todos os corretores do tenant
  */
+/**
+ * Só os leads de uma lista de ids. Para telas que mostram o lead ao lado de
+ * outra coisa (a Central mostra o lead ao lado da atividade) e não precisam
+ * da base inteira — `fetchTodosLeadsCRM` baixava 6,92 MB na Imobiliária Japi
+ * para enriquecer algumas dezenas de linhas.
+ *
+ * Fatia em blocos: um `in` com centenas de uuid estoura o tamanho da URL, e o
+ * PostgREST corta sem avisar.
+ */
+export async function fetchLeadsCRMPorId(tenantId: string, ids: string[]): Promise<KanbanLead[]> {
+  if (!tenantId || ids.length === 0) return [];
+  // Um `in` com centenas de uuid estoura o tamanho da URL, e o PostgREST
+  // corta sem avisar.
+  const BLOCO = 100;
+
+  // As DUAS tabelas: o seletor que gravou `lead_uuid` lista `leads` e
+  // `kenlo_leads` juntos, então o id pode ser de qualquer uma.
+  const buscar = async <T,>(tabela: string, colunas: string) => {
+    const linhas: T[] = [];
+    for (let i = 0; i < ids.length; i += BLOCO) {
+      const { data, error } = await supabase
+        .from(tabela)
+        .select(colunas)
+        .eq('tenant_id', tenantId)
+        // Mesmo recorte de `fetchTodosLeadsCRM`: arquivado não enriquece a
+        // linha, ela cai no nome guardado na própria atividade.
+        .is('archived_at', null)
+        .in('id', ids.slice(i, i + BLOCO));
+      if (error) throw error;
+      linhas.push(...((data || []) as unknown as T[]));
+    }
+    return linhas;
+  };
+
+  try {
+    const crm = await buscar<CRMLead>(LEADS_TABLE, LEADS_KANBAN_COLUMNS);
+    const achados = new Set(crm.map((l) => l.id));
+    const faltam = ids.filter((id) => !achados.has(id));
+    if (faltam.length === 0) return crm.map(mapToKanbanLead);
+
+    const kenlo = await (async () => {
+      const linhas: Record<string, unknown>[] = [];
+      for (let i = 0; i < faltam.length; i += BLOCO) {
+        const { data, error } = await supabase
+          .from('kenlo_leads')
+          .select(KENLO_KANBAN_COLUMNS)
+          .eq('tenant_id', tenantId)
+          .is('archived_at', null)
+          .in('id', faltam.slice(i, i + BLOCO));
+        if (error) throw error;
+        linhas.push(...((data || []) as Record<string, unknown>[]));
+      }
+      return linhas;
+    })();
+
+    return [...crm.map(mapToKanbanLead), ...kenlo.map(mapKenloToKanbanLead)];
+  } catch (error) {
+    console.error('❌ Erro ao buscar leads por id:', error);
+    return [];
+  }
+}
+
 export async function fetchTodosLeadsCRM(tenantId?: string, leadType?: LeadType): Promise<KanbanLead[]> {
   try {
 

@@ -48,6 +48,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
+  fetchLeadsCRMPorId,
   fetchTodosLeadsCRM,
   LEAD_TYPE_PROPRIETARIO,
   type KanbanLead,
@@ -328,6 +329,9 @@ export const CentralLeadsPage: React.FC<CentralLeadsPageProps> = ({ embedded = f
   // atividade. `useLeadsData` entrega ProcessedLead, cujo `id_lead` é um
   // contador gerado no mapeamento — serve pra listar, não pra referenciar.
   const [leads, setLeads] = useState<KanbanLead[]>([]);
+  // A base inteira, carregada sob demanda para o seletor dos diálogos.
+  const [todosOsLeads, setTodosOsLeads] = useState<KanbanLead[]>([]);
+  const [carregandoSeletor, setCarregandoSeletor] = useState(false);
 
   const [atividades, setAtividades] = useState<Atividade[]>([]);
   const [carregando, setCarregando] = useState(false);
@@ -398,12 +402,50 @@ export const CentralLeadsPage: React.FC<CentralLeadsPageProps> = ({ embedded = f
     carregar();
   }, [carregar]);
 
+  /**
+   * Os leads que as atividades JÁ referenciam — só eles, e só por id.
+   *
+   * Antes isto baixava a base inteira do tenant para decorar a lista: medido
+   * em 18/09, a Imobiliária Japi trazia 9.494 linhas · 6,92 MB em 12 idas ao
+   * banco, e a Lotus 1.656 · 1,05 MB. Numa conexão fraca é daí que saem os
+   * "mais de 60 s" do plano — não de falta de índice, que já existe.
+   */
+  // Chave estável: só o CONJUNTO de ids importa. Depender do array
+  // `atividades` refazia a busca a cada novo render da lista, mesmo quando os
+  // leads referenciados eram exatamente os mesmos.
+  const chaveDosLeads = useMemo(
+    () => [...new Set(atividades.map((a) => a.lead_uuid).filter(Boolean) as string[])].sort().join(','),
+    [atividades]
+  );
+
   useEffect(() => {
     if (!tenantValido) return;
+    if (!chaveDosLeads) {
+      setLeads([]);
+      return;
+    }
+    let cancelado = false;
+    fetchLeadsCRMPorId(tenantId as string, chaveDosLeads.split(','))
+      .then((l) => { if (!cancelado) setLeads(l); })
+      .catch((e) => console.error('Erro ao carregar leads das atividades:', e));
+    return () => { cancelado = true; };
+  }, [tenantId, tenantValido, chaveDosLeads]);
+
+  /**
+   * A base inteira só quando um diálogo precisa do seletor de lead — é o
+   * único lugar que lista leads que ainda não estão em nenhuma atividade.
+   */
+  const precisaDoSeletor = Boolean(vinculando) || criarAberto;
+  useEffect(() => {
+    if (!tenantValido || !precisaDoSeletor || todosOsLeads.length > 0) return;
+    let cancelado = false;
+    setCarregandoSeletor(true);
     fetchTodosLeadsCRM(tenantId as string)
-      .then(setLeads)
-      .catch((e) => console.error('Erro ao carregar leads para vínculo:', e));
-  }, [tenantId, tenantValido]);
+      .then((l) => { if (!cancelado) setTodosOsLeads(l); })
+      .catch((e) => console.error('Erro ao carregar leads para vínculo:', e))
+      .finally(() => { if (!cancelado) setCarregandoSeletor(false); });
+    return () => { cancelado = true; };
+  }, [tenantId, tenantValido, precisaDoSeletor, todosOsLeads.length]);
 
   /**
    * Quem é cada corretor, da MESMA fonte que a tela de Equipe usa:
@@ -524,7 +566,7 @@ export const CentralLeadsPage: React.FC<CentralLeadsPageProps> = ({ embedded = f
   /** Vincula (ou troca) o lead de uma atividade que já existe. */
   const salvarVinculo = async () => {
     if (!vinculando || !tenantValido) return;
-    const lead = leads.find((l) => (l.nomedolead || l.lead || l.id) === leadEscolhido);
+    const lead = todosOsLeads.find((l) => (l.nomedolead || l.lead || l.id) === leadEscolhido);
     const patch = {
       lead_uuid: lead?.id ?? null,
       lead_nome: leadEscolhido.trim() || null,
@@ -615,12 +657,12 @@ export const CentralLeadsPage: React.FC<CentralLeadsPageProps> = ({ embedded = f
 
   const opcoesLead = useMemo(
     () =>
-      leads.map((l) => ({
+      todosOsLeads.map((l) => ({
         value: l.nomedolead || l.lead || l.id,
         label: l.nomedolead || 'Sem nome',
         sublabel: l.lead || undefined,
       })),
-    [leads]
+    [todosOsLeads]
   );
 
   if (!tenantValido) {
@@ -871,7 +913,7 @@ export const CentralLeadsPage: React.FC<CentralLeadsPageProps> = ({ embedded = f
                 options={opcoesLead}
                 value={nova.leadNome}
                 onChange={(value) => {
-                  const lead = leads.find((l) => (l.nomedolead || l.lead || l.id) === value);
+                  const lead = todosOsLeads.find((l) => (l.nomedolead || l.lead || l.id) === value);
                   setNova((prev) => ({
                     ...prev,
                     leadNome: value,

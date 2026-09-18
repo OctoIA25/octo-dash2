@@ -3617,6 +3617,7 @@ export const PropostaPage = ({
 
   return (
     <div className={isEmbedded ? 'hidden' : 'min-h-full bg-slate-50 dark:bg-slate-950'}>
+      {!isEmbedded && (
       <div className="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
         <div className="flex flex-col gap-4 px-6 py-5">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -3698,7 +3699,14 @@ export const PropostaPage = ({
           </div>
         </div>
       </div>
+      )}
 
+      {/* A listagem inteira — filtros, indicadores e o kanban com um card por
+          negócio — NÃO é montada quando a ficha abre embutida (Jurídico).
+          Antes ela era só escondida por CSS: o React montava os ~29.500 nós
+          assim mesmo, por cima dos 12.475 do kanban do Jurídico, e era isso
+          que travava o navegador (medido em 18/09 com 654 negócios). */}
+      {!isEmbedded && (
       <div className="px-6 py-4">
         <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
@@ -3925,6 +3933,7 @@ export const PropostaPage = ({
           </div>
         )}
       </div>
+      )}
 
       <Dialog
         open={detailOpen && Boolean(selectedProposal)}
