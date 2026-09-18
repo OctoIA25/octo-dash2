@@ -108,18 +108,42 @@ tela sem significar nada.
 
 ---
 
-## 5. Não dá para saber quem mandou a mensagem
+## 5. Quem mandou a mensagem — e por que a LIA NÃO pode mudar isso sozinha
 
-**Como está:** das 1.161 mensagens de saída da Lotus, **nenhuma** tem autor
-gravado (`sent_by_user_id`). Corretor e LIA usam o mesmo canal, e a coluna só é
-preenchida quando alguém manda pelo chat da própria Dash.
+**Como está (medido em 18/09/2026, plataforma inteira):** de **15.513 mensagens
+de saída**, apenas **14** têm autor gravado em `sent_by_user_id`. A coluna só é
+preenchida quando alguém escreve pelo chat da própria Dash; tudo que sai pela
+LIA vai sem autor.
 
-**O que precisa:** a LIA carimbar as mensagens que ela mesma envia, de qualquer
-forma que permita distinguir depois.
+**O que foi construído em cima disso.** Em 18/09 a Dash passou a medir o tempo
+de primeira interação com o lead, separando os dois lados, e a separação usa
+exatamente essa assimetria:
 
-**Por quê:** a regra de "lead atendido" do plano (P1.1) diz *"o corretor mandou
-mensagem ao lead"*. Hoje isso é impossível de medir. Sem o carimbo, a régua de
-atendimento precisa se apoiar só em atividade agendada e toque registrado.
+| View | Regra | Vira o card |
+|---|---|---|
+| `primeira_interacao` | saída **sem** `sent_by_user_id` | Tempo até a LIA responder |
+| `primeira_interacao_corretor` | saída **com** autor, ou toque de cadência | Tempo até o corretor falar |
+
+Com isso o card parou de mostrar 12,9 dias (que era o tempo até alguém arrastar
+o card no kanban) e passou a mostrar a mediana real: **1,2 min na Lotus** e
+**0,3 min na Japi**, cobrindo 82% dos leads dos últimos 30 dias.
+
+> ⚠️ **Aviso importante para quem for mexer na LIA.**
+> Se a LIA começar a carimbar `sent_by_user_id` nas mensagens que ela envia, as
+> duas métricas **se invertem em silêncio**: o card da LIA fica vazio e o card
+> do corretor passa a contar as mensagens da LIA. Nenhum erro aparece.
+>
+> Então: **a LIA deve continuar enviando sem `sent_by_user_id`.** Se houver
+> necessidade de identificar a LIA na mensagem, o caminho é outro campo (por
+> exemplo `metadata->>'autor' = 'lia'`), e a mudança precisa vir junto com o
+> ajuste das duas views — não isolada.
+
+**O que ainda falta do lado da LIA:** a régra de "lead atendido" do plano (P1.1)
+fala em *"o corretor mandou mensagem ao lead"*. Hoje o lado do corretor só tem
+duas fontes: mensagem enviada pelo painel da Dash e toque de cadência registrado
+(`lead_toques`, no ar desde 17/09 — 9 toques até agora). Se a LIA passar a
+intermediar mensagem que o corretor dita, ela precisa registrar o toque em nome
+dele, senão o trabalho do corretor não aparece em lugar nenhum.
 
 ---
 
