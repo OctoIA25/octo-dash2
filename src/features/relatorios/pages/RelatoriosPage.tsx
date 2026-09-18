@@ -51,6 +51,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { fetchTenantMembers, type TenantMember } from '@/features/corretores/services/tenantMembersService';
 import { LEAD_TYPE_INTERESSADO, LEAD_TYPE_PROPRIETARIO } from '@/features/leads/services/leadsService';
 import { ProcessedLead, canonicalizeOrigemLeads } from '@/data/realLeadsProcessor';
+import { useOrigemRegistry } from '../hooks/useOrigemRegistry';
 import { getRankingColor } from '@/utils/colors';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { CorretorMetricCard } from '@/components/metrics/individual';
@@ -986,6 +987,12 @@ export const RelatoriosPage = () => {
     }
   };
 
+  // Cadastro de origem do tenant (P0.4). O RÓTULO já vem resolvido daqui de
+  // baixo — `useLeadsMetrics` aplica o cadastro ao montar `processedLeads`,
+  // e é lá que fica o único ponto de resolução (aplicar de novo aqui poderia
+  // encadear uma conversão sobre a outra). Desta tela sai só a aparência.
+  const { aparencia: aparenciaOrigem } = useOrigemRegistry();
+
   // ═══ DADOS BASE (declarados cedo para uso em modais e gráficos) ═══
   const allLeadsEarly = useMemo(() => canonicalizeOrigemLeads([...processedLeadsInteressado, ...processedLeadsProprietario]), [processedLeadsInteressado, processedLeadsProprietario]);
   const convertidosEarly = useMemo(() => allLeadsEarly.filter(l => {
@@ -1321,12 +1328,16 @@ export const RelatoriosPage = () => {
       return {
         label: origem,
         data,
-        backgroundColor: BLUE_STACKED_SHADES[Math.min(idx, BLUE_STACKED_SHADES.length - 1)],
+        // Cor do cadastro quando a origem está lá; senão a escala de azuis
+        // por índice, como sempre foi.
+        backgroundColor:
+          aparenciaOrigem(origem)?.cor ??
+          BLUE_STACKED_SHADES[Math.min(idx, BLUE_STACKED_SHADES.length - 1)],
         borderRadius: 4,
       };
     });
     return { labels: dailyLabels, datasets };
-  }, [allLeads, dailyLabels, origemLabels]);
+  }, [allLeads, dailyLabels, origemLabels, aparenciaOrigem]);
 
   // 2b. Leads por Canal diário (origens agrupadas pelo canal efetivo)
   const canalCounts = useMemo(() => {

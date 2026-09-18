@@ -531,7 +531,9 @@ export function crmLeadToProcessedLead(crmLead: Partial<CRMLead>, index: number 
     id_lead: index + 1,
     nome_lead: crmLead.name || 'Lead sem nome',
     telefone: crmLead.phone || undefined,
-    origem_lead: crmLead.source || 'API',
+    // Sem source não se INVENTA origem ("API" era o valor antigo aqui, e ele
+    // entrava nos relatórios como se fosse um canal de captação real).
+    origem_lead: crmLead.source || 'Não informado',
     data_entrada: crmLead.created_at?.split('T')[0] || '',
     status_temperatura: statusTemperatura,
     etapa_atual: etapaAtual,
@@ -559,10 +561,14 @@ export function crmLeadToProcessedLead(crmLead: Partial<CRMLead>, index: number 
  * Converter array de CRMLead para ProcessedLead[]
  * @param crmLeads Lista de leads do CRM
  */
-export function crmLeadsToProcessedLeads(crmLeads: CRMLead[]): ProcessedLead[] {
+export function crmLeadsToProcessedLeads(
+  crmLeads: CRMLead[],
+  /** Cadastro de origem do tenant; sem ele só unifica capitalização. */
+  resolverOrigem?: (textoBruto: string) => string,
+): ProcessedLead[] {
   const processed = crmLeads.map((lead, index) => crmLeadToProcessedLead(lead, index));
   // Unifica variações de capitalização da origem (ex: "ZAP Imoveis" vs "Zap Imoveis").
-  return canonicalizeOrigemLeads(processed);
+  return canonicalizeOrigemLeads(processed, resolverOrigem);
 }
 
 /**

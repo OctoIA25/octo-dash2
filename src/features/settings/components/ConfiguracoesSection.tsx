@@ -62,6 +62,7 @@ import {
 } from 'lucide-react';
 import { WatermarkSettingsCard } from '@/features/settings/components/WatermarkSettingsCard';
 import { LeadChannelsSettingsCard } from '@/features/settings/components/LeadChannelsSettingsCard';
+import { LeadOriginsSettingsCard } from '@/features/settings/components/LeadOriginsSettingsCard';
 import { RecommendationEmailSettingsCard } from '@/features/recommendations/components/RecommendationEmailSettingsCard';
 
 const BOLSAO_TIME_OPTIONS = [5, 10, 15, 20, 30, 45, 60, 90, 120, 240, 360, 480, 720, 1440];
@@ -1013,10 +1014,14 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
                   <Megaphone className="w-[18px] h-[18px] text-orange-600 dark:text-orange-400" />
                 </div>
                 <div>
-                  <h2 className="text-[15px] font-semibold text-slate-900 dark:text-slate-100">Canais de Lead</h2>
-                  <p className="text-[12px] text-slate-500 dark:text-slate-400">Defina a qual canal cada origem de lead pertence nos relatórios</p>
+                  <h2 className="text-[15px] font-semibold text-slate-900 dark:text-slate-100">Origens e Canais de Lead</h2>
+                  <p className="text-[12px] text-slate-500 dark:text-slate-400">Cadastre as origens que a imobiliária reconhece e a qual canal cada uma pertence</p>
                 </div>
               </div>
+              {/* Origem primeiro: o canal agrupa origens, então ele só faz
+                  sentido depois que as origens estão certas. */}
+              <LeadOriginsSettingsCard leads={leads} />
+              <div className="my-8 h-px bg-slate-100 dark:bg-slate-800" />
               <LeadChannelsSettingsCard leads={leads} />
             </div>
           )}

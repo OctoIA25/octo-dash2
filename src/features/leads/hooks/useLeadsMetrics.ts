@@ -26,6 +26,7 @@ import {
   FunnelMetrics,
   LeadsMetrics
 } from '../services/leadsMetricsService';
+import { useOrigemRegistry } from '@/features/relatorios/hooks/useOrigemRegistry';
 import { 
   CRMLead, 
   LeadType, 
@@ -209,10 +210,14 @@ export function useLeadsMetrics(options: UseLeadsMetricsOptions = {}): UseLeadsM
     return unsubscribe;
   }, [fetchLeads]);
 
+  // Cadastro de origem do tenant (P0.4). Entra aqui também, e não só nos
+  // Relatórios, para a mesma origem não aparecer com dois nomes em duas telas.
+  const { resolver: resolverOrigemCadastrada } = useOrigemRegistry();
+
   // Convert to ProcessedLead for legacy components
   const processedLeads = useMemo(() => {
-    return crmLeadsToProcessedLeads(leads);
-  }, [leads]);
+    return crmLeadsToProcessedLeads(leads, resolverOrigemCadastrada);
+  }, [leads, resolverOrigemCadastrada]);
 
   // Calculate funnel metrics for Interessado
   // NOTA: Se lead_type não existe no banco, todos os leads são tratados como Interessado

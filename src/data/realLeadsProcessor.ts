@@ -353,7 +353,22 @@ export interface ProcessedLead {
  * Não normaliza acentuação (por escopo) — "Orgânico" e "Organico" seguem
  * distintos. Retorna um novo array (objetos só são clonados se mudarem).
  */
-export function canonicalizeOrigemLeads<T extends { origem_lead?: string }>(leads: T[]): T[] {
+export function canonicalizeOrigemLeads<T extends { origem_lead?: string }>(
+  leads: T[],
+  /**
+   * Cadastro de origem do tenant (P0.4). Ele roda DEPOIS da unificação de
+   * capitalização, não no lugar dela: são duas etapas diferentes.
+   *
+   *   capitalização ... mecânica  ("santa angela" -> "Santa Angela")
+   *   cadastro ........ do negócio ("Santa Angela" -> "Parceria construtora")
+   *
+   * Aplicá-lo NO LUGAR da primeira etapa foi um defeito real, visto no
+   * navegador em 18/09: ligar o cadastro fazia a construtora voltar a
+   * aparecer como duas barras no gráfico, porque origem sem cadastro saía do
+   * resolvedor com o texto cru, cada lead com a sua caixa.
+   */
+  resolver?: (textoBruto: string) => string,
+): T[] {
   // chave normalizada -> (variante exibida -> contagem)
   const variantesPorChave = new Map<string, Map<string, number>>();
   for (const lead of leads) {
@@ -382,7 +397,8 @@ export function canonicalizeOrigemLeads<T extends { origem_lead?: string }>(lead
   return leads.map((lead) => {
     const label = (lead.origem_lead || '').trim();
     if (!label) return lead;
-    const alvo = canonico.get(label.toLowerCase());
+    const canonicalizado = canonico.get(label.toLowerCase()) ?? label;
+    const alvo = resolver ? resolver(canonicalizado) : canonicalizado;
     return alvo && alvo !== lead.origem_lead ? { ...lead, origem_lead: alvo } : lead;
   });
 }
