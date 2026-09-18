@@ -804,11 +804,9 @@ export const MainMetricsSection = ({
           isEtapaVisitaRealizada(lead.etapa_atual)
         ).length;
         
-        const propostasAssinadas = allLeads.filter(lead => 
-          lead.etapa_atual === 'Proposta Assinada' || 
-          lead.etapa_atual === 'Negócio Fechado' ||
-          lead.etapa_atual === 'Finalizado'
-        ).length;
+        // Mesma regra do servidor. As duas últimas grafias não existem na
+        // base, mas continuam reconhecidas por isEtapaFechamento.
+        const propostasAssinadas = allLeads.filter(lead => isEtapaFechamento(lead.etapa_atual)).length;
         
         const imoveisAtivos = allLeads.filter(lead => 
           lead.codigo_imovel && lead.codigo_imovel.trim() !== "" && lead.Exists

@@ -1,5 +1,5 @@
 import { useMemo, useRef, useEffect } from 'react';
-import { isEtapaVisitaAgendada, isEtapaVisitaRealizada } from '@/features/leads/utils/funnelStages';
+import { isEtapaVisitaAgendada, isEtapaVisitaRealizada, isEtapaFechamento } from '@/features/leads/utils/funnelStages';
 import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -83,7 +83,11 @@ export const MonthlyReport = ({ leads }: MonthlyReportProps) => {
         acc[monthKey].negociacoes++;
       }
 
-      if (lead.valor_final_venda && lead.valor_final_venda > 0) {
+      // Contava SÓ `valor_final_venda > 0`, coluna vazia em produção (0
+      // preenchidas nos 5.234 leads): o relatório mensal mostrava zero
+      // fechamento em todo mês, desde sempre. A etapa é a fonte, igual ao
+      // resto da Dash.
+      if (isEtapaFechamento(lead.etapa_atual)) {
         acc[monthKey].fechamentos++;
       }
 

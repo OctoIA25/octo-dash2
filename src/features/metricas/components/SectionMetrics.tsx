@@ -91,10 +91,11 @@ export const SectionMetrics = ({ leads, activeSection }: SectionMetricsProps) =>
       // Aparece no ranking dos 5 melhores (~L312). Lia só Data_visita, então
       // mostrava zero para todo corretor.
       const visitasCorretor = leadsCorretor.filter(l => isEtapaVisita(l.etapa_atual)).length;
-      const negociacoesCorretor = leadsCorretor.filter(l => 
-        l.etapa_atual === 'Em Negociação' ||
-        l.etapa_atual === 'Negociação' ||
-        l.valor_final_venda && l.valor_final_venda > 0
+      // A perna `valor_final_venda > 0` saiu: a coluna está vazia em produção,
+      // então ela nunca somou nada — só dava a impressão de haver uma segunda
+      // fonte. Quem conta é a etapa.
+      const negociacoesCorretor = leadsCorretor.filter(l =>
+        l.etapa_atual === 'Em Negociação' || l.etapa_atual === 'Negociação'
       ).length;
 
       return {
