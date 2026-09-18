@@ -66,6 +66,17 @@ export default defineConfig(({ mode }) => ({
     environment: "jsdom",     // DOM simulado para testar componentes React
     setupFiles: "./src/test/setup.ts",
     css: false,               // ignora CSS nos testes (mais rápido)
+    // Prazo de 20 s no lugar dos 5 s padrão. Medido, não chutado: numa execução
+    // limpa há 20 testes entre 1,7 s e 5,2 s — os de página inteira, que montam
+    // componentes grandes e fazem cliques reais no jsdom. Com 5 s, esses 20 têm
+    // menos de 3x de folga, e a própria suíte carrega a máquina (load 11 antes,
+    // 23 durante). Bastava rodar num momento ruim para 17 deles caírem juntos:
+    // foi o que aconteceu, e a suíte passou a "às vezes passar" — pior que não
+    // ter portão, porque ninguém sabe se a falha é real.
+    // Com 20 s a folga vira 12x para os de 1,7 s e 4x para o mais lento.
+    // Se um dia um teste travar de verdade, ele leva 20 s para acusar em vez de
+    // 5 s; é o preço, e é menor que o de uma suíte não confiável.
+    testTimeout: 20_000,
     // Excluímos node_modules (em qualquer nível, incl. server/node_modules), dist e
     // supabase. NÃO excluímos "server" inteiro: os testes de envio/ambiente vivem em
     // server/recommendations (os arquivos de runtime não são *.test.*, logo não entram).

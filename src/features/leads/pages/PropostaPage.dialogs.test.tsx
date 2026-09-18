@@ -156,13 +156,15 @@ const renderPage = () =>
  * serve de portão, e aumentar o prazo aqui não esconde defeito: esclarece que
  * este é um teste de página inteira, não de unidade.
  *
+ * O prazo NÃO é definido aqui: está em vite.config.ts, valendo para a suíte
+ * inteira, porque o problema não é deste arquivo — há 20 testes na mesma faixa.
+ * Dois lugares definindo o mesmo prazo divergiriam na primeira mudança.
+ *
  * O que REDUZIRIA o tempo é diminuir o peso da página, e isso é o item P0.7 do
  * plano — a mesma causa pela qual clicar num card do Jurídico trava o
  * navegador: quando embutida, a página é montada por completo e só recebe a
- * classe `hidden`. Quando esse item for feito, estes números caem e este prazo
- * pode voltar ao padrão.
+ * classe `hidden`.
  */
-vi.setConfig({ testTimeout: 20_000 });
 
 describe('PropostaPage — abrir e fechar dialogs', () => {
   it('cancela a criação de nova proposta sem quebrar a página', async () => {
