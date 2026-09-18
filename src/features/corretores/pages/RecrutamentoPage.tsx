@@ -14,7 +14,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { RecrutamentoFunnelChart } from '../components/RecrutamentoFunnelChart';
-import { RecrutamentoPerformanceChart } from '../components/RecrutamentoPerformanceChart';
 import { useRecruitment } from '../hooks/useRecruitment';
 import { ESTAGIOS, LABEL_ESTAGIO, MOTIVOS_PERDA, nivelAlcancado } from '../domain/recruitmentStages';
 import { FilaDeAcao } from '../components/FilaDeAcao';
@@ -79,10 +78,7 @@ export const RecrutamentoPage = () => {
   const {
     candidatos,
     candidatoSelecionado,
-    metrics,
-    monthlyMetrics,
     isLoading,
-    isLoadingMetrics,
     isRefreshing: hookIsRefreshing,
     currentPage,
     totalPages,
@@ -113,9 +109,6 @@ export const RecrutamentoPage = () => {
     selectCandidato,
     candidatosFiltrados,
     candidatosPorStatus,
-    candidatosPorCargo,
-    candidateSources,
-    isLoadingSources,
     filtrosAtivos
   } = useRecruitment({ tenantId, autoRefresh: true, refreshInterval: 30000 });
 
@@ -433,234 +426,45 @@ const handleMudarStatus = async (novoStatus: string) => {
         {/* Indicadores de SLA e conversão por canal (spec §10). */}
         <IndicadoresDoProcesso tenantId={tenantId} />
 
-        {/* Seção de Métricas */}
+        {/*
+          P0.9 — o bloco antigo saiu daqui em 18/09.
+
+          Esta tela mostrava DUAS leituras do mesmo processo, que se
+          contradiziam: no topo o fluxo novo (fila de ação + indicadores do
+          método Lotus) dizia "passam nas três condições: 0%", e logo abaixo o
+          funil antigo dizia "Qualificado 1 (100%)". Quem abria a tela escolhia
+          em qual acreditar.
+
+          O que saiu, e por quê:
+
+            Tempo Médio de Processo · Taxa de Retenção · Custo por Contratação
+              O custo era `1.2` CRAVADO no código (recruitmentService.ts:606,
+              "placeholder herdado do módulo antigo") e aparecia como
+              "R$ 1.2k" para toda imobiliária, em qualquer mês.
+
+            Candidatos Ativos · Em Onboard · Taxa de Conversão
+              Contagens do módulo antigo, com recorte próprio — a origem da
+              contradição com os indicadores do topo.
+
+            Performance de Conversão · Performance Mensal
+              Mesma pergunta que os indicadores do método Lotus respondem,
+              com outra conta.
+
+            Fontes de Candidatos
+              Duplicava a tabela "Conversão por canal" do IndicadoresDoProcesso,
+              logo acima. Mesma pergunta, duas respostas na mesma tela.
+
+          O FUNIL FICOU: é o que o plano manda manter, e é a única visão de
+          etapa-a-etapa do recrutamento.
+        */}
         <div className="mb-12">
           <div className="flex items-center gap-2 mb-6">
             <BarChart3 className="h-5 w-5 text-gray-900 dark:text-slate-100 dark:text-white" />
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-slate-100 dark:text-white">Métricas de Recrutamento</h2>
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-slate-100 dark:text-white">Funil de Recrutamento</h2>
           </div>
 
-          {/* Grid de Métricas Principais */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-            <Card className="border-gray-200/60 dark:border-gray-700/60">
-              <CardHeader>
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <Clock className="h-4 w-4 text-blue-600 dark:text-blue-300 dark:text-blue-400" />
-                  Tempo Médio de Processo
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-3xl font-bold text-gray-900 dark:text-slate-100 dark:text-white mb-2">
-                  {metrics?.tempoMedioProcesso != null ? `${metrics.tempoMedioProcesso} dias` : 'N/A'}
-                </p>
-                <p className="text-sm text-gray-600 dark:text-slate-400 dark:text-gray-400">
-                  Do primeiro contato à contratação
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="border-gray-200/60 dark:border-gray-700/60">
-              <CardHeader>
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <Award className="h-4 w-4 text-green-600 dark:text-green-300 dark:text-green-400" />
-                  Taxa de Retenção
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-3xl font-bold text-gray-900 dark:text-slate-100 dark:text-white mb-2">
-                  {metrics?.taxaRetencao ? `${metrics.taxaRetencao}%` : '0%'}
-                </p>
-                <p className="text-sm text-gray-600 dark:text-slate-400 dark:text-gray-400">
-                  Corretores ativos após 6 meses
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="border-gray-200/60 dark:border-gray-700/60">
-              <CardHeader>
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <TrendingUp className="h-4 w-4 text-purple-600 dark:text-purple-300 dark:text-purple-400" />
-                  Custo por Contratação
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-3xl font-bold text-gray-900 dark:text-slate-100 dark:text-white mb-2">
-                  {metrics?.custoPorContratacao ? `R$ ${metrics.custoPorContratacao}k` : 'R$ 0k'}
-                </p>
-                <p className="text-sm text-gray-600 dark:text-slate-400 dark:text-gray-400">
-                  Investimento médio por contratação
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Grid de Cards de Métricas de Candidatos */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <Card className="border-gray-200/60 dark:border-gray-700/60">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <p className="text-xs font-medium text-gray-600 dark:text-slate-400 dark:text-gray-400 mb-1">
-                      Candidatos Ativos
-                    </p>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-slate-100 dark:text-white">{candidatos.length}</p>
-                    <div className="flex items-center gap-1 mt-1">
-                      <TrendingUp className="h-3 w-3 text-green-600 dark:text-green-300 dark:text-green-400" />
-                      <span className="text-xs text-green-600 dark:text-green-300 dark:text-green-400 font-medium">
-                        {candidatos.length > 0
-                          ? `${Math.round((candidatos.filter(c => nivelAlcancado(c.estagio) >= 1).length / candidatos.length) * 100)}%`
-                          : '0%'
-                        }
-                      </span>
-                    </div>
-                  </div>
-                  <div className="w-10 h-10 rounded-lg bg-[#88C0E5]/10 dark:bg-[#88C0E5]/20 flex items-center justify-center">
-                    <Users className="h-5 w-5 text-[#88C0E5] dark:text-[#88C0E5]" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-gray-200/60 dark:border-gray-700/60">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <p className="text-xs font-medium text-gray-600 dark:text-slate-400 dark:text-gray-400 mb-1">
-                      Em Avaliação
-                    </p>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-slate-100 dark:text-white">
-                      {candidatos.filter(c => nivelAlcancado(c.estagio) >= 1 && c.estagio !== 'onboard').length}
-                    </p>
-                    <div className="flex items-center gap-1 mt-1">
-                      <span className="text-xs text-gray-500 dark:text-slate-400 dark:text-gray-400 font-medium">Em análise</span>
-                    </div>
-                  </div>
-                  <div className="w-10 h-10 rounded-lg bg-[#598DC6]/10 dark:bg-[#598DC6]/20 flex items-center justify-center">
-                    <FileText className="h-5 w-5 text-[#598DC6] dark:text-[#88C0E5]" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-gray-200/60 dark:border-gray-700/60">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <p className="text-xs font-medium text-gray-600 dark:text-slate-400 dark:text-gray-400 mb-1">
-                      Em Onboard
-                    </p>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-slate-100 dark:text-white">
-                      {candidatos.filter(c => c.estagio === 'onboard').length}
-                    </p>
-                    <div className="flex items-center gap-1 mt-1">
-                      <span className="text-xs text-gray-500 dark:text-slate-400 dark:text-gray-400 font-medium">Este mês</span>
-                    </div>
-                  </div>
-                  <div className="w-10 h-10 rounded-lg bg-green-100 dark:bg-green-950/60 dark:bg-green-900/30 flex items-center justify-center">
-                    <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-300 dark:text-green-400" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-gray-200/60 dark:border-gray-700/60">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <p className="text-xs font-medium text-gray-600 dark:text-slate-400 dark:text-gray-400 mb-1">
-                      Taxa de Conversão
-                    </p>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-slate-100 dark:text-white">
-                      {candidatos.length > 0 ? ((candidatos.filter(c => c.estagio === 'onboard').length / candidatos.length) * 100).toFixed(1) : 0.0}%
-                    </p>
-                    <div className="flex items-center gap-1 mt-1">
-                      <span className="text-xs text-gray-500 dark:text-slate-400 dark:text-gray-400 font-medium">Média</span>
-                    </div>
-                  </div>
-                  <div className="w-10 h-10 rounded-lg bg-[#234992]/10 dark:bg-[#234992]/20 flex items-center justify-center">
-                    <TrendingUp className="h-5 w-5 text-[#234992] dark:text-[#598DC6]" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Layout 2 Colunas: Funil à Esquerda, Performance à Direita */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-            {/* Coluna Esquerda - Funil de Recrutamento */}
-            <div className="h-[735px]">
-              <RecrutamentoFunnelChart candidatos={candidatosNoRecorte} />
-            </div>
-
-            {/* Coluna Direita - Performance de Conversão */}
-            <div className="h-[735px]">
-              <RecrutamentoPerformanceChart candidatos={candidatosNoRecorte} />
-            </div>
-          </div>
-
-          {/* Métricas por Período */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Card className="border-gray-200/60 dark:border-gray-700/60">
-              <CardHeader>
-                <CardTitle className="text-lg font-medium">Performance Mensal</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {monthlyMetrics && monthlyMetrics.length > 0 ? (
-                    monthlyMetrics.map((item, idx) => (
-                      <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-950 dark:bg-gray-800/50 rounded-lg">
-                        <div>
-                          <p className="font-medium text-gray-900 dark:text-slate-100 dark:text-white">{item.mes}</p>
-                          <p className="text-sm text-gray-600 dark:text-slate-400 dark:text-gray-400">
-                            {item.candidatos} candidatos • {item.contratados} contratados
-                          </p>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="text-center py-12 px-4">
-                      <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-slate-800 dark:bg-gray-800 flex items-center justify-center mx-auto mb-4">
-                        <Users className="h-8 w-8 text-gray-300 dark:text-gray-600" />
-                      </div>
-                      <p className="text-lg font-light text-gray-900 dark:text-slate-100 dark:text-white">
-                        Nenhum dado de performance mensal disponível
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-gray-200/60 dark:border-gray-700/60">
-              <CardHeader>
-                <CardTitle className="text-lg font-medium">Fontes de Candidatos</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {Object.entries(candidateSources).length > 0 ? Object.entries(candidateSources).map(([fonte, quantidade], idx) => {
-                    const percentual = candidatos.length > 0 ? Math.round((quantidade / candidatos.length) * 100) : 0;
-                    return (
-                      <div key={idx} className="space-y-2">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="font-medium text-gray-700 dark:text-slate-300 dark:text-gray-300">{fonte}</span>
-                          <span className="text-gray-600 dark:text-slate-400 dark:text-gray-400">{quantidade} ({percentual}%)</span>
-                        </div>
-                        <div className="relative w-full h-2 bg-gray-100 dark:bg-slate-800 dark:bg-gray-800 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all duration-500"
-                            style={{ width: `${percentual}%` }}
-                          />
-                        </div>
-                      </div>
-                    );
-                  }) : (
-                    <div className="text-center py-8">
-                      <p className="text-gray-500 dark:text-gray-400">Nenhuma fonte de candidatos encontrada</p>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+          <div className="h-[735px]">
+            <RecrutamentoFunnelChart candidatos={candidatosNoRecorte} />
           </div>
         </div>
 

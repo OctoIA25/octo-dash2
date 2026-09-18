@@ -79,7 +79,14 @@ export interface RecruitmentMetrics {
   avg_process_days: number;
   tempoMedioProcesso: number;
   taxaRetencao: number;
-  custoPorContratacao: number;
+  /*
+    `custoPorContratacao` saiu em 18/09 (P0.8/P0.9). Era `1.2` cravado, com o
+    comentário "placeholder herdado do módulo antigo", e a tela o exibia como
+    "R$ 1.2k" para toda imobiliária, em qualquer mês — um número que não vinha
+    de conta nenhuma. O bloco que o mostrava foi removido; o campo sai junto
+    para não voltar por inércia. Quando houver custo de verdade, ele nasce de
+    uma fonte, não de uma constante.
+  */
 }
 
 export interface ItemFilaAcao {
@@ -573,7 +580,7 @@ export class RecruitmentService {
       return {
         total_candidates: 0, lead_count: 0, interaction_count: 0, meeting_count: 0,
         onboard_count: 0, approved_count: 0, rejected_count: 0, conversion_rate: 0,
-        avg_process_days: 0, tempoMedioProcesso: 0, taxaRetencao: 0, custoPorContratacao: 0,
+        avg_process_days: 0, tempoMedioProcesso: 0, taxaRetencao: 0,
       };
     }
 
@@ -603,7 +610,6 @@ export class RecruitmentService {
       avg_process_days: tempoMedioProcesso,
       tempoMedioProcesso,
       taxaRetencao: avancaram > 0 ? Math.round((onboard / avancaram) * 100) : 0,
-      custoPorContratacao: 1.2, // placeholder herdado do módulo antigo
     };
   }
 }
