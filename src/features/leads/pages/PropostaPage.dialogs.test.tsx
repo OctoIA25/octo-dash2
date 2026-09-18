@@ -138,6 +138,32 @@ const renderPage = () =>
     </MemoryRouter>,
   );
 
+/**
+ * Prazo explícito porque o padrão do vitest (5 s) é curto para este arquivo.
+ *
+ * Não é teste ruim nem produto quebrado: cada caso monta a PropostaPage INTEIRA
+ * — 2.900 linhas de JSX, a tabela de propostas e todos os diálogos — e faz
+ * cliques de verdade no jsdom. Medido numa execução limpa:
+ *
+ *   cancela a criação de nova proposta ........... 3.559 ms
+ *   abre o preview do documento no rascunho ...... 5.189 ms  <- estourava
+ *   permite visualizar o PDF anexado ............. 4.624 ms  <- 376 ms de margem
+ *   abre o detalhe de uma proposta ............... 1.590 ms
+ *
+ * Três dos quatro viviam à beira do limite, então qualquer carga na máquina
+ * derrubava um deles — a suíte falhou uma vez em três execuções sobre o mesmo
+ * código, e o resto do projeto não passa de 2,7 s. Suíte que às vezes passa não
+ * serve de portão, e aumentar o prazo aqui não esconde defeito: esclarece que
+ * este é um teste de página inteira, não de unidade.
+ *
+ * O que REDUZIRIA o tempo é diminuir o peso da página, e isso é o item P0.7 do
+ * plano — a mesma causa pela qual clicar num card do Jurídico trava o
+ * navegador: quando embutida, a página é montada por completo e só recebe a
+ * classe `hidden`. Quando esse item for feito, estes números caem e este prazo
+ * pode voltar ao padrão.
+ */
+vi.setConfig({ testTimeout: 20_000 });
+
 describe('PropostaPage — abrir e fechar dialogs', () => {
   it('cancela a criação de nova proposta sem quebrar a página', async () => {
     const user = userEvent.setup();
