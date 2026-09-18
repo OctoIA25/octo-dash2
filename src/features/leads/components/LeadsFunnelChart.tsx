@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { isEtapaVisitaAgendada, isEtapaVisitaRealizada } from '@/features/leads/utils/funnelStages';
 import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { StandardCardTitle } from '@/components/ui/StandardCardTitle';
@@ -44,8 +45,8 @@ export const LeadsFunnelChart = ({ leads: propsLeads }: LeadsFunnelChartProps) =
       count(l => ['Novos Leads','Novo Lead','novos leads','novo lead'].includes(l.etapa_atual || '')),
       count(l => l.etapa_atual === 'Em Atendimento'),
       count(l => l.etapa_atual === 'Interação'),
-      count(l => l.etapa_atual === 'Visita Agendada' || l.etapa_atual === 'Visita agendada' || !!(l.Data_visita?.trim())),
-      count(l => l.etapa_atual === 'Visita Realizada'),
+      count(l => isEtapaVisitaAgendada(l.etapa_atual)),
+      count(l => isEtapaVisitaRealizada(l.etapa_atual)),
       count(l => ['Negociação','Em Negociação'].includes(l.etapa_atual || '')),
       count(l => l.etapa_atual === 'Proposta Criada'),
       count(l => l.etapa_atual === 'Proposta Enviada'),

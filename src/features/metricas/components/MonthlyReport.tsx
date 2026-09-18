@@ -1,4 +1,5 @@
 import { useMemo, useRef, useEffect } from 'react';
+import { isEtapaVisitaAgendada, isEtapaVisitaRealizada } from '@/features/leads/utils/funnelStages';
 import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -70,11 +71,11 @@ export const MonthlyReport = ({ leads }: MonthlyReportProps) => {
       else if (lead.status_temperatura === 'Frio') acc[monthKey].frios++;
 
       // Contar visitas
-      if (lead.Data_visita && lead.Data_visita.trim() !== "") {
+      if (isEtapaVisitaAgendada(lead.etapa_atual)) {
         acc[monthKey].visitasAgendadas++;
       }
 
-      if (lead.etapa_atual === 'Visita Realizada') {
+      if (isEtapaVisitaRealizada(lead.etapa_atual)) {
         acc[monthKey].visitasRealizadas++;
       }
 

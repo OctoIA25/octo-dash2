@@ -12,6 +12,7 @@
  */
 
 import { useMemo, useState, useEffect } from 'react';
+import { isEtapaVisita } from '@/features/leads/utils/funnelStages';
 import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { MapPin, Eye, X } from 'lucide-react';
@@ -175,7 +176,7 @@ export const ModernRegionChart = ({ leads, tipoNegocioFilter = 'todos', onFilter
       const stats = statsMap.get(condomio)!;
       stats.total++;
       if (lead.status_temperatura === 'Quente') stats.quentes++;
-      if (lead.Data_visita || lead.etapa_atual?.includes('Visita')) stats.visitas++;
+      if (isEtapaVisita(lead.etapa_atual)) stats.visitas++;
       if (lead.etapa_atual === 'Negociação' || lead.etapa_atual === 'Proposta Enviada') stats.negociacoes++;
       if (lead.etapa_atual === 'Fechamento' || lead.data_finalizacao) stats.fechamentos++;
     });

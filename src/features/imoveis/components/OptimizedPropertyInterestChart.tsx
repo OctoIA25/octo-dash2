@@ -13,6 +13,7 @@
  */
 
 import { useMemo, useEffect, useState } from 'react';
+import { isEtapaVisita } from '@/features/leads/utils/funnelStages';
 import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Home, Eye, X } from 'lucide-react';
@@ -188,7 +189,7 @@ export const OptimizedPropertyInterestChart = ({ leads, categoriasCards, tipoNeg
       if (lead.status_temperatura === 'Quente') stats.quentes++;
 
       // Contar visitas
-      if (lead.Data_visita || lead.etapa_atual?.includes('Visita')) {
+      if (isEtapaVisita(lead.etapa_atual)) {
         stats.visitas++;
       }
 

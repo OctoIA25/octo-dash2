@@ -9,6 +9,7 @@
  */
 
 import { useMemo, useState } from 'react';
+import { isEtapaVisita } from '@/features/leads/utils/funnelStages';
 import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Home } from 'lucide-react';
@@ -90,8 +91,9 @@ export const ImoveisInterestTable = ({ leads }: ImoveisInterestTableProps) => {
       }
       
       // Contar visitas e negociações
-      if ((lead.Data_visita && lead.Data_visita.trim() !== '') || 
-          lead.etapa_atual === 'Visita Agendada') {
+      // Passa a incluir a visita realizada: a coluna se chama "Visitas" e antes
+      // deixava de fora quem já tinha visitado.
+      if (isEtapaVisita(lead.etapa_atual)) {
         acc[codigo].visitas++;
       }
       
