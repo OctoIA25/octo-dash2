@@ -33,7 +33,7 @@ import {
 } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { TenantSwitcher } from '@/components/TenantSwitcher';
-import { SidebarPermission } from '@/types/permissions';
+import { SidebarPermission, permissoesDeSidebar } from '@/types/permissions';
 import octoLogo from '@/assets/octodash-logo.png';
 
 interface SubItem {
@@ -204,18 +204,16 @@ export function NovaSidebar() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const allowedPermissions: SidebarPermission[] = (() => {
-    if (isOwner) return ALL_PERMISSIONS;
-    const userPerms = user?.sidebarPermissions ?? [];
-    const tenantPerms = user?.tenantAllowedFeatures;
-    if (Array.isArray(tenantPerms)) {
-      if (userPerms.length > 0) {
-        return userPerms.filter((p) => tenantPerms.includes(p));
-      }
-      return tenantPerms;
-    }
-    return userPerms;
-  })();
+  // A MESMA regra que libera a rota (ver permissoesDeSidebar). Antes esta
+  // cópia não abria a exceção de admin/team_leader e escondia do menu uma
+  // tela que a rota deixava aberta.
+  const allowedPermissions: SidebarPermission[] = permissoesDeSidebar({
+    isOwner,
+    isTenantUser: !!tenantId && tenantId !== 'owner',
+    systemRole: user?.systemRole,
+    tenantAllowedFeatures: user?.tenantAllowedFeatures,
+    sidebarPermissions: user?.sidebarPermissions,
+  });
 
   const canAccess = useCallback(
     (permission: SidebarPermission) => allowedPermissions.includes(permission),

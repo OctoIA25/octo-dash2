@@ -12,7 +12,6 @@ import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Loader2 } from 'lucide-react';
-import { useImoveisData } from '../hooks/useImoveisData';
 import { useAuth } from '@/hooks/useAuth';
 import {
   resolveImoveisBatch,
@@ -142,8 +141,26 @@ const DEFAULT_CENTER: [number, number] = [-23.55, -46.633];
 // mid cadastrado o alternador nem aparece. Exige o mapa compartilhado como
 // "qualquer pessoa com o link".
 
-export default function ImoveisMapPage() {
-  const { imoveis, isLoading } = useImoveisData();
+interface ImoveisMapPageProps {
+  /**
+   * O catálogo do tenant (XML + `imoveis_locais`, rascunho de fora), vindo da
+   * ImoveisPage — o Mapa é uma ABA dela, e ela já fez esse merge.
+   *
+   * Antes esta tela lia só o catálogo XML por conta própria. Medido em
+   * 18/09/2026: a Lotus Brokers tem `tenant_xml_config.xml_url` vazio e
+   * `backup_data` nulo, então a lista chegava vazia e o rodapé dizia "0 de 0
+   * imóveis no mapa" — por falta de imóvel, não de coordenada. Os 27 imóveis
+   * dela estão em `imoveis_locais`, que esta tela não consultava.
+   *
+   * Recebe por prop, e não busca sozinha, porque baixar de novo o que a
+   * página-mãe já tem em memória custaria 223 KB na Lotus e uma segunda
+   * leitura do `backup_data` de 2,86 MB na Imobiliária Japi.
+   */
+  imoveis: Imovel[];
+  isLoading: boolean;
+}
+
+export default function ImoveisMapPage({ imoveis, isLoading }: ImoveisMapPageProps) {
   const { tenantId } = useAuth();
   const [searchParams] = useSearchParams();
 

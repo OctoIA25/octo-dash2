@@ -18,6 +18,8 @@ import {
   ADMIN_SIDEBAR_PERMISSIONS,
   CORRETOR_SIDEBAR_PERMISSIONS,
   SidebarPermission,
+  permissoesDeSidebar,
+  SIDEBAR_PERMISSION_ORDER,
   TEAM_LEADER_SIDEBAR_PERMISSIONS
 } from '@/types/permissions';
 
@@ -30,25 +32,6 @@ const DEBUG_LOGS = import.meta.env?.VITE_DEBUG_LOGS === 'true';
 // daqui era puro desperdício: dezenas de idas ao banco por navegação.
 const ROTAS_QUE_USAM_LEADS_DO_LAYOUT = ['/configuracoes'];
 
-const SIDEBAR_PERMISSION_ORDER: SidebarPermission[] = [
-  'leads',
-  'notificacoes',
-  'metricas',
-  'juridico',
-  'estudo-mercado',
-  'recrutamento',
-  'gestao-equipe',
-  'imoveis',
-  'agentes-ia',
-  'comunicacao',
-  'octo-chat',
-  'chat',
-  'integracoes',
-  'central-leads',
-  'relatorios',
-  'metas',
-  'excel'
-];
 
 const DEFAULT_ROUTE_BY_PERMISSION: Partial<Record<SidebarPermission, string>> = {
   leads: '/leads',
@@ -140,43 +123,18 @@ const DashboardLayout = () => {
 
   if (DEBUG_LOGS) console.log(' DashboardLayout - dados:', { leadsCount: leads?.length, isLoading, error: error?.substring(0, 50) });
 
-  const allowedSidebarPermissions = useMemo(() => {
-    const userSidebarPermissions = user?.sidebarPermissions ?? [];
-    const tenantAllowedFeatures = user?.tenantAllowedFeatures;
-    const isTenantUser = !!tenantId && tenantId !== 'owner';
-
-    if (isOwner) {
-      return SIDEBAR_PERMISSION_ORDER;
-    }
-
-    if (isTenantUser && Array.isArray(tenantAllowedFeatures)) {
-      if (user?.systemRole === 'admin' || user?.systemRole === 'team_leader') {
-        return SIDEBAR_PERMISSION_ORDER.filter(permission => tenantAllowedFeatures.includes(permission));
-      }
-
-      if (userSidebarPermissions.length > 0) {
-        return SIDEBAR_PERMISSION_ORDER.filter(permission => 
-          tenantAllowedFeatures.includes(permission) && userSidebarPermissions.includes(permission)
-        );
-      }
-
-      return SIDEBAR_PERMISSION_ORDER.filter(permission => tenantAllowedFeatures.includes(permission));
-    }
-
-    if (user?.systemRole === 'admin') {
-      return SIDEBAR_PERMISSION_ORDER.filter(permission => ADMIN_SIDEBAR_PERMISSIONS.includes(permission));
-    }
-
-    if (user?.systemRole === 'team_leader') {
-      return SIDEBAR_PERMISSION_ORDER.filter(permission => TEAM_LEADER_SIDEBAR_PERMISSIONS.includes(permission));
-    }
-
-    if (userSidebarPermissions.length > 0) {
-      return SIDEBAR_PERMISSION_ORDER.filter(permission => userSidebarPermissions.includes(permission));
-    }
-
-    return SIDEBAR_PERMISSION_ORDER.filter(permission => CORRETOR_SIDEBAR_PERMISSIONS.includes(permission));
-  }, [isOwner, tenantId, user?.sidebarPermissions, user?.systemRole, user?.tenantAllowedFeatures]);
+  // Uma fonte só, compartilhada com a barra lateral (ver permissoesDeSidebar).
+  const allowedSidebarPermissions = useMemo(
+    () =>
+      permissoesDeSidebar({
+        isOwner,
+        isTenantUser: !!tenantId && tenantId !== 'owner',
+        systemRole: user?.systemRole,
+        tenantAllowedFeatures: user?.tenantAllowedFeatures,
+        sidebarPermissions: user?.sidebarPermissions,
+      }),
+    [isOwner, tenantId, user?.sidebarPermissions, user?.systemRole, user?.tenantAllowedFeatures]
+  );
 
   const defaultAllowedRoute = useMemo(() => {
     const firstAllowedPermission = allowedSidebarPermissions.find(permission => DEFAULT_ROUTE_BY_PERMISSION[permission]);

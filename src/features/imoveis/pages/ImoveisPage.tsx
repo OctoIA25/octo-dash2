@@ -290,6 +290,9 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
 
   // Estado para imóveis locais
   const [imoveisLocais, setImoveisLocais] = useState<ImovelLocal[]>([]);
+  // Sem isto o Mapa pisca "0 de 0" em tenant sem XML: `isLoading` é do
+  // XML e vira false antes de `imoveis_locais` chegar.
+  const [carregandoLocais, setCarregandoLocais] = useState(true);
 
   // Códigos (maiúsculos) que o usuário pode editar/excluir. Quem decide é o banco
   // (imovel_autoriza): captador, gestão responsável, administração.
@@ -355,8 +358,12 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
 
   // Carregar imóveis locais do banco
   const loadImoveisLocais = useCallback(async () => {
-    if (!tenantId) return;
-    
+    if (!tenantId) {
+      setCarregandoLocais(false);
+      return;
+    }
+
+    setCarregandoLocais(true);
     try {
       const [{ data, error: fetchError }, editaveis] = await Promise.all([
         supabase
@@ -378,6 +385,8 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
       setImoveisLocais(((data || []) as unknown as ImovelLocal[]).filter((local) => !ehRascunho(local)));
     } catch (err) {
       console.error('Erro ao carregar imóveis locais:', err);
+    } finally {
+      setCarregandoLocais(false);
     }
   }, [tenantId]);
 
@@ -1571,7 +1580,7 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
 
         <TabsContent value="mapa-imoveis">
           <Suspense fallback={<div className="flex items-center justify-center h-64 text-text-secondary">Carregando mapa...</div>}>
-            <ImoveisMapPage />
+            <ImoveisMapPage imoveis={imoveis} isLoading={isLoading || carregandoLocais} />
           </Suspense>
         </TabsContent>
       </Tabs>

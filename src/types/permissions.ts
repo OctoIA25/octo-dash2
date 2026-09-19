@@ -262,3 +262,69 @@ export const comPermissoesNaoEditaveis = (
   );
   return [...new Set([...salvas, ...naoEditaveis])];
 };
+
+// ============================================================
+// Quais áreas da barra lateral este usuário alcança.
+//
+// FONTE ÚNICA. Isto era calculado em DOIS lugares com regras diferentes:
+// `DashboardLayout` (que libera a ROTA) ignorava as permissões salvas do
+// membro quando ele é admin ou team_leader; `NovaSidebar` (que desenha o
+// MENU) não abria essa exceção. A rota deixava entrar, o menu escondia o
+// caminho.
+//
+// A regra aqui é a do DashboardLayout, ramo a ramo, porque a rota é quem de
+// fato manda. NENHUM acesso novo é concedido: a exceção de admin/team_leader
+// existe desde o commit inicial e já regia as rotas.
+//
+// O QUE MUDA, medido em produção em 18/09/2026: o menu passa a mostrar o que
+// a rota já liberava. De 15 memberships admin/team_leader, 12 ganham pelo
+// menos um item de menu; 2 ganham o link de Imóveis; 3 team_leaders passam a
+// ver Integrações, 2 veem Agentes de IA e 2 veem Comunicação (disparo em
+// massa). Ninguém perde link e nenhum corretor muda.
+//
+// PERGUNTA EM ABERTO PARA O NEGÓCIO: tirar "imoveis" de um admin na tela de
+// Acessos hoje não restringe nada, porque a rota ignora a escolha — a tela
+// promete uma restrição que o app não cumpre. Ou a tela para de oferecer
+// isso, ou a rota passa a respeitar. A segunda opção TIRA acesso que 9
+// pessoas têm hoje, então precisa de decisão antes de virar código.
+// ============================================================
+
+/** A ordem em que as áreas aparecem no menu. */
+export const SIDEBAR_PERMISSION_ORDER: SidebarPermission[] = [
+  'leads', 'notificacoes', 'metricas', 'juridico', 'estudo-mercado', 'recrutamento',
+  'gestao-equipe', 'imoveis', 'agentes-ia', 'comunicacao', 'octo-chat', 'chat',
+  'integracoes', 'central-leads', 'relatorios', 'metas', 'excel',
+];
+
+export interface ContextoDePermissao {
+  isOwner: boolean;
+  /** `true` quando há um tenant real selecionado (não a visão de dono). */
+  isTenantUser: boolean;
+  systemRole?: string | null;
+  /** O que a imobiliária contratou. `undefined` quando ainda não carregou. */
+  tenantAllowedFeatures?: SidebarPermission[] | null;
+  /** O que foi salvo para este membro na tela de Acessos. */
+  sidebarPermissions?: SidebarPermission[] | null;
+}
+
+export function permissoesDeSidebar(ctx: ContextoDePermissao): SidebarPermission[] {
+  const salvas = ctx.sidebarPermissions ?? [];
+  const naOrdem = (permitidas: SidebarPermission[]) =>
+    SIDEBAR_PERMISSION_ORDER.filter((p) => permitidas.includes(p));
+
+  if (ctx.isOwner) return [...SIDEBAR_PERMISSION_ORDER];
+
+  if (ctx.isTenantUser && Array.isArray(ctx.tenantAllowedFeatures)) {
+    const doTenant = ctx.tenantAllowedFeatures;
+    // Admin e team_leader não são limitados pelas permissões salvas.
+    if (ctx.systemRole === 'admin' || ctx.systemRole === 'team_leader') return naOrdem(doTenant);
+    if (salvas.length > 0) return naOrdem(doTenant.filter((p) => salvas.includes(p)));
+    return naOrdem(doTenant);
+  }
+
+  // Sem o que a imobiliária contratou, vale o padrão do cargo.
+  if (ctx.systemRole === 'admin') return naOrdem(ADMIN_SIDEBAR_PERMISSIONS);
+  if (ctx.systemRole === 'team_leader') return naOrdem(TEAM_LEADER_SIDEBAR_PERMISSIONS);
+  if (salvas.length > 0) return naOrdem(salvas);
+  return naOrdem(CORRETOR_SIDEBAR_PERMISSIONS);
+}
