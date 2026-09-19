@@ -3984,6 +3984,12 @@ app.post('/api/v1/anthropic/usage-report', validateApiKey, async (req, res) => {
 import { registerEnpsRoutes, startEnpsScheduler, makeEnpsRunner } from './enps/index.js';
 const enpsRunner = makeEnpsRunner(supabase);
 registerEnpsRoutes(app, supabase);
+
+// P1.1 — a rota que a Lia consulta para saber de quem e o lead. Ela RESPONDE
+// e grava o extrato; quem atribui e a Lia (decisao do chefe em 19/09/2026).
+// Sem scheduler: nao ha nada rodando sozinho aqui.
+import { registerDistribuicaoRoutes } from './distribuicao/routes.js';
+registerDistribuicaoRoutes(app, supabase, validateApiKey);
 if (process.env.ENPS_SCHEDULER === '1') {
   startEnpsScheduler(supabase, { runner: enpsRunner });
 }
