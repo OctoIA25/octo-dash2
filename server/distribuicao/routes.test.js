@@ -19,23 +19,54 @@ import { registerDistribuicaoRoutes } from './routes.js';
 let tabelas;
 let gravados;
 
+/**
+ * `not(coluna, 'is', null)` sobre jsonb, com a semântica do Postgres.
+ *
+ * Isto NÃO é firula: a primeira versão do código usava `detalhes->posicao` e
+ * o jsonb `null` passava pelo filtro, fazendo a roleta reiniciar no primeiro
+ * corretor. Um falso que trate `not` como no-op deixa esse defeito passar —
+ * foi o que aconteceu, e por isso o falso aprendeu a diferença:
+ *
+ *   detalhes->posicao   (jsonb)  jsonb null NÃO é SQL NULL  -> a linha PASSA
+ *   detalhes->>posicao  (texto)  jsonb null VIRA SQL NULL   -> a linha é excluída
+ */
+function aplicaNotIsNull(linhas, coluna) {
+  const setaDupla = coluna.includes('->>');
+  const [campo, chave] = coluna.split(/->>?/).map((x) => x.trim());
+  return linhas.filter((l) => {
+    const valor = l?.[campo]?.[chave];
+    if (valor === undefined) return false;          // chave ausente: SQL NULL nas duas
+    if (valor === null) return !setaDupla;          // jsonb null: só a seta simples deixa passar
+    return true;
+  });
+}
+
 function fakeSupabase() {
   const builder = (tabela) => {
     const filtros = {};
+    let notIsNull = null;
     const chain = {};
-    for (const m of ['select', 'eq', 'order', 'limit', 'ilike', 'not']) {
+    for (const m of ['select', 'eq', 'order', 'limit', 'ilike']) {
       chain[m] = (...args) => {
         if (m === 'eq') filtros[args[0]] = args[1];
         return chain;
       };
     }
+    chain.not = (coluna, op, valor) => {
+      if (op === 'is' && valor === null) notIsNull = coluna;
+      return chain;
+    };
     chain.insert = (linha) => {
       gravados.push({ tabela, linha });
       return Promise.resolve({ error: tabela === '__falha__' ? { code: 'x', message: 'y' } : null });
     };
     chain.update = () => { gravados.push({ tabela, update: true }); return chain; };
-    chain.maybeSingle = () => Promise.resolve({ data: tabelas[tabela]?.[0] ?? null, error: null });
-    chain.then = (resolve) => Promise.resolve({ data: tabelas[tabela] ?? [], error: null }).then(resolve);
+    const linhas = () => {
+      const base = tabelas[tabela] ?? [];
+      return notIsNull ? aplicaNotIsNull(base, notIsNull) : base;
+    };
+    chain.maybeSingle = () => Promise.resolve({ data: linhas()[0] ?? null, error: null });
+    chain.then = (resolve) => Promise.resolve({ data: linhas(), error: null }).then(resolve);
     return chain;
   };
   return { from: builder };
@@ -71,6 +102,8 @@ beforeEach(() => {
   tabelas = {
     tenant_bolsao_config: [{ horario_funcionamento: {}, tempo_expiracao_exclusivo: 60 }],
     tenant_memberships: [membro('1'), membro('2'), membro('3')],
+    // Vazia = ninguém curou a roleta ainda; valem todos os membros.
+    roleta_participantes: [],
     imoveis_locais: [],
     distribuicao_eventos: [],
   };
@@ -198,5 +231,70 @@ describe('POST /api/v1/distribuicao/evento', () => {
     const { status } = await montar().chamar('/api/v1/distribuicao/evento', { evento: 'enviado' });
     expect(status).toBe(400);
     expect(gravados.length).toBe(0);
+  });
+});
+
+
+// ============================================================
+// Achados da revisão de 19/09/2026.
+// ============================================================
+describe('curinga no código do imóvel não vira "qualquer imóvel"', () => {
+  it('código com %, _, * ou barra é recusado antes de consultar o banco', async () => {
+    // O PostgREST lê `*` como `%`, então escapar a barra não bastava: `\\*`
+    // vira `\\%` e o curinga sobrevive. Recusar resolve a classe inteira.
+    tabelas.imoveis_locais = [{ captador_id: '9' }];
+    for (const codigo of ['%', '_', '*', 'AP*', 'AP%', 'AP\\_1']) {
+      const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', { codigo_imovel: codigo });
+      expect(corpo.data.corretor_id, `curinga "${codigo}" nao pode achar captador`).not.toBe('9');
+    }
+  });
+
+  it('código normal continua achando o captador', async () => {
+    tabelas.imoveis_locais = [{ captador_id: '9' }];
+    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', { codigo_imovel: 'AP0961' });
+    expect(corpo.data.corretor_id).toBe('9');
+  });
+});
+
+describe('a fila é a roleta CURADA pelo admin', () => {
+  it('só quem está na roleta ativa entra no rodízio', async () => {
+    // Sem isto o simulador mostraria uma fila que a tela de configuração não
+    // controla — e o gestor não reconheceria o resultado.
+    tabelas.roleta_participantes = [{ broker_id: '3' }];
+    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', {});
+    expect(corpo.data.corretor_id).toBe('3');
+  });
+
+  it('roleta vazia = ninguém curou: valem todos os membros', async () => {
+    tabelas.roleta_participantes = [];
+    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', {});
+    expect(corpo.data.corretor_id).toBe('1');
+  });
+});
+
+
+describe('o ponteiro ignora as linhas sem posição gravada', () => {
+  it('lead de captador (posicao null) NÃO vira o ponteiro', async () => {
+    // O extrato guarda, do mais recente para o mais antigo: uma consulta de
+    // captador (sem posicao) e antes dela a roleta parada na posicao 1.
+    tabelas.distribuicao_eventos = [
+      { corretor_id: '9', detalhes: { posicao: null } },
+      { corretor_id: '2', detalhes: { posicao: 1 } },
+    ];
+    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', {});
+    // Com o ponteiro certo (1), o próximo é o terceiro da fila.
+    expect(corpo.data.corretor_id).toBe('3');
+  });
+
+  it('posição ZERO é posição, não ausência', async () => {
+    tabelas.distribuicao_eventos = [{ corretor_id: '1', detalhes: { posicao: 0 } }];
+    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', {});
+    expect(corpo.data.corretor_id).toBe('2');
+  });
+
+  it('extrato vazio começa do primeiro', async () => {
+    tabelas.distribuicao_eventos = [];
+    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', {});
+    expect(corpo.data.corretor_id).toBe('1');
   });
 });

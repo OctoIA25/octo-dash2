@@ -7,7 +7,7 @@
  * ROLETA, não para o bolsão.
  */
 import { describe, it, expect } from 'vitest';
-import { decidirDestino, proximoDaRoleta, podeReceber, tipoDoLead, foiAtendido, expirou, MOTIVOS } from './regra.js';
+import { decidirDestino, proximoDaRoleta, podeReceber, tipoDoLead, foiAtendido, expirou, atendePool, MOTIVOS } from './regra.js';
 
 const c = (id, extra = {}) => ({ id, ...extra });
 const FILA = [c('ana'), c('bruno'), c('carla')];
@@ -162,5 +162,78 @@ describe('expirou', () => {
   it('sem prazo válido, NÃO expira — não tira lead de ninguém por dado ruim', () => {
     expect(expirou({ prazo: null, agora: new Date() })).toBe(false);
     expect(expirou({ prazo: new Date('nada'), agora: new Date() })).toBe(false);
+  });
+});
+
+// ============================================================
+// Achados da revisão de 19/09/2026, cada um virando teste.
+// ============================================================
+describe('o ponteiro ancora em QUEM recebeu, não no índice', () => {
+  it('quem entra na equipe não faz o seguinte perder a vez', () => {
+    const antes = [c('ana'), c('bruno'), c('carla')];
+    // Depois da Ana (posição 0) viria o Bruno.
+    expect(proximoDaRoleta(antes, { posicao: 0, corretorId: 'ana' }).corretor.id).toBe('bruno');
+
+    // Entra alguém ANTES da Ana na ordem. Pelo índice cru, a posição 0 agora é
+    // o novato e o "próximo" viraria a Ana de novo.
+    const depois = [c('novo'), c('ana'), c('bruno'), c('carla')];
+    expect(proximoDaRoleta(depois, { posicao: 0, corretorId: 'ana' }).corretor.id).toBe('bruno');
+    // E é isso que o índice sozinho faria de errado:
+    expect(proximoDaRoleta(depois, 0).corretor.id).toBe('ana');
+  });
+
+  it('quando quem recebeu saiu da equipe, o índice serve de reserva', () => {
+    const fila = [c('ana'), c('bruno'), c('carla')];
+    expect(proximoDaRoleta(fila, { posicao: 1, corretorId: 'quem_saiu' }).corretor.id).toBe('carla');
+  });
+
+  it('continua aceitando o número cru, para quem chama do jeito antigo', () => {
+    expect(proximoDaRoleta([c('ana'), c('bruno')], 0).corretor.id).toBe('bruno');
+  });
+});
+
+describe('ATUAÇÃO — o defeito que fez a roleta antiga ser desligada', () => {
+  // Em 14/09 a distribuição do Octo foi desligada na Lotus porque a roleta
+  // mandava lead de lançamento para corretor de prontos.
+  const lancamentos = c('lu', { atuacoes: ['lancamentos'] });
+  const prontos = c('pe', { atuacoes: ['prontos'] });
+  const tudo = c('ana');
+
+  it('lead de LANÇAMENTO não vai para quem só atende prontos', () => {
+    const r = decidirDestino({
+      lead: { tipoImovel: 'lancamento', liaPassou: true },
+      participantes: [prontos, lancamentos],
+      ultimaPosicao: -1,
+    });
+    expect(r.corretorId).toBe('lu');
+  });
+
+  it('lead de TERCEIROS não vai para quem só atende lançamento', () => {
+    const r = decidirDestino({
+      lead: { codigoImovel: 'AP0961' },
+      participantes: [lancamentos, prontos],
+      ultimaPosicao: -1,
+    });
+    expect(r.corretorId).toBe('pe');
+  });
+
+  it('quem não tem atuação declarada atende tudo — falha ABERTO', () => {
+    // 111 membros da base não têm atuação gravada; fechar aqui esvaziaria a fila.
+    expect(atendePool(tudo, 'lancamentos')).toBe(true);
+    expect(atendePool(tudo, 'prontos')).toBe(true);
+    expect(atendePool(c('x', { atuacoes: [] }), 'lancamentos')).toBe(true);
+  });
+
+  it('"prontos" cobre alugados, como no motor antigo', () => {
+    expect(atendePool(c('x', { atuacoes: ['alugados'] }), 'prontos')).toBe(true);
+    expect(atendePool(c('x', { atuacoes: ['alugados'] }), 'lancamentos')).toBe(false);
+  });
+
+  it('ninguém com a atuação certa devolve "ninguem", não um chute', () => {
+    const r = decidirDestino({
+      lead: { tipoImovel: 'lancamento', liaPassou: true },
+      participantes: [prontos],
+    });
+    expect(r).toMatchObject({ destino: 'ninguem', corretorId: null });
   });
 });

@@ -14,6 +14,27 @@
 /** Ordem da roleta: estável e explicável. */
 const ORDEM = 'created_at';
 
+const ATUACAO_TIPOS = ['lancamentos', 'prontos', 'alugados'];
+
+/**
+ * Em que o corretor atua. Mesma leitura do motor antigo (`atuacoesOf` em
+ * leadAssignment.js) e do front (`atuacoesDe` em types/permissions.ts).
+ *
+ * FALHA ABERTO de propósito: ausente, lista vazia ou lixo valem como "atende
+ * os três". Fechar aqui tiraria da fila os 111 membros que não têm atuação
+ * gravada.
+ */
+function atuacoesDoMembro(permissions) {
+  const v = permissions?.atuacao;
+  if (v === 'lancamentos') return ['lancamentos'];
+  if (v === 'prontos') return ['prontos', 'alugados'];
+  if (Array.isArray(v)) {
+    const validos = ATUACAO_TIPOS.filter((t) => v.includes(t));
+    if (validos.length > 0) return validos;
+  }
+  return [...ATUACAO_TIPOS];
+}
+
 export function criarLeituras({ supabase }) {
   /** Configuração de horário e prazo da imobiliária. */
   const configuracao = async (tenantId) => {
@@ -34,16 +55,31 @@ export function criarLeituras({ supabase }) {
    * inteira andar quando alguém é renomeado.
    */
   const participantes = async (tenantId) => {
-    const { data, error } = await supabase
-      .from('tenant_memberships')
-      .select('user_id, role, permissions, created_at')
-      .eq('tenant_id', tenantId)
-      .order(ORDEM, { ascending: true });
+    // FONTE PRIMÁRIA é a roleta curada pelo admin (`roleta_participantes`),
+    // a mesma que o motor antigo usa e que a tela de configuração controla.
+    // Sem ela, o simulador mostraria uma fila que o gestor não reconhece.
+    // Vazia = ninguém curou ainda; aí valem todos os membros, igual ao
+    // fallback de leadAssignment.js.
+    const [{ data: membros, error }, { data: curados }] = await Promise.all([
+      supabase
+        .from('tenant_memberships')
+        .select('user_id, role, permissions, created_at')
+        .eq('tenant_id', tenantId)
+        .order(ORDEM, { ascending: true }),
+      supabase
+        .from('roleta_participantes')
+        .select('broker_id')
+        .eq('tenant_id', tenantId)
+        .eq('is_active', true),
+    ]);
     if (error) throw error;
 
-    return (data || [])
+    const naRoleta = new Set((curados || []).map((c) => c.broker_id).filter(Boolean));
+
+    return (membros || [])
       // Só quem atende lead entra no rodízio.
       .filter((m) => m.role === 'corretor' || m.role === 'team_leader')
+      .filter((m) => naRoleta.size === 0 || naRoleta.has(m.user_id))
       .map((m) => {
         const p = m.permissions || {};
         const ate = p.bolsao_blocked_until ? Date.parse(p.bolsao_blocked_until) : NaN;
@@ -53,6 +89,7 @@ export function criarLeituras({ supabase }) {
           pausado: Number.isFinite(ate) ? ate > Date.now() : Boolean(p.bolsao_pausado),
           semPermissao: p.nao_recebe_leads === true,
           noLimite: false, // o limite de leads está desligado nesta base
+          atuacoes: atuacoesDoMembro(p),
         };
       });
   };
@@ -60,13 +97,17 @@ export function criarLeituras({ supabase }) {
   /** O captador do imóvel, quando há imóvel e quando ele tem captador. */
   const captadorDoImovel = async (tenantId, codigoImovel) => {
     const codigo = String(codigoImovel ?? '').trim();
-    if (!codigo) return null;
+    // CURINGA NÃO É CÓDIGO. O PostgREST lê `*` como `%`, então escapar a
+    // barra não basta — `\*` vira `\%` e o curinga sobrevive. Recusar a
+    // entrada resolve a classe inteira: nenhum código de imóvel real tem
+    // `%`, `_`, `*` ou barra invertida.
+    if (!codigo || /[%_*\\]/.test(codigo)) return null;
 
     const { data, error } = await supabase
       .from('imoveis_locais')
       .select('captador_id')
       .eq('tenant_id', tenantId)
-      .ilike('codigo_imovel', codigo.replace(/[\\%_]/g, (c) => `\\${c}`))
+      .ilike('codigo_imovel', codigo)
       .limit(1)
       .maybeSingle();
     if (error) throw error;
@@ -83,16 +124,35 @@ export function criarLeituras({ supabase }) {
   const ultimaPosicao = async (tenantId) => {
     const { data, error } = await supabase
       .from('distribuicao_eventos')
-      .select('detalhes')
+      .select('corretor_id, detalhes')
       .eq('tenant_id', tenantId)
       .eq('evento', 'consultado')
-      .not('detalhes->posicao', 'is', null)
+      // SETA DUPLA, de propósito. `detalhes->posicao` devolve jsonb, e o
+      // jsonb `null` NÃO é SQL NULL: o filtro deixava passar as linhas de
+      // captador, de lançamento e de "ninguém", que gravam posicao nula. A
+      // leitura caía em -1 e a roleta VOLTAVA PARA O PRIMEIRO da fila a cada
+      // lead de captador — que é o caso mais comum da Lotus (22 dos 29
+      // imóveis têm captador). Medido em 19/09/2026:
+      //   ('{"posicao": null}'::jsonb ->  'posicao') IS NULL  ->  false
+      //   ('{"posicao": null}'::jsonb ->> 'posicao') IS NULL  ->  true
+      .not('detalhes->>posicao', 'is', null)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
     if (error) throw error;
-    const pos = data?.detalhes?.posicao;
-    return Number.isInteger(pos) ? pos : -1;
+
+    // A seta dupla vale para o FILTRO; a projeção continua trazendo `detalhes`
+    // como objeto, então `posicao` chega como número. O parse é cinto de
+    // segurança para o dia em que alguém gravar "2" como texto — não é o que
+    // faz o filtro funcionar.
+    const pos = Number.parseInt(data?.detalhes?.posicao, 10);
+    return {
+      posicao: Number.isInteger(pos) ? pos : -1,
+      // A âncora de verdade é QUEM recebeu, não o índice: a fila muda de
+      // tamanho quando alguém entra ou sai da equipe, e aí o índice antigo
+      // aponta para outra pessoa.
+      corretorId: data?.corretor_id ?? null,
+    };
   };
 
   /** Grava um acontecimento. Devolve se conseguiu — nunca lança. */

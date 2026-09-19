@@ -51,17 +51,45 @@ export function podeReceber(corretor) {
 }
 
 /**
+ * Em que POOL este lead cai. Espelha `atendePool` do motor antigo.
+ * Lançamento exige a marca; o resto aceita prontos OU alugados.
+ */
+export function atendePool(corretor, pool) {
+  const a = Array.isArray(corretor?.atuacoes) ? corretor.atuacoes : null;
+  // Sem atuação declarada, atende tudo — falha aberto, igual ao motor antigo.
+  if (!a || a.length === 0) return true;
+  return pool === 'lancamentos'
+    ? a.includes('lancamentos')
+    : a.includes('prontos') || a.includes('alugados');
+}
+
+/**
  * O próximo da roleta, a partir de quem recebeu por último.
  *
- * `participantes` vem ORDENADO pela posição na fila. Devolve `null` quando
- * ninguém pode receber — e aí quem chama decide o que fazer, em vez de esta
- * função escolher alguém que não podia.
+ * `ultimaPosicao` aceita o número cru ou `{ posicao, corretorId }`. Quando vem
+ * o id, ele MANDA: a fila muda de tamanho quando alguém entra ou sai da
+ * equipe, e um índice antigo passa a apontar para outra pessoa — o que faz o
+ * vizinho perder a vez sem ninguém entender por quê. O índice fica como
+ * reserva, para quando quem recebeu por último não está mais na fila.
+ *
+ * `pool` filtra por atuação. Ignorar isso foi o que fez a roleta antiga
+ * mandar lead de lançamento para corretor de prontos — e foi por isso que a
+ * distribuição automática do Octo foi desligada na Lotus em 14/09/2026.
+ *
+ * Devolve `null` quando ninguém pode receber: quem chama decide, em vez de
+ * esta função escolher alguém que não podia.
  */
-export function proximoDaRoleta(participantes, ultimaPosicao = -1) {
-  const fila = (participantes || []).filter((c) => c && c.id && !c.semPermissao);
+export function proximoDaRoleta(participantes, ultimaPosicao = -1, pool = null) {
+  const fila = (participantes || [])
+    .filter((c) => c && c.id && !c.semPermissao)
+    .filter((c) => (pool ? atendePool(c, pool) : true));
   if (fila.length === 0) return null;
 
-  const inicio = Number.isInteger(ultimaPosicao) ? ultimaPosicao : -1;
+  const cru = typeof ultimaPosicao === 'object' && ultimaPosicao !== null ? ultimaPosicao : { posicao: ultimaPosicao };
+  const porId = cru.corretorId ? fila.findIndex((c) => c.id === cru.corretorId) : -1;
+  const inicio = porId >= 0
+    ? porId
+    : (Number.isInteger(cru.posicao) ? cru.posicao : -1);
   for (let i = 1; i <= fila.length; i += 1) {
     const idx = (inicio + i) % fila.length;
     if (podeReceber(fila[idx])) return { corretor: fila[idx], posicao: idx };
@@ -87,13 +115,15 @@ export function tipoDoLead(lead) {
  */
 export function decidirDestino({ lead, captador = null, participantes = [], ultimaPosicao = -1 }) {
   const tipo = tipoDoLead(lead);
+  // Lançamento tem pool próprio; o resto cai em prontos/alugados.
+  const pool = tipo === 'lancamento' ? 'lancamentos' : 'prontos';
 
   if (tipo === 'lancamento') {
     // A Lia atende primeiro. Só quando ela passa é que entra a roleta.
     if (!lead?.liaPassou) {
       return { destino: 'lia', corretorId: null, motivo: MOTIVOS.LIA_PRIMEIRO, tipo };
     }
-    const r = proximoDaRoleta(participantes, ultimaPosicao);
+    const r = proximoDaRoleta(participantes, ultimaPosicao, pool);
     return r
       ? { destino: 'corretor', corretorId: r.corretor.id, posicao: r.posicao, motivo: MOTIVOS.ROLETA, tipo }
       : { destino: 'ninguem', corretorId: null, motivo: MOTIVOS.SEM_CORRETOR, tipo };
@@ -106,14 +136,14 @@ export function decidirDestino({ lead, captador = null, participantes = [], ulti
     // Decisão de 19/09: sem captador — ou com o captador indisponível — o lead
     // vai para a roleta geral, e não fica parado esperando alguém que não
     // pode atender.
-    const r = proximoDaRoleta(participantes, ultimaPosicao);
+    const r = proximoDaRoleta(participantes, ultimaPosicao, pool);
     const motivo = captador ? MOTIVOS.CAPTADOR_INDISPONIVEL : MOTIVOS.SEM_CAPTADOR;
     return r
       ? { destino: 'corretor', corretorId: r.corretor.id, posicao: r.posicao, motivo, tipo }
       : { destino: 'ninguem', corretorId: null, motivo: MOTIVOS.SEM_CORRETOR, tipo };
   }
 
-  const r = proximoDaRoleta(participantes, ultimaPosicao);
+  const r = proximoDaRoleta(participantes, ultimaPosicao, pool);
   return r
     ? { destino: 'corretor', corretorId: r.corretor.id, posicao: r.posicao, motivo: MOTIVOS.ROLETA, tipo }
     : { destino: 'ninguem', corretorId: null, motivo: MOTIVOS.SEM_CORRETOR, tipo };
