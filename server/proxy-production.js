@@ -47,7 +47,7 @@ import { buildImovelwebXml } from './imovelweb/buildFeed.js';
 import { createLeadAssignment } from './leadAssignment.js';
 import { countLeadsPerBroker, fetchBrokerLeadStats } from './brokerLeadStats.js';
 import { handleClassificationPatch } from './leadClassification.js';
-import { avisoValorLancamento } from './lancamentoValor.js';
+import { avisoValorLancamento, mapLancamentoFromDB } from './lancamentoValor.js';
 
 // Timeout do fetch de webhooks de saída (evita que um endpoint lento trave o loop de polling).
 const WEBHOOK_FETCH_TIMEOUT_MS = 10000;
@@ -4757,30 +4757,6 @@ app.delete('/api/v1/webhooks/:id', validateApiKey, async (req, res) => {
 // ROUTES - LANÇAMENTOS (consumo por agentes de IA)
 // ============================================
 
-const mapLancamentoFromDB = (row) => ({
-  id: row.id,
-  nome: row.nome,
-  descricao: row.descricao || null,
-  // Endereço do plantão (estande de vendas). null = não cadastrado: a Lia diz
-  // que o corretor entrará em contato para informar o endereço.
-  endereco_plantao: row.endereco_plantao || null,
-  // Valor mínimo ("a partir de R$ ..."), não o preço da unidade. Sempre que
-  // informar o valor, a Lia deve repetir `aviso_valor` junto — é o texto pronto
-  // com a ressalva e a data dos dados. null = valor não cadastrado.
-  valor_minimo: row.preco_texto || null,
-  aviso_valor: avisoValorLancamento(row.preco_texto, row.updated_at),
-  // Landing page do empreendimento. null = não cadastrado; a Lia não oferece link.
-  site_url: row.site_url || null,
-  book_pdf_url: row.book_pdf || null,
-  book_pdf_filename: row.book_pdf_filename || null,
-  fotos: (Array.isArray(row.fotos) ? row.fotos : []).map((f) => ({
-    url: f?.url || null,
-    legenda: f?.legenda || null,
-    is_capa: !!f?.isCapa,
-  })),
-  created_at: row.created_at,
-  updated_at: row.updated_at,
-});
 
 // GET /api/v1/lancamentos - Listar lançamentos do tenant (resumido)
 app.get('/api/v1/lancamentos', validateApiKey, async (req, res) => {
@@ -5070,14 +5046,14 @@ import { registerEnpsRoutes, startEnpsScheduler, makeEnpsRunner } from './enps/i
 const enpsRunner = makeEnpsRunner(supabase);
 registerEnpsRoutes(app, supabase);
 if (process.env.ENPS_SCHEDULER === '1') {
-  startEnpsScheduler(supabase, { runner: enpsRunner }
+  startEnpsScheduler(supabase, { runner: enpsRunner });
+}
 
 // P0.6 — teste diário de consistência dos números. Mesma flag-única dos
 // outros schedulers: dois processos gravariam dois relatórios por dia.
 import { startConsistenciaScheduler } from './consistencia/scheduler.js';
 if (process.env.CONSISTENCIA_SCHEDULER === '1') {
   startConsistenciaScheduler(supabase);
-});
 }
 
 // REPORT espelho no Google Sheets (docs/superpowers/specs/2026-08-28-report-espelho-drive.md).
