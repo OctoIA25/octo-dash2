@@ -15,7 +15,7 @@ import { createZapConfigResolver, registerZapRoutes, extractZapPhotoUrls } from 
 import { registerImoveisExportRoutes, EXPORTAR_PATH, exportarJsonParser } from './imoveis/exportRoutes.js';
 import { createLeadAssignment } from './leadAssignment.js';
 import { handleClassificationPatch } from './leadClassification.js';
-import { avisoValorLancamento } from './lancamentoValor.js';
+import { avisoValorLancamento, mapLancamentoFromDB } from './lancamentoValor.js';
 import { enriquecerComCodigoLancamento } from './lancamentoAnuncios.js';
 
 const app = express();
@@ -3741,31 +3741,6 @@ app.get('/api/v1/reference/sources', (req, res) => {
 // Normaliza uma linha da tabela lancamentos no formato exposto pela API.
 // Devolve apenas campos relevantes para IA: nome, descrição, URL do book em PDF,
 // e fotos com legendas (ex.: { legenda: "Sala", url: "..." }).
-const mapLancamentoFromDB = (row) => ({
-  id: row.id,
-  nome: row.nome,
-  descricao: row.descricao || null,
-  // Endereço do plantão (estande de vendas). null = não cadastrado:
-  // nesse caso a Lia deve dizer que o corretor entrará em contato para
-  // informar o endereço e combinar a melhor data.
-  endereco_plantao: row.endereco_plantao || null,
-  // Valor mínimo ("a partir de R$ ..."), não o preço da unidade. Sempre que
-  // informar o valor, a Lia deve repetir `aviso_valor` junto — é o texto pronto
-  // com a ressalva e a data dos dados. null = valor não cadastrado.
-  valor_minimo: row.preco_texto || null,
-  aviso_valor: avisoValorLancamento(row.preco_texto, row.updated_at),
-  // Landing page do empreendimento. null = não cadastrado; a Lia não oferece link.
-  site_url: row.site_url || null,
-  book_pdf_url: row.book_pdf || null,
-  book_pdf_filename: row.book_pdf_filename || null,
-  fotos: (Array.isArray(row.fotos) ? row.fotos : []).map((f) => ({
-    url: f?.url || null,
-    legenda: f?.legenda || null,
-    is_capa: !!f?.isCapa,
-  })),
-  created_at: row.created_at,
-  updated_at: row.updated_at,
-});
 
 // GET /api/v1/lancamentos - Listar lançamentos do tenant (resumido)
 // Query params:
