@@ -60,7 +60,16 @@ const CAMPOS_DETALHE: { key: keyof EmpreendimentoCatalogo; label: string }[] = [
   { key: 'dormitorios', label: 'Dormitórios' },
   { key: 'suites', label: 'Suítes' },
   { key: 'garden', label: 'Garden' },
-  { key: 'comissao', label: 'Comissão' },
+  // COMISSÃO FORA DA TELA, de propósito, por decisão do chefe em 18/09/2026.
+  //
+  // Enquanto esta aba se alimentar da planilha do Google, a comissão é um dado
+  // comercial numa URL aberta: quem tem o endereço lê, sem login. Tirar a
+  // coluna não fecha a planilha — fecha a exposição a todo corretor que abre a
+  // aba, que é o alcance que dá para resolver daqui.
+  //
+  // Ela volta quando a aba passar a ler o cadastro `construtoras`, onde a
+  // comissão é protegida pelo próprio banco: fica fora do SELECT do navegador
+  // e só sai pela RPC `construtoras_comissao`, que confere o cargo.
   { key: 'condominio', label: 'Condomínio' },
   { key: 'iptu', label: 'IPTU' },
   { key: 'atualizado_em', label: 'Atualizado em' },
