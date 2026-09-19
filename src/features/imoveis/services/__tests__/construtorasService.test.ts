@@ -29,7 +29,9 @@ function fake(tabela: string) {
   chain.select = (cols: string) => { c.colunas = cols; return chain; };
   chain.eq = (k: string, v: unknown) => { c.filtros[k] = v; return chain; };
   chain.order = () => chain;
-  chain.upsert = (linha: unknown) => { c.filtros.__upsert = linha; chamadas.push(c); return Promise.resolve({ error: respostaErro }); };
+    chain.insert = (linha: unknown) => { c.filtros.__grava = linha; chamadas.push(c); return Promise.resolve({ error: respostaErro }); };
+  chain.update = (linha: unknown) => { c.filtros.__grava = linha; return chain; };
+  chain.upsert = () => { throw new Error('upsert proibido: cadastrar uma nova nao pode sobrescrever outra'); };
   chain.delete = () => chain;
   chain.then = (resolve: (r: unknown) => unknown) => {
     chamadas.push(c);
@@ -116,32 +118,32 @@ describe('a comissão sai só pela RPC', () => {
 
 describe('gravação', () => {
   it('NÃO manda a comissão quando quem salva não pode vê-la', async () => {
-    const { salvarConstrutora } = await import('../construtorasService');
-    await salvarConstrutora(TENANT, {
+    const { criarConstrutora } = await import('../construtorasService');
+    await criarConstrutora(TENANT, {
       codigo: 'tebas', nome: 'Tebas', razaoSocial: null, responsavelNome: null,
       responsavelTelefone: null, responsavelEmail: null, prazoPagamentoDias: null,
       dadosNota: null, eAvulso: false, ativa: true, observacao: null,
     });
-    const linha = chamadas[0].filtros.__upsert as Record<string, unknown>;
+    const linha = chamadas[0].filtros.__grava as Record<string, unknown>;
     expect('comissao_padrao_pct' in linha).toBe(false);
   });
 
   it('manda a comissão quando ela foi informada, inclusive null para limpar', async () => {
-    const { salvarConstrutora } = await import('../construtorasService');
-    await salvarConstrutora(TENANT, {
+    const { criarConstrutora } = await import('../construtorasService');
+    await criarConstrutora(TENANT, {
       codigo: 'tebas', nome: 'Tebas', razaoSocial: null, responsavelNome: null,
       responsavelTelefone: null, responsavelEmail: null, prazoPagamentoDias: null,
       dadosNota: null, eAvulso: false, ativa: true, observacao: null,
       comissaoPadraoPct: null,
     });
-    const linha = chamadas[0].filtros.__upsert as Record<string, unknown>;
+    const linha = chamadas[0].filtros.__grava as Record<string, unknown>;
     expect('comissao_padrao_pct' in linha).toBe(true);
     expect(linha.comissao_padrao_pct).toBeNull();
   });
 
   it('código fora do formato é recusado antes de ir ao banco', async () => {
-    const { salvarConstrutora } = await import('../construtorasService');
-    const r = await salvarConstrutora(TENANT, {
+    const { criarConstrutora } = await import('../construtorasService');
+    const r = await criarConstrutora(TENANT, {
       codigo: 'Santa Ângela', nome: 'Santa Ângela', razaoSocial: null, responsavelNome: null,
       responsavelTelefone: null, responsavelEmail: null, prazoPagamentoDias: null,
       dadosNota: null, eAvulso: false, ativa: true, observacao: null,
@@ -150,15 +152,49 @@ describe('gravação', () => {
     expect(chamadas.length).toBe(0);
   });
 
-  it('duplicata de grafia vira mensagem em português, não código do Postgres', async () => {
-    respostaErro = { code: '23505', message: 'duplicate key value violates unique constraint "construtoras_nome_normalizado_uk"' };
-    const { salvarConstrutora } = await import('../construtorasService');
-    const r = await salvarConstrutora(TENANT, {
+  it('duplicata vira mensagem em português, não código do Postgres', async () => {
+    // Vale para as DUAS travas: o identificador é derivado do nome, então
+    // "SANTA ANGELA" tendo "Santa Ângela" esbarra primeiro no índice de
+    // código — e falar em "identificador" seria jargão para quem digitou um nome.
+    respostaErro = { code: '23505', message: 'duplicate key value violates unique constraint "construtoras_codigo_uk"' };
+    const { criarConstrutora } = await import('../construtorasService');
+    const r = await criarConstrutora(TENANT, {
       codigo: 'santa_angela_2', nome: 'SANTA ANGELA', razaoSocial: null, responsavelNome: null,
       responsavelTelefone: null, responsavelEmail: null, prazoPagamentoDias: null,
       dadosNota: null, eAvulso: false, ativa: true, observacao: null,
     });
     expect(r.error).toBe('já existe uma construtora com esse nome');
+  });
+});
+
+describe('criar NUNCA sobrescreve uma existente', () => {
+  it('criar usa INSERT, não upsert', async () => {
+    // Com upsert, cadastrar "SANTA ANGELA" tendo "Santa Ângela" renomeava a
+    // existente em silêncio: as duas geram o mesmo código e o upsert casava
+    // por ele. Pego no navegador em 18/09/2026.
+    const { criarConstrutora } = await import('../construtorasService');
+    const r = await criarConstrutora(TENANT, {
+      codigo: 'santa_angela', nome: 'SANTA ANGELA', razaoSocial: null, responsavelNome: null,
+      responsavelTelefone: null, responsavelEmail: null, prazoPagamentoDias: null,
+      dadosNota: null, eAvulso: false, ativa: true, observacao: null,
+    });
+    expect(r.success).toBe(true);
+    expect(chamadas[0].filtros.__grava).toBeDefined();
+  });
+
+  it('editar usa UPDATE pelo id, e não manda o código junto', async () => {
+    const { atualizarConstrutora } = await import('../construtorasService');
+    await atualizarConstrutora(TENANT, 'c1', {
+      codigo: 'santa_angela', nome: 'Santa Ângela Incorporadora', razaoSocial: null,
+      responsavelNome: null, responsavelTelefone: null, responsavelEmail: null,
+      prazoPagamentoDias: null, dadosNota: null, eAvulso: false, ativa: true, observacao: null,
+    });
+    const linha = chamadas[0].filtros.__grava as Record<string, unknown>;
+    // O código é a identidade: renomear não pode troca-lo, senão os
+    // lançamentos vinculados ficariam órfãos.
+    expect('codigo' in linha).toBe(false);
+    expect(linha.nome).toBe('Santa Ângela Incorporadora');
+    expect(chamadas[0].filtros.id).toBe('c1');
   });
 });
 

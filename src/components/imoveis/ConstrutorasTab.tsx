@@ -1,7 +1,17 @@
 /**
- * Aba Construtoras — catálogo de lançamentos das construtoras da região,
- * lido da planilha-espelho pública no Google Sheets (ver useConstrutorasCatalogo).
- * Somente leitura: a edição acontece na planilha operacional da equipe.
+ * Aba Construtoras.
+ *
+ * QUEM É CADA CONSTRUTORA vem do CRM (tabela `construtoras`), por decisão do
+ * chefe em 18/09/2026. Antes os cards saíam do texto exato da planilha, e por
+ * isso "Tebas" e "tebas" viravam dois cards — e "Sebel" e "SEBEL
+ * EMPREENDIMENTOS", que normalização nenhuma junta, viravam outros dois.
+ * Renomear no cadastro agora renomeia o card e a coluna da tabela.
+ *
+ * O DETALHE DO EMPREENDIMENTO (tipo, valor, materiais) continua vindo da
+ * planilha-espelho até o item das tipologias migrar esses dados para a Dash.
+ * As linhas são atribuídas à construtora do cadastro pelo nome normalizado; o
+ * que não casa com ninguém fica num grupo visível de "fora do cadastro", em
+ * vez de sumir.
  */
 
 import { useMemo, useState } from 'react';
@@ -13,6 +23,14 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { OctoDashLoader } from '@/components/ui/OctoDashLoader';
+import { Pencil } from 'lucide-react';
+import { useConstrutoras } from '@/features/imoveis/hooks/useConstrutoras';
+import { ConstrutoraFormDialog } from '@/features/imoveis/components/ConstrutoraFormDialog';
+import type { Construtora } from '@/features/imoveis/services/construtorasService';
+
+/** Mesma regra do banco (normalizar_texto): sem acento, minúscula, espaços colapsados. */
+const chaveDoNome = (t: string) =>
+  (t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/\s+/g, ' ');
 import {
   Dialog,
   DialogContent,
@@ -105,6 +123,23 @@ export function ConstrutorasTab() {
   const [construtoraFilter, setConstrutoraFilter] = useState('todas');
   const [tipoFilter, setTipoFilter] = useState('todos');
   const [selecionado, setSelecionado] = useState<EmpreendimentoCatalogo | null>(null);
+  const [editando, setEditando] = useState<Construtora | null>(null);
+  const [criando, setCriando] = useState(false);
+
+  // Quem é cada construtora vem do CRM.
+  const {
+    construtoras: cadastro,
+    comissoes,
+    salvando,
+    erro: erroCadastro,
+    criar: criarConstrutora,
+    atualizar: atualizarConstrutora,
+  } = useConstrutoras();
+
+  const codigoPorChave = useMemo(
+    () => new Map(cadastro.map((c) => [chaveDoNome(c.nome), c.codigo])),
+    [cadastro]
+  );
 
   const { user } = useAuth();
   const tenantId = user?.tenantId;
@@ -138,24 +173,40 @@ export function ConstrutorasTab() {
     else setSelecionado(e);
   };
 
-  // Um card por construtora: nome, nº de lançamentos e cidades de atuação.
+  // Um card por construtora CADASTRADA. O texto da planilha é atribuído pelo
+  // nome normalizado — é o que junta "Tebas" e "tebas" num card só.
   const construtoras = useMemo(() => {
-    const porNome = new Map<string, { total: number; cidades: Set<string> }>();
+    const porCodigo = new Map<string, { nome: string; total: number; cidades: Set<string>; cadastro: Construtora | null }>();
+    for (const c of cadastro) {
+      porCodigo.set(c.codigo, { nome: c.nome, total: 0, cidades: new Set(), cadastro: c });
+    }
+    const porChave = new Map(cadastro.map((c) => [chaveDoNome(c.nome), c.codigo]));
+
+    const FORA = '__fora_do_cadastro__';
     for (const e of catalogo) {
       if (!e.construtora) continue;
-      const atual = porNome.get(e.construtora) ?? { total: 0, cidades: new Set<string>() };
+      const codigo = porChave.get(chaveDoNome(e.construtora)) ?? FORA;
+      if (!porCodigo.has(codigo)) {
+        porCodigo.set(codigo, { nome: 'Fora do cadastro', total: 0, cidades: new Set(), cadastro: null });
+      }
+      const atual = porCodigo.get(codigo)!;
       atual.total += 1;
       if (e.cidade) atual.cidades.add(e.cidade);
-      porNome.set(e.construtora, atual);
     }
-    return [...porNome.entries()]
-      .map(([nome, { total, cidades }]) => ({
+
+    return [...porCodigo.entries()]
+      .map(([codigo, { nome, total, cidades, cadastro: c }]) => ({
+        codigo,
         nome,
         total,
+        cadastro: c,
         cidades: [...cidades].sort((a, b) => a.localeCompare(b, 'pt-BR')),
       }))
-      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
-  }, [catalogo]);
+      // O grupo "fora do cadastro" vai para o fim: ele é pendência, não catálogo.
+      .sort((a, b) =>
+        a.cadastro === b.cadastro ? a.nome.localeCompare(b.nome, 'pt-BR') : a.cadastro ? -1 : 1
+      );
+  }, [catalogo, cadastro]);
 
   const tipos = useMemo(
     () =>
@@ -168,13 +219,16 @@ export function ConstrutorasTab() {
   const filtrados = useMemo(() => {
     const busca = searchTerm.trim().toLowerCase();
     return catalogo.filter((e) => {
-      if (construtoraFilter !== 'todas' && e.construtora !== construtoraFilter) return false;
+      if (construtoraFilter !== 'todas') {
+        const cod = codigoPorChave.get(chaveDoNome(e.construtora)) ?? '__fora_do_cadastro__';
+        if (cod !== construtoraFilter) return false;
+      }
       if (tipoFilter !== 'todos' && e.tipo !== tipoFilter) return false;
       if (!busca) return true;
       return [e.construtora, e.empreendimento, e.bairro, e.cidade, e.endereco]
         .some((campo) => campo.toLowerCase().includes(busca));
     });
-  }, [catalogo, searchTerm, construtoraFilter, tipoFilter]);
+  }, [catalogo, searchTerm, construtoraFilter, tipoFilter, codigoPorChave]);
 
   if (isLoading) {
     return (
@@ -201,6 +255,23 @@ export function ConstrutorasTab() {
 
   return (
     <div className="space-y-4">
+      {/* Falha ao ler o cadastro não pode virar "nenhuma construtora". */}
+      {erroCadastro && (
+        <p className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-[13px] text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+          Não foi possível carregar o cadastro de construtoras: {erroCadastro}
+        </p>
+      )}
+
+      <ConstrutoraFormDialog
+        aberto={Boolean(editando) || criando}
+        onFechar={() => { setEditando(null); setCriando(false); }}
+        construtora={editando}
+        comissao={editando ? comissoes.get(editando.id)?.comissaoPadraoPct ?? null : undefined}
+        salvando={salvando}
+        onCriar={criarConstrutora}
+        onAtualizar={atualizarConstrutora}
+      />
+
       <div className="rounded-xl border border-border bg-card/60 p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
           <div className="relative min-w-0 w-full lg:w-[360px]">
@@ -228,26 +299,35 @@ export function ConstrutorasTab() {
           <Badge variant="secondary" className="shrink-0 lg:ml-auto">
             {filtrados.length} de {catalogo.length}
           </Badge>
+
+          <Button type="button" variant="outline" size="sm" onClick={() => setCriando(true)}>
+            Nova construtora
+          </Button>
         </div>
 
       </div>
 
       {/* Um card por construtora: clicar filtra a tabela; clicar de novo desmarca. */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-        {construtoras.map(({ nome, total, cidades }) => {
-          const ativa = construtoraFilter === nome;
+        {construtoras.map(({ codigo, nome, total, cidades, cadastro: c }) => {
+          const ativa = construtoraFilter === codigo;
           return (
-            <button
-              key={nome}
-              type="button"
-              onClick={() => setConstrutoraFilter(ativa ? 'todas' : nome)}
-              className={`rounded-xl border p-4 text-left transition-colors ${
+            <div
+              key={codigo}
+              className={`relative rounded-xl border transition-colors ${
                 ativa
                   ? 'border-primary bg-primary/5 ring-1 ring-primary'
-                  : 'border-border bg-card/60 hover:bg-muted/60'
+                  : c
+                    ? 'border-border bg-card/60 hover:bg-muted/60'
+                    : 'border-amber-300 bg-amber-50/60 dark:border-amber-900 dark:bg-amber-950/20'
               }`}
             >
-              <p className="font-medium text-text-primary truncate" title={nome}>{nome}</p>
+            <button
+              type="button"
+              onClick={() => setConstrutoraFilter(ativa ? 'todas' : codigo)}
+              className="w-full p-4 text-left"
+            >
+              <p className="font-medium text-text-primary truncate pr-6" title={nome}>{nome}</p>
               <p className="text-xs text-text-secondary mt-1">
                 {total} {total === 1 ? 'lançamento' : 'lançamentos'}
               </p>
@@ -256,7 +336,25 @@ export function ConstrutorasTab() {
                   {cidades.join(', ')}
                 </p>
               )}
+              {!c && (
+                <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">
+                  Nomes da planilha que não batem com nenhuma construtora cadastrada.
+                </p>
+              )}
             </button>
+            {c && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                title={`Editar ${c.nome}`}
+                onClick={() => setEditando(c)}
+                className="absolute right-1 top-1 h-7 w-7 p-0 text-muted-foreground"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+            )}
+            </div>
           );
         })}
       </div>

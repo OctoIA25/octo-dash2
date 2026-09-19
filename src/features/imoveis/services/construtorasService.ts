@@ -133,22 +133,31 @@ export type EntradaDeConstrutora = Omit<Construtora, 'id'> & {
   comissaoPadraoPct?: number | null;
 };
 
-export async function salvarConstrutora(
-  tenantId: string,
-  entrada: EntradaDeConstrutora
-): Promise<{ success: boolean; error?: string }> {
-  if (!tenantId) return { success: false, error: 'imobiliária não selecionada' };
+/**
+ * Mensagem em português para as travas do banco.
+ *
+ * As DUAS dizem a mesma coisa para quem está na tela. O identificador é
+ * derivado do nome, então "SANTA ANGELA" tendo "Santa Ângela" cadastrada
+ * esbarra primeiro no índice de código — e responder "já existe uma
+ * construtora com esse identificador" seria jargão para quem digitou um NOME.
+ */
+function erroDeDuplicata(error: { code?: string; message?: string }): string | null {
+  if (error.code !== '23505') return null;
+  return 'já existe uma construtora com esse nome';
+}
 
+function validar(entrada: EntradaDeConstrutora): { codigo: string; nome: string } | { erro: string } {
   const codigo = (entrada.codigo || '').trim().toLowerCase();
   if (!/^[a-z0-9_]+$/.test(codigo)) {
-    return { success: false, error: 'o código aceita só letras minúsculas, números e _' };
+    return { erro: 'o código aceita só letras minúsculas, números e _' };
   }
   const nome = (entrada.nome || '').trim();
-  if (!nome) return { success: false, error: 'o nome é obrigatório' };
+  if (!nome) return { erro: 'o nome é obrigatório' };
+  return { codigo, nome };
+}
 
+function paraLinha(entrada: EntradaDeConstrutora, nome: string): Record<string, unknown> {
   const linha: Record<string, unknown> = {
-    tenant_id: tenantId,
-    codigo,
     nome,
     razao_social: entrada.razaoSocial || null,
     responsavel_nome: entrada.responsavelNome || null,
@@ -161,23 +170,55 @@ export async function salvarConstrutora(
     observacao: entrada.observacao || null,
     updated_at: new Date().toISOString(),
   };
-  // Só manda a comissão quem a recebeu — enviar `undefined` apagaria o valor
-  // de quem não pode vê-lo.
+  // Só manda a comissão quem a recebeu — enviar o campo sem ele apagaria o
+  // valor de quem não pode vê-lo.
   if (entrada.comissaoPadraoPct !== undefined) {
     linha.comissao_padrao_pct = entrada.comissaoPadraoPct;
   }
+  return linha;
+}
+
+/**
+ * CRIAR é INSERT, nunca upsert.
+ *
+ * Com upsert, cadastrar "SANTA ANGELA" tendo "Santa Ângela" no cadastro
+ * RENOMEAVA a existente em silêncio: as duas geram o mesmo código, o upsert
+ * casava por ele e sobrescrevia o nome. Quem achava que estava cadastrando uma
+ * construtora nova renomeava outra. Pego pelo teste de navegador em 18/09/2026.
+ */
+export async function criarConstrutora(
+  tenantId: string,
+  entrada: EntradaDeConstrutora
+): Promise<{ success: boolean; error?: string }> {
+  if (!tenantId) return { success: false, error: 'imobiliária não selecionada' };
+  const v = validar(entrada);
+  if ('erro' in v) return { success: false, error: v.erro };
 
   const { error } = await supabase
     .from('construtoras')
-    .upsert(linha, { onConflict: 'tenant_id,codigo' });
+    .insert({ tenant_id: tenantId, codigo: v.codigo, ...paraLinha(entrada, v.nome) });
 
-  if (error) {
-    // O índice único de nome normalizado é a trava contra duplicata por grafia.
-    if (error.code === '23505' && String(error.message).includes('nome_normalizado')) {
-      return { success: false, error: 'já existe uma construtora com esse nome' };
-    }
-    return { success: false, error: error.message };
-  }
+  if (error) return { success: false, error: erroDeDuplicata(error) ?? error.message };
+  return { success: true };
+}
+
+/** EDITAR é UPDATE pelo id: o código é a identidade e não muda. */
+export async function atualizarConstrutora(
+  tenantId: string,
+  id: string,
+  entrada: EntradaDeConstrutora
+): Promise<{ success: boolean; error?: string }> {
+  if (!tenantId || !id) return { success: false, error: 'parâmetros inválidos' };
+  const v = validar(entrada);
+  if ('erro' in v) return { success: false, error: v.erro };
+
+  const { error } = await supabase
+    .from('construtoras')
+    .update(paraLinha(entrada, v.nome))
+    .eq('tenant_id', tenantId)
+    .eq('id', id);
+
+  if (error) return { success: false, error: erroDeDuplicata(error) ?? error.message };
   return { success: true };
 }
 

@@ -11,7 +11,8 @@ import { useAuthContext } from '@/contexts/AuthContext';
 import {
   fetchConstrutoras,
   fetchComissoes,
-  salvarConstrutora,
+  criarConstrutora,
+  atualizarConstrutora,
   removerConstrutora,
   type Construtora,
   type ComissaoDaConstrutora,
@@ -28,7 +29,10 @@ export interface UseConstrutorasResult {
   /** Mensagem de falha de LEITURA. Lista vazia com erro não é "nada cadastrado". */
   erro: string | null;
   porNome: (nome: string | null | undefined) => Construtora | undefined;
-  salvar: (entrada: EntradaDeConstrutora) => Promise<{ success: boolean; error?: string }>;
+  /** Cadastrar UMA NOVA. Nunca sobrescreve uma existente — ver criarConstrutora. */
+  criar: (entrada: EntradaDeConstrutora) => Promise<{ success: boolean; error?: string }>;
+  /** Editar uma existente, pelo id. O código não muda. */
+  atualizar: (id: string, entrada: EntradaDeConstrutora) => Promise<{ success: boolean; error?: string }>;
   remover: (codigo: string) => Promise<{ success: boolean; error?: string }>;
   recarregar: () => void;
 }
@@ -105,7 +109,8 @@ export function useConstrutoras(): UseConstrutorasResult {
     salvando,
     erro,
     porNome,
-    salvar: (entrada) => comEscrita(() => salvarConstrutora(tenantId as string, entrada)),
+    criar: (entrada) => comEscrita(() => criarConstrutora(tenantId as string, entrada)),
+    atualizar: (id, entrada) => comEscrita(() => atualizarConstrutora(tenantId as string, id, entrada)),
     remover: (codigo) => comEscrita(() => removerConstrutora(tenantId as string, codigo)),
     recarregar,
   };
