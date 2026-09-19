@@ -25,6 +25,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { ConstrutoraSelect } from '@/features/imoveis/components/ConstrutoraSelect';
+import { useConstrutoras } from '@/features/imoveis/hooks/useConstrutoras';
 import {
   Select,
   SelectContent,
@@ -131,6 +133,7 @@ interface CondominioFormData {
   status: string;
   status_comercial: string;
   construtora: string;
+  construtoraId: string | null;
   incorporadora: string;
   ano_construcao: string;
   imobiliaria_exclusiva: string;
@@ -249,6 +252,7 @@ const initialFormData: CondominioFormData = {
   status: '',
   status_comercial: '',
   construtora: '',
+  construtoraId: null,
   incorporadora: '',
   ano_construcao: '',
   imobiliaria_exclusiva: '',
@@ -380,6 +384,7 @@ export const CriarCondominioForm = ({
 }: CriarCondominioFormProps) => {
   const { user } = useAuth();
   const tenantId = user?.tenantId;
+  const { construtoras } = useConstrutoras();
 
   const [formData, setFormData] = useState<CondominioFormData>(initialFormData);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -674,7 +679,10 @@ export const CriarCondominioForm = ({
         tipo: formData.tipo || null,
         status: formData.status || null,
         status_comercial: formData.status_comercial || null,
-        construtora: formData.construtora || null,
+        construtora: formData.construtora.trim() || null,
+        // O VÍNCULO é o que vale daqui em diante; o texto acima fica porque
+        // o Portal público do site ainda lê `condominios.construtora`.
+        construtora_id: formData.construtoraId,
         incorporadora: formData.incorporadora || null,
         ano_construcao: formData.ano_construcao ? parseInt(formData.ano_construcao) : null,
         imobiliaria_exclusiva: formData.imobiliaria_exclusiva || null,
@@ -1073,7 +1081,17 @@ export const CriarCondominioForm = ({
                 </div>
                 <div className="space-y-2">
                   <Label>Construtora</Label>
-                  <Input placeholder="Nome da construtora" value={formData.construtora} onChange={(e) => handleInputChange('construtora', e.target.value)} />
+                  {/* Era texto livre — a mesma construtora entrava com três
+                      grafias diferentes. Agora escolhe do cadastro. */}
+                  <ConstrutoraSelect
+                    construtoras={construtoras}
+                    nome={formData.construtora}
+                    construtoraId={formData.construtoraId}
+                    onChange={({ nome, construtoraId }) => {
+                      handleInputChange('construtora', nome);
+                      handleInputChange('construtoraId', construtoraId as unknown as string);
+                    }}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Incorporadora</Label>

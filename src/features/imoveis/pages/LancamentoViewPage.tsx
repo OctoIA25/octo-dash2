@@ -24,6 +24,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { OctoDashLoader } from '@/components/ui/OctoDashLoader';
 import { FotosUploader, type Foto } from '@/components/imoveis/FotosUploader';
+import { ConstrutoraSelect } from '@/features/imoveis/components/ConstrutoraSelect';
+import { useConstrutoras } from '@/features/imoveis/hooks/useConstrutoras';
 
 interface Lancamento {
   id: string;
@@ -122,6 +124,10 @@ export const LancamentoViewPage = () => {
   const [bairro, setBairro] = useState('');
   const [estagio, setEstagio] = useState('');
   const [construtora, setConstrutora] = useState('');
+  // O VÍNCULO é o que vale daqui em diante; o texto acima fica porque o Portal
+  // público do site ainda lê `lancamentos.construtora`.
+  const [construtoraId, setConstrutoraId] = useState<string | null>(null);
+  const { construtoras } = useConstrutoras();
   const [dormitorios, setDormitorios] = useState('');
   const [specs, setSpecs] = useState('');
   const [precoTexto, setPrecoTexto] = useState('');
@@ -168,6 +174,7 @@ export const LancamentoViewPage = () => {
     setBairro(normalized.bairro ?? '');
     setEstagio(normalized.estagio ?? '');
     setConstrutora(normalized.construtora ?? '');
+    setConstrutoraId((normalized as { construtora_id?: string | null }).construtora_id ?? null);
     setDormitorios(normalized.dormitorios ?? '');
     setSpecs(normalized.specs ?? '');
     setPrecoTexto(normalized.preco_texto ?? '');
@@ -314,6 +321,7 @@ export const LancamentoViewPage = () => {
           bairro: bairro.trim() || null,
           estagio: estagio.trim() || null,
           construtora: construtora.trim() || null,
+          construtora_id: construtoraId,
           dormitorios: dormitorios.trim() || null,
           specs: specs.trim() || null,
           preco_texto: precoTexto.trim() || null,
@@ -604,11 +612,18 @@ export const LancamentoViewPage = () => {
           </div>
           <div className="space-y-1.5">
             <label htmlFor="lanc-construtora" className="text-sm font-medium text-text-primary">Construtora</label>
-            <Input
+            {/* Era um campo de texto livre — foi ele que produziu "Tebas" e
+                "tebas" como construtoras diferentes. Agora escolhe do cadastro
+                e guarda o vínculo. */}
+            <ConstrutoraSelect
               id="lanc-construtora"
-              placeholder="Ex: Incorporadora XYZ"
-              value={construtora}
-              onChange={(e) => setConstrutora(e.target.value)}
+              construtoras={construtoras}
+              nome={construtora}
+              construtoraId={construtoraId}
+              onChange={({ nome, construtoraId: id }) => {
+                setConstrutora(nome);
+                setConstrutoraId(id);
+              }}
             />
           </div>
           <div className="space-y-1.5">
