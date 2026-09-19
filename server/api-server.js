@@ -2691,10 +2691,17 @@ app.get('/api/v1/brokers/:id', validateApiKey, async (req, res) => {
     const { id } = req.params;
     const decodedId = decodeURIComponent(id);
 
-    // Buscar todos os leads e filtrar pelo corretor
+    // Buscar os leads DESTA imobiliária e filtrar pelo corretor.
+    //
+    // O `.eq('tenant_id')` faltava: a rota é autenticada por chave de API, e
+    // sem o filtro uma chave da imobiliária A lia os leads de TODAS. O
+    // entrypoint de produção já filtrava (proxy-production.js usa
+    // `effectiveTenantId`); só este, que o desenvolvedor roda na porta 3001
+    // com o .env apontando para produção, não filtrava. Achado em 19/09/2026.
     const { data, error } = await supabase
       .from(LEADS_TABLE)
-      .select('*');
+      .select('*')
+      .eq('tenant_id', req.tenantId);
 
     if (error) throw error;
 
@@ -2774,6 +2781,10 @@ app.post('/api/v1/brokers/:id/assign', validateApiKey, async (req, res) => {
       });
     }
 
+    // O `.eq('tenant_id')` faltava, e aqui o buraco era de ESCRITA: uma chave
+    // da imobiliária A reatribuía leads da B, bastando saber os ids. O
+    // entrypoint de produção não tem o problema — ele chama a RPC
+    // `assign_broker_to_leads`, que recebe `p_tenant_id`. Achado em 19/09/2026.
     const { data, error } = await supabase
       .from(LEADS_TABLE)
       .update({ 
@@ -2781,6 +2792,7 @@ app.post('/api/v1/brokers/:id/assign', validateApiKey, async (req, res) => {
         corretor: broker_name || id,
         updated_at: new Date().toISOString()
       })
+      .eq('tenant_id', req.tenantId)
       .in('id_lead', lead_ids)
       .select();
 
