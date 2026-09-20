@@ -97,10 +97,11 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { avisoTelefone, linkWhatsapp } from '@/lib/contato';
 import { SimuladorPanel } from '@/features/distribuicao/SimuladorPanel';
+import { PainelDistribuicao } from '@/features/distribuicao/PainelDistribuicao';
 
 interface BolsaoSectionProps {}
 
-type BolsaoTab = 'geral' | 'disponiveis' | 'configuracoes' | 'equipes' | 'simulador';
+type BolsaoTab = 'geral' | 'disponiveis' | 'configuracoes' | 'equipes' | 'simulador' | 'distribuicao';
 
 /**
  * O subtítulo era fixo em "leads que esfriaram" nas cinco abas — inclusive nas
@@ -113,6 +114,7 @@ const SUBTITULO_DA_ABA: Record<BolsaoTab, string> = {
   equipes: 'A fila por equipe, quando a distribuição por equipe está ligada.',
   configuracoes: 'Horário de funcionamento, prazo de atendimento e quem entra na roleta.',
   simulador: 'De quem seria um lead que chegasse agora — sem atribuir nada.',
+  distribuicao: 'O que a distribuição fez nas últimas 24 horas, e por quê.',
 };
 
 export const BolsaoSection = (props: BolsaoSectionProps) => {
@@ -173,7 +175,7 @@ const BolsaoSectionContent = (props: BolsaoSectionProps) => {
   // Aba "equipes" só vale quando team_queue_enabled — senão volta pra disponiveis
   // (efeito é aplicado num useEffect abaixo, depois da config carregar)
   const activeTab: BolsaoTab =
-    tabParam === 'geral' || tabParam === 'configuracoes' || tabParam === 'equipes' || tabParam === 'simulador'
+    tabParam === 'geral' || tabParam === 'configuracoes' || tabParam === 'equipes' || tabParam === 'simulador' || tabParam === 'distribuicao'
       ? tabParam
       : 'disponiveis';
   const setActiveTab = useCallback((tab: BolsaoTab) => {
@@ -2192,7 +2194,16 @@ const BolsaoSectionContent = (props: BolsaoSectionProps) => {
           {/* Container de Conteúdo */}
           <div className="w-full">
         {/* Aba "Configurações" / "Equipes" — render isolado */}
-        {activeTab === 'simulador' ? (
+        {activeTab === 'distribuicao' ? (
+          // Mesmo gate do simulador: o filtro da aba é só UX e a URL é digitável.
+          isAdmin ? (
+            <PainelDistribuicao tenantId={tenantId} />
+          ) : (
+            <p className="p-6 text-sm text-text-secondary">
+              O painel da distribuição é uma ferramenta de gestão.
+            </p>
+          )
+        ) : activeTab === 'simulador' ? (
           // O gate de cargo é repetido aqui de propósito: o filtro da aba é só
           // UX, e a URL com ?tab=simulador é digitável.
           isAdmin ? (

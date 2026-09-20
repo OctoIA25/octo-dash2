@@ -34,6 +34,7 @@ import {
   Zap,
   Tag,
   Play,
+  Activity,
   Settings2,
   Sparkles,
   MessageCircle,
@@ -175,6 +176,7 @@ const TAB_CONFIGS: TabConfig[] = [
       { id: 'disponiveis', label: 'Disponíveis', icon: Zap, href: '/bolsao?tab=disponiveis', isQuery: true },
       { id: 'geral', label: 'Todos os Leads', icon: Tag, href: '/bolsao?tab=geral', isQuery: true },
       { id: 'equipes', label: 'Equipes', icon: Users, href: '/bolsao?tab=equipes', isQuery: true },
+      { id: 'distribuicao', label: 'Distribuição', icon: Activity, href: '/bolsao?tab=distribuicao', isQuery: true },
       { id: 'simulador', label: 'Simulador', icon: Play, href: '/bolsao?tab=simulador', isQuery: true },
       { id: 'configuracoes', label: 'Configurações', icon: Settings2, href: '/bolsao?tab=configuracoes', isQuery: true },
     ],
@@ -293,7 +295,7 @@ export function PageTabs() {
         ...baseCfg,
         tabs: baseCfg.tabs
           .filter((t) => t.id !== 'equipes' || teamQueueEnabled)
-          .filter((t) => t.id !== 'simulador' || isGestao || isOwner),
+          .filter((t) => !['simulador', 'distribuicao'].includes(t.id) || isGestao || isOwner),
       };
     } else if (baseCfg.basePath === '/agentes-ia') {
       cfg = { ...baseCfg, tabs: baseCfg.tabs.filter((t) => t.id !== 'telemetria' || isGestao || isOwner) };
