@@ -6,7 +6,7 @@
 
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Plus, Save, User as UserIcon, Phone, Mail, Home, Loader2, Thermometer, Inbox, Tag, MessageSquare, IdCard, Archive, Building2, ChevronDown, MapPin } from 'lucide-react';
+import { X, Plus, Save, User as UserIcon, Phone, Mail, Home, Loader2, Thermometer, Inbox, Tag, MessageSquare, IdCard, Archive, Building2, ChevronDown, MapPin, ListChecks } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { leadsEventEmitter } from '@/lib/leadsEventEmitter';
 import { CLASSIFICACAO_ESTILOS, CLASSIFICACAO_ORDEM } from './ClassificacaoBadge';
@@ -65,6 +65,22 @@ interface CriarLeadQuickModalProps {
    * RLS de `leads`/`kenlo_leads` já limita INSERT/UPDATE ao tenant do usuário.
    */
   permitirEdicao?: boolean;
+  /**
+   * As etapas do funil deste lead, para o seletor (P1.6). Vem do pai porque é
+   * ele que conhece o funil (Interessado tem 8 etapas, Proprietário 11).
+   */
+  etapas?: Array<{ id: string; title: string }>;
+  /**
+   * Em que etapa o lead está, já normalizada. Vem pronta do pai: a
+   * normalização de "Novos Leads" -> "novos-leads" mora lá, e refazê-la aqui
+   * criaria a segunda verdade sobre a mesma coisa.
+   */
+  etapaAtual?: string;
+  /**
+   * Muda a etapa do lead. É a MESMA função que o arrastar usa — dois caminhos
+   * fariam a regra de pré-requisitos valer num e não no outro.
+   */
+  onMudarEtapa?: (lead: KanbanLead, etapaId: string) => Promise<void>;
 }
 
 interface LeadForm {
@@ -130,12 +146,18 @@ export const CriarLeadQuickModal = ({
   leadType = LEAD_TYPE_INTERESSADO,
   onArquivar,
   permitirEdicao = false,
+  etapas,
+  etapaAtual,
+  onMudarEtapa,
 }: CriarLeadQuickModalProps) => {
   const isEditMode = Boolean(editingLead);
   const isProprietario = leadType === LEAD_TYPE_PROPRIETARIO;
   // Documentação (CPF + upload) só a partir da etapa de Propostas.
   const showDocumentacao = isEditMode && reachedPropostaStage(editingLead?.status);
   const [form, setForm] = useState<LeadForm>(EMPTY_FORM);
+  // Seletor de etapa (P1.6). Só em edição, e só quando o pai entrega o funil
+  // e o caminho de mudar — um seletor que não muda nada é pior que nenhum.
+  const [mudandoEtapa, setMudandoEtapa] = useState(false);
   // Histórico de imóveis do cliente. `null` = ainda não buscado: o carregamento
   // é sob demanda porque custa duas queries + o catálogo, e a maioria dos leads
   // tem um imóvel só, que já está no campo "Código do Imóvel" acima.
@@ -728,6 +750,40 @@ export const CriarLeadQuickModal = ({
             {/* Seção: Interesse */}
             <SectionTitle>Interesse</SectionTitle>
             <div className="space-y-3 mb-5">
+              {isEditMode && onMudarEtapa && etapas && etapas.length > 0 && editingLead && (
+                <div>
+                  <label
+                    htmlFor="seletor-de-etapa"
+                    className="flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5"
+                  >
+                    <ListChecks className="w-4 h-4 text-slate-400" />
+                    Etapa
+                  </label>
+                  <select
+                    id="seletor-de-etapa"
+                    value={etapaAtual ?? ''}
+                    disabled={!canEdit || mudandoEtapa}
+                    onChange={async (e) => {
+                      const destino = e.target.value;
+                      if (!destino || destino === etapaAtual) return;
+                      setMudandoEtapa(true);
+                      // O aviso de pré-requisito é responsabilidade de quem
+                      // move — a mesma função do arrastar. Aqui só se espera.
+                      try { await onMudarEtapa(editingLead, destino); }
+                      finally { setMudandoEtapa(false); }
+                    }}
+                    className="w-full h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm disabled:opacity-50"
+                  >
+                    {etapas.map((et) => (
+                      <option key={et.id} value={et.id}>{et.title}</option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                    Mudar aqui é o mesmo que arrastar o card — inclusive as pendências que a imobiliária exige.
+                  </p>
+                </div>
+              )}
+
               <Field
                 icon={<Home className="w-4 h-4 text-slate-400" />}
                 label="Código do Imóvel"

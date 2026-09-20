@@ -87,6 +87,65 @@ export function registerLeadEventsRoutes(app, supabase, options = {}) {
     }
   });
 
+  /**
+   * A dash registra que uma etapa mudou SEM os pré-requisitos (P1.6).
+   *
+   * Decidido pelo chefe em 20/09/2026: falta de pré-requisito avisa, deixa
+   * passar e REGISTRA. Sem este registro o "deixa passar" viraria "ninguém
+   * fica sabendo", e a chave não serviria para nada.
+   *
+   * Passa pelo servidor porque `lead_events` só aceita a service_role — a
+   * mesma razão da leitura acima. O corretor não escolhe o que gravar: manda
+   * a etapa e os ids das pendências, e o SERVIDOR monta a linha.
+   */
+  app.post('/api/v1/leads/:leadId/requisitos-ignorados', requireAuth, async (req, res) => {
+    try {
+      const resolved = await resolveTenant(supabase, req);
+      if (resolved.error) return res.status(resolved.status).json({ ok: false, error: resolved.error });
+      const { tenantId } = resolved;
+
+      const { leadId } = req.params;
+      if (!UUID_RE.test(leadId)) return res.status(400).json({ ok: false, error: 'invalid_lead_id' });
+
+      const etapa = String(req.body?.etapa ?? '').trim().slice(0, 80);
+      const pendencias = Array.isArray(req.body?.pendencias)
+        ? req.body.pendencias.map((x) => String(x).trim().slice(0, 60)).filter(Boolean).slice(0, 20)
+        : [];
+      if (!etapa || pendencias.length === 0) {
+        return res.status(400).json({ ok: false, error: 'etapa_e_pendencias_obrigatorias' });
+      }
+
+      const lead = await buscarLead(supabase, tenantId, leadId);
+      if (!lead) return res.status(404).json({ ok: false, error: 'lead_not_found' });
+
+      // Mesmo recorte da leitura: quem não pode ver o histórico do lead não
+      // pode escrever nele.
+      const ehOwnerDaPlataforma = isPlatformOwner(req.userEmail);
+      const role = ehOwnerDaPlataforma ? null : await papelNoTenant(supabase, req.userId, tenantId);
+      if (!podeVerCadencia({ ehOwnerDaPlataforma, role, userId: req.userId, lead })) {
+        return res.status(403).json({ ok: false, error: 'forbidden' });
+      }
+
+      // `lead.` é do trigger do banco; este evento tem namespace próprio.
+      const resultado = await gravarEvento(supabase, tenantId, lead, {
+        event_type: 'etapa.requisito_ignorado',
+        descricao: `Etapa mudada para ${etapa} com ${pendencias.length} pendência(s)`,
+        para: etapa,
+        ator_tipo: 'usuario',
+        ator_user_id: req.userId ?? null,
+        metadata: { pendencias },
+        // Duas vezes a mesma etapa com as mesmas pendências no mesmo minuto é
+        // clique duplo, não dois acontecimentos.
+        idempotency_key: `requisito:${leadId}:${etapa}:${pendencias.slice().sort().join(',')}:${new Date().toISOString().slice(0, 16)}`,
+      });
+
+      return res.json({ ok: true, id: resultado.id, lead: ecoDoLead(lead) });
+    } catch (err) {
+      console.error('[lead-events] erro registrando requisito ignorado:', err?.message);
+      return res.status(500).json({ ok: false, error: 'internal_error' });
+    }
+  });
+
   // ----------------------------------------------------------------- escrita
   app.post('/api/v1/lia/lead-events', async (req, res) => {
     try {

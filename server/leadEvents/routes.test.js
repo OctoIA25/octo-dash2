@@ -267,3 +267,116 @@ describe('POST /api/v1/lia/lead-events', () => {
     expect(update.lead_source).toBeUndefined();
   });
 });
+
+// ============================================================
+// POST /api/v1/leads/:leadId/requisitos-ignorados  (P1.6)
+//
+// Decidido pelo chefe em 20/09/2026: falta de pré-requisito avisa, DEIXA
+// PASSAR e registra. Estes testes travam o "registra" — sem ele o "deixa
+// passar" viraria "ninguém fica sabendo", e a chave não serviria para nada.
+// ============================================================
+describe('POST /api/v1/leads/:leadId/requisitos-ignorados', () => {
+  let app;
+  beforeEach(() => { app = appFalso(); });
+
+  const registrar = (tabelas, usuario) => {
+    const sb = supabaseFalso(tabelas, usuario);
+    registerLeadEventsRoutes(app, sb, { verbose: false });
+    return sb;
+  };
+
+  const req = (over = {}) => ({
+    params: { leadId: LEAD },
+    query: { tenantId: TENANT },
+    headers: { authorization: 'Bearer jwt' },
+    body: { etapa: 'proposta-assinada', pendencias: ['sem_documento_anexado', 'relato_curto'] },
+    ...over,
+  });
+
+  const CHAVE = 'POST /api/v1/leads/:leadId/requisitos-ignorados';
+
+  it('sem Authorization devolve 401', async () => {
+    registrar({});
+    expect((await app.chamar(CHAVE, req({ headers: {} }))).statusCode).toBe(401);
+  });
+
+  it('leadId que não é uuid devolve 400 sem tocar no extrato', async () => {
+    const sb = registrar({ tenant_memberships: [{ tenant_id: TENANT, role: 'admin' }] });
+    const res = await app.chamar(CHAVE, req({ params: { leadId: 'abc' } }));
+    expect(res.statusCode).toBe(400);
+    expect(sb.chamadas.some((c) => c.tabela === 'lead_events')).toBe(false);
+  });
+
+  it('sem pendências devolve 400 — evento sem motivo não é extrato', async () => {
+    const sb = registrar({ tenant_memberships: [{ tenant_id: TENANT, role: 'admin' }] });
+    const res = await app.chamar(CHAVE, req({ body: { etapa: 'x', pendencias: [] } }));
+    expect(res.statusCode).toBe(400);
+    expect(sb.chamadas.some((c) => c.tabela === 'lead_events')).toBe(false);
+  });
+
+  it('CORRETOR DE OUTRO LEAD recebe 403 e nada é gravado', async () => {
+    // Mesmo recorte da leitura: quem não pode ver o histórico não escreve nele.
+    const sb = registrar({
+      tenant_memberships: [{ tenant_id: TENANT, role: 'corretor' }],
+      leads: [leadRow({ assigned_agent_id: OUTRO })],
+    });
+    const res = await app.chamar(CHAVE, req());
+    expect(res.statusCode).toBe(403);
+    expect(sb.chamadas.some((c) => c.tabela === 'lead_events' && c.insert)).toBe(false);
+  });
+
+  it('o dono do lead registra, e o SERVIDOR é quem monta a linha', async () => {
+    const sb = registrar({
+      tenant_memberships: [{ tenant_id: TENANT, role: 'corretor' }],
+      leads: [leadRow({ assigned_agent_id: CORRETOR })],
+    });
+    const res = await app.chamar(CHAVE, req());
+    expect(res.statusCode).toBe(200);
+
+    const gravou = sb.chamadas.find((c) => c.tabela === 'lead_events' && c.insert);
+    expect(gravou, 'nada foi gravado no extrato').toBeTruthy();
+    expect(gravou.insert.tenant_id).toBe(TENANT);
+    expect(gravou.insert.lead_id).toBe(LEAD);
+    // Namespace próprio: `lead.` é do trigger do banco.
+    expect(gravou.insert.event_type).toBe('etapa.requisito_ignorado');
+    expect(gravou.insert.event_type.startsWith('lead.')).toBe(false);
+    expect(gravou.insert.ator_tipo).toBe('usuario');
+    expect(gravou.insert.metadata.pendencias).toEqual(['sem_documento_anexado', 'relato_curto']);
+  });
+
+  it('o corpo NÃO escolhe o que vai gravado — só etapa e ids de pendência', async () => {
+    // Quem escreve no extrato é o servidor. Se o corpo pudesse ditar o evento,
+    // um corretor poderia gravar "atendido" num lead que não atendeu.
+    const sb = registrar({
+      tenant_memberships: [{ tenant_id: TENANT, role: 'admin' }],
+      leads: [leadRow()],
+    });
+    await app.chamar(CHAVE, req({
+      body: {
+        etapa: 'visita-agendada',
+        pendencias: ['visita_sem_data'],
+        event_type: 'lia.contato_realizado',
+        ator_tipo: 'lia',
+        tenant_id: '00000000-0000-4000-a000-000000000000',
+      },
+    }));
+    const gravou = sb.chamadas.find((c) => c.tabela === 'lead_events' && c.insert);
+    expect(gravou.insert.event_type).toBe('etapa.requisito_ignorado');
+    expect(gravou.insert.ator_tipo).toBe('usuario');
+    expect(gravou.insert.tenant_id).toBe(TENANT);
+  });
+
+  it('corpo gigante é cortado em vez de ir inteiro para o banco', async () => {
+    const sb = registrar({
+      tenant_memberships: [{ tenant_id: TENANT, role: 'admin' }],
+      leads: [leadRow()],
+    });
+    await app.chamar(CHAVE, req({
+      body: { etapa: 'x'.repeat(500), pendencias: Array.from({ length: 80 }, (_, i) => `p${i}`.repeat(50)) },
+    }));
+    const gravou = sb.chamadas.find((c) => c.tabela === 'lead_events' && c.insert);
+    expect(gravou.insert.para.length).toBeLessThanOrEqual(80);
+    expect(gravou.insert.metadata.pendencias.length).toBeLessThanOrEqual(20);
+    expect(Math.max(...gravou.insert.metadata.pendencias.map((p) => p.length))).toBeLessThanOrEqual(60);
+  });
+});

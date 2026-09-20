@@ -18,6 +18,13 @@ import { useDebounce } from '../hooks/useDebounce';
 import { ClassificacaoDots } from './ClassificacaoBadge';
 import { seloDeParado } from '../utils/diasParado';
 import { seloDeSubStatus } from '../utils/subStatus';
+import {
+  pendenciasDaEtapa, deveCarimbarAssinatura, textoDoAviso,
+  CHAVES_PADRAO, type ChavesDeEtapa,
+} from '../utils/preRequisitos';
+import { buscarChavesDeEtapa } from '../services/etapaConfigService';
+import { contextoDoLead } from '../services/preRequisitosService';
+import { registrarRequisitosIgnorados, carimbarAssinatura } from '../services/requisitosService';
 import { buscarUltimaMovimentacao, type Movimentacao } from '../services/movimentacaoService';
 import { filtrarPorAtuacao, opcoesFiltroBolsao, classificacoesDe } from '../utils/classificarLead';
 import { anuncioNaoIdentificado } from '../utils/anuncioDoPortal';
@@ -756,6 +763,9 @@ export const MeusLeadsAtribuidosSection = ({
   }
   const [bolsaoStatusMap, setBolsaoStatusMap] = useState<Record<string, BolsaoMirrorRow>>({});
   const [movimentacoes, setMovimentacoes] = useState<Record<string, Movimentacao>>({});
+  // As chaves de pré-requisito da imobiliária. Padrão = tudo desligado, então
+  // uma falha de leitura simplesmente não avisa nada.
+  const [chavesDeEtapa, setChavesDeEtapa] = useState<ChavesDeEtapa>(CHAVES_PADRAO);
   const carregarBolsaoStatus = useCallback(async (leadIds: string[]) => {
     if (leadIds.length === 0) {
       setBolsaoStatusMap({});
@@ -880,6 +890,13 @@ export const MeusLeadsAtribuidosSection = ({
   useEffect(() => {
     carregarMeusLeads();
   }, [carregarMeusLeads]);
+
+  useEffect(() => {
+    if (!tenantId || tenantId === 'owner') { setChavesDeEtapa(CHAVES_PADRAO); return; }
+    let cancelado = false;
+    buscarChavesDeEtapa(tenantId).then((c) => { if (!cancelado) setChavesDeEtapa(c); });
+    return () => { cancelado = true; };
+  }, [tenantId]);
 
   // Sincroniza o status do bolsão (queue_attempt, atendido) sempre que mudar lista
   useEffect(() => {
@@ -1116,29 +1133,57 @@ export const MeusLeadsAtribuidosSection = ({
 
   // Handler de fim de drag — igual Proposta: solta em uma coluna, atualiza status.
   // Sem reordenação dentro da mesma coluna, sem animação de re-layout.
-const handleDragEnd = useCallback(async (event: DragEndEvent) => {
-  const { active, over } = event;
-  setActiveId(null);
-  if (!over) return;
- 
-  const leadId = String(active.id);
-  const overId = String(over.id);
-  const lead = findLeadById(leadId);
-  if (!lead) return;
- 
-  const destColumnId = kanbanColumns.find((c) => c.id === overId)?.id
-    ?? findContainerByItemId(overId);
-  if (!destColumnId) return;
- 
-  const etapaAtual = getLeadStatus(lead, kanbanColumns);
-  if (etapaAtual === destColumnId) return;
- 
+/**
+ * Avalia os pré-requisitos da etapa de destino, registra o que faltou e
+ * carimba a assinatura quando a chave manda.
+ *
+ * Devolve as pendências para quem chama avisar. NUNCA lança e NUNCA barra: a
+ * etapa já mudou quando isto roda.
+ */
+const avaliarRequisitos = useCallback(async (lead: KanbanLead, etapaDestino: string) => {
+  const nenhumaChaveLigada =
+    !chavesDeEtapa.exigir_visita_agendada &&
+    !chavesDeEtapa.exigir_dados_da_proposta &&
+    !chavesDeEtapa.exigir_proposta_assinada &&
+    !chavesDeEtapa.registrar_hora_da_assinatura;
+  if (nenhumaChaveLigada) return [];
+
+  try {
+    const ctx = await contextoDoLead(tenantId || '', lead.id, lead.comments, chavesDeEtapa);
+    const pendencias = pendenciasDaEtapa(etapaDestino, ctx, chavesDeEtapa);
+
+    if (pendencias.length > 0) {
+      void registrarRequisitosIgnorados(lead.id, etapaDestino, pendencias);
+    }
+    if (deveCarimbarAssinatura(etapaDestino, ctx, chavesDeEtapa)) {
+      void carimbarAssinatura(tenantId || '', lead.id);
+    }
+    return pendencias;
+  } catch {
+    // Sem aviso é melhor que aviso inventado: uma falha de rede não pode
+    // mandar o corretor procurar um dado que não falta.
+    return [];
+  }
+}, [chavesDeEtapa, tenantId]);
+
+/**
+ * MUDA A ETAPA DE UM LEAD. Caminho único: o arrastar e o seletor do modal
+ * passam os dois por aqui.
+ *
+ * Ter dois caminhos faria a regra de pré-requisitos valer num e não no outro,
+ * e a diferença só apareceria quando alguém reclamasse do aviso que não veio.
+ */
+const mudarEtapa = useCallback(async (lead: KanbanLead, destColumnId: string) => {
+  const leadId = lead.id;
   const destColumn = kanbanColumns.find((c) => c.id === destColumnId);
   const statusParaSalvar = destColumn?.title ?? destColumnId;
  
   setMeusLeads((prev) =>
     prev.map((l) => (l.id === leadId ? { ...l, status: statusParaSalvar } : l))
   );
+  // O modal guarda um retrato do lead. Sem isto, trocar a etapa pelo seletor
+  // deixaria o próprio seletor mostrando a etapa antiga.
+  setEditingLead((prev) => (prev && prev.id === leadId ? { ...prev, status: statusParaSalvar } : prev));
  
   try {
     const result = await atualizarStatusLeadCRM(leadId, statusParaSalvar);
@@ -1158,15 +1203,30 @@ const handleDragEnd = useCallback(async (event: DragEndEvent) => {
       }
     }
 
-    toast({
-      title: '✅ Etapa atualizada',
-      description: `Lead movido para ${kanbanColumns.find((c) => c.id === destColumnId)?.title}`,
-      className: 'bg-green-500/10 border-green-500/50',
-    });
+    // PRÉ-REQUISITOS (P1.6). Decidido em 20/09/2026: avisa, DEIXA PASSAR e
+    // registra — nunca barra. A etapa já foi salva acima de propósito: o
+    // aviso não pode segurar o trabalho de ninguém.
+    // Com as chaves no padrão (tudo desligado) nada disto consulta o banco.
+    const pendencias = await avaliarRequisitos(lead, destColumnId);
+
+    if (pendencias.length > 0) {
+      toast({
+        title: '⚠️ Etapa atualizada, com pendências',
+        description: `${textoDoAviso(pendencias)} ${pendencias[0].onde}.`,
+        className: 'bg-amber-500/10 border-amber-500/50',
+      });
+    } else {
+      toast({
+        title: '✅ Etapa atualizada',
+        description: `Lead movido para ${kanbanColumns.find((c) => c.id === destColumnId)?.title}`,
+        className: 'bg-green-500/10 border-green-500/50',
+      });
+    }
   } catch (error) {
     setMeusLeads((prev) =>
       prev.map((l) => (l.id === leadId ? { ...l, status: lead.status } : l))
     );
+    setEditingLead((prev) => (prev && prev.id === leadId ? { ...prev, status: lead.status } : prev));
     console.error('Erro ao atualizar status:', error);
     toast({
       title: 'Erro ao atualizar status',
@@ -1174,7 +1234,25 @@ const handleDragEnd = useCallback(async (event: DragEndEvent) => {
       variant: 'destructive',
     });
   }
-}, [findLeadById, kanbanColumns, findContainerByItemId, toast, tenantId]);
+}, [kanbanColumns, toast, tenantId, avaliarRequisitos]);
+
+const handleDragEnd = useCallback(async (event: DragEndEvent) => {
+  const { active, over } = event;
+  setActiveId(null);
+  if (!over) return;
+
+  const lead = findLeadById(String(active.id));
+  if (!lead) return;
+
+  const overId = String(over.id);
+  const destColumnId = kanbanColumns.find((c) => c.id === overId)?.id
+    ?? findContainerByItemId(overId);
+  if (!destColumnId) return;
+
+  if (getLeadStatus(lead, kanbanColumns) === destColumnId) return;
+
+  await mudarEtapa(lead, destColumnId);
+}, [findLeadById, kanbanColumns, findContainerByItemId, mudarEtapa]);
 
   // Lead ativo sendo arrastado
   const activeLead = activeId ? meusLeads.find(l => l.id === activeId) : null;
@@ -1484,6 +1562,9 @@ const handleDragEnd = useCallback(async (event: DragEndEvent) => {
         tenantId={tenantId}
         editingLead={editingLead}
         leadType={leadType}
+        etapas={kanbanColumns.map((c) => ({ id: c.id, title: c.title }))}
+        etapaAtual={editingLead ? getLeadStatus(editingLead, kanbanColumns) : undefined}
+        onMudarEtapa={mudarEtapa}
         // Corretor edita os leads que aparecem aqui: esta lista é carregada
         // por assigned_agent_id/nome dele (ver carregarMeusLeads).
         permitirEdicao
