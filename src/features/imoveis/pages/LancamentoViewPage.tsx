@@ -26,6 +26,9 @@ import { OctoDashLoader } from '@/components/ui/OctoDashLoader';
 import { FotosUploader, type Foto } from '@/components/imoveis/FotosUploader';
 import { ConstrutoraSelect } from '@/features/imoveis/components/ConstrutoraSelect';
 import { useConstrutoras } from '@/features/imoveis/hooks/useConstrutoras';
+import { TipologiasSection } from '@/features/imoveis/components/TipologiasSection';
+import { buscarTipologias, salvarTipologias } from '@/features/imoveis/services/tipologiasService';
+import type { Tipologia } from '@/features/imoveis/utils/tipologias';
 
 interface Lancamento {
   id: string;
@@ -129,6 +132,9 @@ export const LancamentoViewPage = () => {
   const [construtoraId, setConstrutoraId] = useState<string | null>(null);
   const { construtoras } = useConstrutoras();
   const [dormitorios, setDormitorios] = useState('');
+  // Tipologias (P2.1). A lista inteira é editada na tela e gravada junto com
+  // o lançamento — salvar em dois botões separados deixaria metade gravada.
+  const [tipologias, setTipologias] = useState<Tipologia[]>([]);
   const [specs, setSpecs] = useState('');
   const [precoTexto, setPrecoTexto] = useState('');
   const [exclusivo, setExclusivo] = useState(false);
@@ -183,6 +189,16 @@ export const LancamentoViewPage = () => {
     setFotos(normalized.fotos);
     setBookPdf(normalized.book_pdf);
     setBookFilename(normalized.book_pdf_filename);
+    // Falha ao carregar tipologia NÃO pode virar lista vazia: salvar em
+    // seguida apagaria as que existem no banco.
+    try {
+      setTipologias(await buscarTipologias(String(id)));
+    } catch (e) {
+      console.error('Erro ao carregar tipologias:', e);
+      alert('Não foi possível carregar as tipologias deste lançamento. Recarregue antes de salvar.');
+      setLoading(false);
+      return;
+    }
     setLoading(false);
   }, [id, tenantId]);
 
@@ -309,6 +325,17 @@ export const LancamentoViewPage = () => {
       }
 
       // 3) Agora o UPDATE só carrega texto e URLs — payload pequeno.
+      // As tipologias vão ANTES do update: se elas falharem, o lançamento não
+      // é gravado com um card prometendo dados que não entraram.
+      try {
+        await salvarTipologias(tenantId, String(id), tipologias);
+      } catch (e) {
+        console.error('Erro ao salvar tipologias:', e);
+        alert('Não foi possível salvar as tipologias. O lançamento não foi alterado.');
+        setIsSaving(false);
+        return;
+      }
+
       const { error } = await supabase
         .from('lancamentos')
         .update({
@@ -572,6 +599,13 @@ export const LancamentoViewPage = () => {
           rows={8}
         />
       </section>
+
+      <TipologiasSection
+        tipologias={tipologias}
+        onChange={setTipologias}
+        texto={{ dormitorios, preco_texto: precoTexto }}
+        disabled={isSaving}
+      />
 
       <section className="rounded-xl border border-border bg-card p-5 space-y-4">
         <div>
