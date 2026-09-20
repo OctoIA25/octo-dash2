@@ -96,10 +96,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { avisoTelefone, linkWhatsapp } from '@/lib/contato';
+import { SimuladorPanel } from '@/features/distribuicao/SimuladorPanel';
 
 interface BolsaoSectionProps {}
 
-type BolsaoTab = 'geral' | 'disponiveis' | 'configuracoes' | 'equipes';
+type BolsaoTab = 'geral' | 'disponiveis' | 'configuracoes' | 'equipes' | 'simulador';
 
 export const BolsaoSection = (props: BolsaoSectionProps) => {
   const { user, isCorretor } = useAuth();
@@ -159,7 +160,7 @@ const BolsaoSectionContent = (props: BolsaoSectionProps) => {
   // Aba "equipes" só vale quando team_queue_enabled — senão volta pra disponiveis
   // (efeito é aplicado num useEffect abaixo, depois da config carregar)
   const activeTab: BolsaoTab =
-    tabParam === 'geral' || tabParam === 'configuracoes' || tabParam === 'equipes'
+    tabParam === 'geral' || tabParam === 'configuracoes' || tabParam === 'equipes' || tabParam === 'simulador'
       ? tabParam
       : 'disponiveis';
   const setActiveTab = useCallback((tab: BolsaoTab) => {
@@ -2178,7 +2179,17 @@ const BolsaoSectionContent = (props: BolsaoSectionProps) => {
           {/* Container de Conteúdo */}
           <div className="w-full">
         {/* Aba "Configurações" / "Equipes" — render isolado */}
-        {activeTab === 'configuracoes' ? (
+        {activeTab === 'simulador' ? (
+          // O gate de cargo é repetido aqui de propósito: o filtro da aba é só
+          // UX, e a URL com ?tab=simulador é digitável.
+          isAdmin ? (
+            <SimuladorPanel tenantId={tenantId} />
+          ) : (
+            <p className="p-6 text-sm text-text-secondary">
+              O simulador da distribuição é uma ferramenta de gestão.
+            </p>
+          )
+        ) : activeTab === 'configuracoes' ? (
           <BolsaoConfigPanel tenantId={tenantId} isAdmin={isAdmin} />
         ) : activeTab === 'equipes' ? (
           <BolsaoTeamsPanel

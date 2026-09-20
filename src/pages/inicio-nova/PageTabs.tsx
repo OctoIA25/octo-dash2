@@ -33,6 +33,7 @@ import {
   User,
   Zap,
   Tag,
+  Play,
   Settings2,
   Sparkles,
   MessageCircle,
@@ -174,6 +175,7 @@ const TAB_CONFIGS: TabConfig[] = [
       { id: 'disponiveis', label: 'Disponíveis', icon: Zap, href: '/bolsao?tab=disponiveis', isQuery: true },
       { id: 'geral', label: 'Todos os Leads', icon: Tag, href: '/bolsao?tab=geral', isQuery: true },
       { id: 'equipes', label: 'Equipes', icon: Users, href: '/bolsao?tab=equipes', isQuery: true },
+      { id: 'simulador', label: 'Simulador', icon: Play, href: '/bolsao?tab=simulador', isQuery: true },
       { id: 'configuracoes', label: 'Configurações', icon: Settings2, href: '/bolsao?tab=configuracoes', isQuery: true },
     ],
   },
@@ -285,7 +287,14 @@ export function PageTabs() {
     // custos da empresa — a rota também redireciona, isto é só UX).
     let cfg: TabConfig = baseCfg;
     if (baseCfg.basePath === '/bolsao') {
-      cfg = { ...baseCfg, tabs: baseCfg.tabs.filter((t) => t.id !== 'equipes' || teamQueueEnabled) };
+      // O simulador responde "de quem seria este lead" para a equipe inteira:
+      // é ferramenta de gestão, como a Telemetria em /agentes-ia.
+      cfg = {
+        ...baseCfg,
+        tabs: baseCfg.tabs
+          .filter((t) => t.id !== 'equipes' || teamQueueEnabled)
+          .filter((t) => t.id !== 'simulador' || isGestao || isOwner),
+      };
     } else if (baseCfg.basePath === '/agentes-ia') {
       cfg = { ...baseCfg, tabs: baseCfg.tabs.filter((t) => t.id !== 'telemetria' || isGestao || isOwner) };
     } else if (baseCfg.basePath === '/imoveis') {

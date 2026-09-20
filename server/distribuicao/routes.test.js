@@ -63,7 +63,15 @@ function fakeSupabase() {
     chain.update = () => { gravados.push({ tabela, update: true }); return chain; };
     const linhas = () => {
       const base = tabelas[tabela] ?? [];
-      return notIsNull ? aplicaNotIsNull(base, notIsNull) : base;
+      // `eq` FILTRA. Um falso que o tratasse como no-op devolveria a primeira
+      // linha da tabela para qualquer busca — foi assim que a busca do
+      // captador por `user_id` passou a achar o membro errado sem ninguém ver.
+      // Colunas que a linha do teste não declara são ignoradas: o teste que
+      // não monta `tenant_id` não está exercitando escopo de tenant.
+      const filtrado = base.filter((l) =>
+        Object.entries(filtros).every(([c, v]) => !(c in (l ?? {})) || l[c] === v)
+      );
+      return notIsNull ? aplicaNotIsNull(filtrado, notIsNull) : filtrado;
     };
     chain.maybeSingle = () => Promise.resolve({ data: linhas()[0] ?? null, error: null });
     chain.then = (resolve) => Promise.resolve({ data: linhas(), error: null }).then(resolve);
@@ -137,8 +145,39 @@ describe('POST /api/v1/distribuicao/destino', () => {
 
   it('imóvel com captador vai para o captador', async () => {
     tabelas.imoveis_locais = [{ captador_id: '9' }];
+    tabelas.tenant_memberships.push(membro('9'));
     const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', { codigo_imovel: 'AP0961' });
     expect(corpo.data).toMatchObject({ destino: 'corretor', corretor_id: '9', motivo: 'captador_do_imovel' });
+  });
+
+  it('CAPTADOR PAUSADO manda o lead para a roleta — decisão de 19/09', async () => {
+    // Este era o defeito: `captadorDoImovel` devolvia `{ id }` sem as flags,
+    // então `podeReceber` dizia sempre que sim e o lead ficava com quem não
+    // podia atender. `captador_indisponivel` nunca chegava a acontecer.
+    tabelas.imoveis_locais = [{ captador_id: '9' }];
+    tabelas.tenant_memberships.push(membro('9', { permissions: { bolsao_pausado: true } }));
+    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', { codigo_imovel: 'AP0961' });
+    expect(corpo.data.motivo).toBe('captador_indisponivel');
+    expect(corpo.data.corretor_id).toBe('1');
+  });
+
+  it('captador que não é mais da imobiliária manda o lead para a roleta', async () => {
+    // Sem membership não há a quem atribuir: o lead tem de voltar para a fila
+    // em vez de ficar com quem saiu.
+    tabelas.imoveis_locais = [{ captador_id: '9' }];
+    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', { codigo_imovel: 'AP0961' });
+    expect(corpo.data.motivo).toBe('imovel_sem_captador');
+    expect(corpo.data.corretor_id).toBe('1');
+  });
+
+  it('CAPTADOR FORA DO RODÍZIO ainda recebe o que captou', async () => {
+    // 15 dos 22 imóveis com captador da Lotus estão neste caso (20/09/2026).
+    // Buscar o captador na roleta em vez de na equipe tiraria o lead deles.
+    tabelas.imoveis_locais = [{ captador_id: '9' }];
+    tabelas.tenant_memberships.push(membro('9'));
+    tabelas.roleta_participantes = [{ broker_id: '1' }, { broker_id: '2' }];
+    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', { codigo_imovel: 'AP0961' });
+    expect(corpo.data).toMatchObject({ corretor_id: '9', motivo: 'captador_do_imovel' });
   });
 
   it('imóvel SEM captador cai na roleta — decisão de 19/09', async () => {
@@ -251,6 +290,7 @@ describe('curinga no código do imóvel não vira "qualquer imóvel"', () => {
 
   it('código normal continua achando o captador', async () => {
     tabelas.imoveis_locais = [{ captador_id: '9' }];
+    tabelas.tenant_memberships.push(membro('9'));
     const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', { codigo_imovel: 'AP0961' });
     expect(corpo.data.corretor_id).toBe('9');
   });

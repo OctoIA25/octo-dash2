@@ -168,3 +168,64 @@ export function expirou({ prazo, agora }) {
   if (!(agora instanceof Date) || Number.isNaN(agora.getTime())) return false;
   return agora > prazo;
 }
+
+const ATUACAO_TIPOS = ['lancamentos', 'prontos', 'alugados'];
+
+/**
+ * Em que o corretor atua. Mesma leitura do motor antigo (`atuacoesOf`) e do
+ * front (`atuacoesDe`). FALHA ABERTO: ausente, vazio ou lixo = atende os três
+ * — fechar aqui tiraria da fila os 111 membros sem o campo gravado.
+ */
+export function atuacoesDoMembro(permissions) {
+  const v = permissions?.atuacao;
+  if (v === 'lancamentos') return ['lancamentos'];
+  if (v === 'prontos') return ['prontos', 'alugados'];
+  if (Array.isArray(v)) {
+    const validos = ATUACAO_TIPOS.filter((t) => v.includes(t));
+    if (validos.length > 0) return validos;
+  }
+  return [...ATUACAO_TIPOS];
+}
+
+/**
+ * A fila da roleta, a partir das linhas do banco. PURA, de propósito: o
+ * servidor e o simulador montam a fila pela MESMA função, senão a tela
+ * mostraria uma ordem que a Lia não recebe.
+ *
+ * `membros` vem ordenado por data de entrada — a única ordem disponível que
+ * não muda sozinha (ordenar por nome faria a fila inteira andar quando
+ * alguém é renomeado).
+ *
+ * `curados` são os ids de `roleta_participantes` ativos, a lista que o admin
+ * controla na tela de configuração. Vazia = ninguém curou ainda, e aí valem
+ * todos os membros — mesmo fallback do motor antigo.
+ */
+/**
+ * Um membro do banco vira um participante da regra.
+ *
+ * Mora fora de `montarFila` porque o CAPTADOR também precisa da derivação e
+ * NÃO passa pela fila: ele pode estar fora do rodízio e ainda assim receber o
+ * lead do imóvel que captou (15 dos 22 imóveis com captador da Lotus estão
+ * nesse caso, medido em 20/09/2026). Duas derivações seriam duas verdades.
+ */
+export function comoParticipante(membro, agora = Date.now()) {
+  const p = membro?.permissions || {};
+  const ate = p.bolsao_blocked_until ? Date.parse(p.bolsao_blocked_until) : NaN;
+  return {
+    id: membro.user_id,
+    nome: membro.name || membro.email || null,
+    // Bloqueio temporário do bolsão = pausado: pula a vez e a mantém.
+    pausado: Number.isFinite(ate) ? ate > agora : Boolean(p.bolsao_pausado),
+    semPermissao: p.nao_recebe_leads === true,
+    noLimite: false, // o limite de leads está desligado nesta base
+    atuacoes: atuacoesDoMembro(p),
+  };
+}
+
+export function montarFila(membros, curados = [], agora = Date.now()) {
+  const naRoleta = new Set((curados || []).filter(Boolean));
+  return (membros || [])
+    .filter((m) => m.role === 'corretor' || m.role === 'team_leader')
+    .filter((m) => naRoleta.size === 0 || naRoleta.has(m.user_id))
+    .map((m) => comoParticipante(m, agora));
+}

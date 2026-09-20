@@ -1,3 +1,5 @@
+import { comoParticipante, montarFila } from './regra.js';
+
 /**
  * As leituras que a regra precisa — separadas dela de propósito.
  *
@@ -13,27 +15,6 @@
 
 /** Ordem da roleta: estável e explicável. */
 const ORDEM = 'created_at';
-
-const ATUACAO_TIPOS = ['lancamentos', 'prontos', 'alugados'];
-
-/**
- * Em que o corretor atua. Mesma leitura do motor antigo (`atuacoesOf` em
- * leadAssignment.js) e do front (`atuacoesDe` em types/permissions.ts).
- *
- * FALHA ABERTO de propósito: ausente, lista vazia ou lixo valem como "atende
- * os três". Fechar aqui tiraria da fila os 111 membros que não têm atuação
- * gravada.
- */
-function atuacoesDoMembro(permissions) {
-  const v = permissions?.atuacao;
-  if (v === 'lancamentos') return ['lancamentos'];
-  if (v === 'prontos') return ['prontos', 'alugados'];
-  if (Array.isArray(v)) {
-    const validos = ATUACAO_TIPOS.filter((t) => v.includes(t));
-    if (validos.length > 0) return validos;
-  }
-  return [...ATUACAO_TIPOS];
-}
 
 export function criarLeituras({ supabase }) {
   /** Configuração de horário e prazo da imobiliária. */
@@ -74,27 +55,22 @@ export function criarLeituras({ supabase }) {
     ]);
     if (error) throw error;
 
-    const naRoleta = new Set((curados || []).map((c) => c.broker_id).filter(Boolean));
-
-    return (membros || [])
-      // Só quem atende lead entra no rodízio.
-      .filter((m) => m.role === 'corretor' || m.role === 'team_leader')
-      .filter((m) => naRoleta.size === 0 || naRoleta.has(m.user_id))
-      .map((m) => {
-        const p = m.permissions || {};
-        const ate = p.bolsao_blocked_until ? Date.parse(p.bolsao_blocked_until) : NaN;
-        return {
-          id: m.user_id,
-          // Bloqueio temporário do bolsão = pausado: pula a vez e a mantém.
-          pausado: Number.isFinite(ate) ? ate > Date.now() : Boolean(p.bolsao_pausado),
-          semPermissao: p.nao_recebe_leads === true,
-          noLimite: false, // o limite de leads está desligado nesta base
-          atuacoes: atuacoesDoMembro(p),
-        };
-      });
+    // A MONTAGEM da fila mora em regra.js, pura: o simulador do navegador usa
+    // a mesma função, senão a tela mostraria uma ordem que a Lia não recebe.
+    return montarFila(membros, (curados || []).map((c) => c.broker_id));
   };
 
-  /** O captador do imóvel, quando há imóvel e quando ele tem captador. */
+  /**
+   * O captador do imóvel, quando há imóvel e quando ele tem captador.
+   *
+   * Devolve o captador COM as flags (pausado, sem permissão). Sem elas
+   * `podeReceber` dizia sempre que sim, e a decisão de 19/09 — captador
+   * indisponível manda o lead para a roleta — nunca chegava a valer.
+   *
+   * A busca é na EQUIPE, não na roleta: o captador pode estar fora do rodízio
+   * e ainda assim receber o lead que captou. Quem não é mais membro devolve
+   * nulo, e o lead vai para a roleta em vez de ficar com quem saiu.
+   */
   const captadorDoImovel = async (tenantId, codigoImovel) => {
     const codigo = String(codigoImovel ?? '').trim();
     // CURINGA NÃO É CÓDIGO. O PostgREST lê `*` como `%`, então escapar a
@@ -111,7 +87,16 @@ export function criarLeituras({ supabase }) {
       .limit(1)
       .maybeSingle();
     if (error) throw error;
-    return data?.captador_id ? { id: data.captador_id } : null;
+    if (!data?.captador_id) return null;
+
+    const { data: membro, error: erroMembro } = await supabase
+      .from('tenant_memberships')
+      .select('user_id, role, permissions')
+      .eq('tenant_id', tenantId)
+      .eq('user_id', data.captador_id)
+      .maybeSingle();
+    if (erroMembro) throw erroMembro;
+    return membro ? comoParticipante(membro) : null;
   };
 
   /**

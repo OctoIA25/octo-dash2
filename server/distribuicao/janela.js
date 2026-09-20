@@ -145,3 +145,24 @@ export function minutosUteisEntre(inicio, fim, janela = JANELA_PADRAO) {
   }
   return total;
 }
+
+/** O prazo padrão combinado com o chefe: 1 hora de expediente. */
+export const PRAZO_PADRAO_MIN = 60;
+
+/**
+ * Quantos minutos o corretor tem, a partir da configuração da imobiliária.
+ *
+ * MORA AQUI, e não na rota, porque o simulador roda esta mesma função no
+ * navegador. Com o ajuste dentro da rota, a tela mostraria um prazo e o
+ * servidor responderia outro — a segunda verdade que este módulo existe para
+ * não criar.
+ *
+ * O valor gravado na Lotus é 525.600 minutos: 365 dias, o jeito que a equipe
+ * encontrou de dizer "nunca expira" numa tela sem a opção "desligado".
+ * Tratado como prazo real, daria uma data no ano seguinte e o lead nunca
+ * sairia de ninguém. Qualquer coisa fora de (0, 24h) cai no padrão.
+ */
+export function minutosDePrazo(config) {
+  const m = Number(config?.tempo_expiracao_exclusivo);
+  return Number.isFinite(m) && m > 0 && m < 24 * 60 ? m : PRAZO_PADRAO_MIN;
+}

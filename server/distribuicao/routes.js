@@ -9,11 +9,8 @@
  */
 
 import { decidirDestino, MOTIVOS } from './regra.js';
-import { janelaDaConfiguracao, prazoDeAtendimento } from './janela.js';
+import { janelaDaConfiguracao, prazoDeAtendimento, minutosDePrazo } from './janela.js';
 import { criarLeituras } from './dados.js';
-
-/** O prazo padrão combinado: 1 hora de expediente. */
-const PRAZO_PADRAO_MIN = 60;
 
 export function registerDistribuicaoRoutes(app, supabase, validateApiKey) {
   const dados = criarLeituras({ supabase });
@@ -52,12 +49,9 @@ export function registerDistribuicaoRoutes(app, supabase, validateApiKey) {
 
       // O prazo só existe quando há um corretor com quem o relógio corre.
       const janela = janelaDaConfiguracao(config?.horario_funcionamento);
-      const minutos = Number(config?.tempo_expiracao_exclusivo);
-      // 525.600 min (365 dias) é o valor que a Lotus tem gravado para
-      // "nunca expira". Tratá-lo como prazo real daria uma data em 2027.
-      const minutosValidos = Number.isFinite(minutos) && minutos > 0 && minutos < 24 * 60
-        ? minutos
-        : PRAZO_PADRAO_MIN;
+      // O ajuste mora em janela.js: o simulador roda a MESMA função no
+      // navegador, e duplicá-lo aqui criaria a segunda verdade.
+      const minutosValidos = minutosDePrazo(config);
       const prazo = decisao.destino === 'corretor'
         ? prazoDeAtendimento(new Date(), minutosValidos, janela)
         : null;

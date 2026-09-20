@@ -18,6 +18,7 @@ import {
   minutosUteisEntre,
   diaDaSemanaEmBrasilia,
   minutosDoDiaEmBrasilia,
+  minutosDePrazo,
 } from './janela.js';
 
 /** Data em horário de Brasília (UTC-3). 19/09/2026 é um sábado. */
@@ -160,5 +161,31 @@ describe('minutosUteisEntre', () => {
 
   it('fim antes do início dá zero, não negativo', () => {
     expect(minutosUteisEntre(br(18, 11), br(18, 10))).toBe(0);
+  });
+});
+
+describe('minutosDePrazo — o ajuste mora aqui, não na rota', () => {
+  it('usa o valor da imobiliária quando ele é razoável', () => {
+    expect(minutosDePrazo({ tempo_expiracao_exclusivo: 30 })).toBe(30);
+    expect(minutosDePrazo({ tempo_expiracao_exclusivo: 120 })).toBe(120);
+  });
+
+  it('OS 525.600 MINUTOS DA LOTUS caem no padrão', () => {
+    // 365 dias: o jeito que a equipe achou de dizer "nunca expira" numa tela
+    // sem a opção "desligado". Como prazo real, daria uma data no ano seguinte.
+    expect(minutosDePrazo({ tempo_expiracao_exclusivo: 525600 })).toBe(60);
+  });
+
+  it('valor ausente, zero, negativo ou lixo cai no padrão', () => {
+    expect(minutosDePrazo(null)).toBe(60);
+    expect(minutosDePrazo({})).toBe(60);
+    expect(minutosDePrazo({ tempo_expiracao_exclusivo: 0 })).toBe(60);
+    expect(minutosDePrazo({ tempo_expiracao_exclusivo: -5 })).toBe(60);
+    expect(minutosDePrazo({ tempo_expiracao_exclusivo: 'muito' })).toBe(60);
+  });
+
+  it('exatamente 24h já é demais para um prazo de atendimento', () => {
+    expect(minutosDePrazo({ tempo_expiracao_exclusivo: 1440 })).toBe(60);
+    expect(minutosDePrazo({ tempo_expiracao_exclusivo: 1439 })).toBe(1439);
   });
 });

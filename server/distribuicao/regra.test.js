@@ -7,7 +7,7 @@
  * ROLETA, não para o bolsão.
  */
 import { describe, it, expect } from 'vitest';
-import { decidirDestino, proximoDaRoleta, podeReceber, tipoDoLead, foiAtendido, expirou, atendePool, MOTIVOS } from './regra.js';
+import { decidirDestino, proximoDaRoleta, podeReceber, tipoDoLead, foiAtendido, expirou, atendePool, montarFila, MOTIVOS } from './regra.js';
 
 const c = (id, extra = {}) => ({ id, ...extra });
 const FILA = [c('ana'), c('bruno'), c('carla')];
@@ -91,6 +91,19 @@ describe('imóvel de TERCEIROS', () => {
       ultimaPosicao: 0,
     });
     expect(r).toMatchObject({ destino: 'corretor', corretorId: 'bruno', motivo: MOTIVOS.CAPTADOR_INDISPONIVEL });
+  });
+
+  it('o captador NÃO consome a vez da roleta', () => {
+    // Sem `posicao`, quem chama não move o ponteiro — e o próximo lead de
+    // roleta continua indo para quem era a vez. Se o captador gastasse a vez
+    // de alguém, um imóvel muito procurado puniria a fila inteira.
+    const r = decidirDestino({ lead: { codigoImovel: 'AP0961' }, captador: c('ana'), participantes: FILA });
+    expect(r.posicao).toBeUndefined();
+  });
+
+  it('a roleta, essa sim, devolve a posição para o ponteiro andar', () => {
+    const r = decidirDestino({ lead: { codigoImovel: 'X' }, captador: null, participantes: FILA, ultimaPosicao: 0 });
+    expect(r.posicao).toBe(1);
   });
 
   it('o motivo distingue "sem captador" de "captador indisponível"', () => {
@@ -235,5 +248,53 @@ describe('ATUAÇÃO — o defeito que fez a roleta antiga ser desligada', () => 
       participantes: [prontos],
     });
     expect(r).toMatchObject({ destino: 'ninguem', corretorId: null });
+  });
+});
+
+describe('montarFila — a MESMA fila para o servidor e para o simulador', () => {
+  const m = (id, extra = {}) => ({ user_id: id, role: 'corretor', permissions: {}, name: `N${id}`, ...extra });
+
+  it('só corretor e líder entram; admin fica de fora', () => {
+    const fila = montarFila([m('1'), m('2', { role: 'admin' }), m('3', { role: 'team_leader' })]);
+    expect(fila.map((c) => c.id)).toEqual(['1', '3']);
+  });
+
+  it('a roleta CURADA manda quando existe', () => {
+    const fila = montarFila([m('1'), m('2'), m('3')], ['3']);
+    expect(fila.map((c) => c.id)).toEqual(['3']);
+  });
+
+  it('roleta curada vazia = ninguém curou: valem todos', () => {
+    expect(montarFila([m('1'), m('2')], []).map((c) => c.id)).toEqual(['1', '2']);
+  });
+
+  it('bloqueio do bolsão ainda válido marca pausado; vencido, não', () => {
+    const agora = Date.parse('2026-09-19T12:00:00Z');
+    const futuro = m('1', { permissions: { bolsao_blocked_until: '2026-09-19T13:00:00Z' } });
+    const passado = m('2', { permissions: { bolsao_blocked_until: '2026-09-19T11:00:00Z' } });
+    const fila = montarFila([futuro, passado], [], agora);
+    expect(fila[0].pausado).toBe(true);
+    expect(fila[1].pausado).toBe(false);
+  });
+
+  it('quem não recebe leads sai da fila', () => {
+    const fila = montarFila([m('1', { permissions: { nao_recebe_leads: true } }), m('2')]);
+    expect(fila[0].semPermissao).toBe(true);
+    expect(proximoDaRoleta(fila, -1).corretor.id).toBe('2');
+  });
+
+  it('a atuação vem junto, e sem ela atende tudo', () => {
+    const fila = montarFila([
+      m('1', { permissions: { atuacao: 'lancamentos' } }),
+      m('2', { permissions: { atuacao: 'prontos' } }),
+      m('3'),
+    ]);
+    expect(fila[0].atuacoes).toEqual(['lancamentos']);
+    expect(fila[1].atuacoes).toEqual(['prontos', 'alugados']);
+    expect(fila[2].atuacoes).toEqual(['lancamentos', 'prontos', 'alugados']);
+  });
+
+  it('a ordem recebida é preservada — é a da data de entrada', () => {
+    expect(montarFila([m('c'), m('a'), m('b')]).map((x) => x.id)).toEqual(['c', 'a', 'b']);
   });
 });
