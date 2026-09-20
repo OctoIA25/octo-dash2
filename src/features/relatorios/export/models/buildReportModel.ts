@@ -339,7 +339,12 @@ function emptyModel(base: Base): ReportModel {
 // Aceita tambem 'excel' (aba de importacao) e 'enps' (secao eNPS, com painel
 // proprio): ambas sem relatorio exportavel aqui, caem no `default` -> emptyModel.
 // As demais sub-areas tem builder dedicado.
-export function buildReportModel(subArea: RelatoriosSubArea | 'excel' | 'enps', source: ReportSource): ReportModel {
+/**
+ * `leads` entra junto de `excel` e `enps`: são telas sem relatório exportável
+ * (P1.10). O `default` já devolve modelo vazio — o que faltava era o tipo
+ * aceitar o nome, senão a aba nova nem compila.
+ */
+export function buildReportModel(subArea: RelatoriosSubArea | 'excel' | 'enps' | 'leads', source: ReportSource): ReportModel {
   const base: Base = { subtitle: source.subtitle, meta: source.meta ?? [] };
   switch (subArea) {
     case 'marketing':
