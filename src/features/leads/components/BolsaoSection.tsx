@@ -102,6 +102,19 @@ interface BolsaoSectionProps {}
 
 type BolsaoTab = 'geral' | 'disponiveis' | 'configuracoes' | 'equipes' | 'simulador';
 
+/**
+ * O subtítulo era fixo em "leads que esfriaram" nas cinco abas — inclusive nas
+ * que não mostram lead nenhum. Descrever a tela errada é pior do que não
+ * descrever.
+ */
+const SUBTITULO_DA_ABA: Record<BolsaoTab, string> = {
+  disponiveis: 'Leads que esfriaram e estão disponíveis para qualquer corretor assumir.',
+  geral: 'Todos os leads da imobiliária, com o corretor de cada um.',
+  equipes: 'A fila por equipe, quando a distribuição por equipe está ligada.',
+  configuracoes: 'Horário de funcionamento, prazo de atendimento e quem entra na roleta.',
+  simulador: 'De quem seria um lead que chegasse agora — sem atribuir nada.',
+};
+
 export const BolsaoSection = (props: BolsaoSectionProps) => {
   const { user, isCorretor } = useAuth();
 
@@ -2158,7 +2171,7 @@ const BolsaoSectionContent = (props: BolsaoSectionProps) => {
                 Bolsão de Leads
               </h1>
               <p className="text-[12.5px] text-slate-500 dark:text-slate-400 mt-0.5">
-                Leads que esfriaram e estão disponíveis para qualquer corretor assumir.
+                {SUBTITULO_DA_ABA[activeTab] ?? SUBTITULO_DA_ABA.disponiveis}
               </p>
             </div>
             <div className="flex items-center gap-2">
