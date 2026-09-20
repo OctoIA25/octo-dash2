@@ -16,6 +16,8 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { useDebounce } from '../hooks/useDebounce';
 import { ClassificacaoDots } from './ClassificacaoBadge';
+import { seloDeParado } from '../utils/diasParado';
+import { buscarUltimaMovimentacao, type Movimentacao } from '../services/movimentacaoService';
 import { filtrarPorAtuacao, opcoesFiltroBolsao, classificacoesDe } from '../utils/classificarLead';
 import { anuncioNaoIdentificado } from '../utils/anuncioDoPortal';
 import { PreferenciasBadges } from './PreferenciasLead';
@@ -231,6 +233,8 @@ interface KanbanCardProps {
   bolsaoConfig?: TenantBolsaoConfig | null;
   nowMs?: number;
   bolsaoStatus?: { queue_attempt: number; atendido: boolean; status: string } | null;
+  /** Quando este lead se moveu pela última vez. AUSENTE não é zero: é "sem registro". */
+  movimentacao?: Movimentacao | null;
 }
 
 interface KanbanCardContentProps {
@@ -242,6 +246,8 @@ interface KanbanCardContentProps {
   nowMs?: number;
   /** Estado do espelho do bolsão pra esse lead — usado pro badge "Assumido do bolsão" */
   bolsaoStatus?: { queue_attempt: number; atendido: boolean; status: string } | null;
+  /** Quando este lead se moveu pela última vez. AUSENTE não é zero: é "sem registro". */
+  movimentacao?: Movimentacao | null;
 }
 
 /**
@@ -322,7 +328,7 @@ BolsaoCountdownLine.displayName = 'BolsaoCountdownLine';
  * GripVertical com listeners do dnd-kit) para renderizar à esquerda do avatar.
  * Quando `isOverlay=true` estamos desenhando o clone do DragOverlay.
  */
-export const KanbanCardContent = memo(({ lead, onClick, mostrarCorretor, isOverlay = false, dragHandle, bolsaoConfig, nowMs, bolsaoStatus }: KanbanCardContentProps & { dragHandle?: React.ReactNode }) => {
+export const KanbanCardContent = memo(({ lead, onClick, mostrarCorretor, isOverlay = false, dragHandle, bolsaoConfig, nowMs, bolsaoStatus, movimentacao }: KanbanCardContentProps & { dragHandle?: React.ReactNode }) => {
   const nome = lead.nomedolead || 'Lead sem nome';
   const telefone = lead.lead || lead.numerocorretor || '';
   const portal = lead.portal || '';
@@ -336,6 +342,11 @@ export const KanbanCardContent = memo(({ lead, onClick, mostrarCorretor, isOverl
   const dataFmt = createdAt
     ? createdAt.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
     : '';
+
+  // Sem movimentação registrada o selo não aparece — e isso NÃO significa
+  // "parado há 0 dias". Hoje 1.249 dos 1.681 leads ativos da Lotus estão
+  // nesse caso, porque o registro de eventos só existe desde 10/09/2026.
+  const selo = seloDeParado(movimentacao?.ultima, movimentacao?.fonte, nowMs);
 
   return (
     <div
@@ -410,7 +421,11 @@ export const KanbanCardContent = memo(({ lead, onClick, mostrarCorretor, isOverl
 
       {/* Footer: corretor atribuído + badge + data */}
       <div className="flex flex-wrap items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800 gap-y-1 gap-x-2">
-        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+        {/* `basis-28`: sem uma largura mínima, o bloco do corretor encolhia
+            até "a.." para caber o selo de dias parado na mesma linha. Com a
+            base declarada, quem não cabe é o selo — e o `flex-wrap` do pai o
+            joga para a linha de baixo, que é o comportamento desejado. */}
+        <div className="flex items-center gap-1.5 min-w-0 flex-1 basis-28">
           {corretorResponsavel ? (
             <>
               <div
@@ -439,6 +454,15 @@ export const KanbanCardContent = memo(({ lead, onClick, mostrarCorretor, isOverl
             </Badge>
           )}
           <ClassificacaoDots tipo={lead.classification} />
+          {selo && (
+            <span
+              className={`inline-flex items-center gap-1 px-1.5 py-0 h-4 rounded text-[9px] font-semibold ${selo.classe}`}
+              title={selo.explicacao}
+            >
+              <Clock className="w-2.5 h-2.5" strokeWidth={2.5} />
+              {selo.texto}
+            </span>
+          )}
           {dataFmt && (
             <span className="text-[10px] text-slate-500 dark:text-slate-400 tabular-nums">
               {dataFmt}
@@ -465,7 +489,7 @@ export const KanbanCardContent = memo(({ lead, onClick, mostrarCorretor, isOverl
 
 KanbanCardContent.displayName = 'KanbanCardContent';
 
-const KanbanCard = memo(({ lead, onClick, mostrarCorretor, bolsaoConfig, nowMs, bolsaoStatus }: KanbanCardProps) => {
+const KanbanCard = memo(({ lead, onClick, mostrarCorretor, bolsaoConfig, nowMs, bolsaoStatus, movimentacao }: KanbanCardProps) => {
   // Quando há DragOverlay, o card ORIGINAL não recebe `transform` — só muda opacity
   // para marcar a posição de origem. O overlay (portal no body) é quem segue o cursor.
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: lead.id });
@@ -496,6 +520,7 @@ const KanbanCard = memo(({ lead, onClick, mostrarCorretor, bolsaoConfig, nowMs, 
         bolsaoConfig={bolsaoConfig}
         nowMs={nowMs}
         bolsaoStatus={bolsaoStatus}
+        movimentacao={movimentacao}
       />
     </div>
   );
@@ -512,11 +537,12 @@ interface KanbanColumnProps {
   bolsaoConfig?: TenantBolsaoConfig | null;
   nowMs?: number;
   bolsaoStatusMap?: Record<string, { queue_attempt: number; atendido: boolean; status: string }>;
+  movimentacoes?: Record<string, Movimentacao>;
 }
 
 const CARDS_PER_PAGE = 15;
 
-const KanbanColumn = memo(({ column, leads, onLeadClick, onAdicionarLead, mostrarCorretor, bolsaoConfig, nowMs, bolsaoStatusMap }: KanbanColumnProps) => {
+const KanbanColumn = memo(({ column, leads, onLeadClick, onAdicionarLead, mostrarCorretor, bolsaoConfig, nowMs, bolsaoStatusMap, movimentacoes }: KanbanColumnProps) => {
   const { setNodeRef, isOver } = useDroppable({ id: column.id });
   const [visibleCount, setVisibleCount] = useState(CARDS_PER_PAGE);
 
@@ -564,6 +590,7 @@ const KanbanColumn = memo(({ column, leads, onLeadClick, onAdicionarLead, mostra
               bolsaoConfig={bolsaoConfig}
               nowMs={nowMs}
               bolsaoStatus={bolsaoStatusMap?.[lead.id] ?? null}
+              movimentacao={movimentacoes?.[lead.id] ?? null}
             />
           ))}
 
@@ -714,6 +741,7 @@ export const MeusLeadsAtribuidosSection = ({
     status: string;
   }
   const [bolsaoStatusMap, setBolsaoStatusMap] = useState<Record<string, BolsaoMirrorRow>>({});
+  const [movimentacoes, setMovimentacoes] = useState<Record<string, Movimentacao>>({});
   const carregarBolsaoStatus = useCallback(async (leadIds: string[]) => {
     if (leadIds.length === 0) {
       setBolsaoStatusMap({});
@@ -843,6 +871,31 @@ export const MeusLeadsAtribuidosSection = ({
   useEffect(() => {
     carregarBolsaoStatus(meusLeads.map((l) => l.id));
   }, [meusLeads, carregarBolsaoStatus]);
+
+  // Quando cada lead se moveu pela última vez — UMA chamada para o quadro
+  // inteiro. Uma por card seria o N+1 que o P0.7 acabou de tirar da Central.
+  // Chave estável: `meusLeads` ganha identidade nova a cada recarga, e o
+  // efeito disparava duas vezes por carga — oito consultas onde bastavam
+  // quatro. Medido no navegador em 20/09/2026.
+  const chaveDosLeads = useMemo(() => meusLeads.map((l) => l.id).sort().join(','), [meusLeads]);
+
+  useEffect(() => {
+    const ids = chaveDosLeads ? chaveDosLeads.split(',') : [];
+    if (!tenantId || tenantId === 'owner' || ids.length === 0) {
+      setMovimentacoes({});
+      return;
+    }
+    let cancelado = false;
+    buscarUltimaMovimentacao(tenantId, ids)
+      .then((m) => { if (!cancelado) setMovimentacoes(m); })
+      .catch((e) => {
+        // Erro NÃO pode virar quadro sem selo nenhum: um quadro sem selos
+        // parece um quadro saudável, e seria a leitura mais errada possível.
+        if (DEBUG_LOGS) console.warn('Erro ao carregar movimentação dos leads:', e?.message ?? e);
+        if (!cancelado) setMovimentacoes({});
+      });
+    return () => { cancelado = true; };
+  }, [chaveDosLeads, tenantId]);
 
   // Refetch quando outro lugar do app atualiza um lead (funil/pipeline, etc.)
   useEffect(() => {
@@ -1372,6 +1425,7 @@ const handleDragEnd = useCallback(async (event: DragEndEvent) => {
                     bolsaoConfig={bolsaoConfig}
                     nowMs={nowMs}
                     bolsaoStatusMap={bolsaoStatusMap}
+                    movimentacoes={movimentacoes}
                   />
                 </div>
               ))}
