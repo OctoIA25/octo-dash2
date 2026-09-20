@@ -3957,6 +3957,9 @@ registerLiaCadenciaRoutes(app, supabase);
 // telefone e devolve o lead resolvido, para quem integra detectar divergência.
 import { registerLeadEventsRoutes } from './leadEvents/index.js';
 registerLeadEventsRoutes(app, supabase);
+// Base de conhecimento (P2.3): a LIA indexa, a Dash guarda e busca.
+import { registerBaseConhecimentoRoutes } from './baseConhecimento/index.js';
+registerBaseConhecimentoRoutes(app, supabase, validateApiKey);
 
 // Cadência do corretor — os 10 quadrados do modal do lead (canal, resultado,
 // próximo toque). Leitura e escrita pelo servidor porque lead_toques tem RLS

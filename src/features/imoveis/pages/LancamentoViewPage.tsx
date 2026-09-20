@@ -27,6 +27,7 @@ import { FotosUploader, type Foto } from '@/components/imoveis/FotosUploader';
 import { ConstrutoraSelect } from '@/features/imoveis/components/ConstrutoraSelect';
 import { useConstrutoras } from '@/features/imoveis/hooks/useConstrutoras';
 import { TipologiasSection } from '@/features/imoveis/components/TipologiasSection';
+import { BaseDeConhecimentoSection } from '@/features/imoveis/components/BaseDeConhecimentoSection';
 import { buscarTipologias, salvarTipologias } from '@/features/imoveis/services/tipologiasService';
 import type { Tipologia } from '@/features/imoveis/utils/tipologias';
 
@@ -599,6 +600,8 @@ export const LancamentoViewPage = () => {
           rows={8}
         />
       </section>
+
+      {id && <BaseDeConhecimentoSection tenantId={tenantId} lancamentoId={String(id)} />}
 
       <TipologiasSection
         tipologias={tipologias}
