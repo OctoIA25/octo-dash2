@@ -11,6 +11,7 @@ import { fetchTenantBolsaoConfig } from '@/features/leads/services/tenantBolsaoC
 import { useOverflowTabs } from './useOverflowTabs';
 import {
   BarChart3,
+  MessageSquare,
   Headphones,
   Phone,
   Building2,
@@ -122,6 +123,7 @@ const TAB_CONFIGS: TabConfig[] = [
       { id: 'agente-comportamental', label: 'Comportamental', icon: Headphones, href: '/agentes-ia/agente-comportamental' },
       // Telemetria é gestão/owner — filtrada dinamicamente no useMemo (mesmo
       // padrão da aba "Equipes" do Bolsão).
+      { id: 'plantao', label: 'Plantão', icon: MessageSquare, href: '/agentes-ia/plantao' },
       { id: 'telemetria', label: 'Telemetria', icon: BarChart3, href: '/agentes-ia/telemetria' },
     ],
   },
@@ -301,7 +303,11 @@ export function PageTabs() {
           .filter((t) => !['simulador', 'distribuicao'].includes(t.id) || isGestao || isOwner),
       };
     } else if (baseCfg.basePath === '/agentes-ia') {
-      cfg = { ...baseCfg, tabs: baseCfg.tabs.filter((t) => t.id !== 'telemetria' || isGestao || isOwner) };
+      // Plantão junto da Telemetria: a fila mostra o nome de cada lead e a
+      // resposta de cada colega da imobiliária inteira, e aprovar para a base
+      // é ato de gestão. Abrir para o corretor depois é uma linha; vazar não
+      // tem volta.
+      cfg = { ...baseCfg, tabs: baseCfg.tabs.filter((t) => !['telemetria', 'plantao'].includes(t.id) || isGestao || isOwner) };
     } else if (baseCfg.basePath === '/imoveis') {
       // Amarrar anúncio vale para os leads de todos os corretores: só gestão
       // (a rota do servidor exige admin/líder; isto é só UX).
