@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Loader2, Plus, Settings } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
 import {
@@ -10,7 +10,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { ConversationList } from '../components/ConversationList';
+import { ConversationList, type ExtrasDaConversa } from '../components/ConversationList';
+import {
+  buscarExtrasDasConversas, buscarPorConteudo, marcarComoLida,
+} from '../services/conversaExtrasService';
 import { ChatWindow } from '../components/ChatWindow';
 import { TemplatePicker } from '../components/TemplatePicker';
 import { WhatsAppIntegrationTab } from '../components/WhatsAppIntegrationTab';
@@ -35,7 +38,12 @@ import type { WhatsappCategory, WhatsappConfig, WhatsappConversation } from '../
 export const ChatPage = () => {
   const { tenantId, isAdmin, isOwner, user } = useAuthContext();
   const canConfigure = isAdmin || isOwner;
+  const navigate = useNavigate();
+  const timerDaBuscaRef = useRef<number | undefined>(undefined);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // P1.9: leitura por usuário, vínculo com candidato e busca no conteúdo.
+  const [extras, setExtras] = useState<Record<string, ExtrasDaConversa>>({});
+  const [idsPorConteudo, setIdsPorConteudo] = useState<Set<string> | undefined>(undefined);
   const [config, setConfig] = useState<WhatsappConfig | null>(null);
   const [configError, setConfigError] = useState<string | null>(null);
   const [setupOpen, setSetupOpen] = useState(false);
@@ -50,6 +58,33 @@ export const ChatPage = () => {
   const [leadLoading, setLeadLoading] = useState(false);
 
   const { conversations: conversasBrutas, loading: loadingConversations, refresh: refreshConversations } = useChatConversations(tenantId);
+
+  const recarregarExtras = useCallback(() => {
+    if (!tenantId) return;
+    buscarExtrasDasConversas(tenantId).then(setExtras);
+  }, [tenantId]);
+  useEffect(() => { recarregarExtras(); }, [recarregarExtras, conversasBrutas.length]);
+
+  // Abrir a conversa marca como lida PARA MIM. O pedido vai sem esperar: a
+  // tela já mostrou a conversa, e segurá-la por causa disto seria pior.
+  const abrirConversa = useCallback((id: string) => {
+    setSelectedId(id);
+    if (tenantId && user?.id) {
+      void marcarComoLida(tenantId, id, user.id).then(() => {
+        setExtras((e) => ({ ...e, [id]: { ...e[id], lidaEm: new Date().toISOString() } }));
+      });
+    }
+  }, [tenantId, user?.id]);
+
+  // Busca no CONTEÚDO das mensagens. Espera o usuário parar de digitar: uma
+  // consulta por tecla varreria 2.889 mensagens a cada letra.
+  const buscarConteudo = useCallback((termo: string) => {
+    if (!tenantId) return;
+    window.clearTimeout(timerDaBuscaRef.current);
+    timerDaBuscaRef.current = window.setTimeout(() => {
+      buscarPorConteudo(tenantId, termo).then(setIdsPorConteudo);
+    }, 350);
+  }, [tenantId]);
   // Conversa com número de corretor cadastrado já chega categorizada.
   const corretorPhones = useCorretorPhones(tenantId);
   const conversations = useMemo(
@@ -224,7 +259,12 @@ export const ChatPage = () => {
   };
 
   const notConfigured = !config && !configError;
-  const showSetupBanner = !config || !config.is_active;
+  // O AVISO NÃO APARECE QUANDO HÁ CONVERSA ATIVA (P1.9). A Lia conversa pelo
+  // n8n, com credencial própria; o que a Dash não tem é número para ENVIAR
+  // manualmente. Dizer "nenhum número configurado" com 366 conversas na tela
+  // faz o gestor achar que o WhatsApp está fora do ar.
+  const temConversaAtiva = conversasBrutas.some((c) => c.last_message_at);
+  const showSetupBanner = (!config || !config.is_active) && !temConversaAtiva;
 
   return (
     <div className="flex h-screen w-full flex-col" style={{ backgroundColor: 'var(--bg-primary)' }}>
@@ -270,7 +310,7 @@ export const ChatPage = () => {
             {configError
               ? `Não foi possível carregar a configuração: ${configError}`
               : notConfigured
-                ? 'Nenhum número WhatsApp configurado para este tenant.'
+                ? 'A Lia atende por fora da Dash · envio manual daqui não configurado.'
                 : 'Integração WhatsApp inativa.'}
           </span>
         </div>
@@ -287,8 +327,13 @@ export const ChatPage = () => {
           <ConversationList
             conversations={conversations}
             selectedId={selectedId}
-            onSelect={setSelectedId}
+            onSelect={abrirConversa}
             loading={loadingConversations}
+            extras={extras}
+            meuUserId={user?.id ?? null}
+            idsPorConteudo={idsPorConteudo}
+            onBuscaChange={buscarConteudo}
+            onVerCandidato={(id) => navigate(`/recrutamento?candidato=${encodeURIComponent(id)}`)}
           />
         </div>
         <ChatWindow
