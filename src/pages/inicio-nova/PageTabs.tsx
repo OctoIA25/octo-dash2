@@ -34,6 +34,7 @@ import {
   Zap,
   Tag,
   Play,
+  ListChecks,
   Activity,
   Settings2,
   Sparkles,
@@ -73,6 +74,7 @@ const TAB_CONFIGS: TabConfig[] = [
     tabs: [
       { id: 'kanban', label: 'Kanban Interessado', icon: LayoutGrid, href: '/meus-leads?sub=kanban', isQuery: true },
       { id: 'kanban-proprietario', label: 'Kanban Proprietário', icon: Building2, href: '/meus-leads?sub=kanban-proprietario', isQuery: true },
+      { id: 'lista', label: 'Lista', icon: ListChecks, href: '/meus-leads?sub=lista', isQuery: true },
       { id: 'central-leads', label: 'Central de Leads', icon: Users, href: '/meus-leads?sub=central-leads', isQuery: true },
       { id: 'arquivados', label: 'Arquivados', icon: Archive, href: '/meus-leads?sub=arquivados', isQuery: true },
     ],

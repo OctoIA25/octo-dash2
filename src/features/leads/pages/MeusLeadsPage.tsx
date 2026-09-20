@@ -6,6 +6,7 @@
 import { MeusLeadsAtribuidosSection } from '../components/MeusLeadsAtribuidosSection';
 import { LeadsArquivadosSection } from '../components/LeadsArquivadosSection';
 import { CentralLeadsPage } from './CentralLeadsPage';
+import { ListaDeLeadsSection } from '../components/ListaDeLeadsSection';
 import { useSearchParams } from 'react-router-dom';
 import { LEAD_TYPE_INTERESSADO, LEAD_TYPE_PROPRIETARIO } from '../services/leadsService';
 
@@ -15,13 +16,13 @@ interface MeusLeadsPageProps {
   isRefreshing?: boolean;
 }
 
-type SubArea = 'kanban' | 'kanban-proprietario' | 'central-leads' | 'arquivados';
+type SubArea = 'kanban' | 'kanban-proprietario' | 'lista' | 'central-leads' | 'arquivados';
 
 export const MeusLeadsPage = (_props: MeusLeadsPageProps) => {
   const [searchParams] = useSearchParams();
   const sub = searchParams.get('sub');
   const activeSubArea: SubArea =
-    sub === 'kanban-proprietario' || sub === 'central-leads' || sub === 'arquivados'
+    sub === 'kanban-proprietario' || sub === 'central-leads' || sub === 'arquivados' || sub === 'lista'
       ? sub
       : 'kanban';
 
@@ -31,6 +32,8 @@ export const MeusLeadsPage = (_props: MeusLeadsPageProps) => {
         <MeusLeadsAtribuidosSection leadType={LEAD_TYPE_INTERESSADO} />
       ) : activeSubArea === 'kanban-proprietario' ? (
         <MeusLeadsAtribuidosSection leadType={LEAD_TYPE_PROPRIETARIO} />
+      ) : activeSubArea === 'lista' ? (
+        <div className="w-full overflow-auto"><ListaDeLeadsSection /></div>
       ) : activeSubArea === 'arquivados' ? (
         <div className="w-full"><LeadsArquivadosSection /></div>
       ) : (
