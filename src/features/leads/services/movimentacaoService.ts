@@ -12,15 +12,20 @@
 import { supabase } from '@/lib/supabaseClient';
 
 export interface Movimentacao {
-  ultima: string;
-  fonte: string;
+  /** Quando o lead se moveu pela última vez. Ausente = sem registro. */
+  ultima: string | null;
+  fonte: string | null;
+  /** A Lia entregou o lead a um corretor. */
+  liaPassou: boolean;
+  /** A Lia encostou no lead alguma vez. */
+  liaAtendeu: boolean;
 }
 
 /** Leads por chamada. O array vai na URL do PostgREST, que tem limite de tamanho. */
 const LOTE = 500;
 
 /**
- * Mapa `lead_id -> { ultima, fonte }`, só com os leads que TÊM movimento.
+ * Mapa `lead_id -> { ultima, fonte, liaPassou, liaAtendeu }`.
  *
  * Quem não aparece no mapa não é "parado há 0 dias": é "sem registro". Quem
  * chama precisa tratar a ausência como ausência — devolver zero aqui faria a
@@ -45,9 +50,21 @@ export async function buscarUltimaMovimentacao(
     // selo por lead recente se parecem na tela, então o erro sobe.
     if (error) throw error;
 
-    for (const linha of (data ?? []) as Array<{ lead_id: string; ultima: string; fonte: string }>) {
-      if (linha?.lead_id && linha.ultima) {
-        mapa[linha.lead_id] = { ultima: linha.ultima, fonte: linha.fonte };
+    type Linha = {
+      lead_id: string; ultima: string | null; fonte: string | null;
+      lia_passou: boolean | null; lia_atendeu: boolean | null;
+    };
+    for (const linha of (data ?? []) as Linha[]) {
+      // A linha entra mesmo sem data: o estado do handoff é um fato à parte,
+      // e filtrar por `ultima` aqui apagaria o sub-status do lead que a Lia
+      // está atendendo e que ainda não se moveu.
+      if (linha?.lead_id) {
+        mapa[linha.lead_id] = {
+          ultima: linha.ultima ?? null,
+          fonte: linha.fonte ?? null,
+          liaPassou: linha.lia_passou === true,
+          liaAtendeu: linha.lia_atendeu === true,
+        };
       }
     }
   }

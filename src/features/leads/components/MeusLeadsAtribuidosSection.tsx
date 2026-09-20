@@ -17,6 +17,7 @@ import { Input } from '@/components/ui/input';
 import { useDebounce } from '../hooks/useDebounce';
 import { ClassificacaoDots } from './ClassificacaoBadge';
 import { seloDeParado } from '../utils/diasParado';
+import { seloDeSubStatus } from '../utils/subStatus';
 import { buscarUltimaMovimentacao, type Movimentacao } from '../services/movimentacaoService';
 import { filtrarPorAtuacao, opcoesFiltroBolsao, classificacoesDe } from '../utils/classificarLead';
 import { anuncioNaoIdentificado } from '../utils/anuncioDoPortal';
@@ -348,6 +349,11 @@ export const KanbanCardContent = memo(({ lead, onClick, mostrarCorretor, isOverl
   // nesse caso, porque o registro de eventos só existe desde 10/09/2026.
   const selo = seloDeParado(movimentacao?.ultima, movimentacao?.fonte, nowMs);
 
+  // De quem é a bola. "Com o corretor" não desenha nada: o nome do corretor
+  // já está no rodapé, e repetir a mesma informação em 98% dos cards é o que
+  // transforma selo em paisagem.
+  const bola = seloDeSubStatus(corretorResponsavel, movimentacao?.liaPassou, movimentacao?.liaAtendeu);
+
   return (
     <div
       onClick={isOverlay ? undefined : onClick}
@@ -454,6 +460,14 @@ export const KanbanCardContent = memo(({ lead, onClick, mostrarCorretor, isOverl
             </Badge>
           )}
           <ClassificacaoDots tipo={lead.classification} />
+          {bola && (
+            <span
+              className={`inline-flex items-center px-1.5 py-0 h-4 rounded text-[9px] font-semibold ${bola.classe}`}
+              title={bola.explicacao}
+            >
+              {bola.texto}
+            </span>
+          )}
           {selo && (
             <span
               className={`inline-flex items-center gap-1 px-1.5 py-0 h-4 rounded text-[9px] font-semibold ${selo.classe}`}
