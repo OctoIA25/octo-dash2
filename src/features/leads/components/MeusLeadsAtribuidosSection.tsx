@@ -23,6 +23,8 @@ import {
   CHAVES_PADRAO, type ChavesDeEtapa,
 } from '../utils/preRequisitos';
 import { buscarChavesDeEtapa } from '../services/etapaConfigService';
+import { calcularScore, explicacaoCurta, corDaTemperatura, PESOS_PADRAO, type SinaisDoLead, type PesosDoScore } from '../utils/score';
+import { buscarSinaisDeScore, buscarConfiguracaoDoScore } from '../services/scoreService';
 import { contextoDoLead } from '../services/preRequisitosService';
 import { registrarRequisitosIgnorados, carimbarAssinatura } from '../services/requisitosService';
 import { buscarUltimaMovimentacao, type Movimentacao } from '../services/movimentacaoService';
@@ -243,6 +245,11 @@ interface KanbanCardProps {
   bolsaoStatus?: { queue_attempt: number; atendido: boolean; status: string } | null;
   /** Quando este lead se moveu pela última vez. AUSENTE não é zero: é "sem registro". */
   movimentacao?: Movimentacao | null;
+  /** Os sinais observados do lead, para o score (P1.7). */
+  sinais?: SinaisDoLead | null;
+  pesos?: PesosDoScore;
+  /** Bônus da origem deste lead, já resolvido pelo pai. */
+  pesoDaOrigem?: number;
 }
 
 interface KanbanCardContentProps {
@@ -256,6 +263,11 @@ interface KanbanCardContentProps {
   bolsaoStatus?: { queue_attempt: number; atendido: boolean; status: string } | null;
   /** Quando este lead se moveu pela última vez. AUSENTE não é zero: é "sem registro". */
   movimentacao?: Movimentacao | null;
+  /** Os sinais observados do lead, para o score (P1.7). */
+  sinais?: SinaisDoLead | null;
+  pesos?: PesosDoScore;
+  /** Bônus da origem deste lead, já resolvido pelo pai. */
+  pesoDaOrigem?: number;
 }
 
 /**
@@ -336,7 +348,7 @@ BolsaoCountdownLine.displayName = 'BolsaoCountdownLine';
  * GripVertical com listeners do dnd-kit) para renderizar à esquerda do avatar.
  * Quando `isOverlay=true` estamos desenhando o clone do DragOverlay.
  */
-export const KanbanCardContent = memo(({ lead, onClick, mostrarCorretor, isOverlay = false, dragHandle, bolsaoConfig, nowMs, bolsaoStatus, movimentacao }: KanbanCardContentProps & { dragHandle?: React.ReactNode }) => {
+export const KanbanCardContent = memo(({ lead, onClick, mostrarCorretor, isOverlay = false, dragHandle, bolsaoConfig, nowMs, bolsaoStatus, movimentacao, sinais, pesos, pesoDaOrigem }: KanbanCardContentProps & { dragHandle?: React.ReactNode }) => {
   const nome = lead.nomedolead || 'Lead sem nome';
   const telefone = lead.lead || lead.numerocorretor || '';
   const portal = lead.portal || '';
@@ -360,6 +372,11 @@ export const KanbanCardContent = memo(({ lead, onClick, mostrarCorretor, isOverl
   // já está no rodapé, e repetir a mesma informação em 98% dos cards é o que
   // transforma selo em paisagem.
   const bola = seloDeSubStatus(corretorResponsavel, movimentacao?.liaPassou, movimentacao?.liaAtendeu);
+
+  // SCORE (P1.7). A temperatura sai DAQUI, e não da coluna `temperature` —
+  // dois campos separados se contradizem, e foi isso que o plano mandou tirar.
+  // Sem sinais carregados ainda, `sinais` é nulo e o card não inventa número.
+  const avaliacao = sinais ? calcularScore({ ...sinais, peso_da_origem: pesoDaOrigem }, pesos ?? PESOS_PADRAO) : null;
 
   return (
     <div
@@ -461,11 +478,23 @@ export const KanbanCardContent = memo(({ lead, onClick, mostrarCorretor, isOverl
             (migration 20260818) e duas badges numa coluna estreita de Kanban
             estouravam a linha. Com uma badge só o layout é o mesmo de antes. */}
         <div className="flex items-center justify-end gap-1 flex-wrap min-w-0">
-          {lead.temperature && (
+          {avaliacao ? (
+            <span
+              className={`inline-flex items-center gap-1 px-1.5 py-0 h-4 rounded text-[9px] font-semibold ${corDaTemperatura(avaliacao.temperatura)}`}
+              title={
+                avaliacao.sinaisObservados === 0
+                  ? 'Nenhum sinal observado ainda — este lead está no ponto de partida, não avaliado.'
+                  : `${avaliacao.score}/100 · ${explicacaoCurta(avaliacao)}`
+              }
+            >
+              {avaliacao.score}
+              <span className="font-normal">{avaliacao.temperatura}</span>
+            </span>
+          ) : lead.temperature ? (
             <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 capitalize border-slate-200 dark:border-slate-700">
               {lead.temperature}
             </Badge>
-          )}
+          ) : null}
           <ClassificacaoDots tipo={lead.classification} />
           {bola && (
             <span
@@ -510,7 +539,7 @@ export const KanbanCardContent = memo(({ lead, onClick, mostrarCorretor, isOverl
 
 KanbanCardContent.displayName = 'KanbanCardContent';
 
-const KanbanCard = memo(({ lead, onClick, mostrarCorretor, bolsaoConfig, nowMs, bolsaoStatus, movimentacao }: KanbanCardProps) => {
+const KanbanCard = memo(({ lead, onClick, mostrarCorretor, bolsaoConfig, nowMs, bolsaoStatus, movimentacao, sinais, pesos, pesoDaOrigem }: KanbanCardProps) => {
   // Quando há DragOverlay, o card ORIGINAL não recebe `transform` — só muda opacity
   // para marcar a posição de origem. O overlay (portal no body) é quem segue o cursor.
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: lead.id });
@@ -542,6 +571,9 @@ const KanbanCard = memo(({ lead, onClick, mostrarCorretor, bolsaoConfig, nowMs, 
         nowMs={nowMs}
         bolsaoStatus={bolsaoStatus}
         movimentacao={movimentacao}
+        sinais={sinais}
+        pesos={pesos}
+        pesoDaOrigem={pesoDaOrigem}
       />
     </div>
   );
@@ -559,11 +591,14 @@ interface KanbanColumnProps {
   nowMs?: number;
   bolsaoStatusMap?: Record<string, { queue_attempt: number; atendido: boolean; status: string }>;
   movimentacoes?: Record<string, Movimentacao>;
+  sinaisPorLead?: Record<string, SinaisDoLead>;
+  pesos?: PesosDoScore;
+  pesoPorOrigem?: Record<string, number>;
 }
 
 const CARDS_PER_PAGE = 15;
 
-const KanbanColumn = memo(({ column, leads, onLeadClick, onAdicionarLead, mostrarCorretor, bolsaoConfig, nowMs, bolsaoStatusMap, movimentacoes }: KanbanColumnProps) => {
+const KanbanColumn = memo(({ column, leads, onLeadClick, onAdicionarLead, mostrarCorretor, bolsaoConfig, nowMs, bolsaoStatusMap, movimentacoes, sinaisPorLead, pesos, pesoPorOrigem }: KanbanColumnProps) => {
   const { setNodeRef, isOver } = useDroppable({ id: column.id });
   const [visibleCount, setVisibleCount] = useState(CARDS_PER_PAGE);
 
@@ -612,6 +647,9 @@ const KanbanColumn = memo(({ column, leads, onLeadClick, onAdicionarLead, mostra
               nowMs={nowMs}
               bolsaoStatus={bolsaoStatusMap?.[lead.id] ?? null}
               movimentacao={movimentacoes?.[lead.id] ?? null}
+              sinais={sinaisPorLead?.[lead.id] ?? null}
+              pesos={pesos}
+              pesoDaOrigem={pesoPorOrigem?.[String(lead.portal ?? '').trim().toLowerCase()] ?? 0}
             />
           ))}
 
@@ -766,6 +804,11 @@ export const MeusLeadsAtribuidosSection = ({
   // As chaves de pré-requisito da imobiliária. Padrão = tudo desligado, então
   // uma falha de leitura simplesmente não avisa nada.
   const [chavesDeEtapa, setChavesDeEtapa] = useState<ChavesDeEtapa>(CHAVES_PADRAO);
+  // Score (P1.7). `sinaisPorLead` vazio = ainda não carregou, e o card então
+  // não mostra número nenhum em vez de mostrar 50 para todo mundo.
+  const [sinaisPorLead, setSinaisPorLead] = useState<Record<string, SinaisDoLead>>({});
+  const [pesos, setPesos] = useState<PesosDoScore>(PESOS_PADRAO);
+  const [pesoPorOrigem, setPesoPorOrigem] = useState<Record<string, number>>({});
   const carregarBolsaoStatus = useCallback(async (leadIds: string[]) => {
     if (leadIds.length === 0) {
       setBolsaoStatusMap({});
@@ -895,8 +938,14 @@ export const MeusLeadsAtribuidosSection = ({
     if (!tenantId || tenantId === 'owner') { setChavesDeEtapa(CHAVES_PADRAO); return; }
     let cancelado = false;
     buscarChavesDeEtapa(tenantId).then((c) => { if (!cancelado) setChavesDeEtapa(c); });
+    buscarConfiguracaoDoScore(tenantId).then((c) => {
+      if (cancelado) return;
+      setPesos(c.pesos);
+      setPesoPorOrigem(c.porOrigem);
+    });
     return () => { cancelado = true; };
   }, [tenantId]);
+
 
   // Sincroniza o status do bolsão (queue_attempt, atendido) sempre que mudar lista
   useEffect(() => {
@@ -924,6 +973,22 @@ export const MeusLeadsAtribuidosSection = ({
         // parece um quadro saudável, e seria a leitura mais errada possível.
         if (DEBUG_LOGS) console.warn('Erro ao carregar movimentação dos leads:', e?.message ?? e);
         if (!cancelado) setMovimentacoes({});
+      });
+    return () => { cancelado = true; };
+  }, [chaveDosLeads, tenantId]);
+
+  // Os sinais do score, UMA chamada para o quadro inteiro.
+  useEffect(() => {
+    const ids = chaveDosLeads ? chaveDosLeads.split(',') : [];
+    if (!tenantId || tenantId === 'owner' || ids.length === 0) { setSinaisPorLead({}); return; }
+    let cancelado = false;
+    buscarSinaisDeScore(tenantId, ids)
+      .then((m) => { if (!cancelado) setSinaisPorLead(m); })
+      .catch((e) => {
+        // Erro NÃO vira quadro com 50 em todo card: um score inventado é pior
+        // que score nenhum, porque ordena a lista errado sem avisar.
+        if (DEBUG_LOGS) console.warn('Erro ao carregar sinais do score:', e?.message ?? e);
+        if (!cancelado) setSinaisPorLead({});
       });
     return () => { cancelado = true; };
   }, [chaveDosLeads, tenantId]);
@@ -1518,6 +1583,9 @@ const handleDragEnd = useCallback(async (event: DragEndEvent) => {
                     nowMs={nowMs}
                     bolsaoStatusMap={bolsaoStatusMap}
                     movimentacoes={movimentacoes}
+                    sinaisPorLead={sinaisPorLead}
+                    pesos={pesos}
+                    pesoPorOrigem={pesoPorOrigem}
                   />
                 </div>
               ))}
@@ -1564,6 +1632,17 @@ const handleDragEnd = useCallback(async (event: DragEndEvent) => {
         leadType={leadType}
         etapas={kanbanColumns.map((c) => ({ id: c.id, title: c.title }))}
         etapaAtual={editingLead ? getLeadStatus(editingLead, kanbanColumns) : undefined}
+        avaliacao={
+          editingLead && sinaisPorLead[editingLead.id]
+            ? calcularScore(
+                {
+                  ...sinaisPorLead[editingLead.id],
+                  peso_da_origem: pesoPorOrigem[String(editingLead.portal ?? '').trim().toLowerCase()] ?? 0,
+                },
+                pesos
+              )
+            : null
+        }
         onMudarEtapa={mudarEtapa}
         // Corretor edita os leads que aparecem aqui: esta lista é carregada
         // por assigned_agent_id/nome dele (ver carregarMeusLeads).

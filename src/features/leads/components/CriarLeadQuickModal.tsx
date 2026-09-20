@@ -7,6 +7,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Plus, Save, User as UserIcon, Phone, Mail, Home, Loader2, Thermometer, Inbox, Tag, MessageSquare, IdCard, Archive, Building2, ChevronDown, MapPin, ListChecks } from 'lucide-react';
+import { corDaTemperatura, type ResultadoDoScore } from '../utils/score';
 import { supabase } from '@/lib/supabaseClient';
 import { leadsEventEmitter } from '@/lib/leadsEventEmitter';
 import { CLASSIFICACAO_ESTILOS, CLASSIFICACAO_ORDEM } from './ClassificacaoBadge';
@@ -76,6 +77,13 @@ interface CriarLeadQuickModalProps {
    * criaria a segunda verdade sobre a mesma coisa.
    */
   etapaAtual?: string;
+  /**
+   * O score já calculado, com o porquê de cada parcela (P1.7).
+   *
+   * O plano diz do Aether: "não há tela explicando por que um lead tem 32 e
+   * outro 94". Esta é a tela.
+   */
+  avaliacao?: ResultadoDoScore | null;
   /**
    * Muda a etapa do lead. É a MESMA função que o arrastar usa — dois caminhos
    * fariam a regra de pré-requisitos valer num e não no outro.
@@ -149,6 +157,7 @@ export const CriarLeadQuickModal = ({
   etapas,
   etapaAtual,
   onMudarEtapa,
+  avaliacao,
 }: CriarLeadQuickModalProps) => {
   const isEditMode = Boolean(editingLead);
   const isProprietario = leadType === LEAD_TYPE_PROPRIETARIO;
@@ -750,6 +759,44 @@ export const CriarLeadQuickModal = ({
             {/* Seção: Interesse */}
             <SectionTitle>Interesse</SectionTitle>
             <div className="space-y-3 mb-5">
+              {isEditMode && avaliacao && (
+                <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-slate-700 dark:text-slate-300">Score do lead</span>
+                    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-semibold ${corDaTemperatura(avaliacao.temperatura)}`}>
+                      {avaliacao.score}/100
+                      <span className="font-normal">{avaliacao.temperatura}</span>
+                    </span>
+                  </div>
+
+                  {avaliacao.sinaisObservados === 0 ? (
+                    // 50 por não ter sido observado e 50 por sinais que se
+                    // anulam são coisas diferentes. Sem isto, o corretor leria
+                    // "morno" como avaliação, quando não houve avaliação.
+                    <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
+                      Nenhum sinal observado ainda — este lead está no ponto de partida, não foi avaliado.
+                    </p>
+                  ) : (
+                    <ul className="mt-2 space-y-0.5">
+                      {avaliacao.motivos.map((m) => (
+                        <li key={m.id} className="flex items-baseline justify-between gap-2 text-[11.5px]">
+                          <span className="text-slate-600 dark:text-slate-300">{m.texto}</span>
+                          <span className={`shrink-0 font-mono tabular-nums ${m.pontos < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                            {m.pontos > 0 ? '+' : '−'}{Math.abs(m.pontos)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
+                  {avaliacao.cortado && (
+                    <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
+                      A soma passou dos limites e foi cortada em 0–100.
+                    </p>
+                  )}
+                </div>
+              )}
+
               {isEditMode && onMudarEtapa && etapas && etapas.length > 0 && editingLead && (
                 <div>
                   <label
