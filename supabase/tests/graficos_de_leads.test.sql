@@ -36,19 +36,19 @@ BEGIN
   -- ----------------------------------------------------------
   r := leads_graficos(t);
 
-  IF (r->>'total')::int <> 2 THEN
+  IF (r->>'total')::int IS DISTINCT FROM 2 THEN
     RAISE EXCEPTION 'FALHOU: total deu %', r->>'total';
   END IF;
 
   SELECT sum((x->>'total')::int) INTO soma
   FROM jsonb_array_elements(r->'por_dia') x;
-  IF soma <> (r->>'total')::int THEN
+  IF soma IS DISTINCT FROM (r->>'total')::int THEN
     RAISE EXCEPTION 'FALHOU: o grafico por dia soma % e o contador diz %', soma, r->>'total';
   END IF;
 
   SELECT sum((x->>'total')::int) INTO soma
   FROM jsonb_array_elements(r->'por_equipe') x;
-  IF soma <> (r->>'total')::int THEN
+  IF soma IS DISTINCT FROM (r->>'total')::int THEN
     RAISE EXCEPTION 'FALHOU: o grafico por equipe soma % e o contador diz %', soma, r->>'total';
   END IF;
 
@@ -57,7 +57,7 @@ BEGIN
   SELECT sum((x->>'com_corretor')::int + (x->>'aguardando_corretor')::int
            + (x->>'com_lia')::int + (x->>'sem_ninguem')::int) INTO soma
   FROM jsonb_array_elements(r->'por_equipe') x;
-  IF soma <> (r->>'total')::int THEN
+  IF soma IS DISTINCT FROM (r->>'total')::int THEN
     RAISE EXCEPTION 'FALHOU: as pilhas somam % e o total e %', soma, r->>'total';
   END IF;
 
@@ -84,11 +84,11 @@ BEGIN
   -- diferentes na mesma tela.
   -- ----------------------------------------------------------
   r := leads_graficos(t, now() - interval '5 days');
-  IF (r->>'total')::int <> 1 THEN
+  IF (r->>'total')::int IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: filtro de periodo deu total %', r->>'total';
   END IF;
   SELECT sum((x->>'total')::int) INTO soma FROM jsonb_array_elements(r->'por_equipe') x;
-  IF soma <> 1 THEN
+  IF soma IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: o periodo nao chegou no grafico por equipe (soma %)', soma;
   END IF;
 
@@ -104,7 +104,7 @@ BEGIN
     (t, l2, now(), 1, 'Financiamento', 'AP2', 'Proposta Assinada');
 
   r := leads_graficos(t);
-  IF (r->'conversao'->>'amostras')::int <> 2 THEN
+  IF (r->'conversao'->>'amostras')::int IS DISTINCT FROM 2 THEN
     RAISE EXCEPTION 'FALHOU: amostras de conversao deu %', r->'conversao'->>'amostras';
   END IF;
   IF r->'conversao'->>'mediana_dias' IS NULL THEN
@@ -149,7 +149,7 @@ BEGIN
   -- 6. ESCOPO DE IMOBILIÁRIA.
   -- ----------------------------------------------------------
   r := leads_graficos('cccccccc-cccc-4ccc-accc-cccccccccccc'::uuid);
-  IF (r->>'total')::int <> 0 THEN
+  IF (r->>'total')::int IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'FALHOU: graficos vazaram para outra imobiliaria (total %)', r->>'total';
   END IF;
 

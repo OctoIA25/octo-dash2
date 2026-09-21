@@ -22,6 +22,13 @@ BEGIN
   END IF;
 END $$;
 
+-- O tenant da fixture existe em produção, e não num banco recém-levantado. O
+-- teste o cria aqui dentro do BEGIN/ROLLBACK: assim ele roda em qualquer banco
+-- e não depende do que o dump trouxe junto.
+INSERT INTO tenants (id, code, name)
+VALUES ('e2d9bca4-3ce3-4733-b3ea-ed65ce09c832', 'area-de-teste', 'Área de Teste')
+ON CONFLICT (id) DO NOTHING;
+
 CREATE TEMP TABLE fx ON COMMIT DROP AS SELECT
   'e2d9bca4-3ce3-4733-b3ea-ed65ce09c832'::uuid AS tenant;
 

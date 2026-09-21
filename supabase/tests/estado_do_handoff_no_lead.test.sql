@@ -78,7 +78,7 @@ BEGIN
   IF NOT r.lia_passou THEN
     RAISE EXCEPTION 'FALHOU: distribuicao antiga da LIA sumiu do estado do handoff';
   END IF;
-  IF r.fonte <> 'evento' OR r.ultima < now() - interval '4 days' THEN
+  IF r.fonte IS DISTINCT FROM 'evento' OR r.ultima < now() - interval '4 days' THEN
     RAISE EXCEPTION 'FALHOU: a distribuicao antiga virou a data do selo de parado (%)', r.ultima;
   END IF;
 

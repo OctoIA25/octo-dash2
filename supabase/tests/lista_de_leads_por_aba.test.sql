@@ -61,7 +61,7 @@ BEGIN
         aba, r->'contadores'->>aba, r->>'total_na_aba';
     END IF;
     -- E o número de linhas devolvidas bate também, quando cabe na página.
-    IF jsonb_array_length(r->'linhas') <> (r->>'total_na_aba')::int THEN
+    IF jsonb_array_length(r->'linhas') IS DISTINCT FROM (r->>'total_na_aba')::int THEN
       RAISE EXCEPTION 'FALHOU: aba "%" promete % e devolveu % linhas',
         aba, r->>'total_na_aba', jsonb_array_length(r->'linhas');
     END IF;
@@ -72,15 +72,15 @@ BEGIN
   -- ----------------------------------------------------------
   r := leads_lista_por_aba(t, 'todos', NULL, NULL, NULL, NULL, NULL, 200, 0);
   c := r->'contadores';
-  IF (c->>'todos')::int <> 4 THEN RAISE EXCEPTION 'FALHOU: todos deu %', c->>'todos'; END IF;
-  IF (c->>'novos')::int <> 1 THEN RAISE EXCEPTION 'FALHOU: novos deu %', c->>'novos'; END IF;
-  IF (c->>'atendimento')::int <> 3 THEN RAISE EXCEPTION 'FALHOU: atendimento deu %', c->>'atendimento'; END IF;
-  IF (c->>'atividade')::int <> 1 THEN RAISE EXCEPTION 'FALHOU: atividade deu %', c->>'atividade'; END IF;
-  IF (c->>'sem-corretor')::int <> 1 THEN RAISE EXCEPTION 'FALHOU: sem-corretor deu %', c->>'sem-corretor'; END IF;
+  IF (c->>'todos')::int IS DISTINCT FROM 4 THEN RAISE EXCEPTION 'FALHOU: todos deu %', c->>'todos'; END IF;
+  IF (c->>'novos')::int IS DISTINCT FROM 1 THEN RAISE EXCEPTION 'FALHOU: novos deu %', c->>'novos'; END IF;
+  IF (c->>'atendimento')::int IS DISTINCT FROM 3 THEN RAISE EXCEPTION 'FALHOU: atendimento deu %', c->>'atendimento'; END IF;
+  IF (c->>'atividade')::int IS DISTINCT FROM 1 THEN RAISE EXCEPTION 'FALHOU: atividade deu %', c->>'atividade'; END IF;
+  IF (c->>'sem-corretor')::int IS DISTINCT FROM 1 THEN RAISE EXCEPTION 'FALHOU: sem-corretor deu %', c->>'sem-corretor'; END IF;
 
   -- Novos + Em atendimento = Todos. Se não somar, algum lead está fora das
   -- duas ou nas duas, e o gestor nunca o encontra.
-  IF (c->>'novos')::int + (c->>'atendimento')::int <> (c->>'todos')::int THEN
+  IF (c->>'novos')::int + (c->>'atendimento')::int IS DISTINCT FROM (c->>'todos')::int THEN
     RAISE EXCEPTION 'FALHOU: novos + atendimento nao soma todos';
   END IF;
 
@@ -91,15 +91,15 @@ BEGIN
   -- registro de eventos só existe desde 10/09. Misturar "sei que parou" com
   -- "não sei nada" tiraria da aba o poder de apontar.
   -- ----------------------------------------------------------
-  IF (c->>'parados')::int <> 1 THEN
+  IF (c->>'parados')::int IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: parados deu % (esperava so o lp)', c->>'parados';
   END IF;
-  IF (r->>'sem_historico')::int <> 2 THEN
+  IF (r->>'sem_historico')::int IS DISTINCT FROM 2 THEN
     RAISE EXCEPTION 'FALHOU: sem_historico deu % (esperava ln e ls)', r->>'sem_historico';
   END IF;
 
   r := leads_lista_por_aba(t, 'parados', NULL, NULL, NULL, NULL, NULL, 200, 0);
-  IF (r->'linhas'->0->>'nome') <> 'Parado' THEN
+  IF (r->'linhas'->0->>'nome') IS DISTINCT FROM 'Parado' THEN
     RAISE EXCEPTION 'FALHOU: a aba Parados trouxe "%"', r->'linhas'->0->>'nome';
   END IF;
 
@@ -111,7 +111,7 @@ BEGIN
   -- anunciou 2.553 leads numa imobiliária sem nenhum corretor.
   -- ----------------------------------------------------------
   r := leads_lista_por_aba(t, 'sem-corretor', NULL, NULL, NULL, NULL, NULL, 200, 0);
-  IF (r->'linhas'->0->>'nome') <> 'Novo Sem Corretor' THEN
+  IF (r->'linhas'->0->>'nome') IS DISTINCT FROM 'Novo Sem Corretor' THEN
     RAISE EXCEPTION 'FALHOU: sem-corretor trouxe "%"', r->'linhas'->0->>'nome';
   END IF;
   -- E a linha não devolve o texto "Não atribuído" como se fosse gente.
@@ -126,11 +126,11 @@ BEGIN
   -- mostra — e o gestor clicaria numa aba que diz 12 e abre vazia.
   -- ----------------------------------------------------------
   r := leads_lista_por_aba(t, 'todos', NULL, NULL, 'Meta', NULL, NULL, 200, 0);
-  IF (r->'contadores'->>'todos')::int <> 2 THEN
+  IF (r->'contadores'->>'todos')::int IS DISTINCT FROM 2 THEN
     RAISE EXCEPTION 'FALHOU: filtro de origem nao chegou no contador (deu %)', r->'contadores'->>'todos';
   END IF;
   -- Mas o total DA BASE ignora o filtro: é o terceiro número do rodapé.
-  IF (r->>'total_na_base')::int <> 4 THEN
+  IF (r->>'total_na_base')::int IS DISTINCT FROM 4 THEN
     RAISE EXCEPTION 'FALHOU: total_na_base virou % com filtro', r->>'total_na_base';
   END IF;
 
@@ -142,17 +142,17 @@ BEGIN
   -- lead sumiu.
   -- ----------------------------------------------------------
   r := leads_lista_por_aba(t, 'todos', '(11) 99999-0001', NULL, NULL, NULL, NULL, 200, 0);
-  IF (r->>'total_na_aba')::int <> 1 THEN
+  IF (r->>'total_na_aba')::int IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: busca por telefone formatado achou % leads', r->>'total_na_aba';
   END IF;
 
   r := leads_lista_por_aba(t, 'todos', 'parad', NULL, NULL, NULL, NULL, 200, 0);
-  IF (r->>'total_na_aba')::int <> 1 THEN
+  IF (r->>'total_na_aba')::int IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: busca por nome achou %', r->>'total_na_aba';
   END IF;
 
   r := leads_lista_por_aba(t, 'todos', 'AP0003', NULL, NULL, NULL, NULL, 200, 0);
-  IF (r->>'total_na_aba')::int <> 1 THEN
+  IF (r->>'total_na_aba')::int IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: busca por codigo de imovel achou %', r->>'total_na_aba';
   END IF;
 
@@ -164,14 +164,14 @@ BEGIN
   -- nada.
   -- ----------------------------------------------------------
   r := leads_lista_por_aba(t, 'todos', NULL, NULL, NULL, NULL, NULL, 2, 0);
-  IF jsonb_array_length(r->'linhas') <> 2 OR (r->>'total_na_aba')::int <> 4 THEN
+  IF jsonb_array_length(r->'linhas') IS DISTINCT FROM 2 OR (r->>'total_na_aba')::int IS DISTINCT FROM 4 THEN
     RAISE EXCEPTION 'FALHOU: paginacao — % linhas de um total de %',
       jsonb_array_length(r->'linhas'), r->>'total_na_aba';
   END IF;
 
   -- Offset além do fim devolve lista vazia, e não erro nem a primeira página.
   r := leads_lista_por_aba(t, 'todos', NULL, NULL, NULL, NULL, NULL, 2, 999);
-  IF jsonb_array_length(r->'linhas') <> 0 THEN
+  IF jsonb_array_length(r->'linhas') IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'FALHOU: offset alem do fim devolveu % linhas', jsonb_array_length(r->'linhas');
   END IF;
 
@@ -189,7 +189,7 @@ BEGIN
   -- parece "você não tem lead nenhum".
   -- ----------------------------------------------------------
   r := leads_lista_por_aba(t, 'aba-que-nao-existe', NULL, NULL, NULL, NULL, NULL, 200, 0);
-  IF (r->>'total_na_aba')::int <> 4 THEN
+  IF (r->>'total_na_aba')::int IS DISTINCT FROM 4 THEN
     RAISE EXCEPTION 'FALHOU: aba desconhecida deu %', r->>'total_na_aba';
   END IF;
 
@@ -197,7 +197,7 @@ BEGIN
   -- 9. ESCOPO DE IMOBILIÁRIA.
   -- ----------------------------------------------------------
   r := leads_lista_por_aba('00000000-0000-4000-a000-000000000000'::uuid, 'todos', NULL, NULL, NULL, NULL, NULL, 200, 0);
-  IF (r->>'total_na_aba')::int <> 0 OR jsonb_array_length(r->'linhas') <> 0 THEN
+  IF (r->>'total_na_aba')::int IS DISTINCT FROM 0 OR jsonb_array_length(r->'linhas') IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'FALHOU: lista vazou para outra imobiliaria';
   END IF;
 

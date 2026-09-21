@@ -35,10 +35,10 @@ BEGIN
   --
   -- "Clicar em um corretor filtra todos os contadores" é o critério do plano.
   -- ----------------------------------------------------------
-  IF (painel_comercial(t, mes, mes + 27, 'todos', '{"corretor":["Ana"]}'::jsonb)->'atual'->>'vendas')::int <> 2 THEN
+  IF (painel_comercial(t, mes, mes + 27, 'todos', '{"corretor":["Ana"]}'::jsonb)->'atual'->>'vendas')::int IS DISTINCT FROM 2 THEN
     RAISE EXCEPTION 'FALHOU: o contador não obedeceu ao filtro por corretor';
   END IF;
-  IF (painel_comercial(t, mes, mes + 27, 'todos', '{}'::jsonb)->'atual'->>'vendas')::int <> 3 THEN
+  IF (painel_comercial(t, mes, mes + 27, 'todos', '{}'::jsonb)->'atual'->>'vendas')::int IS DISTINCT FROM 3 THEN
     RAISE EXCEPTION 'FALHOU: sem filtro deveria contar as 3';
   END IF;
 
@@ -50,11 +50,11 @@ BEGIN
   -- ----------------------------------------------------------
   r := painel_comercial_rankings(t, mes, mes + 27, 'todos', '{}'::jsonb);
   SELECT count(*) INTO n FROM jsonb_array_elements(r->'origem') o WHERE o->>'valor' = 'SANTA';
-  IF n <> 1 THEN
+  IF n IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: as duas grafias de origem não viraram uma — %', r->'origem';
   END IF;
   SELECT (o->>'vendas')::int INTO n FROM jsonb_array_elements(r->'origem') o WHERE o->>'valor' = 'SANTA';
-  IF n <> 2 THEN
+  IF n IS DISTINCT FROM 2 THEN
     RAISE EXCEPTION 'FALHOU: "SANTA" deveria somar as 2 vendas, somou %', n;
   END IF;
 
@@ -66,13 +66,13 @@ BEGIN
   -- pede para somar BETA, fica sem nada para clicar.
   -- ----------------------------------------------------------
   r := painel_comercial_rankings(t, mes, mes + 27, 'todos', '{"empreendimento":["ALFA"]}'::jsonb);
-  IF jsonb_array_length(r->'empreendimento') <> 2 THEN
+  IF jsonb_array_length(r->'empreendimento') IS DISTINCT FROM 2 THEN
     RAISE EXCEPTION 'FALHOU: com ALFA escolhido, a tabela de empreendimentos deveria continuar com os 2 — veio %',
       jsonb_array_length(r->'empreendimento');
   END IF;
 
   -- As OUTRAS dimensões acompanham o recorte: só quem vendeu ALFA aparece.
-  IF jsonb_array_length(r->'corretor') <> 2 THEN
+  IF jsonb_array_length(r->'corretor') IS DISTINCT FROM 2 THEN
     RAISE EXCEPTION 'FALHOU: a tabela de corretores deveria seguir o recorte de ALFA — veio %',
       jsonb_array_length(r->'corretor');
   END IF;
@@ -80,12 +80,12 @@ BEGIN
   -- ----------------------------------------------------------
   -- 4. DOIS ITENS NA MESMA DIMENSÃO SOMAM (o SHIFT + clique).
   -- ----------------------------------------------------------
-  IF (painel_comercial(t, mes, mes + 27, 'todos', '{"empreendimento":["ALFA","BETA"]}'::jsonb)->'atual'->>'vendas')::int <> 3 THEN
+  IF (painel_comercial(t, mes, mes + 27, 'todos', '{"empreendimento":["ALFA","BETA"]}'::jsonb)->'atual'->>'vendas')::int IS DISTINCT FROM 3 THEN
     RAISE EXCEPTION 'FALHOU: dois empreendimentos escolhidos deveriam somar as 3 vendas';
   END IF;
 
   -- Dimensões diferentes se cruzam (E, não OU): Ana em BETA é 1 venda.
-  IF (painel_comercial(t, mes, mes + 27, 'todos', '{"corretor":["Ana"],"empreendimento":["BETA"]}'::jsonb)->'atual'->>'vendas')::int <> 1 THEN
+  IF (painel_comercial(t, mes, mes + 27, 'todos', '{"corretor":["Ana"],"empreendimento":["BETA"]}'::jsonb)->'atual'->>'vendas')::int IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: dimensões diferentes deveriam se cruzar, não somar';
   END IF;
 
@@ -97,7 +97,7 @@ BEGIN
   r := painel_comercial_rankings(t, mes, mes + 27, 'todos', '{}'::jsonb);
   SELECT round(sum((e->>'participacao')::numeric)) INTO n
     FROM jsonb_array_elements(r->'empreendimento') e;
-  IF n <> 100 THEN
+  IF n IS DISTINCT FROM 100 THEN
     RAISE EXCEPTION 'FALHOU: a participação somou %%% (esperava 100)', n;
   END IF;
 
@@ -107,10 +107,10 @@ BEGIN
   -- `team_leader_nome` está vazio nas três; a tabela de equipe fica vazia, e o
   -- contador diz quantas vendas ficaram de fora.
   -- ----------------------------------------------------------
-  IF jsonb_array_length(r->'equipe') <> 0 THEN
+  IF jsonb_array_length(r->'equipe') IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'FALHOU: equipe sem valor virou linha de ranking';
   END IF;
-  IF (r->>'equipe_sem_valor')::int <> 3 THEN
+  IF (r->>'equipe_sem_valor')::int IS DISTINCT FROM 3 THEN
     RAISE EXCEPTION 'FALHOU: não contou as 3 vendas sem equipe — %', r->>'equipe_sem_valor';
   END IF;
 

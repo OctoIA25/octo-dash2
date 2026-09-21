@@ -20,6 +20,7 @@ DO $$
 DECLARE
   t     uuid := 'bbbbbbb1-1111-4111-a111-111111111111';  -- a imobiliária do teste
   t2    uuid := 'bbbbbbb9-9999-4111-a111-111111111111';  -- a vizinha
+  t3    uuid := 'bbbbbbb8-8888-4111-a111-111111111111';  -- minha, mas sem movimento
   u     uuid := 'bbbbbbb2-2222-4111-a111-111111111111';  -- admin de t
   u_fora uuid := 'bbbbbbb3-3333-4111-a111-111111111111'; -- logado, mas de fora
   lanc  uuid;
@@ -88,17 +89,17 @@ BEGIN
   -- ----------------------------------------------------------
   fila := plantao_fila(t, 'aguardando');
   SELECT jsonb_array_length(fila->'linhas') INTO n;
-  IF n <> 2 THEN
+  IF n IS DISTINCT FROM 2 THEN
     RAISE EXCEPTION 'FALHOU: aba Aguardando trouxe % linhas (esperava 2: a pendente e a expirada)', n;
   END IF;
-  IF (fila->'contadores'->>'aguardando')::int <> 1
-     OR (fila->'contadores'->>'expiradas')::int <> 1
-     OR (fila->'contadores'->>'respondidas')::int <> 2 THEN
+  IF (fila->'contadores'->>'aguardando')::int IS DISTINCT FROM 1
+     OR (fila->'contadores'->>'expiradas')::int IS DISTINCT FROM 1
+     OR (fila->'contadores'->>'respondidas')::int IS DISTINCT FROM 2 THEN
     RAISE EXCEPTION 'FALHOU: contadores errados — %', fila->'contadores';
   END IF;
 
   -- A régua padrão é a do plano, mesmo sem ninguém ter configurado nada.
-  IF (fila->>'espera_maxima_minutos')::int <> 30 OR (fila->>'configurado')::boolean THEN
+  IF (fila->>'espera_maxima_minutos')::int IS DISTINCT FROM 30 OR (fila->>'configurado')::boolean THEN
     RAISE EXCEPTION 'FALHOU: padrão da espera máxima deveria ser 30 min e não-configurado, veio % / %',
       fila->>'espera_maxima_minutos', fila->>'configurado';
   END IF;
@@ -113,7 +114,7 @@ BEGIN
   SELECT count(*) INTO n
     FROM jsonb_array_elements(fila->'linhas') l
    WHERE (l->>'fora_do_canal')::boolean;
-  IF n <> 1 THEN
+  IF n IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: marcou % respostas como fora do canal (esperava 1)', n;
   END IF;
 
@@ -121,7 +122,7 @@ BEGIN
   SELECT count(*) INTO n
     FROM jsonb_array_elements(fila->'linhas') l
    WHERE l->>'corretor_nome' = 'Corretora do Plantão';
-  IF n <> 2 THEN
+  IF n IS DISTINCT FROM 2 THEN
     RAISE EXCEPTION 'FALHOU: resolveu o nome do corretor em % linhas (esperava 2)', n;
   END IF;
 
@@ -139,7 +140,7 @@ BEGIN
   doc := (res->>'documento_id')::uuid;
 
   SELECT count(*) INTO n FROM kb_trechos WHERE documento_id = doc;
-  IF n <> 1 THEN
+  IF n IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: gravou % trechos (esperava 1 — a resposta já buscável)', n;
   END IF;
 
@@ -154,11 +155,11 @@ BEGIN
   -- 5. DOIS CLIQUES NÃO VIRAM DUAS RESPOSTAS NA BASE.
   -- ----------------------------------------------------------
   res := plantao_salvar_na_base('p-respondida', 'Horário de visita aos sábados', 'texto qualquer');
-  IF NOT (res->>'ja_existia')::boolean OR (res->>'documento_id')::uuid <> doc THEN
+  IF NOT (res->>'ja_existia')::boolean OR (res->>'documento_id')::uuid IS DISTINCT FROM doc THEN
     RAISE EXCEPTION 'FALHOU: o segundo clique criou um segundo documento — %', res;
   END IF;
   SELECT count(*) INTO n FROM kb_documentos WHERE tenant_id = t AND tipo = 'resposta_plantao';
-  IF n <> 1 THEN
+  IF n IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: % documentos de plantão na base (esperava 1)', n;
   END IF;
 
@@ -211,7 +212,7 @@ BEGIN
 
   -- E não virou vale-tudo: afrouxar só vale quando o preciso não acha nada.
   SELECT count(*) INTO n FROM buscar_kb(lanc, 'qual a cor da fachada?');
-  IF n <> 0 THEN
+  IF n IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'FALHOU: pergunta sem relação trouxe % trechos', n;
   END IF;
 
@@ -224,7 +225,7 @@ BEGIN
   -- ----------------------------------------------------------
   PERFORM set_config('request.jwt.claims', json_build_object('sub', u_fora::text)::text, true);
   SELECT count(*) INTO n FROM buscar_kb(lanc2, 'horário de visita no sábado');
-  IF n <> 0 THEN
+  IF n IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'FALHOU: a vizinha achou % trechos do conhecimento geral alheio', n;
   END IF;
   PERFORM set_config('request.jwt.claims', json_build_object('sub', u::text)::text, true);
@@ -251,28 +252,43 @@ BEGIN
   -- ----------------------------------------------------------
   regua := plantao_regua(t, 30);
   -- Duas respondidas, ambas em 1h: nenhuma cabe em 30 min.
-  IF (regua->>'respondidas')::int <> 2 OR (regua->>'dentro_do_prazo')::int <> 0 THEN
+  IF (regua->>'respondidas')::int IS DISTINCT FROM 2 OR (regua->>'dentro_do_prazo')::int IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'FALHOU: régua de 30 min contou errado — %', regua;
   END IF;
-  IF (regua->>'pct_dentro')::numeric <> 0.0 THEN
+  IF (regua->>'pct_dentro')::numeric IS DISTINCT FROM 0.0 THEN
     RAISE EXCEPTION 'FALHOU: com amostra e nenhuma dentro, pct_dentro deveria ser 0 — %', regua;
   END IF;
 
   regua := plantao_regua(t, 120);
-  IF (regua->>'dentro_do_prazo')::int <> 2 THEN
+  IF (regua->>'dentro_do_prazo')::int IS DISTINCT FROM 2 THEN
     RAISE EXCEPTION 'FALHOU: régua de 2h deveria abraçar as duas respostas de 1h — %', regua;
   END IF;
 
-  regua := plantao_regua(t2, 30);
-  IF regua->>'pct_dentro' IS NOT NULL OR (regua->>'respondidas')::int <> 0 THEN
-    RAISE EXCEPTION 'FALHOU: sem amostra, pct_dentro tem que ser nulo — %', regua;
+  -- Fora do tenant a função recusa (NULL). O caso "sem amostra" de verdade é o
+  -- do tenant próprio com régua impossível, logo abaixo — e ali pct_dentro
+  -- precisa vir nulo, nunca 0%, que seria acusar um atraso que não houve.
+  IF plantao_regua(t2, 30) IS NOT NULL THEN
+    RAISE EXCEPTION 'FALHOU: a vizinha recebeu a régua do tenant alheio em vez de recusa';
+  END IF;
+
+  -- SEM AMOSTRA: tenant meu, porém sem nenhuma resposta. `pct_dentro` tem que
+  -- vir NULO, nunca 0% — 0% acusa um atraso que não houve, e é o mesmo engano
+  -- que o plano persegue em toda tela: zero por ausência lido como zero medido.
+  INSERT INTO tenants (id, code, name) VALUES (t3, 'teste-plantao-3', 'Sem Movimento')
+  ON CONFLICT DO NOTHING;
+  INSERT INTO tenant_memberships (tenant_id, user_id, role) VALUES (t3, u, 'admin')
+  ON CONFLICT DO NOTHING;
+
+  regua := plantao_regua(t3, 30);
+  IF regua->>'pct_dentro' IS NOT NULL OR (regua->>'respondidas')::int IS DISTINCT FROM 0 THEN
+    RAISE EXCEPTION 'FALHOU: sem amostra, pct_dentro tem que ser nulo e respondidas 0 — %', regua;
   END IF;
 
   -- ----------------------------------------------------------
   -- 10. NÃO SE SALVA RESPOSTA VAZIA NA BASE.
   -- ----------------------------------------------------------
   res := plantao_salvar_na_base('p-esperando', 'Elevador', '   ');
-  IF (res->>'ok')::boolean OR res->>'motivo' <> 'conteudo_vazio' THEN
+  IF (res->>'ok')::boolean OR res->>'motivo' IS DISTINCT FROM 'conteudo_vazio' THEN
     RAISE EXCEPTION 'FALHOU: aceitou salvar resposta vazia na base — %', res;
   END IF;
 

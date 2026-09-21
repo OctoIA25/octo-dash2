@@ -71,12 +71,12 @@ BEGIN
   -- 1. A MATRIZ AGRUPA POR CORRETOR.
   -- ----------------------------------------------------------
   r := matriz_de_eficiencia(t, '2026-09-01', '2026-09-30', 'corretor');
-  IF jsonb_array_length(r->'linhas') <> 2 THEN
+  IF jsonb_array_length(r->'linhas') IS DISTINCT FROM 2 THEN
     RAISE EXCEPTION 'FALHOU: deveriam vir 2 corretores, vieram %', jsonb_array_length(r->'linhas');
   END IF;
 
   SELECT e INTO x FROM jsonb_array_elements(r->'linhas') e WHERE e->>'quem' = 'Ana';
-  IF (x->>'recebidos')::int <> 2 THEN
+  IF (x->>'recebidos')::int IS DISTINCT FROM 2 THEN
     RAISE EXCEPTION 'FALHOU: a Ana recebeu 2 leads, a matriz diz %', x->>'recebidos';
   END IF;
 
@@ -101,11 +101,11 @@ BEGIN
   r := matriz_de_eficiencia(t, '2026-09-01', '2026-09-30', 'corretor');
   SELECT e INTO x FROM jsonb_array_elements(r->'linhas') e WHERE e->>'quem' = 'Ana';
 
-  IF (x->>'atendidos_1h')::int <> 0 THEN
+  IF (x->>'atendidos_1h')::int IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'FALHOU: a Ana levou 5h e a matriz creditou % atendimento(s) em 1h — está lendo a LIA',
       x->>'atendidos_1h';
   END IF;
-  IF (x->>'minutos_medio')::int <> 300 THEN
+  IF (x->>'minutos_medio')::int IS DISTINCT FROM 300 THEN
     RAISE EXCEPTION 'FALHOU: o tempo médio deveria ser 300 min (o da Ana), veio % — se deu 2, é a LIA',
       x->>'minutos_medio';
   END IF;
@@ -118,7 +118,7 @@ BEGIN
 
   r := matriz_de_eficiencia(t, '2026-09-01', '2026-09-30', 'corretor');
   SELECT e INTO x FROM jsonb_array_elements(r->'linhas') e WHERE e->>'quem' = 'Ana';
-  IF (x->>'atendidos_1h')::int <> 1 THEN
+  IF (x->>'atendidos_1h')::int IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: a Ana atendeu 1 lead em 30 min e a matriz conta %', x->>'atendidos_1h';
   END IF;
 
@@ -128,10 +128,10 @@ BEGIN
   -- Em produção são 3.560 leads parados em "Novos Leads" sem ninguém. Tirá-los
   -- do denominador faria toda taxa parecer muito melhor do que é.
   -- ----------------------------------------------------------
-  IF (r->'totais'->>'leads')::int <> 4 THEN
+  IF (r->'totais'->>'leads')::int IS DISTINCT FROM 4 THEN
     RAISE EXCEPTION 'FALHOU: o total deveria contar os 4 leads, contou %', r->'totais'->>'leads';
   END IF;
-  IF (r->'totais'->>'sem_responsavel')::int <> 1 THEN
+  IF (r->'totais'->>'sem_responsavel')::int IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: 1 lead está sem corretor e o total diz %', r->'totais'->>'sem_responsavel';
   END IF;
 
@@ -141,7 +141,7 @@ BEGIN
   -- São duas contagens da mesma coisa que não se falam (em produção: 4 no
   -- funil contra 37 na planilha). A tela mostra as duas.
   -- ----------------------------------------------------------
-  IF (r->'totais'->>'venda')::int <> 1 THEN
+  IF (r->'totais'->>'venda')::int IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: 1 lead em Proposta Assinada, o funil diz %', r->'totais'->>'venda';
   END IF;
 
@@ -151,11 +151,11 @@ BEGIN
          (t, 'RESERVA CASTANHEIRA', 'Bruno', 400000, 20000, '2026-09-12', true, 'teste', 2);
 
   r := matriz_de_eficiencia(t, '2026-09-01', '2026-09-30', 'corretor');
-  IF (r->>'vendas_na_planilha')::int <> 2 THEN
+  IF (r->>'vendas_na_planilha')::int IS DISTINCT FROM 2 THEN
     RAISE EXCEPTION 'FALHOU: a planilha tem 2 vendas e a matriz declara %', r->>'vendas_na_planilha';
   END IF;
   -- O funil continua com 1: o desencontro é o assunto, e não um erro a esconder.
-  IF (r->'totais'->>'venda')::int <> 1 THEN
+  IF (r->'totais'->>'venda')::int IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: a planilha não pode mudar a contagem do funil';
   END IF;
 
@@ -163,14 +163,14 @@ BEGIN
   -- 5. POR EQUIPE, E A EQUIPE VAZIA É DECLARADA.
   -- ----------------------------------------------------------
   r := matriz_de_eficiencia(t, '2026-09-01', '2026-09-30', 'equipe');
-  IF jsonb_array_length(r->'linhas') <> 1 THEN
+  IF jsonb_array_length(r->'linhas') IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: só "Lançamentos" tem membro, vieram % linhas', jsonb_array_length(r->'linhas');
   END IF;
   SELECT e INTO x FROM jsonb_array_elements(r->'linhas') e WHERE e->>'quem' = 'Lançamentos';
-  IF (x->>'recebidos')::int <> 3 THEN
+  IF (x->>'recebidos')::int IS DISTINCT FROM 3 THEN
     RAISE EXCEPTION 'FALHOU: a equipe soma os 3 leads da Ana e do Bruno, somou %', x->>'recebidos';
   END IF;
-  IF (r->>'equipes_sem_membro')::int <> 1 THEN
+  IF (r->>'equipes_sem_membro')::int IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: 1 equipe está sem membro e a matriz diz %', r->>'equipes_sem_membro';
   END IF;
 
@@ -192,18 +192,18 @@ BEGIN
   IF x IS NULL THEN
     RAISE EXCEPTION 'FALHOU: a campanha não chegou à construtora — %', r->'linhas';
   END IF;
-  IF (x->>'gasto')::numeric <> 2000.00 THEN
+  IF (x->>'gasto')::numeric IS DISTINCT FROM 2000.00 THEN
     RAISE EXCEPTION 'FALHOU: o gasto da construtora deu %, esperado 2000.00', x->>'gasto';
   END IF;
-  IF (x->>'vendas')::int <> 2 THEN
+  IF (x->>'vendas')::int IS DISTINCT FROM 2 THEN
     RAISE EXCEPTION 'FALHOU: 2 vendas da construtora, veio %', x->>'vendas';
   END IF;
   -- CPA = 2000 / 2 vendas.
-  IF (x->>'cpa')::numeric <> 1000.00 THEN
+  IF (x->>'cpa')::numeric IS DISTINCT FROM 1000.00 THEN
     RAISE EXCEPTION 'FALHOU: CPA deu %, esperado 1000.00', x->>'cpa';
   END IF;
   -- ROAS sobre COMISSÃO: 50.000 de VGC / 2.000 de gasto = 25.
-  IF (x->>'roas_vgc')::numeric <> 25.00 THEN
+  IF (x->>'roas_vgc')::numeric IS DISTINCT FROM 25.00 THEN
     RAISE EXCEPTION 'FALHOU: ROAS sobre VGC deu %, esperado 25.00', x->>'roas_vgc';
   END IF;
 
@@ -220,7 +220,7 @@ BEGIN
           18, 120.58, 3519, 98, 0);
 
   r := cpa_por_construtora(t, '2026-09-01', '2026-09-30');
-  IF (r->>'gasto_sem_construtora')::numeric <> 120.58 THEN
+  IF (r->>'gasto_sem_construtora')::numeric IS DISTINCT FROM 120.58 THEN
     RAISE EXCEPTION 'FALHOU: o gasto sem construtora deu %, esperado 120.58', r->>'gasto_sem_construtora';
   END IF;
 
@@ -236,29 +236,29 @@ BEGIN
   VALUES (t, 'Cliente Um de novo', '1187654321', 'ZAP Imóveis', 'Novos Leads', '2026-09-20 09:00-03');
 
   r := toques_por_origem(t, '2026-09-01', '2026-09-30');
-  IF (r->'resumo'->>'clientes_repetidos')::int <> 1 THEN
+  IF (r->'resumo'->>'clientes_repetidos')::int IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: 1 cliente voltou e o resumo diz % — o nono dígito não foi resolvido',
       r->'resumo'->>'clientes_repetidos';
   END IF;
-  IF (r->'resumo'->>'trocaram_de_origem')::int <> 1 THEN
+  IF (r->'resumo'->>'trocaram_de_origem')::int IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: o cliente voltou por outra origem e o resumo diz %',
       r->'resumo'->>'trocaram_de_origem';
   END IF;
 
   -- O Instagram trouxe (primeiro toque) e o ZAP reencontrou (último toque).
   SELECT e INTO x FROM jsonb_array_elements(r->'linhas') e WHERE e->>'origem' = 'Instagram';
-  IF (x->>'primeiro_toque')::int <> 3 OR (x->>'ultimo_toque')::int <> 2 THEN
+  IF (x->>'primeiro_toque')::int IS DISTINCT FROM 3 OR (x->>'ultimo_toque')::int IS DISTINCT FROM 2 THEN
     RAISE EXCEPTION 'FALHOU: Instagram deveria ter 3 primeiros e 2 últimos, teve % e %',
       x->>'primeiro_toque', x->>'ultimo_toque';
   END IF;
   SELECT e INTO x FROM jsonb_array_elements(r->'linhas') e WHERE e->>'origem' = 'ZAP Imóveis';
-  IF (x->>'primeiro_toque')::int <> 0 OR (x->>'ultimo_toque')::int <> 1 THEN
+  IF (x->>'primeiro_toque')::int IS DISTINCT FROM 0 OR (x->>'ultimo_toque')::int IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: o ZAP só reencontrou — deveria ter 0 primeiros e 1 último, teve % e %',
       x->>'primeiro_toque', x->>'ultimo_toque';
   END IF;
   -- O saldo negativo é o sinal: esta origem é a segunda porta, e o crédito por
   -- último toque a favorece indevidamente.
-  IF (x->>'saldo')::int <> -1 THEN
+  IF (x->>'saldo')::int IS DISTINCT FROM -1 THEN
     RAISE EXCEPTION 'FALHOU: o saldo do ZAP deveria ser -1, foi %', x->>'saldo';
   END IF;
 
@@ -274,7 +274,7 @@ BEGIN
 
   r := toques_por_origem(t, '2026-09-01', '2026-09-30');
   SELECT e INTO x FROM jsonb_array_elements(r->'linhas') e WHERE e->>'origem' = 'Site';
-  IF (x->>'primeiro_toque')::int <> 2 THEN
+  IF (x->>'primeiro_toque')::int IS DISTINCT FROM 2 THEN
     RAISE EXCEPTION 'FALHOU: os 2 sem telefone são clientes distintos, viraram %', x->>'primeiro_toque';
   END IF;
 
@@ -304,27 +304,27 @@ BEGIN
   UPDATE leads SET meta_campaign_id = 'c1' WHERE id IN (l1, l2, l4);
 
   r := corretores_da_campanha(t, 'c1', '2026-09-01', '2026-09-30');
-  IF jsonb_array_length(r->'linhas') <> 1 THEN
+  IF jsonb_array_length(r->'linhas') IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: só a Ana recebeu leads da c1, vieram % linhas', jsonb_array_length(r->'linhas');
   END IF;
 
   SELECT e INTO x FROM jsonb_array_elements(r->'linhas') e WHERE e->>'quem' = 'Ana';
-  IF (x->>'recebidos')::int <> 2 THEN
+  IF (x->>'recebidos')::int IS DISTINCT FROM 2 THEN
     RAISE EXCEPTION 'FALHOU: a Ana recebeu 2 leads da campanha, veio %', x->>'recebidos';
   END IF;
   -- Mesma definição da matriz: a Ana atendeu 1 em 30 min e outro em 5h.
-  IF (x->>'atendidos_1h')::int <> 1 THEN
+  IF (x->>'atendidos_1h')::int IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: atendimento em 1h na campanha deu %, esperado 1', x->>'atendidos_1h';
   END IF;
 
   -- O lead pago que não chegou a ninguém: o número mais caro da tela.
-  IF (r->>'sem_corretor')::int <> 1 THEN
+  IF (r->>'sem_corretor')::int IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: 1 lead da campanha está sem corretor, a função diz %', r->>'sem_corretor';
   END IF;
 
   -- Campanha sem lead nenhum não é erro.
   r := corretores_da_campanha(t, 'campanha_vazia', '2026-09-01', '2026-09-30');
-  IF jsonb_array_length(r->'linhas') <> 0 OR (r->>'sem_corretor')::int <> 0 THEN
+  IF jsonb_array_length(r->'linhas') IS DISTINCT FROM 0 OR (r->>'sem_corretor')::int IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'FALHOU: campanha sem lead deveria vir vazia';
   END IF;
 

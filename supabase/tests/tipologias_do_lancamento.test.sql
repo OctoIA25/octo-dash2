@@ -46,7 +46,7 @@ BEGIN
   SELECT count(*) INTO n FROM information_schema.table_privileges
   WHERE table_schema = 'public' AND table_name = 'tipologias' AND grantee = 'anon'
     AND privilege_type <> 'SELECT';
-  IF n <> 0 THEN
+  IF n IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'FALHOU: anon tem % privilegio(s) de escrita em tipologias', n;
   END IF;
 
@@ -131,7 +131,7 @@ BEGIN
   -- ----------------------------------------------------------
   DELETE FROM lancamentos WHERE id = sig;
   SELECT count(*) INTO n FROM tipologias WHERE lancamento_id = sig;
-  IF n <> 0 THEN
+  IF n IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'FALHOU: % tipologia(s) sobraram apos apagar o lancamento', n;
   END IF;
 

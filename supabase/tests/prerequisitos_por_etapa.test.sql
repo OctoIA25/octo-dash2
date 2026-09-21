@@ -25,7 +25,7 @@ BEGIN
   SELECT count(*) INTO n
   FROM information_schema.table_privileges
   WHERE table_schema = 'public' AND table_name = 'tenant_etapa_config' AND grantee = 'anon';
-  IF n <> 0 THEN
+  IF n IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'FALHOU: anon tem % privilegio(s) em tenant_etapa_config', n;
   END IF;
 
@@ -33,7 +33,7 @@ BEGIN
   FROM information_schema.table_privileges
   WHERE table_schema = 'public' AND table_name = 'tenant_etapa_config'
     AND grantee = 'authenticated' AND privilege_type IN ('DELETE', 'TRUNCATE');
-  IF n <> 0 THEN
+  IF n IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'FALHOU: authenticated pode apagar as chaves da imobiliaria';
   END IF;
 
@@ -60,7 +60,7 @@ BEGIN
      OR r.exigir_proposta_assinada OR r.registrar_hora_da_assinatura THEN
     RAISE EXCEPTION 'FALHOU: alguma chave nasce ligada';
   END IF;
-  IF r.relato_minimo_caracteres <> 20 THEN
+  IF r.relato_minimo_caracteres IS DISTINCT FROM 20 THEN
     RAISE EXCEPTION 'FALHOU: relato minimo padrao mudou (veio %)', r.relato_minimo_caracteres;
   END IF;
 
@@ -105,7 +105,7 @@ BEGIN
   -- ----------------------------------------------------------
   DELETE FROM tenants WHERE id = t;
   SELECT count(*) INTO n FROM tenant_etapa_config WHERE tenant_id = t;
-  IF n <> 0 THEN
+  IF n IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'FALHOU: chaves sobraram apos apagar a imobiliaria';
   END IF;
 

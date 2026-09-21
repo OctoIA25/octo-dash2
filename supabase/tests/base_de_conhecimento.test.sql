@@ -48,10 +48,10 @@ BEGIN
   IF r.texto IS NULL OR r.texto NOT LIKE '%varanda gourmet%' THEN
     RAISE EXCEPTION 'FALHOU: a pergunta nao trouxe o trecho da varanda (veio "%")', left(coalesce(r.texto,'(nada)'), 40);
   END IF;
-  IF r.modo <> 'palavra' THEN
+  IF r.modo IS DISTINCT FROM 'palavra' THEN
     RAISE EXCEPTION 'FALHOU: sem embedding deveria buscar por palavra, veio "%"', r.modo;
   END IF;
-  IF r.documento_titulo <> 'Memorial descritivo' THEN
+  IF r.documento_titulo IS DISTINCT FROM 'Memorial descritivo' THEN
     RAISE EXCEPTION 'FALHOU: nao disse de qual documento veio o trecho';
   END IF;
 
@@ -70,7 +70,7 @@ BEGIN
   -- relevante, ela não tem com o que responder.
   -- ----------------------------------------------------------
   SELECT count(*) INTO n FROM buscar_kb(lanc, 'aceita animal de estimação?');
-  IF n <> 0 THEN
+  IF n IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'FALHOU: pergunta sem resposta devolveu % trecho(s)', n;
   END IF;
 
@@ -86,7 +86,7 @@ BEGIN
   VALUES (t, d_venc, lanc, 0, 'A varanda gourmet custava dez mil reais a mais em 2024.');
 
   SELECT count(*) INTO n FROM buscar_kb(lanc, 'varanda gourmet') WHERE documento_id = d_venc;
-  IF n <> 0 THEN
+  IF n IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'FALHOU: documento VENCIDO apareceu na busca';
   END IF;
 
@@ -108,7 +108,7 @@ BEGIN
   VALUES (t, d_off, lanc, 0, 'Piscina aquecida com raia de 25 metros, versão não aprovada.');
 
   SELECT count(*) INTO n FROM buscar_kb(lanc, 'piscina') WHERE documento_id = d_off;
-  IF n <> 0 THEN
+  IF n IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'FALHOU: documento INATIVO apareceu na busca';
   END IF;
 
@@ -119,7 +119,7 @@ BEGIN
   -- recebe a informação de um prédio que não é o que ele perguntou.
   -- ----------------------------------------------------------
   SELECT count(*) INTO n FROM buscar_kb(outro, 'varanda gourmet');
-  IF n <> 0 THEN
+  IF n IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'FALHOU: trecho de um empreendimento apareceu na busca de outro';
   END IF;
 
@@ -143,7 +143,7 @@ BEGIN
   -- ----------------------------------------------------------
   SELECT count(*) INTO n FROM information_schema.table_privileges
   WHERE table_schema = 'public' AND table_name IN ('kb_documentos', 'kb_trechos') AND grantee = 'anon';
-  IF n <> 0 THEN
+  IF n IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'FALHOU: anon tem % privilegio(s) na base de conhecimento', n;
   END IF;
 
@@ -153,7 +153,7 @@ BEGIN
   SELECT count(*) INTO n FROM information_schema.table_privileges
   WHERE table_schema = 'public' AND table_name = 'kb_trechos'
     AND grantee = 'authenticated' AND privilege_type <> 'SELECT';
-  IF n <> 0 THEN
+  IF n IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'FALHOU: usuario logado pode escrever trecho (% privilegio(s))', n;
   END IF;
 
@@ -162,7 +162,7 @@ BEGIN
   -- ----------------------------------------------------------
   DELETE FROM kb_documentos WHERE id = d_ok;
   SELECT count(*) INTO n FROM kb_trechos WHERE documento_id = d_ok;
-  IF n <> 0 THEN
+  IF n IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'FALHOU: % trecho(s) orfaos apos apagar o documento', n;
   END IF;
 

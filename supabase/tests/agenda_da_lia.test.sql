@@ -85,11 +85,11 @@ BEGIN
   fila := agenda_lia_fila(t, 'hoje');
 
   -- Contagem exata só onde ela NÃO depende da hora em que o teste roda.
-  IF (fila->'contadores'->>'pedidos_pelo_lead')::int <> 1 THEN
+  IF (fila->'contadores'->>'pedidos_pelo_lead')::int IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: "Pedidos pelo lead" contou % — %',
       fila->'contadores'->>'pedidos_pelo_lead', fila->'contadores';
   END IF;
-  IF (fila->'contadores'->>'nao_sairam')::int <> 1 THEN
+  IF (fila->'contadores'->>'nao_sairam')::int IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: "Não saíram" contou % — %',
       fila->'contadores'->>'nao_sairam', fila->'contadores';
   END IF;
@@ -140,7 +140,7 @@ BEGIN
   -- ----------------------------------------------------------
   -- 4. A JANELA PADRÃO É A DO PLANO, SEM NINGUÉM CONFIGURAR.
   -- ----------------------------------------------------------
-  IF fila->>'pode_falar_das' <> '09:00:00' OR fila->>'pode_falar_ate' <> '20:00:00'
+  IF fila->>'pode_falar_das' IS DISTINCT FROM '09:00:00' OR fila->>'pode_falar_ate' IS DISTINCT FROM '20:00:00'
      OR (fila->>'configurado')::boolean THEN
     RAISE EXCEPTION 'FALHOU: padrão deveria ser 09:00–20:00 e não-configurado — % a % / %',
       fila->>'pode_falar_das', fila->>'pode_falar_ate', fila->>'configurado';
@@ -158,14 +158,14 @@ BEGIN
   SELECT count(*) INTO n
     FROM lia_followups
    WHERE tenant_id = t AND status = 'pending' AND pedido_por <> 'lead';
-  IF n <> 2 THEN
+  IF n IS DISTINCT FROM 2 THEN
     RAISE EXCEPTION 'FALHOU: % pendentes canceláveis por retorno do lead (esperava 2)', n;
   END IF;
 
   SELECT count(*) INTO n
     FROM lia_followups
    WHERE tenant_id = t AND status = 'pending' AND pedido_por = 'lead';
-  IF n <> 1 THEN
+  IF n IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: o retorno pedido pelo lead sumiu da fila protegida';
   END IF;
 
@@ -179,7 +179,7 @@ BEGIN
   INSERT INTO lia_followups (id, tenant_id, lead_id, idempotency_key, status, scheduled_at)
   VALUES ('ag-sem-pedido', t, lead, 'k6', 'pending', now() + interval '1 hour');
   SELECT pedido_por INTO v FROM lia_followups WHERE id = 'ag-sem-pedido';
-  IF v <> 'lia' THEN
+  IF v IS DISTINCT FROM 'lia' THEN
     RAISE EXCEPTION 'FALHOU: linha sem pedido_por deveria nascer como "lia", veio "%"', v;
   END IF;
 
@@ -208,7 +208,7 @@ BEGIN
   INSERT INTO tenant_agenda_lia_config (tenant_id, pode_falar_das, pode_falar_ate, dias_permitidos)
   VALUES (t, '10:00', '17:00', '{1,2,3,4,5}');
   fila := agenda_lia_fila(t, 'hoje');
-  IF fila->>'pode_falar_das' <> '10:00:00' OR NOT (fila->>'configurado')::boolean THEN
+  IF fila->>'pode_falar_das' IS DISTINCT FROM '10:00:00' OR NOT (fila->>'configurado')::boolean THEN
     RAISE EXCEPTION 'FALHOU: a fila não refletiu a configuração gravada — %', fila;
   END IF;
 

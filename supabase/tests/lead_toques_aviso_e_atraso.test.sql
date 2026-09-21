@@ -20,6 +20,13 @@ BEGIN
   END IF;
 END $$;
 
+-- O tenant da fixture existe em produção, e não num banco recém-levantado. O
+-- teste o cria aqui dentro do BEGIN/ROLLBACK: assim ele roda em qualquer banco
+-- e não depende do que o dump trouxe junto.
+INSERT INTO tenants (id, code, name)
+VALUES ('e2d9bca4-3ce3-4733-b3ea-ed65ce09c832', 'area-de-teste', 'Área de Teste')
+ON CONFLICT (id) DO NOTHING;
+
 CREATE TEMP TABLE fx ON COMMIT DROP AS SELECT
   'e2d9bca4-3ce3-4733-b3ea-ed65ce09c832'::uuid AS tenant,
   'ff771163-b597-4c29-a030-044dbe013f93'::uuid AS usuario,
@@ -27,6 +34,23 @@ CREATE TEMP TABLE fx ON COMMIT DROP AS SELECT
   '5ad29789-99e9-4e74-9bf1-925de8fa2a2f'::text AS lead_substituido,
   '738e518a-108b-40c5-8eab-cf3b019fe183'::text AS lead_futuro,
   '6da37bb2-ff89-4813-a5ae-e8a484549e75'::text AS lead_arquivado;
+
+-- O aviso exige membership (quem saiu não recebe) e o lead de verdade (o
+-- arquivado não recebe). Sem estas linhas o laço não acha nada e o teste
+-- passaria a medir o vazio em vez da regra.
+INSERT INTO auth.users (id, email)
+SELECT usuario, 'e2e@teste.dev' FROM fx ON CONFLICT DO NOTHING;
+INSERT INTO public.tenant_memberships (tenant_id, user_id, role)
+SELECT tenant, usuario, 'corretor' FROM fx ON CONFLICT DO NOTHING;
+INSERT INTO public.leads (id, tenant_id, name)
+SELECT v.id::uuid, fx.tenant, v.nome
+  FROM fx, (VALUES
+    ('c0bfb1a4-2a6c-48bd-bfd9-7be4d5663f83', 'Lead Vencido'),
+    ('5ad29789-99e9-4e74-9bf1-925de8fa2a2f', 'Lead Substituído'),
+    ('738e518a-108b-40c5-8eab-cf3b019fe183', 'Lead Futuro'),
+    ('6da37bb2-ff89-4813-a5ae-e8a484549e75', 'Lead Arquivado')
+  ) AS v(id, nome)
+ON CONFLICT (id) DO NOTHING;
 
 CREATE FUNCTION pg_temp.toque(p_lead text, p_executado timestamptz, p_proximo timestamptz) RETURNS uuid
 LANGUAGE sql AS $$

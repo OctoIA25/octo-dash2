@@ -35,7 +35,7 @@ BEGIN
   VALUES (t, l1, 'leads', 'lead.created', 'sistema', 'nasceu', now() - interval '2 days');
 
   SELECT count(*) INTO n FROM leads_ultima_movimentacao(t, ARRAY[l1]);
-  IF n <> 0 THEN
+  IF n IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'FALHOU: lead.created foi contado como movimento (devolveu % linhas)', n;
   END IF;
 
@@ -49,7 +49,7 @@ BEGIN
   VALUES (t, l1, 'leads', 'lead.assigned', 'sistema', 'roleta', now() - interval '1 hour');
 
   SELECT count(*) INTO n FROM leads_ultima_movimentacao(t, ARRAY[l1]);
-  IF n <> 0 THEN
+  IF n IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'FALHOU: lead.assigned do sistema foi contado como movimento';
   END IF;
 
@@ -75,7 +75,7 @@ BEGIN
   VALUES (t, l1, 'leads', 'whatsapp', 'respondeu', u, now() - interval '1 day');
 
   SELECT * INTO r FROM leads_ultima_movimentacao(t, ARRAY[l1]);
-  IF r.fonte <> 'toque' THEN
+  IF r.fonte IS DISTINCT FROM 'toque' THEN
     RAISE EXCEPTION 'FALHOU: o toque de ontem perdeu para o evento de 5 dias (veio "%")', r.fonte;
   END IF;
 
@@ -84,7 +84,7 @@ BEGIN
   VALUES (t, l1, 'leads', 'lead.stage_changed', 'usuario', 'mudou', now() - interval '2 hours');
 
   SELECT * INTO r FROM leads_ultima_movimentacao(t, ARRAY[l1]);
-  IF r.fonte <> 'evento' THEN
+  IF r.fonte IS DISTINCT FROM 'evento' THEN
     RAISE EXCEPTION 'FALHOU: o evento de 2 horas perdeu para o toque de ontem (veio "%")', r.fonte;
   END IF;
 
@@ -96,7 +96,7 @@ BEGIN
   -- nada — 1.249 dos 1.681 leads da Lotus estão neste caso hoje.
   -- ----------------------------------------------------------
   SELECT count(*) INTO n FROM leads_ultima_movimentacao(t, ARRAY[l2]);
-  IF n <> 0 THEN
+  IF n IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'FALHOU: lead sem movimento devolveu linha';
   END IF;
 
@@ -107,7 +107,7 @@ BEGIN
   VALUES (t, l3, 'leads', 'lead.stage_changed', 'usuario', 'do futuro', now() + interval '3 days');
 
   SELECT count(*) INTO n FROM leads_ultima_movimentacao(t, ARRAY[l3]);
-  IF n <> 0 THEN
+  IF n IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'FALHOU: movimento no futuro passou';
   END IF;
 
@@ -116,7 +116,7 @@ BEGIN
   --    escolher a primeira que chegasse — e o resultado mudaria a cada carga.
   -- ----------------------------------------------------------
   SELECT count(*) INTO n FROM leads_ultima_movimentacao(t, ARRAY[l1, l1, l2, l3]);
-  IF n <> 1 THEN
+  IF n IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: esperava 1 linha (so o l1 tem movimento), veio %', n;
   END IF;
 
@@ -127,7 +127,7 @@ BEGIN
   -- ----------------------------------------------------------
   SELECT count(*) INTO n
   FROM leads_ultima_movimentacao('22222222-2222-4222-a222-222222222222'::uuid, ARRAY[l1]);
-  IF n <> 0 THEN
+  IF n IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'FALHOU: movimento vazou para outra imobiliaria';
   END IF;
 
@@ -135,10 +135,10 @@ BEGIN
   -- 9. Lista vazia e nula não explodem nem devolvem a base inteira.
   -- ----------------------------------------------------------
   SELECT count(*) INTO n FROM leads_ultima_movimentacao(t, ARRAY[]::text[]);
-  IF n <> 0 THEN RAISE EXCEPTION 'FALHOU: lista vazia devolveu linhas'; END IF;
+  IF n IS DISTINCT FROM 0 THEN RAISE EXCEPTION 'FALHOU: lista vazia devolveu linhas'; END IF;
 
   SELECT count(*) INTO n FROM leads_ultima_movimentacao(t, NULL);
-  IF n <> 0 THEN RAISE EXCEPTION 'FALHOU: lista nula devolveu linhas'; END IF;
+  IF n IS DISTINCT FROM 0 THEN RAISE EXCEPTION 'FALHOU: lista nula devolveu linhas'; END IF;
 
   RAISE NOTICE 'ultima_movimentacao_do_lead: 9 casos OK';
 END $$;

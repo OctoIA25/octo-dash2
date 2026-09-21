@@ -57,12 +57,12 @@ BEGIN
   -- mesmo lugar, e o mapa geocodificaria de novo o que já sabia.
   -- ----------------------------------------------------------
   SELECT * INTO r FROM mapa_endereco('Rua Augusta', '1500', 'Consolação', 'São Paulo', 'SP');
-  IF r.endereco <> 'Rua Augusta 1500, Consolação, São Paulo, SP, Brasil' OR r.precisao <> 'exata' THEN
+  IF r.endereco IS DISTINCT FROM 'Rua Augusta 1500, Consolação, São Paulo, SP, Brasil' OR r.precisao IS DISTINCT FROM 'exata' THEN
     RAISE EXCEPTION 'FALHOU: endereço completo saiu como "%" / %', r.endereco, r.precisao;
   END IF;
 
   SELECT * INTO r FROM mapa_endereco(NULL, NULL, 'Vila Mariana', 'São Paulo', NULL);
-  IF r.endereco <> 'Vila Mariana, São Paulo, Brasil' OR r.precisao <> 'aproximada' THEN
+  IF r.endereco IS DISTINCT FROM 'Vila Mariana, São Paulo, Brasil' OR r.precisao IS DISTINCT FROM 'aproximada' THEN
     RAISE EXCEPTION 'FALHOU: endereço de bairro saiu como "%" / %', r.endereco, r.precisao;
   END IF;
 
@@ -88,20 +88,20 @@ BEGIN
   -- não tem endereço nenhum para achar.
   -- ----------------------------------------------------------
   m := mapa_pontos(t);
-  IF (m->'totais'->'lancamentos'->>'total')::int <> 3
-     OR (m->'totais'->'lancamentos'->>'sem_endereco')::int <> 1
-     OR (m->'totais'->'lancamentos'->>'no_mapa')::int <> 0 THEN
+  IF (m->'totais'->'lancamentos'->>'total')::int IS DISTINCT FROM 3
+     OR (m->'totais'->'lancamentos'->>'sem_endereco')::int IS DISTINCT FROM 1
+     OR (m->'totais'->'lancamentos'->>'no_mapa')::int IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'FALHOU: contadores de lançamento errados — %', m->'totais'->'lancamentos';
   END IF;
 
   -- Sem coordenada, o ponto não entra na lista de desenho — só no contador.
-  IF jsonb_array_length(m->'pontos') <> 0 THEN
+  IF jsonb_array_length(m->'pontos') IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'FALHOU: desenhou % pontos sem coordenada', jsonb_array_length(m->'pontos');
   END IF;
 
   -- A fila traz os que têm endereço, e só eles.
   SELECT count(*) INTO n FROM mapa_fila_de_geocodificacao(t, 50);
-  IF n <> 3 THEN
+  IF n IS DISTINCT FROM 3 THEN
     RAISE EXCEPTION 'FALHOU: a fila trouxe % (esperava 3: 2 lançamentos com endereço + 1 condomínio)', n;
   END IF;
 
@@ -115,15 +115,15 @@ BEGIN
    WHERE id = lanc_bairro;
 
   SELECT count(*) INTO n FROM mapa_fila_de_geocodificacao(t, 50) WHERE id = lanc_bairro;
-  IF n <> 0 THEN
+  IF n IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'FALHOU: o pino arrastado voltou para a fila de geocodificação';
   END IF;
 
   m := mapa_pontos(t);
-  IF jsonb_array_length(m->'pontos') <> 1 THEN
+  IF jsonb_array_length(m->'pontos') IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: o ponto com coordenada não foi desenhado';
   END IF;
-  IF m->'pontos'->0->>'geo_origem' <> 'manual' THEN
+  IF m->'pontos'->0->>'geo_origem' IS DISTINCT FROM 'manual' THEN
     RAISE EXCEPTION 'FALHOU: o ponto perdeu a marca de manual — %', m->'pontos'->0;
   END IF;
 
@@ -136,12 +136,12 @@ BEGIN
   UPDATE lancamentos SET geo_erro = 'nao_encontrado' WHERE id = lanc_exato;
 
   SELECT count(*) INTO n FROM mapa_fila_de_geocodificacao(t, 50) WHERE id = lanc_exato;
-  IF n <> 0 THEN
+  IF n IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'FALHOU: insistiu num endereço que já tinha falhado';
   END IF;
 
   SELECT count(*) INTO n FROM mapa_fila_de_geocodificacao(t, 50, true) WHERE id = lanc_exato;
-  IF n <> 1 THEN
+  IF n IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: pedindo explicitamente, o que falhou deveria voltar à fila';
   END IF;
 
@@ -149,13 +149,14 @@ BEGIN
   -- 6. O MAPA NÃO ATRAVESSA A PAREDE DA IMOBILIÁRIA.
   -- ----------------------------------------------------------
   SELECT count(*) INTO n FROM mapa_fila_de_geocodificacao(t2, 50, true);
-  IF n <> 0 THEN
+  IF n IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'FALHOU: a fila da vizinha trouxe % endereços alheios', n;
   END IF;
 
+  -- Recusa, não mapa vazio: fora do tenant a função devolve NULL.
   m := mapa_pontos(t2);
-  IF (m->'totais'->'condominios'->>'total')::int <> 0 THEN
-    RAISE EXCEPTION 'FALHOU: a vizinha contou condomínio que não é dela';
+  IF m IS NOT NULL THEN
+    RAISE EXCEPTION 'FALHOU: a vizinha recebeu o mapa do tenant alheio em vez de recusa — %', m;
   END IF;
 
   RAISE NOTICE 'OK: mapa interligado — 6 casos';

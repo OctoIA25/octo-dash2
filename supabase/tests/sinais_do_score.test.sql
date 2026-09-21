@@ -45,7 +45,7 @@ BEGIN
 
   SELECT * INTO r FROM leads_sinais_de_score(t, ARRAY[l1::text]);
   IF NOT r.respondeu THEN RAISE EXCEPTION 'FALHOU: nao viu que o lead respondeu'; END IF;
-  IF r.minutos_para_responder <> 4 THEN
+  IF r.minutos_para_responder IS DISTINCT FROM 4 THEN
     RAISE EXCEPTION 'FALHOU: tempo de resposta deu % (esperava 4)', r.minutos_para_responder;
   END IF;
   IF NOT r.conversou_recente THEN RAISE EXCEPTION 'FALHOU: conversa de 1h atras nao contou como recente'; END IF;
@@ -66,7 +66,7 @@ BEGIN
   IF r.minutos_para_responder IS NOT NULL THEN
     RAISE EXCEPTION 'FALHOU: tempo de resposta inventado (%) para quem nao respondeu', r.minutos_para_responder;
   END IF;
-  IF r.sem_resposta_ha_dias <> 12 THEN
+  IF r.sem_resposta_ha_dias IS DISTINCT FROM 12 THEN
     RAISE EXCEPTION 'FALHOU: dias sem conversa deu % (esperava 12)', r.sem_resposta_ha_dias;
   END IF;
   IF r.conversou_recente THEN RAISE EXCEPTION 'FALHOU: conversa de 12 dias contou como recente'; END IF;
@@ -116,22 +116,22 @@ BEGIN
   -- inventaria o seu.
   -- ----------------------------------------------------------
   SELECT count(*) INTO n FROM leads_sinais_de_score(t, ARRAY[l1::text, l2::text, l3::text, l4::text]);
-  IF n <> 4 THEN RAISE EXCEPTION 'FALHOU: pedi 4 leads e vieram %', n; END IF;
+  IF n IS DISTINCT FROM 4 THEN RAISE EXCEPTION 'FALHOU: pedi 4 leads e vieram %', n; END IF;
 
   -- ----------------------------------------------------------
   -- 6. ESCOPO DE IMOBILIÁRIA.
   -- ----------------------------------------------------------
   SELECT count(*) INTO n
   FROM leads_sinais_de_score('77777777-7777-4777-a777-777777777777'::uuid, ARRAY[l1::text]);
-  IF n <> 0 THEN RAISE EXCEPTION 'FALHOU: sinais vazaram para outra imobiliaria'; END IF;
+  IF n IS DISTINCT FROM 0 THEN RAISE EXCEPTION 'FALHOU: sinais vazaram para outra imobiliaria'; END IF;
 
   -- ----------------------------------------------------------
   -- 7. OS PESOS: a tabela nasce com os números do plano.
   -- ----------------------------------------------------------
   INSERT INTO tenant_score_config (tenant_id) VALUES (t);
   SELECT * INTO r FROM tenant_score_config WHERE tenant_id = t;
-  IF r.ponto_de_partida <> 50 OR r.peso_pediu_visita <> 25
-     OR r.peso_sem_resposta_7_dias <> -15 OR r.limite_morno <> 40 OR r.limite_quente <> 70 THEN
+  IF r.ponto_de_partida IS DISTINCT FROM 50 OR r.peso_pediu_visita IS DISTINCT FROM 25
+     OR r.peso_sem_resposta_7_dias IS DISTINCT FROM -15 OR r.limite_morno IS DISTINCT FROM 40 OR r.limite_quente IS DISTINCT FROM 70 THEN
     RAISE EXCEPTION 'FALHOU: a tabela nao nasce com os pesos do plano';
   END IF;
 
@@ -148,7 +148,7 @@ BEGIN
   SELECT count(*) INTO n FROM information_schema.table_privileges
   WHERE table_schema = 'public' AND table_name IN ('tenant_score_config', 'tenant_score_origem')
     AND grantee = 'anon';
-  IF n <> 0 THEN RAISE EXCEPTION 'FALHOU: anon tem % privilegio(s) nas tabelas do score', n; END IF;
+  IF n IS DISTINCT FROM 0 THEN RAISE EXCEPTION 'FALHOU: anon tem % privilegio(s) nas tabelas do score', n; END IF;
 
   RAISE NOTICE 'sinais_do_score: 8 casos OK';
 END $$;

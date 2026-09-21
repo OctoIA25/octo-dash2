@@ -74,8 +74,8 @@ BEGIN
 
   SELECT meta_form_id, meta_ad_id, meta_adset_id, meta_campaign_id, meta_captado, meta_lia_atende
     INTO r FROM leads WHERE id = lead_a;
-  IF r.meta_form_id <> 'form-com-empreendimento' OR r.meta_campaign_id <> 'campanha-1'
-     OR r.meta_adset_id <> 'conjunto-1' OR r.meta_ad_id <> 'anuncio-1' THEN
+  IF r.meta_form_id IS DISTINCT FROM 'form-com-empreendimento' OR r.meta_campaign_id IS DISTINCT FROM 'campanha-1'
+     OR r.meta_adset_id IS DISTINCT FROM 'conjunto-1' OR r.meta_ad_id IS DISTINCT FROM 'anuncio-1' THEN
     RAISE EXCEPTION 'FALHOU: o gatilho não promoveu os ids — %', to_jsonb(r);
   END IF;
   IF r.meta_captado IS NOT TRUE OR r.meta_lia_atende IS NOT FALSE THEN
@@ -85,7 +85,7 @@ BEGIN
   -- Lead que não é da Meta passa intacto.
   INSERT INTO leads (tenant_id, name, custom_fields) VALUES (t, 'Lead comum', '{"source":"manual"}'::jsonb);
   SELECT count(*) INTO n FROM leads WHERE tenant_id = t AND name = 'Lead comum' AND meta_form_id IS NOT NULL;
-  IF n <> 0 THEN
+  IF n IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'FALHOU: carimbou lead que não é da Meta';
   END IF;
 
@@ -126,11 +126,11 @@ BEGIN
    WHERE l->>'form_id' = 'form-com-empreendimento'
      AND l->>'destino' = 'lancamento'
      AND l->>'empreendimento_codigo' = 'RESERVA CASTANHEIRA';
-  IF n <> 1 THEN
+  IF n IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: o formulário amarrado não saiu como lançamento — %', p->'linhas';
   END IF;
 
-  IF (p->'contadores'->>'sem_direcionamento')::int <> 1 THEN
+  IF (p->'contadores'->>'sem_direcionamento')::int IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: "sem direcionamento" contou % (esperava 1)', p->'contadores'->>'sem_direcionamento';
   END IF;
 
@@ -140,26 +140,29 @@ BEGIN
   -- `leads_na_base` e `sem_campanha` não viram coluna de propósito: contagem
   -- copiada para coluna envelhece sem ninguém perceber.
   -- ----------------------------------------------------------
-  IF (p->'contadores'->>'leads_na_base')::int <> 2 THEN
+  IF (p->'contadores'->>'leads_na_base')::int IS DISTINCT FROM 2 THEN
     RAISE EXCEPTION 'FALHOU: leads_na_base contou % (esperava 2)', p->'contadores'->>'leads_na_base';
   END IF;
 
   -- "Lead antigo" teve a campanha recuperada; sobra zero sem campanha.
-  IF (p->'contadores'->>'sem_campanha')::int <> 0 THEN
+  IF (p->'contadores'->>'sem_campanha')::int IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'FALHOU: sem_campanha contou % (esperava 0)', p->'contadores'->>'sem_campanha';
   END IF;
 
   -- Todo formulário nasce captando e com a LIA atendendo.
-  IF (p->'contadores'->>'captando')::int <> 2 OR (p->'contadores'->>'lia_atende')::int <> 2 THEN
+  IF (p->'contadores'->>'captando')::int IS DISTINCT FROM 2 OR (p->'contadores'->>'lia_atende')::int IS DISTINCT FROM 2 THEN
     RAISE EXCEPTION 'FALHOU: os padrões de captação/LIA não são "ligado" — %', p->'contadores';
   END IF;
 
   -- ----------------------------------------------------------
   -- 6. O PAINEL DA VIZINHA NÃO VÊ NADA DAQUI.
   -- ----------------------------------------------------------
+  -- A função RECUSA: quem não é membro do tenant recebe NULL, e não um painel
+  -- zerado. Afirmar "zerado" aqui passava por acidente — `NULL <> 0` é NULO, e
+  -- o IF nunca disparava, de modo que uma volta ao painel aberto passaria batida.
   p := meta_formularios_painel(t2);
-  IF (p->'contadores'->>'formularios')::int <> 0 OR jsonb_array_length(p->'linhas') <> 0 THEN
-    RAISE EXCEPTION 'FALHOU: a vizinha viu formulário alheio — %', p->'contadores';
+  IF p IS NOT NULL THEN
+    RAISE EXCEPTION 'FALHOU: a vizinha recebeu painel do tenant alheio em vez de recusa — %', p;
   END IF;
 
   RAISE NOTICE 'OK: formulários da Meta — 6 casos';

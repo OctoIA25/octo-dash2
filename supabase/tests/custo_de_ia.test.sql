@@ -62,7 +62,7 @@ BEGIN
   -- por milhão → US$ 0,00725.
   -- ----------------------------------------------------------
   p := ia_custos_painel(t);
-  IF round((p->'total'->>'custo_usd')::numeric, 6) <> 0.007250 THEN
+  IF round((p->'total'->>'custo_usd')::numeric, 6) IS DISTINCT FROM 0.007250 THEN
     RAISE EXCEPTION 'FALHOU: custo saiu % (esperava 0,00725)', p->'total'->>'custo_usd';
   END IF;
 
@@ -73,10 +73,10 @@ BEGIN
   -- — precisam aparecer NOMEADAS, senão o gestor lê "US$ 0,007" e conclui que a
   -- IA é barata, quando dois terços das chamadas não contaram.
   -- ----------------------------------------------------------
-  IF (p->'total'->>'chamadas')::int <> 3
-     OR (p->'total'->>'com_uso')::int <> 2
-     OR (p->'total'->>'sem_uso')::int <> 1
-     OR (p->'total'->>'sem_preco')::int <> 1 THEN
+  IF (p->'total'->>'chamadas')::int IS DISTINCT FROM 3
+     OR (p->'total'->>'com_uso')::int IS DISTINCT FROM 2
+     OR (p->'total'->>'sem_uso')::int IS DISTINCT FROM 1
+     OR (p->'total'->>'sem_preco')::int IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: contadores de cobertura errados — %', p->'total';
   END IF;
 
@@ -86,7 +86,7 @@ BEGIN
    WHERE m->>'modelo' = 'modelo-fantasma'
      AND (m->>'tem_preco')::boolean IS FALSE
      AND m->>'custo_usd' IS NULL;
-  IF n <> 1 THEN
+  IF n IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: o modelo sem preço não foi marcado — %', p->'por_modelo';
   END IF;
 
@@ -102,7 +102,7 @@ BEGIN
   VALUES ('gpt-4o', 'openai', 99.0000, 99.0000, 99.0000, current_date + 30);
 
   p := ia_custos_painel(t);
-  IF round((p->'total'->>'custo_usd')::numeric, 6) <> 0.007250 THEN
+  IF round((p->'total'->>'custo_usd')::numeric, 6) IS DISTINCT FROM 0.007250 THEN
     RAISE EXCEPTION 'FALHOU: preço com vigência futura reescreveu o custo já apurado — %', p->'total'->>'custo_usd';
   END IF;
 
@@ -114,13 +114,13 @@ BEGIN
   VALUES (t, 'gpt-4o', 'openai', 1.0000, 1.0000, 1.0000, '2026-01-01');
 
   SELECT * INTO r FROM ia_preco_vigente(t, 'gpt-4o', current_date);
-  IF r.preco_entrada <> 1.0000 THEN
+  IF r.preco_entrada IS DISTINCT FROM 1.0000 THEN
     RAISE EXCEPTION 'FALHOU: o preço próprio não venceu o global (veio %)', r.preco_entrada;
   END IF;
 
   -- E o global continua valendo para a vizinha.
   SELECT * INTO r FROM ia_preco_vigente(t2, 'gpt-4o', current_date);
-  IF r.preco_entrada <> 2.5000 THEN
+  IF r.preco_entrada IS DISTINCT FROM 2.5000 THEN
     RAISE EXCEPTION 'FALHOU: o preço próprio vazou para outra imobiliária (veio %)', r.preco_entrada;
   END IF;
 

@@ -61,22 +61,22 @@ BEGIN
   -- ----------------------------------------------------------
   p := painel_comercial(t, mes, mes + 27, 'todos');
 
-  IF (p->'atual'->>'vendas')::int <> 4 THEN
+  IF (p->'atual'->>'vendas')::int IS DISTINCT FROM 4 THEN
     RAISE EXCEPTION 'FALHOU: contou % vendas (esperava 4)', p->'atual'->>'vendas';
   END IF;
   -- 600k + 400k + 100k (a de TERCEIROS soma zero)
-  IF (p->'atual'->>'vgv')::numeric <> 1100000 THEN
+  IF (p->'atual'->>'vgv')::numeric IS DISTINCT FROM 1100000 THEN
     RAISE EXCEPTION 'FALHOU: VGV saiu % (esperava 1.100.000)', p->'atual'->>'vgv';
   END IF;
   -- todas somam comissão, inclusive a sem VGV
-  IF (p->'atual'->>'vgc')::numeric <> 59000 THEN
+  IF (p->'atual'->>'vgc')::numeric IS DISTINCT FROM 59000 THEN
     RAISE EXCEPTION 'FALHOU: VGC saiu % (esperava 59.000)', p->'atual'->>'vgc';
   END IF;
   -- ticket = 1.100.000 / 3 vendas COM VGV = 366.667. Com as 4, daria 275.000.
-  IF (p->'atual'->>'ticket_medio')::numeric <> 366667 THEN
+  IF (p->'atual'->>'ticket_medio')::numeric IS DISTINCT FROM 366667 THEN
     RAISE EXCEPTION 'FALHOU: ticket saiu % (esperava 366.667, dividindo pelas 3 com VGV)', p->'atual'->>'ticket_medio';
   END IF;
-  IF (p->'atual'->>'vendas_sem_vgv')::int <> 1 THEN
+  IF (p->'atual'->>'vendas_sem_vgv')::int IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: não contou a venda sem VGV';
   END IF;
 
@@ -86,10 +86,10 @@ BEGIN
   -- "MEU LANCAMENTO" e "meu lancamento" são o mesmo — sem isso, o filtro por
   -- lançamento perderia metade das vendas por causa da caixa da letra.
   -- ----------------------------------------------------------
-  IF (painel_comercial(t, mes, mes + 27, 'lancamento')->'atual'->>'vendas')::int <> 2 THEN
+  IF (painel_comercial(t, mes, mes + 27, 'lancamento')->'atual'->>'vendas')::int IS DISTINCT FROM 2 THEN
     RAISE EXCEPTION 'FALHOU: o filtro de lançamento não juntou as duas grafias';
   END IF;
-  IF (painel_comercial(t, mes, mes + 27, 'terceiros')->'atual'->>'vendas')::int <> 1 THEN
+  IF (painel_comercial(t, mes, mes + 27, 'terceiros')->'atual'->>'vendas')::int IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: o filtro de terceiros errou';
   END IF;
 
@@ -99,7 +99,7 @@ BEGIN
   -- 2 + 1 = 3 de 4: a venda de PARCERIA não aparece em nenhum dos dois filtros.
   -- Sem o contador, ela sumiria sem explicação.
   -- ----------------------------------------------------------
-  IF (p->'atual'->>'sem_classificacao')::int <> 1 THEN
+  IF (p->'atual'->>'sem_classificacao')::int IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: não contou a venda sem classificação — %', p->'atual';
   END IF;
 
@@ -109,15 +109,15 @@ BEGIN
   -- Dois nomes distintos, mas só um bate com membro cadastrado. É o que impede
   -- a tela de dividir e chamar de produtividade.
   -- ----------------------------------------------------------
-  IF (p->'atual'->>'nomes_que_venderam')::int <> 2
-     OR (p->'atual'->>'nomes_reconhecidos')::int <> 1 THEN
+  IF (p->'atual'->>'nomes_que_venderam')::int IS DISTINCT FROM 2
+     OR (p->'atual'->>'nomes_reconhecidos')::int IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: reconhecimento de vendedor errado — %', p->'atual';
   END IF;
 
   -- ----------------------------------------------------------
   -- 6. SEM META CADASTRADA, NADA DE ZERO.
   -- ----------------------------------------------------------
-  IF (p->'metas'->>'cadastradas')::int <> 0 OR p->'metas'->>'vendas' IS NOT NULL THEN
+  IF (p->'metas'->>'cadastradas')::int IS DISTINCT FROM 0 OR p->'metas'->>'vendas' IS NOT NULL THEN
     RAISE EXCEPTION 'FALHOU: meta inexistente não deveria virar número — %', p->'metas';
   END IF;
 
@@ -126,15 +126,16 @@ BEGIN
   --
   -- 01 a 07/06/2026: 01 é segunda, então 5 dias úteis na semana.
   -- ----------------------------------------------------------
-  IF dias_uteis('2026-06-01', '2026-06-07') <> 5 THEN
+  IF dias_uteis('2026-06-01', '2026-06-07') IS DISTINCT FROM 5 THEN
     RAISE EXCEPTION 'FALHOU: dias úteis contou % numa semana cheia (esperava 5)', dias_uteis('2026-06-01','2026-06-07');
   END IF;
 
   -- ----------------------------------------------------------
   -- 8. A VIZINHA NÃO VÊ VENDA ALHEIA.
   -- ----------------------------------------------------------
-  IF (painel_comercial(t2, mes, mes + 27, 'todos')->'atual'->>'vendas')::int <> 0 THEN
-    RAISE EXCEPTION 'FALHOU: a vizinha contou venda que não é dela';
+  -- Recusa, não painel zerado: fora do tenant a função devolve NULL.
+  IF painel_comercial(t2, mes, mes + 27, 'todos') IS NOT NULL THEN
+    RAISE EXCEPTION 'FALHOU: a vizinha recebeu o painel do tenant alheio em vez de recusa';
   END IF;
 
   RAISE NOTICE 'OK: painel comercial — 8 casos';

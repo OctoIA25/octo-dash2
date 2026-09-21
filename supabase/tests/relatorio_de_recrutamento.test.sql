@@ -48,21 +48,21 @@ BEGIN
   UPDATE recrut_candidato SET estagio = 'onboard', coordenador_id = u WHERE id = c1;
 
   -- Hoje ela está em onboard.
-  IF (SELECT estagio::text FROM recrut_candidato WHERE id = c1) <> 'onboard' THEN
+  IF (SELECT estagio::text FROM recrut_candidato WHERE id = c1) IS DISTINCT FROM 'onboard' THEN
     RAISE EXCEPTION 'FALHOU: o fixture não levou a candidata até onboard';
   END IF;
 
   r := recrut_relatorio(t, '2026-09-01', '2026-12-31');
 
   SELECT e INTO x FROM jsonb_array_elements(r->'etapas') e WHERE e->>'etapa' = 'qualificado';
-  IF (x->>'alcancaram')::int <> 1 THEN
+  IF (x->>'alcancaram')::int IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: ela PASSOU por qualificado e a leitura por alcance conta % — está contando quem está lá hoje',
       x->>'alcancaram';
   END IF;
 
   -- E as etapas seguintes também contam, porque ela chegou a todas.
   SELECT e INTO x FROM jsonb_array_elements(r->'etapas') e WHERE e->>'etapa' = 'onboard';
-  IF (x->>'alcancaram')::int <> 1 THEN
+  IF (x->>'alcancaram')::int IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: onboard deveria contar 1, contou %', x->>'alcancaram';
   END IF;
 
@@ -89,7 +89,7 @@ BEGIN
   UPDATE recrut_candidato SET estagio = 'interacao'   WHERE id = c1;
   UPDATE recrut_candidato SET estagio = 'qualificado' WHERE id = c1;
 
-  IF (SELECT ts_qualificado FROM recrut_candidato WHERE id = c1) <> '2026-09-23 10:00-03'::timestamptz THEN
+  IF (SELECT ts_qualificado FROM recrut_candidato WHERE id = c1) IS DISTINCT FROM '2026-09-23 10:00-03'::timestamptz THEN
     RAISE EXCEPTION 'FALHOU: voltar e avançar reescreveu a data do primeiro alcance';
   END IF;
 
@@ -110,11 +110,11 @@ BEGIN
   r := recrut_relatorio(t, '2026-09-01', '2026-12-31');
 
   SELECT sum((e->>'candidatos')::int) INTO soma FROM jsonb_array_elements(r->'por_origem') e;
-  IF soma <> (r->>'total')::int THEN
+  IF soma IS DISTINCT FROM (r->>'total')::int THEN
     RAISE EXCEPTION 'FALHOU: a soma por origem deu % e o total é % — alguém sumiu do agrupamento',
       soma, r->>'total';
   END IF;
-  IF (r->>'total')::int <> 3 THEN
+  IF (r->>'total')::int IS DISTINCT FROM 3 THEN
     RAISE EXCEPTION 'FALHOU: são 3 candidatos no período, o total diz %', r->>'total';
   END IF;
 
@@ -125,13 +125,13 @@ BEGIN
   -- preencheu", e não "todos vieram de outro lugar". Sem esta marca, o gestor
   -- lê a segunda coisa.
   SELECT e INTO x FROM jsonb_array_elements(r->'por_origem') e WHERE e->>'origem' = 'outro';
-  IF x IS NULL OR (x->>'candidatos')::int <> 1 THEN
+  IF x IS NULL OR (x->>'candidatos')::int IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: quem entrou sem canal deveria cair em "outro" — %', r->'por_origem';
   END IF;
   IF (x->>'e_o_padrao')::boolean IS NOT TRUE THEN
     RAISE EXCEPTION 'FALHOU: a linha "outro" precisa vir marcada como padrão do cadastro';
   END IF;
-  IF (r->>'origem_no_padrao')::int <> 1 THEN
+  IF (r->>'origem_no_padrao')::int IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: 1 candidato está no padrão e o relatório diz %', r->>'origem_no_padrao';
   END IF;
 
@@ -149,14 +149,14 @@ BEGIN
   -- ninguém anota. Sem essa distinção, 0% vira "o processo trava aqui".
   -- ----------------------------------------------------------
   SELECT e INTO x FROM jsonb_array_elements(r->'etapas') e WHERE e->>'etapa' = 'reuniao_realizada';
-  IF (x->>'alcancaram')::int <> 0 OR (x->>'registrado_sempre')::int <> 0 THEN
+  IF (x->>'alcancaram')::int IS DISTINCT FROM 0 OR (x->>'registrado_sempre')::int IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'FALHOU: reunião feita deveria ter 0 e 0, teve % e %',
       x->>'alcancaram', x->>'registrado_sempre';
   END IF;
 
   -- Já "qualificado" tem registro: a Ana passou por lá.
   SELECT e INTO x FROM jsonb_array_elements(r->'etapas') e WHERE e->>'etapa' = 'qualificado';
-  IF (x->>'registrado_sempre')::int <> 1 THEN
+  IF (x->>'registrado_sempre')::int IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: qualificado tem 1 registro e a função diz %', x->>'registrado_sempre';
   END IF;
 
@@ -179,13 +179,13 @@ BEGIN
 
   r := recrut_relatorio(t, '2026-09-01', '2026-12-31');
   SELECT sum((e->>'candidatos')::int) INTO soma FROM jsonb_array_elements(r->'por_area') e;
-  IF soma <> (r->>'total')::int THEN
+  IF soma IS DISTINCT FROM (r->>'total')::int THEN
     RAISE EXCEPTION 'FALHOU: a soma por área deu % e o total é %', soma, r->>'total';
   END IF;
 
   -- Quem ainda não tem área aparece, em vez de sumir da conta.
   SELECT e INTO x FROM jsonb_array_elements(r->'por_area') e WHERE e->>'area' = '(sem área)';
-  IF x IS NULL OR (x->>'candidatos')::int <> 1 THEN
+  IF x IS NULL OR (x->>'candidatos')::int IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: o candidato sem área deveria aparecer — %', r->'por_area';
   END IF;
 
@@ -193,7 +193,7 @@ BEGIN
   -- 7. O PERÍODO RECORTA DE VERDADE.
   -- ----------------------------------------------------------
   r := recrut_relatorio(t, '2026-09-24', '2026-09-24');
-  IF (r->>'total')::int <> 1 THEN
+  IF (r->>'total')::int IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: só o Bruno se candidatou em 24/09, o total diz %', r->>'total';
   END IF;
 

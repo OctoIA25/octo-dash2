@@ -56,7 +56,7 @@ BEGIN
   -- caso perderia o proprio sentido.
   PERFORM set_config('request.jwt.claims', json_build_object('sub', u1::text)::text, true);
   SELECT count(*) INTO n FROM whatsapp_conversas_extras(t);
-  IF n <> 2 THEN
+  IF n IS DISTINCT FROM 2 THEN
     RAISE EXCEPTION 'FALHOU: devolveu % linhas (esperava 2: a lida e a de candidato) de 43 conversas', n;
   END IF;
 
@@ -68,7 +68,7 @@ BEGIN
   -- ----------------------------------------------------------
   PERFORM set_config('request.jwt.claims', json_build_object('sub', u2::text)::text, true);
   SELECT count(*) INTO n FROM whatsapp_conversas_extras(t) WHERE lida_em IS NOT NULL;
-  IF n <> 0 THEN
+  IF n IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'FALHOU: a leitura de um usuario vazou para o outro (% linhas)', n;
   END IF;
   PERFORM set_config('request.jwt.claims', NULL, true);
@@ -83,7 +83,7 @@ BEGIN
   IF r.conversation_id IS DISTINCT FROM cv_cand THEN
     RAISE EXCEPTION 'FALHOU: casou a conversa errada com o candidato';
   END IF;
-  IF r.candidato_id IS DISTINCT FROM cand OR r.candidato_nome <> 'Candidata' THEN
+  IF r.candidato_id IS DISTINCT FROM cand OR r.candidato_nome IS DISTINCT FROM 'Candidata' THEN
     RAISE EXCEPTION 'FALHOU: nao devolveu o candidato para o botao "Ver candidato"';
   END IF;
 
@@ -96,34 +96,34 @@ BEGIN
     (t, cv_lida, 'inbound', 'text', 'Bom dia', now());
 
   SELECT count(*) INTO n FROM whatsapp_busca_em_mensagens(t, 'santa âng');
-  IF n <> 1 THEN RAISE EXCEPTION 'FALHOU: busca por pedaco de palavra achou %', n; END IF;
+  IF n IS DISTINCT FROM 1 THEN RAISE EXCEPTION 'FALHOU: busca por pedaco de palavra achou %', n; END IF;
 
   SELECT count(*) INTO n FROM whatsapp_busca_em_mensagens(t, 'SANTA');
-  IF n <> 1 THEN RAISE EXCEPTION 'FALHOU: busca ignorando caixa achou %', n; END IF;
+  IF n IS DISTINCT FROM 1 THEN RAISE EXCEPTION 'FALHOU: busca ignorando caixa achou %', n; END IF;
 
   -- Menos de três letras não busca: varreria a tabela a cada tecla, e a tela
   -- já filtra por nome e telefone nesse caso.
   SELECT count(*) INTO n FROM whatsapp_busca_em_mensagens(t, 'sa');
-  IF n <> 0 THEN RAISE EXCEPTION 'FALHOU: termo curto disparou varredura'; END IF;
+  IF n IS DISTINCT FROM 0 THEN RAISE EXCEPTION 'FALHOU: termo curto disparou varredura'; END IF;
 
   SELECT count(*) INTO n FROM whatsapp_busca_em_mensagens(t, 'palavra que ninguem disse');
-  IF n <> 0 THEN RAISE EXCEPTION 'FALHOU: busca sem resultado devolveu %', n; END IF;
+  IF n IS DISTINCT FROM 0 THEN RAISE EXCEPTION 'FALHOU: busca sem resultado devolveu %', n; END IF;
 
   -- ----------------------------------------------------------
   -- 5. ESCOPO DE IMOBILIÁRIA nas duas funções.
   -- ----------------------------------------------------------
   SELECT count(*) INTO n FROM whatsapp_conversas_extras('ffffffff-ffff-4fff-afff-ffffffffffff'::uuid);
-  IF n <> 0 THEN RAISE EXCEPTION 'FALHOU: extras vazaram para outra imobiliaria'; END IF;
+  IF n IS DISTINCT FROM 0 THEN RAISE EXCEPTION 'FALHOU: extras vazaram para outra imobiliaria'; END IF;
 
   SELECT count(*) INTO n FROM whatsapp_busca_em_mensagens('ffffffff-ffff-4fff-afff-ffffffffffff'::uuid, 'santa');
-  IF n <> 0 THEN RAISE EXCEPTION 'FALHOU: busca vazou para outra imobiliaria'; END IF;
+  IF n IS DISTINCT FROM 0 THEN RAISE EXCEPTION 'FALHOU: busca vazou para outra imobiliaria'; END IF;
 
   -- ----------------------------------------------------------
   -- 6. A CHAVE DO NAVEGADOR NÃO LÊ A TABELA DE LEITURA.
   -- ----------------------------------------------------------
   SELECT count(*) INTO n FROM information_schema.table_privileges
   WHERE table_schema = 'public' AND table_name = 'whatsapp_conversa_leitura' AND grantee = 'anon';
-  IF n <> 0 THEN RAISE EXCEPTION 'FALHOU: anon tem % privilegio(s) na tabela de leitura', n; END IF;
+  IF n IS DISTINCT FROM 0 THEN RAISE EXCEPTION 'FALHOU: anon tem % privilegio(s) na tabela de leitura', n; END IF;
 
   RAISE NOTICE 'whatsapp_filtros_e_leitura: 6 casos OK';
 END $$;

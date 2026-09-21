@@ -49,7 +49,7 @@ BEGIN
   VALUES (t, 'Post do lançamento', 'post', ana, 'Gerar visitas', 'Famílias de Jundiaí', '2026-10-10')
   RETURNING id INTO d;
 
-  IF (SELECT status FROM mkt_demandas WHERE id = d) <> 'solicitado' THEN
+  IF (SELECT status FROM mkt_demandas WHERE id = d) IS DISTINCT FROM 'solicitado' THEN
     RAISE EXCEPTION 'FALHOU: a demanda deveria nascer em solicitado';
   END IF;
 
@@ -67,19 +67,19 @@ BEGIN
 
   h := mkt_historico_da_demanda(t, d);
   -- Seis eventos: o nascimento mais as cinco mudanças.
-  IF jsonb_array_length(h) <> 6 THEN
+  IF jsonb_array_length(h) IS DISTINCT FROM 6 THEN
     RAISE EXCEPTION 'FALHOU: o histórico deveria ter 6 passos, tem %  — %', jsonb_array_length(h), h;
   END IF;
 
-  IF (h->0->>'para') <> 'solicitado' OR (h->0->>'de') IS NOT NULL THEN
+  IF (h->0->>'para') IS DISTINCT FROM 'solicitado' OR (h->0->>'de') IS NOT NULL THEN
     RAISE EXCEPTION 'FALHOU: o primeiro passo é o nascimento em solicitado, veio %', h->0;
   END IF;
-  IF (h->5->>'para') <> 'publicado' OR (h->5->>'de') <> 'aprovado' THEN
+  IF (h->5->>'para') IS DISTINCT FROM 'publicado' OR (h->5->>'de') IS DISTINCT FROM 'aprovado' THEN
     RAISE EXCEPTION 'FALHOU: o último passo deveria ser aprovado → publicado, veio %', h->5;
   END IF;
 
   -- E o histórico diz QUEM fez cada passo.
-  IF (h->1->>'por') <> 'Gestor' THEN
+  IF (h->1->>'por') IS DISTINCT FROM 'Gestor' THEN
     RAISE EXCEPTION 'FALHOU: o passo para briefing foi do Gestor, o histórico diz %', h->1->>'por';
   END IF;
 
@@ -90,14 +90,14 @@ BEGIN
   -- encheria o histórico de ruído e esconderia o que importa.
   -- ----------------------------------------------------------
   UPDATE mkt_demandas SET texto_base = 'Chamada nova', formato = '1080x1080' WHERE id = d;
-  IF jsonb_array_length(mkt_historico_da_demanda(t, d)) <> 6 THEN
+  IF jsonb_array_length(mkt_historico_da_demanda(t, d)) IS DISTINCT FROM 6 THEN
     RAISE EXCEPTION 'FALHOU: editar o texto virou passo do histórico';
   END IF;
 
   -- E o gatilho pega mudança feita por FORA da tela — é o motivo de ele
   -- existir. Aqui o UPDATE é direto no banco, sem tela nenhuma.
   UPDATE mkt_demandas SET status = 'revisao' WHERE id = d;
-  IF jsonb_array_length(mkt_historico_da_demanda(t, d)) <> 7 THEN
+  IF jsonb_array_length(mkt_historico_da_demanda(t, d)) IS DISTINCT FROM 7 THEN
     RAISE EXCEPTION 'FALHOU: mudança fora da tela não foi registrada';
   END IF;
 
@@ -140,7 +140,7 @@ BEGIN
   -- ----------------------------------------------------------
   r := mkt_quadro_de_demandas(t);
   SELECT x INTO h FROM jsonb_array_elements(r->'demandas') x WHERE (x->>'id')::uuid = d;
-  IF (h->>'solicitante') <> 'Ana' OR (h->>'responsavel') <> 'Bruno' THEN
+  IF (h->>'solicitante') IS DISTINCT FROM 'Ana' OR (h->>'responsavel') IS DISTINCT FROM 'Bruno' THEN
     RAISE EXCEPTION 'FALHOU: o card deveria trazer Ana e Bruno, trouxe % e %',
       h->>'solicitante', h->>'responsavel';
   END IF;
@@ -160,14 +160,14 @@ BEGIN
 
   r := mkt_quadro_de_demandas(t);
   SELECT count(*) INTO n FROM jsonb_array_elements(r->'demandas') x WHERE (x->>'id')::uuid = d2;
-  IF n <> 0 THEN
+  IF n IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'FALHOU: publicado de 90 dias atrás ainda aparece no quadro';
   END IF;
 
   -- Mas continua alcançável quando se pede o período inteiro.
   r := mkt_quadro_de_demandas(t, '2020-01-01');
   SELECT count(*) INTO n FROM jsonb_array_elements(r->'demandas') x WHERE (x->>'id')::uuid = d2;
-  IF n <> 1 THEN
+  IF n IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: pedindo o período inteiro, a demanda antiga deveria voltar';
   END IF;
 
@@ -175,7 +175,7 @@ BEGIN
   UPDATE mkt_demandas SET status = 'publicado' WHERE id = d;
   r := mkt_quadro_de_demandas(t);
   SELECT count(*) INTO n FROM jsonb_array_elements(r->'demandas') x WHERE (x->>'id')::uuid = d;
-  IF n <> 1 THEN
+  IF n IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: publicado hoje sumiu do quadro';
   END IF;
 
@@ -228,7 +228,7 @@ UPDATE mkt_demandas SET status = 'publicado' WHERE titulo = 'Peça da Ana';
 SELECT pg_temp.como('0eee0000-0000-4000-a000-000000000002', 'ana@teste-mkt.dev');
 DO $$
 BEGIN
-  IF (SELECT status FROM mkt_demandas WHERE titulo = 'Peça da Ana') <> 'solicitado' THEN
+  IF (SELECT status FROM mkt_demandas WHERE titulo = 'Peça da Ana') IS DISTINCT FROM 'solicitado' THEN
     RAISE EXCEPTION 'FALHOU: um colega moveu a demanda que não é dele';
   END IF;
 END $$;

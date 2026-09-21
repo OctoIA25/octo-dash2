@@ -48,12 +48,12 @@ BEGIN
   -- mesmo nome. Setembro tem 30 dias, então a série tem 30 baldes.
   -- ----------------------------------------------------------
   r := painel_evolucao(t, de, ate);
-  IF jsonb_array_length(r->'serie') <> 30 THEN
+  IF jsonb_array_length(r->'serie') IS DISTINCT FROM 30 THEN
     RAISE EXCEPTION 'FALHOU: setembro deveria ter 30 baldes, teve %', jsonb_array_length(r->'serie');
   END IF;
 
   SELECT (b->>'vendas')::int INTO n FROM jsonb_array_elements(r->'serie') b WHERE b->>'em' = '2026-09-05';
-  IF n <> 2 THEN RAISE EXCEPTION 'FALHOU: dia 05 deveria ter 2 vendas, teve %', n; END IF;
+  IF n IS DISTINCT FROM 2 THEN RAISE EXCEPTION 'FALHOU: dia 05 deveria ter 2 vendas, teve %', n; END IF;
 
   SELECT (b->>'vendas')::int INTO n FROM jsonb_array_elements(r->'serie') b WHERE b->>'em' = '2026-09-20';
   IF n IS DISTINCT FROM 0 THEN
@@ -72,7 +72,7 @@ BEGIN
     RAISE EXCEPTION 'FALHOU: venda sem VGV não pode gerar ticket zero';
   END IF;
   SELECT (b->>'vendas')::int INTO n FROM jsonb_array_elements(r->'serie') b WHERE b->>'em' = '2026-09-10';
-  IF n <> 1 THEN RAISE EXCEPTION 'FALHOU: a venda sem VGV ainda conta como venda'; END IF;
+  IF n IS DISTINCT FROM 1 THEN RAISE EXCEPTION 'FALHOU: a venda sem VGV ainda conta como venda'; END IF;
 
   -- ----------------------------------------------------------
   -- 2. A RÉGUA VIRA DE DIAS PARA MESES.
@@ -80,26 +80,26 @@ BEGIN
   -- O critério do plano, por escrito: "Período de 30 dias mostra dias; de 6
   -- meses mostra meses."
   -- ----------------------------------------------------------
-  IF r->>'granularidade' <> 'dia' THEN
+  IF r->>'granularidade' IS DISTINCT FROM 'dia' THEN
     RAISE EXCEPTION 'FALHOU: 30 dias deveria ser por dia, veio %', r->>'granularidade';
   END IF;
 
   r := painel_evolucao(t, '2026-04-01', '2026-09-30');
-  IF r->>'granularidade' <> 'mes' THEN
+  IF r->>'granularidade' IS DISTINCT FROM 'mes' THEN
     RAISE EXCEPTION 'FALHOU: 6 meses deveria ser por mês, veio %', r->>'granularidade';
   END IF;
-  IF jsonb_array_length(r->'serie') <> 6 THEN
+  IF jsonb_array_length(r->'serie') IS DISTINCT FROM 6 THEN
     RAISE EXCEPTION 'FALHOU: 6 meses deveriam dar 6 baldes, deu %', jsonb_array_length(r->'serie');
   END IF;
   SELECT (b->>'vendas')::int INTO n FROM jsonb_array_elements(r->'serie') b WHERE b->>'em' = '2026-09-01';
-  IF n <> 3 THEN RAISE EXCEPTION 'FALHOU: o balde de setembro deveria somar as 3, somou %', n; END IF;
+  IF n IS DISTINCT FROM 3 THEN RAISE EXCEPTION 'FALHOU: o balde de setembro deveria somar as 3, somou %', n; END IF;
 
   -- A borda: 62 dias ainda é "dia", 63 já é "mês". Sem isso a régua vira num
   -- lugar que ninguém consegue prever.
-  IF painel_evolucao(t, '2026-07-01', '2026-08-31')->>'granularidade' <> 'dia' THEN
+  IF painel_evolucao(t, '2026-07-01', '2026-08-31')->>'granularidade' IS DISTINCT FROM 'dia' THEN
     RAISE EXCEPTION 'FALHOU: julho+agosto (62 dias) ainda é por dia';
   END IF;
-  IF painel_evolucao(t, '2026-07-01', '2026-09-01')->>'granularidade' <> 'mes' THEN
+  IF painel_evolucao(t, '2026-07-01', '2026-09-01')->>'granularidade' IS DISTINCT FROM 'mes' THEN
     RAISE EXCEPTION 'FALHOU: acima de 62 dias já é por mês';
   END IF;
 
@@ -111,7 +111,7 @@ BEGIN
   -- ao ponto 2 de agosto e o gráfico mente sem dar sinal.
   -- ----------------------------------------------------------
   r := painel_evolucao(t, de, ate);
-  IF jsonb_array_length(r->'anterior'->'serie') <> jsonb_array_length(r->'serie') THEN
+  IF jsonb_array_length(r->'anterior'->'serie') IS DISTINCT FROM jsonb_array_length(r->'serie') THEN
     RAISE EXCEPTION 'FALHOU: anterior com % baldes contra % do atual',
       jsonb_array_length(r->'anterior'->'serie'), jsonb_array_length(r->'serie');
   END IF;
@@ -119,7 +119,7 @@ BEGIN
   -- Em meses o deslocamento é por MÊS, não por dias: descontar 180 dias daria
   -- 6 ou 7 baldes conforme o calendário.
   r := painel_evolucao(t, '2026-04-01', '2026-09-30');
-  IF jsonb_array_length(r->'anterior'->'serie') <> 6 THEN
+  IF jsonb_array_length(r->'anterior'->'serie') IS DISTINCT FROM 6 THEN
     RAISE EXCEPTION 'FALHOU: o semestre anterior deveria ter 6 baldes, teve %',
       jsonb_array_length(r->'anterior'->'serie');
   END IF;
@@ -149,11 +149,11 @@ BEGIN
   -- ----------------------------------------------------------
   r := painel_evolucao(t, de, ate, 'todos', '{"corretor":["Ana"]}'::jsonb);
   SELECT sum((b->>'vendas')::int) INTO n FROM jsonb_array_elements(r->'serie') b;
-  IF n <> 2 THEN RAISE EXCEPTION 'FALHOU: o filtro por corretor não chegou ao gráfico (% vendas)', n; END IF;
+  IF n IS DISTINCT FROM 2 THEN RAISE EXCEPTION 'FALHOU: o filtro por corretor não chegou ao gráfico (% vendas)', n; END IF;
 
   r := painel_evolucao(t, de, ate, 'todos', '{"construtora":["Santa Ângela"]}'::jsonb);
   SELECT sum((b->>'vendas')::int) INTO n FROM jsonb_array_elements(r->'serie') b;
-  IF n <> 3 THEN RAISE EXCEPTION 'FALHOU: o corte pelo lançamento não chegou ao gráfico'; END IF;
+  IF n IS DISTINCT FROM 3 THEN RAISE EXCEPTION 'FALHOU: o corte pelo lançamento não chegou ao gráfico'; END IF;
 
   -- ----------------------------------------------------------
   -- 6. AS BANDEIRINHAS.
@@ -164,14 +164,14 @@ BEGIN
   INSERT INTO eventos_comerciais (tenant_id, em, titulo) VALUES (t, '2026-11-02', 'Feirão de novembro');
 
   r := painel_evolucao(t, de, ate);
-  IF jsonb_array_length(r->'eventos') <> 2 THEN
+  IF jsonb_array_length(r->'eventos') IS DISTINCT FROM 2 THEN
     RAISE EXCEPTION 'FALHOU: deveriam vir 2 eventos do período, vieram %', jsonb_array_length(r->'eventos');
   END IF;
 
   -- O nome canônico do empreendimento é o que o front compara com o filtro do
   -- P3.2. Vindo em outra grafia, a bandeirinha nunca casaria com o recorte.
   IF (SELECT e->>'empreendimento' FROM jsonb_array_elements(r->'eventos') e
-       WHERE e->>'titulo' = 'Campanha Serrah') <> 'SERRAH' THEN
+       WHERE e->>'titulo' = 'Campanha Serrah') IS DISTINCT FROM 'SERRAH' THEN
     RAISE EXCEPTION 'FALHOU: o evento deveria trazer o empreendimento canônico';
   END IF;
   IF (SELECT e->>'empreendimento' FROM jsonb_array_elements(r->'eventos') e
@@ -183,7 +183,7 @@ BEGIN
   -- ponto do eixo que não existe e sumiria do gráfico.
   r := painel_evolucao(t, '2026-04-01', '2026-09-30');
   IF (SELECT e->>'em' FROM jsonb_array_elements(r->'eventos') e
-       WHERE e->>'titulo' = 'Campanha Serrah') <> '2026-09-01' THEN
+       WHERE e->>'titulo' = 'Campanha Serrah') IS DISTINCT FROM '2026-09-01' THEN
     RAISE EXCEPTION 'FALHOU: em meses o evento deveria cair no primeiro dia do mês';
   END IF;
 
