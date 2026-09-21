@@ -85,6 +85,7 @@ import {
 import { FinanceiroTab } from '../components/FinanceiroTab';
 import { MarketingSiteTab } from '../components/MarketingSiteTab';
 import { CampanhasTab } from '../marketing/CampanhasTab';
+import { AnunciosTab } from '../marketing/AnunciosTab';
 import { ExportReportDialog, buildReportModel, fromChartJs, type ReportSource } from '../export';
 import { useLeadSourceCosts } from '../hooks/useLeadSourceCosts';
 import { buildFinanceiroResumo, origemKey } from '../utils/buildFinanceiroResumo';
@@ -234,11 +235,11 @@ export const RelatoriosPage = () => {
   const initialMktView = useMemo(
     () => {
       const v = searchParams.get('view');
-      return v === 'site' || v === 'campanhas' ? v : 'geral';
+      return v === 'site' || v === 'campanhas' || v === 'anuncios' ? v : 'geral';
     },
     [searchParams],
   );
-  const [mktView, setMktView] = useState<'geral' | 'site' | 'campanhas'>(initialMktView);
+  const [mktView, setMktView] = useState<'geral' | 'site' | 'campanhas' | 'anuncios'>(initialMktView);
 
   const initialMetricasSubArea = useMemo(() => {
     const fromQuery = searchParams.get('metricasSubArea');
@@ -1991,7 +1992,7 @@ export const RelatoriosPage = () => {
 
       {activeSubArea === 'marketing' && (
         <div className="mb-4 inline-flex rounded-lg border border-gray-200 dark:border-slate-700 p-0.5 bg-gray-50 dark:bg-slate-800">
-          {([['geral', 'Geral'], ['campanhas', 'Campanhas'], ['site', 'Site']] as const).map(([value, label]) => (
+          {([['geral', 'Geral'], ['campanhas', 'Campanhas'], ['anuncios', 'Anúncios'], ['site', 'Site']] as const).map(([value, label]) => (
             <button
               key={value}
               onClick={() => {
@@ -2019,6 +2020,10 @@ export const RelatoriosPage = () => {
           numerador. Entra ao lado do "Geral", e não no lugar: o Geral traz
           números que alguém usa hoje. */}
       {activeSubArea === 'marketing' && mktView === 'campanhas' && <CampanhasTab />}
+      {/* P3.6 — matriz de eficiência, CPA por construtora e primeiro/último
+          toque. Separado de Campanhas porque responde outra pergunta: lá é
+          "quanto custou"; aqui é "quem aproveitou". */}
+      {activeSubArea === 'marketing' && mktView === 'anuncios' && <AnunciosTab />}
       {/* SEÇÃO MARKETING */}
       {activeSubArea === 'marketing' && mktView === 'geral' && (
         <>
