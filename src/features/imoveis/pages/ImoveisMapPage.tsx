@@ -2,11 +2,16 @@
  * 🗺️ Mapa de Imóveis — Leaflet + OpenStreetMap
  *
  * Carregado lazy (não pesa o resto do app). Resolve coordenadas de cada
- * imóvel via cadeia de fallback (XML → cache → ViaCEP → Nominatim) e
- * renderiza pins clusterizados.
+ * imóvel via cadeia de fallback (XML → cache → ViaCEP → Nominatim).
+ *
+ * P2.6 — o mapa passou a ser INTERLIGADO: além dos imóveis, mostra lançamentos
+ * e condomínios, com coordenada gravada na linha de cada um (`mapa_pontos`).
+ * O agrupamento de pinos, que este cabeçalho prometia desde sempre e não
+ * existia — `leaflet.markercluster` estava instalado e sem um único import —
+ * agora existe, em PinosDoMapa.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
@@ -23,6 +28,12 @@ import { fetchMyMapsMid } from '../services/imoveisXmlService';
 import type { Imovel } from '../services/kenloService';
 import type { GeoCoords } from '../services/geocodingService';
 import { ImoveisMapHeaderFilters } from '../components/ImoveisMapHeaderFilters';
+import { PinosDoMapa } from '../components/PinosDoMapa';
+import { carregarPontos, salvarPino } from '../services/mapaPontosService';
+import {
+  COR_DO_TIPO, ROTULO_DO_TIPO, contar, filtrarPontos, textoDoContador,
+  type PontoDoMapa, type TipoDePonto, type TotaisDoMapa,
+} from '../utils/mapaPontos';
 
 // Fix dos ícones default do Leaflet ao usar com bundlers
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -169,6 +180,13 @@ export default function ImoveisMapPage({ imoveis, isLoading }: ImoveisMapPagePro
   const finalidadeFiltro = searchParams.get('finalidade') ?? 'todas';
 
   const [modo, setModo] = useState<'imoveis' | 'curado'>('imoveis');
+  // Os três tipos ligados por padrão: o item se chama "mapa interligado", e
+  // abrir mostrando só um deles esconderia justamente o que ele entrega.
+  const [tiposLigados, setTiposLigados] = useState<Set<TipoDePonto>>(
+    () => new Set<TipoDePonto>(['lancamento', 'condominio', 'imovel'])
+  );
+  const [pontos, setPontos] = useState<PontoDoMapa[]>([]);
+  const [totais, setTotais] = useState<TotaisDoMapa | null>(null);
   const [myMapsMid, setMyMapsMid] = useState<string | null>(null);
   const [coordsByRef, setCoordsByRef] = useState<Map<string, GeoCoords>>(new Map());
   const [progress, setProgress] = useState({ current: 0, total: 0 });
@@ -192,6 +210,22 @@ export default function ImoveisMapPage({ imoveis, isLoading }: ImoveisMapPagePro
       }
       setDbLoaded(true); // libera o geocoding apenas após o BD ser consultado
     });
+  }, [tenantId]);
+
+  // Os pontos dos três tipos, com a coordenada gravada em cada linha.
+  useEffect(() => {
+    if (!tenantId || tenantId === 'owner') return;
+    let cancelado = false;
+    carregarPontos(tenantId)
+      .then((r) => {
+        if (cancelado || !r) return;
+        setPontos(r.pontos ?? []);
+        setTotais(r.totais ?? null);
+      })
+      .catch((e) => console.error('[mapa] não deu para ler os pontos:', e?.message));
+    return () => {
+      cancelado = true;
+    };
   }, [tenantId]);
 
   // Mapa curado do tenant (opcional)
@@ -226,6 +260,60 @@ export default function ImoveisMapPage({ imoveis, isLoading }: ImoveisMapPagePro
     }
     return out;
   }, [imoveisFiltrados, coordsByRef]);
+
+  // A coordenada gravada na LINHA do imóvel vence o cache de endereço: se
+  // alguém arrastou o pino, é ela que vale. Sem esta precedência, o cache —
+  // que é por endereço, e portanto compartilhado entre imóveis do mesmo
+  // prédio — devolveria o pino para a posição automática na recarga seguinte.
+  useEffect(() => {
+    const doBanco = pontos.filter((p) => p.tipo === 'imovel' && p.ref && p.latitude != null);
+    if (doBanco.length === 0) return;
+    setCoordsByRef((prev) => {
+      const next = new Map(prev);
+      for (const p of doBanco) {
+        next.set(p.ref as string, {
+          lat: p.latitude as number,
+          lng: p.longitude as number,
+          source: p.geo_origem === 'manual' ? 'manual' : 'cache',
+          confidence: p.geo_precisao === 'aproximada' ? 'low' : 'high',
+        });
+      }
+      return next;
+    });
+  }, [pontos]);
+
+  // Lançamentos e condomínios: pinos próprios, que não passam pela lista de
+  // imóveis. Os imóveis continuam vindo por `markers`, já com a precedência
+  // acima aplicada.
+  const pontosVisiveis = useMemo(
+    () => filtrarPontos(pontos.filter((p) => p.tipo !== 'imovel'), { tipos: tiposLigados, busca: search }),
+    [pontos, tiposLigados, search]
+  );
+
+  const contagem = useMemo(
+    () => contar(totais, tiposLigados, [
+      ...pontosVisiveis,
+      ...(tiposLigados.has('imovel') ? pontos.filter((p) => p.tipo === 'imovel' && p.latitude != null) : []),
+    ]),
+    [totais, tiposLigados, pontosVisiveis, pontos]
+  );
+
+  const arrastarPino = useCallback(
+    (p: PontoDoMapa, lat: number, lng: number) => {
+      salvarPino(p.tipo, p.id, lat, lng)
+        .then(() =>
+          setPontos((antes) =>
+            antes.map((x) =>
+              x.id === p.id && x.tipo === p.tipo
+                ? { ...x, latitude: lat, longitude: lng, geo_origem: 'manual', geo_precisao: 'exata' }
+                : x
+            )
+          )
+        )
+        .catch((e) => console.error('[mapa] não deu para gravar o pino:', e?.message));
+    },
+    []
+  );
 
   // 1) XML — coordenadas válidas aparecem INSTANTANEAMENTE (síncrono)
   useEffect(() => {
@@ -335,6 +423,39 @@ export default function ImoveisMapPage({ imoveis, isLoading }: ImoveisMapPagePro
           </span>
         )}
 
+        {!mostrandoCurado && (
+          <div className="shrink-0 flex gap-1">
+            {(['lancamento', 'condominio', 'imovel'] as TipoDePonto[]).map((t) => {
+              const ligado = tiposLigados.has(t);
+              return (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() =>
+                    setTiposLigados((antes) => {
+                      const proximo = new Set(antes);
+                      if (proximo.has(t)) proximo.delete(t);
+                      else proximo.add(t);
+                      return proximo;
+                    })
+                  }
+                  className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[12px] transition-colors ${
+                    ligado
+                      ? 'border-slate-300 bg-slate-50 text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100'
+                      : 'border-slate-200 text-slate-400 dark:border-slate-800'
+                  }`}
+                >
+                  <span
+                    className="h-2.5 w-2.5 rounded-full"
+                    style={{ background: ligado ? COR_DO_TIPO[t] : 'transparent', border: `1.5px solid ${COR_DO_TIPO[t]}` }}
+                  />
+                  {ROTULO_DO_TIPO[t]}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {myMapsMid && (
         <div className="shrink-0 flex rounded-lg border border-slate-200 p-0.5 dark:border-slate-700">
           {(['imoveis', 'curado'] as const).map((m) => (
@@ -380,9 +501,13 @@ export default function ImoveisMapPage({ imoveis, isLoading }: ImoveisMapPagePro
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
-            {markers.map(({ imovel, coords }) => (
-              <ImovelMarker key={imovel.referencia} imovel={imovel} coords={coords} />
-            ))}
+            {tiposLigados.has('imovel') &&
+              markers.map(({ imovel, coords }) => (
+                <ImovelMarker key={imovel.referencia} imovel={imovel} coords={coords} />
+              ))}
+            {/* Lançamentos e condomínios, agrupados por proximidade. O pino é
+                arrastável aqui também: é onde o gestor VÊ que está errado. */}
+            <PinosDoMapa pontos={pontosVisiveis} aoArrastar={arrastarPino} />
           </MapContainer>
         )}
 
@@ -400,17 +525,25 @@ export default function ImoveisMapPage({ imoveis, isLoading }: ImoveisMapPagePro
         <div className="absolute bottom-4 left-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-lg p-3 text-[11px] z-[1000]">
           <div className="font-semibold text-slate-700 dark:text-slate-300 mb-2">Legenda</div>
           <div className="space-y-1">
-            <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-blue-600" /> Apartamento</div>
-            <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-green-600" /> Casa</div>
-            <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-yellow-600" /> Terreno</div>
-            <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-purple-600" /> Comercial</div>
-            <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-lime-700" /> Rural</div>
+            {(['lancamento', 'condominio', 'imovel'] as TipoDePonto[]).map((t) => (
+              <div key={t} className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full" style={{ background: COR_DO_TIPO[t] }} />
+                {ROTULO_DO_TIPO[t]}
+              </div>
+            ))}
+            <div className="flex items-center gap-2 pt-1 text-slate-500 dark:text-slate-400">
+              <span className="w-3 h-3 rounded-full border-2 border-dashed border-slate-400" />
+              Pino aproximado (bairro)
+            </div>
           </div>
         </div>
 
         {/* Contagem de imóveis */}
         <div className="absolute bottom-4 right-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow px-3 py-1.5 text-[11px] z-[1000] text-slate-600 dark:text-slate-300">
-          {markers.length} de {imoveisFiltrados.length} imóveis no mapa
+          {/* A frase separa quem NUNCA vai aparecer (sem endereço) de quem
+              ainda não foi geocodificado — senão o gestor espera pinos que não
+              existem. Na Lotus são 18 lançamentos sem endereço nenhum. */}
+          {textoDoContador(contagem)}
           {isGeocoding && <span className="ml-1 text-blue-600 dark:text-blue-400">· processando…</span>}
         </div>
           </>

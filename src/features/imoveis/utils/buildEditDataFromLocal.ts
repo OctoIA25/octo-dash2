@@ -97,6 +97,8 @@ export const CAMPOS_PERSISTIDOS = [
 
 /** A linha de `imoveis_locais` (select *). Tudo opcional: o builder lê o que existir. */
 export interface ImovelLocalRow {
+  /** Opcional: nem toda origem traz o id, e a edição funciona sem ele. */
+  id?: string;
   codigo_imovel: string;
   tipo?: string | null;
   finalidade?: string | null;
@@ -170,6 +172,9 @@ export interface ImovelLocalRow {
 
 export const buildEditDataFromLocal = (local: ImovelLocalRow) => {
   return {
+    // O id da linha, não do formulário: é por ele que o mini-mapa sabe onde
+    // gravar a posição do pino arrastado (P2.6).
+    id: local.id,
     codigo_imovel: local.codigo_imovel,
     tipo: local.tipo || '',
     // Categoria do tipo, não a coluna `finalidade` do banco. Ver categoriaDoTipo.

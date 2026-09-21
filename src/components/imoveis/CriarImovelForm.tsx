@@ -8,6 +8,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { MiniMapaDoEndereco } from '@/features/imoveis/components/MiniMapaDoEndereco';
 import { toast } from 'sonner';
 import { format, parseISO } from 'date-fns';
 import { useAuthContext } from '@/contexts/AuthContext';
@@ -123,6 +124,8 @@ interface CriarImovelFormProps {
   onClose: () => void;
   onSuccess: () => void;
   initialData?: Partial<ImovelFormData> & {
+    /** Id da linha em `imoveis_locais` — o mini-mapa grava o pino nele (P2.6). */
+    id?: string;
     codigo_imovel?: string;
     status_aprovacao?: StatusAprovacaoImovel;
     exclusivo?: Exclusividade;
@@ -2039,6 +2042,12 @@ export const CriarImovelForm = ({
                     value={formData.logradouro}
                     onChange={(e) => handleInputChange('logradouro', e.target.value)}
                   />
+                </div>
+                {/* O pino deste imóvel no Mapa (P2.6). Dois imóveis no mesmo
+                    prédio têm pinos próprios: arrastar um não move o outro. */}
+                <div className="space-y-2 md:col-span-3">
+                  <Label>Posição no mapa</Label>
+                  <MiniMapaDoEndereco tipo="imovel" id={initialData?.id ?? null} tenantId={tenantId} />
                 </div>
                 <div className="space-y-2">
                   <Label>Número</Label>

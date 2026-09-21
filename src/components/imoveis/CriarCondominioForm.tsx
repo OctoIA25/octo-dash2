@@ -5,6 +5,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { MiniMapaDoEndereco } from '@/features/imoveis/components/MiniMapaDoEndereco';
 import { useAuth } from '@/hooks/useAuth';
 import { buscarCep, formatarCepExibicao, validarCep } from '@/services/viaCepService';
 import { supabase } from '@/lib/supabaseClient';
@@ -1035,6 +1036,12 @@ export const CriarCondominioForm = ({
                 <div className="space-y-2 md:col-span-3">
                   <Label>Logradouro</Label>
                   <Input placeholder="Rua, Avenida, etc." value={formData.logradouro} onChange={(e) => handleInputChange('logradouro', e.target.value)} />
+                </div>
+                {/* O pino deste condomínio no Mapa (P2.6). Arrastar aqui fixa a
+                    posição: a busca automática não a sobrescreve mais. */}
+                <div className="space-y-2 md:col-span-3">
+                  <Label>Posição no mapa</Label>
+                  <MiniMapaDoEndereco tipo="condominio" id={editingId} tenantId={tenantId} />
                 </div>
               </div>
             </CollapsibleContent>

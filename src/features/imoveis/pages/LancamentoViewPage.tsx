@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { MiniMapaDoEndereco } from '../components/MiniMapaDoEndereco';
 import {
   ArrowLeft,
   FileText,
@@ -40,6 +41,11 @@ interface Lancamento {
   codigos: string[] | null;
   descricao: string | null;
   endereco_plantao: string | null;
+  /** Coordenadas do pino no Mapa (P2.6). */
+  latitude?: number | null;
+  longitude?: number | null;
+  geo_precisao?: 'exata' | 'aproximada' | null;
+  geo_origem?: 'automatica' | 'manual' | null;
   site_url: string | null;
   book_pdf: string | null;
   book_pdf_filename: string | null;
@@ -769,6 +775,19 @@ export const LancamentoViewPage = () => {
           placeholder="Ex: Av. Brasil, 1000 — Centro, São Paulo/SP"
           value={enderecoPlantao}
           onChange={(e) => setEnderecoPlantao(e.target.value)}
+        />
+
+        {/* É este endereço que vira o pino do lançamento no Mapa (P2.6).
+            Quando falta, o pino sai do bairro e é marcado como aproximado. */}
+        <MiniMapaDoEndereco
+          tipo="lancamento"
+          id={id}
+          tenantId={tenantId}
+          latitude={lancamento?.latitude ?? null}
+          longitude={lancamento?.longitude ?? null}
+          precisao={lancamento?.geo_precisao ?? null}
+          origem={lancamento?.geo_origem ?? null}
+          aoMover={load}
         />
       </section>
 

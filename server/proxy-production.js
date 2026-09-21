@@ -4951,6 +4951,9 @@ registerRecrutamentoRoutes(app, supabase);
 import { registerLiaCadenciaRoutes } from './liaCadencia/index.js';
 registerLiaCadenciaRoutes(app, supabase);
 
+import { registerMapaRoutes } from './mapa/index.js';
+registerMapaRoutes(app, supabase);
+
 // Histórico do lead — linha do tempo no card (criação, atribuição, etapa,
 // arquivamento) + o que a LIA reporta. Leitura pelo servidor porque
 // lead_events tem RLS sem policy; a escrita resolve o lead pelo id OU pelo
