@@ -13,7 +13,7 @@
 import { useState } from 'react';
 import { ChevronDown, Bot, Clock, AlertTriangle } from 'lucide-react';
 import type { Cadencia, CadenciaEvento } from '../services/cadenciaService';
-import { rotuloDaTag, estiloDoResultado, duracaoCurta, dataCurta } from './cadenciaLabels';
+import { rotuloDaTag, rotuloDoProximo, estiloDoResultado, duracaoCurta, dataCurta } from './cadenciaLabels';
 
 interface Props {
   cadencia?: Cadencia;
@@ -171,10 +171,18 @@ export const CadenciaLiaSection = ({ cadencia, carregando, erro }: Props) => {
           className={`mt-2 flex items-center gap-1.5 text-[11px] font-medium ${
             proxima.atrasada ? 'text-amber-600 dark:text-amber-400' : 'text-blue-600 dark:text-blue-400'
           }`}
+          title={proxima.motivo ?? undefined}
         >
           {proxima.atrasada ? <AlertTriangle className="w-3.5 h-3.5" /> : <Clock className="w-3.5 h-3.5" />}
-          {proxima.atrasada ? 'Cadência atrasada desde' : 'Próxima cadência'} {dataCurta(proxima.scheduled_at)}
-          {proxima.attempt_number ? ` · ${proxima.attempt_number}ª tentativa` : ''}
+          {/*
+            O retorno que o CLIENTE pediu não é "próxima cadência" (P2.5).
+            Chamar os dois pela mesma frase faz o corretor achar que a LIA vai
+            cutucar alguém que, na verdade, marcou hora com ele.
+          */}
+          {rotuloDoProximo(proxima.pedido_por, proxima.atrasada)} {dataCurta(proxima.scheduled_at)}
+          {(proxima.pedido_por ?? 'lia') === 'lia' && proxima.attempt_number
+            ? ` · ${proxima.attempt_number}ª tentativa`
+            : ''}
         </p>
       )}
 

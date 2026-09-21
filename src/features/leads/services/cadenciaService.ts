@@ -47,10 +47,23 @@ export interface CadenciaResumo {
   por_tentativa: { attempt_number: number; enviadas: number; respondidas: number }[];
   por_tag: { tag: string; enviadas: number; respondidas: number }[];
   proxima: {
+    /**
+     * Por ele o corretor remarca ou cancela (P2.5). OPCIONAL de propósito: uma
+     * resposta guardada antes deste deploy não traz os três campos novos, e
+     * exigi-los faria a tela quebrar em cima de cache.
+     */
+    id?: string | null;
     scheduled_at: string;
     tag: string | null;
     attempt_number: number | null;
     atrasada: boolean;
+    /**
+     * 'lead' = o CLIENTE pediu este retorno. É outra coisa de "próxima
+     * cadência": a LIA não vai cutucar um lead sumido, ela marcou hora com
+     * ele. O card fala dos dois com palavras diferentes de propósito.
+     */
+    pedido_por?: 'lead' | 'lia' | 'corretor' | null;
+    motivo?: string | null;
   } | null;
   ultima_interacao_lead: string | null;
   dias_em_silencio: number | null;

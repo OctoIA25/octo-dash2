@@ -141,10 +141,19 @@ function proximaAgendada(followups, agora) {
   const futura = pendentes.find((fw) => ms(fw.scheduled_at) >= agora);
   const escolhida = futura ?? pendentes[pendentes.length - 1];
   return {
+    // O id sai daqui porque é por ele que o corretor cancela ou reagenda o
+    // retorno no card (P2.5).
+    id: escolhida.id ?? null,
     scheduled_at: escolhida.scheduled_at,
     tag: escolhida.tag ?? null,
     attempt_number: escolhida.attempt_number ?? null,
     atrasada: futura == null,
+    // 'lead' = o cliente pediu este retorno. O card fala dele com outras
+    // palavras: "Retorno: amanhã 16h" não é a mesma coisa que "próxima
+    // cadência", e confundir os dois faz o corretor achar que a LIA vai
+    // cutucar quem, na verdade, marcou hora com ele.
+    pedido_por: escolhida.pedido_por ?? 'lia',
+    motivo: escolhida.motivo ?? null,
   };
 }
 

@@ -27,6 +27,15 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export const STATUS_VALIDOS = ['pending', 'sent', 'cancelled', 'expired'];
 export const CANAIS_VALIDOS = ['whatsapp', 'email', 'ligacao', 'sms'];
 export const OUTCOMES_VALIDOS = ['respondido', 'sem_resposta', 'visita_agendada', 'escalado', 'opt_out'];
+/**
+ * Quem pediu o retorno (P2.5). Ausente = 'lia', que é o default da coluna e o
+ * que toda linha de hoje é: cadência automática.
+ *
+ * NÃO é rótulo. `lead` protege a linha do cancelamento por `lead_returned` —
+ * sem isso, "me chama amanhã às 16h" cancelaria o próprio retorno, porque o
+ * pedido É o lead voltando a falar.
+ */
+export const PEDIDOS_VALIDOS = ['lead', 'lia', 'corretor'];
 
 const MAX_TEXTO_CURTO = 200;   // tag, template_name, cancelled_reason, idempotency_key
 const MAX_TEXTO_LONGO = 4000;  // motivo, message_sent
@@ -91,6 +100,12 @@ export function normalizarCadencia(raw, { now = Date.now() } = {}) {
     else row.channel = channel;
   }
 
+  if (veio(raw.pedido_por)) {
+    const pedido = String(raw.pedido_por).trim().toLowerCase();
+    if (!PEDIDOS_VALIDOS.includes(pedido)) erro('pedido_por', 'invalid_value');
+    else row.pedido_por = pedido;
+  }
+
   if (veio(raw.outcome)) {
     const outcome = String(raw.outcome).trim().toLowerCase();
     if (!OUTCOMES_VALIDOS.includes(outcome)) erro('outcome', 'invalid_value');
@@ -119,6 +134,10 @@ export function normalizarCadencia(raw, { now = Date.now() } = {}) {
     ['tag', MAX_TEXTO_CURTO],
     ['template_name', MAX_TEXTO_CURTO],
     ['cancelled_reason', MAX_TEXTO_CURTO],
+    // Campo próprio para a falha do disparo (P2.5). Antes ela dividia espaço
+    // com `cancelled_reason`, onde "o lead voltou" e "o Claude caiu" ficavam
+    // indistinguíveis — e 48 das 84 linhas `expired` não diziam nada.
+    ['erro', MAX_TEXTO_CURTO],
     ['motivo', MAX_TEXTO_LONGO],
     ['message_sent', MAX_TEXTO_LONGO],
   ]) {
@@ -127,6 +146,12 @@ export function normalizarCadencia(raw, { now = Date.now() } = {}) {
 
   // --- coerência: dizer que enviou sem dizer quando deixa a tela cega ---
   if (status === 'sent' && !row.sent_at) erro('sent_at', 'required_when_status_sent');
+
+  // Retorno pedido pelo lead SEM hora não é agendamento: é um pedido que
+  // ninguém vai cumprir, e apareceria na tela como linha muda.
+  if (row.pedido_por === 'lead' && !row.scheduled_at) {
+    erro('scheduled_at', 'required_when_pedido_por_lead');
+  }
 
   if (erros.length > 0) return { ok: false, details: erros };
 

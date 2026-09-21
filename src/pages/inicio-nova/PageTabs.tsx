@@ -12,6 +12,7 @@ import { useOverflowTabs } from './useOverflowTabs';
 import {
   BarChart3,
   MessageSquare,
+  CalendarClock,
   Headphones,
   Phone,
   Building2,
@@ -123,6 +124,7 @@ const TAB_CONFIGS: TabConfig[] = [
       { id: 'agente-comportamental', label: 'Comportamental', icon: Headphones, href: '/agentes-ia/agente-comportamental' },
       // Telemetria é gestão/owner — filtrada dinamicamente no useMemo (mesmo
       // padrão da aba "Equipes" do Bolsão).
+      { id: 'agenda', label: 'Agenda', icon: CalendarClock, href: '/agentes-ia/agenda' },
       { id: 'plantao', label: 'Plantão', icon: MessageSquare, href: '/agentes-ia/plantao' },
       { id: 'telemetria', label: 'Telemetria', icon: BarChart3, href: '/agentes-ia/telemetria' },
     ],
@@ -307,7 +309,7 @@ export function PageTabs() {
       // resposta de cada colega da imobiliária inteira, e aprovar para a base
       // é ato de gestão. Abrir para o corretor depois é uma linha; vazar não
       // tem volta.
-      cfg = { ...baseCfg, tabs: baseCfg.tabs.filter((t) => !['telemetria', 'plantao'].includes(t.id) || isGestao || isOwner) };
+      cfg = { ...baseCfg, tabs: baseCfg.tabs.filter((t) => !['telemetria', 'plantao', 'agenda'].includes(t.id) || isGestao || isOwner) };
     } else if (baseCfg.basePath === '/imoveis') {
       // Amarrar anúncio vale para os leads de todos os corretores: só gestão
       // (a rota do servidor exige admin/líder; isto é só UX).

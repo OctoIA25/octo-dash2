@@ -121,7 +121,7 @@ async function buscarFollowups(supabase, tenantId, lead) {
     .select(
       'id, lead_id, lead_phone, scheduled_at, sent_at, status, tag, motivo, attempt_number, ' +
       'cancelled_at, cancelled_reason, last_lead_msg_at, channel, replied_at, outcome, ' +
-      'template_name, created_at',
+      'template_name, created_at, pedido_por, erro',
     )
     .eq('tenant_id', tenantId)
     .or(filtros.join(','))
@@ -260,4 +260,21 @@ export async function gravarCadencia(supabase, tenantId, row) {
   if (error) throw error;
 
   return { id: data.id, created: true };
+}
+
+/**
+ * O horário de não incomodar da imobiliária (P2.5).
+ *
+ * Sem linha, devolve null e quem chama cai no padrão — 9h às 20h, todos os
+ * dias. Erro de leitura NÃO vira null: tratar falha como "sem configuração"
+ * mandaria mensagem às 3h da manhã achando que estava tudo certo.
+ */
+export async function carregarConfigAgenda(supabase, tenantId) {
+  const { data, error } = await supabase
+    .from('tenant_agenda_lia_config')
+    .select('pode_falar_das, pode_falar_ate, dias_permitidos')
+    .eq('tenant_id', tenantId)
+    .maybeSingle();
+  if (error) throw error;
+  return data ?? null;
 }

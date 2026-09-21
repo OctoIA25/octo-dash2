@@ -76,8 +76,15 @@ export function janelaDaConfiguracao(horarioFuncionamento) {
   });
 }
 
-/** O instante do próximo minuto ÚTIL a partir de `data` (ela mesma, se já é útil). */
-function proximoMinutoUtil(data, janela) {
+/**
+ * O instante do próximo minuto ÚTIL a partir de `data` (ela mesma, se já é útil).
+ *
+ * Exportado porque a Agenda da LIA (P2.5) faz a mesma pergunta com outra janela:
+ * "o lead pediu retorno às 3h da manhã — qual é o primeiro horário em que dá
+ * para falar com ele?". Mesma conta, mesma virada de fuso, mesmo tratamento de
+ * dia desligado. Reescrever daria duas respostas para a mesma pergunta.
+ */
+export function proximoMinutoUtil(data, janela) {
   let atual = data;
   // 14 dias é folga suficiente: só não termina se a janela inteira for nula,
   // e aí a função avisa em vez de rodar para sempre.

@@ -21,12 +21,13 @@
 
 import { makeRequireSupabaseAuth, resolveTenant } from '../kpis/index.js';
 import { isPlatformOwner } from '../utils/ownerAuth.js';
-import { buscarLead, carregarCadencia, gravarCadencia } from './query.js';
+import { buscarLead, carregarCadencia, carregarConfigAgenda, gravarCadencia } from './query.js';
 // Mora em leadEvents porque nasceu lá; é a MESMA âncora por telefone que a LIA
 // usa nas duas rotas. Duplicar daria duas regras de resolução divergentes.
 import { buscarLeadPorTelefone } from '../leadEvents/query.js';
 import { resumirCadencia } from './compute.js';
 import { normalizarCadencia } from './normalize.js';
+import { primeiroHorarioPermitido } from './agenda.js';
 import { createHash } from 'node:crypto';
 
 /** Impressão digital de um segredo, para log. Nunca o segredo em si. */
@@ -135,6 +136,109 @@ export function registerLiaCadenciaRoutes(app, supabase, options = {}) {
     }
   });
 
+  // ------------------------------------------------- retorno agendado (P2.5)
+  /**
+   * O corretor marca, remarca ou cancela o retorno de um lead pelo card.
+   *
+   * MESMO PORTÃO DA LEITURA: quem pode ver a cadência do lead pode mexer no
+   * retorno dele. Uma segunda regra aqui divergiria da primeira no dia em que
+   * uma das duas mudasse.
+   *
+   * Respeita o horário de não incomodar como o pedido da LIA respeita — o
+   * corretor também não deve marcar mensagem para as 3h da manhã — e devolve a
+   * hora final para a tela mostrar o que foi realmente gravado.
+   */
+  app.post('/api/v1/leads/:leadId/retorno', requireAuth, async (req, res) => {
+    try {
+      const resolved = await resolveTenant(supabase, req);
+      if (resolved.error) return res.status(resolved.status).json({ ok: false, error: resolved.error });
+      const { tenantId } = resolved;
+
+      const { leadId } = req.params;
+      if (!UUID_RE.test(leadId)) return res.status(400).json({ ok: false, error: 'invalid_lead_id' });
+
+      const lead = await buscarLead(supabase, tenantId, leadId);
+      if (!lead) return res.status(404).json({ ok: false, error: 'lead_not_found' });
+
+      const ehOwnerDaPlataforma = isPlatformOwner(req.userEmail);
+      const role = ehOwnerDaPlataforma ? null : await papelNoTenant(supabase, req.userId, tenantId);
+      if (!podeVerCadencia({ ehOwnerDaPlataforma, role, userId: req.userId, lead })) {
+        return res.status(403).json({ ok: false, error: 'forbidden' });
+      }
+
+      const cancelarId = String(req.body?.cancelar ?? '').trim();
+      if (cancelarId) {
+        const { error } = await supabase
+          .from('lia_followups')
+          .update({
+            status: 'cancelled',
+            cancelled_at: new Date().toISOString(),
+            cancelled_reason: 'cancelado_na_dash',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('tenant_id', tenantId)
+          .eq('lead_id', leadId)
+          .eq('id', cancelarId);
+        if (error) throw error;
+        return res.json({ ok: true, cancelado: cancelarId });
+      }
+
+      const quando = Date.parse(req.body?.quando ?? '');
+      if (Number.isNaN(quando)) return res.status(422).json({ ok: false, error: 'invalid_quando' });
+      // Retorno no passado não é agendamento: é uma linha que já nasce atrasada.
+      if (quando < Date.now() - 60_000) return res.status(422).json({ ok: false, error: 'quando_no_passado' });
+
+      const cfg = await carregarConfigAgenda(supabase, tenantId);
+      const permitido = primeiroHorarioPermitido(new Date(quando), cfg);
+      if (!permitido) return res.status(422).json({ ok: false, error: 'sem_horario_permitido' });
+
+      const motivo = String(req.body?.motivo ?? '').trim().slice(0, 4000) || 'retorno marcado pelo corretor';
+      const idAnterior = String(req.body?.substituir ?? '').trim();
+
+      // Remarcar é cancelar o anterior e criar o novo: deixar os dois pendentes
+      // mandaria duas mensagens ao cliente.
+      if (idAnterior) {
+        const { error } = await supabase
+          .from('lia_followups')
+          .update({
+            status: 'cancelled',
+            cancelled_at: new Date().toISOString(),
+            cancelled_reason: 'rescheduled',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('tenant_id', tenantId)
+          .eq('lead_id', leadId)
+          .eq('id', idAnterior);
+        if (error) throw error;
+      }
+
+      const { id, created } = await gravarCadencia(supabase, tenantId, {
+        lead_id: leadId,
+        // A chave de idempotência inclui o instante, então dois cliques rápidos
+        // no mesmo horário não viram duas linhas.
+        idempotency_key: `dash:retorno:${leadId}:${permitido.quando.toISOString()}`,
+        status: 'pending',
+        scheduled_at: permitido.quando.toISOString(),
+        motivo,
+        pedido_por: 'corretor',
+        tag: 'retorno_manual',
+        channel: 'whatsapp',
+        updated_at: new Date().toISOString(),
+      });
+
+      return res.status(created ? 201 : 200).json({
+        ok: true,
+        id,
+        created,
+        agendado_para: permitido.quando.toISOString(),
+        ajustado: permitido.ajustado,
+      });
+    } catch (err) {
+      console.error('[lia-cadencia] erro no retorno agendado:', err?.message);
+      return res.status(500).json({ ok: false, error: 'internal_error' });
+    }
+  });
+
   // ----------------------------------------------------------------- escrita
   app.post('/api/v1/lia/cadencias', async (req, res) => {
     try {
@@ -178,8 +282,32 @@ export function registerLiaCadenciaRoutes(app, supabase, options = {}) {
         if (!lead) return res.status(404).json({ ok: false, error: 'lead_not_found' });
       }
 
+      // AGENDA DA LIA (P2.5): o retorno que o LEAD pediu respeita o horário de
+      // não incomodar. Pedido para as 3h da manhã não é recusado — é empurrado
+      // para o primeiro horário permitido, e a resposta diz qual é, para a LIA
+      // combinar isso com o cliente ("consigo te chamar às 9h, pode ser?").
+      // Recusar perderia o pedido; mandar às 3h queimaria a imobiliária.
+      let ajustado = false;
+      if (validado.row.pedido_por === 'lead' && validado.row.scheduled_at) {
+        const cfg = await carregarConfigAgenda(supabase, tenantId);
+        const permitido = primeiroHorarioPermitido(new Date(validado.row.scheduled_at), cfg);
+        if (permitido) {
+          ajustado = permitido.ajustado;
+          validado.row.scheduled_at = permitido.quando.toISOString();
+        }
+      }
+
       const { id, created } = await gravarCadencia(supabase, tenantId, validado.row);
-      return res.status(created ? 201 : 200).json({ ok: true, id, created });
+      return res.status(created ? 201 : 200).json({
+        ok: true,
+        id,
+        created,
+        // Só aparece quando há agendamento — o eco é o que a LIA usa para
+        // confirmar a hora ao cliente.
+        ...(validado.row.scheduled_at
+          ? { agendado_para: validado.row.scheduled_at, ajustado }
+          : {}),
+      });
     } catch (err) {
       console.error('[lia-cadencia] erro gravando cadência:', err?.message);
       return res.status(500).json({ ok: false, error: 'internal_error' });
@@ -188,6 +316,7 @@ export function registerLiaCadenciaRoutes(app, supabase, options = {}) {
 
   if (options.verbose !== false) {
     console.log('   ├─ 🤖 GET  /api/v1/leads/:leadId/cadencia                 → Cadência da LIA no card do lead');
+    console.log('   ├─ 🤖 POST /api/v1/leads/:leadId/retorno                  → Retorno agendado pelo corretor');
     console.log('   └─ 🤖 POST /api/v1/lia/cadencias                          → App da LIA reporta a cadência');
   }
 }

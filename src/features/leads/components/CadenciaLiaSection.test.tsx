@@ -6,6 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { CadenciaLiaSection } from './CadenciaLiaSection';
+import { rotuloDoProximo } from './cadenciaLabels';
 import type { Cadencia, CadenciaEvento } from '../services/cadenciaService';
 
 const evento = (over: Partial<CadenciaEvento> = {}): CadenciaEvento => ({
@@ -173,5 +174,30 @@ describe('CadenciaLiaSection — histórico', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: /Ver histórico/ }));
     expect(screen.getByText(/histórico completo é maior/i)).toBeInTheDocument();
+  });
+});
+
+/**
+ * P2.5: o retorno que o CLIENTE pediu não é "próxima cadência".
+ *
+ * Chamar os dois pela mesma frase faz o corretor achar que a LIA vai cutucar
+ * alguém que, na verdade, marcou hora com ele.
+ */
+describe('rotuloDoProximo', () => {
+  it('distingue o pedido do cliente da cadência automática', () => {
+    expect(rotuloDoProximo('lead', false)).toBe('Retorno pedido pelo cliente:');
+    expect(rotuloDoProximo('corretor', false)).toBe('Retorno que você marcou:');
+    expect(rotuloDoProximo('lia', false)).toBe('Próxima cadência');
+  });
+
+  it('o atraso muda a frase, não o dono', () => {
+    expect(rotuloDoProximo('lead', true)).toBe('Retorno pedido pelo cliente, atrasado desde');
+    expect(rotuloDoProximo('lia', true)).toBe('Cadência atrasada desde');
+  });
+
+  /** Resposta antiga em cache não pode mudar o sentido da linha. */
+  it('ausente vale "lia", como o default da coluna', () => {
+    expect(rotuloDoProximo(undefined, false)).toBe('Próxima cadência');
+    expect(rotuloDoProximo(null, true)).toBe('Cadência atrasada desde');
   });
 });

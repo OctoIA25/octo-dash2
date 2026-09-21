@@ -261,3 +261,212 @@ describe('POST /api/v1/lia/cadencias', () => {
     expect(gravou.insert.tenant_id).toBe(TENANT);
   });
 });
+
+/**
+ * Agenda da LIA (P2.5): o retorno que o LEAD pediu.
+ *
+ * O ajuste de horário mora na rota, e não no app da LIA, porque é a Dash que
+ * guarda o "não incomodar" da imobiliária. A resposta devolve a hora final para
+ * a LIA poder combinar com o cliente — sem esse eco, ela confirmaria "te chamo
+ * às 3h" e a mensagem sairia às 9h.
+ */
+describe('POST /api/v1/lia/cadencias — retorno pedido pelo lead', () => {
+  let app;
+  beforeEach(() => {
+    app = appFalso();
+    vi.stubEnv('LIA_SERVICE_TOKEN', 'segredo');
+    vi.stubEnv('DISPARADOR_SERVICE_TOKEN', '');
+  });
+
+  const req = (body) => ({
+    headers: { 'x-service-token': 'segredo' },
+    body: { tenant_id: TENANT, lead_id: LEAD, idempotency_key: 'lia:retorno:1', status: 'pending', ...body },
+    params: {},
+    query: {},
+  });
+  const comLead = (extras = {}) =>
+    supabaseFalso({ leads: [{ id: LEAD, phone: '1', assigned_agent_id: null }], lia_followups: [], ...extras });
+
+  it('hora pedida dentro da janela sai na hora pedida', async () => {
+    const sb = comLead();
+    registerLiaCadenciaRoutes(app, sb, { verbose: false });
+    // 16h de Brasília = 19h UTC.
+    const res = await app.chamar(
+      'POST /api/v1/lia/cadencias',
+      req({ pedido_por: 'lead', scheduled_at: '2026-12-01T19:00:00Z' }),
+    );
+    expect(res.statusCode).toBe(201);
+    expect(res.corpo.ajustado).toBe(false);
+    expect(res.corpo.agendado_para).toBe('2026-12-01T19:00:00.000Z');
+  });
+
+  it('3h da manhã é empurrada para as 9h, e a resposta diz que mudou', async () => {
+    const sb = comLead();
+    registerLiaCadenciaRoutes(app, sb, { verbose: false });
+    // 03h de Brasília = 06h UTC; 09h de Brasília = 12h UTC.
+    const res = await app.chamar(
+      'POST /api/v1/lia/cadencias',
+      req({ pedido_por: 'lead', scheduled_at: '2026-12-01T06:00:00Z' }),
+    );
+    expect(res.corpo.ajustado).toBe(true);
+    expect(res.corpo.agendado_para).toBe('2026-12-01T12:00:00.000Z');
+    expect(sb.chamadas.find((c) => c.insert).insert.scheduled_at).toBe('2026-12-01T12:00:00.000Z');
+  });
+
+  it('respeita o não incomodar configurado pela imobiliária', async () => {
+    const sb = comLead({
+      tenant_agenda_lia_config: [
+        { pode_falar_das: '10:00:00', pode_falar_ate: '17:00:00', dias_permitidos: [1, 2, 3, 4, 5] },
+      ],
+    });
+    registerLiaCadenciaRoutes(app, sb, { verbose: false });
+    // 01/12/2026 é terça; 09h de Brasília ainda é cedo para esta imobiliária.
+    const res = await app.chamar(
+      'POST /api/v1/lia/cadencias',
+      req({ pedido_por: 'lead', scheduled_at: '2026-12-01T12:00:00Z' }),
+    );
+    expect(res.corpo.ajustado).toBe(true);
+    expect(res.corpo.agendado_para).toBe('2026-12-01T13:00:00.000Z'); // 10h de Brasília
+  });
+
+  /** A cadência automática não é agendamento do cliente: não se mexe nela. */
+  it('não mexe no horário da cadência automática', async () => {
+    const sb = comLead();
+    registerLiaCadenciaRoutes(app, sb, { verbose: false });
+    const res = await app.chamar(
+      'POST /api/v1/lia/cadencias',
+      req({ scheduled_at: '2026-12-01T06:00:00Z', tag: 'cadencia_conversa_1' }),
+    );
+    expect(res.corpo.agendado_para).toBe('2026-12-01T06:00:00.000Z');
+    expect(res.corpo.ajustado).toBe(false);
+  });
+
+  it('retorno do lead sem hora é recusado em vez de virar linha muda', async () => {
+    registerLiaCadenciaRoutes(app, comLead(), { verbose: false });
+    const res = await app.chamar('POST /api/v1/lia/cadencias', req({ pedido_por: 'lead', scheduled_at: undefined }));
+    expect(res.statusCode).toBe(422);
+    expect(res.corpo.details).toEqual([{ field: 'scheduled_at', reason: 'required_when_pedido_por_lead' }]);
+  });
+
+  it('quem pediu tem que ser lead, lia ou corretor', async () => {
+    registerLiaCadenciaRoutes(app, comLead(), { verbose: false });
+    const res = await app.chamar('POST /api/v1/lia/cadencias', req({ pedido_por: 'o gerente' }));
+    expect(res.statusCode).toBe(422);
+    expect(res.corpo.details[0].field).toBe('pedido_por');
+  });
+});
+
+/**
+ * Retorno agendado pelo corretor, no card do lead (P2.5).
+ *
+ * MESMO PORTÃO DA LEITURA, de propósito: quem pode ver a cadência do lead pode
+ * mexer no retorno dele. Uma segunda regra aqui divergiria da primeira no dia
+ * em que uma das duas mudasse.
+ */
+describe('POST /api/v1/leads/:leadId/retorno', () => {
+  let app;
+  beforeEach(() => {
+    app = appFalso();
+  });
+
+  const req = (body, usuario) => ({
+    params: { leadId: LEAD },
+    query: { tenantId: TENANT },
+    headers: { authorization: 'Bearer jwt' },
+    body,
+    userId: usuario ?? CORRETOR,
+    userEmail: 'corretor@x.com',
+  });
+  const daquiA = (horas) => new Date(Date.now() + horas * 3_600_000).toISOString();
+
+  it('o corretor de OUTRO lead não marca retorno', async () => {
+    const sb = supabaseFalso(
+      { leads: [{ id: LEAD, tenant_id: TENANT, assigned_agent_id: OUTRO }], tenant_memberships: [{ tenant_id: TENANT, role: 'corretor' }] },
+      { id: CORRETOR, email: 'corretor@x.com' },
+    );
+    registerLiaCadenciaRoutes(app, sb, { verbose: false });
+    const res = await app.chamar('POST /api/v1/leads/:leadId/retorno', req({ quando: daquiA(3) }));
+    expect(res.statusCode).toBe(403);
+    expect(sb.chamadas.some((c) => c.insert)).toBe(false);
+  });
+
+  it('marca o retorno como "corretor", que é o que o protege de virar cadência', async () => {
+    const sb = supabaseFalso(
+      {
+        leads: [{ id: LEAD, tenant_id: TENANT, assigned_agent_id: CORRETOR, owner_id: CORRETOR }],
+        tenant_memberships: [{ tenant_id: TENANT, role: 'corretor' }],
+        lia_followups: [],
+      },
+      { id: CORRETOR, email: 'corretor@x.com' },
+    );
+    registerLiaCadenciaRoutes(app, sb, { verbose: false });
+    const res = await app.chamar('POST /api/v1/leads/:leadId/retorno', req({ quando: daquiA(3), motivo: 'ligar depois' }));
+    expect(res.statusCode).toBe(201);
+    const linha = sb.chamadas.find((c) => c.insert).insert;
+    expect(linha.pedido_por).toBe('corretor');
+    expect(linha.tag).toBe('retorno_manual');
+    expect(linha.tenant_id).toBe(TENANT);
+  });
+
+  it('retorno no passado é recusado em vez de nascer atrasado', async () => {
+    const sb = supabaseFalso(
+      {
+        leads: [{ id: LEAD, tenant_id: TENANT, assigned_agent_id: CORRETOR, owner_id: CORRETOR }],
+        tenant_memberships: [{ tenant_id: TENANT, role: 'corretor' }],
+      },
+      { id: CORRETOR, email: 'corretor@x.com' },
+    );
+    registerLiaCadenciaRoutes(app, sb, { verbose: false });
+    const res = await app.chamar('POST /api/v1/leads/:leadId/retorno', req({ quando: daquiA(-5) }));
+    expect(res.statusCode).toBe(422);
+    expect(res.corpo.error).toBe('quando_no_passado');
+  });
+
+  it('data ilegível é recusada', async () => {
+    const sb = supabaseFalso(
+      {
+        leads: [{ id: LEAD, tenant_id: TENANT, assigned_agent_id: CORRETOR, owner_id: CORRETOR }],
+        tenant_memberships: [{ tenant_id: TENANT, role: 'corretor' }],
+      },
+      { id: CORRETOR, email: 'corretor@x.com' },
+    );
+    registerLiaCadenciaRoutes(app, sb, { verbose: false });
+    const res = await app.chamar('POST /api/v1/leads/:leadId/retorno', req({ quando: 'sexta que vem' }));
+    expect(res.statusCode).toBe(422);
+    expect(res.corpo.error).toBe('invalid_quando');
+  });
+
+  it('cancelar não cria linha nova', async () => {
+    const sb = supabaseFalso(
+      {
+        leads: [{ id: LEAD, tenant_id: TENANT, assigned_agent_id: CORRETOR, owner_id: CORRETOR }],
+        tenant_memberships: [{ tenant_id: TENANT, role: 'corretor' }],
+      },
+      { id: CORRETOR, email: 'corretor@x.com' },
+    );
+    registerLiaCadenciaRoutes(app, sb, { verbose: false });
+    const res = await app.chamar('POST /api/v1/leads/:leadId/retorno', req({ cancelar: 'ag1' }));
+    expect(res.statusCode).toBe(200);
+    expect(sb.chamadas.some((c) => c.insert)).toBe(false);
+    const upd = sb.chamadas.find((c) => c.update);
+    expect(upd.update.status).toBe('cancelled');
+    expect(upd.update.cancelled_reason).toBe('cancelado_na_dash');
+  });
+
+  /** Remarcar com os dois pendentes mandaria DUAS mensagens ao cliente. */
+  it('remarcar cancela o anterior antes de criar o novo', async () => {
+    const sb = supabaseFalso(
+      {
+        leads: [{ id: LEAD, tenant_id: TENANT, assigned_agent_id: CORRETOR, owner_id: CORRETOR }],
+        tenant_memberships: [{ tenant_id: TENANT, role: 'corretor' }],
+        lia_followups: [],
+      },
+      { id: CORRETOR, email: 'corretor@x.com' },
+    );
+    registerLiaCadenciaRoutes(app, sb, { verbose: false });
+    await app.chamar('POST /api/v1/leads/:leadId/retorno', req({ quando: daquiA(3), substituir: 'ag1' }));
+    const upd = sb.chamadas.find((c) => c.update);
+    expect(upd.update.cancelled_reason).toBe('rescheduled');
+    expect(sb.chamadas.some((c) => c.insert)).toBe(true);
+  });
+});

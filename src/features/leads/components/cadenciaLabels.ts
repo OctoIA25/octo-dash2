@@ -71,3 +71,15 @@ export function dataCurta(iso: string | null | undefined): string {
     ? '—'
     : d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
+
+/** Como o card chama o que vem a seguir, conforme quem marcou (P2.5). */
+export function rotuloDoProximo(
+  // Ausente vale 'lia', como o default da coluna no banco: resposta antiga em
+  // cache não pode fazer a linha mudar de sentido na tela.
+  pedidoPor: 'lead' | 'lia' | 'corretor' | null | undefined,
+  atrasada: boolean
+): string {
+  if (pedidoPor === 'lead') return atrasada ? 'Retorno pedido pelo cliente, atrasado desde' : 'Retorno pedido pelo cliente:';
+  if (pedidoPor === 'corretor') return atrasada ? 'Retorno que você marcou, atrasado desde' : 'Retorno que você marcou:';
+  return atrasada ? 'Cadência atrasada desde' : 'Próxima cadência';
+}

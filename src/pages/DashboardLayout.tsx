@@ -84,6 +84,7 @@ const ImoveisPage = lazyWithRetry(() => import('@/features/imoveis/pages/Imoveis
 const LancamentoViewPage = lazyWithRetry(() => import('@/features/imoveis/pages/LancamentoViewPage').then(m => ({ default: m.LancamentoViewPage })));
 const AgentesIaPage = lazyWithRetry(() => import('@/features/agentes-ia/pages/AgentesIaPage').then(m => ({ default: m.AgentesIaPage })));
 const AgentesTelemetriaPage = lazyWithRetry(() => import('@/features/agentes-ia/pages/AgentesTelemetriaPage').then(m => ({ default: m.AgentesTelemetriaPage })));
+const AgendaLiaPage = lazyWithRetry(() => import('@/features/agentes-ia/pages/AgendaLiaPage').then(m => ({ default: m.AgendaLiaPage })));
 const PlantaoPage = lazyWithRetry(() => import('@/features/agentes-ia/pages/PlantaoPage').then(m => ({ default: m.PlantaoPage })));
 const ComunicacaoPage = lazyWithRetry(() => import('@/features/comunicacao').then(m => ({ default: m.ComunicacaoPage })));
 const OctoChatPage = lazyWithRetry(() => import('@/features/agentes-ia/pages/OctoChatPage').then(m => ({ default: m.OctoChatPage })));
@@ -289,7 +290,13 @@ const DashboardLayout = () => {
             element={canAccess('agentes-ia') ? <AgentesTelemetriaPage /> : <Navigate to={defaultAllowedRoute} replace />}
           />
 
-          {/* Plantão: rota específica ANTES de :agent?, como a Telemetria. */}
+          {/* Agenda e Plantão: rotas específicas ANTES de :agent?, como a Telemetria. */}
+          <Route
+            path="agentes-ia/agenda"
+            element={canAccess('agentes-ia') ? <AgendaLiaPage /> : <Navigate to={defaultAllowedRoute} replace />}
+          />
+
+
           <Route
             path="agentes-ia/plantao"
             element={canAccess('agentes-ia') ? <PlantaoPage /> : <Navigate to={defaultAllowedRoute} replace />}

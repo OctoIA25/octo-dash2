@@ -15,9 +15,10 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { getWebhookUrl, saveWebhookUrl, testWebhookConnection } from '@/features/agentes-ia/services/agentWebhookService';
 import { supabase } from '@/integrations/supabase/client';
-import { Lock, ListChecks, Gauge, MessageSquare } from 'lucide-react';
+import { Lock, ListChecks, Gauge, MessageSquare, CalendarClock } from 'lucide-react';
 import { EtapaConfigPanel } from '@/features/leads/components/EtapaConfigPanel';
 import { PlantaoConfigPanel } from '@/features/agentes-ia/components/PlantaoConfigPanel';
+import { AgendaLiaConfigPanel } from '@/features/agentes-ia/components/AgendaLiaConfigPanel';
 import { ScoreConfigPanel } from '@/features/leads/components/ScoreConfigPanel';
 import { getDailySessionId } from '@/utils/snowflakeId';
 import { UsuariosSection } from '@/components/sections/UsuariosSection';
@@ -89,7 +90,7 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
   const { toast } = useToast();
   const { currentTheme, changeTheme, themes } = useTheme();
   
-  const [activeTab, setActiveTab] = useState<'perfil' | 'geral' | 'aparencia' | 'agentes-ia' | 'usuarios' | 'bolsao' | 'limite-leads' | 'etapas' | 'score' | 'plantao' | 'marca-dagua' | 'canais-lead' | 'recomendacoes'>('perfil');
+  const [activeTab, setActiveTab] = useState<'perfil' | 'geral' | 'aparencia' | 'agentes-ia' | 'usuarios' | 'bolsao' | 'limite-leads' | 'etapas' | 'score' | 'plantao' | 'agenda-lia' | 'marca-dagua' | 'canais-lead' | 'recomendacoes'>('perfil');
   
   // Estados para os campos do perfil
   const [profileData, setProfileData] = useState({
@@ -416,6 +417,10 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
                   <button type="button" onClick={() => setActiveTab('plantao')} className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all text-left ${activeTab === 'plantao' ? 'bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'}`}>
                     <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${activeTab === 'plantao' ? 'bg-violet-100 dark:bg-violet-900/60' : 'bg-slate-100 dark:bg-slate-800'}`}><MessageSquare className={`w-3.5 h-3.5 ${activeTab === 'plantao' ? 'text-violet-600 dark:text-violet-400' : 'text-slate-400'}`} /></div>
                     Plantão da LIA
+                  </button>
+                  <button type="button" onClick={() => setActiveTab('agenda-lia')} className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all text-left ${activeTab === 'agenda-lia' ? 'bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'}`}>
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${activeTab === 'agenda-lia' ? 'bg-violet-100 dark:bg-violet-900/60' : 'bg-slate-100 dark:bg-slate-800'}`}><CalendarClock className={`w-3.5 h-3.5 ${activeTab === 'agenda-lia' ? 'text-violet-600 dark:text-violet-400' : 'text-slate-400'}`} /></div>
+                    Agenda da LIA
                   </button>
                   <button type="button" onClick={() => setActiveTab('canais-lead')} className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all text-left ${activeTab === 'canais-lead' ? 'bg-orange-50 dark:bg-orange-950/50 text-orange-700 dark:text-orange-300' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'}`}>
                     <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${activeTab === 'canais-lead' ? 'bg-orange-100 dark:bg-orange-900/60' : 'bg-slate-100 dark:bg-slate-800'}`}><Megaphone className={`w-3.5 h-3.5 ${activeTab === 'canais-lead' ? 'text-orange-600 dark:text-orange-400' : 'text-slate-400'}`} /></div>
@@ -799,6 +804,21 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
                 </div>
               </div>
               <ScoreConfigPanel tenantId={user?.tenantId} isAdmin={user?.role === 'gestao'} />
+            </div>
+          )}
+
+          {activeTab === 'agenda-lia' && user?.role === 'gestao' && (
+            <div className="space-y-6">
+              <div className="-mx-6 -mt-6 mb-6 px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-violet-100 dark:bg-violet-900/40 flex items-center justify-center">
+                  <CalendarClock className="w-[18px] h-[18px] text-violet-600 dark:text-violet-400" />
+                </div>
+                <div>
+                  <h2 className="text-[15px] font-semibold text-slate-900 dark:text-slate-100">Agenda da LIA</h2>
+                  <p className="text-[12px] text-slate-500 dark:text-slate-400">O horário em que ela pode falar com o cliente</p>
+                </div>
+              </div>
+              <AgendaLiaConfigPanel tenantId={user?.tenantId} isAdmin={user?.role === 'gestao'} />
             </div>
           )}
 
