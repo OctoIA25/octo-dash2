@@ -29,7 +29,7 @@ import type { Imovel } from '../services/kenloService';
 import type { GeoCoords } from '../services/geocodingService';
 import { ImoveisMapHeaderFilters } from '../components/ImoveisMapHeaderFilters';
 import { PinosDoMapa } from '../components/PinosDoMapa';
-import { carregarPontos, salvarPino } from '../services/mapaPontosService';
+import { carregarPontos, geocodificarPendentes, salvarPino } from '../services/mapaPontosService';
 import {
   COR_DO_TIPO, ROTULO_DO_TIPO, contar, filtrarPontos, textoDoContador,
   type PontoDoMapa, type TipoDePonto, type TotaisDoMapa,
@@ -187,6 +187,8 @@ export default function ImoveisMapPage({ imoveis, isLoading }: ImoveisMapPagePro
   );
   const [pontos, setPontos] = useState<PontoDoMapa[]>([]);
   const [totais, setTotais] = useState<TotaisDoMapa | null>(null);
+  const [localizando, setLocalizando] = useState(false);
+  const [relatorio, setRelatorio] = useState<string | null>(null);
   const [myMapsMid, setMyMapsMid] = useState<string | null>(null);
   const [coordsByRef, setCoordsByRef] = useState<Map<string, GeoCoords>>(new Map());
   const [progress, setProgress] = useState({ current: 0, total: 0 });
@@ -314,6 +316,61 @@ export default function ImoveisMapPage({ imoveis, isLoading }: ImoveisMapPagePro
     },
     []
   );
+
+  /**
+   * O "script único" que o plano pede, com o relatório na tela.
+   *
+   * A 1,1 s por endereço (o teto do OpenStreetMap), 100 endereços levam quase
+   * dois minutos — por isso o botão avisa quantos vai tentar antes de começar,
+   * e o resultado diz quantos NÃO foram achados. Sem o relatório, o gestor não
+   * tem como saber que o problema é o cadastro e não o mapa.
+   */
+  const localizarOsQueFaltam = useCallback(async () => {
+    if (!tenantId || tenantId === 'owner') return;
+    setLocalizando(true);
+    setRelatorio(null);
+    try {
+      const r = await geocodificarPendentes(tenantId, { limite: 100 });
+
+      // Fila vazia com registros sem coordenada significa que todos eles já
+      // falharam antes — a fila não insiste em endereço que o Nominatim não
+      // achou. Sem dizer isso, o gestor clica, lê "0 de 0" e não entende:
+      // o problema está no cadastro, não no mapa.
+      if (r.na_fila === 0) {
+        const jaFalharam = totais?.com_erro ?? 0;
+        setRelatorio(
+          jaFalharam > 0
+            ? `Nada novo para localizar. ${jaFalharam} endereço${jaFalharam > 1 ? 's' : ''} já ` +
+              `tentado${jaFalharam > 1 ? 's' : ''} sem sucesso — corrija o cadastro e tente de novo ` +
+              'pelo próprio imóvel.'
+            : 'Tudo o que tem endereço já está no mapa.'
+        );
+        return;
+      }
+
+      const partes = [`${r.achados} de ${r.tentados} localizados`];
+      if (r.aproximados > 0) partes.push(`${r.aproximados} pelo bairro`);
+      if (r.falhas.length > 0) {
+        partes.push(
+          `${r.falhas.length} não encontrados — confira o endereço de: ${r.falhas
+            .slice(0, 3)
+            .map((f) => f.endereco)
+            .join(' · ')}${r.falhas.length > 3 ? ` e mais ${r.falhas.length - 3}` : ''}`
+        );
+      }
+      if (r.na_fila > r.tentados) partes.push(`${r.na_fila - r.tentados} na fila para a próxima rodada`);
+      setRelatorio(partes.join(' · '));
+      const novo = await carregarPontos(tenantId);
+      if (novo) {
+        setPontos(novo.pontos ?? []);
+        setTotais(novo.totais ?? null);
+      }
+    } catch (e) {
+      setRelatorio(`Não deu para localizar: ${(e as Error).message}`);
+    } finally {
+      setLocalizando(false);
+    }
+  }, [tenantId, totais]);
 
   // 1) XML — coordenadas válidas aparecem INSTANTANEAMENTE (síncrono)
   useEffect(() => {
@@ -545,6 +602,19 @@ export default function ImoveisMapPage({ imoveis, isLoading }: ImoveisMapPagePro
               existem. Na Lotus são 18 lançamentos sem endereço nenhum. */}
           {textoDoContador(contagem)}
           {isGeocoding && <span className="ml-1 text-blue-600 dark:text-blue-400">· processando…</span>}
+          {contagem.total - contagem.noMapa - contagem.semEndereco > 0 && (
+            <button
+              type="button"
+              onClick={localizarOsQueFaltam}
+              disabled={localizando}
+              className="ml-2 rounded-md border px-2 py-0.5 hover:bg-accent disabled:opacity-50"
+            >
+              {localizando ? 'Localizando…' : 'Localizar os que faltam'}
+            </button>
+          )}
+          {relatorio && (
+            <div className="mt-1 max-w-sm text-[10.5px] text-slate-500 dark:text-slate-400">{relatorio}</div>
+          )}
         </div>
           </>
         )}
