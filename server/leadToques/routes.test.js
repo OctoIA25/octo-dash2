@@ -5,7 +5,7 @@
  * é autorização e isolamento por tenant, não o SQL. A validação do corpo está
  * em normalize.test.js.
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -212,7 +212,15 @@ describe.each(['proxy-production.js', 'api-server.js'])('%s', (arquivo) => {
  */
 describe('POST de toque e a agenda', () => {
   let app;
-  beforeEach(() => { app = appFalso(); });
+  // Relógio congelado: a rota recusa toque no passado (normalize.js), então uma
+  // data fixa no fixture envelhece e o teste passaria a falhar sozinho — foi o
+  // que aconteceu em 21/09/2026, horas depois de escrito.
+  beforeEach(() => {
+    app = appFalso();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-21T12:00:00.000Z'));
+  });
+  afterEach(() => { vi.useRealTimers(); });
 
   it('toque com próximo marcado cria a atividade na agenda do corretor', async () => {
     const sb = supabaseFalso(corretorDono);
