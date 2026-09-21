@@ -9,6 +9,7 @@
 
 import { supabase } from '@/lib/supabaseClient';
 import type { PainelComercial } from '../utils/painelComercial';
+import type { Balde, EventoComercial } from '../utils/evolucao';
 
 export async function carregarPainel(
   tenantId: string,
@@ -135,5 +136,63 @@ export async function salvarVisao(
 
 export async function apagarVisao(id: string): Promise<void> {
   const { error } = await supabase.from('painel_visoes').delete().eq('id', id);
+  if (error) throw error;
+}
+
+export interface Evolucao {
+  de: string;
+  ate: string;
+  granularidade: 'dia' | 'mes';
+  hoje: string;
+  serie: Balde[];
+  anterior: { de: string; ate: string; vazio: boolean; vendas: number; serie: Balde[] };
+  eventos: EventoComercial[];
+  metas: { vendas: number | null; vgc: number | null; cadastradas: number };
+}
+
+/** O gráfico de evolução (P3.3), no mesmo recorte dos contadores e dos rankings. */
+export async function carregarEvolucao(
+  tenantId: string,
+  opts: { de?: string; ate?: string; tipo?: string; filtros?: Record<string, string[]> } = {}
+): Promise<Evolucao | null> {
+  if (!tenantId || tenantId === 'owner') return null;
+  const { data, error } = await supabase.rpc('painel_evolucao', {
+    p_tenant_id: tenantId,
+    p_de: opts.de ?? null,
+    p_ate: opts.ate ?? null,
+    p_tipo: opts.tipo ?? 'todos',
+    p_filtros: opts.filtros ?? {},
+  });
+  if (error) throw error;
+  return (data as Evolucao) ?? null;
+}
+
+/** Cadastro simples das bandeirinhas. Só a gestão escreve — a política do banco cobra. */
+export async function listarEventos(tenantId: string): Promise<EventoComercial[]> {
+  if (!tenantId || tenantId === 'owner') return [];
+  const { data, error } = await supabase
+    .from('eventos_comerciais')
+    .select('id, em, titulo, lancamento_id')
+    .eq('tenant_id', tenantId)
+    .order('em', { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((e) => ({ ...e, dia: e.em, empreendimento: null })) as EventoComercial[];
+}
+
+export async function criarEvento(
+  tenantId: string,
+  evento: { em: string; titulo: string; lancamentoId?: string | null }
+): Promise<void> {
+  const { error } = await supabase.from('eventos_comerciais').insert({
+    tenant_id: tenantId,
+    em: evento.em,
+    titulo: evento.titulo.trim(),
+    lancamento_id: evento.lancamentoId ?? null,
+  });
+  if (error) throw error;
+}
+
+export async function apagarEvento(id: string): Promise<void> {
+  const { error } = await supabase.from('eventos_comerciais').delete().eq('id', id);
   if (error) throw error;
 }

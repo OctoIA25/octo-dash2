@@ -20,6 +20,7 @@ import {
   apagarVisao, carregarPainel, carregarRankings, listarVisoes, salvarVisao,
 } from '../services/painelComercialService';
 import { RankingsDoPainel } from './RankingsDoPainel';
+import { EvolucaoDoPainel } from './EvolucaoDoPainel';
 import {
   aoClicar, chips, daQuery, nomeSugerido, paraQuery, quantosFiltros, remover,
   type Dimensao, type Filtros,
@@ -156,6 +157,8 @@ export function PainelComercialSection() {
       />
 
       {p && <Contadores p={p} tipo={tipo} />}
+
+      <EvolucaoDoPainel tenantId={tenantId} mes={mes} tipo={tipo} filtros={filtros} />
 
       {rankings && (
         <>
