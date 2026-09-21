@@ -12,6 +12,7 @@ import { PDIManager } from '@/components/PDIManager';
 import { TaskManager } from '@/components/TaskManager';
 import { AgendaCalendar } from '@/features/agenda/components/AgendaCalendar';
 import { KpisPage } from '@/features/kpis';
+import { PainelComercialSection } from '@/features/kpis/components/PainelComercialSection';
 import {
   Plus,
   Phone,
@@ -640,6 +641,13 @@ export function InicioNovaPage() {
         <div className="px-6 py-5">
           <div className="max-w-[1400px] mx-auto"><AgendaCalendar corretorEmail={user?.email || ''} /></div>
         </div>
+      </div>
+    );
+  }
+  if (activeInicioTab === 'painel-comercial') {
+    return (
+      <div key="painel-comercial" className={ANIM}>
+        <PainelComercialSection />
       </div>
     );
   }

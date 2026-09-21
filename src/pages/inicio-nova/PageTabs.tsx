@@ -89,6 +89,10 @@ const TAB_CONFIGS: TabConfig[] = [
     tabs: [
       { id: 'funil', label: 'Funil', icon: Filter, href: '/leads?tab=funil', isQuery: true },
       { id: 'okrs', label: 'OKRs', icon: Target, href: '/leads?tab=okrs', isQuery: true },
+      // P3.1 — o plano diz que ela SUBSTITUI os KPIs soltos. Entra ao lado, e
+      // não no lugar: remover a aba antiga sem o senhor confirmar que a nova
+      // cobre tudo tiraria número que alguém usa hoje.
+      { id: 'painel-comercial', label: 'Painel comercial', icon: BarChart3, href: '/leads?tab=painel-comercial', isQuery: true },
       { id: 'kpis', label: 'KPIs', icon: BarChart3, href: '/leads?tab=kpis', isQuery: true },
       { id: 'pdi', label: 'PDI', icon: GraduationCap, href: '/leads?tab=pdi', isQuery: true },
       { id: 'tarefas-semana', label: 'Tarefas da Semana', icon: CheckSquare, href: '/leads?tab=tarefas-semana', isQuery: true },
