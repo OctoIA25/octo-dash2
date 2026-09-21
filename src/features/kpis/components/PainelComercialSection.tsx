@@ -10,11 +10,20 @@
  * elas ficam de fora do que depende de VGV, e a tela diz que ficaram.
  */
 
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { AlertTriangle, ArrowDownRight, ArrowUpRight, Info, Loader2, Minus } from 'lucide-react';
+import { useCallback, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { AlertTriangle, ArrowDownRight, ArrowUpRight, Bookmark, Info, Loader2, Minus, X } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
-import { carregarPainel } from '../services/painelComercialService';
+import { useToast } from '@/hooks/use-toast';
+import {
+  apagarVisao, carregarPainel, carregarRankings, listarVisoes, salvarVisao,
+} from '../services/painelComercialService';
+import { RankingsDoPainel } from './RankingsDoPainel';
+import {
+  aoClicar, chips, daQuery, nomeSugerido, paraQuery, quantosFiltros, remover,
+  type Dimensao, type Filtros,
+} from '../utils/filtrosDoPainel';
 import {
   ROTULO_DO_TIPO, avisoDeClassificacao, avisoDeVgv, contraMeta, percentual,
   produtividade, reais, variacao, type PainelComercial, type Variacao,
@@ -25,17 +34,66 @@ type Tipo = 'todos' | 'lancamento' | 'terceiros';
 export function PainelComercialSection() {
   const { user } = useAuthContext();
   const tenantId = user?.tenantId;
-  const [tipo, setTipo] = useState<Tipo>('todos');
-  const [mes, setMes] = useState<string>(() => new Date().toISOString().slice(0, 7));
+  const { toast } = useToast();
+  const qc = useQueryClient();
+
+  // O ESTADO MORA NA URL, e não em `useState`: é o que faz o link levar a visão
+  // pronta sem nenhum código a mais, e o que mantém os contadores, os avisos e
+  // as oito tabelas olhando para o mesmo recorte — um store só.
+  const [params, setParams] = useSearchParams();
+  const filtros = useMemo(() => daQuery(params), [params]);
+  const tipo = (params.get('tipo') as Tipo) ?? 'todos';
+  const mes = params.get('mes') ?? new Date().toISOString().slice(0, 7);
 
   const de = `${mes}-01`;
   const ate = new Date(Number(mes.slice(0, 4)), Number(mes.slice(5, 7)), 0).toISOString().slice(0, 10);
 
+  const escrever = useCallback(
+    (proximos: Filtros, extras: Record<string, string> = {}) => {
+      // A aba de Início é lida de `?tab=`; sem preservá-la, filtrar jogaria o
+      // gestor de volta para o Funil.
+      const base = { tab: params.get('tab') ?? '', mes, tipo, ...extras };
+      setParams(paraQuery(proximos, base), { replace: true });
+    },
+    [params, mes, tipo, setParams]
+  );
+
   const { data: p, isLoading, isError, error } = useQuery({
-    queryKey: ['painel-comercial', tenantId, mes, tipo],
-    queryFn: () => carregarPainel(tenantId!, { de, ate, tipo }),
+    queryKey: ['painel-comercial', tenantId, mes, tipo, params.toString()],
+    queryFn: () => carregarPainel(tenantId!, { de, ate, tipo, filtros }),
     enabled: !!tenantId && tenantId !== 'owner',
   });
+
+  const { data: rankings } = useQuery({
+    queryKey: ['painel-rankings', tenantId, mes, tipo, params.toString()],
+    queryFn: () => carregarRankings(tenantId!, { de, ate, tipo, filtros }),
+    enabled: !!tenantId && tenantId !== 'owner',
+  });
+
+  const { data: visoes } = useQuery({
+    queryKey: ['painel-visoes', tenantId],
+    queryFn: () => listarVisoes(tenantId!),
+    enabled: !!tenantId && tenantId !== 'owner',
+  });
+
+  const escolher = useCallback(
+    (d: Dimensao, valor: string, comShift: boolean) => escrever(aoClicar(filtros, d, valor, comShift)),
+    [filtros, escrever]
+  );
+
+  const guardarVisao = async () => {
+    if (!tenantId) return;
+    const sugerido = nomeSugerido(filtros, tipo);
+    const nome = window.prompt('Nome da visão', sugerido);
+    if (!nome?.trim()) return;
+    try {
+      await salvarVisao(tenantId, nome, filtros, tipo);
+      await qc.invalidateQueries({ queryKey: ['painel-visoes', tenantId] });
+      toast({ title: 'Visão salva', description: 'Ela fica disponível para a equipe inteira.' });
+    } catch (e) {
+      toast({ title: 'Não deu para salvar', description: (e as Error).message, variant: 'destructive' });
+    }
+  };
 
   if (!tenantId || tenantId === 'owner') {
     return <p className="p-4 text-sm text-muted-foreground">Escolha uma imobiliária.</p>;
@@ -54,14 +112,14 @@ export function PainelComercialSection() {
           <input
             type="month"
             value={mes}
-            onChange={(e) => setMes(e.target.value)}
+            onChange={(e) => escrever(filtros, { mes: e.target.value })}
             className="h-8 rounded-md border bg-background px-2 text-sm"
           />
           <div className="flex gap-1">
             {(['todos', 'lancamento', 'terceiros'] as Tipo[]).map((t) => (
               <button
                 key={t}
-                onClick={() => setTipo(t)}
+                onClick={() => escrever(filtros, { tipo: t })}
                 className={`rounded-md border px-2.5 py-1 text-xs ${
                   tipo === t ? 'border-primary bg-primary/10 text-primary' : 'text-muted-foreground'
                 }`}
@@ -84,7 +142,111 @@ export function PainelComercialSection() {
         </p>
       )}
 
+      <BarraDeFiltros
+        filtros={filtros}
+        visoes={visoes ?? []}
+        aoRemover={(d, v) => escrever(remover(filtros, d, v))}
+        aoLimpar={() => escrever({})}
+        aoSalvar={guardarVisao}
+        aoAbrirVisao={(vis) => escrever(vis.filtros ?? {}, { tipo: vis.tipo ?? 'todos' })}
+        aoApagarVisao={async (id) => {
+          await apagarVisao(id);
+          await qc.invalidateQueries({ queryKey: ['painel-visoes', tenantId] });
+        }}
+      />
+
       {p && <Contadores p={p} tipo={tipo} />}
+
+      {rankings && (
+        <>
+          <p className="text-xs text-muted-foreground">
+            Clique numa linha para filtrar o painel inteiro. Segure SHIFT (ou o dedo, no celular) para
+            somar mais de um. A porcentagem é a fatia do VGV do período — não é conversão: esta base
+            não liga a venda ao lead que a originou.
+          </p>
+          <RankingsDoPainel rankings={rankings} filtros={filtros} aoEscolher={escolher} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function BarraDeFiltros({
+  filtros,
+  visoes,
+  aoRemover,
+  aoLimpar,
+  aoSalvar,
+  aoAbrirVisao,
+  aoApagarVisao,
+}: {
+  filtros: Filtros;
+  visoes: Array<{ id: string; nome: string; filtros: Filtros; tipo: string | null }>;
+  aoRemover: (d: Dimensao, v: string) => void;
+  aoLimpar: () => void;
+  aoSalvar: () => void;
+  aoAbrirVisao: (v: { filtros: Filtros; tipo: string | null }) => void;
+  aoApagarVisao: (id: string) => void;
+}) {
+  const lista = chips(filtros);
+  const quantos = quantosFiltros(filtros);
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {lista.map((c) => (
+        <span
+          key={`${c.dimensao}:${c.valor}`}
+          className="inline-flex items-center gap-1 rounded-full border bg-primary/10 px-2 py-0.5 text-xs text-primary"
+        >
+          {c.rotulo}
+          <button onClick={() => aoRemover(c.dimensao, c.valor)} aria-label={`Remover ${c.rotulo}`}>
+            <X className="h-3 w-3" />
+          </button>
+        </span>
+      ))}
+
+      {quantos > 0 && (
+        <button onClick={aoLimpar} className="rounded-md border px-2 py-0.5 text-xs hover:bg-accent">
+          Limpar tudo
+        </button>
+      )}
+
+      <button
+        onClick={aoSalvar}
+        className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs hover:bg-accent"
+      >
+        <Bookmark className="h-3 w-3" /> Salvar visão
+      </button>
+
+      {visoes.length > 0 && (
+        <select
+          className="h-6 rounded-md border bg-background px-1.5 text-xs"
+          value=""
+          onChange={(e) => {
+            const v = visoes.find((x) => x.id === e.target.value);
+            if (v) aoAbrirVisao(v);
+          }}
+        >
+          <option value="">Visões salvas…</option>
+          {visoes.map((v) => (
+            <option key={v.id} value={v.id}>
+              {v.nome}
+            </option>
+          ))}
+        </select>
+      )}
+
+      {visoes.length > 0 && quantos === 0 && (
+        <button
+          onClick={() => {
+            const alvo = visoes[0];
+            if (alvo && window.confirm(`Apagar a visão "${alvo.nome}"?`)) aoApagarVisao(alvo.id);
+          }}
+          className="text-[11px] text-muted-foreground underline"
+        >
+          apagar a primeira visão
+        </button>
+      )}
     </div>
   );
 }
