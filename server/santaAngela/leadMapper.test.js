@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mapSantaAngelaToLead, mapAssignedAgentName } from './leadMapper.js';
+import { mapSantaAngelaToLead, mapAssignedAgentName, etapaAvanca } from './leadMapper.js';
 
 it('mapAssignedAgentName ignora "JAPI LEADS" e trim', () => {
   expect(mapAssignedAgentName('  JAPI LEADS ')).toBe(null);
@@ -67,3 +67,38 @@ it('todo status gerado pelo mapper está na lista aceita pela constraint', () =>
     expect(validos.has(status), `situação "${s}" gerou status inválido: ${status}`).toBe(true);
   }
 });
+
+/**
+ * A etapa da origem só empurra o lead para FRENTE. Antes, qualquer diferença
+ * fazia a Santa Ângela mandar: o corretor movia o lead no Octo e o ciclo
+ * seguinte (1 min) devolvia para "Novos Leads" — 23 voltas em 7 leads entre
+ * 12 e 20/09/2026, e a reclamação que abriu esta investigação.
+ */
+describe('etapaAvanca', () => {
+  it('origem à frente do Octo avança o lead', () => {
+    expect(etapaAvanca('Interação', 'Negociação')).toBe(true);
+    expect(etapaAvanca('Novos Leads', 'Interação')).toBe(true);
+  });
+
+  it('origem atrás não puxa o lead de volta', () => {
+    expect(etapaAvanca('Interação', 'Novos Leads')).toBe(false);
+    expect(etapaAvanca('Negociação', 'Visita Agendada')).toBe(false);
+  });
+
+  it('mesma etapa não é avanço (evita escrita inútil a cada minuto)', () => {
+    expect(etapaAvanca('Interação', 'Interação')).toBe(false);
+  });
+
+  it('etapa fora do funil não é mexida — inclusive lead arquivado', () => {
+    expect(etapaAvanca('Arquivado', 'Interação')).toBe(false);
+    expect(etapaAvanca('Interação', 'Etapa Inventada')).toBe(false);
+    expect(etapaAvanca(null, 'Interação')).toBe(false);
+  });
+
+  it('Em Atendimento fica entre Novos Leads e Interação', () => {
+    expect(etapaAvanca('Novos Leads', 'Em Atendimento')).toBe(true);
+    expect(etapaAvanca('Em Atendimento', 'Interação')).toBe(true);
+    expect(etapaAvanca('Interação', 'Em Atendimento')).toBe(false);
+  });
+});
+
