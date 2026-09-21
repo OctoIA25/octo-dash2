@@ -5,6 +5,8 @@ import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { useLeadSourceCosts } from '../hooks/useLeadSourceCosts';
+import { gastoDaMetaNoPeriodo } from '../marketing/campanhasService';
+import { avisoDeSubstituicao, vemDaMeta } from '../marketing/gastoNoFinanceiro';
 import {
   buildFinanceiroResumo,
   origemKey,
@@ -54,6 +56,29 @@ export function FinanceiroTab({ leads }: FinanceiroTabProps) {
   const canEdit = Boolean(isOwner) || ROLES_EDIT.includes(String(user?.systemRole || ''));
 
   const [periodo, setPeriodo] = useState<Periodo>('mensal');
+
+  // P3.5 — o gasto de anúncio deixa de ser digitado nas origens que a Meta
+  // cobre. Lido da MESMA tabela da aba Campanhas: uma fonte só, senão as duas
+  // telas divergem e ninguém sabe qual está certa.
+  const [gastoDaMeta, setGastoDaMeta] = useState<number | null>(null);
+  useEffect(() => {
+    const tid = user?.tenantId;
+    if (!tid || tid === 'owner') { setGastoDaMeta(null); return; }
+    const hoje = new Date();
+    const de = periodo === 'anual'
+      ? `${hoje.getFullYear()}-01-01`
+      : `${hoje.toISOString().slice(0, 7)}-01`;
+    const ate = hoje.toISOString().slice(0, 10);
+    let cancelado = false;
+    gastoDaMetaNoPeriodo(tid, de, ate)
+      .then((v) => { if (!cancelado) setGastoDaMeta(v); })
+      // Falhar em ler o gasto NÃO pode derrubar o Financeiro inteiro: a tela
+      // volta a ser a de antes, com os campos digitados destravados.
+      .catch(() => { if (!cancelado) setGastoDaMeta(null); });
+    return () => { cancelado = true; };
+  }, [user?.tenantId, periodo]);
+
+  const aviso = useMemo(() => avisoDeSubstituicao(costs, gastoDaMeta), [costs, gastoDaMeta]);
   // rascunho dos inputs (string) por chave de origem, para edição controlada
   const [draft, setDraft] = useState<Record<string, string>>({});
 
@@ -144,6 +169,16 @@ export function FinanceiroTab({ leads }: FinanceiroTabProps) {
           )}
         </div>
 
+        {/* P3.5 — o gasto real da Meta, no lugar do digitado. Mostra OS DOIS
+            números: trocar em silêncio faria o gestor achar que alguém mexeu
+            no valor dele. */}
+        {aviso && (
+          <div className="mx-5 mb-4 flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200">
+            <Info className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{aviso.texto}</span>
+          </div>
+        )}
+
         {loading ? (
           <div className="p-8 text-center text-sm text-gray-400">Carregando…</div>
         ) : rows.length === 0 ? (
@@ -173,7 +208,12 @@ export function FinanceiroTab({ leads }: FinanceiroTabProps) {
                         <input
                           type="text"
                           inputMode="decimal"
-                          disabled={!canEdit || saving}
+                          disabled={!canEdit || saving || (!!aviso && vemDaMeta(r.origem))}
+                          title={
+                            !!aviso && vemDaMeta(r.origem)
+                              ? 'Este valor passou a ser lido da Meta — veja a linha Meta Ads acima. O que estava digitado continua guardado.'
+                              : undefined
+                          }
                           value={draft[r.key] ?? ''}
                           onChange={(e) => setDraft((d) => ({ ...d, [r.key]: e.target.value }))}
                           onBlur={() => canEdit && handleBlurSave(r.key, r.origem)}

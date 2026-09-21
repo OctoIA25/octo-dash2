@@ -142,3 +142,29 @@ export async function carregarDetalhe(
   if (error) throw error;
   return (data as DetalheDaCampanha) ?? null;
 }
+
+/**
+ * O gasto total da Meta num período, para o Financeiro.
+ *
+ * Lê a mesma tabela da aba Campanhas — uma fonte só. Devolve `null` quando não
+ * há nada guardado, e não zero: "ninguém sincronizou ainda" e "não se gastou
+ * nada" são coisas diferentes, e confundi-las travaria os campos digitados em
+ * cima de um total falso.
+ */
+export async function gastoDaMetaNoPeriodo(
+  tenantId: string,
+  de: string,
+  ate: string
+): Promise<number | null> {
+  if (!tenantId || tenantId === 'owner') return null;
+  const { data, error } = await supabase
+    .from('meta_insights_diarios')
+    .select('gasto')
+    .eq('tenant_id', tenantId)
+    .gte('data', de)
+    .lte('data', ate);
+  if (error) throw error;
+  if (!data || data.length === 0) return null;
+  const total = data.reduce((s, l) => s + (Number((l as { gasto: number }).gasto) || 0), 0);
+  return Math.round(total * 100) / 100;
+}
