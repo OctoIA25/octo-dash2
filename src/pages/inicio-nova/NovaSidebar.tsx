@@ -33,6 +33,7 @@ import {
   Calculator,
   Receipt,
   Wallet,
+  Shield,
 } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { TenantSwitcher } from '@/components/TenantSwitcher';
@@ -151,6 +152,9 @@ const GROUPS: SidebarGroup[] = [
     items: [
       { id: 'gestao-equipe', label: 'Gestão de Equipe', icon: Users, route: '/gestao-equipe', permission: 'gestao-equipe' },
       { id: 'recrutamento', label: 'Recrutamento', icon: UserCheck, route: '/recrutamento', permission: 'recrutamento' },
+      // P4.1 — o cargo é um pacote de permissões que vale para todo mundo que
+      // o tem. Mora perto da Gestão de Equipe, que é onde as pessoas estão.
+      { id: 'cargos', label: 'Cargos', icon: Shield, route: '/cargos', permission: 'gestao-equipe' },
     ],
   },
   {
@@ -258,6 +262,7 @@ export function NovaSidebar() {
     systemRole: user?.systemRole,
     tenantAllowedFeatures: user?.tenantAllowedFeatures,
     sidebarPermissions: user?.sidebarPermissions,
+    permissoesDoCargo: user?.permissoesDoCargo,
   });
 
   const canAccess = useCallback(

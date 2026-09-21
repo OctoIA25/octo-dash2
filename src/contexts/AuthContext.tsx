@@ -36,6 +36,12 @@ export interface AuthUser {
   tenantCode?: string;
   tenantName?: string;
   sidebarPermissions: SidebarPermission[];
+  /**
+   * P4.1 — o pacote do CARGO, já com as exceções individuais aplicadas.
+   * `null` = esta pessoa ainda não tem cargo, e tudo segue na regra antiga.
+   */
+  permissoesDoCargo?: SidebarPermission[] | null;
+  cargoNome?: string | null;
   tenantAllowedFeatures?: SidebarPermission[];
   permissions?: any;
   equipe?: TeamColor;
@@ -213,6 +219,25 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       const sidebarPerms = getSidebarPermissions(membership.role, false, userPermissions);
 
+      // P4.1 — o pacote do cargo. Devolve `permissoes: null` para quem ainda
+      // não tem cargo, e aí nada muda: `permissoesDeSidebar` cai na regra
+      // antiga. Falha de rede aqui também não pode mudar o menu de ninguém,
+      // por isso o catch devolve null em vez de uma lista vazia.
+      let permissoesDoCargo: SidebarPermission[] | null = null;
+      let cargoNome: string | null = null;
+      try {
+        const { data: cargoData } = await supabase.rpc('minhas_permissoes', {
+          p_tenant_id: membership.tenant_id,
+        });
+        const pacote = cargoData as { cargo?: string | null; permissoes?: string[] | null } | null;
+        if (pacote && Array.isArray(pacote.permissoes)) {
+          permissoesDoCargo = pacote.permissoes as SidebarPermission[];
+          cargoNome = pacote.cargo ?? null;
+        }
+      } catch {
+        permissoesDoCargo = null;
+      }
+
       // Buscar permissões do tenant usando RPC para contornar RLS
       const previousTenantAllowedFeatures = authStateRef.current.user?.tenantId === membership.tenant_id
         ? authStateRef.current.user.tenantAllowedFeatures
@@ -246,6 +271,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           tenantCode: membership.code,
           tenantName: membership.name,
           sidebarPermissions: sidebarPerms,
+          permissoesDoCargo,
+          cargoNome,
           tenantAllowedFeatures: tenantAllowedFeatures,
           permissions: userPermissions,
           equipe: userPermissions?.team as TeamColor | undefined

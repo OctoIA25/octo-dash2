@@ -90,6 +90,9 @@ const ConferenciaDeVendasPage = lazyWithRetry(() => import('@/features/comercial
 
 // P4.5 — o Financeiro fase 1.
 const FinanceiroPage = lazyWithRetry(() => import('@/features/financeiro/FinanceiroPage').then(m => ({ default: m.FinanceiroPage })));
+
+// P4.1 — cargos com pacote de permissões.
+const CargosPage = lazyWithRetry(() => import('@/features/cargos/CargosPage').then(m => ({ default: m.CargosPage })));
 const BolsaoPage = lazyWithRetry(() => import('@/features/leads/pages/BolsaoPage').then(m => ({ default: m.BolsaoPage })));
 const CentralLeadsPage = lazyWithRetry(() => import('@/features/leads/pages/CentralLeadsPage').then(m => ({ default: m.CentralLeadsPage })));
 const CorretoresPage = lazyWithRetry(() => import('@/features/corretores/pages/CorretoresPage').then(m => ({ default: m.CorretoresPage })));
@@ -147,8 +150,9 @@ const DashboardLayout = () => {
         systemRole: user?.systemRole,
         tenantAllowedFeatures: user?.tenantAllowedFeatures,
         sidebarPermissions: user?.sidebarPermissions,
+        permissoesDoCargo: user?.permissoesDoCargo,
       }),
-    [isOwner, tenantId, user?.sidebarPermissions, user?.systemRole, user?.tenantAllowedFeatures]
+    [isOwner, tenantId, user?.permissoesDoCargo, user?.sidebarPermissions, user?.systemRole, user?.tenantAllowedFeatures]
   );
 
   const defaultAllowedRoute = useMemo(() => {
@@ -261,6 +265,7 @@ const DashboardLayout = () => {
           <Route path="marketing/demandas" element={<DemandasPage />} />
           <Route path="comercial/vendas" element={<ConferenciaDeVendasPage />} />
           <Route path="financeiro" element={<FinanceiroPage />} />
+          <Route path="cargos" element={<CargosPage />} />
 
           <Route 
             path="bolsao" 

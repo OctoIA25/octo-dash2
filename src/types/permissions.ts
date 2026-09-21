@@ -305,10 +305,19 @@ export interface ContextoDePermissao {
   tenantAllowedFeatures?: SidebarPermission[] | null;
   /** O que foi salvo para este membro na tela de Acessos. */
   sidebarPermissions?: SidebarPermission[] | null;
+  /**
+   * P4.1 — o pacote do CARGO, já com as exceções individuais aplicadas.
+   *
+   * `null`/ausente significa "esta pessoa ainda não tem cargo": o cálculo cai
+   * inteiro na regra antiga, e por isso a virada não muda a tela de ninguém.
+   * Quando vem uma lista, ela MANDA — inclusive para admin e team_leader.
+   */
+  permissoesDoCargo?: SidebarPermission[] | null;
 }
 
 export function permissoesDeSidebar(ctx: ContextoDePermissao): SidebarPermission[] {
   const salvas = ctx.sidebarPermissions ?? [];
+  const doCargo = Array.isArray(ctx.permissoesDoCargo) ? ctx.permissoesDoCargo : null;
   const naOrdem = (permitidas: SidebarPermission[]) =>
     SIDEBAR_PERMISSION_ORDER.filter((p) => permitidas.includes(p));
 
@@ -316,11 +325,18 @@ export function permissoesDeSidebar(ctx: ContextoDePermissao): SidebarPermission
 
   if (ctx.isTenantUser && Array.isArray(ctx.tenantAllowedFeatures)) {
     const doTenant = ctx.tenantAllowedFeatures;
+    // COM CARGO, O CARGO MANDA — e para todo mundo. É aqui que a pergunta
+    // aberta acima é respondida: tirar uma aba de um admin passa a restringir
+    // de verdade. Ninguém perde acesso na virada porque a migração dá a cada
+    // gestor um cargo com exatamente o que ele já via.
+    if (doCargo) return naOrdem(doTenant.filter((p) => doCargo.includes(p)));
     // Admin e team_leader não são limitados pelas permissões salvas.
     if (ctx.systemRole === 'admin' || ctx.systemRole === 'team_leader') return naOrdem(doTenant);
     if (salvas.length > 0) return naOrdem(doTenant.filter((p) => salvas.includes(p)));
     return naOrdem(doTenant);
   }
+
+  if (doCargo) return naOrdem(doCargo);
 
   // Sem o que a imobiliária contratou, vale o padrão do cargo.
   if (ctx.systemRole === 'admin') return naOrdem(ADMIN_SIDEBAR_PERMISSIONS);

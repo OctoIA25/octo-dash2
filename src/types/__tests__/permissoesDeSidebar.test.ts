@@ -122,3 +122,85 @@ describe('permissoesDeSidebar', () => {
     expect(r.length).toBeGreaterThan(0);
   });
 });
+
+// ============================================================
+// P4.1 — o pacote do cargo
+// ============================================================
+describe('permissoesDeSidebar com cargo (P4.1)', () => {
+  const tenantComTudo: SidebarPermission[] = [
+    'leads', 'notificacoes', 'metricas', 'juridico', 'estudo-mercado', 'recrutamento',
+    'gestao-equipe', 'imoveis', 'agentes-ia', 'chat', 'integracoes', 'central-leads', 'relatorios',
+  ];
+
+  it('sem cargo, nada muda: a regra antiga continua valendo', () => {
+    const semCargo = permissoesDeSidebar({
+      isOwner: false, isTenantUser: true, systemRole: 'corretor',
+      tenantAllowedFeatures: tenantComTudo,
+      sidebarPermissions: ['leads', 'imoveis'],
+    });
+    const comCargoNulo = permissoesDeSidebar({
+      isOwner: false, isTenantUser: true, systemRole: 'corretor',
+      tenantAllowedFeatures: tenantComTudo,
+      sidebarPermissions: ['leads', 'imoveis'],
+      permissoesDoCargo: null,
+    });
+    expect(comCargoNulo).toEqual(semCargo);
+    expect(semCargo).toEqual(['leads', 'imoveis']);
+  });
+
+  it('com cargo, o cargo manda e as permissões salvas são ignoradas', () => {
+    expect(permissoesDeSidebar({
+      isOwner: false, isTenantUser: true, systemRole: 'corretor',
+      tenantAllowedFeatures: tenantComTudo,
+      sidebarPermissions: ['leads', 'imoveis'],
+      permissoesDoCargo: ['leads', 'metricas', 'chat'],
+    })).toEqual(['leads', 'metricas', 'chat']);
+  });
+
+  // Este é o caso que responde a pergunta aberta de 18/09: hoje tirar uma aba
+  // de um admin não restringe nada, porque a rota ignora a escolha.
+  it('o cargo LIMITA o admin — que hoje ignora o que foi salvo', () => {
+    const semCargo = permissoesDeSidebar({
+      isOwner: false, isTenantUser: true, systemRole: 'admin',
+      tenantAllowedFeatures: tenantComTudo,
+      sidebarPermissions: ['leads'],
+    });
+    expect(semCargo.length).toBe(tenantComTudo.length); // salvas ignoradas
+
+    const comCargo = permissoesDeSidebar({
+      isOwner: false, isTenantUser: true, systemRole: 'admin',
+      tenantAllowedFeatures: tenantComTudo,
+      sidebarPermissions: ['leads'],
+      permissoesDoCargo: ['leads', 'gestao-equipe'],
+    });
+    expect(comCargo).toEqual(['leads', 'gestao-equipe']);
+  });
+
+  it('o que a imobiliária não contratou continua fora, mesmo estando no cargo', () => {
+    expect(permissoesDeSidebar({
+      isOwner: false, isTenantUser: true, systemRole: 'corretor',
+      tenantAllowedFeatures: ['leads', 'imoveis'],
+      permissoesDoCargo: ['leads', 'imoveis', 'relatorios'],
+    })).toEqual(['leads', 'imoveis']);
+  });
+
+  it('cargo vazio tira o menu inteiro — e não vira fail-open como a lista vazia', () => {
+    expect(permissoesDeSidebar({
+      isOwner: false, isTenantUser: true, systemRole: 'corretor',
+      tenantAllowedFeatures: tenantComTudo,
+      permissoesDoCargo: [],
+    })).toEqual([]);
+    // Contraste: a lista salva vazia libera tudo (regra antiga, fail-open).
+    expect(permissoesDeSidebar({
+      isOwner: false, isTenantUser: true, systemRole: 'corretor',
+      tenantAllowedFeatures: tenantComTudo,
+      sidebarPermissions: [],
+    }).length).toBe(tenantComTudo.length);
+  });
+
+  it('o dono da plataforma continua vendo tudo, com cargo ou sem', () => {
+    expect(permissoesDeSidebar({
+      isOwner: true, isTenantUser: false, permissoesDoCargo: ['leads'],
+    }).length).toBeGreaterThan(1);
+  });
+});

@@ -21,6 +21,8 @@ export interface TenantMember {
   leader_user_id?: string | null;
   creci?: string | null;
   team_id?: string | null;
+  /** P4.1 — o cargo do membro. `null` = ainda na regra antiga de permissões. */
+  cargo_id?: string | null;
 }
 
 export interface CreateMemberData {
@@ -60,6 +62,8 @@ interface TenantMemberExtra {
   leader_user_id: string | null;
   creci: string | null;
   team_id: string | null;
+  /** P4.1 — o cargo do membro. `null` = ainda na regra antiga de permissões. */
+  cargo_id: string | null;
 }
 
 function mapTenantMemberRow(
@@ -95,6 +99,7 @@ function mapTenantMemberRow(
     leader_user_id: extra?.leader_user_id ?? member.leader_user_id ?? null,
     creci: extra?.creci ?? member.creci ?? null,
     team_id: extra?.team_id ?? member.team_id ?? null,
+    cargo_id: extra?.cargo_id ?? member.cargo_id ?? null,
   };
 }
 
@@ -156,15 +161,21 @@ export async function fetchTenantMembers(tenantId: string): Promise<TenantMember
     const memberIds = (members as any[]).map((m: any) => m.user_id);
     const extraMap: Record<string, TenantMemberExtra> = {};
     if (memberIds.length > 0) {
-      const { data: extraData } = await supabase
+      // O erro é registrado, e não engolido: quando o PostgREST ainda não
+      // conhece uma coluna nova daqui, esta consulta falha inteira e TODOS os
+      // membros voltam sem cargo, sem líder e sem CRECI — com a tela parecendo
+      // certa. Aconteceu em 21/09 com `cargo_id` recém-criada.
+      const { data: extraData, error: extraError } = await supabase
         .from('tenant_memberships')
-        .select('user_id, leader_user_id, creci, team_id')
+        .select('user_id, leader_user_id, creci, team_id, cargo_id')
         .eq('tenant_id', tenantId)
         .in('user_id', memberIds);
+      if (extraError) console.error('Erro ao buscar cargo/líder/CRECI dos membros:', extraError);
       (extraData || []).forEach((row: any) => {
         extraMap[row.user_id] = {
           leader_user_id: row.leader_user_id ?? null,
           creci: row.creci ?? null,
+          cargo_id: row.cargo_id ?? null,
           team_id: row.team_id ?? null,
         };
       });
