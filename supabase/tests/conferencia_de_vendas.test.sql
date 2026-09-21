@@ -178,29 +178,40 @@ BEGIN
   -- 5. DIVERGÊNCIA É CONCLUÍDA, E NÃO MARCADA À MÃO.
   --
   -- Deixar alguém marcar faria a divergência depender de reparar nela.
+  --
+  -- O previsto é a comissão BRUTA (30.000), porque é ela que a construtora
+  -- deposita — o imposto é pago depois, pela casa. Comparar contra a líquida
+  -- acusava divergência justamente no recebimento certo.
   -- ----------------------------------------------------------
-  UPDATE vendas SET recebido_em = '2026-10-10', valor_recebido = 28200 WHERE id = v.id;
+  UPDATE vendas SET recebido_em = '2026-10-10', valor_recebido = 30000 WHERE id = v.id;
   SELECT * INTO v FROM vendas WHERE id = v.id;
   IF v.status IS DISTINCT FROM 'recebido' THEN
-    RAISE EXCEPTION 'FALHOU: recebeu o valor certo e o status deu %', v.status;
+    RAISE EXCEPTION 'FALHOU: recebeu a bruta e o status deu %', v.status;
+  END IF;
+
+  -- E receber a LÍQUIDA é divergência: faltou o imposto no depósito.
+  UPDATE vendas SET valor_recebido = 28200 WHERE id = v.id;
+  SELECT * INTO v FROM vendas WHERE id = v.id;
+  IF v.status IS DISTINCT FROM 'divergente' THEN
+    RAISE EXCEPTION 'FALHOU: recebeu a líquida contra a bruta e o status deu %', v.status;
+  END IF;
+  IF v.diferenca IS DISTINCT FROM -1800 THEN
+    RAISE EXCEPTION 'FALHOU: a diferença deveria ser -1800 (o imposto), deu %', v.diferenca;
   END IF;
 
   UPDATE vendas SET valor_recebido = 25000 WHERE id = v.id;
   SELECT * INTO v FROM vendas WHERE id = v.id;
-  IF v.status IS DISTINCT FROM 'divergente' THEN
-    RAISE EXCEPTION 'FALHOU: recebeu 25000 contra 28200 e o status deu %', v.status;
-  END IF;
-  IF v.diferenca IS DISTINCT FROM -3200 THEN
-    RAISE EXCEPTION 'FALHOU: a diferença deveria ser -3200, deu %', v.diferenca;
+  IF v.diferenca IS DISTINCT FROM -5000 THEN
+    RAISE EXCEPTION 'FALHOU: a diferença deveria ser -5000, deu %', v.diferenca;
   END IF;
 
   -- Um centavo é arredondamento de banco, e não divergência.
-  UPDATE vendas SET valor_recebido = 28200.01 WHERE id = v.id;
+  UPDATE vendas SET valor_recebido = 30000.01 WHERE id = v.id;
   IF (SELECT status FROM vendas WHERE id = v.id) IS DISTINCT FROM 'recebido' THEN
     RAISE EXCEPTION 'FALHOU: um centavo de diferença virou divergência';
   END IF;
 
-  UPDATE vendas SET valor_recebido = 28200 WHERE id = v.id;
+  UPDATE vendas SET valor_recebido = 30000 WHERE id = v.id;
 
   -- ----------------------------------------------------------
   -- 6. OS TOTAIS BATEM COM A SOMA DAS LINHAS.
@@ -350,10 +361,11 @@ BEGIN
   END IF;
 
   -- ----------------------------------------------------------
-  -- 11. A FOLHA DE REPASSE TEM QUE FECHAR A COMISSÃO LÍQUIDA.
+  -- 11. A FOLHA DE REPASSE TEM QUE FECHAR A COMISSÃO BRUTA.
   --
   -- O motor do front já confere, mas quem chama a API não é obrigado a ser a
-  -- tela. Uma folha que não fecha é dinheiro sumindo ou sobrando.
+  -- tela. Uma folha que não fecha é dinheiro sumindo ou sobrando. Medido na
+  -- planilha da Lotus: corretor + líder dão 60% do BRUTO, e a casa fica com 40%.
   -- ----------------------------------------------------------
   SELECT * INTO v FROM vendas WHERE id = v.id;
   BEGIN
@@ -366,9 +378,9 @@ BEGIN
 
   PERFORM venda_gravar_repasses(v.id, jsonb_build_array(
     jsonb_build_object('papel', 'corretor', 'parte', 'Ana', 'nivel', 'junior',
-                       'percentual', 40, 'valor', round(v.comissao_liquida * 0.4, 2)),
+                       'percentual', 40, 'valor', round(v.comissao_bruta * 0.4, 2)),
     jsonb_build_object('papel', 'lotus', 'parte', 'Lotus', 'nivel', NULL,
-                       'percentual', 60, 'valor', v.comissao_liquida - round(v.comissao_liquida * 0.4, 2))));
+                       'percentual', 60, 'valor', v.comissao_bruta - round(v.comissao_bruta * 0.4, 2))));
   IF (SELECT count(*) FROM venda_repasses WHERE venda_id = v.id) IS DISTINCT FROM 2 THEN
     RAISE EXCEPTION 'FALHOU: deveriam ter ficado 2 repasses';
   END IF;
@@ -388,7 +400,7 @@ BEGIN
   BEGIN
     PERFORM venda_gravar_repasses(v.id, jsonb_build_array(
       jsonb_build_object('papel', 'lotus', 'parte', 'Lotus', 'nivel', NULL,
-                         'percentual', 100, 'valor', v.comissao_liquida)));
+                         'percentual', 100, 'valor', v.comissao_bruta)));
     RAISE EXCEPTION 'FALHOU: recalculou por cima de repasse já pago';
   EXCEPTION WHEN check_violation THEN NULL;
   END;

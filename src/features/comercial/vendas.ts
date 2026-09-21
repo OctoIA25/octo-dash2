@@ -103,22 +103,26 @@ const CENTAVO = 0.01;
  * Devolve `null` enquanto nada foi recebido — antes do recebimento não existe
  * divergência, existe espera, e pintar de vermelho quem só não recebeu ainda
  * treinaria todo mundo a ignorar o vermelho.
+ *
+ * O previsto é a comissão BRUTA: é o que a construtora deposita. O imposto é
+ * pago depois, pela casa. Comparar contra a líquida acusava divergência
+ * justamente no caso normal — o recebimento certo virava alarme.
  */
-export function divergencia(v: Pick<VendaNaLista, 'valor_recebido' | 'comissao_liquida'>): {
+export function divergencia(v: Pick<VendaNaLista, 'valor_recebido' | 'comissao_bruta'>): {
   valor: number;
   sentido: 'a_menos' | 'a_mais';
   texto: string;
 } | null {
   if (v?.valor_recebido == null) return null;
-  const d = v.valor_recebido - v.comissao_liquida;
+  const d = v.valor_recebido - v.comissao_bruta;
   if (Math.abs(d) <= CENTAVO) return null;
   const sentido = d < 0 ? 'a_menos' : 'a_mais';
   return {
     valor: d,
     sentido,
     texto: sentido === 'a_menos'
-      ? `Entrou ${formatar(Math.abs(d))} a MENOS do que a comissão calculada.`
-      : `Entrou ${formatar(d)} a MAIS do que a comissão calculada.`,
+      ? `Entrou ${formatar(Math.abs(d))} a MENOS do que a comissão bruta calculada.`
+      : `Entrou ${formatar(d)} a MAIS do que a comissão bruta calculada.`,
   };
 }
 
@@ -184,11 +188,17 @@ export interface PessoaDoRepasse {
  * Buscar o nível atual aqui desfaria, na hora de pagar, a garantia que o banco
  * protege — e ninguém notaria, porque o número continuaria plausível.
  *
- * A base do rateio é a comissão LÍQUIDA: o imposto sai antes, e dividir a
- * bruta faria a casa distribuir dinheiro que já foi para o governo.
+ * A BASE DO RATEIO É A COMISSÃO BRUTA. Medido na planilha da Lotus em 21/09:
+ * nas 31 vendas com comissão, `valor_vgc` e `comissao_total_venda` são o mesmo
+ * número, e em 26 delas corretor + líder dão exatamente 60% dele — a casa fica
+ * com 40%, e é dos 40% que sai o imposto.
+ *
+ * Eu havia construído isto sobre a LÍQUIDA, o que paga 6% a menos a cada
+ * corretor: numa comissão de R$ 42.500, o júnior receberia R$ 15.980 em vez de
+ * R$ 17.000. O erro não apareceria na tela, porque a folha fechava.
  */
 export function entradaDoMotor(
-  venda: Pick<VendaNaLista, 'tipo' | 'corretor' | 'corretor_id' | 'nivel_corretor' | 'comissao_liquida'>,
+  venda: Pick<VendaNaLista, 'tipo' | 'corretor' | 'corretor_id' | 'nivel_corretor' | 'comissao_bruta'>,
   equipe: PessoaDoRepasse[]
 ): { entrada: Entrada } | { impedimento: string } {
   const nivel = nivelValido(venda.nivel_corretor);
@@ -198,8 +208,8 @@ export function entradaDoMotor(
         'Defina o nível em Gestão de Equipe e registre o repasse manualmente — mudar o cadastro agora NÃO altera esta venda, de propósito.',
     };
   }
-  if (!(venda.comissao_liquida > 0)) {
-    return { impedimento: 'A venda está com comissão líquida zerada. Confira o percentual da construtora antes de gerar os repasses.' };
+  if (!(venda.comissao_bruta > 0)) {
+    return { impedimento: 'A venda está com comissão zerada. Confira o percentual da construtora antes de gerar os repasses.' };
   }
 
   const eu = equipe.find((p) => p.user_id === venda.corretor_id);
@@ -218,7 +228,7 @@ export function entradaDoMotor(
       // Lançamento não tem ponta de captação — ela é direta com a construtora.
       // Venda de terceiros é revenda para o motor, e aí as duas pontas existem.
       tipo: venda.tipo === 'lancamento' ? 'lancamento' : 'revenda',
-      comissaoTotal: venda.comissao_liquida,
+      comissaoTotal: venda.comissao_bruta,
       captacao: venda.tipo === 'lancamento' ? null : corretor,
       intermediacao: corretor,
     },

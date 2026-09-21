@@ -139,10 +139,15 @@ CREATE INDEX IF NOT EXISTS vendas_lead_idx ON public.vendas (tenant_id, lead_id)
 -- NULA, e não a comissão inteira negativa. Com o COALESCE, uma venda que só
 -- ainda não foi paga aparecia devendo R$ 32.900 para quem consultasse a
 -- coluna — e "não recebi ainda" viraria "recebi a menos".
+--
+-- CONTRA A BRUTA, e não a líquida: é a bruta que a construtora deposita. O
+-- imposto é pago depois, pela casa. Medido na planilha da Lotus em 21/09, nas
+-- 31 vendas com comissão: `valor_vgc` e `comissao_total_venda` são o mesmo
+-- número, e é dele que saem os repasses — não há desconto de imposto antes.
 ALTER TABLE public.vendas DROP COLUMN IF EXISTS diferenca;
 ALTER TABLE public.vendas
   ADD COLUMN diferenca numeric
-  GENERATED ALWAYS AS (valor_recebido - COALESCE(comissao_liquida, 0)) STORED;
+  GENERATED ALWAYS AS (valor_recebido - COALESCE(comissao_bruta, 0)) STORED;
 
 -- ------------------------------------------------------------
 -- 4. Os repasses
@@ -255,7 +260,7 @@ BEGIN
   -- continua com o que escolheu.
   IF NEW.recebido_em IS NOT NULL AND NEW.valor_recebido IS NOT NULL THEN
     -- Um centavo de diferença é arredondamento de banco, não divergência.
-    IF abs(COALESCE(NEW.valor_recebido, 0) - COALESCE(NEW.comissao_liquida, 0)) > 0.01 THEN
+    IF abs(COALESCE(NEW.valor_recebido, 0) - COALESCE(NEW.comissao_bruta, 0)) > 0.01 THEN
       NEW.status := 'divergente';
     ELSE
       NEW.status := 'recebido';
@@ -570,7 +575,8 @@ BEGIN
       'imposto', round(COALESCE(sum(imposto_valor), 0), 2),
       'comissao_liquida', round(COALESCE(sum(comissao_liquida), 0), 2),
       'recebido', round(COALESCE(sum(valor_recebido), 0), 2),
-      'a_receber', round(COALESCE(sum(comissao_liquida) FILTER (WHERE recebido_em IS NULL), 0), 2),
+      -- A RECEBER é a BRUTA: é o que a construtora ainda vai depositar.
+      'a_receber', round(COALESCE(sum(comissao_bruta) FILTER (WHERE recebido_em IS NULL), 0), 2),
       'divergentes', count(*) FILTER (WHERE status = 'divergente'),
       -- Quantas ainda não têm percentual: nasceram sem construtora casada, e
       -- a comissão delas é zero até alguém resolver.
@@ -782,10 +788,14 @@ BEGIN
   -- O FECHAMENTO É CONFERIDO AQUI TAMBÉM. O motor já confere do lado do front,
   -- mas quem chama a API não é obrigado a ser a tela — e uma folha que não
   -- fecha a comissão líquida é dinheiro sumindo ou sobrando.
+  -- A folha fecha a comissão BRUTA. Medido na planilha da Lotus: em 26 das 31
+  -- vendas, corretor + líder dão exatamente 60% do bruto e a casa fica com 40%
+  -- — e é dos 40% da casa que sai o imposto. Fechar contra a líquida pagaria
+  -- 6% a menos a cada corretor, um erro que ninguém notaria olhando a tela.
   SELECT sum((x->>'valor')::numeric) INTO v_soma FROM jsonb_array_elements(p_linhas) x;
-  IF abs(COALESCE(v_soma, 0) - v_venda.comissao_liquida) > 0.01 THEN
-    RAISE EXCEPTION 'Os repasses somam % e a comissão líquida é % — a folha não fecha.',
-      round(COALESCE(v_soma, 0), 2), round(v_venda.comissao_liquida, 2)
+  IF abs(COALESCE(v_soma, 0) - v_venda.comissao_bruta) > 0.01 THEN
+    RAISE EXCEPTION 'Os repasses somam % e a comissão bruta é % — a folha não fecha.',
+      round(COALESCE(v_soma, 0), 2), round(v_venda.comissao_bruta, 2)
       USING ERRCODE = 'check_violation';
   END IF;
 

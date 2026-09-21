@@ -27,18 +27,29 @@ describe('divergência entre o previsto e o recebido', () => {
     expect(divergencia(venda({ valor_recebido: null }))).toBeNull();
   });
 
+  // A construtora deposita a BRUTA. O imposto é pago depois, pela casa.
+  it('recebimento igual à comissão bruta NÃO é divergência', () => {
+    expect(divergencia(venda({ valor_recebido: 30000 }))).toBeNull();
+  });
+
+  it('e receber a líquida É divergência — faltou o imposto no depósito', () => {
+    const d = divergencia(venda({ valor_recebido: 28200 }));
+    expect(d?.sentido).toBe('a_menos');
+    expect(d?.texto).toContain('1.800,00');
+  });
+
   it('não acusa diferença de centavo', () => {
-    expect(divergencia(venda({ valor_recebido: 28200.004 }))).toBeNull();
+    expect(divergencia(venda({ valor_recebido: 30000.004 }))).toBeNull();
   });
 
   it('acusa o que entrou a menos, com o valor', () => {
     const d = divergencia(venda({ valor_recebido: 25000 }));
     expect(d?.sentido).toBe('a_menos');
-    expect(d?.texto).toContain('3.200,00');
+    expect(d?.texto).toContain('5.000,00');
   });
 
   it('acusa também o que entrou A MAIS — dinheiro sobrando é erro igual', () => {
-    expect(divergencia(venda({ valor_recebido: 30000 }))?.sentido).toBe('a_mais');
+    expect(divergencia(venda({ valor_recebido: 31000 }))?.sentido).toBe('a_mais');
   });
 });
 
@@ -98,13 +109,15 @@ describe('a entrada do motor de comissão', () => {
   });
 
   it('impede quando a comissão está zerada — nada para repassar', () => {
-    const r = entradaDoMotor(venda({ comissao_liquida: 0 }), equipe);
+    const r = entradaDoMotor(venda({ comissao_bruta: 0 }), equipe);
     expect('impedimento' in r && r.impedimento).toContain('zerada');
   });
 
-  it('divide a LÍQUIDA, não a bruta — o imposto já saiu', () => {
+  // Medido na planilha da Lotus: em 26 das 31 vendas, corretor + líder dão
+  // exatamente 60% do BRUTO. Dividir a líquida pagaria 6% a menos a cada um.
+  it('divide a BRUTA, não a líquida — o imposto sai dos 40% da casa', () => {
     const r = entradaDoMotor(venda(), equipe);
-    expect('entrada' in r && r.entrada.tipo !== 'permuta' && r.entrada.comissaoTotal).toBe(28200);
+    expect('entrada' in r && r.entrada.tipo !== 'permuta' && r.entrada.comissaoTotal).toBe(30000);
   });
 
   it('lançamento não tem ponta de captação; venda de terceiros tem', () => {
@@ -116,12 +129,23 @@ describe('a entrada do motor de comissão', () => {
 });
 
 describe('os repasses da venda', () => {
-  it('fecham a comissão líquida inteira', () => {
+  it('fecham a comissão bruta inteira', () => {
     const r = repassesDaVenda(venda(), equipe);
     expect('linhas' in r).toBe(true);
     if (!('linhas' in r)) return;
     const soma = r.linhas.reduce((s, l) => s + l.valor, 0);
-    expect(soma).toBeCloseTo(28200, 2);
+    expect(soma).toBeCloseTo(30000, 2);
+  });
+
+  // O caso real da planilha: júnior com líder coordenador. 40% + 20% + 40%.
+  it('reproduzem a planilha da Lotus: corretor 40%, líder 20%, casa 40%', () => {
+    const r = repassesDaVenda(venda(), equipe);
+    if (!('linhas' in r)) throw new Error('deveria ter calculado');
+    const por = (papel: string) =>
+      r.linhas.filter((l) => l.papel === papel).reduce((s, l) => s + l.valor, 0);
+    expect(por('corretor')).toBeCloseTo(12000, 2);
+    expect(por('lider')).toBeCloseTo(6000, 2);
+    expect(por('lotus')).toBeCloseTo(12000, 2);
   });
 
   it('gravam o nível de cada pessoa, para a promoção de amanhã não mexer', () => {

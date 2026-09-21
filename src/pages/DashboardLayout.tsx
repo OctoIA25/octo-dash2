@@ -87,6 +87,9 @@ const DemandasPage = lazyWithRetry(() => import('@/features/marketing/DemandasPa
 
 // P4.4 — a conferência de vendas.
 const ConferenciaDeVendasPage = lazyWithRetry(() => import('@/features/comercial/ConferenciaDeVendasPage').then(m => ({ default: m.ConferenciaDeVendasPage })));
+
+// P4.5 — o Financeiro fase 1.
+const FinanceiroPage = lazyWithRetry(() => import('@/features/financeiro/FinanceiroPage').then(m => ({ default: m.FinanceiroPage })));
 const BolsaoPage = lazyWithRetry(() => import('@/features/leads/pages/BolsaoPage').then(m => ({ default: m.BolsaoPage })));
 const CentralLeadsPage = lazyWithRetry(() => import('@/features/leads/pages/CentralLeadsPage').then(m => ({ default: m.CentralLeadsPage })));
 const CorretoresPage = lazyWithRetry(() => import('@/features/corretores/pages/CorretoresPage').then(m => ({ default: m.CorretoresPage })));
@@ -257,6 +260,7 @@ const DashboardLayout = () => {
           <Route path="pdi" element={<PdiPage />} />
           <Route path="marketing/demandas" element={<DemandasPage />} />
           <Route path="comercial/vendas" element={<ConferenciaDeVendasPage />} />
+          <Route path="financeiro" element={<FinanceiroPage />} />
 
           <Route 
             path="bolsao" 

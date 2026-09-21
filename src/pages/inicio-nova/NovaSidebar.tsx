@@ -32,6 +32,7 @@ import {
   Target,
   Calculator,
   Receipt,
+  Wallet,
 } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { TenantSwitcher } from '@/components/TenantSwitcher';
@@ -123,6 +124,24 @@ const GROUPS: SidebarGroup[] = [
           { id: 'mkt-campanhas', label: 'Campanhas e ROI', icon: Target, route: '/relatorios?tab=marketing&view=campanhas' },
           { id: 'mkt-anuncios', label: 'Anúncios', icon: BarChart3, route: '/relatorios?tab=marketing&view=anuncios' },
           { id: 'mkt-formularios', label: 'Formulários da Meta', icon: ClipboardList, route: '/relatorios?tab=formularios-meta' },
+        ],
+      },
+    ],
+  },
+  {
+    // P4.5 — o Financeiro é seção própria: o plano manda restringi-lo a quem
+    // cuida do dinheiro, e ele não é um relatório comercial.
+    title: 'FINANCEIRO',
+    items: [
+      {
+        id: 'financeiro',
+        label: 'Financeiro',
+        icon: Wallet,
+        route: '/financeiro',
+        permission: 'relatorios',
+        subItems: [
+          { id: 'fin-receber', label: 'A receber', icon: Receipt, route: '/financeiro' },
+          { id: 'fin-vendas', label: 'Conferência de vendas', icon: Receipt, route: '/comercial/vendas' },
         ],
       },
     ],
