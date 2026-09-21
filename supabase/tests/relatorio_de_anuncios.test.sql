@@ -293,7 +293,48 @@ BEGIN
     RAISE EXCEPTION 'FALHOU: quem não é do tenant leu os toques';
   END IF;
 
-  RAISE NOTICE 'OK: relatório de anúncios — 10 casos';
+  -- ----------------------------------------------------------
+  -- 11. CLICAR NUMA CAMPANHA MOSTRA QUEM RECEBEU.
+  --
+  -- É o critério de pronto do item, por escrito no plano. E as definições são
+  -- as MESMAS da matriz: "atendido em 1h" é o corretor, não a LIA.
+  -- ----------------------------------------------------------
+  PERFORM set_config('request.jwt.claims', json_build_object('sub', gestor::text)::text, true);
+
+  UPDATE leads SET meta_campaign_id = 'c1' WHERE id IN (l1, l2, l4);
+
+  r := corretores_da_campanha(t, 'c1', '2026-09-01', '2026-09-30');
+  IF jsonb_array_length(r->'linhas') <> 1 THEN
+    RAISE EXCEPTION 'FALHOU: só a Ana recebeu leads da c1, vieram % linhas', jsonb_array_length(r->'linhas');
+  END IF;
+
+  SELECT e INTO x FROM jsonb_array_elements(r->'linhas') e WHERE e->>'quem' = 'Ana';
+  IF (x->>'recebidos')::int <> 2 THEN
+    RAISE EXCEPTION 'FALHOU: a Ana recebeu 2 leads da campanha, veio %', x->>'recebidos';
+  END IF;
+  -- Mesma definição da matriz: a Ana atendeu 1 em 30 min e outro em 5h.
+  IF (x->>'atendidos_1h')::int <> 1 THEN
+    RAISE EXCEPTION 'FALHOU: atendimento em 1h na campanha deu %, esperado 1', x->>'atendidos_1h';
+  END IF;
+
+  -- O lead pago que não chegou a ninguém: o número mais caro da tela.
+  IF (r->>'sem_corretor')::int <> 1 THEN
+    RAISE EXCEPTION 'FALHOU: 1 lead da campanha está sem corretor, a função diz %', r->>'sem_corretor';
+  END IF;
+
+  -- Campanha sem lead nenhum não é erro.
+  r := corretores_da_campanha(t, 'campanha_vazia', '2026-09-01', '2026-09-30');
+  IF jsonb_array_length(r->'linhas') <> 0 OR (r->>'sem_corretor')::int <> 0 THEN
+    RAISE EXCEPTION 'FALHOU: campanha sem lead deveria vir vazia';
+  END IF;
+
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', '0ddd0000-0000-4000-a000-000000000099')::text, true);
+  IF corretores_da_campanha(t, 'c1', '2026-09-01', '2026-09-30') IS NOT NULL THEN
+    RAISE EXCEPTION 'FALHOU: quem não é do tenant viu quem recebeu a campanha';
+  END IF;
+
+  RAISE NOTICE 'OK: relatório de anúncios — 11 casos';
 END
 $$;
 

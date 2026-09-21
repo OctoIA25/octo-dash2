@@ -134,3 +134,34 @@ export async function carregarConfigDeAnuncios(tenantId: string): Promise<Config
   if (error) throw error;
   return (data as ConfigDeAnuncios) ?? vazia;
 }
+
+export interface CorretorDaCampanha {
+  quem: string;
+  recebidos: number;
+  atendidos_1h: number;
+  minutos_medio: number | null;
+  visita: number;
+  proposta: number;
+  venda: number;
+}
+
+/**
+ * Quem recebeu os leads de uma campanha — o critério de pronto do P3.6.
+ *
+ * Mesmas definições da matriz: "atendido em 1h" é o corretor, não a LIA, e
+ * "venda" é a etapa do funil. Duas definições para a mesma palavra na mesma
+ * tela seria pior do que não ter a tela.
+ */
+export async function carregarCorretoresDaCampanha(
+  tenantId: string,
+  campaignId: string,
+  de: string,
+  ate: string
+): Promise<{ linhas: CorretorDaCampanha[]; sem_corretor: number } | null> {
+  if (!tenantId || tenantId === 'owner' || !campaignId) return null;
+  const { data, error } = await supabase.rpc('corretores_da_campanha', {
+    p_tenant_id: tenantId, p_campaign_id: campaignId, p_de: de, p_ate: ate,
+  });
+  if (error) throw error;
+  return (data as { linhas: CorretorDaCampanha[]; sem_corretor: number }) ?? null;
+}

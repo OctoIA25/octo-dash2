@@ -18,6 +18,8 @@ import { AlertTriangle, ChevronDown, ChevronRight, Info, Loader2, RefreshCw } fr
 import { useAuthContext } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { percentual } from '@/features/kpis/utils/painelComercial';
+import { carregarConfigDeAnuncios, carregarCorretoresDaCampanha } from './anunciosService';
+import { semaforo, taxa, type Faixa } from './anuncios';
 import {
   carregarCampanhas, carregarDetalhe, qualificadosPorCampanha, sincronizarGasto,
   type LinhaDeDetalhe,
@@ -29,6 +31,14 @@ import {
 
 const inteiro = (n: number | null | undefined) =>
   n == null ? '—' : n.toLocaleString('pt-BR');
+
+/** As mesmas cores da matriz de eficiência, para não reaprender em cada tela. */
+const COR_SEMAFORO: Record<Faixa, string> = {
+  boa: 'bg-emerald-500',
+  media: 'bg-amber-500',
+  ruim: 'bg-rose-500',
+  sem: 'bg-muted-foreground/30',
+};
 
 export function CampanhasTab() {
   const { user, isAdmin } = useAuthContext();
@@ -55,6 +65,12 @@ export function CampanhasTab() {
     () => filtrarPorEmpreendimento(todas, empreendimento),
     [todas, empreendimento]
   );
+
+  const { data: configAnuncios } = useQuery({
+    queryKey: ['anuncios-config', tenantId],
+    queryFn: () => carregarConfigDeAnuncios(tenantId!),
+    enabled: !!tenantId && tenantId !== 'owner',
+  });
 
   const { data: qualificados } = useQuery({
     queryKey: ['campanhas-qualificados', tenantId, de, ate, campanhas.length],
@@ -194,7 +210,9 @@ export function CampanhasTab() {
           )}
 
           <Tabela campanhas={campanhas} qualificados={qualificados ?? {}}
-            tenantId={tenantId} de={de} ate={ate} />
+            tenantId={tenantId} de={de} ate={ate}
+            alvo={configAnuncios?.custo_alvo_qualificado ?? null}
+            limite={configAnuncios?.custo_limite_qualificado ?? null} />
 
           <PainelDeRoi
             disponivel={data.roi_disponivel}
@@ -225,12 +243,16 @@ function Tabela({
   tenantId,
   de,
   ate,
+  alvo,
+  limite,
 }: {
   campanhas: Campanha[];
   qualificados: Record<string, number>;
   tenantId: string;
   de: string;
   ate: string;
+  alvo: number | null;
+  limite: number | null;
 }) {
   const [aberta, setAberta] = useState<string | null>(null);
   return (
@@ -248,6 +270,7 @@ function Tabela({
             <th className="px-3 py-2 text-right">Na Dash</th>
             <th className="px-3 py-2 text-right">Qualificados</th>
             <th className="px-3 py-2 text-right">R$/qualificado</th>
+            <th className="px-3 py-2 text-center">Sinal</th>
           </tr>
         </thead>
         <tbody className="divide-y">
@@ -295,13 +318,27 @@ function Tabela({
                     ? reaisExatos(porUnidade(c.gasto, q))
                     : <span className="text-muted-foreground">—</span>}
                 </td>
+                <td className="px-3 py-2 text-center">
+                  {(() => {
+                    const s = semaforo(
+                      c.atribuivel && q != null ? porUnidade(c.gasto, q) : null, alvo, limite
+                    );
+                    return (
+                      <span
+                        className={`inline-block h-2.5 w-2.5 rounded-full ${COR_SEMAFORO[s.cor]}`}
+                        title={s.texto}
+                        aria-label={s.texto}
+                      />
+                    );
+                  })()}
+                </td>
               </tr>
             );
           })}
           {campanhas.map((c) =>
             aberta === c.campaign_id ? (
               <tr key={`${c.campaign_id}-detalhe`}>
-                <td colSpan={10} className="bg-muted/30 px-3 py-2">
+                <td colSpan={11} className="bg-muted/30 px-3 py-2">
                   <Detalhe tenantId={tenantId} campaignId={c.campaign_id} de={de} ate={ate} />
                 </td>
               </tr>
@@ -312,6 +349,7 @@ function Tabela({
       <p className="border-t px-3 py-2 text-[11px] text-muted-foreground">
         Qualificado = score acima do limite da imobiliária <strong>ou</strong> já chegou em Visita agendada.
         O score é o mesmo da lista de leads — não há uma segunda conta aqui.
+        {alvo == null && ' O sinal fica cinza porque não há alvo de custo por qualificado cadastrado — sem ele, a tela não tem como dizer o que é caro.'}
       </p>
     </div>
   );
@@ -394,9 +432,71 @@ function Detalhe({
   if (!data) return null;
 
   return (
-    <div className="grid gap-4 md:grid-cols-2">
-      <Nivel titulo="Conjuntos" linhas={data.conjuntos} campo="adset_nome" />
-      <Nivel titulo="Anúncios" linhas={data.anuncios} campo="ad_nome" />
+    <div className="space-y-4">
+      <div className="grid gap-4 md:grid-cols-2">
+        <Nivel titulo="Conjuntos" linhas={data.conjuntos} campo="adset_nome" />
+        <Nivel titulo="Anúncios" linhas={data.anuncios} campo="ad_nome" />
+      </div>
+      <QuemRecebeu tenantId={tenantId} campaignId={campaignId} de={de} ate={ate} />
+    </div>
+  );
+}
+
+/**
+ * Quem recebeu os leads desta campanha, e até onde levou (P3.6).
+ *
+ * É o critério de pronto do item, por escrito no plano. As definições são as
+ * MESMAS da matriz de eficiência: "em 1h" é o corretor falando (não a LIA), e
+ * "venda" é a etapa do funil.
+ */
+function QuemRecebeu({
+  tenantId,
+  campaignId,
+  de,
+  ate,
+}: {
+  tenantId: string;
+  campaignId: string;
+  de: string;
+  ate: string;
+}) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['campanha-corretores', tenantId, campaignId, de, ate],
+    queryFn: () => carregarCorretoresDaCampanha(tenantId, campaignId, de, ate),
+    enabled: !!tenantId && !!campaignId,
+  });
+
+  if (isLoading || !data) return null;
+
+  return (
+    <div>
+      <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        Quem recebeu
+      </p>
+      {data.linhas.length === 0 ? (
+        <p className="text-[11px] text-muted-foreground">
+          Nenhum lead desta campanha chegou a um corretor no período.
+        </p>
+      ) : (
+        <ul className="divide-y rounded-md border bg-background">
+          {data.linhas.map((c) => (
+            <li key={c.quem} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-2 py-1.5 text-xs">
+              <span className="font-medium">{c.quem}</span>
+              <span className="tabular-nums text-muted-foreground">
+                {c.recebidos} recebido{c.recebidos === 1 ? '' : 's'}
+                {' · '}{taxa(c.atendidos_1h, c.recebidos).texto} em 1h
+                {' · '}{taxa(c.visita, c.recebidos).texto} chegou à visita
+                {c.minutos_medio != null && ` · 1º contato em ${inteiro(c.minutos_medio)} min`}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {data.sem_corretor > 0 && (
+        <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">
+          {inteiro(data.sem_corretor)} lead(s) pagos desta campanha não chegaram a corretor nenhum.
+        </p>
+      )}
     </div>
   );
 }

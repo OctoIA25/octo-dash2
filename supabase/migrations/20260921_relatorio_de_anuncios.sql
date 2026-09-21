@@ -538,3 +538,97 @@ $function$;
 
 REVOKE ALL ON FUNCTION public.toques_por_origem(uuid, date, date) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.toques_por_origem(uuid, date, date) TO authenticated, service_role;
+
+-- ------------------------------------------------------------
+-- 7. Quem recebeu os leads de uma campanha
+-- ------------------------------------------------------------
+-- É o critério de pronto do item, por escrito no plano: "clicar numa campanha
+-- mostra quais corretores receberam e quanto converteram".
+--
+-- Mesmas definições da matriz, de propósito: "atendido em 1h" é o corretor
+-- (não a LIA) e "venda" é a etapa do funil. Duas definições para a mesma
+-- palavra na mesma tela seria pior do que não ter a tela.
+CREATE OR REPLACE FUNCTION public.corretores_da_campanha(
+  p_tenant_id   uuid,
+  p_campaign_id text,
+  p_de          date DEFAULT NULL,
+  p_ate         date DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_caller uuid := auth.uid();
+  v_hoje date := (now() AT TIME ZONE 'America/Sao_Paulo')::date;
+  v_de date := COALESCE(p_de, date_trunc('month', v_hoje)::date);
+  v_ate date := COALESCE(p_ate, v_hoje);
+  v_linhas jsonb;
+  v_sem_corretor int;
+BEGIN
+  IF p_tenant_id IS NULL OR COALESCE(p_campaign_id, '') = '' THEN RETURN NULL; END IF;
+
+  IF v_caller IS NOT NULL
+     AND NOT public.is_platform_owner()
+     AND NOT EXISTS (
+       SELECT 1 FROM tenant_memberships tm
+       WHERE tm.user_id = v_caller AND tm.tenant_id = p_tenant_id
+     )
+  THEN
+    RETURN NULL;
+  END IF;
+
+  WITH base AS (
+    SELECT NULLIF(btrim(l.assigned_agent_name), '') AS corretor,
+           l.status,
+           pi.minutos_ate_primeiro_contato AS minutos
+      FROM leads l
+      LEFT JOIN primeira_interacao_corretor pi
+             ON pi.lead_id = l.id AND pi.tenant_id = l.tenant_id
+     WHERE l.tenant_id = p_tenant_id
+       AND l.meta_campaign_id = p_campaign_id
+       AND (l.created_at AT TIME ZONE 'America/Sao_Paulo')::date >= v_de
+       AND (l.created_at AT TIME ZONE 'America/Sao_Paulo')::date <= v_ate
+  )
+  SELECT
+    COALESCE((
+      SELECT jsonb_agg(jsonb_build_object(
+               'quem', corretor,
+               'recebidos', recebidos,
+               'atendidos_1h', atendidos_1h,
+               'minutos_medio', minutos_medio,
+               'visita', visita,
+               'proposta', proposta,
+               'venda', venda
+             ) ORDER BY recebidos DESC)
+        FROM (
+          SELECT corretor,
+                 count(*) AS recebidos,
+                 count(*) FILTER (WHERE minutos IS NOT NULL AND minutos <= 60) AS atendidos_1h,
+                 round(avg(minutos) FILTER (WHERE minutos IS NOT NULL)) AS minutos_medio,
+                 count(*) FILTER (WHERE status = ANY (public.etapas_da_visita_em_diante())) AS visita,
+                 count(*) FILTER (WHERE status IN ('Proposta Criada', 'Proposta Enviada', 'Proposta Assinada')) AS proposta,
+                 count(*) FILTER (WHERE status = 'Proposta Assinada') AS venda
+            FROM base
+           WHERE corretor IS NOT NULL
+           GROUP BY corretor
+        ) x
+    ), '[]'::jsonb),
+    -- Lead pago que não chegou a ninguém. É o número mais caro da tela, e por
+    -- isso vem separado em vez de sumir do agrupamento.
+    (SELECT count(*) FROM base WHERE corretor IS NULL)
+  INTO v_linhas, v_sem_corretor;
+
+  RETURN jsonb_build_object(
+    'campaign_id', p_campaign_id,
+    'de', v_de, 'ate', v_ate,
+    'linhas', v_linhas,
+    'sem_corretor', v_sem_corretor
+  );
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.corretores_da_campanha(uuid, text, date, date) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.corretores_da_campanha(uuid, text, date, date) TO authenticated, service_role;

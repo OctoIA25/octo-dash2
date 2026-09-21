@@ -18,10 +18,12 @@ import { useAuthContext } from '@/contexts/AuthContext';
 import { percentual } from '@/features/kpis/utils/painelComercial';
 import { reaisExatos } from './campanhas';
 import {
-  carregarCpa, carregarMatriz, carregarToques, type LinhaDeCpa,
+  carregarCpa, carregarMatriz, carregarToques, listarVerbas, type LinhaDeCpa,
 } from './anunciosService';
+import { carregarCampanhas } from './campanhasService';
+import { empreendimentoDaCampanha } from './campanhas';
 import {
-  corDaTaxa, leituraDoSaldo, taxa, valeOlharToques,
+  consumoDaVerba, corDaTaxa, leituraDoSaldo, taxa, valeOlharToques,
   type Faixa, type LinhaDaMatriz, type LinhaDeToque, type Taxa,
 } from './anuncios';
 
@@ -55,6 +57,19 @@ export function AnunciosTab() {
     queryFn: () => carregarCpa(tenantId!, de, ate),
     enabled: !!tenantId && tenantId !== 'owner',
   });
+  const verbas = useQuery({
+    queryKey: ['anuncios-verbas', tenantId, mes],
+    queryFn: () => listarVerbas(tenantId!, mes),
+    enabled: !!tenantId && tenantId !== 'owner',
+  });
+  // O gasto vem da MESMA fonte da aba Campanhas. Uma segunda consulta para o
+  // mesmo número daria duas verdades sobre quanto se gastou.
+  const gasto = useQuery({
+    queryKey: ['anuncios-gasto', tenantId, de, ate],
+    queryFn: () => carregarCampanhas(tenantId!, de, ate),
+    enabled: !!tenantId && tenantId !== 'owner',
+  });
+
   const toques = useQuery({
     queryKey: ['anuncios-toques', tenantId, de, ate],
     queryFn: () => carregarToques(tenantId!, de, ate),
@@ -125,6 +140,11 @@ export function AnunciosTab() {
       <CpaSecao
         carregando={cpa.isLoading}
         dados={cpa.data ?? null}
+      />
+
+      <VerbaSecao
+        verbas={verbas.data ?? []}
+        campanhas={gasto.data?.campanhas ?? []}
       />
 
       <ToquesSecao
@@ -358,6 +378,74 @@ function ToquesSecao({
           </div>
         </>
       )}
+    </section>
+  );
+}
+
+/**
+ * Verba planejada contra gasto real (P3.6).
+ *
+ * A verba é cadastrada por empreendimento ou por campanha; o gasto vem da
+ * mesma fonte da aba Campanhas. Uma linha sem verba cadastrada NÃO aparece
+ * aqui — a tela não inventa um planejamento que ninguém fez.
+ */
+function VerbaSecao({
+  verbas,
+  campanhas,
+}: {
+  verbas: Array<{ id: string; empreendimento: string | null; campaign_id: string | null; valor: number }>;
+  campanhas: Array<{ campaign_id: string; campaign_nome: string; gasto: number }>;
+}) {
+  if (verbas.length === 0) {
+    return (
+      <section className="space-y-2">
+        <h3 className="text-sm font-semibold">Verba planejada × gasta</h3>
+        <p className="rounded-md border p-3 text-xs text-muted-foreground">
+          Nenhuma verba cadastrada para este mês. Sem o planejado, a tela não tem contra o que comparar
+          o gasto — e inventar um alvo seria pior do que não mostrar a barra.
+        </p>
+      </section>
+    );
+  }
+
+  const linhas = verbas.map((v) => {
+    // Verba de campanha casa pelo id; verba de empreendimento soma todas as
+    // campanhas cujo nome traz aquele empreendimento entre colchetes.
+    const gasto = v.campaign_id
+      ? campanhas.filter((c) => c.campaign_id === v.campaign_id).reduce((s, c) => s + c.gasto, 0)
+      : campanhas
+          .filter((c) => empreendimentoDaCampanha(c.campaign_nome) === (v.empreendimento ?? '').toUpperCase())
+          .reduce((s, c) => s + c.gasto, 0);
+    const alvo = v.campaign_id
+      ? campanhas.find((c) => c.campaign_id === v.campaign_id)?.campaign_nome ?? v.campaign_id
+      : v.empreendimento ?? '';
+    return { id: v.id, alvo, planejado: v.valor, gasto, consumo: consumoDaVerba(v.valor, gasto) };
+  });
+
+  return (
+    <section className="space-y-2">
+      <h3 className="text-sm font-semibold">Verba planejada × gasta</h3>
+      <div className="space-y-2 rounded-md border p-3">
+        {linhas.map((l) => (
+          <div key={l.id}>
+            <div className="flex flex-wrap items-baseline justify-between gap-2 text-xs">
+              <span className="font-medium">{l.alvo}</span>
+              <span className="tabular-nums text-muted-foreground">
+                {reaisExatos(l.gasto)} de {reaisExatos(l.planejado)} · {l.consumo.texto}
+              </span>
+            </div>
+            <div className="mt-1 h-1.5 w-full rounded-full bg-muted">
+              <div
+                className={`h-1.5 rounded-full ${
+                  l.consumo.estado === 'ruim' ? 'bg-rose-500'
+                    : l.consumo.estado === 'media' ? 'bg-amber-500' : 'bg-emerald-500'
+                }`}
+                style={{ width: `${l.consumo.larguraDaBarra}%` }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }
