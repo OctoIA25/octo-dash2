@@ -586,6 +586,9 @@ export const ElaineChat = ({
         status: chatStatusFrom(result),
         durationMs: Date.now() - sendStartedMs,
         errorMessage: result.success ? null : result.error || null,
+        // O uso vem do webhook quando ele conta (P2.8).
+        uso: result.uso,
+        etapa: 'conversa',
       });
 
       if (!result.success) {

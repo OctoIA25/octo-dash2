@@ -14,6 +14,7 @@
  * Privacidade: o evento carrega métricas e ids — nunca o texto da mensagem.
  */
 import { authedFetch } from '@/features/comunicacao/services/authedFetch';
+import type { UsoDaChamada } from './usoDaIa';
 
 export type ChatTelemetryStatus = 'ok' | 'empty_response' | 'error';
 
@@ -25,6 +26,15 @@ export interface ChatTelemetryEvent {
   status: ChatTelemetryStatus;
   durationMs?: number;
   errorMessage?: string | null;
+  /**
+   * O que a chamada consumiu (P2.8). Sem isto o evento chega sem modelo nem
+   * token, e a Telemetria mostra "custo —" para agentes que rodam AQUI, com o
+   * `usage` da resposta na mão. Era o caso dos 19 eventos gravados até 21/09:
+   * nenhum tinha token.
+   */
+  uso?: UsoDaChamada;
+  /** Em que ponto do atendimento (abertura, conversa, handoff…). */
+  etapa?: string;
 }
 
 /**
@@ -56,6 +66,20 @@ export async function emitChatTelemetry(evt: ChatTelemetryEvent): Promise<void> 
         execution_id: evt.conversationId ?? null,
         duration_ms: evt.durationMs,
         error_message: evt.errorMessage ?? null,
+        // O uso só entra quando existe. Mandar zero seria pior que não mandar:
+        // "não informado" e "custou zero" são coisas diferentes, e a tela
+        // precisa distinguir para não anunciar IA barata por falta de dado.
+        ...(evt.uso
+          ? {
+              model: evt.uso.modelo,
+              provider: 'openai',
+              input_tokens: evt.uso.tokensEntrada,
+              output_tokens: evt.uso.tokensSaida,
+              cached_tokens: evt.uso.tokensCache,
+              total_tokens: evt.uso.tokensEntrada + evt.uso.tokensSaida,
+            }
+          : {}),
+        ...(evt.etapa ? { etapa: evt.etapa } : {}),
       }),
       // Sobrevive à navegação: o envio segue mesmo se o usuário trocar de página.
       keepalive: true,

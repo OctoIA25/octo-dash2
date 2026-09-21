@@ -33,12 +33,24 @@ export interface ApiKeyConfig {
   model: string;
 }
 
+import type { UsoDaChamada } from './usoDaIa';
+import { lerUso } from './usoDaIa';
+
 export interface OpenAIResponse {
   success: boolean;
   message?: string;
   error?: string;
   toolCalls?: ToolCall[];
+  /**
+   * O que a chamada consumiu (P2.8).
+   *
+   * A OpenAI devolve isso em toda resposta e nós jogávamos fora — por isso a
+   * Telemetria mostrava "custo —" para o Caio e a Elaine, que rodam daqui.
+   * Sem depender de ninguém: o dado sempre esteve na mão.
+   */
+  uso?: UsoDaChamada;
 }
+
 
 // ============================================================================
 // SYSTEM PROMPT - Especialista em Avaliação Imobiliária
@@ -313,7 +325,7 @@ export async function sendChatMessage(
       return { success: false, error: 'Resposta vazia da IA.' };
     }
 
-    return { success: true, message: content };
+    return { success: true, message: content, uso: lerUso(data, model) };
   } catch (err: any) {
     return { success: false, error: err.message || 'Erro de conexão com a OpenAI' };
   }
@@ -368,6 +380,7 @@ export async function sendChatMessageWithTools(
         success: true,
         message: choice.message?.content || null,
         toolCalls: choice.message.tool_calls,
+        uso: lerUso(data, model),
       };
     }
 
@@ -375,6 +388,7 @@ export async function sendChatMessageWithTools(
     return {
       success: true,
       message: choice.message?.content || '',
+      uso: lerUso(data, model),
     };
   } catch (err: any) {
     return { success: false, error: err.message || 'Erro de conexão com a OpenAI' };

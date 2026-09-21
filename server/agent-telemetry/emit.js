@@ -19,6 +19,16 @@ export const EVENT_TYPES = ['execution', 'llm_call', 'tool_call', 'handoff', 'er
 export const EVENT_STATUSES = ['ok', 'error', 'timeout', 'empty_response', 'refused'];
 
 const MAX_SHORT_TEXT = 200;        // slugs, modelo, provider, tool, execution_id
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * `lead_id` é uuid no banco: texto que não seja uuid vira NULO em vez de
+ * derrubar a gravação. Telemetria nunca pode custar a chamada que ela mede.
+ */
+function toUuidOrNull(v) {
+  const s = String(v ?? '').trim();
+  return UUID_RE.test(s) ? s : null;
+}
 const MAX_ERROR_TEXT = 500;        // error_message
 const MAX_METADATA_JSON = 2000;    // metadata serializada (cap anti-abuso)
 const MAX_FUTURE_SKEW_MS = 5 * 60_000; // occurred_at até 5min à frente (skew n8n)
@@ -115,6 +125,12 @@ export function normalizeEvent(raw, { now = Date.now() } = {}) {
       error_class: toShortText(raw.error_class),
       error_message: toShortText(raw.error_message, MAX_ERROR_TEXT),
       tool_name: toShortText(raw.tool_name),
+      // P2.8 — o recorte do custo. `etapa` é texto livre: cada agente tem as
+      // suas, e uma lista fechada obrigaria deploy a cada etapa nova.
+      etapa: toShortText(raw.etapa),
+      lead_id: toUuidOrNull(raw.lead_id),
+      conversa_id: toShortText(raw.conversa_id),
+      documento_id: toShortText(raw.documento_id),
       metadata,
       occurred_at: new Date(occurredMs).toISOString(),
     },

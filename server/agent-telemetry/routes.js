@@ -29,7 +29,7 @@
 
 import { isPlatformOwner } from '../utils/ownerAuth.js';
 import { normalizeEvent } from './emit.js';
-import { costForModelBreakdown } from './pricing.js';
+import { costForModelBreakdown, precosCadastrados } from './pricing.js';
 import { computeEscalationMetrics } from './derive/escalations.js';
 import { fetchEscalationRows, fetchClosedLeadIds } from './derive/escalationsQuery.js';
 import { computeCostMetrics } from './derive/costMetrics.js';
@@ -272,7 +272,11 @@ export function registerAgentTelemetryRoutes(app, supabase) {
       // Custo derivado na leitura: tokens por modelo × pricing.js. Modelo sem
       // preço fica em unknown_models (a UI mostra "—", nunca estima).
       const summary = data || {};
-      const { rows, totalUsd, unknownModels } = costForModelBreakdown(summary.by_model || []);
+      // A tabela `ia_precos` manda (P2.8); sem ela, o mapa do código. Sem isto
+      // esta tela e o painel de custo mostrariam números diferentes para a
+      // mesma pergunta — foi o que aconteceu ao ligar o painel novo.
+      const tabelaDePrecos = await precosCadastrados(supabase, scope.tenantId, console);
+      const { rows, totalUsd, unknownModels } = costForModelBreakdown(summary.by_model || [], tabelaDePrecos);
       return res.json({
         window: { from: window.from, to: window.to },
         summary: {

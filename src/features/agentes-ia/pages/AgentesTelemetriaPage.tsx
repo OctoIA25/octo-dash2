@@ -38,6 +38,7 @@ import {
   TelemetryLatencyChart,
   TelemetryTrendChart,
 } from '../components/telemetria/TelemetriaCharts';
+import { CustoDeIaSection } from '../components/CustoDeIaSection';
 
 const WINDOW_OPTIONS: Array<{ key: TelemetryWindowKey; label: string }> = [
   { key: '7d', label: '7 dias' },
@@ -313,6 +314,12 @@ export const AgentesTelemetriaPage = () => {
                 ))}
               </select>
             </div>
+          </div>
+
+          {/* P2.8 — o custo, com a cobertura da medição ANTES dos números.
+              Um custo parcial apresentado como total é pior que custo nenhum. */}
+          <div className="mt-5">
+            <CustoDeIaSection dias={30} />
           </div>
 
           {!hasTenant ? (

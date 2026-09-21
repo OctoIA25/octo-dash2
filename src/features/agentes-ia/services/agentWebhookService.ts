@@ -22,6 +22,9 @@
  */
 
 import { getDailySessionId } from '@/utils/snowflakeId';
+import { lerUso, type UsoDaChamada } from './usoDaIa';
+
+export type { UsoDaChamada };
 
 export interface AgentMessage {
   empresa: string;
@@ -72,7 +75,7 @@ export const sendMessageToAgent = async (
   message: string,
   userName: string,
   empresa: string = ''
-): Promise<{ success: boolean; error?: string; response?: string }> => {
+): Promise<{ success: boolean; error?: string; response?: string; uso?: UsoDaChamada }> => {
   // SEMPRE usar a URL padrão - imutável
   const webhookUrl = DEFAULT_WEBHOOK_URL;
 
@@ -164,7 +167,12 @@ export const sendMessageToAgent = async (
 
     return {
       success: true,
-      response: agentResponse
+      response: agentResponse,
+      // P2.8 — o custo da IA. O webhook (n8n) é quem chama o provedor; se ele
+      // devolver o `usage` da resposta, a Dash o repassa à Telemetria e o custo
+      // deixa de ser "—". Enquanto não devolver, fica indefinido — e a tela diz
+      // quantas chamadas vieram sem uso, em vez de anunciar IA barata.
+      uso: lerUso(data, 'desconhecido'),
     };
   } catch (error) {
     console.error('❌ Erro ao enviar mensagem para webhook:', error);
@@ -218,7 +226,7 @@ export const sendMessageToElaine = async (
   tipoMBTI?: string,
   resultadoUsuario?: string,
   empresa: string = ''
-): Promise<{ success: boolean; error?: string; response?: string }> => {
+): Promise<{ success: boolean; error?: string; response?: string; uso?: UsoDaChamada }> => {
   // Escolher webhook baseado no tipo de usuário
   const webhookUrl = userRole === 'corretor'
     ? ELAINE_CORRETOR_WEBHOOK_URL
@@ -469,7 +477,9 @@ ${analises.mbti.interpretacao}
 
     return {
       success: true,
-      response: typeof agentResponse === 'string' ? agentResponse.trim() : agentResponse
+      response: typeof agentResponse === 'string' ? agentResponse.trim() : agentResponse,
+      // P2.8 — o mesmo repasse de uso do agente Caio.
+      uso: lerUso(data, 'desconhecido'),
     };
   } catch (error) {
     console.error('❌ Erro ao enviar mensagem para Elaine:', error);

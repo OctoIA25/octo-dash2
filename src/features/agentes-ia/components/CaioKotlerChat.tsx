@@ -151,6 +151,10 @@ export const CaioKotlerChat = ({
       status: chatStatusFrom(result),
       durationMs: Date.now() - sendStartedMs,
       errorMessage: result.success ? null : result.error || null,
+      // O uso vem do webhook quando ele conta (P2.8). Sem ele o evento entra
+      // sem modelo nem token — que era o caso dos 19 primeiros eventos.
+      uso: result.uso,
+      etapa: 'conversa',
     });
 
     if (!result.success) {
