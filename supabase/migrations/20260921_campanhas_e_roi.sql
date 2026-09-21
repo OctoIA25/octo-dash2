@@ -278,3 +278,101 @@ $function$;
 REVOKE ALL ON FUNCTION public.campanhas_resultado(uuid, date, date) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.campanhas_resultado(uuid, date, date) TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.etapas_da_visita_em_diante() TO authenticated, service_role;
+
+-- ------------------------------------------------------------
+-- 5. Abrir a campanha em conjunto e anúncio
+-- ------------------------------------------------------------
+-- Função à parte, chamada só quando a pessoa abre a linha. Trazer o detalhe de
+-- todas as campanhas junto com a lista deixaria a tela pesada para responder
+-- uma pergunta que quase sempre não é feita.
+--
+-- O grão já está guardado: `meta_insights_diarios` é por ANÚNCIO. Isto só
+-- agrupa de dois jeitos a partir do que já existe.
+CREATE OR REPLACE FUNCTION public.campanha_detalhe(
+  p_tenant_id   uuid,
+  p_campaign_id text,
+  p_de          date DEFAULT NULL,
+  p_ate         date DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_caller uuid := auth.uid();
+  v_hoje date := (now() AT TIME ZONE 'America/Sao_Paulo')::date;
+  v_de date := COALESCE(p_de, date_trunc('month', v_hoje)::date);
+  v_ate date := COALESCE(p_ate, v_hoje);
+  v_conjuntos jsonb;
+  v_anuncios jsonb;
+BEGIN
+  IF p_tenant_id IS NULL OR COALESCE(p_campaign_id, '') = '' THEN RETURN NULL; END IF;
+
+  IF v_caller IS NOT NULL
+     AND NOT public.is_platform_owner()
+     AND NOT EXISTS (
+       SELECT 1 FROM tenant_memberships tm
+       WHERE tm.user_id = v_caller AND tm.tenant_id = p_tenant_id
+     )
+  THEN
+    RETURN NULL;
+  END IF;
+
+  -- Mesma regra do agregado de campanha: CTR, CPC e CPM recalculados dos
+  -- totais, nunca a média dos diários.
+  SELECT COALESCE(jsonb_agg(jsonb_build_object(
+           'adset_id', adset_id,
+           'adset_nome', nome,
+           'gasto', round(gasto, 2),
+           'impressoes', impressoes,
+           'cliques', cliques,
+           'leads_meta', leads_meta,
+           'ctr', CASE WHEN impressoes > 0 THEN round(100.0 * cliques / impressoes, 2) END,
+           'cpc', CASE WHEN cliques > 0 THEN round(gasto / cliques, 2) END,
+           'custo_por_lead', CASE WHEN leads_meta > 0 THEN round(gasto / leads_meta, 2) END
+         ) ORDER BY gasto DESC), '[]'::jsonb) INTO v_conjuntos
+  FROM (
+    SELECT adset_id, max(adset_nome) AS nome, sum(gasto) AS gasto,
+           sum(impressoes) AS impressoes, sum(cliques) AS cliques,
+           sum(leads_meta) AS leads_meta
+      FROM meta_insights_diarios
+     WHERE tenant_id = p_tenant_id AND campaign_id = p_campaign_id
+       AND data >= v_de AND data <= v_ate
+     GROUP BY adset_id
+  ) c;
+
+  SELECT COALESCE(jsonb_agg(jsonb_build_object(
+           'ad_id', ad_id,
+           'ad_nome', nome,
+           'adset_id', adset_id,
+           'gasto', round(gasto, 2),
+           'impressoes', impressoes,
+           'cliques', cliques,
+           'leads_meta', leads_meta,
+           'ctr', CASE WHEN impressoes > 0 THEN round(100.0 * cliques / impressoes, 2) END,
+           'cpc', CASE WHEN cliques > 0 THEN round(gasto / cliques, 2) END,
+           'custo_por_lead', CASE WHEN leads_meta > 0 THEN round(gasto / leads_meta, 2) END
+         ) ORDER BY gasto DESC), '[]'::jsonb) INTO v_anuncios
+  FROM (
+    SELECT ad_id, max(ad_nome) AS nome, max(adset_id) AS adset_id,
+           sum(gasto) AS gasto, sum(impressoes) AS impressoes,
+           sum(cliques) AS cliques, sum(leads_meta) AS leads_meta
+      FROM meta_insights_diarios
+     WHERE tenant_id = p_tenant_id AND campaign_id = p_campaign_id
+       AND data >= v_de AND data <= v_ate
+     GROUP BY ad_id
+  ) a;
+
+  RETURN jsonb_build_object(
+    'campaign_id', p_campaign_id,
+    'de', v_de, 'ate', v_ate,
+    'conjuntos', v_conjuntos,
+    'anuncios', v_anuncios
+  );
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.campanha_detalhe(uuid, text, date, date) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.campanha_detalhe(uuid, text, date, date) TO authenticated, service_role;

@@ -157,3 +157,43 @@ export function reaisExatos(v: number | null | undefined): string {
     })
     .replace(/\u00A0/g, ' ');
 }
+
+/**
+ * O empreendimento da campanha, lido do nome.
+ *
+ * A Lotus nomeia as campanhas com o empreendimento entre colchetes:
+ * "[RESERVA CASTANHEIRA] Reserva Castanheira". Não há campo na Meta que diga
+ * isso — a convenção é da casa, e é a única coisa que liga a campanha ao
+ * lançamento hoje.
+ *
+ * Por isso a tela diz que o filtro é LIDO DO NOME: no dia em que alguém criar
+ * uma campanha sem colchete, ela cai em "sem empreendimento" e fica visível,
+ * em vez de sumir do filtro sem ninguém entender.
+ */
+export function empreendimentoDaCampanha(nome: string): string | null {
+  const m = /^\s*\[([^\]]+)\]/.exec(nome || '');
+  const dentro = m?.[1]?.trim().toUpperCase();
+  if (!dentro) return null;
+  // "[RECRUTAMENTO]" e "[LEAD]" são tipo de campanha, não empreendimento.
+  if (['LEAD', 'LEADS', 'RECRUTAMENTO', 'BRANDING', 'REMARKETING'].includes(dentro)) return null;
+  return dentro;
+}
+
+/** Os empreendimentos presentes, para montar o filtro. */
+export function empreendimentosDas(campanhas: Campanha[]): string[] {
+  const s = new Set<string>();
+  for (const c of campanhas ?? []) {
+    const e = empreendimentoDaCampanha(c.campaign_nome);
+    if (e) s.add(e);
+  }
+  return [...s].sort();
+}
+
+/** Aplica o filtro. Vazio mostra tudo, inclusive as sem empreendimento. */
+export function filtrarPorEmpreendimento(campanhas: Campanha[], alvo: string): Campanha[] {
+  if (!alvo) return campanhas ?? [];
+  if (alvo === '(sem)') {
+    return (campanhas ?? []).filter((c) => empreendimentoDaCampanha(c.campaign_nome) === null);
+  }
+  return (campanhas ?? []).filter((c) => empreendimentoDaCampanha(c.campaign_nome) === alvo);
+}

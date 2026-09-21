@@ -14,14 +14,17 @@
 
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Info, Loader2, RefreshCw } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronRight, Info, Loader2, RefreshCw } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { percentual } from '@/features/kpis/utils/painelComercial';
-import { carregarCampanhas, qualificadosPorCampanha, sincronizarGasto } from './campanhasService';
 import {
-  avisoDeAtribuicao, buracoDeAtribuicao, desdeQuando, pctSemAtribuicao, porUnidade, reaisExatos,
-  type Campanha,
+  carregarCampanhas, carregarDetalhe, qualificadosPorCampanha, sincronizarGasto,
+  type LinhaDeDetalhe,
+} from './campanhasService';
+import {
+  avisoDeAtribuicao, buracoDeAtribuicao, desdeQuando, empreendimentosDas, filtrarPorEmpreendimento,
+  pctSemAtribuicao, porUnidade, reaisExatos, type Campanha,
 } from './campanhas';
 
 const inteiro = (n: number | null | undefined) =>
@@ -34,6 +37,7 @@ export function CampanhasTab() {
   const qc = useQueryClient();
   const [mes, setMes] = useState(() => new Date().toISOString().slice(0, 7));
   const [sincronizando, setSincronizando] = useState(false);
+  const [empreendimento, setEmpreendimento] = useState('');
 
   const de = `${mes}-01`;
   const ate = new Date(Date.UTC(Number(mes.slice(0, 4)), Number(mes.slice(5, 7)), 0))
@@ -45,7 +49,12 @@ export function CampanhasTab() {
     enabled: !!tenantId && tenantId !== 'owner',
   });
 
-  const campanhas = useMemo(() => data?.campanhas ?? [], [data]);
+  const todas = useMemo(() => data?.campanhas ?? [], [data]);
+  const empreendimentos = useMemo(() => empreendimentosDas(todas), [todas]);
+  const campanhas = useMemo(
+    () => filtrarPorEmpreendimento(todas, empreendimento),
+    [todas, empreendimento]
+  );
 
   const { data: qualificados } = useQuery({
     queryKey: ['campanhas-qualificados', tenantId, de, ate, campanhas.length],
@@ -99,6 +108,23 @@ export function CampanhasTab() {
             onChange={(e) => setMes(e.target.value)}
             className="h-8 rounded-md border bg-background px-2 text-sm"
           />
+          {empreendimentos.length > 0 && (
+            <select
+              value={empreendimento}
+              onChange={(e) => setEmpreendimento(e.target.value)}
+              className="h-8 rounded-md border bg-background px-2 text-sm"
+              // O empreendimento não é campo da Meta: vem do colchete no nome
+              // da campanha, que é convenção da casa. A legenda diz isso para
+              // ninguém achar que a Meta o informa.
+              title="Lido do colchete no nome da campanha"
+            >
+              <option value="">Todos os empreendimentos</option>
+              {empreendimentos.map((e) => (
+                <option key={e} value={e}>{e}</option>
+              ))}
+              <option value="(sem)">Sem empreendimento no nome</option>
+            </select>
+          )}
           {isAdmin && (
             <button
               onClick={sincronizar}
@@ -167,7 +193,8 @@ export function CampanhasTab() {
             </p>
           )}
 
-          <Tabela campanhas={campanhas} qualificados={qualificados ?? {}} />
+          <Tabela campanhas={campanhas} qualificados={qualificados ?? {}}
+            tenantId={tenantId} de={de} ate={ate} />
 
           <PainelDeRoi
             disponivel={data.roi_disponivel}
@@ -195,10 +222,17 @@ function Contador({ rotulo, valor, legenda }: { rotulo: string; valor: string; l
 function Tabela({
   campanhas,
   qualificados,
+  tenantId,
+  de,
+  ate,
 }: {
   campanhas: Campanha[];
   qualificados: Record<string, number>;
+  tenantId: string;
+  de: string;
+  ate: string;
 }) {
+  const [aberta, setAberta] = useState<string | null>(null);
   return (
     <div className="overflow-x-auto rounded-md border">
       <table className="w-full min-w-[980px] text-sm">
@@ -223,12 +257,21 @@ function Tabela({
             return (
               <tr key={c.campaign_id} className="align-top">
                 <td className="px-3 py-2">
-                  <span className="font-medium">{c.campaign_nome}</span>
-                  <span className="block text-[11px] text-muted-foreground">
+                  <button
+                    type="button"
+                    onClick={() => setAberta(aberta === c.campaign_id ? null : c.campaign_id)}
+                    className="flex items-start gap-1 text-left font-medium hover:underline"
+                  >
+                    {aberta === c.campaign_id
+                      ? <ChevronDown className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      : <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
+                    {c.campaign_nome}
+                  </button>
+                  <span className="block pl-4 text-[11px] text-muted-foreground">
                     {c.anuncios} anúncio{c.anuncios === 1 ? '' : 's'}
                   </span>
                   {aviso && (
-                    <span className="mt-1 block text-[11px] text-amber-700 dark:text-amber-400">{aviso}</span>
+                    <span className="mt-1 block pl-4 text-[11px] text-amber-700 dark:text-amber-400">{aviso}</span>
                   )}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">{reaisExatos(c.gasto)}</td>
@@ -255,6 +298,15 @@ function Tabela({
               </tr>
             );
           })}
+          {campanhas.map((c) =>
+            aberta === c.campaign_id ? (
+              <tr key={`${c.campaign_id}-detalhe`}>
+                <td colSpan={10} className="bg-muted/30 px-3 py-2">
+                  <Detalhe tenantId={tenantId} campaignId={c.campaign_id} de={de} ate={ate} />
+                </td>
+              </tr>
+            ) : null
+          )}
         </tbody>
       </table>
       <p className="border-t px-3 py-2 text-[11px] text-muted-foreground">
@@ -304,5 +356,80 @@ function PainelDeRoi({
         </p>
       )}
     </section>
+  );
+}
+
+/**
+ * Conjunto e anúncio de uma campanha.
+ *
+ * Carregado só ao abrir: o grão guardado já é por anúncio, mas trazer o
+ * detalhe de todas as campanhas junto com a lista pesaria a tela para
+ * responder uma pergunta que quase sempre não é feita.
+ */
+function Detalhe({
+  tenantId,
+  campaignId,
+  de,
+  ate,
+}: {
+  tenantId: string;
+  campaignId: string;
+  de: string;
+  ate: string;
+}) {
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['campanha-detalhe', tenantId, campaignId, de, ate],
+    queryFn: () => carregarDetalhe(tenantId, campaignId, de, ate),
+    enabled: !!tenantId && !!campaignId,
+  });
+
+  if (isLoading) {
+    return (
+      <p className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Loader2 className="h-3 w-3 animate-spin" /> Abrindo…
+      </p>
+    );
+  }
+  if (isError) return <p className="text-xs text-rose-700 dark:text-rose-300">Não deu para abrir a campanha.</p>;
+  if (!data) return null;
+
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      <Nivel titulo="Conjuntos" linhas={data.conjuntos} campo="adset_nome" />
+      <Nivel titulo="Anúncios" linhas={data.anuncios} campo="ad_nome" />
+    </div>
+  );
+}
+
+function Nivel({
+  titulo,
+  linhas,
+  campo,
+}: {
+  titulo: string;
+  linhas: LinhaDeDetalhe[];
+  campo: 'adset_nome' | 'ad_nome';
+}) {
+  return (
+    <div>
+      <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {titulo}
+      </p>
+      {linhas.length === 0 ? (
+        <p className="text-[11px] text-muted-foreground">Nada neste período.</p>
+      ) : (
+        <ul className="divide-y rounded-md border bg-background">
+          {linhas.map((l, i) => (
+            <li key={String(l.ad_id ?? l.adset_id ?? i)} className="flex items-baseline justify-between gap-2 px-2 py-1.5 text-xs">
+              <span className="min-w-0 flex-1 truncate">{l[campo] || '(sem nome)'}</span>
+              <span className="shrink-0 tabular-nums text-muted-foreground">
+                {reaisExatos(l.gasto)}
+                {l.leads_meta > 0 && ` · ${l.leads_meta} leads · ${reaisExatos(l.custo_por_lead)}/lead`}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

@@ -104,3 +104,41 @@ export async function qualificadosPorCampanha(
   }
   return out;
 }
+
+export interface LinhaDeDetalhe {
+  adset_id?: string;
+  adset_nome?: string;
+  ad_id?: string;
+  ad_nome?: string;
+  gasto: number;
+  impressoes: number;
+  cliques: number;
+  leads_meta: number;
+  ctr: number | null;
+  cpc: number | null;
+  custo_por_lead: number | null;
+}
+
+export interface DetalheDaCampanha {
+  campaign_id: string;
+  conjuntos: LinhaDeDetalhe[];
+  anuncios: LinhaDeDetalhe[];
+}
+
+/** Só quando a pessoa abre a linha: trazer o detalhe de tudo pesaria a tela à toa. */
+export async function carregarDetalhe(
+  tenantId: string,
+  campaignId: string,
+  de: string,
+  ate: string
+): Promise<DetalheDaCampanha | null> {
+  if (!tenantId || tenantId === 'owner' || !campaignId) return null;
+  const { data, error } = await supabase.rpc('campanha_detalhe', {
+    p_tenant_id: tenantId,
+    p_campaign_id: campaignId,
+    p_de: de,
+    p_ate: ate,
+  });
+  if (error) throw error;
+  return (data as DetalheDaCampanha) ?? null;
+}

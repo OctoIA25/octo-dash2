@@ -239,7 +239,48 @@ BEGIN
     RAISE EXCEPTION 'FALHOU: quem não é do tenant leu o gasto de anúncios';
   END IF;
 
-  RAISE NOTICE 'OK: campanhas e ROI — 9 casos';
+  -- ----------------------------------------------------------
+  -- 10. ABRIR A CAMPANHA MOSTRA CONJUNTO E ANÚNCIO.
+  --
+  -- O grão guardado já é por anúncio; isto só agrupa de dois jeitos. As mesmas
+  -- regras valem: CTR e CPC recalculados dos totais.
+  -- ----------------------------------------------------------
+  PERFORM set_config('request.jwt.claims', json_build_object('sub', u::text)::text, true);
+
+  INSERT INTO meta_insights_diarios
+    (tenant_id, data, campaign_id, campaign_nome, adset_id, adset_nome, ad_id, ad_nome,
+     objetivo, resultado_indicador, resultados, gasto, impressoes, cliques, leads_meta) VALUES
+    (t, '2026-09-03', 'c_castanheira', '[RESERVA CASTANHEIRA] Reserva Castanheira',
+     's1', 'Conjunto Jundiaí', 'a_cast_2', 'Anúncio vídeo',
+     'OUTCOME_LEADS', 'actions:lead', 10, 300.00, 10000, 300, 10);
+
+  r := campanha_detalhe(t, 'c_castanheira', '2026-09-01', '2026-09-30');
+  IF jsonb_array_length(r->'anuncios') <> 2 THEN
+    RAISE EXCEPTION 'FALHOU: a campanha tem 2 anúncios, o detalhe trouxe %', jsonb_array_length(r->'anuncios');
+  END IF;
+
+  SELECT x INTO c FROM jsonb_array_elements(r->'anuncios') x WHERE x->>'ad_id' = 'a_cast_2';
+  IF (c->>'cpc')::numeric <> 1.00 THEN
+    RAISE EXCEPTION 'FALHOU: CPC do anúncio deu % e deveria dar 1.00', c->>'cpc';
+  END IF;
+  IF (c->>'custo_por_lead')::numeric <> 30.00 THEN
+    RAISE EXCEPTION 'FALHOU: custo por lead do anúncio deu %, esperado 30.00', c->>'custo_por_lead';
+  END IF;
+
+  -- Campanha inexistente devolve listas vazias, e não erro.
+  r := campanha_detalhe(t, 'c_que_nao_existe', '2026-09-01', '2026-09-30');
+  IF jsonb_array_length(r->'anuncios') <> 0 THEN
+    RAISE EXCEPTION 'FALHOU: campanha inexistente deveria vir vazia';
+  END IF;
+
+  -- E o detalhe respeita o tenant, como a lista.
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', '0ccc0000-0000-4000-a000-000000000009')::text, true);
+  IF campanha_detalhe(t, 'c_castanheira', '2026-09-01', '2026-09-30') IS NOT NULL THEN
+    RAISE EXCEPTION 'FALHOU: quem não é do tenant abriu o detalhe da campanha';
+  END IF;
+
+  RAISE NOTICE 'OK: campanhas e ROI — 10 casos';
 END
 $$;
 

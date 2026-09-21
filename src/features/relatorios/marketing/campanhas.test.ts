@@ -9,6 +9,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   avisoDeAtribuicao, buracoDeAtribuicao, contarQualificados, desdeQuando,
+  empreendimentoDaCampanha, empreendimentosDas, filtrarPorEmpreendimento,
   pctSemAtribuicao, porUnidade, reaisExatos, type Campanha,
 } from './campanhas';
 
@@ -184,5 +185,56 @@ describe('reaisExatos', () => {
     expect(reaisExatos(null)).toBe('—');
     expect(reaisExatos(undefined)).toBe('—');
     expect(reaisExatos(0)).toBe('R$ 0,00');
+  });
+});
+
+describe('empreendimentoDaCampanha', () => {
+  /** A convenção real da Lotus: o empreendimento entre colchetes no nome. */
+  it('lê o empreendimento do colchete', () => {
+    expect(empreendimentoDaCampanha('[RESERVA CASTANHEIRA] Reserva Castanheira')).toBe('RESERVA CASTANHEIRA');
+    expect(empreendimentoDaCampanha('[Gioviale] tráfego')).toBe('GIOVIALE');
+  });
+
+  /**
+   * "[LEAD]" e "[RECRUTAMENTO]" são tipo de campanha, não empreendimento.
+   * Tratá-los como empreendimento criaria dois itens falsos no filtro — e um
+   * deles agruparia campanhas de imóveis diferentes.
+   */
+  it('não confunde tipo de campanha com empreendimento', () => {
+    expect(empreendimentoDaCampanha('[LEAD] Alto Padrão')).toBeNull();
+    expect(empreendimentoDaCampanha('[RECRUTAMENTO] Corretores')).toBeNull();
+  });
+
+  it('campanha sem colchete não tem empreendimento, e isso não é erro', () => {
+    expect(empreendimentoDaCampanha('Tráfego geral')).toBeNull();
+    expect(empreendimentoDaCampanha('')).toBeNull();
+  });
+});
+
+describe('filtrarPorEmpreendimento', () => {
+  const lista = [
+    camp({ campaign_id: '1', campaign_nome: '[RESERVA CASTANHEIRA] Reserva Castanheira' }),
+    camp({ campaign_id: '2', campaign_nome: '[LEAD] Alto Padrão' }),
+    camp({ campaign_id: '3', campaign_nome: '[GIOVIALE] Gioviale' }),
+  ];
+
+  it('sem filtro mostra tudo', () => {
+    expect(filtrarPorEmpreendimento(lista, '')).toHaveLength(3);
+  });
+
+  it('filtra pelo escolhido', () => {
+    expect(filtrarPorEmpreendimento(lista, 'GIOVIALE').map((c) => c.campaign_id)).toEqual(['3']);
+  });
+
+  /**
+   * As sem empreendimento ficam alcançáveis. Escondê-las faria sumir 41% do
+   * gasto da Lotus sem ninguém notar.
+   */
+  it('dá para ver justamente as que não têm empreendimento', () => {
+    expect(filtrarPorEmpreendimento(lista, '(sem)').map((c) => c.campaign_id)).toEqual(['2']);
+  });
+
+  it('a lista do filtro ignora tipo de campanha', () => {
+    expect(empreendimentosDas(lista)).toEqual(['GIOVIALE', 'RESERVA CASTANHEIRA']);
   });
 });
