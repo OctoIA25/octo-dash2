@@ -142,5 +142,17 @@ export function createMetaGraphClient({
     return { ok: true, leads: Array.isArray(r.corpo?.data) ? r.corpo.data : [] };
   }
 
-  return { fetchLead, fetchForms, fetchFormLeads };
+  /**
+   * Insights de uma conta de anúncios (P3.5).
+   *
+   * Recebe o caminho já montado por `caminhoDeInsights` porque ele carrega
+   * query própria (`level`, `time_increment`, `time_range`) — codificá-lo aqui
+   * como um id quebraria a chamada. A classificação de erro é a mesma das
+   * outras três, e é por isso que esta função mora aqui e não no módulo novo.
+   */
+  async function fetchInsights(caminho, accessToken, campos) {
+    return comRetry(caminho, accessToken, campos, 'fetchInsights');
+  }
+
+  return { fetchLead, fetchForms, fetchFormLeads, fetchInsights };
 }

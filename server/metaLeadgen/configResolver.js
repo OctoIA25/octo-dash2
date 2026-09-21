@@ -40,6 +40,9 @@ export function createMetaConfigResolver({ supabase, processEnv = process.env, l
       pageId: data.page_id,
       appSecret: decryptOrNull(data.app_secret_encrypted, 'app_secret', data.tenant_id),
       accessToken: decryptOrNull(data.system_user_token_encrypted, 'system_user_token', data.tenant_id),
+      // P3.5 — a conta de ANÚNCIOS, que é outro identificador que a página:
+      // insights vêm dela, o webhook de Lead Ads vem da página.
+      adAccountId: data.ad_account_id || null,
       webhookToken: data.webhook_token,
       verifyToken: data.verify_token,
       status: data.status,

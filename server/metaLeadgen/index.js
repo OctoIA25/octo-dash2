@@ -5,6 +5,7 @@
 import { registerMetaConfigRoutes } from './configRoutes.js';
 import { registerMetaWebhookRoutes } from './webhookRoutes.js';
 import { registerMetaFormRoutes } from './formRoutes.js';
+import { registerMetaInsightsRoutes } from '../metaInsights/routes.js';
 import { createMetaConfigResolver } from './configResolver.js';
 
 export { createMetaConfigResolver } from './configResolver.js';
@@ -21,4 +22,8 @@ export function registerMetaLeadgenRoutes(app, supabase, options = {}) {
   // nos dois lugares, e mexer neles de novo é uma chance a mais de a rota
   // existir em dev e dar 404 em produção.
   registerMetaFormRoutes(app, supabase, { ...options, configResolver: resolver });
+  // P3.5 — entra aqui pelo mesmo motivo do P2.7: os entrypoints já chamam esta
+  // função nos dois lugares, e mexer neles de novo é uma chance a mais de a
+  // rota existir em dev e dar 404 em produção.
+  registerMetaInsightsRoutes(app, supabase, { ...options, configResolver: resolver });
 }

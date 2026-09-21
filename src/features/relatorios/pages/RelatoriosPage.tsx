@@ -84,6 +84,7 @@ import {
 } from '@/features/metricas/services/commercialSalesService';
 import { FinanceiroTab } from '../components/FinanceiroTab';
 import { MarketingSiteTab } from '../components/MarketingSiteTab';
+import { CampanhasTab } from '../marketing/CampanhasTab';
 import { ExportReportDialog, buildReportModel, fromChartJs, type ReportSource } from '../export';
 import { useLeadSourceCosts } from '../hooks/useLeadSourceCosts';
 import { buildFinanceiroResumo, origemKey } from '../utils/buildFinanceiroResumo';
@@ -231,10 +232,13 @@ export const RelatoriosPage = () => {
   // Não há setSearchParams neste arquivo (só o getter de useSearchParams), então seguimos o
   // padrão já usado abaixo (activeMetricasSubArea): estado local + window.history.replaceState.
   const initialMktView = useMemo(
-    () => (searchParams.get('view') === 'site' ? 'site' : 'geral'),
+    () => {
+      const v = searchParams.get('view');
+      return v === 'site' || v === 'campanhas' ? v : 'geral';
+    },
     [searchParams],
   );
-  const [mktView, setMktView] = useState<'geral' | 'site'>(initialMktView);
+  const [mktView, setMktView] = useState<'geral' | 'site' | 'campanhas'>(initialMktView);
 
   const initialMetricasSubArea = useMemo(() => {
     const fromQuery = searchParams.get('metricasSubArea');
@@ -1987,17 +1991,16 @@ export const RelatoriosPage = () => {
 
       {activeSubArea === 'marketing' && (
         <div className="mb-4 inline-flex rounded-lg border border-gray-200 dark:border-slate-700 p-0.5 bg-gray-50 dark:bg-slate-800">
-          {([['geral', 'Geral'], ['site', 'Site']] as const).map(([value, label]) => (
+          {([['geral', 'Geral'], ['campanhas', 'Campanhas'], ['site', 'Site']] as const).map(([value, label]) => (
             <button
               key={value}
               onClick={() => {
                 setMktView(value);
                 const params = new URLSearchParams(searchParams);
-                if (value === 'site') {
-                  params.set('view', 'site');
-                } else {
-                  params.delete('view');
-                }
+                // 'geral' é o padrão e não vai para a URL; as outras vão, para
+                // o link levar à visão certa.
+                if (value === 'geral') params.delete('view');
+                else params.set('view', value);
                 window.history.replaceState(null, '', `?${params.toString()}`);
               }}
               className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
@@ -2012,6 +2015,10 @@ export const RelatoriosPage = () => {
         </div>
       )}
       {activeSubArea === 'marketing' && mktView === 'site' && <MarketingSiteTab />}
+      {/* P3.5 — gasto de anúncio, custo por lead e o ROI que ainda não tem
+          numerador. Entra ao lado do "Geral", e não no lugar: o Geral traz
+          números que alguém usa hoje. */}
+      {activeSubArea === 'marketing' && mktView === 'campanhas' && <CampanhasTab />}
       {/* SEÇÃO MARKETING */}
       {activeSubArea === 'marketing' && mktView === 'geral' && (
         <>
