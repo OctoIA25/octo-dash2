@@ -6,9 +6,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import { InfoMetrica } from '@/features/kpis/components/KpiComponents';
 import { contarVisitasAgendadasPara } from '@/features/leads/utils/funnelStages';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { OKRManager } from '@/components/OKRManager';
-import { PDIManager } from '@/components/PDIManager';
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { TaskManager } from '@/components/TaskManager';
 import { AgendaCalendar } from '@/features/agenda/components/AgendaCalendar';
 import { KpisPage } from '@/features/kpis';
@@ -608,24 +606,11 @@ export function InicioNovaPage() {
   // Switch de conteúdo baseado na aba da Início
   const ANIM = 'animate-in fade-in-0 slide-in-from-bottom-3 duration-300 ease-out';
 
-  if (activeInicioTab === 'okrs') {
-    return (
-      <div key="okrs" className={ANIM}>
-        <div className="px-6 py-5">
-          <div className="max-w-[1400px] mx-auto"><OKRManager /></div>
-        </div>
-      </div>
-    );
-  }
-  if (activeInicioTab === 'pdi') {
-    return (
-      <div key="pdi" className={ANIM}>
-        <div className="px-6 py-5">
-          <div className="max-w-[1400px] mx-auto"><PDIManager /></div>
-        </div>
-      </div>
-    );
-  }
+  // P3.4 — OKR e PDI saíram daqui para as rotas /okrs e /pdi. Estes dois
+  // desvios existem pelos links antigos: quem tiver /leads?tab=okrs salvo nos
+  // favoritos continua chegando na tela, em vez de cair no Funil sem entender.
+  if (activeInicioTab === 'okrs') return <Navigate to="/okrs" replace />;
+  if (activeInicioTab === 'pdi') return <Navigate to="/pdi" replace />;
   if (activeInicioTab === 'tarefas-semana') {
     return (
       <div key="tarefas-semana" className={ANIM}>

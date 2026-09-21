@@ -1310,9 +1310,9 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
               // remove \uFFFD, então o nome sujo não bateria com o do banco).
               const nomeLimpo = (membro.nome || '').replace(/[\uFFFD\u0000-\u001F]/g, '').trim();
 
-              // Atalhos por corretor. Tarefas leva o e-mail na URL porque a tela de
-              // Tarefas filtra por ele; OKRs, KPIs e PDI não têm recorte por pessoa
-              // hoje, então abrem a área (OKRs e PDI ainda são telas "em breve").
+              // Atalhos por corretor. Tarefas, OKRs e PDI levam o e-mail na URL
+              // porque as três telas filtram por ele — o `?pessoa=` do P3.4.
+              // KPIs continua abrindo a área: não tem recorte por pessoa.
               const atalhos: {
                 id: string;
                 label: string;
@@ -1327,9 +1327,19 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                   icon: ClipboardList,
                   onClick: () => navigate(`/gestao-equipe?tab=tarefas${emailCorretor ? `&corretor=${encodeURIComponent(emailCorretor)}` : ''}`),
                 },
-                { id: 'okrs', label: 'OKRs', icon: Target, onClick: () => navigate('/gestao-equipe?tab=okrs') },
+                {
+                  id: 'okrs',
+                  label: 'OKRs',
+                  icon: Target,
+                  onClick: () => navigate(`/okrs${emailCorretor ? `?pessoa=${encodeURIComponent(emailCorretor)}` : ''}`),
+                },
                 { id: 'kpis', label: 'KPIs', icon: BarChart3, onClick: () => navigate('/leads?tab=kpis') },
-                { id: 'pdi', label: 'PDI', icon: GraduationCap, onClick: () => navigate('/gestao-equipe?tab=pdi') },
+                {
+                  id: 'pdi',
+                  label: 'PDI',
+                  icon: GraduationCap,
+                  onClick: () => navigate(`/pdi${emailCorretor ? `?pessoa=${encodeURIComponent(emailCorretor)}` : ''}`),
+                },
                 {
                   id: 'autorizacoes',
                   label: 'Autorizações',

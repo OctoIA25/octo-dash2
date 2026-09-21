@@ -1,11 +1,23 @@
 /**
- * Hook para gerenciar PDI (Plano de Desenvolvimento Individual)
- * Suporta 3 tipos: Individual, Dinamo e Personalizado
- * Persistência via localStorage
+ * PDI — Plano de Desenvolvimento Individual (P3.4), agora com banco.
+ *
+ * Até 21/09/2026 este hook guardava tudo em `localStorage['octodash_pdis']`,
+ * filtrado por e-mail e sem nenhuma noção de imobiliária: trocar de
+ * computador perdia o plano, e o gestor nunca via o da equipe.
+ *
+ * O que ficou no navegador de cada um não é jogado fora. A tela diz quantos
+ * achou e oferece subir — decidido com o chefe em 21/09. Ninguém perde
+ * trabalho escrito sem mandar.
+ *
+ * A API pública é a mesma de antes mais três coisas (`pendentesNoNavegador`,
+ * `migrarDoNavegador`, `dispensarAvisoDoNavegador`), para as 1.062 linhas do
+ * `PDIManager` não precisarem mudar.
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { useAuth } from './useAuth';
+import { supabase } from '@/lib/supabaseClient';
+import { useAuthContext } from '@/contexts/AuthContext';
+import { lerDoNavegador, limparDoNavegador, paraOBanco } from './pdiDoNavegador';
 
 export type NivelCompetencia = 'iniciante' | 'intermediario' | 'avancado' | 'expert';
 export type StatusPDI = 'planejado' | 'em_andamento' | 'concluido' | 'pausado';
@@ -23,18 +35,21 @@ export interface PDIDinamoRow {
   col1: string;
   col2: string;
   col3: string;
+  col4?: string;
   vistoCorretor?: boolean;
 }
 
 export interface PDIDinamoSection {
   id: string;
   titulo: string;
+  tituloOriginal?: string;
   campos: string[];
   rows: PDIDinamoRow[];
 }
 
 export interface PDI {
-  id?: number;
+  /** uuid. Era `number` (um `Date.now()`) enquanto isto vivia no navegador. */
+  id?: string;
   corretor_email: string;
   tipo: TipoPDI;
   competencia: string;
@@ -42,189 +57,197 @@ export interface PDI {
   nivel_desejado: NivelCompetencia;
   progresso: number;
   acoes: AcaoPDI[];
-  prazo?: string;
+  prazo?: string | null;
   status: StatusPDI;
   observacoes?: string;
   ordem: number;
-  criador_email?: string;
-  criador_nome?: string;
+  criador_email?: string | null;
+  criador_nome?: string | null;
   atribuido_por_admin?: boolean;
   created_at?: string;
   updated_at?: string;
-  // Campos para PDI Dinamo/Personalizado
   sections?: PDIDinamoSection[];
 }
 
-const STORAGE_KEY = 'octodash_pdis';
+/** O progresso do plano: quantas ações já foram feitas. */
+export const calcularProgressoPDI = (acoes: AcaoPDI[]): number => {
+  if (acoes.length === 0) return 0;
+  return Math.round((acoes.filter((a) => a.concluida).length / acoes.length) * 100);
+};
 
-export const usePDI = () => {
-  const { user } = useAuth();
+/**
+ * @param emailAlvo de quem é o plano. Vazio = o de quem está logado. Quem não
+ * for da gestão simplesmente não recebe as linhas de outra pessoa — quem
+ * decide é a política do banco, não esta linha.
+ */
+export const usePDI = (emailAlvo?: string) => {
+  const { user } = useAuthContext();
+  const tenantId = user?.tenantId;
+  const email = (emailAlvo || user?.email || '').toLowerCase();
+  /** Só faz sentido oferecer migração do PRÓPRIO navegador para o próprio dono. */
+  const ehOProprio = !emailAlvo || emailAlvo.toLowerCase() === (user?.email ?? '').toLowerCase();
+
   const [pdis, setPdis] = useState<PDI[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [pendentesNoNavegador, setPendentes] = useState(0);
 
-  // Salvar no localStorage
-  const savePDIs = useCallback((newPdis: PDI[]) => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(newPdis));
-    } catch (err) {
-      console.error('Erro ao salvar PDIs no localStorage:', err);
-    }
-  }, []);
-
-  // Carregar PDIs do localStorage
   const loadPDIs = useCallback(async () => {
-    if (!user?.email) {
+    if (!tenantId || tenantId === 'owner' || !email) {
+      setPdis([]);
       setIsLoading(false);
       return;
     }
-
     try {
       setIsLoading(true);
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const allPdis: PDI[] = JSON.parse(stored);
-        // Filtrar por email do usuário
-        const userPdis = allPdis.filter(p => p.corretor_email === user.email);
-        setPdis(userPdis);
-      } else {
-        setPdis([]);
-      }
+      setError(null);
+      const { data, error: err } = await supabase
+        .from('pdis')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .ilike('corretor_email', email)
+        .order('ordem', { ascending: true });
+      if (err) throw err;
+      setPdis((data ?? []) as unknown as PDI[]);
+      setPendentes(ehOProprio ? lerDoNavegador(email).length : 0);
     } catch (err) {
+      // Erro NÃO vira lista vazia: "não tenho plano" e "não deu para ler" são
+      // coisas diferentes, e a tela precisa poder dizer qual das duas é.
       console.error('Erro ao carregar PDIs:', err);
       setError(err instanceof Error ? err.message : 'Erro desconhecido');
-      setPdis([]);
     } finally {
       setIsLoading(false);
     }
-  }, [user?.email]);
+  }, [tenantId, email, ehOProprio]);
 
-  // Criar novo PDI
+  /**
+   * Sobe para o banco o que estava guardado naquele navegador.
+   *
+   * O navegador só é limpo DEPOIS de o banco confirmar. Se o insert falhar, o
+   * que estava escrito continua onde estava — perder o plano por causa de uma
+   * falha de rede seria o pior desfecho possível deste item.
+   */
+  const migrarDoNavegador = async (): Promise<number> => {
+    if (!tenantId || !email) return 0;
+    const guardados = lerDoNavegador(email);
+    if (guardados.length === 0) {
+      setPendentes(0);
+      return 0;
+    }
+    const { error: err } = await supabase
+      .from('pdis')
+      .insert(guardados.map((p) => paraOBanco(p, tenantId, email)));
+    if (err) {
+      setError(err.message);
+      throw err;
+    }
+    limparDoNavegador(email);
+    setPendentes(0);
+    await loadPDIs();
+    return guardados.length;
+  };
+
+  /** Some com o aviso sem apagar nada do navegador. */
+  const dispensarAvisoDoNavegador = () => setPendentes(0);
+
   const criarPDI = async (pdi: Omit<PDI, 'id' | 'corretor_email' | 'created_at' | 'updated_at'>) => {
-    if (!user?.email) return;
-
-    const novoPDI: PDI = {
-      ...pdi,
-      id: Date.now(),
-      corretor_email: user.email,
-      tipo: pdi.tipo || 'individual',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    };
-
-    const novosPdis = [...pdis, novoPDI];
-    setPdis(novosPdis);
-    
-    // Salvar todos os PDIs (incluindo de outros usuários)
-    const stored = localStorage.getItem(STORAGE_KEY);
-    const allPdis: PDI[] = stored ? JSON.parse(stored) : [];
-    const otherPdis = allPdis.filter(p => p.corretor_email !== user.email);
-    savePDIs([...otherPdis, ...novosPdis]);
-    
-    return novoPDI;
+    if (!tenantId || !email) return;
+    const { data, error: err } = await supabase
+      .from('pdis')
+      .insert({
+        ...pdi,
+        tenant_id: tenantId,
+        corretor_email: email,
+        tipo: pdi.tipo || 'individual',
+        prazo: pdi.prazo || null,
+        criador_email: user?.email ?? null,
+        criador_nome: user?.name ?? null,
+        atribuido_por_admin: !ehOProprio,
+      })
+      .select('*')
+      .single();
+    if (err) {
+      setError(err.message);
+      throw err;
+    }
+    setPdis((prev) => [...prev, data as unknown as PDI]);
+    return data as unknown as PDI;
   };
 
-  // Atualizar PDI
-  const atualizarPDI = async (id: number, updates: Partial<PDI>) => {
-    if (!user?.email) return;
+  const atualizarPDI = async (id: string, updates: Partial<PDI>) => {
+    const { data, error: err } = await supabase
+      .from('pdis')
+      .update(updates)
+      .eq('id', id)
+      .select('*')
+      .single();
+    if (err) {
+      setError(err.message);
+      throw err;
+    }
+    setPdis((prev) => prev.map((p) => (p.id === id ? (data as unknown as PDI) : p)));
+    return data as unknown as PDI;
+  };
 
-    const novosPdis = pdis.map(p => 
-      p.id === id 
-        ? { ...p, ...updates, updated_at: new Date().toISOString() } 
-        : p
+  /**
+   * Grava as ações e o progresso NA MESMA escrita.
+   *
+   * Conserta um defeito antigo: o código anterior gravava as ações e logo
+   * depois chamava `atualizarProgresso`, que relia `pdis` do estado do React —
+   * ainda o de antes. O progresso saía sempre um passo atrasado.
+   */
+  const gravarAcoes = async (pdiId: string, acoes: AcaoPDI[]) =>
+    atualizarPDI(pdiId, { acoes, progresso: calcularProgressoPDI(acoes) });
+
+  const atualizarProgresso = async (id: string) => {
+    const pdi = pdis.find((p) => p.id === id);
+    if (!pdi) return;
+    await atualizarPDI(id, { progresso: calcularProgressoPDI(pdi.acoes) });
+  };
+
+  const adicionarAcao = async (pdiId: string, descricao: string, prazo?: string) => {
+    const pdi = pdis.find((p) => p.id === pdiId);
+    if (!pdi) return;
+    await gravarAcoes(pdiId, [
+      ...pdi.acoes,
+      { id: crypto.randomUUID(), descricao, concluida: false, prazo },
+    ]);
+  };
+
+  const toggleAcao = async (pdiId: string, acaoId: string) => {
+    const pdi = pdis.find((p) => p.id === pdiId);
+    if (!pdi) return;
+    await gravarAcoes(
+      pdiId,
+      pdi.acoes.map((a) => (a.id === acaoId ? { ...a, concluida: !a.concluida } : a))
     );
-    setPdis(novosPdis);
-    
-    // Salvar todos os PDIs
-    const stored = localStorage.getItem(STORAGE_KEY);
-    const allPdis: PDI[] = stored ? JSON.parse(stored) : [];
-    const otherPdis = allPdis.filter(p => p.corretor_email !== user.email);
-    savePDIs([...otherPdis, ...novosPdis]);
-    
-    return novosPdis.find(p => p.id === id);
   };
 
-  // Atualizar progresso baseado nas ações
-  const atualizarProgresso = async (id: number) => {
-    const pdi = pdis.find(p => p.id === id);
+  const removerAcao = async (pdiId: string, acaoId: string) => {
+    const pdi = pdis.find((p) => p.id === pdiId);
     if (!pdi) return;
-
-    const totalAcoes = pdi.acoes.length;
-    if (totalAcoes === 0) return;
-
-    const concluidas = pdi.acoes.filter(a => a.concluida).length;
-    const novoProgresso = Math.round((concluidas / totalAcoes) * 100);
-
-    await atualizarPDI(id, { progresso: novoProgresso });
+    await gravarAcoes(pdiId, pdi.acoes.filter((a) => a.id !== acaoId));
   };
 
-  // Adicionar ação ao PDI
-  const adicionarAcao = async (pdiId: number, descricao: string, prazo?: string) => {
-    const pdi = pdis.find(p => p.id === pdiId);
-    if (!pdi) return;
-
-    const novaAcao: AcaoPDI = {
-      id: Date.now().toString(),
-      descricao,
-      concluida: false,
-      prazo
-    };
-
-    const novasAcoes = [...pdi.acoes, novaAcao];
-    await atualizarPDI(pdiId, { acoes: novasAcoes });
-    await atualizarProgresso(pdiId);
+  const deletarPDI = async (id: string) => {
+    const { error: err } = await supabase.from('pdis').delete().eq('id', id);
+    if (err) {
+      setError(err.message);
+      throw err;
+    }
+    setPdis((prev) => prev.filter((p) => p.id !== id));
   };
 
-  // Marcar ação como concluída/não concluída
-  const toggleAcao = async (pdiId: number, acaoId: string) => {
-    const pdi = pdis.find(p => p.id === pdiId);
-    if (!pdi) return;
-
-    const novasAcoes = pdi.acoes.map(a =>
-      a.id === acaoId ? { ...a, concluida: !a.concluida } : a
-    );
-
-    await atualizarPDI(pdiId, { acoes: novasAcoes });
-    await atualizarProgresso(pdiId);
-  };
-
-  // Remover ação
-  const removerAcao = async (pdiId: number, acaoId: string) => {
-    const pdi = pdis.find(p => p.id === pdiId);
-    if (!pdi) return;
-
-    const novasAcoes = pdi.acoes.filter(a => a.id !== acaoId);
-    await atualizarPDI(pdiId, { acoes: novasAcoes });
-    await atualizarProgresso(pdiId);
-  };
-
-  // Deletar PDI
-  const deletarPDI = async (id: number) => {
-    if (!user?.email) return;
-
-    const novosPdis = pdis.filter(p => p.id !== id);
-    setPdis(novosPdis);
-    
-    // Salvar todos os PDIs
-    const stored = localStorage.getItem(STORAGE_KEY);
-    const allPdis: PDI[] = stored ? JSON.parse(stored) : [];
-    const otherPdis = allPdis.filter(p => p.corretor_email !== user.email);
-    savePDIs([...otherPdis, ...novosPdis]);
-  };
-
-  // Estatísticas dos PDIs
   const estatisticas = {
     total: pdis.length,
-    planejados: pdis.filter(p => p.status === 'planejado').length,
-    em_andamento: pdis.filter(p => p.status === 'em_andamento').length,
-    concluidos: pdis.filter(p => p.status === 'concluido').length,
-    pausados: pdis.filter(p => p.status === 'pausado').length,
-    progressoMedio: pdis.length > 0
-      ? Math.round(pdis.reduce((acc, p) => acc + p.progresso, 0) / pdis.length)
-      : 0
+    planejados: pdis.filter((p) => p.status === 'planejado').length,
+    em_andamento: pdis.filter((p) => p.status === 'em_andamento').length,
+    concluidos: pdis.filter((p) => p.status === 'concluido').length,
+    pausados: pdis.filter((p) => p.status === 'pausado').length,
+    progressoMedio:
+      pdis.length > 0 ? Math.round(pdis.reduce((acc, p) => acc + p.progresso, 0) / pdis.length) : 0,
   };
 
-  // Carregar ao montar
   useEffect(() => {
     loadPDIs();
   }, [loadPDIs]);
@@ -241,7 +264,9 @@ export const usePDI = () => {
     deletarPDI,
     atualizarProgresso,
     estatisticas,
-    refetch: loadPDIs
+    refetch: loadPDIs,
+    pendentesNoNavegador,
+    migrarDoNavegador,
+    dispensarAvisoDoNavegador,
   };
 };
-

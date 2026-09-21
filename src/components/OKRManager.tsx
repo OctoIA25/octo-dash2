@@ -32,7 +32,13 @@ import {
   Save
 } from 'lucide-react';
 
-export const OKRManager = () => {
+/**
+ * @param emailAlvo de quem são os OKRs. Vazio = os de quem está logado. Vem
+ * preenchido quando a gestão abre pela Gestão de Equipe (`/okrs?pessoa=…`);
+ * quem não for gestor simplesmente não recebe as linhas — quem decide é a
+ * política do banco, não este parâmetro.
+ */
+export const OKRManager = ({ emailAlvo }: { emailAlvo?: string } = {}) => {
   const { 
     okrs, 
     isLoading, 
@@ -41,7 +47,7 @@ export const OKRManager = () => {
     removerKeyResult,
     deletarOKR, 
     estatisticas 
-  } = useOKRs();
+  } = useOKRs(emailAlvo);
   
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingOKR, setEditingOKR] = useState<OKR | null>(null);
@@ -150,7 +156,7 @@ export const OKRManager = () => {
     }
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Tem certeza que deseja excluir este OKR?')) {
       await deletarOKR(id);
     }

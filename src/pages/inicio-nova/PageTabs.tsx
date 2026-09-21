@@ -1,6 +1,7 @@
 /**
  * PageTabs - Abas contextuais que aparecem no header conforme a rota atual
- * Substituem as "internal tabs" do antigo MainLayoutOptimized.
+ * Substituem as "internal tabs" do antigo MainLayoutOptimized, removido em
+ * 21/09/2026: 802 linhas que ninguém importava e que redeclaravam estas abas.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -88,13 +89,14 @@ const TAB_CONFIGS: TabConfig[] = [
     queryKey: 'tab',
     tabs: [
       { id: 'funil', label: 'Funil', icon: Filter, href: '/leads?tab=funil', isQuery: true },
-      { id: 'okrs', label: 'OKRs', icon: Target, href: '/leads?tab=okrs', isQuery: true },
+      // P3.4 — sai do ?tab= e vai para a rota própria: um endereço por assunto.
+      { id: 'okrs', label: 'OKRs', icon: Target, href: '/okrs' },
       // P3.1 — o plano diz que ela SUBSTITUI os KPIs soltos. Entra ao lado, e
       // não no lugar: remover a aba antiga sem o senhor confirmar que a nova
       // cobre tudo tiraria número que alguém usa hoje.
       { id: 'painel-comercial', label: 'Painel comercial', icon: BarChart3, href: '/leads?tab=painel-comercial', isQuery: true },
       { id: 'kpis', label: 'KPIs', icon: BarChart3, href: '/leads?tab=kpis', isQuery: true },
-      { id: 'pdi', label: 'PDI', icon: GraduationCap, href: '/leads?tab=pdi', isQuery: true },
+      { id: 'pdi', label: 'PDI', icon: GraduationCap, href: '/pdi' },
       { id: 'tarefas-semana', label: 'Tarefas da Semana', icon: CheckSquare, href: '/leads?tab=tarefas-semana', isQuery: true },
       { id: 'agenda', label: 'Agenda', icon: Calendar, href: '/leads?tab=agenda', isQuery: true },
     ],
@@ -167,8 +169,10 @@ const TAB_CONFIGS: TabConfig[] = [
     queryKey: 'tab',
     tabs: [
       { id: 'tarefas', label: 'Tarefas', icon: ClipboardList, href: '/gestao-equipe?tab=tarefas', isQuery: true },
-      { id: 'okrs', label: 'OKRs', icon: Target, href: '/gestao-equipe?tab=okrs', isQuery: true },
-      { id: 'pdi', label: 'PDI', icon: GraduationCap, href: '/gestao-equipe?tab=pdi', isQuery: true },
+      // A MESMA rota que a aba de Início abre. Eram duas telas diferentes com
+      // o mesmo nome: uma funcionava, a outra dizia "Em breve".
+      { id: 'okrs', label: 'OKRs', icon: Target, href: '/okrs' },
+      { id: 'pdi', label: 'PDI', icon: GraduationCap, href: '/pdi' },
       { id: 'equipes', label: 'Equipes', icon: Users, href: '/gestao-equipe?tab=equipes', isQuery: true },
       { id: 'acessos-permissoes', label: 'Acessos e Permissões', icon: Key, href: '/gestao-equipe?tab=acessos-permissoes', isQuery: true },
     ],

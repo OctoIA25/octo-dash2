@@ -110,7 +110,11 @@ const EMPTY_PERSONALIZADO_SECTION: PDIDinamoSection = {
   rows: []
 };
 
-export const PDIManager = () => {
+/**
+ * @param emailAlvo de quem é o plano. Vazio = o de quem está logado. Ver a
+ * observação equivalente em `OKRManager`.
+ */
+export const PDIManager = ({ emailAlvo }: { emailAlvo?: string } = {}) => {
   const { 
     pdis, 
     isLoading, 
@@ -120,13 +124,16 @@ export const PDIManager = () => {
     toggleAcao,
     removerAcao,
     deletarPDI, 
-    estatisticas 
-  } = usePDI();
+    estatisticas,
+    pendentesNoNavegador,
+    migrarDoNavegador,
+    dispensarAvisoDoNavegador
+  } = usePDI(emailAlvo);
   
   const [dialogOpen, setDialogOpen] = useState(false);
   const [acaoDialogOpen, setAcaoDialogOpen] = useState(false);
   const [editingPDI, setEditingPDI] = useState<PDI | null>(null);
-  const [selectedPDIId, setSelectedPDIId] = useState<number | null>(null);
+  const [selectedPDIId, setSelectedPDIId] = useState<string | null>(null);
   const [novaAcaoDescricao, setNovaAcaoDescricao] = useState('');
   const [novaAcaoPrazo, setNovaAcaoPrazo] = useState('');
   
@@ -363,13 +370,13 @@ export const PDIManager = () => {
     }
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Tem certeza que deseja excluir este PDI?')) {
       await deletarPDI(id);
     }
   };
 
-  const handleOpenAcaoDialog = (pdiId: number) => {
+  const handleOpenAcaoDialog = (pdiId: string) => {
     setSelectedPDIId(pdiId);
     setNovaAcaoDescricao('');
     setNovaAcaoPrazo('');
@@ -430,6 +437,12 @@ export const PDIManager = () => {
 
   return (
     <div className="w-full">
+      <AvisoDoNavegador
+        quantos={pendentesNoNavegador}
+        aoSubir={migrarDoNavegador}
+        aoDispensar={dispensarAvisoDoNavegador}
+      />
+
       {/* Header com Estatísticas */}
       <div className="mb-6 flex items-center justify-between">
         <div>
@@ -1059,4 +1072,68 @@ export const PDIManager = () => {
   );
 };
 
+/**
+ * O PDI que ficou no navegador (P3.4).
+ *
+ * Até 21/09/2026 o plano era gravado em `localStorage`, por navegador. Quem
+ * escreveu um e trocou de computador não o vê mais aqui — mas ele continua
+ * na máquina antiga. Este aviso é o que dá para trazê-lo, e só aparece para
+ * quem tem algo guardado.
+ *
+ * Nada sobe sozinho: decidido com o chefe em 21/09, e por um motivo concreto
+ * — num computador compartilhado, migrar sem perguntar subiria o plano da
+ * pessoa errada.
+ */
+function AvisoDoNavegador({
+  quantos,
+  aoSubir,
+  aoDispensar
+}: {
+  quantos: number;
+  aoSubir: () => Promise<number>;
+  aoDispensar: () => void;
+}) {
+  const [subindo, setSubindo] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
 
+  if (quantos <= 0) return null;
+
+  const subir = async () => {
+    setSubindo(true);
+    setErro(null);
+    try {
+      await aoSubir();
+    } catch (e) {
+      // O que estava no navegador NÃO foi apagado: a limpeza só acontece
+      // depois de o banco confirmar. Dá para tentar de novo.
+      setErro(e instanceof Error ? e.message : 'Erro desconhecido');
+    } finally {
+      setSubindo(false);
+    }
+  };
+
+  return (
+    <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/30">
+      <p className="text-sm text-amber-900 dark:text-amber-200">
+        {quantos === 1
+          ? 'Achei 1 plano salvo só neste computador.'
+          : `Achei ${quantos} planos salvos só neste computador.`}{' '}
+        Eles foram escritos antes de o PDI ter banco, e por isso não aparecem em
+        outra máquina nem para a gestão. Quer subi-los agora?
+      </p>
+      {erro && (
+        <p className="mt-1.5 text-xs text-rose-700 dark:text-rose-300">
+          Não deu para subir: {erro}. Nada foi perdido — o que está no navegador continua lá.
+        </p>
+      )}
+      <div className="mt-2 flex gap-2">
+        <Button size="sm" onClick={subir} disabled={subindo}>
+          {subindo ? 'Subindo…' : 'Subir para a minha conta'}
+        </Button>
+        <Button size="sm" variant="ghost" onClick={aoDispensar} disabled={subindo}>
+          Agora não
+        </Button>
+      </div>
+    </div>
+  );
+}

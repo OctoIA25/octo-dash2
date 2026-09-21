@@ -1,15 +1,15 @@
 /**
  * Dashboard de Gestão Completa - Design Moderno
  * Inspirado em ClickUp, Notion e Material Design 3
- * As tabs são gerenciadas pelo header superior (MainLayoutOptimized)
+ * As tabs são gerenciadas pelo header superior (PageTabs)
  */
 
 import { useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { AdminTaskManager } from './AdminTaskManager';
 import { EquipeSection } from '@/features/corretores/components/EquipeSection';
 import { EquipesManagerSection } from '@/features/corretores/components/EquipesManagerSection';
-import { Target, GraduationCap, Bot, ArrowRight } from 'lucide-react';
+import { Bot, ArrowRight } from 'lucide-react';
 import { useLeadsData } from '@/features/leads/hooks/useLeadsData';
 
 export const AdminDashboard = () => {
@@ -56,33 +56,12 @@ export const AdminDashboard = () => {
       <div>
         {activeTab === 'tarefas' && <AdminTaskManager />}
         
-        {activeTab === 'okrs' && (
-          <div className="flex flex-col items-center justify-center min-h-[400px] rounded-2xl bg-gray-50/50 dark:bg-gray-800/30 border border-dashed border-gray-200 dark:border-gray-700">
-            <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-6">
-              <Target className="h-8 w-8 text-gray-300 dark:text-gray-600" />
-            </div>
-            <h3 className="text-lg font-light text-gray-900 dark:text-white mb-2">
-              Gestão de OKRs
-            </h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400 font-light text-center max-w-md">
-              Em breve você poderá definir e acompanhar objetivos e resultados-chave de toda a equipe
-            </p>
-          </div>
-        )}
-        
-        {activeTab === 'pdi' && (
-          <div className="flex flex-col items-center justify-center min-h-[400px] rounded-2xl bg-gray-50/50 dark:bg-gray-800/30 border border-dashed border-gray-200 dark:border-gray-700">
-            <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-6">
-              <GraduationCap className="h-8 w-8 text-gray-300 dark:text-gray-600" />
-            </div>
-            <h3 className="text-lg font-light text-gray-900 dark:text-white mb-2">
-              Gestão de PDI
-            </h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400 font-light text-center max-w-md">
-              Em breve você poderá criar e acompanhar planos de desenvolvimento individual da equipe
-            </p>
-          </div>
-        )}
+        {/* P3.4 — estas duas abas mostravam "Em breve" para funcionalidades que
+            JÁ existiam e funcionavam em /leads?tab=. Quem abria por aqui
+            concluía que o recurso não existia. Agora há um endereço só, e
+            estas rotas levam até ele em vez de manter uma segunda tela. */}
+        {activeTab === 'okrs' && <Navigate to="/okrs" replace />}
+        {activeTab === 'pdi' && <Navigate to="/pdi" replace />}
 
         {activeTab === 'equipes' && <EquipesManagerSection />}
         {activeTab === 'acessos-permissoes' && <EquipeSection leads={leads} />}

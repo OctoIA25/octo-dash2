@@ -77,6 +77,11 @@ const ClienteProprietarioPage = lazyWithRetry(() => import('@/features/leads/pag
 const EquipePage = lazyWithRetry(() => import('@/features/corretores/pages/EquipePage').then(m => ({ default: m.EquipePage })));
 const RecrutamentoPage = lazyWithRetry(() => import('@/features/corretores/pages/RecrutamentoPage').then(m => ({ default: m.RecrutamentoPage })));
 const GestaoEquipePage = lazyWithRetry(() => import('@/features/corretores/pages/GestaoEquipePage').then(m => ({ default: m.GestaoEquipePage })));
+// P3.4 — uma rota por assunto. Antes, OKR e PDI tinham três endereços: a tela
+// real em /leads?tab=, um cartaz "Em breve" em /gestao-equipe?tab= e uma
+// terceira cópia em código morto.
+const OkrsPage = lazyWithRetry(() => import('@/features/okrs/pages/OkrsPage').then(m => ({ default: m.OkrsPage })));
+const PdiPage = lazyWithRetry(() => import('@/features/okrs/pages/OkrsPage').then(m => ({ default: m.PdiPage })));
 const BolsaoPage = lazyWithRetry(() => import('@/features/leads/pages/BolsaoPage').then(m => ({ default: m.BolsaoPage })));
 const CentralLeadsPage = lazyWithRetry(() => import('@/features/leads/pages/CentralLeadsPage').then(m => ({ default: m.CentralLeadsPage })));
 const CorretoresPage = lazyWithRetry(() => import('@/features/corretores/pages/CorretoresPage').then(m => ({ default: m.CorretoresPage })));
@@ -241,6 +246,11 @@ const DashboardLayout = () => {
             } 
           />
           
+          {/* P3.4 — as duas rotas que o plano pede. `?pessoa=` vem da Gestão
+              de Equipe; quem pode ver o de outra pessoa é o banco que decide. */}
+          <Route path="okrs" element={<OkrsPage />} />
+          <Route path="pdi" element={<PdiPage />} />
+
           <Route 
             path="bolsao" 
             element={
