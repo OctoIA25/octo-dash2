@@ -10,7 +10,8 @@ import { describe, it, expect } from 'vitest';
 import {
   avisoDeAtribuicao, buracoDeAtribuicao, contarQualificados, desdeQuando,
   empreendimentoDaCampanha, empreendimentosDas, filtrarPorEmpreendimento,
-  pctSemAtribuicao, porUnidade, reaisExatos, type Campanha,
+  avisoDoCiclo, buracoDaVenda, pctSemAtribuicao, porUnidade, reaisExatos,
+  type Campanha, type VendasDoPeriodo,
 } from './campanhas';
 
 const camp = (over: Partial<Campanha> = {}): Campanha => ({
@@ -34,6 +35,11 @@ const camp = (over: Partial<Campanha> = {}): Campanha => ({
   custo_por_lead_dash: 48.99,
   lead_ids: [],
   lead_ids_visita: [],
+  vendas: 0,
+  vgv: 0,
+  comissao_liquida: 0,
+  cac: null,
+  roas: null,
   ...over,
 });
 
@@ -236,5 +242,52 @@ describe('filtrarPorEmpreendimento', () => {
 
   it('a lista do filtro ignora tipo de campanha', () => {
     expect(empreendimentosDas(lista)).toEqual(['GIOVIALE', 'RESERVA CASTANHEIRA']);
+  });
+});
+
+describe('o que o ROI do período deixa de fora (P4.4)', () => {
+  const v = (over: Partial<VendasDoPeriodo> = {}): VendasDoPeriodo => ({
+    vendas: 4, atribuidas: 2, sem_lead: 1, sem_campanha: 1,
+    comissao_liquida: 30000, vgv: 750000, ...over,
+  });
+
+  it('cala quando não houve venda no período', () => {
+    expect(buracoDaVenda(v({ vendas: 0, atribuidas: 0, sem_lead: 0, sem_campanha: 0 }))).toBeNull();
+  });
+
+  it('cala quando todas as vendas foram atribuídas', () => {
+    expect(buracoDaVenda(v({ vendas: 2, atribuidas: 2, sem_lead: 0, sem_campanha: 0 }))).toBeNull();
+  });
+
+  it('separa "sem lead" de "lead que não veio de anúncio" — são problemas diferentes', () => {
+    const t = buracoDaVenda(v())!;
+    expect(t).toContain('2 das 4 vendas');
+    expect(t).toContain('1 sem lead de origem');
+    expect(t).toContain('1 com lead que não veio de anúncio');
+    expect(t).toContain('das 2 que dá para atribuir');
+  });
+
+  it('cita só o problema que existe', () => {
+    const t = buracoDaVenda(v({ sem_campanha: 0, vendas: 3, atribuidas: 2 }))!;
+    expect(t).toContain('sem lead de origem');
+    expect(t).not.toContain('não veio de anúncio');
+  });
+});
+
+describe('o aviso do descasamento de janela (P4.4)', () => {
+  it('cala sem mediana medida', () => {
+    expect(avisoDoCiclo(null)).toBeNull();
+    expect(avisoDoCiclo(0)).toBeNull();
+  });
+
+  it('diz os dias e traduz em meses, para o gasto do mês não ser lido como o que pagou a venda', () => {
+    const t = avisoDoCiclo(52)!;
+    expect(t).toContain('52 dias');
+    expect(t).toContain('2 meses');
+    expect(t).toContain('não pelo gasto que aparece ao lado');
+  });
+
+  it('usa singular quando dá um mês', () => {
+    expect(avisoDoCiclo(28)).toContain('1 mês');
   });
 });

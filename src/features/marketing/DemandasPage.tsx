@@ -30,24 +30,9 @@ import {
   type Demanda, type Status, type Tipo,
 } from './demandas';
 
-const hojeIso = () => new Date().toISOString().slice(0, 10);
+import { useEscapeFecha } from '@/hooks/useEscapeFecha';
 
-/**
- * Escape fecha o modal.
- *
- * Visto no navegador em 21/09: sem isto, quem abre o card fica preso — o
- * único jeito de sair é acertar o X ou o fundo. É o básico que todo diálogo
- * precisa ter, e some justamente para quem usa teclado.
- */
-function useEscapeFecha(aoFechar: () => void) {
-  useEffect(() => {
-    const aoTeclar = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') aoFechar();
-    };
-    window.addEventListener('keydown', aoTeclar);
-    return () => window.removeEventListener('keydown', aoTeclar);
-  }, [aoFechar]);
-}
+const hojeIso = () => new Date().toISOString().slice(0, 10);
 
 export function DemandasPage() {
   const { user } = useAuthContext();

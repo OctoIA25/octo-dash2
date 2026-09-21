@@ -31,6 +31,7 @@ import {
   LayoutGrid,
   Target,
   Calculator,
+  Receipt,
 } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { TenantSwitcher } from '@/components/TenantSwitcher';
@@ -86,6 +87,9 @@ const GROUPS: SidebarGroup[] = [
           { id: 'cliente-interessado', label: 'Funil Cliente Interessado', icon: Users, route: '/metricas/cliente-interessado' },
           { id: 'cliente-proprietario', label: 'Cliente Proprietário', icon: Building2, route: '/metricas/cliente-proprietario' },
           { id: 'comissionamento', label: 'Comissionamento', icon: Calculator, route: '/metricas/comissionamento' },
+          // P4.4 — a conferência é onde o dinheiro da venda é conferido, e por
+          // isso mora junto do funil, não no Financeiro.
+          { id: 'conferencia-vendas', label: 'Conferência de vendas', icon: Receipt, route: '/comercial/vendas' },
         ],
       },
       {

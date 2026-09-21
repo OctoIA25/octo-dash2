@@ -28,6 +28,23 @@ export interface Campanha {
   custo_por_lead_dash: number | null;
   lead_ids: string[];
   lead_ids_visita: string[];
+  /** P4.4 — vendas do período cujo lead veio desta campanha. */
+  vendas: number;
+  vgv: number;
+  comissao_liquida: number;
+  /** Nulos quando não houve venda: zero diria "custo zero por cliente". */
+  cac: number | null;
+  roas: number | null;
+}
+
+/** O que dá e o que não dá para atribuir a campanha, no período (P4.4). */
+export interface VendasDoPeriodo {
+  vendas: number;
+  atribuidas: number;
+  sem_lead: number;
+  sem_campanha: number;
+  comissao_liquida: number;
+  vgv: number;
 }
 
 export interface ResultadoDeCampanhas {
@@ -43,8 +60,45 @@ export interface ResultadoDeCampanhas {
     campanhas: number;
     gasto_sem_atribuicao: number;
   };
+  vendas: VendasDoPeriodo;
   roi_disponivel: boolean;
   roi_falta: string;
+  /** Mediana medida em produção entre o lead chegar e a proposta ser assinada. */
+  ciclo_mediana_dias: number;
+}
+
+/**
+ * O que a leitura de ROI do período deixa de fora.
+ *
+ * Uma venda só é atribuível quando tem lead E o lead tem campanha. Medido em
+ * produção em 21/09: 30 das 61 propostas assinadas com valor não têm lead
+ * nenhum. Sem este aviso, um ROAS baixo é lido como campanha ruim quando é
+ * metade das vendas faltando na conta.
+ */
+export function buracoDaVenda(v: VendasDoPeriodo | null | undefined): string | null {
+  if (!v || v.vendas <= 0) return null;
+  const fora = (v.sem_lead || 0) + (v.sem_campanha || 0);
+  if (fora <= 0) return null;
+  const partes: string[] = [];
+  if (v.sem_lead > 0) partes.push(`${v.sem_lead} sem lead de origem`);
+  if (v.sem_campanha > 0) partes.push(`${v.sem_campanha} com lead que não veio de anúncio`);
+  return `${fora} das ${v.vendas} vendas do período não entram nesta conta (${partes.join(' e ')}). ` +
+    `CAC e ROAS aqui falam só das ${v.atribuidas} que dá para atribuir.`;
+}
+
+/**
+ * O aviso do descasamento de janela.
+ *
+ * O gasto é do período; a venda do período foi paga por anúncio de meses
+ * atrás. É a leitura que todo gerenciador de anúncio usa, e a única que o
+ * chefe consegue comparar com a Meta — mas ela precisa vir dita.
+ */
+export function avisoDoCiclo(dias: number | null | undefined): string | null {
+  if (!dias || dias <= 0) return null;
+  const meses = Math.round(dias / 30);
+  return `Entre o lead chegar e a venda ser assinada vão ${dias} dias, na mediana medida na base. ` +
+    `Ou seja: a venda deste período foi paga por anúncio de cerca de ${meses} ${meses === 1 ? 'mês' : 'meses'} atrás, ` +
+    'e não pelo gasto que aparece ao lado.';
 }
 
 /**

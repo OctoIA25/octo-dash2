@@ -25,8 +25,9 @@ import {
   type LinhaDeDetalhe,
 } from './campanhasService';
 import {
-  avisoDeAtribuicao, buracoDeAtribuicao, desdeQuando, empreendimentosDas, filtrarPorEmpreendimento,
-  pctSemAtribuicao, porUnidade, reaisExatos, type Campanha,
+  avisoDeAtribuicao, avisoDoCiclo, buracoDaVenda, buracoDeAtribuicao, desdeQuando,
+  empreendimentosDas, filtrarPorEmpreendimento, pctSemAtribuicao, porUnidade, reaisExatos,
+  type Campanha, type VendasDoPeriodo,
 } from './campanhas';
 
 const inteiro = (n: number | null | undefined) =>
@@ -218,6 +219,8 @@ export function CampanhasTab() {
             disponivel={data.roi_disponivel}
             falta={data.roi_falta}
             gasto={totais.gasto}
+            vendas={data.vendas}
+            cicloDias={data.ciclo_mediana_dias}
           />
         </>
       )}
@@ -356,41 +359,69 @@ function Tabela({
 }
 
 /**
- * O painel de ROI que aparece vazio, com o motivo.
+ * O painel de ROI.
  *
- * O plano pede CAC = gasto ÷ vendas e ROAS = comissão ÷ gasto. Nenhum dos dois
- * tem numerador enquanto a venda não souber de qual lead veio. Sumir com o
- * painel esconderia a dependência; mostrar zero seria mentira.
+ * O plano pede CAC = gasto ÷ vendas e ROAS = comissão ÷ gasto. Até o P4.4 os
+ * dois ficavam vazios: a venda não sabia de qual lead vinha. Agora ela nasce
+ * da proposta assinada e traz o lead junto, e os dois têm numerador.
+ *
+ * Continua condicionado, e continua dizendo o que não sabe — duas coisas:
+ * quantas vendas do período não dá para atribuir a campanha nenhuma, e que o
+ * gasto do período não é o gasto que pagou a venda do período.
  */
 function PainelDeRoi({
   disponivel,
   falta,
   gasto,
+  vendas,
+  cicloDias,
 }: {
   disponivel: boolean;
   falta: string;
   gasto: number;
+  vendas: VendasDoPeriodo | null | undefined;
+  cicloDias: number | null;
 }) {
+  const buraco = buracoDaVenda(vendas);
+  const ciclo = avisoDoCiclo(cicloDias);
+  const atribuidas = vendas?.atribuidas ?? 0;
+  const comissao = vendas?.comissao_liquida ?? 0;
+
   return (
     <section className="rounded-lg border">
       <header className="border-b bg-muted/40 px-3 py-2">
         <h3 className="text-sm font-semibold">ROI</h3>
       </header>
-      <div className="grid gap-2 p-3 sm:grid-cols-3">
+      <div className="grid gap-2 p-3 sm:grid-cols-4">
         <Contador rotulo="Investido" valor={reaisExatos(gasto)}
-          legenda="O que já dá para saber hoje: quanto foi gasto em anúncio no período." />
-        <Contador rotulo="CAC" valor="—"
+          legenda="Quanto foi gasto em anúncio no período." />
+        <Contador rotulo="Vendas atribuídas" valor={disponivel ? inteiro(atribuidas) : '—'}
+          legenda="Vendas do período cujo lead veio de uma destas campanhas." />
+        <Contador rotulo="CAC" valor={disponivel && atribuidas > 0 ? reaisExatos(gasto / atribuidas) : '—'}
           legenda="Gasto dividido pelas vendas vindas destas campanhas." />
-        <Contador rotulo="ROAS sobre VGC" valor="—"
+        <Contador rotulo="ROAS sobre VGC"
+          valor={disponivel && gasto > 0 ? `${(comissao / gasto).toFixed(2).replace('.', ',')}×` : '—'}
           legenda="Comissão das vendas dividida pelo gasto. Sobre comissão, e não sobre VGV — é o que entra na imobiliária." />
       </div>
+
       {!disponivel && (
         <p className="flex items-start gap-2 border-t px-3 py-2.5 text-xs text-muted-foreground">
           <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span>
-            <strong>Os dois ficam vazios de propósito.</strong> {falta} Quando a venda passar a guardar o
-            lead de origem, estes dois campos passam a funcionar sozinhos, com o gasto que já está aqui.
-          </span>
+          <span><strong>Os campos ficam vazios de propósito.</strong> {falta}</span>
+        </p>
+      )}
+
+      {disponivel && buraco && (
+        <p className="flex items-start gap-2 border-t px-3 py-2.5 text-xs text-amber-800 dark:text-amber-300">
+          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>{buraco}</span>
+        </p>
+      )}
+
+      {disponivel && ciclo && (
+        <p className="flex items-start gap-2 border-t px-3 py-2.5 text-xs text-muted-foreground">
+          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>{ciclo}</span>
         </p>
       )}
     </section>

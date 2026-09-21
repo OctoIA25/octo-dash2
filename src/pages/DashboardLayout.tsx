@@ -84,6 +84,9 @@ const OkrsPage = lazyWithRetry(() => import('@/features/okrs/pages/OkrsPage').th
 const PdiPage = lazyWithRetry(() => import('@/features/okrs/pages/OkrsPage').then(m => ({ default: m.PdiPage })));
 // P3.7 — o quadro de demandas de marketing.
 const DemandasPage = lazyWithRetry(() => import('@/features/marketing/DemandasPage').then(m => ({ default: m.DemandasPage })));
+
+// P4.4 — a conferência de vendas.
+const ConferenciaDeVendasPage = lazyWithRetry(() => import('@/features/comercial/ConferenciaDeVendasPage').then(m => ({ default: m.ConferenciaDeVendasPage })));
 const BolsaoPage = lazyWithRetry(() => import('@/features/leads/pages/BolsaoPage').then(m => ({ default: m.BolsaoPage })));
 const CentralLeadsPage = lazyWithRetry(() => import('@/features/leads/pages/CentralLeadsPage').then(m => ({ default: m.CentralLeadsPage })));
 const CorretoresPage = lazyWithRetry(() => import('@/features/corretores/pages/CorretoresPage').then(m => ({ default: m.CorretoresPage })));
@@ -253,6 +256,7 @@ const DashboardLayout = () => {
           <Route path="okrs" element={<OkrsPage />} />
           <Route path="pdi" element={<PdiPage />} />
           <Route path="marketing/demandas" element={<DemandasPage />} />
+          <Route path="comercial/vendas" element={<ConferenciaDeVendasPage />} />
 
           <Route 
             path="bolsao" 

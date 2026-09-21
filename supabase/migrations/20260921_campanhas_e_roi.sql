@@ -151,6 +151,7 @@ DECLARE
   v_ate date := COALESCE(p_ate, v_hoje);
   v_campanhas jsonb;
   v_totais jsonb;
+  v_vendas jsonb;
   v_atualizado timestamptz;
 BEGIN
   IF p_tenant_id IS NULL THEN RETURN NULL; END IF;
@@ -208,6 +209,26 @@ BEGIN
        AND (l.created_at AT TIME ZONE 'America/Sao_Paulo')::date >= v_de
        AND (l.created_at AT TIME ZONE 'America/Sao_Paulo')::date <= v_ate
      GROUP BY l.meta_campaign_id
+  ),
+  -- P4.4 — AS VENDAS QUE FECHARAM NO PERÍODO, pela campanha do lead de origem.
+  --
+  -- Por data da VENDA, e não pela data do lead: é a leitura que todo gerenciador
+  -- de anúncio usa, e a única que o chefe consegue comparar com o que vê na
+  -- Meta. Ela mistura janelas de propósito — medido em produção em 21/09, a
+  -- mediana entre o lead chegar e a proposta ser assinada é de 52 dias (de 9 a
+  -- 107). A tela diz isso em letras, para ninguém ler o mês como se o anúncio
+  -- do mês tivesse pago a venda do mês.
+  vendas_da_campanha AS (
+    SELECT l.meta_campaign_id AS campaign_id,
+           count(*) AS vendas,
+           sum(v.vgv) AS vgv,
+           sum(v.comissao_liquida) AS comissao_liquida
+      FROM vendas v
+      JOIN leads l ON l.id = v.lead_id AND l.tenant_id = v.tenant_id
+     WHERE v.tenant_id = p_tenant_id
+       AND v.data_venda >= v_de AND v.data_venda <= v_ate
+       AND l.meta_campaign_id IS NOT NULL
+     GROUP BY l.meta_campaign_id
   )
   SELECT COALESCE(jsonb_agg(jsonb_build_object(
            'campaign_id', g.campaign_id,
@@ -235,11 +256,20 @@ BEGIN
            'custo_por_lead_dash', CASE WHEN COALESCE(l.leads_dash, 0) > 0
                                        THEN round(g.gasto / l.leads_dash, 2) END,
            'lead_ids', COALESCE(to_jsonb(l.lead_ids), '[]'::jsonb),
-           'lead_ids_visita', COALESCE(to_jsonb(l.lead_ids_visita), '[]'::jsonb)
+           'lead_ids_visita', COALESCE(to_jsonb(l.lead_ids_visita), '[]'::jsonb),
+           'vendas', COALESCE(vd.vendas, 0),
+           'vgv', round(COALESCE(vd.vgv, 0), 2),
+           'comissao_liquida', round(COALESCE(vd.comissao_liquida, 0), 2),
+           -- CAC e ROAS por campanha, das mesmas somas — e NULOS quando não há
+           -- venda. Zero diria "custo zero por cliente", que é o contrário.
+           'cac', CASE WHEN COALESCE(vd.vendas, 0) > 0 THEN round(g.gasto / vd.vendas, 2) END,
+           'roas', CASE WHEN g.gasto > 0 AND COALESCE(vd.vendas, 0) > 0
+                        THEN round(vd.comissao_liquida / g.gasto, 2) END
          ) ORDER BY g.gasto DESC), '[]'::jsonb)
     INTO v_campanhas
     FROM gasto g
-    LEFT JOIN leads_da_campanha l ON l.campaign_id = g.campaign_id;
+    LEFT JOIN leads_da_campanha l ON l.campaign_id = g.campaign_id
+    LEFT JOIN vendas_da_campanha vd ON vd.campaign_id = g.campaign_id;
 
   SELECT jsonb_build_object(
     'gasto', round(COALESCE(sum(gasto), 0), 2),
@@ -261,16 +291,43 @@ BEGIN
      GROUP BY campaign_id
   ) t;
 
+  -- O ROI do período e, ao lado dele, O TAMANHO DO QUE NÃO ENTROU NA CONTA.
+  -- Uma venda só é atribuível quando tem lead E o lead tem campanha; medido em
+  -- produção em 21/09, 30 das 61 propostas assinadas com valor não têm lead
+  -- nenhum. Sem este número ao lado, um ROAS baixo seria lido como campanha
+  -- ruim quando é metade das vendas faltando na conta.
+  SELECT jsonb_build_object(
+    'vendas', count(*),
+    'atribuidas', count(*) FILTER (WHERE l.meta_campaign_id IS NOT NULL),
+    'sem_lead', count(*) FILTER (WHERE v.lead_id IS NULL),
+    'sem_campanha', count(*) FILTER (WHERE v.lead_id IS NOT NULL AND l.meta_campaign_id IS NULL),
+    'comissao_liquida', round(COALESCE(sum(v.comissao_liquida) FILTER (
+      WHERE l.meta_campaign_id IS NOT NULL), 0), 2),
+    'vgv', round(COALESCE(sum(v.vgv) FILTER (WHERE l.meta_campaign_id IS NOT NULL), 0), 2)
+  ) INTO v_vendas
+  FROM vendas v
+  LEFT JOIN leads l ON l.id = v.lead_id AND l.tenant_id = v.tenant_id
+  WHERE v.tenant_id = p_tenant_id
+    AND v.data_venda >= v_de AND v.data_venda <= v_ate;
+
   RETURN jsonb_build_object(
     'de', v_de,
     'ate', v_ate,
     'atualizado_em', v_atualizado,
     'campanhas', v_campanhas,
     'totais', v_totais,
-    -- A tela lê isto para dizer, no lugar do ROI, o que falta em vez de
-    -- mostrar um campo vazio sem explicação.
-    'roi_disponivel', false,
-    'roi_falta', 'A venda não guarda de qual lead veio (P4.4). Sem esse vínculo, CAC e ROAS não têm numerador.'
+    'vendas', v_vendas,
+    -- Desde o P4.4 a venda nasce da proposta assinada e guarda o lead, então o
+    -- ROI tem numerador. Continua condicionado: sem venda atribuída no período,
+    -- a tela mostra o que falta em vez de um número que não significa nada.
+    'roi_disponivel', (v_vendas->>'atribuidas')::int > 0,
+    'roi_falta', CASE
+      WHEN (v_vendas->>'vendas')::int = 0
+        THEN 'Nenhuma venda foi registrada no período. A venda nasce quando a proposta entra em "Proposta Assinada".'
+      ELSE 'Nenhuma das vendas do período pôde ser ligada a uma campanha — a venda precisa vir de um lead, e o lead precisa ter vindo de um anúncio de formulário.'
+    END,
+    -- Medido em produção em 21/09 sobre as 31 assinadas que têm lead.
+    'ciclo_mediana_dias', 52
   );
 END;
 $function$;
