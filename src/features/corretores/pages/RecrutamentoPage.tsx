@@ -14,6 +14,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { RecrutamentoFunnelChart } from '../components/RecrutamentoFunnelChart';
+import { RelatorioSection } from '../recrutamento/RelatorioSection';
 import { useRecruitment } from '../hooks/useRecruitment';
 import { ESTAGIOS, LABEL_ESTAGIO, MOTIVOS_PERDA, nivelAlcancado } from '../domain/recruitmentStages';
 import { FilaDeAcao } from '../components/FilaDeAcao';
@@ -467,6 +468,12 @@ const handleMudarStatus = async (novoStatus: string) => {
             <RecrutamentoFunnelChart candidatos={candidatosNoRecorte} />
           </div>
         </div>
+
+        {/* P3.8 — abaixo do fluxo novo, como o plano pede. Responde outra
+            pergunta que o funil acima: lá é "onde cada um está"; aqui é
+            "quantos CHEGARAM em cada etapa no período", que é o que mostra
+            para onde o processo escorre. */}
+        <RelatorioSection tenantId={tenantId || ''} />
 
         {/* Seção de Candidatos */}
         <div>
