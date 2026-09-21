@@ -4,6 +4,7 @@
  */
 import { registerMetaConfigRoutes } from './configRoutes.js';
 import { registerMetaWebhookRoutes } from './webhookRoutes.js';
+import { registerMetaFormRoutes } from './formRoutes.js';
 import { createMetaConfigResolver } from './configResolver.js';
 
 export { createMetaConfigResolver } from './configResolver.js';
@@ -16,4 +17,8 @@ export function registerMetaLeadgenRoutes(app, supabase, options = {}) {
   const resolver = options.resolver || createMetaConfigResolver({ supabase });
   registerMetaConfigRoutes(app, supabase, { ...options, resolver });
   registerMetaWebhookRoutes(app, supabase, { ...options, resolver });
+  // P2.7 — entra aqui, e não nos entrypoints: eles já registram este módulo
+  // nos dois lugares, e mexer neles de novo é uma chance a mais de a rota
+  // existir em dev e dar 404 em produção.
+  registerMetaFormRoutes(app, supabase, { ...options, configResolver: resolver });
 }

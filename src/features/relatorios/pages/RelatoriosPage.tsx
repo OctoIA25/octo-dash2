@@ -8,6 +8,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { InfoMetrica } from '@/features/kpis/components/KpiComponents';
 import { useSearchParams } from 'react-router-dom';
 import { GraficosDeLeadsSection } from '../components/GraficosDeLeadsSection';
+import { FormulariosMetaSection } from '../components/FormulariosMetaSection';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -223,8 +224,8 @@ export const RelatoriosPage = () => {
   const [vendasDoPeriodo, setVendasDoPeriodo] = useState<VendaAssinada[] | null>(null);
   const [exibirValores, setExibirValores] = useState(true);
   const _tab = searchParams.get('tab');
-  const activeSubArea: 'marketing' | 'leads' | 'metricas' | 'metricas-individuais' | 'imoveis' | 'financeiro' | 'excel' | 'enps' =
-    _tab === 'metricas' || _tab === 'leads' || _tab === 'imoveis' || _tab === 'metricas-individuais' || _tab === 'excel' || _tab === 'financeiro' || _tab === 'enps' ? _tab : 'marketing';
+  const activeSubArea: 'marketing' | 'leads' | 'metricas' | 'metricas-individuais' | 'imoveis' | 'financeiro' | 'excel' | 'enps' | 'formularios-meta' =
+    _tab === 'metricas' || _tab === 'leads' || _tab === 'imoveis' || _tab === 'metricas-individuais' || _tab === 'excel' || _tab === 'financeiro' || _tab === 'enps' || _tab === 'formularios-meta' ? _tab : 'marketing';
 
   // Sub-visão do Marketing: 'geral' (conteúdo atual) | 'site' (Google Analytics).
   // Não há setSearchParams neste arquivo (só o getter de useSearchParams), então seguimos o
@@ -1982,6 +1983,7 @@ export const RelatoriosPage = () => {
       <div ref={exportRef}>
       {/* SEÇÃO MARKETING — toggle Geral | Site */}
       {activeSubArea === 'leads' && <GraficosDeLeadsSection />}
+      {activeSubArea === 'formularios-meta' && <div className="p-4 md:p-6"><FormulariosMetaSection /></div>}
 
       {activeSubArea === 'marketing' && (
         <div className="mb-4 inline-flex rounded-lg border border-gray-200 dark:border-slate-700 p-0.5 bg-gray-50 dark:bg-slate-800">

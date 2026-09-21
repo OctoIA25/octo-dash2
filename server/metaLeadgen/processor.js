@@ -17,6 +17,7 @@ import { loadMetaEnv } from './metaConfig.js';
 import { createMetaGraphClient } from './graphClient.js';
 import { createMetaConfigResolver, CONFIG_TABLE } from './configResolver.js';
 import { normalizeLeadgen } from './normalizer.js';
+import { carimbarConfig, garantirFormulario, lerConfigDoFormulario } from './formConfig.js';
 import { enriquecerComCodigoLancamento } from '../lancamentoAnuncios.js';
 import { getDeletedTenantIds } from '../utils/tenantSoftDelete.js';
 
@@ -175,9 +176,20 @@ export function createMetaLeadgenProcessor({
     // nova é um INSERT na tabela, sem deploy.
     // Falha aberta, como no ZAP: erro de banco devolve null e o lead entra sem
     // código. Enriquecimento não pode custar um lead.
-    const payload = await enriquecerComCodigoLancamento(
+    const enriquecido = await enriquecerComCodigoLancamento(
       supabase, event.tenant_id, { originListingId: event.form_id }, bruto,
     );
+
+    // P2.7 — a configuração POR FORMULÁRIO. O formulário é registrado aqui
+    // mesmo se a sincronização com a Meta ainda não rodou: o webhook costuma
+    // ser a primeira notícia de um formulário novo, e sem isto ele só
+    // apareceria na tela (para ser desligado) depois de já ter gastado.
+    await garantirFormulario(supabase, event.tenant_id, event.form_id, event.page_id, logger);
+    const configDoForm = await lerConfigDoFormulario(supabase, event.tenant_id, event.form_id, logger);
+    const payload = carimbarConfig(enriquecido, configDoForm);
+    if (payload.raw_data.meta.captacao_ativa === false) {
+      logger.info(`[meta-leadgen] evento ${event.id}: formulário ${event.form_id} com captação desligada — lead entra sem distribuição`);
+    }
 
     let resp;
     try {

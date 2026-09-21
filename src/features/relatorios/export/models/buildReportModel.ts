@@ -343,8 +343,14 @@ function emptyModel(base: Base): ReportModel {
  * `leads` entra junto de `excel` e `enps`: são telas sem relatório exportável
  * (P1.10). O `default` já devolve modelo vazio — o que faltava era o tipo
  * aceitar o nome, senão a aba nova nem compila.
+ *
+ * `formularios-meta` (P2.7) entra pelo mesmo motivo: é tela de configuração,
+ * com interruptores, não relatório para exportar em PDF.
  */
-export function buildReportModel(subArea: RelatoriosSubArea | 'excel' | 'enps' | 'leads', source: ReportSource): ReportModel {
+export function buildReportModel(
+  subArea: RelatoriosSubArea | 'excel' | 'enps' | 'leads' | 'formularios-meta',
+  source: ReportSource,
+): ReportModel {
   const base: Base = { subtitle: source.subtitle, meta: source.meta ?? [] };
   switch (subArea) {
     case 'marketing':

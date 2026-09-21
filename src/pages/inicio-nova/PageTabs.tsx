@@ -137,6 +137,7 @@ const TAB_CONFIGS: TabConfig[] = [
     tabs: [
       { id: 'marketing', label: 'Marketing', icon: TrendingUp, href: '/relatorios?tab=marketing', isQuery: true },
       { id: 'leads', label: 'Leads', icon: Tag, href: '/relatorios?tab=leads', isQuery: true },
+      { id: 'formularios-meta', label: 'Formulários da Meta', icon: Megaphone, href: '/relatorios?tab=formularios-meta', isQuery: true },
       { id: 'metricas', label: 'Métricas da Equipe', icon: Users, href: '/relatorios?tab=metricas', isQuery: true },
       { id: 'metricas-individuais', label: 'Métricas Individuais', icon: User, href: '/relatorios?tab=metricas-individuais', isQuery: true },
       { id: 'imoveis', label: 'Imóveis', icon: Building2, href: '/relatorios?tab=imoveis', isQuery: true },

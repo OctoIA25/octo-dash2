@@ -38,8 +38,15 @@ export function createMetaGraphClient({
 } = {}) {
   const cfg = loadMetaEnv(processEnv);
 
-  async function once(leadgenId, accessToken) {
-    const url = `https://graph.facebook.com/${cfg.graphVersion}/${encodeURIComponent(leadgenId)}?fields=${FIELDS}`;
+  /**
+   * Uma chamada ao Graph. Recebe o caminho inteiro (sem a versão) para servir
+   * tanto a `/{leadgen_id}` quanto a `/{page_id}/leadgen_forms` — a
+   * classificação de erro é a mesma, e duplicá-la daria dois critérios de
+   * "vale tentar de novo" divergindo com o tempo (P2.7).
+   */
+  async function once(caminho, accessToken, campos = FIELDS) {
+    const sep = caminho.includes('?') ? '&' : '?';
+    const url = `https://graph.facebook.com/${cfg.graphVersion}/${caminho}${campos ? `${sep}fields=${campos}` : ''}`;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), cfg.timeoutMs);
     try {
@@ -58,7 +65,7 @@ export function createMetaGraphClient({
       if (resp.ok && body == null) {
         return { ok: false, status: resp.status, retriable: true, error: `resposta ${resp.status} sem corpo JSON` };
       }
-      if (resp.ok) return { ok: true, lead: body };
+      if (resp.ok) return { ok: true, lead: body, corpo: body };
       return {
         ok: false,
         status: resp.status,
@@ -70,14 +77,15 @@ export function createMetaGraphClient({
     }
   }
 
-  async function fetchLead(leadgenId, accessToken) {
+  /** O laço de tentativas, para as três chamadas usarem o mesmo. */
+  async function comRetry(caminho, accessToken, campos, rotulo) {
     if (!accessToken) {
       return { ok: false, status: null, retriable: false, error: 'token de acesso ausente na config do tenant' };
     }
     let last = null;
     for (let attempt = 1; attempt <= cfg.retries; attempt++) {
       try {
-        last = await once(leadgenId, accessToken);
+        last = await once(caminho, accessToken, campos);
       } catch (e) {
         // Rede/timeout: sem status. Vale retry — não sabemos se a Meta recebeu.
         last = { ok: false, status: null, retriable: true, error: e?.name === 'AbortError' ? 'timeout' : (e?.message || 'erro de rede') };
@@ -85,9 +93,54 @@ export function createMetaGraphClient({
       if (last.ok || !last.retriable) return last;
       if (attempt < cfg.retries) await sleep(cfg.backoffMs * attempt);
     }
-    logger.warn(`[meta-leadgen] fetchLead esgotou tentativas: ${last?.error}`);
+    logger.warn(`[meta-leadgen] ${rotulo} esgotou tentativas: ${last?.error}`);
     return last;
   }
 
-  return { fetchLead };
+  async function fetchLead(leadgenId, accessToken) {
+    return comRetry(encodeURIComponent(leadgenId), accessToken, FIELDS, 'fetchLead');
+  }
+
+  /**
+   * Os formulários da página (P2.7). SÓ os nomes — não baixa lead nenhum.
+   *
+   * Decidido pelo chefe em 21/09: a tela lista TODOS os formulários da página,
+   * inclusive os que nunca receberam lead. É o que permite desligar a captação
+   * de um formulário ANTES do primeiro lead entrar; listando só os que já
+   * geraram lead, o gestor só descobre o formulário quando já é tarde.
+   */
+  async function fetchForms(pageId, accessToken) {
+    const r = await comRetry(
+      `${encodeURIComponent(pageId)}/leadgen_forms?limit=100`,
+      accessToken,
+      'id,name,status,leads_count',
+      'fetchForms',
+    );
+    if (!r.ok) return r;
+    return { ok: true, forms: Array.isArray(r.corpo?.data) ? r.corpo.data : [] };
+  }
+
+  /**
+   * Os leads de um formulário (P2.7). A Meta guarda os últimos 90 dias.
+   *
+   * `depois` corta pelo instante já baixado, para a segunda rodada não pagar
+   * de novo pelo que já veio.
+   */
+  async function fetchFormLeads(formId, accessToken, { depois = null, limite = 100 } = {}) {
+    const filtro = depois
+      ? `&filtering=${encodeURIComponent(JSON.stringify([
+          { field: 'time_created', operator: 'GREATER_THAN', value: Math.floor(new Date(depois).getTime() / 1000) },
+        ]))}`
+      : '';
+    const r = await comRetry(
+      `${encodeURIComponent(formId)}/leads?limit=${Math.min(Math.max(limite, 1), 500)}${filtro}`,
+      accessToken,
+      FIELDS,
+      'fetchFormLeads',
+    );
+    if (!r.ok) return r;
+    return { ok: true, leads: Array.isArray(r.corpo?.data) ? r.corpo.data : [] };
+  }
+
+  return { fetchLead, fetchForms, fetchFormLeads };
 }
