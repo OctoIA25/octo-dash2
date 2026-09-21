@@ -22,6 +22,7 @@ import {
   Inbox,
   FileText,
   Headphones,
+  ClipboardList,
   Megaphone,
   Pencil,
   Settings,
@@ -99,6 +100,27 @@ const GROUPS: SidebarGroup[] = [
         ],
       },
       { id: 'metas', label: 'Metas', icon: Target, route: '/metas', permission: 'metas' },
+    ],
+  },
+  {
+    // P3.7 — o plano pede uma seção Marketing no menu, junto com Formulários
+    // da Meta, Campanhas e ROI. As telas continuam onde estão; o que muda é
+    // haver um caminho direto até elas.
+    title: 'MARKETING',
+    items: [
+      {
+        id: 'mkt-demandas',
+        label: 'Marketing',
+        icon: Megaphone,
+        route: '/marketing/demandas',
+        permission: 'relatorios',
+        subItems: [
+          { id: 'mkt-demandas', label: 'Demandas', icon: ClipboardList, route: '/marketing/demandas' },
+          { id: 'mkt-campanhas', label: 'Campanhas e ROI', icon: Target, route: '/relatorios?tab=marketing&view=campanhas' },
+          { id: 'mkt-anuncios', label: 'Anúncios', icon: BarChart3, route: '/relatorios?tab=marketing&view=anuncios' },
+          { id: 'mkt-formularios', label: 'Formulários da Meta', icon: ClipboardList, route: '/relatorios?tab=formularios-meta' },
+        ],
+      },
     ],
   },
   {

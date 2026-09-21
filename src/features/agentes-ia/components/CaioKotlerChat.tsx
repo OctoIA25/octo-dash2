@@ -4,6 +4,7 @@
  */
 
 import { useState, useRef, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from '@/hooks/use-toast';
 import { useTheme } from '@/hooks/useTheme';
@@ -77,6 +78,21 @@ export const CaioKotlerChat = ({
   const [messages, setMessages] = useState<Message[]>([GREETING_MESSAGE]);
   const [inputMessage, setInputMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
+
+  // P3.7 — o quadro de demandas manda o briefing por aqui. O texto entra no
+  // campo e NÃO é enviado sozinho: quem pediu revisa antes, porque o rascunho
+  // sai do que a pessoa digitou e pode estar pela metade.
+  const [paramsDaUrl, setParamsDaUrl] = useSearchParams();
+  useEffect(() => {
+    const pergunta = paramsDaUrl.get('pergunta');
+    if (!pergunta) return;
+    setInputMessage(pergunta);
+    // A pergunta sai da URL depois de usada: recarregar a página não pode
+    // reescrever o campo por cima do que a pessoa já editou.
+    const proximos = new URLSearchParams(paramsDaUrl);
+    proximos.delete('pergunta');
+    setParamsDaUrl(proximos, { replace: true });
+  }, [paramsDaUrl, setParamsDaUrl]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 

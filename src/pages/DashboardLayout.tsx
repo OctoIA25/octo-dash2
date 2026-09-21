@@ -82,6 +82,8 @@ const GestaoEquipePage = lazyWithRetry(() => import('@/features/corretores/pages
 // terceira cópia em código morto.
 const OkrsPage = lazyWithRetry(() => import('@/features/okrs/pages/OkrsPage').then(m => ({ default: m.OkrsPage })));
 const PdiPage = lazyWithRetry(() => import('@/features/okrs/pages/OkrsPage').then(m => ({ default: m.PdiPage })));
+// P3.7 — o quadro de demandas de marketing.
+const DemandasPage = lazyWithRetry(() => import('@/features/marketing/DemandasPage').then(m => ({ default: m.DemandasPage })));
 const BolsaoPage = lazyWithRetry(() => import('@/features/leads/pages/BolsaoPage').then(m => ({ default: m.BolsaoPage })));
 const CentralLeadsPage = lazyWithRetry(() => import('@/features/leads/pages/CentralLeadsPage').then(m => ({ default: m.CentralLeadsPage })));
 const CorretoresPage = lazyWithRetry(() => import('@/features/corretores/pages/CorretoresPage').then(m => ({ default: m.CorretoresPage })));
@@ -250,6 +252,7 @@ const DashboardLayout = () => {
               de Equipe; quem pode ver o de outra pessoa é o banco que decide. */}
           <Route path="okrs" element={<OkrsPage />} />
           <Route path="pdi" element={<PdiPage />} />
+          <Route path="marketing/demandas" element={<DemandasPage />} />
 
           <Route 
             path="bolsao" 
