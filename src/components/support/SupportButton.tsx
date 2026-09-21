@@ -36,7 +36,15 @@ export function SupportButton({
 
   return (
     <>
-      <div className={`${positionClasses[position]} z-50`}>
+      {/*
+        z-40, e não z-50: os diálogos do app são `fixed inset-0 z-50` e este
+        botão é desenhado depois de todos eles, no layout. Com o mesmo nível ele
+        ficava POR CIMA — medido no navegador em 21/09, o botão de suporte
+        (x 1120–1176, y 522–576) cobria o "Salvar" da gaveta de materiais
+        (x 1122–1180, y 512–542), e o clique ia para o suporte. Vale para as
+        oito telas com diálogo, não só para aquela.
+      */}
+      <div className={`${positionClasses[position]} z-40`}>
         {!isMinimized && (
           <button
             onClick={() => setIsOpen(true)}

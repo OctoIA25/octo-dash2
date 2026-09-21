@@ -34,6 +34,7 @@ import {
   Receipt,
   Wallet,
   Shield,
+  BookOpen,
 } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { TenantSwitcher } from '@/components/TenantSwitcher';
@@ -155,6 +156,10 @@ const GROUPS: SidebarGroup[] = [
       // P4.1 — o cargo é um pacote de permissões que vale para todo mundo que
       // o tem. Mora perto da Gestão de Equipe, que é onde as pessoas estão.
       { id: 'cargos', label: 'Cargos', icon: Shield, route: '/cargos', permission: 'gestao-equipe' },
+      // P4.2 — materiais de estudo. Permissão 'leads' de propósito: o plano de
+      // carreira e as regras de comissão são para o corretor ler, e ele não
+      // tem 'gestao-equipe'. Quem gere edita; todo membro lê.
+      { id: 'materiais', label: 'Materiais de estudo', icon: BookOpen, route: '/materiais', permission: 'leads' },
     ],
   },
   {

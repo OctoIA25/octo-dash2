@@ -93,6 +93,9 @@ const FinanceiroPage = lazyWithRetry(() => import('@/features/financeiro/Finance
 
 // P4.1 — cargos com pacote de permissões.
 const CargosPage = lazyWithRetry(() => import('@/features/cargos/CargosPage').then(m => ({ default: m.CargosPage })));
+
+// P4.2 — materiais de estudo.
+const MateriaisPage = lazyWithRetry(() => import('@/features/materiais/MateriaisPage').then(m => ({ default: m.MateriaisPage })));
 const BolsaoPage = lazyWithRetry(() => import('@/features/leads/pages/BolsaoPage').then(m => ({ default: m.BolsaoPage })));
 const CentralLeadsPage = lazyWithRetry(() => import('@/features/leads/pages/CentralLeadsPage').then(m => ({ default: m.CentralLeadsPage })));
 const CorretoresPage = lazyWithRetry(() => import('@/features/corretores/pages/CorretoresPage').then(m => ({ default: m.CorretoresPage })));
@@ -266,6 +269,7 @@ const DashboardLayout = () => {
           <Route path="comercial/vendas" element={<ConferenciaDeVendasPage />} />
           <Route path="financeiro" element={<FinanceiroPage />} />
           <Route path="cargos" element={<CargosPage />} />
+          <Route path="materiais" element={<MateriaisPage />} />
 
           <Route 
             path="bolsao" 
