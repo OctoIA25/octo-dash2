@@ -642,6 +642,9 @@ export const MeusLeadsAtribuidosSection = ({
   
   const [meusLeads, setMeusLeads] = useState<KanbanLead[]>([]);
   const [loading, setLoading] = useState(true);
+  // Recarga com o kanban na tela: alimenta só o botão "Atualizar".
+  const [atualizando, setAtualizando] = useState(false);
+  const primeiraCargaRef = useRef(true);
   const [leadParaArquivar, setLeadParaArquivar] = useState<KanbanLead | null>(null);
   const [motivoArquivamento, setMotivoArquivamento] = useState('');
   const [motivoPredefinido, setMotivoPredefinido] = useState<string>('ja_fechou_outro');
@@ -755,7 +758,13 @@ export const MeusLeadsAtribuidosSection = ({
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
   );
 
-  // Carregar meus leads
+  /**
+   * Só a PRIMEIRA carga troca o kanban pelo "Carregando seus leads...". As
+   * recargas (salvar um lead avisa o app inteiro, ver leadsEventEmitter) são
+   * silenciosas: trocar as colunas por um spinner as desmonta, e com elas vão
+   * embora a rolagem e o "Mostrar mais" de cada coluna — quem estava no fim de
+   * uma coluna longa voltava ao topo (queixa de 21/09/2026).
+   */
   const carregarMeusLeads = useCallback(async () => {
     // Aguardar auth terminar de carregar antes de buscar leads
     if (authLoading) {
@@ -769,7 +778,8 @@ export const MeusLeadsAtribuidosSection = ({
     // não atende lead nenhum e o kanban vinha VAZIO.
     if (isAdmin || user?.systemRole === 'team_leader') {
       try {
-        setLoading(true);
+        setLoading(primeiraCargaRef.current);
+        setAtualizando(true);
         const data = await fetchTodosLeadsCRM(tenantId || undefined, leadType);
         // Gestor (team_leader) vê o kanban recortado pela PRÓPRIA atuação —
         // mesmo filtro do Bolsão: quantos leads da especialidade dele existem e
@@ -789,6 +799,8 @@ export const MeusLeadsAtribuidosSection = ({
         });
       } finally {
         setLoading(false);
+        setAtualizando(false);
+        primeiraCargaRef.current = false;
       }
       return;
     }
@@ -813,7 +825,8 @@ export const MeusLeadsAtribuidosSection = ({
     }
 
     try {
-      setLoading(true);
+      setLoading(primeiraCargaRef.current);
+      setAtualizando(true);
       // Tentar buscar por ID primeiro
       const effectiveTenantId = tenantId || undefined;
       let data = userId
@@ -835,6 +848,8 @@ export const MeusLeadsAtribuidosSection = ({
       });
     } finally {
       setLoading(false);
+      setAtualizando(false);
+      primeiraCargaRef.current = false;
     }
   }, [authLoading, isAdmin, scope.id, scope.name, scope.email, toast, tenantId, leadType, user?.systemRole, user?.permissions]);
 
@@ -1247,12 +1262,12 @@ const handleDragEnd = useCallback(async (event: DragEndEvent) => {
           </span>
           <Button
             onClick={() => carregarMeusLeads()}
-            disabled={loading}
+            disabled={loading || atualizando}
             variant="outline"
             size="sm"
             className="h-8 text-xs"
           >
-            {loading ? (
+            {(loading || atualizando) ? (
               <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
             ) : (
               <Clock className="h-3.5 w-3.5 mr-1" />
