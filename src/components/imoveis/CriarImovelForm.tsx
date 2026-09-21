@@ -309,7 +309,11 @@ const initialFormData: ImovelFormData = {
   valor_iptu: '',
   titulo: '',
   descricao: '',
-  anunciar: 'nao',
+  // 'sim' desde 21/09/2026: com o padrão 'nao', todo imóvel novo nascia fora dos
+  // portais até alguém lembrar de marcar — três imóveis da Lotus ficaram assim
+  // sem ninguém notar. O imóvel só chega ao portal depois de aprovado, então o
+  // padrão "anuncia" não publica nada sozinho.
+  anunciar: 'sim',
   destaque: 'nao',
   super_destaque: 'nao',
   link_video: '',
