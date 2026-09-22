@@ -35,6 +35,7 @@ import {
   Wallet,
   Shield,
   BookOpen,
+  NotebookPen,
   FileSignature,
 } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
@@ -161,6 +162,10 @@ const GROUPS: SidebarGroup[] = [
       // carreira e as regras de comissão são para o corretor ler, e ele não
       // tem 'gestao-equipe'. Quem gere edita; todo membro lê.
       { id: 'materiais', label: 'Materiais de estudo', icon: BookOpen, route: '/materiais', permission: 'leads' },
+      // P4.8 — atas de reunião. Permissão 'gestao-equipe': a ata guarda a
+      // conversa inteira da gestão, e quem só faz o trabalho recebe a tarefa na
+      // agenda, não a conversa.
+      { id: 'reunioes', label: 'Reuniões', icon: NotebookPen, route: '/reunioes', permission: 'gestao-equipe' },
     ],
   },
   {

@@ -3969,6 +3969,11 @@ registerBaseConhecimentoRoutes(app, supabase, validateApiKey);
 import { registerDocumentosRoutes } from './documentos/routes.js';
 registerDocumentosRoutes(app, supabase, validateApiKey);
 
+// P4.8 — a LIA estrutura a ata da reunião. Ela escreve o conteúdo; quem cria
+// as tarefas na agenda de alguém é uma pessoa, depois de revisar.
+import { registerAtasRoutes } from './atas/routes.js';
+registerAtasRoutes(app, supabase, validateApiKey);
+
 // Cadência do corretor — os 10 quadrados do modal do lead (canal, resultado,
 // próximo toque). Leitura e escrita pelo servidor porque lead_toques tem RLS
 // sem policy; a permissão é a mesma da cadência da LIA.
