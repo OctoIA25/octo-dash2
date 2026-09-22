@@ -9,6 +9,9 @@ import { HeaderSlotProvider } from '@/contexts/HeaderSlotContext';
 import { NovoActionsProvider } from '@/contexts/NovoActionsContext';
 import { ViewAsProvider } from '@/contexts/ViewAsContext';
 import { SupportButton } from '@/components/support/SupportButton';
+// P4.9 — o (?) de cada tela. Montado aqui, e não em trinta páginas: o botão de
+// suporte já aparece em toda a Dash, e este mora ao lado dele.
+import { BotaoDeAjuda } from '@/features/ajuda/BotaoDeAjuda';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { SupportService } from '@/components/support/SupportService';
 
@@ -45,6 +48,7 @@ export function NovoLayout({ children }: NovoLayoutProps) {
               {children}
             </main>
           </div>
+          <BotaoDeAjuda />
           <SupportButton
           position='bottom-right'
           config={{

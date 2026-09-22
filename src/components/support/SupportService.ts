@@ -26,11 +26,17 @@ export class SupportService {
         try {
             const systemInfo = this.collectSystemInfo();
 
+            // `user_id`, e NÃO `id`. Até 22/09/2026 isto mandava o identificador
+            // de QUEM reportou no campo do identificador DO REPORTE — e como
+            // `bug_reports` não tinha chave primária, nada reclamou: os quatro
+            // reportes de produção ficaram com o mesmo id e `user_id` vazio.
+            // Mesmo abrindo a tabela, não dava para saber de quem era a queixa.
+            // O id agora vem do banco (`gen_random_uuid()`).
             const payload = {
                 ...report,
                 ...systemInfo,
-                id: SupportService.currentUser?.id,
-                tenant_id: SupportService.currentTenantId, 
+                user_id: SupportService.currentUser?.id ?? null,
+                tenant_id: SupportService.currentTenantId,
                 status: 'open' as const
             };
 

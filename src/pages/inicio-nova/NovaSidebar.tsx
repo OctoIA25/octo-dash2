@@ -36,6 +36,7 @@ import {
   Shield,
   BookOpen,
   NotebookPen,
+  HelpCircle,
   FileSignature,
 } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
@@ -222,6 +223,9 @@ const GROUPS: SidebarGroup[] = [
     items: [
       { id: 'integracoes', label: 'Integrações', icon: Plug, route: '/integracoes', permission: 'integracoes' },
       { id: 'relatorios', label: 'Relatórios', icon: BarChart3, route: '/relatorios', permission: 'relatorios' },
+      // P4.9 — Ajuda. Permissão 'leads' de propósito: uma ajuda que só quem
+      // administra lê não ajuda ninguém.
+      { id: 'ajuda', label: 'Ajuda', icon: HelpCircle, route: '/ajuda', permission: 'leads' },
       { id: 'configuracoes', label: 'Configurações', icon: Settings, route: '/configuracoes', permission: 'leads' },
     ],
   },
