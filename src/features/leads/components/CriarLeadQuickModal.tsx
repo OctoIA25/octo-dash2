@@ -31,6 +31,7 @@ import { avisoEmail, avisoTelefone, chaveTelefone, classificarEmail, classificar
 import { fetchCorretoresDisponiveis, type CorretorDisponivel } from '../services/roletaService';
 import { fetchFichasDuplicadas, type FichaDuplicada } from '../services/leadsService';
 import { CadenciaLiaSection } from './CadenciaLiaSection';
+import { DistribuicaoDoLead } from '@/features/distribuicao/DistribuicaoDoLead';
 import { CadenciaToquesSection } from './CadenciaToquesSection';
 import { AtividadesLeadSection } from './AtividadesLeadSection';
 import { useCadenciaLead } from '../hooks/useCadenciaLead';
@@ -1118,6 +1119,17 @@ export const CriarLeadQuickModal = ({
                 corretorEmail={userEmail}
                 imovelRef={editingLead.codigo}
                 ativo={isOpen}
+              />
+            )}
+
+            {/* Seção: Distribuição (P1.1) — por que este lead é desta pessoa,
+                e quanto tempo falta para atender. Somente leitura: quem atribui
+                é a Lia, e o prazo mora no extrato, não no lead. */}
+            {isEditMode && editingLead && (
+              <DistribuicaoDoLead
+                tenantId={tenantId}
+                leadId={editingLead.id}
+                atendidoEm={editingLead.data_atendimento ?? null}
               />
             )}
 
