@@ -12,6 +12,13 @@
     "isolatedModules": true,
     "moduleDetection": "force",
     "noEmit": true,
+
+    /* O typecheck deste projeto leva ~60s do zero. Com o cache incremental,
+       a segunda rodada cai para ~3s — e o typecheck é a coisa que mais se
+       roda durante o trabalho. O cache vai para node_modules/.tmp, que já é
+       ignorado pelo git; não há arquivo novo para versionar. */
+    "incremental": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
     "jsx": "react-jsx",
 
     /* Linting */
