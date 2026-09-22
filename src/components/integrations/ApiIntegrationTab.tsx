@@ -13,7 +13,7 @@ import { fetchApiKey, generateApiKey, revokeApiKey, type ApiKey } from '@/featur
 import { supabase } from '@/integrations/supabase/client';
 
 export const ApiIntegrationTab: React.FC = () => {
-  const { tenantId } = useAuth();
+  const { tenantId, isAdmin } = useAuth();
   const navigate = useNavigate();
   const [apiKey, setApiKey] = useState<ApiKey | null>(null);
   const [showKey, setShowKey] = useState(false);
@@ -86,6 +86,26 @@ export const ApiIntegrationTab: React.FC = () => {
   if (isLoading) return (
     <div className="flex items-start justify-start p-12">
       <RefreshCw className="w-6 h-6 text-blue-600 animate-spin" />
+    </div>
+  );
+
+  // A chave da API é do administrador desde 22/09, quando se descobriu que
+  // qualquer membro a lia em texto puro — inclusive a que autentica a API
+  // interna. Sem esta tela, quem não é admin veria "nenhuma chave" e um botão
+  // de gerar que o banco recusa: a tela convidando para algo impossível.
+  if (!isAdmin) return (
+    <div className="p-8 w-full max-w-2xl">
+      <div className="flex items-start gap-3 rounded-2xl border border-gray-200 bg-white p-6">
+        <Key className="mt-0.5 h-5 w-5 shrink-0 text-gray-400" />
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900">A chave de API é do administrador</h2>
+          <p className="mt-1 text-sm leading-relaxed text-gray-500">
+            Ela dá acesso aos dados desta imobiliária por fora do sistema, então só quem
+            administra a conta pode ver ou gerar. Fale com o administrador se precisar
+            integrar alguma coisa.
+          </p>
+        </div>
+      </div>
     </div>
   );
 
