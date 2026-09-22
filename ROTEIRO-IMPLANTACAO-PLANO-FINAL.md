@@ -158,6 +158,7 @@ anulável — instantâneas no Postgres, sem reescrever tabela:
 | `formularios_da_meta` | `leads` | 6 colunas |
 | `campanhas_e_roi` | `tenant_meta_leadgen_config` | — |
 | `plantao_da_lia` | `lia_perguntas_corretor` | — |
+| `etiqueta_de_quem_enviou` | `whatsapp_messages` (28.116 linhas) | `enviado_por` + 2 CHECK + backfill |
 | `agenda_da_lia` | `lia_followups` | — |
 | `relatorio_de_recrutamento` | `recrut_candidato` | — |
 
@@ -176,7 +177,10 @@ existente.
 2. **`integracoes` idem**, para a tela de Integrações aparecer.
 3. Rodar a suíte SQL contra produção **não** — ela usa `ROLLBACK`, mas cria
    fixtures. Conferir por consulta, não por teste.
-4. O front precisa subir junto: várias telas leem funções que só existem depois
+4. **Mandar `server/leadToques/PROMPT_LIA_ETIQUETA.md` para quem mexe na LIA.**
+   Sem isso, a etiqueta nasce mostrando "sem autor" em tudo que for novo, e o
+   botão "Assumir conversa" grava a decisão que ninguém lê.
+5. O front precisa subir junto: várias telas leem funções que só existem depois
    destas migrations. Aplicar o banco sem o front deixa as telas antigas
    funcionando; aplicar o front sem o banco quebra as telas novas.
 
