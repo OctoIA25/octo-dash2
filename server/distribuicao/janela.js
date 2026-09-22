@@ -177,3 +177,35 @@ export function minutosDePrazo(config) {
   const m = Number(config?.tempo_expiracao_exclusivo);
   return Number.isFinite(m) && m > 0 && m < 24 * 60 ? m : PRAZO_PADRAO_MIN;
 }
+
+/** Os nomes de dia que o banco usa em `horario_funcionamento`, na ordem 0..6. */
+export const DIAS_DA_CONFIGURACAO = [
+  'domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado',
+];
+
+const doisDigitos = (n) => String(n).padStart(2, '0');
+const paraHHMM = (min) => `${doisDigitos(Math.floor(min / 60))}:${doisDigitos(min % 60)}`;
+
+/**
+ * O caminho de volta: a janela vira o formato que a TELA edita e o banco grava.
+ *
+ * EXISTE PARA NÃO HAVER DOIS PADRÕES. A tela de Configurações do Bolsão tinha
+ * um padrão próprio, escrito à mão — 9h às 18h, com SÁBADO ativo das 9h às 13h
+ * — enquanto a regra usava 9h às 20h de segunda a sexta. Os dois discordavam,
+ * e o jeito de descobrir era abrir a tela, salvar sem mudar nada, e ver o
+ * prazo de atendimento mudar sozinho: o sábado voltava a contar.
+ *
+ * Agora a tela deriva daqui. Um padrão só, e quem quiser mudar muda num lugar.
+ */
+export function janelaParaConfiguracao(janela = JANELA_PADRAO) {
+  const fora = {};
+  DIAS_DA_CONFIGURACAO.forEach((nome, i) => {
+    const d = janela[i];
+    fora[nome] = d
+      ? { ativo: true, inicio: paraHHMM(d.inicio), termino: paraHHMM(d.fim) }
+      // Dia desligado guarda um horário plausível: se alguém religar o dia na
+      // tela, o campo não abre vazio.
+      : { ativo: false, inicio: '09:00', termino: '20:00' };
+  });
+  return fora;
+}

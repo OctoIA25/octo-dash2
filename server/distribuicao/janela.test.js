@@ -21,6 +21,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   JANELA_PADRAO,
+  janelaParaConfiguracao,
   janelaDaConfiguracao,
   prazoDeAtendimento,
   minutosUteisEntre,
@@ -208,5 +209,32 @@ describe('minutosDePrazo — o ajuste mora aqui, não na rota', () => {
   it('exatamente 24h já é demais para um prazo de atendimento', () => {
     expect(minutosDePrazo({ tempo_expiracao_exclusivo: 1440 })).toBe(60);
     expect(minutosDePrazo({ tempo_expiracao_exclusivo: 1439 })).toBe(1439);
+  });
+});
+
+describe('janelaParaConfiguracao — o caminho de volta, para não haver dois padrões', () => {
+  it('o padrão da TELA é o mesmo da REGRA', () => {
+    const c = janelaParaConfiguracao();
+    expect(c.segunda).toEqual({ ativo: true, inicio: '09:00', termino: '20:00' });
+    expect(c.sexta).toEqual({ ativo: true, inicio: '09:00', termino: '20:00' });
+    // Os dois que a decisão de 22/09 desligou.
+    expect(c.sabado.ativo).toBe(false);
+    expect(c.domingo.ativo).toBe(false);
+  });
+
+  it('SALVAR A TELA SEM MUDAR NADA não pode mexer no prazo', () => {
+    // Era o furo: a tela tinha um padrão próprio (9h-18h, sábado 9h-13h), e
+    // abrir Configurações e salvar reescrevia a regra com o sábado ativo.
+    const daTela = janelaParaConfiguracao(JANELA_PADRAO);
+    expect(janelaDaConfiguracao(daTela)).toEqual(JANELA_PADRAO);
+  });
+
+  it('dia desligado guarda horário plausível, para o campo não abrir vazio', () => {
+    expect(janelaParaConfiguracao().sabado.inicio).toBe('09:00');
+  });
+
+  it('ida e volta de uma janela personalizada devolve a mesma coisa', () => {
+    const custom = [null, { inicio: 480, fim: 1080 }, null, null, null, null, { inicio: 540, fim: 780 }];
+    expect(janelaDaConfiguracao(janelaParaConfiguracao(custom))).toEqual(custom);
   });
 });

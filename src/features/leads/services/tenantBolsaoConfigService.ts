@@ -1,4 +1,6 @@
 import { supabase } from '@/lib/supabaseClient';
+// A janela da regra é a fonte do horário padrão — ver o comentário abaixo.
+import { janelaParaConfiguracao } from '../../../../server/distribuicao/janela.js';
 
 export interface HorarioDiaConfig {
   ativo: boolean;
@@ -47,15 +49,15 @@ export const DEFAULT_BOLSAO_CONFIG: TenantBolsaoConfig = {
   autoDistributionEnabled: true,
   teamQueueEnabled: false,
   teamQueueOrder: 'balanced' as TeamQueueOrder,
-  horarioFuncionamento: {
-    segunda: { ativo: true, inicio: '09:00', termino: '18:00' },
-    terca: { ativo: true, inicio: '09:00', termino: '18:00' },
-    quarta: { ativo: true, inicio: '09:00', termino: '18:00' },
-    quinta: { ativo: true, inicio: '09:00', termino: '18:00' },
-    sexta: { ativo: true, inicio: '09:00', termino: '18:00' },
-    sabado: { ativo: true, inicio: '09:00', termino: '13:00' },
-    domingo: { ativo: false, inicio: '09:00', termino: '18:00' }
-  }
+  // UM PADRÃO SÓ, derivado da janela que a REGRA usa.
+  //
+  // Aqui havia uma segunda tabela escrita à mão — 9h às 18h, com SÁBADO ativo
+  // das 9h às 13h — enquanto a regra da distribuição usava 9h às 20h de
+  // segunda a sexta. As duas discordavam, e o jeito de descobrir era abrir
+  // Configurações, salvar sem mudar nada, e ver o prazo de atendimento mudar
+  // sozinho: o sábado voltava a contar, desfazendo a decisão de 22/09 sem
+  // ninguém pedir.
+  horarioFuncionamento: janelaParaConfiguracao() as TenantBolsaoConfig['horarioFuncionamento']
 };
 
 const STORAGE_KEY = 'bolsao-config';
