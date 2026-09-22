@@ -74,6 +74,7 @@ import { syncProposalStageFromLead } from '../services/proposalsService';
 import { leadStatusToPropostaStage } from '../utils/stageBridge';
 import { leadCasaBusca } from '../utils/buscaLead';
 import { canaisDosLeads, leadCasaCanal, SEM_CANAL } from '../utils/canalLead';
+import { MOTIVOS_ARQUIVAMENTO, MOTIVO_OUTROS, montarMotivoFinal } from '../utils/motivosArquivamento';
 import {
   fetchTenantBolsaoConfig,
   type TenantBolsaoConfig,
@@ -647,7 +648,7 @@ export const MeusLeadsAtribuidosSection = ({
   const primeiraCargaRef = useRef(true);
   const [leadParaArquivar, setLeadParaArquivar] = useState<KanbanLead | null>(null);
   const [motivoArquivamento, setMotivoArquivamento] = useState('');
-  const [motivoPredefinido, setMotivoPredefinido] = useState<string>('ja_fechou_outro');
+  const [motivoPredefinido, setMotivoPredefinido] = useState<string>(MOTIVOS_ARQUIVAMENTO[0].value);
   const [arquivando, setArquivando] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   // Estados dos filtros
@@ -1466,24 +1467,22 @@ const handleDragEnd = useCallback(async (event: DragEndEvent) => {
                   <SelectTrigger className="h-10">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ja_fechou_outro">Já fechou com outro</SelectItem>
-                    <SelectItem value="contato_errado">Contato errado / inválido</SelectItem>
-                    <SelectItem value="fora_perfil">Fora do perfil</SelectItem>
-                    <SelectItem value="duplicado">Lead duplicado</SelectItem>
-                    <SelectItem value="nao_respondeu">Não respondeu</SelectItem>
-                    <SelectItem value="erro">Erro / cadastro incorreto</SelectItem>
-                    <SelectItem value="outro">Outro (descrever abaixo)</SelectItem>
+                  <SelectContent className="max-h-72">
+                    {MOTIVOS_ARQUIVAMENTO.map((motivo) => (
+                      <SelectItem key={motivo.value} value={motivo.value}>
+                        {motivo.label}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="motivo-arquivar" className="text-xs text-muted-foreground">
-                  {motivoPredefinido === 'outro' ? 'Descreva o motivo' : 'Observações (opcional)'}
+                  {motivoPredefinido === MOTIVO_OUTROS ? 'Descreva o motivo' : 'Observações (opcional)'}
                 </Label>
                 <Textarea
                   id="motivo-arquivar"
-                  placeholder={motivoPredefinido === 'outro' ? 'Descreva o motivo...' : 'Detalhes adicionais (opcional)'}
+                  placeholder={motivoPredefinido === MOTIVO_OUTROS ? 'Descreva o motivo...' : 'Detalhes adicionais (opcional)'}
                   value={motivoArquivamento}
                   onChange={(e) => setMotivoArquivamento(e.target.value)}
                   rows={2}
@@ -1494,23 +1493,12 @@ const handleDragEnd = useCallback(async (event: DragEndEvent) => {
             <DialogFooter>
               <Button variant="outline" onClick={() => setLeadParaArquivar(null)}>Cancelar</Button>
               <Button
-                disabled={arquivando || (motivoPredefinido === 'outro' && !motivoArquivamento.trim())}
+                disabled={arquivando || (motivoPredefinido === MOTIVO_OUTROS && !motivoArquivamento.trim())}
                 onClick={async () => {
                   if (!leadParaArquivar) return;
                   setArquivando(true);
                   try {
-                    const MOTIVO_LABELS: Record<string, string> = {
-                      ja_fechou_outro: 'Já fechou com outro',
-                      contato_errado: 'Contato errado / inválido',
-                      fora_perfil: 'Fora do perfil',
-                      duplicado: 'Lead duplicado',
-                      nao_respondeu: 'Não respondeu',
-                      erro: 'Erro / cadastro incorreto',
-                      outro: 'Outro',
-                    };
-                    const motivoFinal = motivoPredefinido === 'outro'
-                      ? (motivoArquivamento.trim() || 'Outro motivo')
-                      : `${MOTIVO_LABELS[motivoPredefinido] || 'Arquivado'}${motivoArquivamento.trim() ? ` — ${motivoArquivamento.trim()}` : ''}`;
+                    const motivoFinal = montarMotivoFinal(motivoPredefinido, motivoArquivamento);
 
                     const result = await arquivarLeadCRM(
                       leadParaArquivar.id,
