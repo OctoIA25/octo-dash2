@@ -123,6 +123,7 @@ import { useImoveisData } from '@/features/imoveis/hooks/useImoveisData';
 import type { SystemRole } from '@/contexts/AuthContext';
 import type { Imovel } from '@/features/imoveis/services/kenloService';
 import { avisoTelefone, linkWhatsapp } from '@/lib/contato';
+import { PastaDoCliente } from '@/features/documentos/PastaDoCliente';
 
 const PROPOSAL_STAGES = [
   {
@@ -452,15 +453,6 @@ const DEAL_WORKFLOW_GROUPS_VISTA = [
 
 const getDealWorkflowGroups = (comFinanciamento: boolean): readonly DealWorkflowGroup[] =>
   comFinanciamento ? DEAL_WORKFLOW_GROUPS_FINANCIADO : DEAL_WORKFLOW_GROUPS_VISTA;
-
-const DOCUMENT_CHECKLIST = [
-  'Proposta anexada',
-  'Contrato assinado via Clicksign ou presencialmente',
-  'Documentos do vendedor',
-  'Documentos dos compradores',
-  'Comissões conferidas',
-  'Baixa do imóvel em site e portais',
-] as const;
 
 const CERTIFICATE_CHECKLIST = [
   'Matrícula atualizada',
@@ -1279,34 +1271,26 @@ function WorkflowChecklist({
   );
 }
 
-function SimpleChecklist({
-  items,
-  completedCount,
-}: {
-  items: readonly string[];
-  completedCount: number;
-}) {
+/**
+ * Uma lista de lembrete — sem marca de "feito".
+ *
+ * Substitui o `SimpleChecklist`, que pintava de verde os `index < completedCount`
+ * a partir de um booleano da etapa: "Matrícula atualizada" ficava verde porque a
+ * proposta havia sido assinada, sem ninguém ter visto matrícula nenhuma. Um
+ * checklist que marca sozinho é pior que nenhum, porque alguém confia nele.
+ */
+function ListaDeLembrete({ items, aviso }: { items: readonly string[]; aviso: string }) {
   return (
-    <div className="grid gap-2 sm:grid-cols-2">
-      {items.map((item, index) => {
-        const done = index < completedCount;
-        return (
-          <div
-            key={item}
-            className={cn(
-              'flex items-center gap-2 rounded-lg border px-3 py-2 text-sm',
-              done
-                ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200'
-                : 'border-slate-200 bg-white text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300',
-            )}
-          >
-            <span className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded-full', done ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-400 dark:bg-slate-800')}>
-              {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Clock3 className="h-3.5 w-3.5" />}
-            </span>
-            <span className="min-w-0 truncate font-medium">{item}</span>
-          </div>
-        );
-      })}
+    <div className="space-y-2">
+      <p className="text-xs text-muted-foreground">{aviso}</p>
+      <ul className="grid gap-2 sm:grid-cols-2">
+        {items.map((item) => (
+          <li key={item} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+            <Clock3 className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+            <span className="min-w-0 truncate">{item}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -4804,13 +4788,20 @@ export const PropostaPage = ({
 
                 <TabsContent value="documentos" className="mt-0">
                   <DetailSection title="Documentos" icon={FileText}>
-                    <SimpleChecklist items={DOCUMENT_CHECKLIST} completedCount={selectedDetail.enviadoProponente ? 3 : 1} />
+                    <PastaDoCliente
+                      tenantId={tenantId ?? ''}
+                      leadId={selectedProposal.leadId}
+                      proposalId={isUuidLike(selectedProposal.id) ? selectedProposal.id : null}
+                    />
                   </DetailSection>
                 </TabsContent>
 
                 <TabsContent value="certidoes" className="mt-0">
                   <DetailSection title="Certidões" icon={ShieldCheck}>
-                    <SimpleChecklist items={CERTIFICATE_CHECKLIST} completedCount={selectedProposal.stageId === 'proposta-assinada' ? 4 : 1} />
+                    <ListaDeLembrete
+                      items={CERTIFICATE_CHECKLIST}
+                      aviso="Estas certidões são do IMÓVEL, e a Dash ainda não as guarda — a lista serve de lembrete para quem monta o processo no cartório. Os documentos do CLIENTE ficam na aba Documentos, ao lado."
+                    />
                   </DetailSection>
                 </TabsContent>
 

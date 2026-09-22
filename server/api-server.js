@@ -3964,6 +3964,11 @@ registerLeadEventsRoutes(app, supabase);
 import { registerBaseConhecimentoRoutes } from './baseConhecimento/index.js';
 registerBaseConhecimentoRoutes(app, supabase, validateApiKey);
 
+// P4.7 — a LIA devolve a leitura dos documentos do cliente. Mesma divisão da
+// base de conhecimento: a Dash guarda e confere, quem lê é quem tem modelo.
+import { registerDocumentosRoutes } from './documentos/routes.js';
+registerDocumentosRoutes(app, supabase, validateApiKey);
+
 // Cadência do corretor — os 10 quadrados do modal do lead (canal, resultado,
 // próximo toque). Leitura e escrita pelo servidor porque lead_toques tem RLS
 // sem policy; a permissão é a mesma da cadência da LIA.
