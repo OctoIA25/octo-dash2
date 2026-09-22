@@ -206,6 +206,10 @@ export function registerWhatsappRoutes(app, supabase, options = {}) {
           status: 'failed',
           error_message: errorMsg,
           sent_by_user_id: req.userId,
+          // F.1 — quem falou. `null` quando não há usuário: o CHECK do banco
+          // recusa 'corretor' sem pessoa, e etiquetar sem saber quem é seria a
+          // mesma mentira que `metadata.role` virou.
+          enviado_por: req.userId ? 'corretor' : null,
           metadata: {
             meta_error: metaJson?.error ?? null,
             template: template ?? null,
@@ -226,6 +230,7 @@ export function registerWhatsappRoutes(app, supabase, options = {}) {
         media_url: mediaUrlToSave,
         status: 'sent',
         sent_by_user_id: req.userId,
+        enviado_por: req.userId ? 'corretor' : null,
         wa_timestamp: new Date().toISOString(),
         metadata: {
           meta_response: metaJson,

@@ -68,6 +68,8 @@ export interface WhatsappMessage {
   status: WhatsappMessageStatus;
   error_message: string | null;
   sent_by_user_id: string | null;
+  /** F.1 — quem falou: 'lia' | 'corretor' | 'disparo'. Nulo = não registrado. */
+  enviado_por: string | null;
   wa_timestamp: string | null;
   created_at: string;
 }

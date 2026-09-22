@@ -13,6 +13,7 @@ import { MessageInput, type ComposeMedia } from './MessageInput';
 import { PendingBubble } from './messages/PendingBubble';
 import { LightboxProvider } from './lightbox/LightboxProvider';
 import { useMediaSend } from '../hooks/useMediaSend';
+import { AssumirConversa } from './AssumirConversa';
 
 /** Data da mensagem: o WhatsApp usa o horário do provedor quando existe. */
 function messageDate(m: WhatsappMessage): Date {
@@ -116,6 +117,12 @@ export function ChatWindow({
             )}
             <div className="truncate text-xs text-gray-500">{conversation.contact_phone}</div>
           </div>
+          {/* F.1 — quem está atendendo, e o botão de tomar a conversa da LIA. */}
+          <AssumirConversa
+            tenantId={tenantId}
+            leadId={conversation.lead_id ?? null}
+            messages={messages}
+          />
           {onChangeCategory && (
             // <select> nativo: quatro opções fixas não justificam um dropdown
             // próprio, e o nativo já vem com teclado e leitor de tela.

@@ -1,6 +1,7 @@
 import { AlertCircle, Check, CheckCheck, Clock } from 'lucide-react';
 import type { WhatsappMessage } from '../types';
 import { resolveContent } from './messages/registry';
+import { quemEnviou, ROTULO_DO_AUTOR } from '../quemEnviou';
 
 interface Props {
   message: WhatsappMessage;
@@ -31,6 +32,9 @@ function StatusIcon({ status }: { status: WhatsappMessage['status'] }) {
 export function MessageBubble({ message }: Props) {
   const isOutbound = message.direction === 'outbound';
   const Content = resolveContent(message.message_type);
+  // F.1 — quem falou. Só nas enviadas: na recebida, a posição da bolha já diz
+  // que foi o cliente.
+  const autor = quemEnviou(message);
 
   return (
     <div className={`flex ${isOutbound ? 'justify-end' : 'justify-start'}`}>
@@ -47,6 +51,24 @@ export function MessageBubble({ message }: Props) {
             isOutbound ? 'text-emerald-50' : 'text-gray-500'
           }`}
         >
+          {autor && (
+            <span
+              className={`mr-auto rounded px-1 py-px font-medium ${
+                autor === 'lia'
+                  ? 'bg-emerald-700/40 text-white'
+                  : autor === 'nao_registrado'
+                    ? 'bg-emerald-700/20 text-emerald-50/70 italic'
+                    : 'bg-white/25 text-white'
+              }`}
+              title={
+                autor === 'nao_registrado'
+                  ? 'Esta mensagem foi enviada sem registrar quem a escreveu.'
+                  : undefined
+              }
+            >
+              {autor === 'nao_registrado' ? 'sem autor' : ROTULO_DO_AUTOR[autor]}
+            </span>
+          )}
           <span>{formatTime(message.wa_timestamp ?? message.created_at)}</span>
           {isOutbound && <StatusIcon status={message.status} />}
         </div>
