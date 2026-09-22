@@ -82,7 +82,6 @@ import {
   saveKenloLeads, 
   saveKenloIntegration, 
   fetchKenloIntegration,
-  fetchKenloLeads,
   disconnectKenloIntegration
 } from '@/features/imoveis/services/kenloLeadsService';
 import {
@@ -112,6 +111,7 @@ import {
   type AnthropicConfigView,
 } from '@/features/settings/services/anthropicIntegrationService';
 import { ApiIntegrationTab } from '@/components/integrations/ApiIntegrationTab';
+import { PainelDeIntegracoes } from '@/features/settings/components/PainelDeIntegracoes';
 import { WhatsAppIntegrationTab } from '@/features/chat/components/WhatsAppIntegrationTab';
 import { KenloSyncStatusCard } from '@/features/settings/components/KenloSyncStatusCard';
 import { MetaLeadAdsCard } from '@/features/settings/components/MetaLeadAdsCard';
@@ -156,7 +156,6 @@ export const IntegracoesPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [kenloStatus, setKenloStatus] = useState<'inativo' | 'ativo' | 'erro'>('inativo');
-  const [kenloLeads, setKenloLeads] = useState(0);
 
   // Estados Contact2Sale
   const [c2sApiToken, setC2sApiToken] = useState('');
@@ -312,24 +311,16 @@ export const IntegracoesPage: React.FC = () => {
     const loadIntegration = async () => {
       if (!tenantId) return;
       
-      // Sempre buscar leads existentes no banco (mesmo se integração inativa)
-      const { leads: existingLeads } = await fetchKenloLeads(tenantId);
-      if (existingLeads && existingLeads.length > 0) {
-        setKenloLeads(existingLeads.length);
-      }
-      
+      // P4.10 — saiu daqui um `fetchKenloLeads` que baixava a tabela INTEIRA
+      // de leads para o navegador, de mil em mil, só para tirar o tamanho da
+      // lista e pôr num contador. O contador agora é contado no banco, pela
+      // faixa de estado; a página não precisa mais dos leads.
       const { integration } = await fetchKenloIntegration(tenantId);
       if (integration) {
         setKenloEmail(integration.kenlo_email || '');
         setKenloStatus(integration.status === 'active' ? 'ativo' : 'inativo');
-        // Usar contagem real do banco, não a salva na integração
-        if (existingLeads && existingLeads.length > 0) {
-          setKenloLeads(existingLeads.length);
-        }
         
         // Não iniciar atualização automática aqui
-      } else if (existingLeads && existingLeads.length > 0) {
-        // Tem leads mas não tem integração - significa que desconectou mas leads ficaram
       }
     };
     
@@ -487,8 +478,6 @@ export const IntegracoesPage: React.FC = () => {
         const saveResult = await saveKenloLeads(tenantId, leadsCompletos);
         
         if (saveResult.success) {
-          setKenloLeads(leadsCompletos.length);
-          
           // Salvar integração COM credenciais para reautenticação automática
           const intResult = await saveKenloIntegration(tenantId, kenloEmail, leadsCompletos.length, kenloSenha, authToken);
         } else {
@@ -801,8 +790,9 @@ export const IntegracoesPage: React.FC = () => {
 
   const status = statusConfig[kenloStatus];
   const StatusIcon = status.icon;
-  const activeIntegrationsCount = [kenloStatus, c2sStatus, saStatus, zapStatus].filter((s) => s === 'ativo').length;
-  const crmLeadsCount = c2sStatus === 'ativo' ? (c2sSyncStatus?.leads_count || 0) : kenloLeads;
+  // P4.10 — `activeIntegrationsCount` contava quatro e ignorava Anthropic e
+  // Meta; `crmLeadsCount` era um número só, do CRM principal, vindo de rota
+  // owner-only. Os dois foram para `integracoes_status`, no banco.
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--bg-secondary, #f8fafc)' }}>
@@ -1221,44 +1211,12 @@ export const IntegracoesPage: React.FC = () => {
         </div>
       ) : (
         <div className="p-6">
-          {/* Cards de Resumo */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-            <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 p-5">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center">
-                  <Plug className="w-5 h-5 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Total de Integrações</p>
-                  <p className="text-2xl font-bold text-gray-900 dark:text-slate-100">4</p>
-                </div>
-              </div>
-            </div>
-            
-            <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 p-5">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-green-50 flex items-center justify-center">
-                  <CheckCircle2 className="w-5 h-5 text-green-600" />
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Integrações Ativas</p>
-                  <p className="text-2xl font-bold text-gray-900 dark:text-slate-100">{activeIntegrationsCount}</p>
-                </div>
-              </div>
-            </div>
-            
-            <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 p-5">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-purple-50 flex items-center justify-center">
-                  <Zap className="w-5 h-5 text-purple-600" />
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Leads Recebidos</p>
-                  <p className="text-2xl font-bold text-gray-900 dark:text-slate-100">{crmLeadsCount}</p>
-                </div>
-              </div>
-            </div>
-          </div>
+          {/* P4.10 — estes três números eram: um "4" fixo no código, uma
+              contagem que ignorava Anthropic e Meta, e um "Leads Recebidos"
+              que chamava rota de dono-da-plataforma e virava ZERO para quem
+              administra a imobiliária. Agora vêm do banco, e cada integração
+              conta os leads onde ela de fato escreve. */}
+          {tenantId && <PainelDeIntegracoes tenantId={tenantId} />}
 
           {/* Seção CRM */}
           <div className="mb-8">
@@ -1306,11 +1264,11 @@ export const IntegracoesPage: React.FC = () => {
                     <div className="mt-2 p-2 rounded-lg bg-green-50 border border-green-100 w-full">
                       <p className="text-[11px] text-green-700 font-medium">✓ Integração OK</p>
                       <p className="text-[11px] text-green-600 mt-0.5">Feito pelo Kenlo</p>
-                      {kenloLeads > 0 && (
-                        <p className="text-[11px] text-green-600 mt-1">
-                          <strong>{kenloLeads}</strong> leads sincronizados
-                        </p>
-                      )}
+                      {/* P4.10 — o contador saiu daqui. Ele baixava a tabela
+                          INTEIRA de leads para o navegador só para tirar o
+                          tamanho da lista, e ficava ao lado de um segundo
+                          contador que às vezes discordava dele. A contagem
+                          agora é uma só, na faixa de estado no topo. */}
                     </div>
                   )}
                 </div>
@@ -1439,11 +1397,10 @@ export const IntegracoesPage: React.FC = () => {
                       <p className="text-[11px] text-green-600 mt-0.5">
                         {c2sCompany || 'Token validado por tenant'}
                       </p>
-                      {typeof c2sSyncStatus?.leads_count === 'number' && (
-                        <p className="text-[11px] text-green-600 mt-1">
-                          <strong>{c2sSyncStatus.leads_count}</strong> leads sincronizados
-                        </p>
-                      )}
+                      {/* P4.10 — este vinha de rota de dono-da-plataforma:
+                          para quem administra a imobiliária dava 403 e o
+                          número sumia (ou vinha zero) mesmo com milhares de
+                          leads. A contagem está na faixa de estado no topo. */}
                     </div>
                   )}
                 </div>
@@ -1923,175 +1880,17 @@ export const IntegracoesPage: React.FC = () => {
                 </form>
               </div>
 
-              {/* Card OLX (placeholder visual) */}
-              <div className="bg-white dark:bg-slate-900 rounded-xl border-2 border-gray-200 dark:border-slate-800 p-3 w-full relative transition-all">
-                <div className="absolute right-3 top-3 px-2 py-1 rounded-full text-[10px] font-semibold flex items-center gap-1 border bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400 border-gray-200 dark:border-slate-800">
-                  <XCircle className="w-3.5 h-3.5" />
-                  Desconectado
-                </div>
+              {/* P4.10 — SAÍRAM DAQUI 31 CARDS que pediam e-mail e senha para
+                  integração que não existe: OLX, um Zap duplicado, Google Ads e
+                  os 28 gerados de `LEAD_SOURCES`. Todos tinham os campos
+                  desabilitados, nenhum handler e um selo "Desconectado" escrito
+                  à mão. Pedir credencial para o que não existe não é só inútil:
+                  é convidar alguém a digitar a senha de um portal numa caixa que
+                  não vai a lugar nenhum.
 
-                <div className="flex flex-col items-center text-center pt-1">
-                  <div className="w-12 h-12 rounded-lg overflow-hidden ring-2 ring-black/5 bg-gray-50 dark:bg-slate-950 flex items-center justify-center">
-                    <img
-                      src="https://i.ibb.co/p6PWRfTv/logo-olx-0-Q27-Tg.png"
-                      alt="OLX"
-                      className="w-full h-full object-cover"
-                      draggable={false}
-                    />
-                  </div>
-                  <h3 className="font-semibold text-gray-900 dark:text-slate-100 text-sm mt-2">OLX</h3>
-                  <p className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">Integração com o CRM OLX</p>
-                </div>
-
-                <form className="mt-4 space-y-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">E-mail</label>
-                    <input type="email" placeholder="seu@email.com" className="w-full px-3 py-2 border border-gray-200 dark:border-slate-800 rounded-lg text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder-gray-400 outline-none" disabled />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">Senha</label>
-                    <div className="relative flex items-center">
-                      <input type="password" placeholder="••••••••" className="w-full px-3 py-2 border border-gray-200 dark:border-slate-800 rounded-lg text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder-gray-400 outline-none pr-10" disabled />
-                      <button type="button" className="absolute right-2.5" style={{ color: '#000000' }} disabled><Eye className="w-4 h-4" /></button>
-                    </div>
-                  </div>
-                  <div className="pt-1">
-                    <button type="button" disabled className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium opacity-50 cursor-not-allowed flex items-center justify-center gap-2">Conectar<ArrowRight className="w-4 h-4" /></button>
-                  </div>
-                </form>
-              </div>
-
-              {/* Card Zap Imóveis (placeholder visual) */}
-              <div className="bg-white dark:bg-slate-900 rounded-xl border-2 border-gray-200 dark:border-slate-800 p-3 w-full relative transition-all">
-                <div className="absolute right-3 top-3 px-2 py-1 rounded-full text-[10px] font-semibold flex items-center gap-1 border bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400 border-gray-200 dark:border-slate-800">
-                  <XCircle className="w-3.5 h-3.5" />
-                  Desconectado
-                </div>
-
-                <div className="flex flex-col items-center text-center pt-1">
-                  <div className="w-12 h-12 rounded-lg overflow-hidden ring-2 ring-black/5 bg-gray-50 dark:bg-slate-950 flex items-center justify-center">
-                    <img
-                      src="https://i.ibb.co/23SwZGWw/8a6e16ca-fde3-495b-b26c-9dfaca34e641.png"
-                      alt="Zap Imóveis"
-                      className="w-full h-full object-cover"
-                      draggable={false}
-                    />
-                  </div>
-                  <h3 className="font-semibold text-gray-900 dark:text-slate-100 text-sm mt-2">Zap Imóveis</h3>
-                  <p className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">Integração com Zap para captação de leads</p>
-                </div>
-
-                <form className="mt-4 space-y-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">E-mail</label>
-                    <input type="email" placeholder="seu@email.com" className="w-full px-3 py-2 border border-gray-200 dark:border-slate-800 rounded-lg text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder-gray-400 outline-none" disabled />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">Senha</label>
-                    <div className="relative flex items-center">
-                      <input type="password" placeholder="••••••••" className="w-full px-3 py-2 border border-gray-200 dark:border-slate-800 rounded-lg text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder-gray-400 outline-none pr-10" disabled />
-                      <button type="button" className="absolute right-2.5" style={{ color: '#000000' }} disabled><Eye className="w-4 h-4" /></button>
-                    </div>
-                  </div>
-                  <div className="pt-1">
-                    <button type="button" disabled className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium opacity-50 cursor-not-allowed flex items-center justify-center gap-2">Conectar<ArrowRight className="w-4 h-4" /></button>
-                  </div>
-                </form>
-              </div>
-
-              {/* Facebook e Instagram Lead Ads — integração real (substitui o placeholder) */}
+                  O que existe de verdade está na faixa de estado no topo, e o
+                  que ainda não existe está listado lá embaixo — sem campo. */}
               {tenantId && <MetaLeadAdsCard tenantId={tenantId} />}
-
-              {/* Card Google Ads (placeholder visual) */}
-              <div className="bg-white dark:bg-slate-900 rounded-xl border-2 border-gray-200 dark:border-slate-800 p-3 w-full relative transition-all">
-                <div className="absolute right-3 top-3 px-2 py-1 rounded-full text-[10px] font-semibold flex items-center gap-1 border bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400 border-gray-200 dark:border-slate-800">
-                  <XCircle className="w-3.5 h-3.5" />
-                  Desconectado
-                </div>
-
-                <div className="flex flex-col items-center text-center pt-1">
-                  <div className="w-12 h-12 rounded-lg overflow-hidden ring-2 ring-black/5 bg-gray-50 dark:bg-slate-950 flex items-center justify-center">
-                    <img
-                      src="https://i.ibb.co/RGSBF1HD/Google-Ad-Words-logo.png"
-                      alt="Google Ads"
-                      className="w-full h-full object-cover"
-                      draggable={false}
-                    />
-                  </div>
-                  <h3 className="font-semibold text-gray-900 dark:text-slate-100 text-sm mt-2">Google Ads</h3>
-                  <p className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">Integração com campanhas e conversões</p>
-                </div>
-
-                <form className="mt-4 space-y-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">E-mail</label>
-                    <input type="email" placeholder="seu@email.com" className="w-full px-3 py-2 border border-gray-200 dark:border-slate-800 rounded-lg text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder-gray-400 outline-none" disabled />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">Senha</label>
-                    <div className="relative flex items-center">
-                      <input type="password" placeholder="••••••••" className="w-full px-3 py-2 border border-gray-200 dark:border-slate-800 rounded-lg text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder-gray-400 outline-none pr-10" disabled />
-                      <button type="button" className="absolute right-2.5" style={{ color: '#000000' }} disabled><Eye className="w-4 h-4" /></button>
-                    </div>
-                  </div>
-                  <div className="pt-1">
-                    <button type="button" disabled className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium opacity-50 cursor-not-allowed flex items-center justify-center gap-2">Conectar<ArrowRight className="w-4 h-4" /></button>
-                  </div>
-                </form>
-              </div>
-
-              {/* Cards das demais Origens - Mesmo layout (excluindo as que já têm cards estáticos) */}
-              {LEAD_SOURCES.filter(s => ![2, 4, 10, 13].includes(s.id)).map((source) => (
-                <div 
-                  key={source.id} 
-                  className="bg-white dark:bg-slate-900 rounded-xl border-2 border-gray-200 dark:border-slate-800 p-3 w-full relative transition-all group"
-                  onMouseEnter={() => setHoveredSourceId(source.id)}
-                  onMouseLeave={() => setHoveredSourceId(null)}
-                >
-                  <div className="absolute right-3 top-3 px-2 py-1 rounded-full text-[10px] font-semibold flex items-center gap-1 border bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400 border-gray-200 dark:border-slate-800">
-                    <XCircle className="w-3.5 h-3.5" />
-                    Desconectado
-                  </div>
-
-                  <div className="flex flex-col items-center text-center pt-1">
-                    <div 
-                      className="w-12 h-12 rounded-lg overflow-hidden ring-2 ring-black/5 bg-gray-50 dark:bg-slate-950 flex items-center justify-center relative"
-                    >
-                      {sourceImages[source.id] ? (
-                        <img
-                          src={sourceImages[source.id]}
-                          alt={source.name}
-                          className="w-full h-full object-cover"
-                          draggable={false}
-                        />
-                      ) : (
-                        <div className="flex flex-col items-center justify-center text-gray-400 dark:text-slate-500">
-                          <ImagePlus className="w-6 h-6" />
-                        </div>
-                      )}
-                    </div>
-                    <h3 className="font-semibold text-gray-900 dark:text-slate-100 text-sm mt-2">{source.shortName}</h3>
-                    <p className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">{source.description}</p>
-                  </div>
-
-                  <form className="mt-4 space-y-3">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">E-mail</label>
-                      <input type="email" placeholder="seu@email.com" className="w-full px-3 py-2 border border-gray-200 dark:border-slate-800 rounded-lg text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder-gray-400 outline-none" disabled />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">Senha</label>
-                      <div className="relative flex items-center">
-                        <input type="password" placeholder="••••••••" className="w-full px-3 py-2 border border-gray-200 dark:border-slate-800 rounded-lg text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder-gray-400 outline-none pr-10" disabled />
-                        <button type="button" className="absolute right-2.5" style={{ color: '#000000' }} disabled><Eye className="w-4 h-4" /></button>
-                      </div>
-                    </div>
-                    <div className="pt-1">
-                      <button type="button" disabled className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium opacity-50 cursor-not-allowed flex items-center justify-center gap-2">Conectar<ArrowRight className="w-4 h-4" /></button>
-                    </div>
-                  </form>
-                </div>
-              ))}
             </div>
           </div>
 
