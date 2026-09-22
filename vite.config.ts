@@ -10,6 +10,15 @@ export default defineConfig(({ mode }) => ({
     host: "::",
     port: 8080,
     strictPort: true,
+    // O Vite 7 recusa requisição cujo Host ele não conhece — e devolve um 403
+    // com texto, não uma tela em branco, o que ajuda a descobrir. Isso protege
+    // contra DNS rebinding e é o comportamento certo por padrão.
+    //
+    // Para abrir a Dash por um endereço externo (demonstração por túnel),
+    // listar o domínio em VITE_ALLOWED_HOSTS, separado por vírgula. Vazio, que
+    // é o normal, mantém o padrão do Vite.
+    allowedHosts: (process.env.VITE_ALLOWED_HOSTS ?? '')
+      .split(',').map((h) => h.trim()).filter(Boolean),
     proxy: {
       '/api/v1': {
         target: 'http://localhost:3001',
