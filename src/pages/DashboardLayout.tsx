@@ -76,6 +76,7 @@ const ClienteInteressadoPage = lazyWithRetry(() => import('@/features/leads/page
 const ClienteProprietarioPage = lazyWithRetry(() => import('@/features/leads/pages/ClienteProprietarioPage').then(m => ({ default: m.ClienteProprietarioPage })));
 const EquipePage = lazyWithRetry(() => import('@/features/corretores/pages/EquipePage').then(m => ({ default: m.EquipePage })));
 const RecrutamentoPage = lazyWithRetry(() => import('@/features/corretores/pages/RecrutamentoPage').then(m => ({ default: m.RecrutamentoPage })));
+const SimuladorPage = lazyWithRetry(() => import('@/features/simulador/SimuladorPage'));
 const GestaoEquipePage = lazyWithRetry(() => import('@/features/corretores/pages/GestaoEquipePage').then(m => ({ default: m.GestaoEquipePage })));
 // P3.4 — uma rota por assunto. Antes, OKR e PDI tinham três endereços: a tela
 // real em /leads?tab=, um cartaz "Em breve" em /gestao-equipe?tab= e uma
@@ -268,6 +269,9 @@ const DashboardLayout = () => {
           
           {/* P3.4 — as duas rotas que o plano pede. `?pessoa=` vem da Gestão
               de Equipe; quem pode ver o de outra pessoa é o banco que decide. */}
+          {/* P2.2 — o simulador é ferramenta de corretor: quem vende, simula.
+              A tabela de condição é que é de quem administra. */}
+          <Route path="ferramentas/simulador" element={<SimuladorPage />} />
           <Route path="okrs" element={<OkrsPage />} />
           <Route path="pdi" element={<PdiPage />} />
           <Route path="marketing/demandas" element={<DemandasPage />} />

@@ -96,6 +96,10 @@ const GROUPS: SidebarGroup[] = [
           // P4.4 — a conferência é onde o dinheiro da venda é conferido, e por
           // isso mora junto do funil, não no Financeiro.
           { id: 'conferencia-vendas', label: 'Conferência de vendas', icon: Receipt, route: '/comercial/vendas' },
+          // P2.2 — o simulador é ferramenta de quem vende: permissão 'leads',
+          // a mesma do corretor. Quem edita a TABELA de condição é que precisa
+          // administrar a casa, e isso o banco é que decide.
+          { id: 'simulador', label: 'Simulador de pagamento', icon: Calculator, route: '/ferramentas/simulador' },
         ],
       },
       {
