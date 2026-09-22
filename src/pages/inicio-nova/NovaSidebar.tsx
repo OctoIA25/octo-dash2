@@ -35,6 +35,7 @@ import {
   Wallet,
   Shield,
   BookOpen,
+  FileSignature,
 } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { TenantSwitcher } from '@/components/TenantSwitcher';
@@ -205,6 +206,8 @@ const GROUPS: SidebarGroup[] = [
         subItems: [
           { id: 'juridico-visao-geral', label: 'Visão Geral', icon: LayoutGrid, route: '/juridico/visao-geral' },
           { id: 'juridico-proposta', label: 'Propostas', icon: FileText, route: '/juridico/proposta' },
+          // P4.3 — os contratos do corretor moram no Jurídico, como o plano pede.
+          { id: 'juridico-contratos', label: 'Contratos do corretor', icon: FileSignature, route: '/juridico/contratos' },
         ],
       },
     ],

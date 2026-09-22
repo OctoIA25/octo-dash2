@@ -96,6 +96,9 @@ const CargosPage = lazyWithRetry(() => import('@/features/cargos/CargosPage').th
 
 // P4.2 — materiais de estudo.
 const MateriaisPage = lazyWithRetry(() => import('@/features/materiais/MateriaisPage').then(m => ({ default: m.MateriaisPage })));
+
+// P4.3 — contratos do corretor com aceite.
+const ContratosPage = lazyWithRetry(() => import('@/features/contratos/ContratosPage').then(m => ({ default: m.ContratosPage })));
 const BolsaoPage = lazyWithRetry(() => import('@/features/leads/pages/BolsaoPage').then(m => ({ default: m.BolsaoPage })));
 const CentralLeadsPage = lazyWithRetry(() => import('@/features/leads/pages/CentralLeadsPage').then(m => ({ default: m.CentralLeadsPage })));
 const CorretoresPage = lazyWithRetry(() => import('@/features/corretores/pages/CorretoresPage').then(m => ({ default: m.CorretoresPage })));
@@ -270,6 +273,7 @@ const DashboardLayout = () => {
           <Route path="financeiro" element={<FinanceiroPage />} />
           <Route path="cargos" element={<CargosPage />} />
           <Route path="materiais" element={<MateriaisPage />} />
+          <Route path="juridico/contratos" element={<ContratosPage />} />
 
           <Route 
             path="bolsao" 

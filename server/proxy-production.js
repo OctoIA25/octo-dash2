@@ -5049,8 +5049,11 @@ app.post('/api/v1/anthropic/usage-report', validateApiKey, async (req, res) => {
 // (ENPS_SCHEDULER=1) para rodar em UM processo — reentrância POR TENANT no runner.
 // ============================================
 import { registerEnpsRoutes, startEnpsScheduler, makeEnpsRunner } from './enps/index.js';
+// P4.3 — o aceite de contrato precisa do IP, que só o servidor enxerga.
+import { registerContratosRoutes } from './contratos/routes.js';
 const enpsRunner = makeEnpsRunner(supabase);
 registerEnpsRoutes(app, supabase);
+registerContratosRoutes(app, supabase);
 
 // P1.1 — a rota que a Lia consulta para saber de quem e o lead. Ela RESPONDE
 // e grava o extrato; quem atribui e a Lia (decisao do chefe em 19/09/2026).

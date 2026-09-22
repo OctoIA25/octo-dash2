@@ -31,6 +31,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { NotificationsProvider } from "@/contexts/NotificationsContext";
 import { AuthProvider, useAuthContext } from "@/contexts/AuthContext";
 import { WatermarkReprocessNotice } from "@/features/settings/components/WatermarkReprocessNotice";
+import { BloqueioDeContrato } from '@/features/contratos/BloqueioDeContrato';
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 
 const DashboardLayout = lazyWithRetry(() => import("./pages/DashboardLayout"));
@@ -112,9 +113,17 @@ const AppContent = () => {
                   } />
 
                   {/* Rotas protegidas - requerem autenticação */}
+                  {/*
+                    P4.3 — o único portão além do login. `BloqueioDeContrato`
+                    devolve as crianças quando não há nada a bloquear, que é o
+                    caminho de quase todo mundo: administrador e dono nunca são
+                    bloqueados, e erro na consulta também não bloqueia.
+                  */}
                   <Route path="/*" element={
                     isAuthenticated ? (
-                      showOwnerDashboard ? <OwnerDashboard /> : <DashboardLayout />
+                      showOwnerDashboard ? <OwnerDashboard /> : (
+                        <BloqueioDeContrato><DashboardLayout /></BloqueioDeContrato>
+                      )
                     ) : (
                       <MinimalLoginScreen />
                     )
