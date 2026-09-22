@@ -281,3 +281,9 @@ $function$;
 
 REVOKE ALL ON FUNCTION public.mapa_fila_de_geocodificacao(uuid, int, boolean) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.mapa_fila_de_geocodificacao(uuid, int, boolean) TO service_role;
+
+-- O PostgREST guarda um cache do esquema. Sem este aviso, TODA coluna
+-- acrescentada acima fica invisível para o aplicativo — e o sintoma é o pior
+-- possível: nenhum erro, só o campo vindo vazio para sempre. Custou meia hora
+-- para ser achado no P4.1, e ali era uma coluna só.
+NOTIFY pgrst, 'reload schema';

@@ -351,3 +351,9 @@ CREATE POLICY tenant_agente_config_write ON public.tenant_agente_config
   FOR ALL TO authenticated
   USING (public.is_platform_owner())
   WITH CHECK (public.is_platform_owner());
+
+-- O PostgREST guarda um cache do esquema. Sem este aviso, TODA coluna
+-- acrescentada acima fica invisível para o aplicativo — e o sintoma é o pior
+-- possível: nenhum erro, só o campo vindo vazio para sempre. Custou meia hora
+-- para ser achado no P4.1, e ali era uma coluna só.
+NOTIFY pgrst, 'reload schema';

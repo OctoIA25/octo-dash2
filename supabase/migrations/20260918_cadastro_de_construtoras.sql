@@ -207,4 +207,10 @@ $$;
 REVOKE ALL ON FUNCTION public.construtoras_comissao(uuid) FROM public, anon;
 GRANT EXECUTE ON FUNCTION public.construtoras_comissao(uuid) TO authenticated, service_role;
 
+-- O PostgREST guarda um cache do esquema. Sem este aviso, TODA coluna
+-- acrescentada acima fica invisível para o aplicativo — e o sintoma é o pior
+-- possível: nenhum erro, só o campo vindo vazio para sempre. Custou meia hora
+-- para ser achado no P4.1, e ali era uma coluna só.
+NOTIFY pgrst, 'reload schema';
+
 COMMIT;
