@@ -55,13 +55,101 @@ CREATE OR REPLACE VIEW public.user_profiles AS
        WHERE eu.user_id = auth.uid()
     );
 
--- O `pg_default_acl` desta base dá tudo ao anônimo em toda relação nova, e a
--- view herdou escrita que nunca serviu para nada: ninguém grava em `auth.users`
--- por aqui. Sai por higiene — permissão que existe sem uso é permissão que um
--- dia alguém descobre.
+-- ============================================================
+-- E A PARTE GRAVE, ACHADA AO CONFERIR ESTA MIGRATION
+--
+-- A view é AUTO-ATUALIZÁVEL (`is_updatable = YES`) e roda com os poderes de
+-- quem a criou. O `authenticated` tinha INSERT, UPDATE e DELETE nela.
+--
+-- Somado, isso quer dizer: qualquer pessoa logada podia APAGAR QUALQUER CONTA
+-- DA PLATAFORMA, por e-mail, com uma chamada do console do navegador — a de um
+-- administrador, a do dono, a de alguém de outra imobiliária.
+--
+-- Provado no banco local: um corretor comum rodou
+--   DELETE FROM user_profiles WHERE email = 'vitima@outracasa.dev'
+-- e a linha sumiu de `auth.users`. Antes: 1. Depois: 0.
+--
+-- A view existe para LER. Escrita em `auth.users` é assunto do servidor, com a
+-- chave de serviço, e de mais ninguém.
+-- ============================================================
 REVOKE ALL ON public.user_profiles FROM anon;
+REVOKE ALL ON public.user_profiles FROM authenticated;
 GRANT SELECT ON public.user_profiles TO authenticated;
 GRANT SELECT ON public.user_profiles TO service_role;
+
+-- ============================================================
+-- O QUE O RECRUTAMENTO PRECISAVA, SEM O QUE ELE USAVA
+--
+-- A tela de Recrutamento fazia duas coisas por esta view, e as duas são o
+-- motivo de ela estar aberta:
+--
+--   1. buscava por e-mail para saber se o candidato já tem conta — e um
+--      candidato, por definição, ainda não é da casa, então o filtro de
+--      colegas o esconderia e a tela concluiria "não existe";
+--   2. APAGAVA o usuário quando o candidato saía de "Aprovado".
+--
+-- A primeira vira uma pergunta de sim ou não: quem recruta precisa saber que o
+-- e-mail já está em uso, não quem é a pessoa nem onde ela trabalha.
+-- ============================================================
+CREATE OR REPLACE FUNCTION public.usuario_ja_tem_conta(p_email text)
+RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public'
+AS $function$
+  -- Devolve SÓ sim ou não. Nome, telefone e imobiliária da pessoa não são
+  -- assunto de quem está recrutando — e era justamente isso que vazava.
+  SELECT EXISTS (
+    SELECT 1 FROM auth.users u
+     WHERE lower(u.email) = lower(btrim(COALESCE(p_email, '')))
+       AND COALESCE(btrim(p_email), '') <> ''
+  );
+$function$;
+
+-- A segunda não vira função nenhuma, de propósito.
+--
+-- "O candidato saiu de Aprovado" não pode significar "apague a conta dessa
+-- pessoa da plataforma". A conta pode ser de outra imobiliária, pode ser de um
+-- administrador, e apagá-la é irreversível. O que a tela quer dizer é "esta
+-- pessoa não é mais da minha equipe" — e isso é tirar o VÍNCULO, não a conta.
+CREATE OR REPLACE FUNCTION public.recrutamento_desvincular(
+  p_tenant_id uuid,
+  p_email text
+)
+RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public'
+AS $function$
+DECLARE v_user uuid; v_removidos integer;
+BEGIN
+  IF NOT public.is_tenant_admin_or_owner(p_tenant_id)
+     AND NOT public.is_platform_owner() THEN RETURN NULL; END IF;
+
+  SELECT id INTO v_user FROM auth.users
+   WHERE lower(email) = lower(btrim(COALESCE(p_email, ''))) LIMIT 1;
+  IF v_user IS NULL THEN
+    RETURN jsonb_build_object('desvinculado', false, 'motivo', 'não há conta com este e-mail');
+  END IF;
+
+  -- SÓ da imobiliária de quem chamou. O vínculo da pessoa com outras casas não
+  -- é assunto daqui.
+  DELETE FROM tenant_memberships
+   WHERE tenant_id = p_tenant_id AND user_id = v_user;
+  GET DIAGNOSTICS v_removidos = ROW_COUNT;
+
+  RETURN jsonb_build_object('desvinculado', v_removidos > 0, 'conta_preservada', true);
+END;
+$function$;
+
+DO $do$
+DECLARE f text;
+BEGIN
+  FOREACH f IN ARRAY ARRAY[
+    'public.usuario_ja_tem_conta(text)',
+    'public.recrutamento_desvincular(uuid, text)'
+  ] LOOP
+    EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon', f);
+    EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO authenticated, service_role', f);
+  END LOOP;
+END
+$do$;
 
 COMMENT ON VIEW public.user_profiles IS
   'Perfis vindos de auth.users. Desde 22/09/2026 mostra apenas quem divide imobiliária com quem consulta — antes disso devolvia a plataforma inteira para qualquer pessoa autenticada.';

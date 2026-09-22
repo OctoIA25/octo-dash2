@@ -25,6 +25,10 @@ DECLARE
   colega uuid := '2fffddde-0000-4000-a000-000000000003';
   estranho uuid := '2fffddde-0000-4000-a000-000000000009';
   sozinho uuid := '2fffddde-0000-4000-a000-00000000000a';
+  -- `auth.users` aceita e-mail em branco (conferido no banco: o INSERT passa).
+  -- Sem esta linha aqui, a guarda de e-mail vazio no `usuario_ja_tem_conta`
+  -- nunca é exercitada e o teste passa mesmo com ela removida.
+  vazio uuid := '2fffddde-0000-4000-a000-0000000000ff';
   n integer;
 BEGIN
   INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
@@ -32,7 +36,8 @@ BEGIN
     (corretor, 'corretor@casa.dev', '{"name":"Corretor"}'),
     (colega,   'colega@casa.dev',   '{"name":"Colega"}'),
     (estranho, 'estranho@vizinha.dev', '{"name":"Estranho"}'),
-    (sozinho,  'sozinho@lugar.dev', '{"name":"Sem Vínculo"}')
+    (sozinho,  'sozinho@lugar.dev', '{"name":"Sem Vínculo"}'),
+    (vazio,    '',                  '{"name":"Sem E-mail"}')
   ON CONFLICT DO NOTHING;
   INSERT INTO tenants (id, code, name) VALUES
     (casa, 'teste-perfis', 'Casa'), (vizinha, 'teste-perfis-2', 'Vizinha') ON CONFLICT DO NOTHING;
@@ -121,6 +126,90 @@ BEGIN
   END IF;
   PERFORM set_config('request.jwt.claims', NULL, true);
   RAISE NOTICE 'OK 5: admin da casa não alcança a vizinha';
+
+  -- ----------------------------------------------------------
+  -- 7. NINGUÉM APAGA CONTA PELA VIEW — ERA O FURO GRAVE
+  --
+  -- A view é auto-atualizável e roda com poderes de quem a criou. Com DELETE
+  -- concedido ao `authenticated`, qualquer pessoa logada apagava QUALQUER
+  -- conta da plataforma por e-mail, de uma chamada do navegador. Provado no
+  -- banco local antes do conserto: antes 1, depois 0.
+  -- ----------------------------------------------------------
+  PERFORM set_config('request.jwt.claims', json_build_object(
+    'sub', corretor, 'role', 'authenticated')::text, true);
+  SET LOCAL ROLE authenticated;
+  BEGIN
+    DELETE FROM user_profiles WHERE email = 'estranho@vizinha.dev';
+    RESET ROLE;
+    RAISE EXCEPTION 'FALHOU: o corretor APAGOU uma conta pela view';
+  EXCEPTION WHEN insufficient_privilege THEN RESET ROLE;
+  END;
+
+  -- E nem insere nem altera.
+  SET LOCAL ROLE authenticated;
+  BEGIN
+    UPDATE user_profiles SET email = 'sequestrado@x.dev' WHERE id = estranho;
+    RESET ROLE;
+    RAISE EXCEPTION 'FALHOU: o corretor ALTEROU uma conta pela view';
+  EXCEPTION WHEN insufficient_privilege THEN RESET ROLE;
+  END;
+
+  SELECT count(*) INTO n FROM auth.users WHERE email = 'estranho@vizinha.dev';
+  IF n <> 1 THEN RAISE EXCEPTION 'FALHOU: a conta da vizinha sumiu'; END IF;
+  RAISE NOTICE 'OK 7: a view não escreve — a conta da vizinha segue de pé';
+
+  -- ----------------------------------------------------------
+  -- 8. O RECRUTAMENTO CONTINUA FUNCIONANDO, SEM VER DEMAIS
+  --
+  -- Quem recruta precisa saber que o e-mail já está em uso — não quem é a
+  -- pessoa nem onde ela trabalha.
+  -- ----------------------------------------------------------
+  PERFORM set_config('request.jwt.claims', json_build_object(
+    'sub', chefe, 'role', 'authenticated', 'email', 'chefe@casa.dev')::text, true);
+  SET LOCAL ROLE authenticated;
+  IF usuario_ja_tem_conta('estranho@vizinha.dev') IS DISTINCT FROM true THEN
+    RESET ROLE;
+    RAISE EXCEPTION 'FALHOU: não soube dizer que o e-mail já tem conta';
+  END IF;
+  IF usuario_ja_tem_conta('ninguem@lugar.nenhum') IS DISTINCT FROM false THEN
+    RESET ROLE;
+    RAISE EXCEPTION 'FALHOU: disse que um e-mail inexistente tem conta';
+  END IF;
+  IF usuario_ja_tem_conta('') IS DISTINCT FROM false
+     OR usuario_ja_tem_conta(NULL) IS DISTINCT FROM false THEN
+    RESET ROLE;
+    RAISE EXCEPTION 'FALHOU: vazio ou nulo não pode dizer que existe';
+  END IF;
+  RESET ROLE;
+  RAISE NOTICE 'OK 8: sabe dizer se o e-mail está em uso, sem dizer de quem é';
+
+  -- ----------------------------------------------------------
+  -- 9. DESVINCULAR TIRA DA EQUIPE, NÃO APAGA A PESSOA
+  --
+  -- "O candidato saiu de Aprovado" não pode significar "apague a conta dessa
+  -- pessoa da plataforma". A conta pode ser de outra casa, e é irreversível.
+  -- ----------------------------------------------------------
+  PERFORM recrutamento_desvincular(casa, 'colega@casa.dev');
+  SELECT count(*) INTO n FROM tenant_memberships
+   WHERE tenant_id = casa AND user_id = colega;
+  IF n <> 0 THEN RAISE EXCEPTION 'FALHOU: não tirou o vínculo'; END IF;
+  SELECT count(*) INTO n FROM auth.users WHERE id = colega;
+  IF n <> 1 THEN RAISE EXCEPTION 'FALHOU: APAGOU a conta em vez de tirar o vínculo'; END IF;
+
+  -- E só da própria casa: o vínculo da pessoa com outras não é assunto daqui.
+  PERFORM recrutamento_desvincular(casa, 'estranho@vizinha.dev');
+  SELECT count(*) INTO n FROM tenant_memberships
+   WHERE tenant_id = vizinha AND user_id = estranho;
+  IF n <> 1 THEN RAISE EXCEPTION 'FALHOU: mexeu no vínculo da vizinha'; END IF;
+
+  -- E quem não administra não desvincula ninguém.
+  PERFORM set_config('request.jwt.claims', json_build_object(
+    'sub', corretor, 'role', 'authenticated')::text, true);
+  IF recrutamento_desvincular(casa, 'chefe@casa.dev') IS NOT NULL THEN
+    RAISE EXCEPTION 'FALHOU: um corretor desvinculou o próprio chefe';
+  END IF;
+  PERFORM set_config('request.jwt.claims', NULL, true);
+  RAISE NOTICE 'OK 9: desvincular tira da equipe e preserva a conta';
 END $$;
 
 -- ----------------------------------------------------------

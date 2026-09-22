@@ -179,15 +179,16 @@ const handleMudarStatus = async (novoStatus: string) => {
   if (!candidatoSelecionado) return;
 
   try {
-    // 1. Verificar se usuário já existe
-    const { data: verifyUser, error: verifyErr } = await supabase
-      .from('user_profiles')
-      .select('*')
-      .eq('email', candidatoSelecionado.email)
-      .maybeSingle();
+    // 1. O e-mail já tem conta na plataforma?
+    //
+    // Pergunta de sim ou não, de propósito. Antes isto era um SELECT * na view
+    // `user_profiles`, que devolvia nome, telefone e imobiliária de QUALQUER
+    // pessoa da plataforma — inclusive de quem trabalha na concorrência. Quem
+    // recruta precisa saber que o e-mail está em uso, não de quem ele é.
+    const { data: jaTemConta, error: verifyErr } = await supabase
+      .rpc('usuario_ja_tem_conta', { p_email: candidatoSelecionado.email });
 
-    // Tratar erro de verificação (exceto se for "not found")
-    if (verifyErr && verifyErr.code !== 'PGRST116') {
+    if (verifyErr) {
       console.error('❌ Erro ao verificar usuário:', verifyErr);
       toast.error('Erro ao verificar usuário existente');
       return;
@@ -195,7 +196,7 @@ const handleMudarStatus = async (novoStatus: string) => {
 
     // 2. Lógica baseada no novo status
     if (novoStatus === LABEL_ESTAGIO.onboard) {
-      if (verifyUser) {
+      if (jaTemConta) {
         toast.error('Usuário já existe como corretor');
         return;
       }
@@ -229,21 +230,33 @@ const handleMudarStatus = async (novoStatus: string) => {
       toast.success('Candidato aprovado e adicionado à equipe!');
 
     } else {
-      // Se mudou para status diferente de "Aprovado" e usuário existia
-      if (verifyUser) {
-        const { data: deleteUser, error: errDelete } = await supabase
-          .from('user_profiles')
-          .delete()
-          .eq('email', candidatoSelecionado.email)
-          .select()
-          .single();
+      // Saiu de "Aprovado": tira o candidato da EQUIPE, não da plataforma.
+      //
+      // Aqui havia um DELETE na view `user_profiles`, que é auto-atualizável e
+      // escrevia direto em `auth.users`: mudar o status de um candidato APAGAVA
+      // a conta da pessoa. Se o e-mail já pertencia a alguém de outra
+      // imobiliária, apagava a conta dessa pessoa — e conta apagada não volta.
+      const effectiveTenantId = candidatoSelecionado.tenant_id || tenantId;
+      if (jaTemConta && effectiveTenantId) {
+        const { data: desvinculo, error: errDesvincular } = await supabase
+          .rpc('recrutamento_desvincular', {
+            p_tenant_id: effectiveTenantId,
+            p_email: candidatoSelecionado.email
+          });
 
-        if (errDelete) {
-          console.error('❌ Erro ao remover usuário:', errDelete);
-          toast.error('Erro ao remover usuário como corretor');
+        if (errDesvincular) {
+          console.error('❌ Erro ao desvincular usuário:', errDesvincular);
+          toast.error('Erro ao remover usuário da equipe');
           return;
         }
-        toast.success('Usuário removido como corretor');
+        // `null` = quem chamou não administra esta imobiliária.
+        if (!desvinculo) {
+          toast.error('Você não tem permissão para remover este usuário da equipe');
+          return;
+        }
+        if (desvinculo.desvinculado) {
+          toast.success('Usuário removido da equipe');
+        }
       }
     }
 
