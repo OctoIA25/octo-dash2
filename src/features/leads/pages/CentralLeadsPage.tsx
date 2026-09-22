@@ -53,6 +53,11 @@ import {
   type KanbanLead,
 } from '@/features/leads/services/leadsService';
 import { classificacoesDe } from '@/features/leads/utils/classificarLead';
+import {
+  separarLeadsSemAtividade,
+  type LeadSemAtividade,
+  type LeadsSemAtividade,
+} from '@/features/leads/utils/leadsSemAtividade';
 import { ClassificacaoDots } from '@/features/leads/components/ClassificacaoBadge';
 import { fetchTenantMembers } from '@/features/corretores/services/tenantMembersService';
 import {
@@ -312,6 +317,37 @@ const Secao: React.FC<{
   </section>
 );
 
+/** "há 3h", "há 40min" — quanto tempo o lead está esperando uma atividade. */
+const esperandoHa = (iso: string | null): string => {
+  if (!iso) return 'sem data';
+  const minutos = Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 60000));
+  if (!Number.isFinite(minutos)) return 'sem data';
+  if (minutos < 60) return `há ${minutos}min`;
+  return `há ${Math.floor(minutos / 60)}h`;
+};
+
+/**
+ * Lead que ainda não tem atividade agendada. Não é atividade, então não usa a
+ * mesma linha: o que se faz aqui é criar a primeira.
+ */
+const LinhaLeadSemAtividade: React.FC<{ lead: LeadSemAtividade; onAgendar: () => void }> = ({
+  lead,
+  onAgendar,
+}) => (
+  <div className="flex items-center gap-3 overflow-hidden rounded-none border border-l-[3px] border-l-primary bg-card p-3">
+    <div className="min-w-0 flex-1">
+      <p className="truncate text-sm font-medium">{lead.nome || 'Lead sem nome'}</p>
+      <p className="truncate text-xs text-muted-foreground">
+        {[lead.telefone, lead.corretor, lead.status].filter(Boolean).join(' · ')}
+      </p>
+    </div>
+    <span className="shrink-0 text-xs text-muted-foreground">{esperandoHa(lead.assigned_at)}</span>
+    <Button size="sm" variant="outline" className="shrink-0" onClick={onAgendar}>
+      Agendar
+    </Button>
+  </div>
+);
+
 /** Quem é o dono da atividade. Nome e equipe vêm juntos, da mesma pessoa. */
 interface Pessoa {
   nome: string;
@@ -342,6 +378,12 @@ export const CentralLeadsPage: React.FC<CentralLeadsPageProps> = ({ embedded = f
 
   const [vinculando, setVinculando] = useState<Atividade | null>(null);
   const [leadEscolhido, setLeadEscolhido] = useState('');
+
+  // Leads sem atividade agendada: a faixa "Agendar". Sem bloqueio — a
+  // penalidade de 24h ficou para a reunião de 28/09.
+  const [semAtividade, setSemAtividade] = useState<LeadsSemAtividade>({
+    recentes: [], antigos: 0, totalSemAtividade: 0,
+  });
 
   const [criarAberto, setCriarAberto] = useState(false);
   const [salvando, setSalvando] = useState(false);
@@ -397,6 +439,70 @@ export const CentralLeadsPage: React.FC<CentralLeadsPageProps> = ({ embedded = f
   useEffect(() => {
     carregar();
   }, [carregar]);
+
+  /**
+   * Leads sem atividade agendada.
+   *
+   * Duas consultas em vez de uma: a de atividades desta tela é recortada por
+   * janela de tempo, e um lead com atividade marcada para daqui a três meses
+   * apareceria aqui como "sem atividade". A segunda consulta pergunta pelo que
+   * importa — existe atividade em aberto, de qualquer data.
+   */
+  const carregarSemAtividade = useCallback(async () => {
+    if (!tenantValido) return;
+    try {
+      let consultaLeads = supabase
+        .from('leads')
+        .select('id, name, phone, assigned_agent_name, assigned_at, status')
+        .eq('tenant_id', tenantId)
+        .is('archived_at', null)
+        .not('assigned_agent_id', 'is', null);
+
+      // Corretor vê só os seus, pelo id — nome de corretor ainda se repete na
+      // base ("Fernanda" e "Fernanda Souza" são pessoas diferentes lá).
+      if (!isAdmin && user?.id) consultaLeads = consultaLeads.eq('assigned_agent_id', user.id);
+
+      const [{ data: linhasLeads, error: erroLeads }, { data: comAtividade, error: erroAtiv }] =
+        await Promise.all([
+          consultaLeads,
+          supabase
+            .from('agenda_eventos')
+            .select('lead_uuid')
+            .eq('tenant_id', tenantId)
+            .in('status', ['pendente', 'confirmado'])
+            .not('lead_uuid', 'is', null),
+        ]);
+      if (erroLeads) throw erroLeads;
+      if (erroAtiv) throw erroAtiv;
+
+      // Gestor com um corretor escolhido no filtro: recorte por nome, que é o
+      // que o lead guarda. É filtro de tela, não fronteira de acesso.
+      const nomeFiltrado = filtroCorretor
+        ? corretores.find((c) => c.email.toLowerCase() === filtroCorretor.toLowerCase())?.nome ?? null
+        : null;
+
+      const leadsDoEscopo: LeadSemAtividade[] = (linhasLeads || [])
+        .map((l) => ({
+          id: l.id as string,
+          nome: (l.name as string) ?? null,
+          telefone: (l.phone as string) ?? null,
+          corretor: (l.assigned_agent_name as string) ?? null,
+          assigned_at: (l.assigned_at as string) ?? null,
+          status: (l.status as string) ?? null,
+        }))
+        .filter((l) => !nomeFiltrado || l.corretor === nomeFiltrado);
+
+      const ids = new Set((comAtividade || []).map((a) => a.lead_uuid as string));
+      setSemAtividade(separarLeadsSemAtividade(leadsDoEscopo, ids));
+    } catch (error) {
+      console.error('Erro ao carregar leads sem atividade:', error);
+      setSemAtividade({ recentes: [], antigos: 0, totalSemAtividade: 0 });
+    }
+  }, [tenantId, tenantValido, isAdmin, user?.id, filtroCorretor, corretores]);
+
+  useEffect(() => {
+    carregarSemAtividade();
+  }, [carregarSemAtividade]);
 
   useEffect(() => {
     if (!tenantValido) return;
@@ -594,6 +700,8 @@ export const CentralLeadsPage: React.FC<CentralLeadsPageProps> = ({ embedded = f
         leadUuid: null,
       }));
       carregar();
+      // O lead que acabou de ganhar atividade sai da faixa "Agendar".
+      carregarSemAtividade();
     } catch (error) {
       console.error('Erro ao criar atividade:', error);
       toast.error('Erro ao criar atividade');
@@ -717,6 +825,44 @@ export const CentralLeadsPage: React.FC<CentralLeadsPageProps> = ({ embedded = f
         </div>
       ) : aba === 'afazer' ? (
         <div className="space-y-6">
+          {(semAtividade.recentes.length > 0 || semAtividade.antigos > 0) && (
+            <section className="space-y-2">
+              <h2 className="flex flex-wrap items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                <ClipboardList className="h-4 w-4 text-primary" />
+                Agendar
+                <span className="rounded-full bg-muted px-2 text-xs">{semAtividade.recentes.length}</span>
+                {semAtividade.antigos > 0 && (
+                  <span className="text-[11px] font-normal normal-case text-muted-foreground">
+                    e mais {semAtividade.antigos.toLocaleString('pt-BR')} sem atividade há mais de 24h
+                  </span>
+                )}
+              </h2>
+              {semAtividade.recentes.length === 0 ? (
+                <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
+                  Todo lead recebido nas últimas 24h já tem atividade agendada.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {semAtividade.recentes.map((l) => (
+                    <LinhaLeadSemAtividade
+                      key={l.id}
+                      lead={l}
+                      onAgendar={() => {
+                        setNova((prev) => ({
+                          ...prev,
+                          titulo: '',
+                          leadUuid: l.id,
+                          leadNome: l.nome || '',
+                          leadTelefone: l.telefone || '',
+                        }));
+                        setCriarAberto(true);
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
           <Secao
             titulo="Pendentes"
             icone={<AlertTriangle className="h-4 w-4 text-destructive" />}
