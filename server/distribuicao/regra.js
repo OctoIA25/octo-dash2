@@ -7,7 +7,16 @@
  * decisão, e não grava nada. O simulador (P1.2) e o painel ao vivo (P1.3)
  * usam exatamente esta função — uma regra só, não três.
  *
- * A REGRA DA LOTUS, como ficou depois das decisões de 19/09:
+ * A REGRA DA LOTUS, como ficou depois das decisões de 19/09 e **22/09**:
+ *
+ *   TODO LEAD .................. a Lia atende PRIMEIRO. Nada vai para corretor
+ *                               antes de ela passar. Decidido em 22/09,
+ *                               perguntado diretamente: "a LIA atende primeiro
+ *                               também os leads de terceiros, ou eles vão
+ *                               direto ao captador?" — "todos vão para a LIA
+ *                               primeiro". ANTES, só lançamento esperava.
+ *
+ *   Depois que a Lia passa:
  *
  *   Imóvel de TERCEIROS ....... vai para o CAPTADOR do imóvel.
  *                               Sem captador cadastrado (7 dos 29 imóveis da
@@ -16,8 +25,7 @@
  *                               para outro corretor. Isto DIVERGE do plano,
  *                               que manda ir para o bolsão; vale a decisão do
  *                               chefe.
- *   LANÇAMENTO ................ a Lia atende primeiro; quando ela passa, vai
- *                               por roleta em ordem para 1 corretor.
+ *   LANÇAMENTO ................ roleta em ordem para 1 corretor.
  *   Não bate em nada .......... roleta geral (fila "pega-tudo").
  *
  * ROLETA NÃO É SORTEIO: é rodízio em ordem. Cada corretor recebe na sua vez e
@@ -31,7 +39,11 @@ export const MOTIVOS = {
   CAPTADOR: 'captador_do_imovel',
   SEM_CAPTADOR: 'imovel_sem_captador',
   CAPTADOR_INDISPONIVEL: 'captador_indisponivel',
-  LIA_PRIMEIRO: 'lancamento_atendido_pela_lia',
+  // Renomeado em 22/09: era `lancamento_atendido_pela_lia`, e passou a valer
+  // para TODO lead. O nome antigo descrevia o único caso que existia e teria
+  // virado mentira no extrato. A tabela não existe em produção — nenhum
+  // histórico foi reescrito.
+  LIA_PRIMEIRO: 'atendido_pela_lia_primeiro',
   ROLETA: 'roleta_em_ordem',
   SEM_CORRETOR: 'nenhum_corretor_disponivel',
 };
@@ -118,11 +130,18 @@ export function decidirDestino({ lead, captador = null, participantes = [], ulti
   // Lançamento tem pool próprio; o resto cai em prontos/alugados.
   const pool = tipo === 'lancamento' ? 'lancamentos' : 'prontos';
 
+  // A LIA ATENDE PRIMEIRO — TODOS, decisão de 22/09.
+  //
+  // Esta guarda vale para qualquer tipo, e é por isso que ela está aqui em
+  // cima e não dentro de cada ramo: repetida três vezes, um ramo novo nasceria
+  // sem ela um dia, e o lead sairia para o corretor sem a LIA ter falado.
+  // Antes de 22/09 só lançamento esperava, e o lead de terceiros ia direto ao
+  // captador.
+  if (!lead?.liaPassou) {
+    return { destino: 'lia', corretorId: null, motivo: MOTIVOS.LIA_PRIMEIRO, tipo };
+  }
+
   if (tipo === 'lancamento') {
-    // A Lia atende primeiro. Só quando ela passa é que entra a roleta.
-    if (!lead?.liaPassou) {
-      return { destino: 'lia', corretorId: null, motivo: MOTIVOS.LIA_PRIMEIRO, tipo };
-    }
     const r = proximoDaRoleta(participantes, ultimaPosicao, pool);
     return r
       ? { destino: 'corretor', corretorId: r.corretor.id, posicao: r.posicao, motivo: MOTIVOS.ROLETA, tipo }

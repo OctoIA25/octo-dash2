@@ -1,14 +1,22 @@
 /**
  * O relógio do atendimento.
  *
- * A regra combinada em 19/09/2026: 9h às 20h, de SEGUNDA A SÁBADO; domingo o
- * relógio fica parado. Tudo em horário de Brasília — o banco guarda UTC, e
- * errar o fuso desloca o prazo em três horas, o que num prazo de uma hora é a
- * diferença entre certo e absurdo.
+ * A regra combinada em **22/09/2026**: 9h às 20h, de SEGUNDA A SEXTA. Sábado e
+ * domingo o relógio fica parado. Tudo em horário de Brasília — o banco guarda
+ * UTC, e errar o fuso desloca o prazo em três horas, o que num prazo de uma
+ * hora é a diferença entre certo e absurdo.
  *
- * O caso que o plano nomeia está aqui como teste: lead que chega às 19h30 com
- * prazo de 1h fica com 30 minutos naquele dia e os outros 30 correm a partir
- * das 9h do dia seguinte.
+ * ISTO SUBSTITUI a regra de 19/09, que incluía o sábado. Seis casos deste
+ * arquivo mudaram de resposta por causa disso, e cada um foi recalculado à
+ * mão — não "ajustado até passar".
+ *
+ * O caso que o plano nomeia está aqui como teste, e agora em DUAS versões: na
+ * quinta, em que "o dia seguinte" é mesmo o dia seguinte; e na sexta, em que
+ * o resto do prazo só corre na segunda. Era essa a pergunta que o chefe
+ * respondeu.
+
+ * Calendário de referência: 17/09/2026 é quinta, 18/09 sexta, 19/09 sábado,
+ * 20/09 domingo e 21/09 segunda.
  */
 import { describe, it, expect } from 'vitest';
 import {
@@ -50,17 +58,25 @@ describe('prazoDeAtendimento', () => {
     expect(hhmm(r)).toBe('18, 11:00');
   });
 
-  it('O CASO DO PLANO: 19h30 com 1h de prazo vira 09h30 do dia seguinte', () => {
-    // Sexta 18/09 às 19h30: sobram 30 min até as 20h; os outros 30 correm
-    // sábado a partir das 9h.
+  it('O CASO DO PLANO: 19h30 na QUINTA vira 09h30 da sexta', () => {
+    // Quinta 17/09 às 19h30: sobram 30 min até as 20h; os outros 30 correm na
+    // sexta a partir das 9h. É o exemplo literal do plano.
+    const r = prazoDeAtendimento(br(17, 19, 30), 60);
+    expect(hhmm(r)).toBe('18, 09:30');
+  });
+
+  it('o mesmo caso na SEXTA pula o fim de semana inteiro', () => {
+    // Sexta 18/09 às 19h30: 30 min na sexta; sábado e domingo não contam, e os
+    // outros 30 correm na SEGUNDA a partir das 9h. Antes de 22/09 esta conta
+    // dava sábado 09h30.
     const r = prazoDeAtendimento(br(18, 19, 30), 60);
-    expect(hhmm(r)).toBe('19, 09:30');
+    expect(hhmm(r)).toBe('21, 09:30');
   });
 
   it('lead que chega DEPOIS do expediente começa a contar no dia seguinte', () => {
-    // Sexta 18/09 às 22h -> sábado 19/09 às 9h + 60 min.
+    // Sexta 18/09 às 22h -> SEGUNDA 21/09 às 9h + 60 min.
     const r = prazoDeAtendimento(br(18, 22), 60);
-    expect(hhmm(r)).toBe('19, 10:00');
+    expect(hhmm(r)).toBe('21, 10:00');
   });
 
   it('lead que chega ANTES do expediente espera as 9h', () => {
@@ -74,18 +90,18 @@ describe('prazoDeAtendimento', () => {
     expect(hhmm(r)).toBe('21, 10:00');
   });
 
-  it('sábado à noite atravessa o domingo inteiro', () => {
-    // Sábado 19/09 às 19h30 -> 30 min no sábado, 30 na SEGUNDA (domingo não conta).
+  it('SÁBADO não conta nada: o relógio só começa na segunda', () => {
+    // Sábado 19/09 às 19h30 -> a hora INTEIRA corre na segunda, das 9h às 10h.
+    // Até 19/09 esta conta dava 30 min no sábado e 30 na segunda (09h30).
     const r = prazoDeAtendimento(br(19, 19, 30), 60);
-    expect(hhmm(r)).toBe('21, 09:30');
+    expect(hhmm(r)).toBe('21, 10:00');
   });
 
   it('prazo longo atravessa vários dias, contando só horas úteis', () => {
     // Sexta 10h + 20h de prazo: 10h correm na sexta (10h→20h) e as outras 10
-    // no sábado, a partir das 9h -> 19h. Errei esta conta na primeira versão
-    // do teste (escrevi 9h na sexta); o código estava certo.
+    // na SEGUNDA, a partir das 9h -> 19h.
     const r = prazoDeAtendimento(br(18, 10), 20 * 60);
-    expect(hhmm(r)).toBe('19, 19:00');
+    expect(hhmm(r)).toBe('21, 19:00');
   });
 
   it('entrada inválida não inventa prazo', () => {
@@ -146,13 +162,18 @@ describe('minutosUteisEntre', () => {
   });
 
   it('a noite não conta', () => {
-    // Sexta 19h -> sábado 10h: 1h na sexta + 1h no sábado.
-    expect(minutosUteisEntre(br(18, 19), br(19, 10))).toBe(120);
+    // Quinta 19h -> sexta 10h: 1h na quinta + 1h na sexta.
+    expect(minutosUteisEntre(br(17, 19), br(18, 10))).toBe(120);
   });
 
-  it('o domingo inteiro não conta', () => {
-    // Sábado 19h -> segunda 10h: 1h no sábado + 1h na segunda.
-    expect(minutosUteisEntre(br(19, 19), br(21, 10))).toBe(120);
+  it('sexta à noite para sábado de manhã conta só a hora da sexta', () => {
+    // Sexta 19h -> sábado 10h: 1h na sexta, e o sábado inteiro vale zero.
+    expect(minutosUteisEntre(br(18, 19), br(19, 10))).toBe(60);
+  });
+
+  it('o FIM DE SEMANA inteiro não conta', () => {
+    // Sábado 19h -> segunda 10h: sábado zero, domingo zero, 1h na segunda.
+    expect(minutosUteisEntre(br(19, 19), br(21, 10))).toBe(60);
   });
 
   it('intervalo inteiro fora do expediente dá zero', () => {

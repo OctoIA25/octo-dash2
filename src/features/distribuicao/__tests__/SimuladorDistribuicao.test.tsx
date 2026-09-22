@@ -43,6 +43,18 @@ const linhas = () => screen.getAllByRole('row').slice(1); // sem o cabeçalho
 const simular = async (user: ReturnType<typeof userEvent.setup>) =>
   user.click(screen.getByRole('button', { name: /Simular/ }));
 
+/**
+ * Marca "A Lia já passou o lead" e simula.
+ *
+ * Desde 22/09 TODO lead espera a Lia — sem este clique, a tela responde "a Lia
+ * atende primeiro" e nenhum corretor aparece. Os casos que testam a roleta e o
+ * captador falam do DEPOIS do handoff, e agora precisam dizer isso.
+ */
+const simularDepoisDaLia = async (user: ReturnType<typeof userEvent.setup>) => {
+  await user.click(screen.getByLabelText(/A Lia já passou o lead/));
+  await simular(user);
+};
+
 describe('o simulador não encosta em lead nenhum', () => {
   it('diz isso na tela, para não restar dúvida', () => {
     montar();
@@ -55,7 +67,7 @@ describe('a roleta é rodízio — é isso que a sequência mostra', () => {
     const user = userEvent.setup();
     montar();
     fireEvent.change(screen.getByLabelText('Quantos leads'), { target: { value: '4' } });
-    await simular(user);
+    await simularDepoisDaLia(user);
 
     const nomes = linhas().map((l) => within(l).getAllByRole('cell')[1].textContent);
     expect(nomes).toEqual(['Ana', 'Bruno', 'Carla', 'Ana']);
@@ -64,7 +76,7 @@ describe('a roleta é rodízio — é isso que a sequência mostra', () => {
   it('quem está pausado é PULADO e mantém a vez', async () => {
     const user = userEvent.setup();
     montar({ participantes: [p('1', 'Ana'), p('2', 'Bruno', { pausado: true }), p('3', 'Carla')] });
-    await simular(user);
+    await simularDepoisDaLia(user);
 
     const nomes = linhas().map((l) => within(l).getAllByRole('cell')[1].textContent);
     expect(nomes).not.toContain('Bruno');
@@ -75,7 +87,7 @@ describe('a roleta é rodízio — é isso que a sequência mostra', () => {
     // Um gestor que vê "o próximo é a Carla" precisa que a tela concorde.
     const user = userEvent.setup();
     montar({ ponteiro: { posicao: 1, corretorId: '2' } });
-    await simular(user);
+    await simularDepoisDaLia(user);
     expect(within(linhas()[0]).getAllByRole('cell')[1]).toHaveTextContent('Carla');
   });
 });
@@ -88,7 +100,7 @@ describe('as regras decididas em 19/09 aparecem na tela', () => {
     const seletores = screen.getAllByRole('combobox');
     await user.click(seletores[seletores.length - 1]);
     await user.click(await screen.findByRole('option', { name: 'Ana' }));
-    await simular(user);
+    await simularDepoisDaLia(user);
 
     const primeira = within(linhas()[0]).getAllByRole('cell');
     expect(primeira[1]).toHaveTextContent('Ana');
@@ -109,7 +121,7 @@ describe('as regras decididas em 19/09 aparecem na tela', () => {
     const seletores = screen.getAllByRole('combobox');
     await user.click(seletores[seletores.length - 1]);
     await user.click(await screen.findByRole('option', { name: /Dora/ }));
-    await simular(user);
+    await simularDepoisDaLia(user);
 
     const primeira = within(linhas()[0]).getAllByRole('cell');
     expect(primeira[1]).not.toHaveTextContent('Dora');
@@ -124,7 +136,7 @@ describe('as regras decididas em 19/09 aparecem na tela', () => {
     const seletores = screen.getAllByRole('combobox');
     await user.click(seletores[seletores.length - 1]);
     await user.click(await screen.findByRole('option', { name: 'Dora' }));
-    await simular(user);
+    await simularDepoisDaLia(user);
 
     const primeira = within(linhas()[0]).getAllByRole('cell');
     expect(primeira[1]).toHaveTextContent('Dora');

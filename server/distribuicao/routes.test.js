@@ -132,8 +132,17 @@ describe('POST /api/v1/distribuicao/destino', () => {
     ]);
   });
 
-  it('lead sem imóvel cai na roleta e recebe um corretor', async () => {
+  it('SEM o handoff da Lia, a rota responde "lia" — decisão de 22/09', async () => {
+    // Todo lead passa pela Lia primeiro. Este caso é o portão: se ele cair, a
+    // rota voltou a mandar lead direto para corretor.
     const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', {});
+    expect(corpo.data.destino).toBe('lia');
+    expect(corpo.data.corretor_id).toBeNull();
+    expect(corpo.data.motivo).toBe('atendido_pela_lia_primeiro');
+  });
+
+  it('lead sem imóvel cai na roleta e recebe um corretor', async () => {
+    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', { lia_passou: true });
     expect(corpo.data.destino).toBe('corretor');
     expect(corpo.data.corretor_id).toBe('1');
   });
@@ -146,7 +155,7 @@ describe('POST /api/v1/distribuicao/destino', () => {
   it('imóvel com captador vai para o captador', async () => {
     tabelas.imoveis_locais = [{ captador_id: '9' }];
     tabelas.tenant_memberships.push(membro('9'));
-    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', { codigo_imovel: 'AP0961' });
+    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', { codigo_imovel: 'AP0961', lia_passou: true });
     expect(corpo.data).toMatchObject({ destino: 'corretor', corretor_id: '9', motivo: 'captador_do_imovel' });
   });
 
@@ -156,7 +165,7 @@ describe('POST /api/v1/distribuicao/destino', () => {
     // podia atender. `captador_indisponivel` nunca chegava a acontecer.
     tabelas.imoveis_locais = [{ captador_id: '9' }];
     tabelas.tenant_memberships.push(membro('9', { permissions: { bolsao_pausado: true } }));
-    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', { codigo_imovel: 'AP0961' });
+    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', { codigo_imovel: 'AP0961', lia_passou: true });
     expect(corpo.data.motivo).toBe('captador_indisponivel');
     expect(corpo.data.corretor_id).toBe('1');
   });
@@ -165,7 +174,7 @@ describe('POST /api/v1/distribuicao/destino', () => {
     // Sem membership não há a quem atribuir: o lead tem de voltar para a fila
     // em vez de ficar com quem saiu.
     tabelas.imoveis_locais = [{ captador_id: '9' }];
-    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', { codigo_imovel: 'AP0961' });
+    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', { codigo_imovel: 'AP0961', lia_passou: true });
     expect(corpo.data.motivo).toBe('imovel_sem_captador');
     expect(corpo.data.corretor_id).toBe('1');
   });
@@ -176,32 +185,32 @@ describe('POST /api/v1/distribuicao/destino', () => {
     tabelas.imoveis_locais = [{ captador_id: '9' }];
     tabelas.tenant_memberships.push(membro('9'));
     tabelas.roleta_participantes = [{ broker_id: '1' }, { broker_id: '2' }];
-    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', { codigo_imovel: 'AP0961' });
+    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', { codigo_imovel: 'AP0961', lia_passou: true });
     expect(corpo.data).toMatchObject({ corretor_id: '9', motivo: 'captador_do_imovel' });
   });
 
   it('imóvel SEM captador cai na roleta — decisão de 19/09', async () => {
     tabelas.imoveis_locais = [{ captador_id: null }];
-    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', { codigo_imovel: 'AP0961' });
+    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', { codigo_imovel: 'AP0961', lia_passou: true });
     expect(corpo.data.motivo).toBe('imovel_sem_captador');
     expect(corpo.data.corretor_id).toBe('1');
   });
 
   it('A ROTA NÃO ESCREVE EM `leads` — quem atribui é a Lia', async () => {
-    await montar().chamar('/api/v1/distribuicao/destino', {});
+    await montar().chamar('/api/v1/distribuicao/destino', { lia_passou: true });
     expect(gravados.some((g) => g.tabela === 'leads')).toBe(false);
     expect(gravados.every((g) => g.tabela === 'distribuicao_eventos')).toBe(true);
   });
 
   it('grava a consulta no extrato, com motivo e posição', async () => {
-    await montar().chamar('/api/v1/distribuicao/destino', {});
+    await montar().chamar('/api/v1/distribuicao/destino', { lia_passou: true });
     const e = gravados[0].linha;
     expect(e).toMatchObject({ tenant_id: 't1', evento: 'consultado', origem: 'lia', motivo: 'roleta_em_ordem' });
     expect(e.detalhes).toMatchObject({ posicao: 0, participantes: 3, disponiveis: 3 });
   });
 
   it('o prazo é calculado e devolvido quando há corretor', async () => {
-    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', {});
+    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', { lia_passou: true });
     expect(corpo.data.prazo_ate).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
@@ -209,7 +218,7 @@ describe('POST /api/v1/distribuicao/destino', () => {
     // É o valor gravado hoje para "nunca expira". Tratá-lo como prazo real
     // daria um prazo de 365 dias e o lead nunca sairia de ninguém.
     tabelas.tenant_bolsao_config = [{ horario_funcionamento: {}, tempo_expiracao_exclusivo: 525600 }];
-    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', {});
+    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', { lia_passou: true });
     const prazo = new Date(corpo.data.prazo_ate);
     const daquiUmMes = new Date(Date.now() + 31 * 86400000);
     expect(prazo.getTime()).toBeLessThan(daquiUmMes.getTime());
@@ -221,7 +230,7 @@ describe('POST /api/v1/distribuicao/destino', () => {
       { user_id: 'adm', role: 'admin', permissions: {}, created_at: '2026-01-01' },
       membro('2'),
     ];
-    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', {});
+    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', { lia_passou: true });
     expect(corpo.data.corretor_id).toBe('2');
   });
 
@@ -231,18 +240,18 @@ describe('POST /api/v1/distribuicao/destino', () => {
       membro('1', { permissions: { bolsao_blocked_until: futuro } }),
       membro('2'),
     ];
-    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', {});
+    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', { lia_passou: true });
     expect(corpo.data.corretor_id).toBe('2');
   });
 
   it('sem ninguém disponível a resposta é "ninguem" — nunca um chute', async () => {
     tabelas.tenant_memberships = [membro('1', { permissions: { nao_recebe_leads: true } })];
-    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', {});
+    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', { lia_passou: true });
     expect(corpo.data).toMatchObject({ destino: 'ninguem', corretor_id: null, prazo_ate: null });
   });
 
   it('a resposta diz se a consulta ficou registrada', async () => {
-    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', {});
+    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', { lia_passou: true });
     expect(corpo.data.registrado).toBe(true);
   });
 });
@@ -283,7 +292,7 @@ describe('curinga no código do imóvel não vira "qualquer imóvel"', () => {
     // vira `\\%` e o curinga sobrevive. Recusar resolve a classe inteira.
     tabelas.imoveis_locais = [{ captador_id: '9' }];
     for (const codigo of ['%', '_', '*', 'AP*', 'AP%', 'AP\\_1']) {
-      const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', { codigo_imovel: codigo });
+      const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', { codigo_imovel: codigo, lia_passou: true });
       expect(corpo.data.corretor_id, `curinga "${codigo}" nao pode achar captador`).not.toBe('9');
     }
   });
@@ -291,7 +300,7 @@ describe('curinga no código do imóvel não vira "qualquer imóvel"', () => {
   it('código normal continua achando o captador', async () => {
     tabelas.imoveis_locais = [{ captador_id: '9' }];
     tabelas.tenant_memberships.push(membro('9'));
-    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', { codigo_imovel: 'AP0961' });
+    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', { codigo_imovel: 'AP0961', lia_passou: true });
     expect(corpo.data.corretor_id).toBe('9');
   });
 });
@@ -301,13 +310,13 @@ describe('a fila é a roleta CURADA pelo admin', () => {
     // Sem isto o simulador mostraria uma fila que a tela de configuração não
     // controla — e o gestor não reconheceria o resultado.
     tabelas.roleta_participantes = [{ broker_id: '3' }];
-    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', {});
+    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', { lia_passou: true });
     expect(corpo.data.corretor_id).toBe('3');
   });
 
   it('roleta vazia = ninguém curou: valem todos os membros', async () => {
     tabelas.roleta_participantes = [];
-    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', {});
+    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', { lia_passou: true });
     expect(corpo.data.corretor_id).toBe('1');
   });
 });
@@ -321,20 +330,20 @@ describe('o ponteiro ignora as linhas sem posição gravada', () => {
       { corretor_id: '9', detalhes: { posicao: null } },
       { corretor_id: '2', detalhes: { posicao: 1 } },
     ];
-    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', {});
+    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', { lia_passou: true });
     // Com o ponteiro certo (1), o próximo é o terceiro da fila.
     expect(corpo.data.corretor_id).toBe('3');
   });
 
   it('posição ZERO é posição, não ausência', async () => {
     tabelas.distribuicao_eventos = [{ corretor_id: '1', detalhes: { posicao: 0 } }];
-    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', {});
+    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', { lia_passou: true });
     expect(corpo.data.corretor_id).toBe('2');
   });
 
   it('extrato vazio começa do primeiro', async () => {
     tabelas.distribuicao_eventos = [];
-    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', {});
+    const { corpo } = await montar().chamar('/api/v1/distribuicao/destino', { lia_passou: true });
     expect(corpo.data.corretor_id).toBe('1');
   });
 });

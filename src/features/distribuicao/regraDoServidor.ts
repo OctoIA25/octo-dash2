@@ -93,6 +93,9 @@ export const TEXTO_DO_MOTIVO: Record<string, string> = {
   captador_do_imovel: 'captador do imóvel',
   imovel_sem_captador: 'imóvel sem captador — roleta geral',
   captador_indisponivel: 'captador indisponível — roleta geral',
+  atendido_pela_lia_primeiro: 'a Lia atende primeiro',
+  // Nome antigo, de quando só lançamento esperava. Mantido para o extrato de
+  // qualquer ambiente que já tenha gravado com ele.
   lancamento_atendido_pela_lia: 'lançamento: a Lia atende primeiro',
   roleta_em_ordem: 'roleta, em ordem',
   nenhum_corretor_disponivel: 'ninguém disponível na fila',

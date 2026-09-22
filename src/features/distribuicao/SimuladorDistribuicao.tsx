@@ -168,14 +168,15 @@ export function SimuladorDistribuicao({
             </>
           )}
 
-          {tipo === 'lancamento' && (
-            <div className="flex items-end">
-              <label className="flex items-center gap-2 text-[13px]">
-                <Checkbox checked={liaPassou} onCheckedChange={(v) => setLiaPassou(v === true)} />
-                A Lia já passou o lead
-              </label>
-            </div>
-          )}
+          {/* Desde 22/09 TODO lead espera a Lia, não só lançamento. Com o
+              checkbox escondido nos outros tipos, a tela ficaria presa em "a
+              Lia atende primeiro" sem jeito de simular o depois. */}
+          <div className="flex items-end">
+            <label className="flex items-center gap-2 text-[13px]">
+              <Checkbox checked={liaPassou} onCheckedChange={(v) => setLiaPassou(v === true)} />
+              A Lia já passou o lead
+            </label>
+          </div>
 
           <div className="space-y-1.5">
             <Label htmlFor="sim-qtd">Quantos leads</Label>

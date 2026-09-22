@@ -72,20 +72,33 @@ describe('a roleta é rodízio em ordem, não sorteio', () => {
 });
 
 describe('imóvel de TERCEIROS', () => {
-  it('vai para o captador do imóvel', () => {
+  it('a Lia atende PRIMEIRO, mesmo tendo captador — decisão de 22/09', () => {
+    // Antes desta data, lead de terceiros ia direto ao captador. Perguntado ao
+    // chefe: "a LIA atende primeiro também os leads de terceiros?" — "todos
+    // vão para a LIA primeiro".
     const r = decidirDestino({ lead: { codigoImovel: 'AP0961' }, captador: c('ana'), participantes: FILA });
+    expect(r).toMatchObject({ destino: 'lia', corretorId: null, motivo: MOTIVOS.LIA_PRIMEIRO, tipo: 'terceiros' });
+  });
+
+  it('lead SEM tipo nenhum também espera a Lia', () => {
+    const r = decidirDestino({ lead: {}, participantes: FILA });
+    expect(r).toMatchObject({ destino: 'lia', motivo: MOTIVOS.LIA_PRIMEIRO, tipo: 'indefinido' });
+  });
+
+  it('depois que a Lia passa, vai para o captador do imóvel', () => {
+    const r = decidirDestino({ lead: { codigoImovel: 'AP0961', liaPassou: true }, captador: c('ana'), participantes: FILA });
     expect(r).toMatchObject({ destino: 'corretor', corretorId: 'ana', motivo: MOTIVOS.CAPTADOR });
   });
 
   it('SEM captador cadastrado vai para a roleta geral — decisão de 19/09', () => {
     // São 7 dos 29 imóveis da Lotus, medido no mesmo dia.
-    const r = decidirDestino({ lead: { codigoImovel: 'AP0961' }, captador: null, participantes: FILA, ultimaPosicao: 0 });
+    const r = decidirDestino({ lead: { codigoImovel: 'AP0961', liaPassou: true }, captador: null, participantes: FILA, ultimaPosicao: 0 });
     expect(r).toMatchObject({ destino: 'corretor', corretorId: 'bruno', motivo: MOTIVOS.SEM_CAPTADOR });
   });
 
   it('captador pausado NÃO segura o lead: ele vai para a roleta', () => {
     const r = decidirDestino({
-      lead: { codigoImovel: 'AP0961' },
+      lead: { codigoImovel: 'AP0961', liaPassou: true },
       captador: c('ana', { pausado: true }),
       participantes: FILA,
       ultimaPosicao: 0,
@@ -97,18 +110,18 @@ describe('imóvel de TERCEIROS', () => {
     // Sem `posicao`, quem chama não move o ponteiro — e o próximo lead de
     // roleta continua indo para quem era a vez. Se o captador gastasse a vez
     // de alguém, um imóvel muito procurado puniria a fila inteira.
-    const r = decidirDestino({ lead: { codigoImovel: 'AP0961' }, captador: c('ana'), participantes: FILA });
+    const r = decidirDestino({ lead: { codigoImovel: 'AP0961', liaPassou: true }, captador: c('ana'), participantes: FILA });
     expect(r.posicao).toBeUndefined();
   });
 
   it('a roleta, essa sim, devolve a posição para o ponteiro andar', () => {
-    const r = decidirDestino({ lead: { codigoImovel: 'X' }, captador: null, participantes: FILA, ultimaPosicao: 0 });
+    const r = decidirDestino({ lead: { codigoImovel: 'X', liaPassou: true }, captador: null, participantes: FILA, ultimaPosicao: 0 });
     expect(r.posicao).toBe(1);
   });
 
   it('o motivo distingue "sem captador" de "captador indisponível"', () => {
-    const sem = decidirDestino({ lead: { codigoImovel: 'X' }, captador: null, participantes: FILA });
-    const ind = decidirDestino({ lead: { codigoImovel: 'X' }, captador: c('ana', { noLimite: true }), participantes: FILA });
+    const sem = decidirDestino({ lead: { codigoImovel: 'X', liaPassou: true }, captador: null, participantes: FILA });
+    const ind = decidirDestino({ lead: { codigoImovel: 'X', liaPassou: true }, captador: c('ana', { noLimite: true }), participantes: FILA });
     expect(sem.motivo).not.toBe(ind.motivo);
   });
 });
@@ -137,12 +150,12 @@ describe('LANÇAMENTO', () => {
 
 describe('lead que não bate em nenhuma regra', () => {
   it('cai na roleta geral', () => {
-    const r = decidirDestino({ lead: {}, participantes: FILA, ultimaPosicao: -1 });
+    const r = decidirDestino({ lead: { liaPassou: true }, participantes: FILA, ultimaPosicao: -1 });
     expect(r).toMatchObject({ destino: 'corretor', corretorId: 'ana', tipo: 'indefinido' });
   });
 
   it('sem ninguém disponível, a resposta é "ninguém" — e não um chute', () => {
-    const r = decidirDestino({ lead: {}, participantes: [c('a', { pausado: true })] });
+    const r = decidirDestino({ lead: { liaPassou: true }, participantes: [c('a', { pausado: true })] });
     expect(r).toMatchObject({ destino: 'ninguem', corretorId: null, motivo: MOTIVOS.SEM_CORRETOR });
   });
 });
@@ -223,7 +236,7 @@ describe('ATUAÇÃO — o defeito que fez a roleta antiga ser desligada', () => 
 
   it('lead de TERCEIROS não vai para quem só atende lançamento', () => {
     const r = decidirDestino({
-      lead: { codigoImovel: 'AP0961' },
+      lead: { codigoImovel: 'AP0961', liaPassou: true },
       participantes: [lancamentos, prontos],
       ultimaPosicao: -1,
     });

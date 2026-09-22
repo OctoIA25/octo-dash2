@@ -1,9 +1,13 @@
 /**
  * O relógio do atendimento só corre dentro do horário comercial.
  *
- * Decidido pelo chefe em 19/09/2026: **9h às 20h, de segunda a sábado**.
- * Domingo o relógio fica PARADO — um lead que chega no domingo começa a
- * contar segunda às 9h.
+ * Decidido pelo chefe em **22/09/2026**: **9h às 20h, de segunda a SEXTA**.
+ * Sábado e domingo o relógio fica PARADO — um lead que chega na sexta às 19h30
+ * tem 30 minutos contados naquele dia e os outros 30 na SEGUNDA às 9h.
+ *
+ * ISTO SUBSTITUI A DECISÃO DE 19/09, que incluía o sábado. Perguntado
+ * diretamente — "a janela das 9h às 20h vale para sábado e domingo?" —, a
+ * resposta foi "não vale sábado e domingo".
  *
  * O exemplo que o plano dá, e que os testes cobrem: um lead que chega às
  * 19h30 com prazo de 1h fica com 30 minutos contados naquele dia, e os outros
@@ -36,7 +40,7 @@ export function minutosDoDiaEmBrasilia(data) {
 }
 
 /**
- * A janela padrão combinada: 9h–20h de segunda a sábado, domingo parado.
+ * A janela padrão combinada: 9h–20h de segunda a sexta. Fim de semana parado.
  * Índice = dia da semana (0 = domingo).
  */
 export const JANELA_PADRAO = [
@@ -46,7 +50,7 @@ export const JANELA_PADRAO = [
   { inicio: 540, fim: 1200 },  // quarta
   { inicio: 540, fim: 1200 },  // quinta
   { inicio: 540, fim: 1200 },  // sexta
-  { inicio: 540, fim: 1200 },  // sábado
+  null,                        // sábado: relógio parado (decisão de 22/09)
 ];
 
 const MINUTO = 60_000;
