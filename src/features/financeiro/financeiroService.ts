@@ -206,3 +206,128 @@ export function baixarArquivo(conteudo: string, nome: string) {
   // Sem o revoke, cada exportação deixa um blob preso na memória da aba.
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+// ============================================================
+// Conciliação por extrato (P4.6)
+// ============================================================
+
+export interface CandidatoDaConciliacao {
+  lancamento_id: string;
+  descricao: string;
+  vencimento: string | null;
+  valor: number;
+  origem: string;
+  distancia_dias: number;
+}
+
+export interface SugestaoDaConciliacao {
+  transacao_id: string;
+  data: string;
+  valor: number;
+  tipo: 'credito' | 'debito';
+  descricao: string;
+  candidatos: CandidatoDaConciliacao[];
+  quantos: number;
+  /** Mais de um lançamento possível: quem confirma é a pessoa, nunca a tela. */
+  ambigua: boolean;
+  sem_candidato: boolean;
+}
+
+export interface MovimentoDoExtrato {
+  id: string;
+  data: string;
+  valor: number;
+  tipo: 'credito' | 'debito';
+  descricao: string;
+  ignorada: boolean;
+  motivo_ignorada: string;
+  lancamento_id: string | null;
+  lancamento: string | null;
+  conciliada_em: string | null;
+}
+
+export interface SituacaoDaConciliacao {
+  de: string;
+  ate: string;
+  movimentos: number;
+  conciliados: number;
+  ignorados: number;
+  em_aberto: number;
+  valor_em_aberto: number;
+}
+
+export async function importarExtrato(
+  tenantId: string,
+  contaBancariaId: string,
+  arquivo: string,
+  periodo: { de: string | null; ate: string | null },
+  movimentos: Array<{ fitid: string; data: string; valor: number; tipo: string; descricao: string }>
+): Promise<{ importacao_id: string | null; novas: number; repetidas: number }> {
+  const { data, error } = await supabase.rpc('extrato_importar', {
+    p_tenant_id: tenantId,
+    p_conta_bancaria_id: contaBancariaId,
+    p_arquivo: arquivo,
+    p_periodo_de: periodo.de,
+    p_periodo_ate: periodo.ate,
+    p_movimentos: movimentos,
+  });
+  if (error) throw error;
+  return exigir(data, 'importar o extrato');
+}
+
+export async function carregarSugestoes(
+  tenantId: string, de: string, ate: string, diasDeFolga = 5
+): Promise<SugestaoDaConciliacao[]> {
+  if (vazio(tenantId)) return [];
+  const { data, error } = await supabase.rpc('extrato_sugestoes', {
+    p_tenant_id: tenantId, p_de: de, p_ate: ate, p_dias_de_folga: diasDeFolga,
+  });
+  if (error) throw error;
+  return (data as SugestaoDaConciliacao[]) ?? [];
+}
+
+export async function carregarMovimentos(
+  tenantId: string, de: string, ate: string
+): Promise<MovimentoDoExtrato[]> {
+  if (vazio(tenantId)) return [];
+  const { data, error } = await supabase.rpc('extrato_movimentos', {
+    p_tenant_id: tenantId, p_de: de, p_ate: ate,
+  });
+  if (error) throw error;
+  return (data as MovimentoDoExtrato[]) ?? [];
+}
+
+export async function carregarSituacao(
+  tenantId: string, de: string, ate: string
+): Promise<SituacaoDaConciliacao | null> {
+  if (vazio(tenantId)) return null;
+  const { data, error } = await supabase.rpc('extrato_situacao', {
+    p_tenant_id: tenantId, p_de: de, p_ate: ate,
+  });
+  if (error) throw error;
+  return (data as SituacaoDaConciliacao) ?? null;
+}
+
+export async function conciliar(
+  tenantId: string, pares: Array<{ transacao_id: string; lancamento_id: string }>
+): Promise<{ conciliados: number; recusados: Array<{ motivo: string }>; quantos_recusados: number }> {
+  const { data, error } = await supabase.rpc('extrato_conciliar', {
+    p_tenant_id: tenantId, p_pares: pares,
+  });
+  if (error) throw error;
+  return exigir(data, 'conciliar');
+}
+
+export async function desconciliar(transacaoId: string) {
+  const { data, error } = await supabase.rpc('extrato_desconciliar', { p_transacao_id: transacaoId });
+  if (error) throw error;
+  return exigir(data, 'desfazer a conciliação');
+}
+
+export async function ignorarMovimento(transacaoId: string, ignorar: boolean, motivo = '') {
+  const { data, error } = await supabase.rpc('extrato_ignorar', {
+    p_transacao_id: transacaoId, p_ignorar: ignorar, p_motivo: motivo,
+  });
+  if (error) throw error;
+  return exigir(data, 'ignorar o movimento');
+}

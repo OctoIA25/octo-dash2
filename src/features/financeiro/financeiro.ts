@@ -13,7 +13,8 @@
  * com o resultado do mês.
  */
 
-export { reaisExatos } from '@/features/relatorios/marketing/campanhas';
+import { reaisExatos } from '@/features/relatorios/marketing/campanhas';
+export { reaisExatos };
 
 export type TipoDeLancamento = 'receber' | 'pagar';
 export type StatusDoLancamento = 'aberto' | 'baixado' | 'cancelado';
@@ -288,3 +289,66 @@ export function nomeDoArquivo(de: string, ate: string): string {
 const formatar = (v: number) =>
   (v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2 })
     .replace(/\u00A0/g, ' ');
+
+// ============================================================
+// Conciliação por extrato (P4.6)
+// ============================================================
+
+/**
+ * As marcações depois que a lista chega do servidor.
+ *
+ * Duas regras, e a segunda é a que custou um bug:
+ *
+ *  1. SÓ o movimento de candidato único vem marcado. O ambíguo fica desmarcado
+ *     de propósito: marcar o primeiro da lista seria a tela escolhendo por quem
+ *     confere, e conciliar errado é dinheiro no lugar errado — some de onde
+ *     devia estar e aparece onde não devia, sem mudar o total.
+ *
+ *  2. O QUE A PESSOA JÁ ESCOLHEU NÃO SE MEXE. A lista recarrega a cada ação —
+ *     ignorar um movimento, conciliar um lote — e recalcular tudo apagava em
+ *     silêncio a escolha feita num ambíguo. Só o movimento AINDA NÃO VISTO
+ *     ganha marcação; o que saiu da lista perde a dele.
+ */
+export function marcacoes(
+  sugestoes: Array<{ transacao_id: string; quantos: number; candidatos: Array<{ lancamento_id: string }> }>,
+  escolhasAtuais: Record<string, string>,
+  jaVistos: ReadonlySet<string>
+): { escolhas: Record<string, string>; vistos: Set<string> } {
+  const lista = sugestoes ?? [];
+  const naLista = new Set(lista.map((s) => s.transacao_id));
+  const escolhas: Record<string, string> = {};
+
+  // O que já foi escolhido segue escolhido — menos o que saiu da fila.
+  for (const [t, l] of Object.entries(escolhasAtuais)) if (naLista.has(t)) escolhas[t] = l;
+
+  const vistos = new Set(jaVistos);
+  for (const s of lista) {
+    if (vistos.has(s.transacao_id)) continue;
+    vistos.add(s.transacao_id);
+    if (s.quantos === 1 && s.candidatos?.[0]) escolhas[s.transacao_id] = s.candidatos[0].lancamento_id;
+  }
+  return { escolhas, vistos };
+}
+
+/** O placar em letra: conta o que FALTA, que é o que decide se o mês fecha. */
+export function resumoDaConciliacao(s: {
+  movimentos: number; conciliados: number; ignorados: number;
+  em_aberto: number; valor_em_aberto: number;
+} | null | undefined): string {
+  if (!s || s.movimentos === 0) return 'Nenhum extrato importado neste período.';
+  if (s.em_aberto === 0) {
+    return `Extrato conciliado: ${s.conciliados} movimento(s) casado(s)` +
+      `${s.ignorados > 0 ? ` e ${s.ignorados} ignorado(s)` : ''}.`;
+  }
+  return `Faltam ${s.em_aberto} de ${s.movimentos} movimento(s), ` +
+    `${reaisExatos(s.valor_em_aberto)} sem explicação.`;
+}
+
+/** O que a importação trouxe — e o que já estava lá. */
+export function resumoDaImportacao(r: { novas: number; repetidas: number }): string {
+  const partes = [`${r.novas} movimento(s) importado(s)`];
+  // Repetido não é erro: é a pessoa baixando o extrato de novo porque faltavam
+  // dias. Dizer isso evita a conclusão de que a importação falhou.
+  if (r.repetidas > 0) partes.push(`${r.repetidas} já estava(m) no sistema e não entrou(aram) de novo`);
+  return `${partes.join('; ')}.`;
+}

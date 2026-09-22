@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   avisoDeVencidos, avisoSemConta, csvParaContador, dreFecha, eAutomatico,
-  nomeDoArquivo, primeiroDiaNoVermelho, saldoAoFim,
+  marcacoes, nomeDoArquivo, primeiroDiaNoVermelho, resumoDaConciliacao,
+  resumoDaImportacao, saldoAoFim,
   type Dre, type FluxoDeCaixa, type LinhaDaExportacao,
 } from './financeiro';
 
@@ -163,5 +164,84 @@ describe('o nome do arquivo', () => {
 
   it('usa as duas datas quando atravessa meses', () => {
     expect(nomeDoArquivo('2026-09-01', '2026-10-31')).toBe('financeiro-2026-09-01-a-2026-10-31.csv');
+  });
+});
+
+describe('a conciliação por extrato', () => {
+  const s = (id: string, quantos: number) => ({
+    transacao_id: id, quantos,
+    candidatos: Array.from({ length: quantos }, (_, i) => ({ lancamento_id: `${id}-l${i}` })),
+  });
+
+  const marcar = (sug: ReturnType<typeof s>[], atuais = {}, vistos = new Set<string>()) =>
+    marcacoes(sug, atuais, vistos);
+
+  it('marca só o movimento de candidato único', () => {
+    expect(marcar([s('a', 1), s('b', 2), s('c', 0)]).escolhas).toEqual({ a: 'a-l0' });
+  });
+
+  // O caso que dá dinheiro no lugar errado: a tela escolhendo por quem confere.
+  it('nunca escolhe um dos dois quando há empate', () => {
+    expect(marcar([s('b', 3)]).escolhas).toEqual({});
+  });
+
+  it('aguenta lista vazia e candidato faltando', () => {
+    expect(marcar([]).escolhas).toEqual({});
+    expect(marcacoes([{ transacao_id: 'x', quantos: 1, candidatos: [] }], {}, new Set()).escolhas)
+      .toEqual({});
+  });
+
+  // O bug visto no navegador: ignorar um movimento recarregava a lista e
+  // apagava, calado, a escolha que a pessoa tinha feito num ambíguo.
+  it('não apaga a escolha feita num ambíguo quando a lista recarrega', () => {
+    const lista = [s('a', 1), s('b', 2)];
+    const primeira = marcar(lista);
+    const comEscolha = { ...primeira.escolhas, b: 'b-l1' };
+    const segunda = marcacoes(lista, comEscolha, primeira.vistos);
+    expect(segunda.escolhas).toEqual({ a: 'a-l0', b: 'b-l1' });
+  });
+
+  it('não remarca o que a pessoa desmarcou', () => {
+    const lista = [s('a', 1)];
+    const primeira = marcar(lista);
+    expect(marcacoes(lista, {}, primeira.vistos).escolhas).toEqual({});
+  });
+
+  it('esquece a escolha de quem saiu da fila', () => {
+    const primeira = marcar([s('a', 1), s('b', 2)]);
+    const r = marcacoes([s('b', 2)], { ...primeira.escolhas, b: 'b-l0' }, primeira.vistos);
+    expect(r.escolhas).toEqual({ b: 'b-l0' });
+  });
+
+  it('marca o movimento novo que chega depois', () => {
+    const primeira = marcar([s('a', 1)]);
+    const r = marcacoes([s('a', 1), s('novo', 1)], primeira.escolhas, primeira.vistos);
+    expect(r.escolhas).toEqual({ a: 'a-l0', novo: 'novo-l0' });
+  });
+
+  it('o placar conta o que falta, com o valor', () => {
+    expect(resumoDaConciliacao({
+      movimentos: 6, conciliados: 1, ignorados: 1, em_aberto: 4, valor_em_aberto: 1234.5,
+    })).toBe('Faltam 4 de 6 movimento(s), R$ 1.234,50 sem explicação.');
+  });
+
+  it('diz que fechou quando não sobra nada', () => {
+    expect(resumoDaConciliacao({
+      movimentos: 3, conciliados: 2, ignorados: 1, em_aberto: 0, valor_em_aberto: 0,
+    })).toBe('Extrato conciliado: 2 movimento(s) casado(s) e 1 ignorado(s).');
+  });
+
+  it('sem extrato, diz que não há extrato — e não que está conciliado', () => {
+    expect(resumoDaConciliacao(null)).toBe('Nenhum extrato importado neste período.');
+    expect(resumoDaConciliacao({
+      movimentos: 0, conciliados: 0, ignorados: 0, em_aberto: 0, valor_em_aberto: 0,
+    })).toBe('Nenhum extrato importado neste período.');
+  });
+
+  // Reimportar o mesmo mês é comum; sem esta frase parece que a importação falhou.
+  it('explica o repetido em vez de deixar parecer falha', () => {
+    expect(resumoDaImportacao({ novas: 2, repetidas: 4 }))
+      .toBe('2 movimento(s) importado(s); 4 já estava(m) no sistema e não entrou(aram) de novo.');
+    expect(resumoDaImportacao({ novas: 5, repetidas: 0 })).toBe('5 movimento(s) importado(s).');
   });
 });

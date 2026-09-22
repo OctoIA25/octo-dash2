@@ -32,8 +32,9 @@ import {
   carregarExportacao, carregarFluxo, carregarLancamentos, carregarPlanoDeContas,
   lancar, salvarContaBancaria,
 } from './financeiroService';
+import { ConciliacaoPanel } from './ConciliacaoPanel';
 
-type Aba = 'receber' | 'pagar' | 'fluxo' | 'dre';
+type Aba = 'receber' | 'pagar' | 'fluxo' | 'dre' | 'conciliacao';
 
 const hoje = () => new Date().toISOString().slice(0, 10);
 const primeiroDoMes = () => `${new Date().toISOString().slice(0, 7)}-01`;
@@ -89,7 +90,10 @@ export function FinanceiroPage() {
   const contas = useQuery({
     queryKey: ['fin-bancos', tenantId],
     queryFn: () => carregarContasBancarias(tenantId!),
-    enabled: !!tenantId && tenantId !== 'owner' && aba === 'fluxo',
+    // A conciliação também precisa: é a conta que identifica o extrato. Com o
+    // filtro só no fluxo, a aba nova achava que não havia conta nenhuma e
+    // mandava cadastrar uma que já existia.
+    enabled: !!tenantId && tenantId !== 'owner' && (aba === 'fluxo' || aba === 'conciliacao'),
   });
 
   const exportar = useMutation({
@@ -109,6 +113,12 @@ export function FinanceiroPage() {
     qc.invalidateQueries({ queryKey: ['fin-lancamentos'] });
     qc.invalidateQueries({ queryKey: ['fin-dre'] });
     qc.invalidateQueries({ queryKey: ['fin-fluxo'] });
+    // Baixar ou desfazer aqui mexe no extrato: desfazer a baixa solta o
+    // movimento conciliado (gatilho do P4.6). Sem estas três, a Conciliação
+    // seguia mostrando como casado um movimento que já tinha sido solto.
+    qc.invalidateQueries({ queryKey: ['fin-conc-sug'] });
+    qc.invalidateQueries({ queryKey: ['fin-conc-mov'] });
+    qc.invalidateQueries({ queryKey: ['fin-conc-sit'] });
   };
 
   const acao = useMutation({
@@ -164,6 +174,7 @@ export function FinanceiroPage() {
           ['pagar', 'A pagar'],
           ['fluxo', 'Fluxo de caixa'],
           ['dre', 'DRE gerencial'],
+          ['conciliacao', 'Conciliação'],
         ] as Array<[Aba, string]>).map(([id, rotulo]) => (
           <button key={id} onClick={() => setAba(id)}
             className={`-mb-px border-b-2 px-3 py-1.5 text-sm ${
@@ -190,7 +201,7 @@ export function FinanceiroPage() {
             </select>
           </Campo>
         )}
-        {aba !== 'fluxo' && (
+        {ehLista && (
           <Campo rotulo="Centro de custo">
             <select value={centroCusto} onChange={(e) => setCentroCusto(e.target.value)} className={inputCls}>
               <option value="">Todos</option>
@@ -213,6 +224,10 @@ export function FinanceiroPage() {
 
       {ehLista && <Lista q={lista} aba={aba} acao={acao} />}
       {aba === 'dre' && <PainelDre q={dre} />}
+      {aba === 'conciliacao' && (
+        <ConciliacaoPanel tenantId={tenantId} de={de} ate={ate} contas={contas.data ?? []}
+          aoImportarPeriodo={(d, a) => { setDe(d); setAte(a); }} />
+      )}
       {aba === 'fluxo' && <PainelFluxo q={fluxo} temConta={(contas.data ?? []).length > 0}
         aoCriarConta={async (nome, saldo) => {
           await salvarContaBancaria(tenantId, { nome, banco: '', saldoInicial: saldo });
