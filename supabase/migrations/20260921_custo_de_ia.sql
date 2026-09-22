@@ -6,11 +6,24 @@
 -- token ou modelo. A tubulação inteira existe — tabela, cálculo de custo,
 -- tela — e nada a alimenta.
 --
--- MAS A CULPA NÃO É SÓ DO n8n. Os agentes da PRÓPRIA Dash (Caio e Elaine, 16
--- dos 19 eventos) chamam a OpenAI daqui, recebem `usage` na resposta e jogam
--- fora: o evento de telemetria que eles emitem não tem campo de modelo nem de
--- token. Isso se conserta sem depender de ninguém, e é o que faz o custo
--- deixar de ser "—" hoje.
+-- CORREÇÃO DE 22/09/2026 — o parágrafo que estava aqui estava ERRADO, e a
+-- correção muda o que este item depende.
+--
+-- Eu havia escrito que "Caio e Elaine chamam a OpenAI daqui e jogam o `usage`
+-- fora". Não chamam. **Esta Dash não chama modelo nenhum.** Caio, Elaine e o
+-- disparador mandam para `webhook.octoia.org`; a LIA roda em servidor próprio
+-- e entra aqui como cliente de API. A única chamada de IA do repositório está
+-- em `server/scrapers/aiEnricher.js` — e é código órfão: `scrapers/index.js`
+-- importa a função e nunca a invoca.
+--
+-- Ou seja: não há `usage` sendo jogado fora, porque não há `usage` chegando. A
+-- tubulação do lado da Dash está pronta e esperando (`lerUso` →
+-- `agentTelemetryService`); quem precisa passar a devolver modelo e token é o
+-- orquestrador externo. O plano culpa "o n8n"; o nome da ferramenta é outra
+-- discussão, mas a dependência externa é real.
+--
+-- Medido em produção em 22/09: 19 eventos, nenhum com modelo, nenhum com
+-- token, e NENHUM da LIA — que é a maior gastadora e está invisível.
 --
 -- `ia_uso` NÃO NASCE. `agent_telemetry_events` já tem modelo, tokens de
 -- entrada, saída e cacheados, duração e agente — 6 das 11 colunas que o plano
