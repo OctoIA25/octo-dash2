@@ -23,7 +23,10 @@ dependência** — quatro arquivos precisam sair do lugar natural.
 Outras três, todas já resolvidas nesta ordem: `conciliacao_por_extrato` depende
 de `financeiro_fase_1`; `conferencia_de_vendas`, `filtro_por_clique`,
 `painel_comercial` e `relatorio_de_anuncios` dependem de `sem_acento`, criada em
-`plantao_da_lia`; `materiais_de_estudo` depende de `cargos_e_permissoes`.
+`plantao_da_lia`; `materiais_de_estudo` depende de `cargos_e_permissoes`;
+`condicoes_e_simulador` depende de `cadastro_de_construtoras` (a tabela
+`construtoras` e a coluna `lancamentos.construtora_id` **não existem em
+produção** — conferido em 22/09) e de `tipologias_do_lancamento`.
 
   1. `20260916_whatsapp_conversa_completa_vinculo_do_lead.sql`
   2. `20260916_whatsapp_conversa_segue_corretor_do_lead.sql`
@@ -71,6 +74,13 @@ de `financeiro_fase_1`; `conferencia_de_vendas`, `filtro_por_clique`,
  44. `20260922_integracoes_honestas.sql`
  45. `20260922_leitura_de_documentos.sql`
  46. `20260922_ajuda_manual_e_faq.sql`
+ 47. `20260922_user_profiles_so_colegas.sql` — **JÁ APLICADA EM PRODUÇÃO em 22/09**
+     (era porta aberta: qualquer logado apagava qualquer conta). Fica na lista
+     só para a ordem ficar completa; rodar de novo não faz mal.
+ 48. `20260922_condicoes_e_simulador.sql` — **depende da 5**
+     (`cadastro_de_construtoras`): referencia `public.construtoras(id)` e lê
+     `lancamentos.construtora_id`. Conferido em produção em 22/09: **nenhuma das
+     duas existe lá ainda**, então aplicar esta antes da 5 quebra na hora.
 
 ---
 
