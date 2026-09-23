@@ -82,8 +82,27 @@ CREATE TABLE IF NOT EXISTS public.mkt_demanda_eventos (
   de_status text,
   para_status text NOT NULL,
   por uuid REFERENCES auth.users(id) ON DELETE SET NULL,
-  em timestamptz NOT NULL DEFAULT now()
+  /**
+   * `clock_timestamp()`, e NÃO `now()`.
+   *
+   * `now()` é o instante em que a TRANSAÇÃO começou: dois eventos gravados na
+   * mesma transação recebem a mesma hora, e o histórico — que ordena por esta
+   * coluna — sai em ordem arbitrária entre os empatados. Foi assim que o teste
+   * do fluxo viu "aprovado → publicado" como PRIMEIRO passo de uma demanda que
+   * acabara de nascer.
+   *
+   * Em produção os passos costumam vir com segundos de diferença, então o erro
+   * quase nunca aparece — e é justamente por isso que ele fica. Um histórico
+   * que às vezes mente sobre a ordem é pior que nenhum.
+   */
+  em timestamptz NOT NULL DEFAULT clock_timestamp()
 );
+
+-- A tabela acima nasce com `CREATE TABLE IF NOT EXISTS`: onde ela JÁ EXISTE, o
+-- bloco não roda e o default continua sendo `now()`. Esta linha é o que faz a
+-- correção chegar a produção.
+ALTER TABLE public.mkt_demanda_eventos
+  ALTER COLUMN em SET DEFAULT clock_timestamp();
 
 CREATE INDEX IF NOT EXISTS mkt_demanda_eventos_idx
   ON public.mkt_demanda_eventos (demanda_id, em DESC);
@@ -349,7 +368,7 @@ BEGIN
            'para', e.para_status,
            'em', e.em,
            'por', COALESCE(u.raw_user_meta_data->>'name', u.email)
-         ) ORDER BY e.em), '[]'::jsonb) INTO v_out
+         ) ORDER BY e.em, e.id), '[]'::jsonb) INTO v_out
     FROM mkt_demanda_eventos e
     LEFT JOIN auth.users u ON u.id = e.por
    WHERE e.demanda_id = p_demanda_id AND e.tenant_id = p_tenant_id;
