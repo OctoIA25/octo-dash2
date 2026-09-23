@@ -13,6 +13,7 @@ import {
   SIDEBAR_PERMISSION_ORDER,
   ADMIN_SIDEBAR_PERMISSIONS,
   CORRETOR_SIDEBAR_PERMISSIONS,
+  TEAM_LEADER_SIDEBAR_PERMISSIONS,
   type SidebarPermission,
 } from '../permissions';
 
@@ -202,5 +203,64 @@ describe('permissoesDeSidebar com cargo (P4.1)', () => {
     expect(permissoesDeSidebar({
       isOwner: true, isTenantUser: false, permissoesDoCargo: ['leads'],
     }).length).toBeGreaterThan(1);
+  });
+});
+
+/**
+ * A seção Financeiro tem chave própria desde 23/09/2026.
+ *
+ * Antes ela pegava carona em 'relatorios' — que o team_leader tem. O chefe
+ * pediu "só Admin e Diretor". O banco já era assim (`financeiro_pode_ver`
+ * sempre exigiu admin); quem não era admin via o MENU e abria uma tela VAZIA.
+ *
+ * Estes testes prendem as duas metades: o team_leader perde o link, o admin
+ * mantém, e 'relatorios' deixa de arrastar o Financeiro junto.
+ */
+describe('permissão financeiro', () => {
+  const tenantComOsDois: SidebarPermission[] = ['leads', 'relatorios', 'financeiro'];
+
+  it('admin alcança o Financeiro', () => {
+    expect(permissoesDeSidebar({
+      isOwner: false, isTenantUser: true, systemRole: 'admin',
+      tenantAllowedFeatures: tenantComOsDois,
+    })).toContain('financeiro');
+  });
+
+  it('team_leader NÃO alcança o Financeiro, mas continua alcançando Relatórios', () => {
+    // Sem cargo, admin e team_leader recebem tudo que a imobiliária contratou.
+    // Então o corte real do team_leader está no cargo (abaixo) e no padrão do
+    // papel — é por isso que este caso usa cargo, que é como o P4.1 entrega.
+    const comCargoDeLider = permissoesDeSidebar({
+      isOwner: false, isTenantUser: true, systemRole: 'team_leader',
+      tenantAllowedFeatures: tenantComOsDois,
+      permissoesDoCargo: TEAM_LEADER_SIDEBAR_PERMISSIONS,
+    });
+    expect(comCargoDeLider).not.toContain('financeiro');
+    expect(comCargoDeLider).toContain('relatorios');
+  });
+
+  it('o padrão do papel separa os dois: admin tem, team_leader e corretor não', () => {
+    expect(ADMIN_SIDEBAR_PERMISSIONS).toContain('financeiro');
+    expect(TEAM_LEADER_SIDEBAR_PERMISSIONS).not.toContain('financeiro');
+    expect(CORRETOR_SIDEBAR_PERMISSIONS).not.toContain('financeiro');
+  });
+
+  it('um cargo pode conceder o Financeiro a quem não é admin — é assim que "Diretor" existe', () => {
+    expect(permissoesDeSidebar({
+      isOwner: false, isTenantUser: true, systemRole: 'corretor',
+      tenantAllowedFeatures: tenantComOsDois,
+      permissoesDoCargo: ['leads', 'financeiro'],
+    })).toEqual(['leads', 'financeiro']);
+  });
+
+  it('a imobiliária que não contratou Financeiro não o vê, nem para o admin', () => {
+    expect(permissoesDeSidebar({
+      isOwner: false, isTenantUser: true, systemRole: 'admin',
+      tenantAllowedFeatures: ['leads', 'relatorios'],
+    })).not.toContain('financeiro');
+  });
+
+  it('a chave está na ordem do menu — fora dela, seria filtrada e sumiria de todos', () => {
+    expect(SIDEBAR_PERMISSION_ORDER).toContain('financeiro');
   });
 });

@@ -33,6 +33,10 @@ export type SidebarPermission =
   | 'central-leads'   // Central de Leads
   | 'atividades'      // Atividades
   | 'relatorios'      // Relatórios
+  // Financeiro: A receber, A pagar, Fluxo, DRE, Conciliação, Notas e
+  // Conferência de Vendas. Separada de 'relatorios' em 23/09/2026 a pedido do
+  // chefe — antes a seção pegava carona nessa chave, que o team_leader tem.
+  | 'financeiro'      // Financeiro
   | 'metas'           // Metas comerciais
   | 'excel' // Excel
 
@@ -120,19 +124,25 @@ export const atuacoesDe = (permissions?: Record<string, unknown> | null): Atuaca
 // Owner: Acesso total a tudo
 export const OWNER_SIDEBAR_PERMISSIONS: SidebarPermission[] = [
   'leads', 'notificacoes', 'metricas', 'juridico', 'estudo-mercado', 'recrutamento', 'gestao-equipe',
-  'imoveis', 'agentes-ia', 'comunicacao', 'octo-chat', 'chat', 'integracoes', 'central-leads', 'atividades', 'relatorios', 'metas', 'excel'
+  'imoveis', 'agentes-ia', 'comunicacao', 'octo-chat', 'chat', 'integracoes', 'central-leads', 'atividades', 'relatorios', 'financeiro', 'metas', 'excel'
 ];
 
 // Admin: Acesso total ao tenant
 export const ADMIN_SIDEBAR_PERMISSIONS: SidebarPermission[] = [
   'leads', 'notificacoes', 'metricas', 'juridico', 'estudo-mercado', 'recrutamento', 'gestao-equipe',
-  'imoveis', 'agentes-ia', 'comunicacao', 'octo-chat', 'chat', 'integracoes', 'central-leads', 'atividades', 'relatorios', 'metas', 'excel'
+  'imoveis', 'agentes-ia', 'comunicacao', 'octo-chat', 'chat', 'integracoes', 'central-leads', 'atividades', 'relatorios', 'financeiro', 'metas', 'excel'
 ];
 
 // Team Leader: Acesso intermediário
 // 'relatorios' incluído porque a Importação de Planilhas Excel passou a ser uma
 // aba dentro de /relatorios (guardada por canAccess('relatorios')); o team_leader
 // já tinha 'excel' e precisa de 'relatorios' para alcançar a aba.
+//
+// 'financeiro' FORA, de propósito (23/09/2026, pedido do chefe: "só Admin e
+// Diretor"). Até aqui o team_leader via o menu do Financeiro porque a seção
+// pegava carona em 'relatorios' — mas abria uma tela vazia: o banco sempre
+// exigiu admin (`financeiro_pode_ver`). Tirar o menu alinha a tela ao que o
+// banco já fazia; ninguém perde dado, perde-se um link que não levava a nada.
 export const TEAM_LEADER_SIDEBAR_PERMISSIONS: SidebarPermission[] = [
   'leads', 'notificacoes', 'metricas', 'juridico', 'estudo-mercado', 'gestao-equipe', 'imoveis', 'octo-chat', 'chat', 'metas', 'excel', 'relatorios'
 ];
@@ -231,6 +241,18 @@ export const MENU_ICONS: Record<MenuPermission, string> = {
  * Ao MOVER uma aba para cá, as listas já gravadas sem ela deixam de ser curadas
  * na leitura — precisa de backfill (ver migration 20260822_backfill_chat_sidebar).
  */
+/*
+ * 'financeiro' fica FORA desta lista de propósito (23/09/2026).
+ *
+ * Quem está aqui é reconstruído a partir dos checkboxes a cada salvamento —
+ * e não há checkbox de Financeiro na tela de Acessos. Entrar aqui sem o
+ * checkbox é exatamente como 'chat' sumiu de 88 membros.
+ *
+ * Ficando fora, ela segue o padrão do cargo: o admin a recebe por
+ * `comPermissoesNaoEditaveis`, o team_leader e o corretor não. E quando o
+ * P4.1 subir, um cargo "Diretor" ou "Financeiro" pode marcá-la — cargo usa
+ * `cargo_permissoes`, que é outro caminho e não passa por aqui.
+ */
 export const SIDEBAR_PERMISSIONS_EDITAVEIS: SidebarPermission[] = [
   'leads', 'notificacoes', 'metricas', 'juridico', 'estudo-mercado', 'recrutamento',
   'gestao-equipe', 'imoveis', 'agentes-ia', 'chat', 'integracoes', 'central-leads', 'relatorios', 'excel',
@@ -293,7 +315,7 @@ export const comPermissoesNaoEditaveis = (
 export const SIDEBAR_PERMISSION_ORDER: SidebarPermission[] = [
   'leads', 'notificacoes', 'metricas', 'juridico', 'estudo-mercado', 'recrutamento',
   'gestao-equipe', 'imoveis', 'agentes-ia', 'comunicacao', 'octo-chat', 'chat',
-  'integracoes', 'central-leads', 'relatorios', 'metas', 'excel',
+  'integracoes', 'central-leads', 'relatorios', 'financeiro', 'metas', 'excel',
 ];
 
 export interface ContextoDePermissao {

@@ -140,6 +140,10 @@ const GROUPS: SidebarGroup[] = [
   {
     // P4.5 — o Financeiro é seção própria: o plano manda restringi-lo a quem
     // cuida do dinheiro, e ele não é um relatório comercial.
+    //
+    // Até 23/09/2026 esta seção usava a permissão 'relatorios' — o comentário
+    // acima dizia "restringi-lo a quem cuida do dinheiro" e a chave escolhida
+    // era a dos relatórios, que o team_leader tem. Agora tem chave própria.
     title: 'FINANCEIRO',
     items: [
       {
@@ -147,7 +151,7 @@ const GROUPS: SidebarGroup[] = [
         label: 'Financeiro',
         icon: Wallet,
         route: '/financeiro',
-        permission: 'relatorios',
+        permission: 'financeiro',
         subItems: [
           { id: 'fin-receber', label: 'A receber', icon: Receipt, route: '/financeiro' },
           { id: 'fin-vendas', label: 'Conferência de vendas', icon: Receipt, route: '/comercial/vendas' },

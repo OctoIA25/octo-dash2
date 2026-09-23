@@ -49,6 +49,13 @@ const DEFAULT_ROUTE_BY_PERMISSION: Partial<Record<SidebarPermission, string>> = 
   integracoes: '/integracoes',
   'central-leads': '/central-leads',
   relatorios: '/relatorios',
+  // Precisa estar aqui, e não é enfeite: este mapa também é o destino do
+  // redirecionamento quando uma rota é negada. Quem tivesse SÓ 'financeiro'
+  // cairia no fallback '/leads', que por sua vez redireciona para o destino
+  // padrão — de volta a '/leads'. Laço infinito, tela branca. Como 'financeiro'
+  // vem depois de 'leads' na ordem do menu, isto não muda o destino de mais
+  // ninguém: quem tem 'leads' continua entrando por lá.
+  financeiro: '/financeiro',
   metas: '/metas',
   'excel': '/excel'
 };
@@ -275,8 +282,20 @@ const DashboardLayout = () => {
           <Route path="okrs" element={<OkrsPage />} />
           <Route path="pdi" element={<PdiPage />} />
           <Route path="marketing/demandas" element={<DemandasPage />} />
-          <Route path="comercial/vendas" element={<ConferenciaDeVendasPage />} />
-          <Route path="financeiro" element={<FinanceiroPage />} />
+          {/*
+            Estas duas rotas eram as únicas da seção sem o ternário de acesso:
+            quem digitasse a URL entrava, mesmo sem o item no menu. Só não
+            vazava dado porque as RPCs do banco exigem admin e devolviam vazio
+            — a tela abria em branco em vez de barrar. Agora barra.
+          */}
+          <Route
+            path="comercial/vendas"
+            element={canAccess('financeiro') ? <ConferenciaDeVendasPage /> : <Navigate to={defaultAllowedRoute} replace />}
+          />
+          <Route
+            path="financeiro"
+            element={canAccess('financeiro') ? <FinanceiroPage /> : <Navigate to={defaultAllowedRoute} replace />}
+          />
           <Route path="cargos" element={<CargosPage />} />
           <Route path="materiais" element={<MateriaisPage />} />
           <Route path="reunioes" element={<ReunioesPage />} />
