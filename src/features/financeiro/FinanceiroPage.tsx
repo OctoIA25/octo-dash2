@@ -33,8 +33,9 @@ import {
   lancar, salvarContaBancaria,
 } from './financeiroService';
 import { ConciliacaoPanel } from './ConciliacaoPanel';
+import { NotasAEmitir } from './NotasAEmitir';
 
-type Aba = 'receber' | 'pagar' | 'fluxo' | 'dre' | 'conciliacao';
+type Aba = 'receber' | 'pagar' | 'fluxo' | 'dre' | 'conciliacao' | 'notas';
 
 const hoje = () => new Date().toISOString().slice(0, 10);
 const primeiroDoMes = () => `${new Date().toISOString().slice(0, 7)}-01`;
@@ -175,6 +176,7 @@ export function FinanceiroPage() {
           ['fluxo', 'Fluxo de caixa'],
           ['dre', 'DRE gerencial'],
           ['conciliacao', 'Conciliação'],
+          ['notas', 'Notas a emitir'],
         ] as Array<[Aba, string]>).map(([id, rotulo]) => (
           <button key={id} onClick={() => setAba(id)}
             className={`-mb-px border-b-2 px-3 py-1.5 text-sm ${
@@ -224,6 +226,8 @@ export function FinanceiroPage() {
 
       {ehLista && <Lista q={lista} aba={aba} acao={acao} />}
       {aba === 'dre' && <PainelDre q={dre} />}
+      {aba === 'notas' && <NotasAEmitir tenantId={tenantId} />}
+
       {aba === 'conciliacao' && (
         <ConciliacaoPanel tenantId={tenantId} de={de} ate={ate} contas={contas.data ?? []}
           aoImportarPeriodo={(d, a) => { setDe(d); setAte(a); }} />
