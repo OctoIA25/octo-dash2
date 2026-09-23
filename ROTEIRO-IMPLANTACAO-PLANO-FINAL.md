@@ -7,16 +7,16 @@ e os nomes registrados seguem convenções diferentes).
 **Medido:** 58 tabelas nascem deste plano. **57 não existem em produção**; só
 `lead_toques` já foi aplicada.
 
-**Atualizado em 23/09:** mais uma tabela (`pedido_de_nota`) e mais cinco
-migrations — **59 tabelas, 55 migrations**. As cinco novas estão no fim da
-lista, da 51 à 55, e não passaram pela conferência objeto-a-objeto de 22/09.
+**Atualizado em 23/09:** mais uma tabela (`pedido_de_nota`) e mais seis
+migrations — **59 tabelas, 56 migrations**. As seis novas estão no fim da
+lista, da 51 à 56, e não passaram pela conferência objeto-a-objeto de 22/09.
 A 53 **já está em produção**: era uma porta aberta e foi fechada no mesmo dia.
 
 ---
 
 ## 1. A ordem
 
-São **55 migrations**. A ordem abaixo é a alfabética **corrigida por
+São **56 migrations**. A ordem abaixo é a alfabética **corrigida por
 dependência** — quatro arquivos precisam sair do lugar natural.
 
 > **A que mais importa:** `20260922_ajuda_manual_e_faq` é a *primeira*
@@ -121,9 +121,17 @@ produção** — conferido em 22/09) e de `tipologias_do_lancamento`.
      (`financeiro_fase_1`, que cria a funcao `financeiro_lancamentos`), **da 28**
      (`conferencia_de_vendas`, de onde vem `vendas` e `venda_repasses`) e da
      coluna `vendas.lead_id`. So troca o corpo da funcao; nao mexe em tabela.
+ 56. `20260923_meta_confere_com_a_dash.sql` — **depende da 34**
+     (`formularios_da_meta`, dona da tabela `meta_formularios` e da funcao do
+     painel) e **da 26** (`campanhas_e_roi`, de onde vem `meta_insights_diarios`).
+     Acrescenta 3 colunas anulaveis em `meta_formularios` — instantaneo — e
+     traz `NOTIFY pgrst`, sem o qual as colunas ficam invisiveis para o app.
+     **Precisa de deploy do servidor junto:** quem preenche `leads_na_meta` e
+     o `formRoutes.js`, e sem ele a coluna fica nula para sempre e a tela diz
+     "nao perguntado" eternamente.
 
-> **Estas cinco entraram em 23/09, depois do levantamento.** A lista acima foi
-> conferida objeto por objeto contra producao em 22/09; da 51 a 55 nao
+> **Estas seis entraram em 23/09, depois do levantamento.** A lista acima foi
+> conferida objeto por objeto contra producao em 22/09; da 51 a 56 nao
 > passaram por essa conferencia — a dependencia delas foi lida no codigo.
 
 **Reaplicar `20260921_demandas_de_marketing.sql`**, que mudou DEPOIS de entrar
