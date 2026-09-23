@@ -226,10 +226,38 @@ describe('permissão financeiro', () => {
     })).toContain('financeiro');
   });
 
-  it('team_leader NÃO alcança o Financeiro, mas continua alcançando Relatórios', () => {
-    // Sem cargo, admin e team_leader recebem tudo que a imobiliária contratou.
-    // Então o corte real do team_leader está no cargo (abaixo) e no padrão do
-    // papel — é por isso que este caso usa cargo, que é como o P4.1 entrega.
+  /**
+   * ESTE É O CASO QUE A PRIMEIRA VERSÃO NÃO TINHA, E QUE O NAVEGADOR PEGOU.
+   *
+   * Eu tinha testado só o caminho do CARGO, e ele passava. Mas cargo não
+   * existe em produção: o caminho real é team_leader SEM cargo, e nesse ramo
+   * admin e team_leader recebem tudo o que a imobiliária contratou — de modo
+   * que o team_leader herdava a chave nova junto. Logado de verdade como
+   * team_leader, o menu FINANCEIRO continuava na tela.
+   *
+   * Regra para quem escrever o próximo: teste o caminho que está NO AR, não o
+   * que está no repositório.
+   */
+  it('team_leader SEM cargo não alcança o Financeiro — é o caminho que está em produção', () => {
+    const semCargo = permissoesDeSidebar({
+      isOwner: false, isTenantUser: true, systemRole: 'team_leader',
+      tenantAllowedFeatures: tenantComOsDois,
+    });
+    expect(semCargo).not.toContain('financeiro');
+    expect(semCargo).toContain('relatorios');
+  });
+
+  it('corretor sem nada salvo também não alcança, mesmo com a imobiliária tendo contratado', () => {
+    // A lista salva vazia é fail-open: devolve tudo do tenant. Sem o corte por
+    // papel, o Financeiro entraria aí também.
+    expect(permissoesDeSidebar({
+      isOwner: false, isTenantUser: true, systemRole: 'corretor',
+      tenantAllowedFeatures: tenantComOsDois,
+      sidebarPermissions: [],
+    })).not.toContain('financeiro');
+  });
+
+  it('team_leader com cargo de líder também não alcança', () => {
     const comCargoDeLider = permissoesDeSidebar({
       isOwner: false, isTenantUser: true, systemRole: 'team_leader',
       tenantAllowedFeatures: tenantComOsDois,

@@ -337,6 +337,27 @@ export interface ContextoDePermissao {
   permissoesDoCargo?: SidebarPermission[] | null;
 }
 
+/**
+ * Chaves que o PAPEL sozinho nunca concede, por mais que a imobiliária tenha
+ * contratado. Só o admin as recebe pelo papel; para qualquer outro, é preciso
+ * um cargo que as marque explicitamente.
+ *
+ * POR QUE ISTO PRECISOU EXISTIR (23/09/2026). O chefe pediu o Financeiro "só
+ * para Admin e Diretor". Criar a permissão e pô-la em `allowed_features` NÃO
+ * bastou: sem cargo, admin e team_leader recebem tudo o que a imobiliária
+ * contratou, pelo mesmo ramo do cálculo. O team_leader herdava a chave nova
+ * junto — e como `cargos` ainda não existe em produção, o pedido não seria
+ * cumprido em lugar nenhum.
+ *
+ * O teste unitário passou assim mesmo, porque eu o escrevi pelo caminho do
+ * cargo. Quem mostrou foi o navegador, logado como team_leader de verdade: o
+ * menu FINANCEIRO continuava lá.
+ *
+ * O cargo continua mandando: `permissoesDoCargo` é avaliado ANTES desta lista,
+ * e é por isso que um cargo "Diretor" ou "Financeiro" funciona.
+ */
+export const SO_PELO_PAPEL_DE_ADMIN: SidebarPermission[] = ['financeiro'];
+
 export function permissoesDeSidebar(ctx: ContextoDePermissao): SidebarPermission[] {
   const salvas = ctx.sidebarPermissions ?? [];
   const doCargo = Array.isArray(ctx.permissoesDoCargo) ? ctx.permissoesDoCargo : null;
@@ -346,12 +367,23 @@ export function permissoesDeSidebar(ctx: ContextoDePermissao): SidebarPermission
   if (ctx.isOwner) return [...SIDEBAR_PERMISSION_ORDER];
 
   if (ctx.isTenantUser && Array.isArray(ctx.tenantAllowedFeatures)) {
-    const doTenant = ctx.tenantAllowedFeatures;
+    const contratado = ctx.tenantAllowedFeatures;
+
     // COM CARGO, O CARGO MANDA — e para todo mundo. É aqui que a pergunta
     // aberta acima é respondida: tirar uma aba de um admin passa a restringir
     // de verdade. Ninguém perde acesso na virada porque a migração dá a cada
     // gestor um cargo com exatamente o que ele já via.
-    if (doCargo) return naOrdem(doTenant.filter((p) => doCargo.includes(p)));
+    //
+    // Usa o contratado INTEIRO, sem o corte por papel: o cargo é uma escolha
+    // explícita de alguém, e é exatamente o que faz um "Diretor" existir sem
+    // ser admin.
+    if (doCargo) return naOrdem(contratado.filter((p) => doCargo.includes(p)));
+
+    // Sem cargo, vale o papel — e aí as chaves reservadas ao admin saem.
+    const doTenant = ctx.systemRole === 'admin'
+      ? contratado
+      : contratado.filter((p) => !SO_PELO_PAPEL_DE_ADMIN.includes(p));
+
     // Admin e team_leader não são limitados pelas permissões salvas.
     if (ctx.systemRole === 'admin' || ctx.systemRole === 'team_leader') return naOrdem(doTenant);
     if (salvas.length > 0) return naOrdem(doTenant.filter((p) => salvas.includes(p)));
