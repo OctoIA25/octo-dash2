@@ -9,6 +9,7 @@ import { ChevronDown, MoreHorizontal } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { fetchTenantBolsaoConfig } from '@/features/leads/services/tenantBolsaoConfigService';
 import { useOverflowTabs } from './useOverflowTabs';
+import { abasVisiveis } from './abasVisiveis';
 import {
   BarChart3,
   Headphones,
@@ -280,19 +281,12 @@ export function PageTabs() {
     const baseCfg = TAB_CONFIGS.find((c) => location.pathname.startsWith(c.basePath));
     if (!baseCfg) return { activeConfig: null, activeTabId: null };
 
-    // Filtros dinâmicos: aba "Equipes" do Bolsão só com team_queue_enabled;
-    // aba "Telemetria" dos Agentes só para gestão/owner (corretor não vê
-    // custos da empresa — a rota também redireciona, isto é só UX).
-    let cfg: TabConfig = baseCfg;
-    if (baseCfg.basePath === '/bolsao') {
-      cfg = { ...baseCfg, tabs: baseCfg.tabs.filter((t) => t.id !== 'equipes' || teamQueueEnabled) };
-    } else if (baseCfg.basePath === '/agentes-ia') {
-      cfg = { ...baseCfg, tabs: baseCfg.tabs.filter((t) => t.id !== 'telemetria' || isGestao || isOwner) };
-    } else if (baseCfg.basePath === '/imoveis') {
-      // Amarrar anúncio vale para os leads de todos os corretores: só gestão
-      // (a rota do servidor exige admin/líder; isto é só UX).
-      cfg = { ...baseCfg, tabs: baseCfg.tabs.filter((t) => t.id !== 'anuncios-sem-imovel' || isGestao || isOwner) };
-    }
+    // Quem enxerga qual aba está em `abasVisiveis` — é regra de permissão, e
+    // regra de permissão precisa de teste. Aqui é só UX: a trava está no banco.
+    const cfg: TabConfig = {
+      ...baseCfg,
+      tabs: abasVisiveis(baseCfg.basePath, baseCfg.tabs, { teamQueueEnabled, isGestao, isOwner }),
+    };
 
     let activeId: string | null = null;
     if (cfg.matchStrategy === 'pathSegment') {
