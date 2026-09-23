@@ -81,6 +81,19 @@ produção** — conferido em 22/09) e de `tipologias_do_lancamento`.
      (`cadastro_de_construtoras`): referencia `public.construtoras(id)` e lê
      `lancamentos.construtora_id`. Conferido em produção em 22/09: **nenhuma das
      duas existe lá ainda**, então aplicar esta antes da 5 quebra na hora.
+ 49. `20260922_etiqueta_de_quem_enviou.sql` — mexe em `whatsapp_messages`,
+     tabela viva com 28.116 linhas. `ADD COLUMN` anulavel e instantaneo, mas
+     os **dois UPDATE de backfill varrem a tabela inteira** e tocam ~14.256
+     linhas. Rodar fora do horario de conversa.
+ 50. `20260922_rede_de_unidades.sql` — **depende da 27**
+     (`cargos_e_permissoes`): insere em `permissoes` e le `minhas_permissoes`.
+     Acrescenta 2 colunas anulaveis em `tenants` (3 linhas): instantaneo.
+
+**Reaplicar `20260921_demandas_de_marketing.sql`**, que mudou DEPOIS de entrar
+nesta lista: o `DEFAULT` de `mkt_demanda_eventos.em` passou de `now()` para
+`clock_timestamp()`, e ha um `ALTER COLUMN` explicito porque a tabela nasce
+com `CREATE TABLE IF NOT EXISTS` e em producao ela ja existe — sem ele a
+correcao da ordem do historico nao chega la.
 
 ---
 
