@@ -51,6 +51,10 @@ CREATE POLICY corretor_vendas_planilha_select_tenant
       AND tm.user_id = auth.uid()
   ));
 
+-- O pg_default_acl do Supabase concede leitura a anon em toda tabela nova. A RLS
+-- já barra (a policy exige membro do tenant), mas a chave pública do navegador
+-- não tem por que alcançar esta tabela — cinto e suspensório.
+REVOKE ALL ON public.corretor_vendas_planilha FROM anon;
 GRANT SELECT ON public.corretor_vendas_planilha TO authenticated;
 
 COMMENT ON TABLE public.corretor_vendas_planilha IS

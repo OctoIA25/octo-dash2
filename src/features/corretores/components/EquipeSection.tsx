@@ -1484,6 +1484,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                   {isMetricasAberta && (
                     <CorretorMetricasPanel
                       nome={nomeLimpo}
+                      userId={tenantMember?.user_id ?? null}
                       onAbrirRelatorios={() => navigate('/relatorios?tab=metricas-individuais')}
                     />
                   )}
