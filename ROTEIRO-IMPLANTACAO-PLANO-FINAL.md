@@ -7,16 +7,16 @@ e os nomes registrados seguem convenções diferentes).
 **Medido:** 58 tabelas nascem deste plano. **57 não existem em produção**; só
 `lead_toques` já foi aplicada.
 
-**Atualizado em 23/09:** mais uma tabela (`pedido_de_nota`) e mais quatro
-migrations — **59 tabelas, 54 migrations**. As quatro novas estão no fim da
-lista, da 51 à 54, e não passaram pela conferência objeto-a-objeto de 22/09.
+**Atualizado em 23/09:** mais uma tabela (`pedido_de_nota`) e mais cinco
+migrations — **59 tabelas, 55 migrations**. As cinco novas estão no fim da
+lista, da 51 à 55, e não passaram pela conferência objeto-a-objeto de 22/09.
 A 53 **já está em produção**: era uma porta aberta e foi fechada no mesmo dia.
 
 ---
 
 ## 1. A ordem
 
-São **54 migrations**. A ordem abaixo é a alfabética **corrigida por
+São **55 migrations**. A ordem abaixo é a alfabética **corrigida por
 dependência** — quatro arquivos precisam sair do lugar natural.
 
 > **A que mais importa:** `20260922_ajuda_manual_e_faq` é a *primeira*
@@ -117,9 +117,13 @@ produção** — conferido em 22/09) e de `tipologias_do_lancamento`.
      quem ja tem `relatorios` — 2 dos 9 tenants. Sem esse UPDATE a chave nasce
      no catalogo e o menu do Financeiro some para TODOS os admins, sem erro
      nenhum na tela.
+ 55. `20260923_financeiro_portal_e_liquido.sql` — **depende da 33**
+     (`financeiro_fase_1`, que cria a funcao `financeiro_lancamentos`), **da 28**
+     (`conferencia_de_vendas`, de onde vem `vendas` e `venda_repasses`) e da
+     coluna `vendas.lead_id`. So troca o corpo da funcao; nao mexe em tabela.
 
-> **Estas quatro entraram em 23/09, depois do levantamento.** A lista acima foi
-> conferida objeto por objeto contra producao em 22/09; da 51 a 54 nao
+> **Estas cinco entraram em 23/09, depois do levantamento.** A lista acima foi
+> conferida objeto por objeto contra producao em 22/09; da 51 a 55 nao
 > passaram por essa conferencia — a dependencia delas foi lida no codigo.
 
 **Reaplicar `20260921_demandas_de_marketing.sql`**, que mudou DEPOIS de entrar
