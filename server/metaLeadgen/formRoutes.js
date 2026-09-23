@@ -113,6 +113,21 @@ export function registerMetaFormRoutes(app, supabase, options = {}) {
           nome: f.name ?? null,
           sincronizado_em: agora,
           updated_at: agora,
+          // O NÚMERO DA META. `fetchForms` sempre pediu `leads_count` e
+          // `status`, a Meta sempre respondeu os dois, e esta linha aqui os
+          // descartava — então a tela só tinha o lado da Dash e não havia com
+          // o que conferir. Guardar é o conserto do item 6.
+          //
+          // `leads_count` é o total da VIDA INTEIRA do formulário; quem
+          // compara precisa saber de quando é a leitura, e é para isso que
+          // `leads_na_meta_em` anda colado nele.
+          //
+          // Number.isFinite e não `?? null`: a Meta às vezes devolve o campo
+          // como string, e uma string aqui viraria erro de tipo no upsert —
+          // que aparece como "a sincronização falhou", sem dizer por quê.
+          leads_na_meta: Number.isFinite(Number(f.leads_count)) ? Number(f.leads_count) : null,
+          leads_na_meta_em: Number.isFinite(Number(f.leads_count)) ? agora : null,
+          status_na_meta: f.status ?? null,
         }));
 
       if (linhas.length > 0) {

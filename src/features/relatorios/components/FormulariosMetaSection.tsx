@@ -198,6 +198,10 @@ export function FormulariosMetaSection() {
                     <th className="p-2 text-left">Formulário</th>
                     <th className="p-2 text-left">Destino</th>
                     <th className="p-2 text-right">Leads</th>
+                    {/* O lado da Meta, ao lado do nosso — é a conferência que
+                        o chefe pediu. "—" quando o formulário nunca foi
+                        sincronizado: zero diria "conferi e bate". */}
+                    <th className="p-2 text-right">Na Meta</th>
                     <th className="p-2 text-right">24 h</th>
                     <th className="p-2 text-left">Último</th>
                     <th className="p-2 text-center">Captação</th>
@@ -231,6 +235,15 @@ export function FormulariosMetaSection() {
                               primeira sincronização — o id é o que se tem. */}
                           <div className="font-medium">{f.nome ?? `Formulário ${f.form_id}`}</div>
                           <div className="text-[11px] text-muted-foreground">{f.form_id}</div>
+                          {/* O que não migrou fica NA LINHA do formulário, e
+                              não só no contador do topo: saber que 3 leads se
+                              perderam não ajuda sem saber onde. */}
+                          {(f.eventos_travados + f.eventos_parados) > 0 && (
+                            <div className="mt-0.5 text-[11px] text-rose-700 dark:text-rose-400">
+                              {f.eventos_travados + f.eventos_parados} lead(s) não migraram
+                              {f.ultimo_erro ? ` · ${f.ultimo_erro}` : ''}
+                            </div>
+                          )}
                         </td>
                         <td className="p-2">
                           <span className={f.destino === 'pega_tudo' ? 'text-amber-700 dark:text-amber-400' : ''}>
@@ -238,6 +251,9 @@ export function FormulariosMetaSection() {
                           </span>
                         </td>
                         <td className="p-2 text-right tabular-nums">{f.leads_na_base}</td>
+                        <td className="p-2 text-right tabular-nums text-muted-foreground">
+                          {f.leads_na_meta == null ? '—' : f.leads_na_meta}
+                        </td>
                         <td className="p-2 text-right tabular-nums">{f.novos_24h}</td>
                         <td className="p-2 text-[11px] text-muted-foreground">{desde(f.ultimo_lead_em)}</td>
                         <td className="p-2 text-center">

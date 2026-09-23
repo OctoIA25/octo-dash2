@@ -73,6 +73,56 @@ export function contadores(c: ContadoresDaMeta | null, agora: number = Date.now(
       legenda: 'Quando a lista de formulários foi buscada na Meta pela última vez. Só nomes — não baixa lead.',
       alerta: !c.sincronizado_em,
     },
+
+    // ----------------------------------------------------------------
+    // A conferência com o outro lado (item 6, 23/09/2026).
+    //
+    // Até aqui esta tela mostrava um lado só: "Leads na base" é contagem da
+    // Dash contra NADA. Não havia, em lugar nenhum dela, o número da Meta —
+    // embora ele já chegasse na resposta da API e fosse descartado ao salvar.
+    // ----------------------------------------------------------------
+    {
+      chave: 'nao_migraram',
+      rotulo: 'Não migraram',
+      valor: c.eventos_travados + c.eventos_parados,
+      // ESTE é o alerta, e não a diferença de contagem. Aqui a Meta avisou,
+      // guardamos o aviso, e o lead não chegou a existir: não há leitura
+      // inocente, não depende de quando a integração começou.
+      legenda: c.eventos_travados + c.eventos_parados > 0
+        ? `A Meta avisou e o lead não chegou a existir: ${c.eventos_travados} falharam e ${c.eventos_parados} estão parados há mais de uma hora. O motivo aparece na linha do formulário.`
+        : 'Nenhum aviso da Meta ficou pelo caminho. Todo lead anunciado virou lead aqui.',
+      alerta: c.eventos_travados + c.eventos_parados > 0,
+    },
+    {
+      chave: 'meta_conta',
+      rotulo: 'A Meta conta',
+      valor: c.formularios_conferidos === 0
+        ? 'não perguntado'
+        : `${c.leads_na_meta} · aqui ${c.leads_na_base}`,
+      // Sem alerta de propósito: o número da Meta é o total da VIDA INTEIRA
+      // do formulário, e o nosso começa no dia em que a integração entrou no
+      // ar. Num formulário antigo a diferença é enorme e não é perda — é
+      // história anterior. Pintar isso de vermelho treinaria a equipe a
+      // ignorar o vermelho em duas semanas.
+      legenda: c.formularios_conferidos === 0
+        ? 'Nenhum formulário foi conferido com a Meta ainda. Use “Buscar formulários na Meta”.'
+        : `Conferido em ${c.formularios_conferidos} de ${c.formularios} formulários, ${desde(c.conferido_em, agora)}. ` +
+          'O número da Meta é o total da vida inteira do formulário; o daqui começa quando a integração entrou no ar — a diferença num formulário antigo é história, não perda.',
+    },
+    {
+      chave: 'fora_desta_tela',
+      rotulo: 'Fora desta tela',
+      valor: c.campanhas_sem_formulario,
+      // O contador existe para a tela dizer o que ela NÃO sabe. Medido na
+      // Lotus em 23/09: das quatro campanhas ativas, três entregam por
+      // conversa de WhatsApp — R$ 1.902 de R$ 4.148, 46% do gasto. Uma
+      // conferência que só olhasse formulário diria "está tudo certo" e
+      // estaria cega para a metade mais cara.
+      legenda: c.campanhas_sem_formulario > 0
+        ? `${c.campanhas_sem_formulario} campanha(s) dos últimos 30 dias entregam por conversa de WhatsApp, não por formulário. Elas não passam por aqui, e esta conferência não fala sobre elas.`
+        : 'Todas as campanhas dos últimos 30 dias entregam por formulário — esta tela cobre o que está sendo pago.',
+      alerta: c.campanhas_sem_formulario > 0,
+    },
   ];
 }
 

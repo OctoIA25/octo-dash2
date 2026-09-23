@@ -24,6 +24,25 @@ export interface FormularioDaMeta {
   ultimo_lead_em: string | null;
   empreendimento_codigo: string | null;
   destino: 'lancamento' | 'pega_tudo';
+
+  /**
+   * O `leads_count` da Meta. É o total da VIDA INTEIRA do formulário, não do
+   * período — comparar sem lembrar disso acusa perda onde há só história
+   * anterior à integração. `null` = este formulário nunca foi sincronizado.
+   */
+  leads_na_meta: number | null;
+  /** Quando esse número foi lido. Sem ele, um número velho tem cara de novo. */
+  leads_na_meta_em: string | null;
+  /** ACTIVE, PAUSED, ARCHIVED… na Meta. Também vinha e era descartado. */
+  status_na_meta: string | null;
+  /** Meta menos Dash, nos DOIS sentidos. `null` = não foi perguntado. */
+  diferenca: number | null;
+
+  /** Eventos que a Meta mandou e falharam ao virar lead. */
+  eventos_travados: number;
+  /** Eventos parados na fila há mais de uma hora. */
+  eventos_parados: number;
+  ultimo_erro: string | null;
 }
 
 export interface ContadoresDaMeta {
@@ -35,6 +54,21 @@ export interface ContadoresDaMeta {
   novos_24h: number;
   sem_campanha: number;
   sincronizado_em: string | null;
+
+  /** O lado da Meta, somando só os formulários já perguntados. */
+  leads_na_meta: number;
+  formularios_conferidos: number;
+  conferido_em: string | null;
+
+  /** O alerta: a Meta avisou e o lead não chegou a existir. */
+  eventos_travados: number;
+  eventos_parados: number;
+
+  /**
+   * Campanhas dos últimos 30 dias que entregam por CONVERSA, não por
+   * formulário. Esta tela não as enxerga — e precisa dizer isso.
+   */
+  campanhas_sem_formulario: number;
 }
 
 export interface PainelDaMeta {
