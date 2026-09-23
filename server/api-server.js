@@ -3851,7 +3851,19 @@ app.get('/api/v1/lancamentos/:id', validateApiKey, async (req, res) => {
       });
     }
 
-    res.json({ success: true, data: mapLancamentoFromDB(data) });
+    // P2.1 — as tipologias do lançamento. Buscadas SÓ no detalhe: a lista de
+    // lançamentos devolve dezenas de linhas, e uma consulta por linha seria o
+    // N+1 clássico. `null` quando a consulta falha, e não `[]`: a Lia não pode
+    // concluir "não tem tipologia" por causa de um erro de banco.
+    const { data: tipologias, error: erroTipologias } = await supabase
+      .from('tipologias')
+      .select('nome, dormitorios, suites, banheiros, vagas, area_privativa_m2, preco_a_partir, preco_atualizado_em, disponivel, planta_url, observacao')
+      .eq('tenant_id', req.tenantId)
+      .eq('lancamento_id', id)
+      .order('ordem', { ascending: true });
+    if (erroTipologias) console.warn('⚠️ tipologias do lançamento:', erroTipologias.message);
+
+    res.json({ success: true, data: mapLancamentoFromDB(data, erroTipologias ? null : (tipologias ?? [])) });
   } catch (err) {
     console.error('Erro inesperado em /lancamentos/:id:', err);
     res.status(500).json({
