@@ -103,7 +103,11 @@ UPDATE public.whatsapp_messages
 -- Guardado em `leads.permissions`? Não: é estado de atendimento, não permissão.
 -- Tabela própria, uma linha por lead, para a LIA poder perguntar barato.
 -- ------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS public.lia_conversa_assumida (
+-- O nome NÃO leva o prefixo `lia_`: nesta casa, `lia_*` é tabela DA LIA,
+-- fechada ao navegador, e há um teste que cobra isso
+-- (`lia_tabelas_fechadas.test.sql`). Esta aqui é da Dash — ela escreve e a
+-- tela lê. Nasceu como `lia_conversa_assumida` e o teste acusou.
+CREATE TABLE IF NOT EXISTS public.conversa_assumida (
   tenant_id uuid NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
   lead_id uuid NOT NULL,
   /** Quem assumiu. Serve para a tela dizer "Ana assumiu às 14h02". */
@@ -114,8 +118,8 @@ CREATE TABLE IF NOT EXISTS public.lia_conversa_assumida (
   PRIMARY KEY (tenant_id, lead_id)
 );
 
-CREATE INDEX IF NOT EXISTS lia_conversa_assumida_ativa_idx
-  ON public.lia_conversa_assumida (tenant_id, lead_id) WHERE devolvido_em IS NULL;
+CREATE INDEX IF NOT EXISTS conversa_assumida_ativa_idx
+  ON public.conversa_assumida (tenant_id, lead_id) WHERE devolvido_em IS NULL;
 
 /**
  * A pergunta que a LIA faz antes de falar.
@@ -129,7 +133,7 @@ LANGUAGE sql STABLE
 SET search_path TO 'public'
 AS $function$
   SELECT NOT EXISTS (
-    SELECT 1 FROM public.lia_conversa_assumida a
+    SELECT 1 FROM public.conversa_assumida a
      WHERE a.tenant_id = p_tenant_id AND a.lead_id = p_lead_id
        AND a.devolvido_em IS NULL
   );
@@ -159,12 +163,12 @@ BEGIN
   END IF;
 
   IF p_assumir THEN
-    INSERT INTO lia_conversa_assumida (tenant_id, lead_id, assumido_por)
+    INSERT INTO conversa_assumida (tenant_id, lead_id, assumido_por)
     VALUES (p_tenant_id, p_lead_id, v_eu)
     ON CONFLICT (tenant_id, lead_id) DO UPDATE
       SET assumido_por = v_eu, assumido_em = now(), devolvido_em = NULL;
   ELSE
-    UPDATE lia_conversa_assumida SET devolvido_em = now()
+    UPDATE conversa_assumida SET devolvido_em = now()
      WHERE tenant_id = p_tenant_id AND lead_id = p_lead_id AND devolvido_em IS NULL;
   END IF;
 
@@ -175,14 +179,14 @@ $function$;
 -- ------------------------------------------------------------
 -- 4. Quem enxerga o quê
 -- ------------------------------------------------------------
-REVOKE ALL ON public.lia_conversa_assumida FROM anon, authenticated;
-GRANT SELECT ON public.lia_conversa_assumida TO authenticated;
-GRANT ALL ON public.lia_conversa_assumida TO service_role;
+REVOKE ALL ON public.conversa_assumida FROM anon, authenticated;
+GRANT SELECT ON public.conversa_assumida TO authenticated;
+GRANT ALL ON public.conversa_assumida TO service_role;
 
-ALTER TABLE public.lia_conversa_assumida ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.conversa_assumida ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS lia_assumida_membro_le ON public.lia_conversa_assumida;
-CREATE POLICY lia_assumida_membro_le ON public.lia_conversa_assumida
+DROP POLICY IF EXISTS lia_assumida_membro_le ON public.conversa_assumida;
+CREATE POLICY lia_assumida_membro_le ON public.conversa_assumida
   FOR SELECT TO authenticated
   USING (tenant_id IN (SELECT tenant_id FROM public.tenant_memberships WHERE user_id = auth.uid())
          OR public.is_platform_owner());
@@ -200,7 +204,7 @@ BEGIN
 END
 $do$;
 
-COMMENT ON TABLE public.lia_conversa_assumida IS
+COMMENT ON TABLE public.conversa_assumida IS
   'Leads cuja conversa um humano assumiu. A LIA consulta lia_pode_falar() antes de responder — a Dash não intercepta mensagem dela.';
 
 NOTIFY pgrst, 'reload schema';

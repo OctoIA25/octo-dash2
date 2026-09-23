@@ -106,7 +106,7 @@ BEGIN
 
   -- Assumir duas vezes não cria duas linhas nem quebra.
   PERFORM lia_assumir_conversa(casa, lead, true);
-  SELECT count(*) INTO n FROM lia_conversa_assumida WHERE tenant_id = casa AND lead_id = lead;
+  SELECT count(*) INTO n FROM conversa_assumida WHERE tenant_id = casa AND lead_id = lead;
   IF n <> 1 THEN RAISE EXCEPTION 'FALHOU: assumir duas vezes criou % linhas', n; END IF;
 
   PERFORM lia_assumir_conversa(casa, lead, false);
@@ -136,7 +136,7 @@ BEGIN
 
   -- Nem lê a linha.
   SET LOCAL ROLE authenticated;
-  SELECT count(*) INTO n FROM lia_conversa_assumida WHERE tenant_id = casa;
+  SELECT count(*) INTO n FROM conversa_assumida WHERE tenant_id = casa;
   RESET ROLE;
   IF n <> 0 THEN RAISE EXCEPTION 'FALHOU: a vizinha leu quem assumiu conversa desta casa'; END IF;
 
@@ -171,7 +171,7 @@ BEGIN
   -- ----------------------------------------------------------
   SET LOCAL ROLE anon;
   BEGIN
-    PERFORM 1 FROM lia_conversa_assumida;
+    PERFORM 1 FROM conversa_assumida;
     RESET ROLE;
     RAISE EXCEPTION 'FALHOU: o anônimo tem permissão na tabela';
   EXCEPTION WHEN insufficient_privilege THEN RESET ROLE;

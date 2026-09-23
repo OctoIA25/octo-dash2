@@ -31,7 +31,7 @@ interface Assumida {
 
 async function carregarAssumida(tenantId: string, leadId: string): Promise<Assumida | null> {
   const { data, error } = await supabase
-    .from('lia_conversa_assumida')
+    .from('conversa_assumida')
     .select('assumido_por, assumido_em')
     .eq('tenant_id', tenantId)
     .eq('lead_id', leadId)
