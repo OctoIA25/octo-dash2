@@ -95,6 +95,29 @@ describe('lerRankingCorretores', () => {
     const r = lerRankingCorretores([['REPORT 2026'], ['Empreendimento', 'Quadra']]);
 
     expect(r.corretores).toEqual([]);
-    expect(r.avisos.join(' ')).toMatch(/RANKING CORRETORES/);
+    expect(r.avisos.join(' ')).toMatch(/CORRETORES/);
   });
 });
+
+/**
+ * Cabeçalho da aba REAL (planilha do Google, aba "RANKING", lida em 23/09/2026):
+ * a primeira célula é "CORRETORES", sem o "RANKING" na frente. O fixture de
+ * cima veio da exportação em Excel, onde o título da aba entrava na mesma
+ * linha — só a leitura da planilha de verdade mostrou a diferença.
+ */
+describe('lerRankingCorretores — cabeçalho da aba real', () => {
+  const GRADE_REAL = [
+    ['CORRETORES', 'NÍVEL', 'EQUIPE', '', '', 'MÊS'],
+    ['', '', '', '', 'Vendas', 'JANEIRO', 'FEVEREIRO', 'Vendas', 'MARÇO', 'Vendas'],
+    ['Fernanda Souza', 'Coordenador', 'Lançamentos', '', '1', 'R$ 9.544,15', 'R$ 0,00', '0', 'R$ 28.690,55', '2'],
+  ];
+
+  it('reconhece o bloco que começa em "CORRETORES"', () => {
+    const r = lerRankingCorretores(GRADE_REAL);
+
+    expect(r.corretores.map((c) => c.nome)).toEqual(['Fernanda Souza']);
+    const vendas = Object.fromEntries(r.corretores[0].meses.map((m) => [m.mes, m.vendas]));
+    expect(vendas).toMatchObject({ 1: 1, 2: 0, 3: 2 });
+  });
+});
+

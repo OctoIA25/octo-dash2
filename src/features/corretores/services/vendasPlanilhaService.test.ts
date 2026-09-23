@@ -74,3 +74,29 @@ describe('linhaEhDoCorretor', () => {
     expect(linhaEhDoCorretor({ ...l, user_id: null }, { nome: '' })).toBe(false);
   });
 });
+
+/**
+ * Mês que a planilha ainda não preencheu (setembro de 2026, quando a aba só
+ * tinha colunas até agosto) não é zero: é ausência. Mostrar 0 diria "não
+ * vendeu neste mês", que é afirmação que a planilha não fez.
+ */
+describe('resumirVendasPlanilha — mês sem número na planilha', () => {
+  it('período sem nenhuma linha devolve nulo no período, mas mantém o ano', () => {
+    const r = resumirVendasPlanilha(
+      [{ ano: 2026, mes: 8, vendas: 2, atualizado_em: '2026-09-23T12:00:00Z', user_id: 'u1', nome_planilha: 'Fernanda Souza' }],
+      { inicio: '2026-09-01', fim: '2026-09-30' },
+    );
+
+    expect(r).toMatchObject({ noPeriodo: null, noAno: 2 });
+  });
+
+  it('mês preenchido com zero de verdade continua zero', () => {
+    const r = resumirVendasPlanilha(
+      [{ ano: 2026, mes: 9, vendas: 0, atualizado_em: '2026-09-23T12:00:00Z', user_id: 'u1', nome_planilha: 'Fernanda Souza' }],
+      { inicio: '2026-09-01', fim: '2026-09-30' },
+    );
+
+    expect(r).toMatchObject({ noPeriodo: 0, noAno: 0 });
+  });
+});
+

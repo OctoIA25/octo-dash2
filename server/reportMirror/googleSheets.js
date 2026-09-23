@@ -48,6 +48,21 @@ export function makeSheetsClient({ email, privateKeyPem, fetchImpl = fetch }) {
 
   return {
     /**
+     * Abas da planilha: título e id (o `gid` da URL). Serve para configurar o
+     * job sem adivinhação — o nome da aba é o que a leitura pede, e a URL só
+     * mostra o gid.
+     */
+    async listTabs({ spreadsheetId }) {
+      const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`
+        + '?fields=sheets.properties(sheetId,title)';
+      const body = await call(url);
+      return (body?.sheets ?? []).map((s) => ({
+        titulo: s.properties?.title ?? '',
+        gid: s.properties?.sheetId ?? null,
+      }));
+    },
+
+    /**
      * Lê a aba inteira. FORMATTED_VALUE devolve o que está na tela (texto),
      * que é o que o importador do ranking espera: a planilha mistura formatos
      * de número e traz erros de fórmula, tratados lá.

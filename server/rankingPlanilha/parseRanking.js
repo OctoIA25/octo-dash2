@@ -55,9 +55,15 @@ const FIM_DO_BLOCO = ['TOTAL MENSAL', 'SAIDA', 'RANKING 2025 CORRETORES', 'TOTAL
 
 export function lerRankingCorretores(grade) {
   const avisos = [];
-  const iCabecalho = (grade || []).findIndex((linha) => normalizado(linha?.[0]) === 'RANKING CORRETORES');
+  // A aba real ("RANKING") começa em "CORRETORES"; a exportação em Excel trazia
+  // "RANKING CORRETORES" na mesma célula. Aceita as duas, e nada além.
+  const ehCabecalho = (linha) => {
+    const primeira = normalizado(linha?.[0]);
+    return primeira === 'CORRETORES' || primeira === 'RANKING CORRETORES';
+  };
+  const iCabecalho = (grade || []).findIndex(ehCabecalho);
   if (iCabecalho < 0) {
-    avisos.push('Bloco "RANKING CORRETORES" não encontrado na aba lida.');
+    avisos.push('Cabeçalho do ranking ("CORRETORES") não encontrado na aba lida.');
     return { corretores: [], avisos };
   }
 

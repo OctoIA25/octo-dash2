@@ -159,8 +159,14 @@ export const CorretorMetricCard = memo(({ corretor, isLoading = false, vendasPla
         {vendasPlanilha && (
           <p className="text-[11px] text-gray-500 dark:text-gray-400">
             <span>Vendas na planilha:</span>{' '}
-            <strong className="text-gray-900 dark:text-white">{vendasPlanilha.noPeriodo}</strong>
-            {' '}no período · {vendasPlanilha.noAno} no ano
+            {vendasPlanilha.noPeriodo === null ? (
+              <span>sem número para o período</span>
+            ) : (
+              <>
+                <strong className="text-gray-900 dark:text-white">{vendasPlanilha.noPeriodo}</strong> no período
+              </>
+            )}
+            {' '}· {vendasPlanilha.noAno} no ano
             {vendasPlanilha.atualizadoEm && ` · lido em ${quandoLeu(vendasPlanilha.atualizadoEm)}`}
           </p>
         )}

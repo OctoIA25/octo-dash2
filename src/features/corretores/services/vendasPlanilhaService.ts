@@ -23,8 +23,12 @@ export interface LinhaVendasPlanilha {
 }
 
 export interface VendasPlanilha {
-  /** Vendas nos meses que o período toca. */
-  noPeriodo: number;
+  /**
+   * Vendas nos meses que o período toca. `null` quando a planilha ainda não
+   * preencheu nenhum desses meses — ausência não é zero, e zero na tela diria
+   * "não vendeu", afirmação que a planilha não fez.
+   */
+  noPeriodo: number | null;
   /** Vendas no ano do período — o contexto que o mês sozinho não dá. */
   noAno: number;
   /** Última vez que o importador leu a planilha. */
@@ -85,7 +89,11 @@ export function resumirVendasPlanilha(
     .sort()
     .pop() ?? null;
 
-  return { noPeriodo: somar(doPeriodo), noAno: somar(doAno), atualizadoEm: ultimaLeitura };
+  return {
+    noPeriodo: doPeriodo.length > 0 ? somar(doPeriodo) : null,
+    noAno: somar(doAno),
+    atualizadoEm: ultimaLeitura,
+  };
 }
 
 /**
