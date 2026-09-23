@@ -63,11 +63,16 @@ const LINKS_MATERIAIS: { key: keyof EmpreendimentoCatalogo; label: string; icon:
   { key: 'decorado', label: 'Decorado', icon: ImageIcon },
   { key: 'fotos', label: 'Fotos', icon: ImageIcon },
   { key: 'landing_page', label: 'Landing page', icon: ExternalLink },
-  { key: 'youtube', label: 'Youtube', icon: Youtube },
-  { key: 'folhetos', label: 'Folhetos', icon: FileText },
+  // `youtube` e `folhetos` saíram em 23/09: eram consequência do cabeçalho
+  // deslocado — as posições que o código lia com esses nomes não existem na
+  // planilha operacional. Os links de vídeo e folheto que apareciam ali eram,
+  // na verdade, outros campos.
 ];
 
 const CAMPOS_DETALHE: { key: keyof EmpreendimentoCatalogo; label: string }[] = [
+  // O código do empreendimento existia na planilha desde sempre e nunca
+  // chegava à tela: era ele que o sistema lia como se fosse o tipo do imóvel.
+  { key: 'codigo', label: 'Código na Dash' },
   { key: 'endereco', label: 'Endereço' },
   { key: 'bairro', label: 'Bairro' },
   { key: 'cidade', label: 'Cidade' },
@@ -77,6 +82,10 @@ const CAMPOS_DETALHE: { key: keyof EmpreendimentoCatalogo; label: string }[] = [
   { key: 'vagas', label: 'Vagas' },
   { key: 'dormitorios', label: 'Dormitórios' },
   { key: 'suites', label: 'Suítes' },
+  // `Garden` está VAZIA nas 84 linhas da planilha, medido em 23/09. Mantida na
+  // tela por enquanto: a coluna existe na operacional e a equipe pode começar
+  // a preenchê-la — diferente de `condominio`/`iptu`, que saíram porque nem
+  // posição tinham.
   { key: 'garden', label: 'Garden' },
   // COMISSÃO FORA DA TELA, de propósito, por decisão do chefe em 18/09/2026.
   //
@@ -88,8 +97,10 @@ const CAMPOS_DETALHE: { key: keyof EmpreendimentoCatalogo; label: string }[] = [
   // Ela volta quando a aba passar a ler o cadastro `construtoras`, onde a
   // comissão é protegida pelo próprio banco: fica fora do SELECT do navegador
   // e só sai pela RPC `construtoras_comissao`, que confere o cargo.
-  { key: 'condominio', label: 'Condomínio' },
-  { key: 'iptu', label: 'IPTU' },
+  // `Condomínio` e `IPTU` saíram em 23/09 pelo mesmo motivo do Youtube: o que
+  // a tela mostrava nesses campos vinha de posições deslocadas. As colunas
+  // existem na operacional e estão vazias nas 84 linhas — voltam quando
+  // tiverem dado.
   { key: 'atualizado_em', label: 'Atualizado em' },
 ];
 
