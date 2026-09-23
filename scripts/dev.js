@@ -13,10 +13,24 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
 
-// Carregar .env manualmente
-function loadEnv() {
+/**
+ * Carrega os arquivos de ambiente, NA MESMA ORDEM QUE O VITE USA.
+ *
+ * Aqui só se lia o `.env`, e o resultado ia para `process.env` do processo
+ * filho. Como uma variável já presente em `process.env` VENCE qualquer arquivo
+ * `.env*`, isso ANULAVA o `.env.local` — em silêncio.
+ *
+ * O efeito era o pior possível: `.env.local` é o jeito padrão (e ignorado pelo
+ * git) de apontar a Dash para o Supabase LOCAL. Quem o criasse e rodasse
+ * `npm run dev` continuava batendo em PRODUÇÃO, sem nenhum aviso, achando que
+ * estava mexendo no banco de teste. Descoberto em 23/09 ao ver o navegador
+ * tentar autenticar contra o projeto de produção.
+ *
+ * `.env.local` por último: quem vem depois manda, como no Vite.
+ */
+function lerArquivoEnv(nome) {
   try {
-    const envPath = path.join(rootDir, '.env');
+    const envPath = path.join(rootDir, nome);
     const content = readFileSync(envPath, 'utf-8');
     const env = {};
     content.split(/\r?\n/).forEach((line) => {
@@ -34,13 +48,19 @@ function loadEnv() {
     });
     return env;
   } catch (err) {
-    console.warn('⚠️  Não foi possível ler .env:', err.message);
+    // `.env.local` não existir é o normal; só o `.env` ausente merece aviso.
+    if (nome === '.env') console.warn('⚠️  Não foi possível ler .env:', err.message);
     return {};
   }
 }
 
-const envVars = loadEnv();
+const envVars = { ...lerArquivoEnv('.env'), ...lerArquivoEnv('.env.local') };
 const processEnv = { ...process.env, ...envVars };
+
+if (envVars.VITE_SUPABASE_URL) {
+  const onde = /127\.0\.0\.1|localhost/.test(envVars.VITE_SUPABASE_URL) ? 'LOCAL' : 'EXTERNO';
+  console.log(`🔗 Supabase ${onde}: ${envVars.VITE_SUPABASE_URL}`);
+}
 
 // Resolver paths dos binários locais
 // Usar o JS entry direto (não o .cmd wrapper do npm) pra evitar EINVAL no Windows
