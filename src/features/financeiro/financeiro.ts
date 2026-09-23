@@ -40,6 +40,22 @@ export interface Lancamento {
   conta_nome: string | null;
   vencido: boolean;
   dias_de_atraso: number | null;
+  /**
+   * Lançamento ou terceiros, vindo da venda por trás. `null` quando não há
+   * venda: lançamento manual, de mídia, ou venda apagada.
+   */
+  venda_tipo: 'lancamento' | 'terceiros' | null;
+  /**
+   * De onde veio o LEAD — "ZAP Imóveis", "Instagram", "Imovelweb". Não
+   * confundir com `origem`, que é de onde veio o LANÇAMENTO (venda, imposto,
+   * repasse…). São duas perguntas diferentes e os dois nomes existem na tela.
+   *
+   * Texto livre: é `leads.source`, que não tem cadastro por trás. Mostrar cru
+   * é honesto enquanto o cadastro de origens não estiver povoado.
+   */
+  portal: string | null;
+  /** A comissão já sem o imposto. Só na linha da comissão; nas outras, `null`. */
+  valor_liquido: number | null;
 }
 
 export interface TotaisDoPeriodo {
@@ -51,6 +67,16 @@ export interface TotaisDoPeriodo {
   vencidos: number;
   valor_vencido: number;
   sem_conta: number;
+  /** O que se tem a receber depois do imposto. Só das linhas de comissão. */
+  liquido: number;
+  /**
+   * A receber, quebrado pelo tipo da venda. Os três somam `a_receber` — e é de
+   * propósito que `sem_venda` apareça: três números que não fecham é como se
+   * descobre que um pedaço sumiu.
+   */
+  de_lancamento: number;
+  de_terceiros: number;
+  sem_venda: number;
 }
 
 export interface ListaDeLancamentos {
@@ -351,4 +377,40 @@ export function resumoDaImportacao(r: { novas: number; repetidas: number }): str
   // dias. Dizer isso evita a conclusão de que a importação falhou.
   if (r.repetidas > 0) partes.push(`${r.repetidas} já estava(m) no sistema e não entrou(aram) de novo`);
   return `${partes.join('; ')}.`;
+}
+
+/**
+ * Qual conta bancária usar sem perguntar (pedido do chefe, 23/09/2026:
+ * *"Conta não precisa constar, vai sempre pro Inter"*).
+ *
+ * A escolha NÃO é cosmética, e por isso ela não some de vez: é a conta que
+ * identifica o extrato e impede o mesmo mês de ser importado duas vezes.
+ * Apagar o campo e mandar a primeira da lista jogaria o extrato de um banco
+ * dentro de outro — e o erro só apareceria no fim do mês, sem culpado óbvio.
+ *
+ * Então ela é resolvida sozinha só quando há UMA resposta certa:
+ *
+ *   1. uma conta cujo nome ou banco diga "Inter" — é a regra da casa hoje;
+ *   2. ou uma conta ativa só, caso em que não há o que escolher.
+ *
+ * Fora disso devolve `null`, e a tela volta a perguntar. Duas contas sem
+ * nenhuma Inter é uma situação que a regra do chefe não cobre — e adivinhar
+ * ali seria trocar um campo a mais por um erro silencioso.
+ */
+export function contaBancariaPadrao(
+  contas: { id: string; nome: string; banco?: string | null; ativa?: boolean }[] | null | undefined,
+): string | null {
+  const ativas = (contas ?? []).filter((c) => c.ativa !== false);
+  if (ativas.length === 0) return null;
+
+  const ehInter = (c: { nome: string; banco?: string | null }) =>
+    /inter/i.test(`${c.nome} ${c.banco ?? ''}`);
+
+  const inter = ativas.filter(ehInter);
+  // Duas contas "Inter" (conta e poupança, por exemplo) voltam a perguntar:
+  // uma delas está certa e a outra não, e daqui não dá para saber qual.
+  if (inter.length === 1) return inter[0].id;
+  if (inter.length > 1) return null;
+
+  return ativas.length === 1 ? ativas[0].id : null;
 }

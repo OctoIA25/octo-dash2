@@ -14,13 +14,13 @@
  *  - O placar conta o que FALTA, e não o que já foi feito.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle, Check, EyeOff, Loader2, Upload, Undo2,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { marcacoes, reaisExatos, resumoDaConciliacao, resumoDaImportacao } from './financeiro';
+import { contaBancariaPadrao, marcacoes, reaisExatos, resumoDaConciliacao, resumoDaImportacao } from './financeiro';
 import { avisoDeDescartadas, lerArquivoOfx, resumoDoExtrato, type ExtratoLido } from './ofx';
 import {
   carregarMovimentos, carregarSituacao, carregarSugestoes, conciliar, desconciliar,
@@ -45,7 +45,13 @@ export function ConciliacaoPanel({ tenantId, de, ate, contas, aoImportarPeriodo 
   const qc = useQueryClient();
   const arquivoRef = useRef<HTMLInputElement>(null);
 
-  const [contaId, setContaId] = useState('');
+  // A conta resolvida sozinha, quando há uma resposta certa (pedido do chefe,
+  // 23/09/2026: "Conta não precisa constar, vai sempre pro Inter"). Quando
+  // `contaBancariaPadrao` devolve null é porque a regra não cobre o caso — e
+  // aí o campo reaparece, em vez de a importação adivinhar o banco.
+  const contaAutomatica = useMemo(() => contaBancariaPadrao(contas), [contas]);
+  const [contaEscolhida, setContaEscolhida] = useState('');
+  const contaId = contaAutomatica ?? contaEscolhida;
   const [lido, setLido] = useState<{ extrato: ExtratoLido; nome: string } | null>(null);
   const [escolhas, setEscolhas] = useState<Record<string, string>>({});
   // Quem já passou pela lista. É o que impede um recarregamento de remarcar o
@@ -164,14 +170,24 @@ export function ConciliacaoPanel({ tenantId, de, ate, contas, aoImportarPeriodo 
               onChange={(e) => aoEscolherArquivo(e.target.files?.[0])}
               className="text-xs file:mr-2 file:rounded-md file:border file:bg-background file:px-2 file:py-1 file:text-xs" />
           </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-[11px] text-muted-foreground">Conta bancária</span>
-            <select value={contaId} onChange={(e) => setContaId(e.target.value)}
-              className="h-8 rounded-md border bg-background px-2 text-xs">
-              <option value="">Escolha…</option>
-              {contas.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
-            </select>
-          </label>
+          {/*
+            O campo só aparece quando a conta não dá para deduzir. Com uma
+            conta "Inter" (ou uma conta ativa só), ele some: é o pedido do
+            chefe. Ele NÃO some de vez porque é a conta que identifica o
+            extrato e impede o mesmo mês de entrar duas vezes — adivinhar
+            jogaria o extrato de um banco dentro de outro, e o erro só
+            apareceria no fechamento.
+          */}
+          {!contaAutomatica && (
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] text-muted-foreground">Conta bancária</span>
+              <select value={contaEscolhida} onChange={(e) => setContaEscolhida(e.target.value)}
+                className="h-8 rounded-md border bg-background px-2 text-xs">
+                <option value="">Escolha…</option>
+                {contas.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+              </select>
+            </label>
+          )}
           <button onClick={() => importar.mutate()} disabled={!lido || !contaId || importar.isPending}
             className="inline-flex h-8 items-center gap-1.5 rounded-md border px-3 text-xs font-medium hover:bg-accent disabled:opacity-50">
             {importar.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}

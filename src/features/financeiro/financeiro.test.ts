@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  avisoDeVencidos, avisoSemConta, csvParaContador, dreFecha, eAutomatico,
+  avisoDeVencidos, avisoSemConta, contaBancariaPadrao, csvParaContador, dreFecha, eAutomatico,
   marcacoes, nomeDoArquivo, primeiroDiaNoVermelho, resumoDaConciliacao,
   resumoDaImportacao, saldoAoFim,
   type Dre, type FluxoDeCaixa, type LinhaDaExportacao,
@@ -243,5 +243,49 @@ describe('a conciliação por extrato', () => {
     expect(resumoDaImportacao({ novas: 2, repetidas: 4 }))
       .toBe('2 movimento(s) importado(s); 4 já estava(m) no sistema e não entrou(aram) de novo.');
     expect(resumoDaImportacao({ novas: 5, repetidas: 0 })).toBe('5 movimento(s) importado(s).');
+  });
+});
+
+/**
+ * A conta bancária que a Conciliação escolhe sozinha (pedido do chefe,
+ * 23/09/2026: "Conta não precisa constar, vai sempre pro Inter").
+ *
+ * O que esses casos protegem NÃO é a economia de um clique: é a recusa a
+ * adivinhar. A conta identifica o extrato e impede o mesmo mês de entrar duas
+ * vezes — escolher a errada joga o extrato de um banco dentro de outro, e o
+ * erro só aparece no fechamento.
+ */
+describe('contaBancariaPadrao', () => {
+  const inter = { id: 'i1', nome: 'Inter PJ', banco: 'Banco Inter', ativa: true };
+  const outra = { id: 'o1', nome: 'Conta movimento', banco: 'Itaú', ativa: true };
+
+  it('acha a Inter entre várias, pelo nome ou pelo banco', () => {
+    expect(contaBancariaPadrao([outra, inter])).toBe('i1');
+    expect(contaBancariaPadrao([
+      outra, { id: 'i2', nome: 'Principal', banco: 'INTER', ativa: true },
+    ])).toBe('i2');
+  });
+
+  it('com uma conta só, usa ela mesmo sem ser Inter', () => {
+    expect(contaBancariaPadrao([outra])).toBe('o1');
+  });
+
+  it('com duas contas e nenhuma Inter, devolve null — a tela volta a perguntar', () => {
+    expect(contaBancariaPadrao([outra, { ...outra, id: 'o2', nome: 'Poupança' }])).toBeNull();
+  });
+
+  it('com duas Inter, também devolve null: uma está certa e daqui não dá para saber qual', () => {
+    expect(contaBancariaPadrao([inter, { ...inter, id: 'i9', nome: 'Inter poupança' }])).toBeNull();
+  });
+
+  it('conta inativa não conta', () => {
+    expect(contaBancariaPadrao([{ ...inter, ativa: false }, outra])).toBe('o1');
+    expect(contaBancariaPadrao([{ ...inter, ativa: false }])).toBeNull();
+  });
+
+  it('lista vazia, nula ou indefinida não quebra', () => {
+    expect(contaBancariaPadrao([])).toBeNull();
+    expect(contaBancariaPadrao(null)).toBeNull();
+    expect(contaBancariaPadrao(undefined)).toBeNull();
   });
 });

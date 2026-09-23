@@ -275,12 +275,15 @@ function Aviso({ tom, children }: { tom: 'rose' | 'amber' | 'neutro'; children: 
   return <p className={`mb-3 flex items-start gap-2 rounded-md border p-2.5 text-xs ${cls}`}>{children}</p>;
 }
 
+// Cards maiores desde 23/09/2026, a pedido do chefe ("aumentar os cards e
+// colocar em 2 linhas"). O número é o que se lê de longe: subiu de text-sm
+// para text-lg no card forte.
 function Total({ rotulo, valor, nota, forte }: { rotulo: string; valor: string; nota?: string; forte?: boolean }) {
   return (
-    <div className="rounded-lg border p-2.5">
-      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{rotulo}</p>
-      <p className={`tabular-nums ${forte ? 'text-sm font-semibold' : 'text-sm'}`}>{valor}</p>
-      {nota && <p className="mt-0.5 text-[10px] text-muted-foreground">{nota}</p>}
+    <div className="rounded-lg border p-3.5">
+      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{rotulo}</p>
+      <p className={`tabular-nums ${forte ? 'text-lg font-semibold' : 'text-base'}`}>{valor}</p>
+      {nota && <p className="mt-1 text-[10px] leading-snug text-muted-foreground">{nota}</p>}
     </div>
   );
 }
@@ -326,21 +329,30 @@ function Lista({
       )}
 
       <div className="overflow-x-auto rounded-lg border">
-        <table className="w-full min-w-[820px] text-xs">
+        <table className="w-full min-w-[1000px] text-xs">
           <thead>
             <tr className="border-b bg-muted/40 text-left uppercase tracking-wide text-muted-foreground">
               <th className="px-3 py-2">Vencimento</th>
               <th className="px-3 py-2">Histórico</th>
               <th className="px-3 py-2">Conta</th>
               <th className="px-3 py-2">Origem</th>
+              {/*
+                Duas colunas com nomes parecidos, de propósito. "Origem" é de
+                onde nasceu o LANÇAMENTO (venda, imposto, repasse) — é ela que
+                separa receita de custo no DRE. "Portal" é de onde veio o
+                LEAD. Trocar uma pela outra custaria a distinção entre
+                comissão e imposto.
+              */}
+              <th className="px-3 py-2">Portal</th>
               <th className="px-3 py-2 text-right">Valor</th>
+              <th className="px-3 py-2 text-right">Líquido</th>
               <th className="px-3 py-2">Situação</th>
               <th className="px-3 py-2"></th>
             </tr>
           </thead>
           <tbody className="divide-y">
             {dados.linhas.length === 0 && (
-              <tr><td colSpan={7} className="px-3 py-6 text-center text-muted-foreground">
+              <tr><td colSpan={9} className="px-3 py-6 text-center text-muted-foreground">
                 Nada {ehReceber ? 'a receber' : 'a pagar'} no período.
                 {ehReceber && ' O “a receber” aparece sozinho quando uma proposta é assinada.'}
               </td></tr>
@@ -365,7 +377,24 @@ function Lista({
                 <td className="px-3 py-2 text-muted-foreground">
                   {ROTULO_DA_ORIGEM[l.origem]}
                 </td>
+                <td className="px-3 py-2 text-muted-foreground">
+                  {l.portal ?? <span className="text-muted-foreground/60">—</span>}
+                  {l.venda_tipo && (
+                    <span className="ml-1 text-[10px] uppercase tracking-wide text-muted-foreground/70">
+                      · {l.venda_tipo === 'lancamento' ? 'lançamento' : 'terceiros'}
+                    </span>
+                  )}
+                </td>
                 <td className="px-3 py-2 text-right tabular-nums font-medium">{reaisExatos(l.valor)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                  {/*
+                    Traço, e não zero, quando não é uma linha de comissão: um
+                    R$ 0,00 numa coluna de dinheiro é lido como "não sobrou
+                    nada", e o que acontece é que a pergunta não se aplica.
+                  */}
+                  {l.valor_liquido != null ? reaisExatos(l.valor_liquido)
+                    : <span className="text-muted-foreground/60">—</span>}
+                </td>
                 <td className="px-3 py-2 whitespace-nowrap">
                   {l.status === 'baixado' ? (
                     <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
@@ -406,19 +435,50 @@ function Lista({
         </table>
       </div>
 
-      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+      {/*
+        Seis cards em duas linhas de três (23/09/2026, pedido do chefe).
+
+        O card que havia escrito "Lançamentos" era a CONTAGEM de linhas da
+        lista, não uma separação por tipo de venda — e foi ele que deu a
+        entender que já existia aqui a divisão entre lançamento e terceiros.
+        A contagem virou nota do primeiro card, e a divisão de verdade virou
+        dois cards com valor em reais.
+
+        Na aba "A pagar" a segunda linha não aparece: ali não há quebra por
+        tipo de venda (são repasses e impostos), e três zeros lado a lado
+        seriam lidos como "não houve", e não como "não se aplica".
+      */}
+      <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
         <Total rotulo={ehReceber ? 'A receber' : 'A pagar'}
-          valor={reaisExatos(ehReceber ? t.a_receber : t.a_pagar)} forte />
-        <Total rotulo={ehReceber ? 'Recebido' : 'Pago'}
-          valor={reaisExatos(ehReceber ? t.recebido : t.pago)} />
-        <Total rotulo="Vencido" valor={reaisExatos(t.valor_vencido)}
-          nota={t.vencidos > 0 ? `${t.vencidos} lançamento(s)` : undefined} />
-        <Total rotulo="Lançamentos" valor={String(t.lancamentos)} />
+          valor={reaisExatos(ehReceber ? t.a_receber : t.a_pagar)} forte
+          nota={`${t.lancamentos} lançamento(s) no período`} />
+        {ehReceber ? (
+          <Total rotulo="Líquido, após o imposto" valor={reaisExatos(t.liquido)}
+            nota="só as comissões — o imposto já sai daqui" />
+        ) : (
+          <Total rotulo="Pago" valor={reaisExatos(t.pago)} />
+        )}
+        <Total rotulo={ehReceber ? 'Recebido' : 'Vencido'}
+          valor={reaisExatos(ehReceber ? t.recebido : t.valor_vencido)}
+          nota={!ehReceber && t.vencidos > 0 ? `${t.vencidos} lançamento(s)` : undefined} />
+
+        {ehReceber && (
+          <>
+            <Total rotulo="Vencido" valor={reaisExatos(t.valor_vencido)}
+              nota={t.vencidos > 0 ? `${t.vencidos} lançamento(s)` : undefined} />
+            <Total rotulo="De lançamento" valor={reaisExatos(t.de_lancamento)} />
+            <Total rotulo="De terceiros" valor={reaisExatos(t.de_terceiros)}
+              nota={t.sem_venda > 0
+                ? `e ${reaisExatos(t.sem_venda)} sem venda ligada`
+                : undefined} />
+          </>
+        )}
       </div>
 
       <p className="mt-2 text-[11px] text-muted-foreground">
         A lista é por <strong>vencimento</strong>, que é o que a cobrança olha. O DRE é por
         competência — a venda de setembro recebida em outubro é resultado de setembro.
+        {ehReceber && ' “De lançamento” e “de terceiros” somam com o que não tem venda ligada — os três fecham com o total a receber.'}
       </p>
     </>
   );
