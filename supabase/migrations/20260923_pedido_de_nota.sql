@@ -113,6 +113,18 @@ AS $function$
     ON cn.construtora_id = v.construtora_id AND cn.principal
   LEFT JOIN public.pedido_de_nota p ON p.venda_id = v.id
  WHERE v.tenant_id = p_tenant_id
+   -- O PORTEIRO. Esta função é SECURITY DEFINER e tem EXECUTE para
+   -- `authenticated`: sem esta linha, o único filtro seria o `p_tenant_id` que
+   -- o PRÓPRIO chamador manda. Qualquer pessoa logada — de qualquer
+   -- imobiliária — passava o uuid de outra casa e recebia empreendimento,
+   -- tomador, CNPJ e comissão bruta das vendas dela.
+   --
+   -- Faltou na primeira versão desta migração, e passou porque o teste só
+   -- exercitava o caminho do admin. Aqui vai como predicado, e não como
+   -- `IF ... RETURN`, porque a função é LANGUAGE sql. É o mesmo porteiro das
+   -- outras 19 funções do Financeiro — a consistência é o que torna a falta
+   -- visível na próxima revisão.
+   AND public.financeiro_pode_ver(p_tenant_id)
    -- Nota emitida sai da lista. `nf_numero` é preenchido na Conferência de
    -- Vendas, que é onde quem confere o dinheiro já trabalha.
    --

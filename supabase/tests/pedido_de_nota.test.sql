@@ -214,6 +214,44 @@ BEGIN
   EXCEPTION WHEN insufficient_privilege THEN RESET ROLE;
   END;
   RAISE NOTICE 'OK 7: o anônimo não tem permissão nenhuma';
+
+  -- ----------------------------------------------------------
+  -- 8. O LOGADO DE FORA PEDINDO PELO UUID DESTA CASA
+  --
+  -- ESTE CASO NASCEU DE UM FURO QUE ESTE ARQUIVO DEIXOU PASSAR.
+  --
+  -- O caso 6 pergunta "a vizinha enxerga as vendas desta casa?" e responde
+  -- chamando `notas_a_emitir(vizinha)` — com o uuid DA VIZINHA, e como
+  -- superusuário. Dá zero, mas daria zero de qualquer jeito: a vizinha não
+  -- tem venda nenhuma. O teste media a ausência de dado, não a presença de
+  -- porteiro.
+  --
+  -- O ataque real é o contrário: alguém logado em QUALQUER lugar chama a
+  -- função com o uuid DESTA casa. A função é SECURITY DEFINER e tem EXECUTE
+  -- para `authenticated`; sem porteiro, o `p_tenant_id` que o atacante digita
+  -- é o filtro inteiro. Provado em 23/09: vinham empreendimento, tomador,
+  -- CNPJ e comissão bruta.
+  --
+  -- A lição, para quem escrever o próximo teste de isolamento: passe SEMPRE
+  -- o identificador da casa que tem o dado, no papel de quem não deveria
+  -- vê-lo. Testar com o identificador de quem não tem nada passa cego.
+  -- ----------------------------------------------------------
+  UPDATE vendas SET nf_numero = NULL WHERE id = v_ok;   -- devolve à lista
+  SELECT count(*) INTO n FROM notas_a_emitir(casa);
+  IF n = 0 THEN
+    RAISE EXCEPTION 'FALHOU 8: o teste se sabotou — sem venda na lista, o ataque passaria cego';
+  END IF;
+
+  PERFORM set_config('request.jwt.claims', json_build_object(
+    'sub', outro, 'role', 'authenticated')::text, true);
+  SET LOCAL ROLE authenticated;
+  SELECT count(*) INTO n FROM notas_a_emitir(casa);
+  RESET ROLE;
+  PERFORM set_config('request.jwt.claims', NULL, true);
+  IF n <> 0 THEN
+    RAISE EXCEPTION 'FALHOU 8: um logado de fora leu % nota(s) desta casa pelo uuid', n;
+  END IF;
+  RAISE NOTICE 'OK 8: pedir pelo uuid da casa alheia não devolve nada';
 END $$;
 
 ROLLBACK;
