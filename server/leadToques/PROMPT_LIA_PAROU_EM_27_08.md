@@ -1,3 +1,19 @@
+> **RESPONDIDO EM 23/09/2026 — não é mais preciso enviar este documento.**
+>
+> A resposta veio da própria Lia e foi conferida no banco: os quatro destinos
+> eram da **Imobiliária Japi**, e foi **a Japi inteira** que silenciou em 27/08
+> às 21h08 UTC — mensagens e follow-ups junto, não um subconjunto de funções.
+> O que continuou é da **Lotus**, que é outra Lia.
+>
+> O chefe confirmou: **a Japi foi desligada de propósito e não volta.**
+>
+> O erro da análise original foi meu: medi `whatsapp_messages` e as tabelas
+> `lia_*` **sem separar por `tenant_id`**, num sistema multi-tenant. Fica aqui
+> inteiro, com este aviso, porque o raciocínio errado é a parte que ensina.
+>
+> **O que sobrou de verdade** está na seção final, reescrita: 693 eventos de
+> lead fantasma e um número da Meta ainda entregando no vazio.
+
 # Quatro coisas que a Lia deixou de gravar em 27 de agosto
 
 **Para quem mexe na Lia.** Não é pedido de funcionalidade nova: é uma pergunta
@@ -69,8 +85,17 @@ afirmar autoria que ninguém registrou.
 
 ---
 
-## Como confirmar que voltou
+## O que sobrou, depois da resposta
 
-Não precisa avisar nem testar nada: assim que os quatro voltarem a receber, a
-data do último registro de cada um muda. **Uma consulta de trinta segundos do
-lado da Dash responde**, comparando com 27/08.
+A Japi não volta. Mas duas coisas dela continuam de pé e escrevendo:
+
+1. **693 eventos de `lead.created` da Japi desde 28/08, até hoje — e nenhum
+   lead correspondente existe.** Algo ainda anuncia criação de lead para uma
+   imobiliária desligada, todos os dias, e o lead não chega a existir.
+2. **O número da Meta segue CONNECTED** e o callback ainda aponta para o n8n,
+   que encaminha para um IP suspenso. Quem escrever para aquele número não
+   recebe resposta, e ninguém fica sabendo.
+
+Nenhuma das duas é urgente agora que a decisão está tomada — mas as duas são
+lixo que escreve em produção, e lixo que escreve acaba virando número em
+relatório.

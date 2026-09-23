@@ -11,26 +11,25 @@ mesmo número, com a mesma cara.
 
 ## Antes, o que foi medido
 
-Em 22/09/2026, nas **16.401 mensagens enviadas** que estão no banco:
+Em 23/09/2026, separando por imobiliária — que é como isto precisava ter sido
+medido desde o começo:
 
-| | quantas |
+| mensagens enviadas pela **Lotus** | |
 |---|---|
-| com autor registrado | **14** |
-| com a sua marca em `metadata.role` | 14.242 |
-| **sem marca nenhuma** | **2.159** |
+| **sem** marca de autor | **2.235** |
+| **com** marca (`metadata.role`) | **6** |
 
-E o que importa: **a sua marca parou em 27/08.** A última mensagem com
-`metadata.role` é daquele dia. As **2.107** enviadas desde então não têm nada —
-quatro semanas de conversa em que ninguém sabe quem falou.
+Ou seja: **a marca nunca existiu de fato aqui.** As 24.425 mensagens marcadas
+que apareciam na contagem eram da **Imobiliária Japi**, desligada em 27/08 e
+que não volta.
 
-Não sabemos se isso foi mudança de propósito ou se quebrou sozinho. **Se foi
-regressão, vale conferir**: o que se perdeu não volta.
+Numa primeira leitura eu disse que "a LIA parou de marcar em 27/08". Estava
+errado: eu tinha somado as duas casas. Não houve regressão — o que há é uma
+capacidade que a Lotus nunca teve.
 
-O Dash **não chutou** que aquelas mensagens eram suas. Elas aparecem na tela
-como *"sem autor"*, em itálico. É feio de propósito — é conversa com cliente, e
-afirmar autoria que ninguém registrou é pior do que admitir que se perdeu.
-
----
+O Dash **não chuta** autoria nas 2.235: elas aparecem como *"sem autor"*, em
+itálico. É conversa com cliente, e marcá-las agora seria afirmar o que ninguém
+registrou.
 
 ## 1. O campo
 

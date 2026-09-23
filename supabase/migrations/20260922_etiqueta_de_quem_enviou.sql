@@ -17,10 +17,18 @@
 --    "LIA × corretor" meio a meio: é quase toda LIA, e o valor dela está em
 --    marcar a exceção.
 --
--- 2. A LIA PAROU DE MARCAR EM 27/08. A última mensagem com `metadata.role` é
---    daquele dia; as 2.107 enviadas desde então não têm marca nenhuma. Quatro
---    semanas de conversa em que ninguém sabe quem falou. Não é um campo novo
---    que falta — é um que deixou de ser preenchido, em silêncio.
+-- 2. CORRIGIDO EM 23/09 — A LEITURA ACIMA ESTAVA ERRADA, e o erro foi meu.
+--
+--    Eu havia escrito "a LIA parou de marcar em 27/08", porque medi
+--    `whatsapp_messages` SEM SEPARAR POR TENANT. Num sistema multi-tenant.
+--
+--    Separando: as 24.425 mensagens marcadas eram da **Imobiliária Japi**, que
+--    foi DESLIGADA em 27/08 e não volta (confirmado pelo chefe em 23/09). A
+--    LIA da **Lotus**, que é a casa viva, marcou **6 de 2.241** mensagens —
+--    ou seja, nunca marcou.
+--
+--    Não houve regressão nenhuma. O que há é uma capacidade que a Lotus nunca
+--    teve, e que esta coluna dá pela primeira vez.
 --
 -- POR QUE UMA COLUNA, SE `metadata.role` JÁ DIZIA
 -- Porque `metadata` é um saco de coisas de quem escreveu, sem contrato: mudou
