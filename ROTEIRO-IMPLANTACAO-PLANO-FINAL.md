@@ -7,11 +7,15 @@ e os nomes registrados seguem convenções diferentes).
 **Medido:** 58 tabelas nascem deste plano. **57 não existem em produção**; só
 `lead_toques` já foi aplicada.
 
+**Atualizado em 23/09:** mais uma tabela (`pedido_de_nota`) e mais duas
+migrations — **59 tabelas, 52 migrations**. As duas novas estão no fim da
+lista, como 51 e 52, e não passaram pela conferência objeto-a-objeto de 22/09.
+
 ---
 
 ## 1. A ordem
 
-São **46 migrations**. A ordem abaixo é a alfabética **corrigida por
+São **52 migrations**. A ordem abaixo é a alfabética **corrigida por
 dependência** — quatro arquivos precisam sair do lugar natural.
 
 > **A que mais importa:** `20260922_ajuda_manual_e_faq` é a *primeira*
@@ -88,6 +92,22 @@ produção** — conferido em 22/09) e de `tipologias_do_lancamento`.
  50. `20260922_rede_de_unidades.sql` — **depende da 27**
      (`cargos_e_permissoes`): insere em `permissoes` e le `minhas_permissoes`.
      Acrescenta 2 colunas anulaveis em `tenants` (3 linhas): instantaneo.
+ 51. `20260923_pedido_de_nota.sql` — **depende da 28** (`conferencia_de_vendas`,
+     que cria `vendas`) e **da 5** (`cadastro_de_construtoras`, que cria
+     `construtoras` e `construtora_cnpjs`). Nenhuma das tres existe em
+     producao, entao a ordem alfabetica ja resolve — mas se alguem aplicar
+     avulso, quebra na hora.
+ 52. `20260923_card_do_site_vem_das_tipologias.sql` — **depende da 22**
+     (`tipologias_do_lancamento`), de onde vem a tabela `tipologias` E a funcao
+     `lancamento_preco_a_partir`, que esta migration chama.
+     **Recria a view `portal_lancamentos`, que o site publico le hoje.** As
+     colunas antigas saem iguais, na mesma ordem; as novas entram no fim. Se
+     alguma migration futura tambem recriar essa view, ela tem que vir DEPOIS
+     desta, ou as colunas `card_*` somem sem ninguem perceber.
+
+> **Estas duas entraram em 23/09, depois do levantamento.** A lista acima foi
+> conferida objeto por objeto contra producao em 22/09; a 51 e a 52 nao
+> passaram por essa conferencia — a dependencia delas foi lida no codigo.
 
 **Reaplicar `20260921_demandas_de_marketing.sql`**, que mudou DEPOIS de entrar
 nesta lista: o `DEFAULT` de `mkt_demanda_eventos.em` passou de `now()` para
