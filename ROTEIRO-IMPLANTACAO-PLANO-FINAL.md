@@ -7,15 +7,16 @@ e os nomes registrados seguem convenções diferentes).
 **Medido:** 58 tabelas nascem deste plano. **57 não existem em produção**; só
 `lead_toques` já foi aplicada.
 
-**Atualizado em 23/09:** mais uma tabela (`pedido_de_nota`) e mais duas
-migrations — **59 tabelas, 52 migrations**. As duas novas estão no fim da
-lista, como 51 e 52, e não passaram pela conferência objeto-a-objeto de 22/09.
+**Atualizado em 23/09:** mais uma tabela (`pedido_de_nota`) e mais quatro
+migrations — **59 tabelas, 54 migrations**. As quatro novas estão no fim da
+lista, da 51 à 54, e não passaram pela conferência objeto-a-objeto de 22/09.
+A 53 **já está em produção**: era uma porta aberta e foi fechada no mesmo dia.
 
 ---
 
 ## 1. A ordem
 
-São **52 migrations**. A ordem abaixo é a alfabética **corrigida por
+São **54 migrations**. A ordem abaixo é a alfabética **corrigida por
 dependência** — quatro arquivos precisam sair do lugar natural.
 
 > **A que mais importa:** `20260922_ajuda_manual_e_faq` é a *primeira*
@@ -104,9 +105,21 @@ produção** — conferido em 22/09) e de `tipologias_do_lancamento`.
      colunas antigas saem iguais, na mesma ordem; as novas entram no fim. Se
      alguma migration futura tambem recriar essa view, ela tem que vir DEPOIS
      desta, ou as colunas `card_*` somem sem ninguem perceber.
+ 53. `20260923_count_leads_mensal_fecha_o_publico.sql` — **JA APLICADA EM
+     PRODUCAO em 23/09**, com autorizacao do chefe. Era porta aberta: o papel
+     `anon`, sem login, recebia a contagem de leads de qualquer imobiliaria.
+     Nao depende de nada do plano (mexe numa funcao que ja existe la). Fica na
+     lista para a ordem ficar completa; rodar de novo nao faz mal.
+ 54. `20260923_permissao_financeiro.sql` — **depende da 27**
+     (`cargos_e_permissoes`, que cria a tabela `permissoes`). Sem ela o INSERT
+     do catalogo falha com "relation does not exist".
+     **Tambem escreve em `tenants.allowed_features`**, dando `financeiro` a
+     quem ja tem `relatorios` — 2 dos 9 tenants. Sem esse UPDATE a chave nasce
+     no catalogo e o menu do Financeiro some para TODOS os admins, sem erro
+     nenhum na tela.
 
-> **Estas duas entraram em 23/09, depois do levantamento.** A lista acima foi
-> conferida objeto por objeto contra producao em 22/09; a 51 e a 52 nao
+> **Estas quatro entraram em 23/09, depois do levantamento.** A lista acima foi
+> conferida objeto por objeto contra producao em 22/09; da 51 a 54 nao
 > passaram por essa conferencia — a dependencia delas foi lida no codigo.
 
 **Reaplicar `20260921_demandas_de_marketing.sql`**, que mudou DEPOIS de entrar
