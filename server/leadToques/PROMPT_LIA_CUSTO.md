@@ -22,7 +22,7 @@ POST /api/v1/agent-telemetry/events
   "event_type": "execution",
   "status": "ok",
 
-  "model": "claude-sonnet-4-5",     ← o modelo da RESPOSTA, não o pedido
+  "model": "claude-opus-5",         ← o modelo da RESPOSTA, não o pedido
   "provider": "anthropic",
   "input_tokens": 5000,
   "cached_tokens": 1200,
@@ -64,6 +64,12 @@ US$ 3, mas 60% das chamadas não contaram — o real é maior"*.
 Os preços ficam em **Configurações › Preços de IA**, editáveis sem deploy.
 Modelo que vocês usarem e não estiver lá aparece como **"sem preço
 cadastrado"** e fica fora da soma — nunca vira estimativa.
+
+**O `claude-opus-5` ainda NÃO está cadastrado.** O chefe confirmou em 23/09 que
+é o modelo em uso. Não cadastrei o preço por conta própria: número de preço
+entra em conta de dinheiro, e eu não tenho de onde confirmar o valor. Quem
+tiver a página de preços do provedor à mão cadastra em um minuto, e a tela
+marca quem conferiu e quando — preço sem conferência aparece como tal.
 
 Se trocarem de modelo, avisem: é cadastrar uma linha.
 
