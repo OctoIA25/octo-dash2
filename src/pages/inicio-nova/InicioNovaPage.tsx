@@ -590,6 +590,8 @@ export function InicioNovaPage() {
    * e 326 leads em "Negociação" que não casavam com balde nenhum — 19% da base
    * invisível no Pipeline, sem erro e sem aviso.
    */
+  // Fora do componente seria melhor ainda; aqui basta ser constante, senão o
+  // useMemo abaixo se refaz a cada render por causa de um objeto de cores.
   const CORES: Record<string, string> = {
     'Novos Leads': 'bg-blue-600',
     'Em Atendimento': 'bg-blue-500',
@@ -601,12 +603,9 @@ export function InicioNovaPage() {
 
   const pipeline = useMemo(() => pipelineDaHome(leads), [leads]);
 
-  const pipelineStages: PipelineStage[] = useMemo(
-    () => pipeline.baldes.map((b) => ({
-      label: b.label, count: b.count, pct: b.pct, shade: CORES[b.label] ?? 'bg-slate-400',
-    })),
-    [pipeline],
-  );
+  const pipelineStages: PipelineStage[] = pipeline.baldes.map((b) => ({
+    label: b.label, count: b.count, pct: b.pct, shade: CORES[b.label] ?? 'bg-slate-400',
+  }));
 
   const ranking: RankingItem[] = useMemo(() => {
     const map = new Map<string, { closings: number; volume: number }>();
