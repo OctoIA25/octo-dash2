@@ -19,14 +19,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import {
   codigoDaConstrutora,
   digitosDoCnpj,
+  mascaraDeCnpj,
   type Construtora,
   type EntradaDeConstrutora,
 } from '../services/construtorasService';
-
-/** "12345678000190" -> "12.345.678/0001-90". Só para ler; o banco guarda dígitos. */
-const comMascara = (d: string) =>
-  d.replace(/^(\d{2})(\d{0,3})(\d{0,3})(\d{0,4})(\d{0,2}).*$/,
-    (_, a, b, c, e, f) => [a, b && '.' + b, c && '.' + c, e && '/' + e, f && '-' + f].join(''));
 
 interface ConstrutoraFormDialogProps {
   aberto: boolean;
@@ -86,7 +82,7 @@ export function ConstrutoraFormDialog({
   useEffect(() => {
     if (!aberto) return;
     setErro(null);
-    setCnpjForm(cnpj ? comMascara(cnpj) : '');
+    setCnpjForm(cnpj ? mascaraDeCnpj(cnpj) : '');
     if (construtora) {
       const { id: _id, ...resto } = construtora;
       setForm(podeVerComissao ? { ...resto, comissaoPadraoPct: comissao ?? null } : resto);
@@ -173,7 +169,7 @@ export function ConstrutoraFormDialog({
               inputMode="numeric"
               placeholder="00.000.000/0000-00"
               value={cnpjForm}
-              onChange={(e) => setCnpjForm(comMascara(digitosDoCnpj(e.target.value).slice(0, 14)))}
+              onChange={(e) => setCnpjForm(mascaraDeCnpj(digitosDoCnpj(e.target.value).slice(0, 14)))}
               disabled={!construtora}
             />
             <p className="text-[11px] text-muted-foreground">

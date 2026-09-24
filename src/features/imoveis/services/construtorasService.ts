@@ -176,6 +176,21 @@ export async function fetchCnpjPrincipal(tenantId: string): Promise<Map<string, 
 export const digitosDoCnpj = (v: string | null | undefined): string => (v || '').replace(/\D/g, '');
 
 /**
+ * "12345678000190" -> "12.345.678/0001-90". Só para LER; o banco guarda
+ * dígitos. Aceita entrada parcial, porque o formulário mascara enquanto se
+ * digita.
+ *
+ * Mora aqui, ao lado de `digitosDoCnpj`, porque duas telas a usam — o
+ * formulário e o perfil. Eu a tinha escrito nas duas em 24/09, e duas máscaras
+ * do mesmo documento divergem na primeira correção.
+ */
+export const mascaraDeCnpj = (v: string | null | undefined): string =>
+  digitosDoCnpj(v).replace(
+    /^(\d{2})(\d{0,3})(\d{0,3})(\d{0,4})(\d{0,2}).*$/,
+    (_, a, b, c, d, e) => [a, b && '.' + b, c && '.' + c, d && '/' + d, e && '-' + e].join(''),
+  );
+
+/**
  * O que falta preencher nesta construtora — o marcador vermelho pedido pelo
  * chefe em 24/09, para ir completando uma a uma.
  *

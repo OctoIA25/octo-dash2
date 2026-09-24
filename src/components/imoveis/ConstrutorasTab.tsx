@@ -24,9 +24,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { OctoDashLoader } from '@/components/ui/OctoDashLoader';
 import { Pencil } from 'lucide-react';
+import { useEscapeFecha } from '@/hooks/useEscapeFecha';
 import { useConstrutoras } from '@/features/imoveis/hooks/useConstrutoras';
 import { ConstrutoraFormDialog } from '@/features/imoveis/components/ConstrutoraFormDialog';
-import { oQueFaltaNaConstrutora, type Construtora } from '@/features/imoveis/services/construtorasService';
+import { mascaraDeCnpj, oQueFaltaNaConstrutora, type Construtora } from '@/features/imoveis/services/construtorasService';
 
 /** Mesma regra do banco (normalizar_texto): sem acento, minúscula, espaços colapsados. */
 const chaveDoNome = (t: string) =>
@@ -136,6 +137,8 @@ export function ConstrutorasTab() {
   const [selecionado, setSelecionado] = useState<EmpreendimentoCatalogo | null>(null);
   const [editando, setEditando] = useState<Construtora | null>(null);
   const [criando, setCriando] = useState(false);
+  /** O perfil aberto por dois cliques no cartão. */
+  const [perfil, setPerfil] = useState<Construtora | null>(null);
 
   // Quem é cada construtora vem do CRM.
   const {
@@ -306,6 +309,22 @@ export function ConstrutorasTab() {
         </p>
       )}
 
+      {perfil && (
+        <PerfilDaConstrutora
+          construtora={perfil}
+          cnpj={cnpjs.get(perfil.id) ?? null}
+          comissao={comissoes.get(perfil.id)?.comissaoPadraoPct ?? undefined}
+          falta={faltaEm.get(perfil.codigo) ?? []}
+          empreendimentos={catalogo.filter(
+            (e) => codigoPorChave.get(chaveDoNome(e.construtora)) === perfil.codigo,
+          )}
+          lancamentoIdPorNome={lancamentoIdPorNome}
+          onEditar={() => { setEditando(perfil); setPerfil(null); }}
+          onVerNaLista={() => { setConstrutoraFilter(perfil.codigo); setPerfil(null); }}
+          onFechar={() => setPerfil(null)}
+        />
+      )}
+
       <ConstrutoraFormDialog
         aberto={Boolean(editando) || criando}
         onFechar={() => { setEditando(null); setCriando(false); }}
@@ -377,6 +396,18 @@ export function ConstrutorasTab() {
             <button
               type="button"
               onClick={() => setConstrutoraFilter(ativa ? 'todas' : codigo)}
+              /*
+                Um clique filtra a tabela, dois abrem o perfil — como o chefe
+                pediu em 24/09.
+
+                Sem debounce de propósito: os dois cliques alternam o filtro e
+                o devolvem ao estado em que estava, então o único efeito
+                visível é o perfil abrir. Segurar o primeiro clique num timer
+                para "esperar o segundo" atrasaria TODO clique simples, que é
+                o gesto comum, para servir o raro.
+              */
+              onDoubleClick={() => c && setPerfil(c)}
+              title={c ? `${nome} — um clique filtra, dois abrem o perfil` : nome}
               className="w-full p-4 text-left"
             >
               <p className="font-medium text-text-primary truncate pr-6" title={nome}>{nome}</p>
@@ -501,5 +532,146 @@ export function ConstrutorasTab() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+/**
+ * O perfil da construtora — pedido do chefe em 24/09: "seria legal com 2
+ * cliques já abrir o perfil da construtora", e "nem aparece a lista de
+ * empreendimentos linkados a ela".
+ *
+ * Gaveta, e não página nova: tudo o que ela mostra já está na memória da aba —
+ * o cadastro, o CNPJ, a comissão e as linhas da planilha. Uma rota nova
+ * buscaria de novo o que já está aqui, e tiraria a pessoa da lista para onde
+ * ela vai voltar em seguida.
+ */
+function PerfilDaConstrutora({
+  construtora: c, cnpj, comissao, falta, empreendimentos, lancamentoIdPorNome,
+  onEditar, onVerNaLista, onFechar,
+}: {
+  construtora: Construtora;
+  cnpj: string | null;
+  /** `undefined` = este usuário não pode ver a comissão. É decisão do banco. */
+  comissao?: number | null;
+  falta: string[];
+  empreendimentos: EmpreendimentoCatalogo[];
+  lancamentoIdPorNome: Map<string, string>;
+  onEditar: () => void;
+  onVerNaLista: () => void;
+  onFechar: () => void;
+}) {
+  useEscapeFecha(onFechar);
+
+  const cnpjBonito = cnpj ? mascaraDeCnpj(cnpj) : null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onFechar}>
+      <aside
+        className="h-full w-full max-w-md overflow-y-auto bg-background p-5 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+        aria-label={`Perfil de ${c.nome}`}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-lg font-semibold truncate" title={c.nome}>{c.nome}</h2>
+            <p className="font-mono text-[11px] text-muted-foreground">{c.codigo}</p>
+          </div>
+          <Button type="button" variant="ghost" size="sm" onClick={onFechar} aria-label="Fechar">✕</Button>
+        </div>
+
+        {/* O que falta, no topo: é o que a pessoa veio resolver. */}
+        {falta.length > 0 && (
+          <div className="mt-3 rounded-md border border-red-300 bg-red-50/60 p-2.5 text-[12px] text-red-800 dark:border-red-900 dark:bg-red-950/20 dark:text-red-300">
+            <strong>Falta {falta.join(', ')}.</strong>{' '}
+            <button type="button" onClick={onEditar} className="underline underline-offset-2">
+              preencher agora
+            </button>
+          </div>
+        )}
+
+        <dl className="mt-4 grid grid-cols-[auto,1fr] gap-x-3 gap-y-1.5 text-[13px]">
+          <Campo rotulo="Razão social" valor={c.razaoSocial} />
+          <Campo rotulo="CNPJ" valor={cnpjBonito} />
+          <Campo rotulo="Responsável" valor={c.responsavelNome} />
+          <Campo rotulo="Telefone" valor={c.responsavelTelefone} />
+          <Campo rotulo="E-mail" valor={c.responsavelEmail} />
+          <Campo rotulo="Prazo de pagamento" valor={c.prazoPagamentoDias != null ? `${c.prazoPagamentoDias} dias` : null} />
+          {/* Só aparece para quem o banco autoriza — sem `if` de papel aqui. */}
+          {comissao !== undefined && (
+            <Campo rotulo="Comissão padrão" valor={comissao != null ? `${comissao}%` : null} />
+          )}
+          {c.aliases.length > 0 && (
+            <Campo rotulo="Também escrita como" valor={c.aliases.join(' · ')} />
+          )}
+        </dl>
+
+        <div className="mt-5">
+          <div className="flex items-baseline justify-between">
+            <h3 className="text-[13px] font-semibold">
+              Empreendimentos ({empreendimentos.length})
+            </h3>
+            {empreendimentos.length > 0 && (
+              <button type="button" onClick={onVerNaLista} className="text-[11.5px] text-primary hover:underline">
+                ver na lista →
+              </button>
+            )}
+          </div>
+
+          {empreendimentos.length === 0 ? (
+            /*
+              Dizer POR QUE está vazio. Uma lista vazia sem explicação é
+              indistinguível de erro de carregamento — e aqui a causa é sempre
+              a mesma: nenhuma linha da planilha casa com este nome.
+            */
+            <p className="mt-2 text-[12px] text-muted-foreground">
+              Nenhum empreendimento da planilha aponta para esta construtora. Se ela deveria
+              ter, o nome na planilha está escrito de outro jeito — e é isso que a lista de
+              “também escrita como” acima resolve.
+            </p>
+          ) : (
+            <ul className="mt-2 divide-y rounded-md border">
+              {empreendimentos.map((e) => {
+                const id = lancamentoIdPorNome.get(e.empreendimento.trim().toLowerCase());
+                return (
+                  <li key={`${e.empreendimento}-${e.codigo}`} className="px-3 py-2">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-[13px] font-medium truncate" title={e.empreendimento}>
+                        {e.empreendimento}
+                      </span>
+                      {e.codigo && (
+                        <span className="shrink-0 font-mono text-[10.5px] text-muted-foreground">{e.codigo}</span>
+                      )}
+                    </div>
+                    <p className="text-[11.5px] text-muted-foreground truncate">
+                      {[e.tipo, [e.bairro, e.cidade].filter(Boolean).join(' · ')].filter(Boolean).join(' — ') || '—'}
+                    </p>
+                    {id && (
+                      <a
+                        href={`/imoveis/lancamentos/${id}`}
+                        target="_blank"
+                        rel="noopener"
+                        className="text-[11.5px] text-primary hover:underline"
+                      >
+                        abrir o lançamento →
+                      </a>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+/** Um par rótulo/valor. Vazio vira "—", nunca uma linha some. */
+function Campo({ rotulo, valor }: { rotulo: string; valor: string | null | undefined }) {
+  return (
+    <>
+      <dt className="text-muted-foreground whitespace-nowrap">{rotulo}</dt>
+      <dd className={valor ? '' : 'text-muted-foreground/60'}>{valor || '—'}</dd>
+    </>
   );
 }

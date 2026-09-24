@@ -10,7 +10,7 @@
  *    ninguém enxerga os que de fato faltam.
  */
 import { describe, it, expect } from 'vitest';
-import { oQueFaltaNaConstrutora, digitosDoCnpj } from '../construtorasService';
+import { oQueFaltaNaConstrutora, digitosDoCnpj, mascaraDeCnpj } from '../construtorasService';
 
 const completa = {
   razaoSocial: 'Santa Ângela Incorporadora Ltda',
@@ -82,5 +82,36 @@ describe('dígitos do CNPJ', () => {
     expect(digitosDoCnpj(' 12345678000190 ')).toBe(CNPJ);
     expect(digitosDoCnpj(null)).toBe('');
     expect(digitosDoCnpj('abc')).toBe('');
+  });
+});
+
+/*
+ * A máscara é lida em duas telas — o formulário, enquanto se digita, e o
+ * perfil da construtora. Eu a tinha escrito NAS DUAS em 24/09, e duas máscaras
+ * do mesmo documento divergem na primeira correção. Virou uma só.
+ */
+describe('máscara do CNPJ', () => {
+  it('põe os pontos, a barra e o traço', () => {
+    expect(mascaraDeCnpj('12345678000190')).toBe('12.345.678/0001-90');
+  });
+
+  /*
+   * O formulário chama isto a cada tecla. Se a máscara exigisse os 14 dígitos
+   * para formatar, o campo ficaria cru enquanto a pessoa digita e saltaria de
+   * uma vez no último número — e quem revisa o que digitou não tem como ler.
+   */
+  it('formata enquanto se digita, sem esperar os 14', () => {
+    expect(mascaraDeCnpj('12')).toBe('12');
+    expect(mascaraDeCnpj('12345')).toBe('12.345');
+    expect(mascaraDeCnpj('123456780')).toBe('12.345.678/0');
+  });
+
+  it('já mascarado continua igual — não duplica pontuação', () => {
+    expect(mascaraDeCnpj('12.345.678/0001-90')).toBe('12.345.678/0001-90');
+  });
+
+  it('vazio e nulo não viram pontuação solta', () => {
+    expect(mascaraDeCnpj('')).toBe('');
+    expect(mascaraDeCnpj(null)).toBe('');
   });
 });
