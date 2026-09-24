@@ -3,7 +3,7 @@
 Escrito em 23/09/2026, contra o print que o chefe mandou: **CORE, preparado
 para a Imobiliária Japi** — cinco cargos e dezesseis permissões.
 
-Os **cinco cargos entram** (`20260923_cinco_cargos.sql`). Das dezesseis linhas,
+Os **cinco cargos do print entram, mais o Jurídico que ele pediu à parte** (`20260923_cinco_cargos.sql`). Das dezesseis linhas,
 quatro viram permissão de cargo, sete já existem por outro caminho, uma espera
 uma decisão dele, e **quatro são funções que a Dash não tem**.
 
@@ -85,6 +85,7 @@ recortadas pelo que aquela casa contratou:
 | **Diretoria** | admin | tudo o que a casa contratou |
 | **Gerente** | team_leader | leads, equipe, imóveis, métricas, relatórios, central de leads, metas |
 | **Financeiro** | corretor | financeiro, relatórios, jurídico, notificações |
+| **Jurídico** | corretor | jurídico, imóveis, notificações |
 | **Atendimento** | corretor | leads, conversas, notificações |
 | **Corretor** | corretor | leads, imóveis, métricas, estudo de mercado, conversas |
 

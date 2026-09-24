@@ -1,8 +1,8 @@
 -- ============================================================
--- Os cinco cargos do print (item 8).
+-- Os cargos do print, mais o Jurídico (item 8).
 --
 --   docker exec -i <db> psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
---     < supabase/tests/cinco_cargos.test.sql
+--     < supabase/tests/os_cargos.test.sql
 --
 -- O caso 4 é o que sustenta o arquivo: um cargo "Financeiro" que mostra o
 -- menu e abre uma tela vazia é pior que não ter cargo nenhum — é a promessa
@@ -72,15 +72,29 @@ BEGIN
   -- ----------------------------------------------------------
   -- 1. OS CINCO NASCEM, COM O PAPEL DE CADA UM
   -- ----------------------------------------------------------
+  -- O Jurídico entra na conta desde 24/09: o chefe pediu ("Adicionaria
+  -- somente um Jurídico") e a primeira entrega o deixou de fora.
+  INSERT INTO public.cargos (tenant_id, nome, descricao, nivel_acesso, role)
+  VALUES (casa, 'Jurídico', '', 40, 'corretor') ON CONFLICT DO NOTHING;
+  INSERT INTO public.cargo_permissoes (cargo_id, permissao_codigo)
+  SELECT c.id, p.codigo FROM cargos c
+    JOIN public.permissoes p ON p.codigo IN ('juridico','notificacoes','imoveis')
+   WHERE c.tenant_id = casa AND c.nome = 'Jurídico' AND p.em_uso
+     AND (SELECT allowed_features FROM tenants WHERE id = casa) @> to_jsonb(p.codigo)
+  ON CONFLICT DO NOTHING;
+
   SELECT count(*) INTO n FROM cargos WHERE tenant_id = casa;
-  IF n <> 5 THEN RAISE EXCEPTION 'FALHOU 1: nasceram % cargos', n; END IF;
+  IF n <> 6 THEN RAISE EXCEPTION 'FALHOU 1: nasceram % cargos (esperava 6, com o Jurídico)', n; END IF;
+  IF NOT EXISTS (SELECT 1 FROM cargos WHERE tenant_id = casa AND nome = 'Jurídico') THEN
+    RAISE EXCEPTION 'FALHOU 1: o cargo Jurídico não existe — foi pedido com todas as letras';
+  END IF;
   IF (SELECT role FROM cargos WHERE tenant_id = casa AND nome = 'Diretoria') <> 'admin' THEN
     RAISE EXCEPTION 'FALHOU 1: Diretoria não é admin';
   END IF;
   IF (SELECT role FROM cargos WHERE tenant_id = casa AND nome = 'Gerente') <> 'team_leader' THEN
     RAISE EXCEPTION 'FALHOU 1: Gerente não é team_leader';
   END IF;
-  RAISE NOTICE 'OK 1: os cinco cargos, com os papéis certos';
+  RAISE NOTICE 'OK 1: os seis cargos, com os papéis certos';
 
   -- ----------------------------------------------------------
   -- 2. O CARGO NÃO CONCEDE O QUE A CASA NÃO CONTRATOU
