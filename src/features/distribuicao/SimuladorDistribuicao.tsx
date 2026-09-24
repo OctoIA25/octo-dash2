@@ -42,6 +42,12 @@ interface SimuladorProps {
   horarioFuncionamento: unknown;
   /** A configuração de prazo, também crua. */
   configPrazo: { tempo_expiracao_exclusivo?: number | null } | null;
+  /**
+   * Quem recebe os tipos de dono fixo (recrutamento, vendedores). Vem de
+   * `tenant_bolsao_config.destino_por_tipo`. Nulo = ninguém configurado, e a
+   * simulação mostra "falta dizer quem recebe" em vez de cair na roleta.
+   */
+  destinoPorTipo?: Record<string, string> | null;
   /** Quem recebeu por último, para a simulação começar de onde a fila está. */
   ponteiro?: PonteiroDaRoleta;
 }
@@ -63,12 +69,12 @@ export function SimuladorDistribuicao({
   equipe,
   horarioFuncionamento,
   configPrazo,
+  destinoPorTipo = null,
   ponteiro = { posicao: -1, corretorId: null },
 }: SimuladorProps) {
   const candidatos = equipe?.length ? equipe : participantes;
   const [tipo, setTipo] = useState('terceiros');
   const [codigo, setCodigo] = useState('');
-  const [captadorId, setCaptadorId] = useState('');
   const [liaPassou, setLiaPassou] = useState(false);
   const [quantos, setQuantos] = useState(5);
   const [passos, setPassos] = useState<Passo[]>([]);
@@ -92,12 +98,14 @@ export function SimuladorDistribuicao({
           tipoImovel: tipo,
           liaPassou,
         },
-        // O captador vai INTEIRO, com as flags: `{ id }` puro faria
-        // `podeReceber` dizer sempre que sim, e a tela mostraria um captador
-        // pausado recebendo o lead que na prática vai para a roleta.
-        captador: tipo === 'terceiros' && captadorId
-          ? candidatos.find((p) => p.id === captadorId) ?? { id: captadorId }
-          : null,
+        // SEM CAPTADOR, desde 24/09 — o chefe pediu para tirar o campo.
+        //
+        // O captador não é uma escolha de quem simula: é um fato do imóvel.
+        // Preencher à mão convidava a montar um cenário que não existe. A
+        // simulação passa a mostrar o caminho de um imóvel SEM captador
+        // cadastrado, e a tela diz isso com todas as letras logo abaixo.
+        captador: null,
+        destinoPorTipo,
         participantes,
         ultimaPosicao: ptr,
       });
@@ -127,9 +135,17 @@ export function SimuladorDistribuicao({
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-border bg-card/60 p-4">
+        {/*
+          Reescrito em 24/09 a pedido do chefe: "explicar melhor que o botão
+          serve pra mostrar para quem a Lia passaria, afinal sempre passa pela
+          mão dela". A frase antiga ("de quem seria?") dava a entender que o
+          Octo distribui — e ele não distribui desde a decisão de 19/09.
+        */}
         <p className="text-[13px] text-text-secondary">
-          Responde “se este lead chegasse agora, de quem seria?”. <strong>Não atribui nada</strong> e não
-          encosta em lead nenhum — roda a mesma regra que a Lia consulta.
+          <strong>Todo lead passa pela Lia primeiro.</strong> Este botão responde uma coisa só:
+          <strong> para quem a Lia passaria este lead depois de atender</strong>. Ele{' '}
+          <strong>não atribui nada</strong>, não encosta em lead nenhum e não avisa ninguém — roda a
+          mesma regra que a Lia consulta, e mostra a resposta.
         </p>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -141,31 +157,19 @@ export function SimuladorDistribuicao({
                 <SelectItem value="terceiros">Imóvel de terceiros</SelectItem>
                 <SelectItem value="lancamento">Lançamento</SelectItem>
                 <SelectItem value="indefinido">Sem imóvel</SelectItem>
+                {/* 24/09 — os dois que não são cliente comprador e não entram
+                    no rodízio. Cada um tem dono fixo, dito em Configurações. */}
+                <SelectItem value="recrutamento">Recrutamento (quer trabalhar aqui)</SelectItem>
+                <SelectItem value="vendedores">Vendedor (quer vender o imóvel)</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           {tipo === 'terceiros' && (
-            <>
-              <div className="space-y-1.5">
-                <Label htmlFor="sim-codigo">Código do imóvel</Label>
-                <Input id="sim-codigo" value={codigo} onChange={(e) => setCodigo(e.target.value)} placeholder="AP0961" />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Captador</Label>
-                <Select value={captadorId || 'nenhum'} onValueChange={(v) => setCaptadorId(v === 'nenhum' ? '' : v)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="nenhum">Sem captador</SelectItem>
-                    {candidatos.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.nome || p.id.slice(0, 8)}{p.pausado ? ' (pausado)' : ''}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </>
+            <div className="space-y-1.5">
+              <Label htmlFor="sim-codigo">Código do imóvel</Label>
+              <Input id="sim-codigo" value={codigo} onChange={(e) => setCodigo(e.target.value)} placeholder="AP0961" />
+            </div>
           )}
 
           {/* Desde 22/09 TODO lead espera a Lia, não só lançamento. Com o
@@ -206,6 +210,21 @@ export function SimuladorDistribuicao({
           </Badge>
           <span className="text-[12px] text-text-secondary">prazo: {minutos} min de expediente</span>
         </div>
+
+        {tipo === 'terceiros' && (
+          <p className="mt-3 text-[13px] text-text-secondary">
+            Esta simulação mostra o caminho de um imóvel <strong>sem captador cadastrado</strong>.
+            Quando o imóvel tem captador, a Lia passa para ele — e só cai na roleta se ele não
+            puder atender.
+          </p>
+        )}
+
+        {(tipo === 'recrutamento' || tipo === 'vendedores') && (
+          <p className="mt-3 text-[13px] text-text-secondary">
+            Este tipo <strong>não entra no rodízio</strong>: tem dono fixo, definido em
+            Configurações. A Lia atende primeiro do mesmo jeito; o que muda é para quem ela passa.
+          </p>
+        )}
 
         {participantes.length === 0 && (
           <p className="mt-3 text-[13px] text-amber-600 dark:text-amber-400">

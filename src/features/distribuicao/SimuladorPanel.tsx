@@ -20,6 +20,8 @@ interface Estado {
   equipe: ParticipanteDaRoleta[];
   horario: unknown;
   config: { tempo_expiracao_exclusivo?: number | null } | null;
+  /** Quem recebe recrutamento e vendedores nesta imobiliária (24/09). */
+  destinoPorTipo: Record<string, string> | null;
   ponteiro: PonteiroDaRoleta;
 }
 
@@ -40,7 +42,7 @@ export function SimuladorPanel({ tenantId }: SimuladorPanelProps) {
         supabase.from('roleta_participantes').select('broker_id').eq('tenant_id', tenantId).eq('is_active', true),
         supabase
           .from('tenant_bolsao_config')
-          .select('horario_funcionamento, tempo_expiracao_exclusivo')
+          .select('horario_funcionamento, tempo_expiracao_exclusivo, destino_por_tipo')
           .eq('tenant_id', tenantId)
           .maybeSingle(),
         supabase
@@ -76,6 +78,7 @@ export function SimuladorPanel({ tenantId }: SimuladorPanelProps) {
         equipe: montarFila(ordenados as never, []),
         horario: config.data?.horario_funcionamento ?? {},
         config: config.data ?? null,
+        destinoPorTipo: (config.data?.destino_por_tipo as Record<string, string>) ?? null,
         ponteiro: {
           posicao: Number.isInteger(pos) ? pos : -1,
           corretorId: (ponteiro.data?.corretor_id as string) ?? null,
@@ -114,6 +117,7 @@ export function SimuladorPanel({ tenantId }: SimuladorPanelProps) {
       equipe={estado.equipe}
       horarioFuncionamento={estado.horario}
       configPrazo={estado.config}
+      destinoPorTipo={estado.destinoPorTipo}
       ponteiro={estado.ponteiro}
     />
   );

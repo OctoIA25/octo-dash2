@@ -46,6 +46,10 @@ export const MOTIVOS = {
   LIA_PRIMEIRO: 'atendido_pela_lia_primeiro',
   ROLETA: 'roleta_em_ordem',
   SEM_CORRETOR: 'nenhum_corretor_disponivel',
+  // Pedido do chefe em 24/09: recrutamento e "vendedores" não são cliente
+  // comprador e não entram no rodízio. Têm dono fixo, configurado por casa.
+  DONO_FIXO: 'tipo_tem_dono_fixo',
+  SEM_DONO_FIXO: 'tipo_sem_dono_configurado',
 };
 
 const norm = (t) => String(t ?? '').trim().toLowerCase();
@@ -112,11 +116,19 @@ export function proximoDaRoleta(participantes, ultimaPosicao = -1, pool = null) 
 /** O lead é de um imóvel de terceiros (do Catálogo) ou de um lançamento? */
 export function tipoDoLead(lead) {
   const t = norm(lead?.tipoImovel || lead?.tipo_imovel);
+  // Os dois que não são cliente comprador (24/09). Ficam ANTES do resto
+  // porque não dependem de haver código de imóvel: quem quer trabalhar aqui,
+  // ou quer vender a própria casa, não chega com um imóvel do catálogo.
+  if (t === 'recrutamento') return 'recrutamento';
+  if (t === 'vendedores' || t === 'vendedor' || t === 'proprietario' || t === 'proprietário') return 'vendedores';
   if (t === 'lancamento' || t === 'lançamento') return 'lancamento';
   if (t === 'terceiros' || t === 'terceiro' || t === 'catalogo' || t === 'catálogo') return 'terceiros';
   // Sem tipo declarado, o código do imóvel decide: se há imóvel, é terceiros.
   return lead?.codigoImovel || lead?.codigo_imovel ? 'terceiros' : 'indefinido';
 }
+
+/** Os tipos que têm dono fixo e NÃO entram no rodízio. */
+export const TIPOS_COM_DONO_FIXO = ['recrutamento', 'vendedores'];
 
 /**
  * De quem é este lead, AGORA.
@@ -125,7 +137,16 @@ export function tipoDoLead(lead) {
  * `captador` é o corretor do imóvel (ou null). `participantes` é a roleta em
  * ordem. `ultimaPosicao` é quem recebeu por último.
  */
-export function decidirDestino({ lead, captador = null, participantes = [], ultimaPosicao = -1 }) {
+export function decidirDestino({
+  lead, captador = null, participantes = [], ultimaPosicao = -1,
+  /**
+   * Quem recebe cada tipo de dono fixo, vindo de
+   * `tenant_bolsao_config.destino_por_tipo`. Sem isto, os dois tipos novos
+   * caem em "ninguém" — de propósito: voltar para a roleta por omissão é
+   * exatamente o problema que o chefe pediu para resolver, e voltaria calado.
+   */
+  destinoPorTipo = null,
+}) {
   const tipo = tipoDoLead(lead);
   // Lançamento tem pool próprio; o resto cai em prontos/alugados.
   const pool = tipo === 'lancamento' ? 'lancamentos' : 'prontos';
@@ -139,6 +160,23 @@ export function decidirDestino({ lead, captador = null, participantes = [], ulti
   // captador.
   if (!lead?.liaPassou) {
     return { destino: 'lia', corretorId: null, motivo: MOTIVOS.LIA_PRIMEIRO, tipo };
+  }
+
+  // OS DOIS TIPOS DE DONO FIXO, antes de qualquer roleta.
+  //
+  // Vêm depois da guarda da Lia de propósito: o chefe disse "sempre passa pela
+  // mão dela". Recrutamento e vendedor também são atendidos por ela primeiro;
+  // o que muda é para QUEM ela passa depois.
+  if (TIPOS_COM_DONO_FIXO.includes(tipo)) {
+    const donoId = destinoPorTipo?.[tipo] || null;
+    if (!donoId) {
+      return { destino: 'ninguem', corretorId: null, motivo: MOTIVOS.SEM_DONO_FIXO, tipo };
+    }
+    // O dono fixo NÃO passa por `podeReceber`: ele não está no rodízio, e
+    // "pausado" ali quer dizer "pule a vez dele na roleta" — não "não me mande
+    // o currículo de ninguém". Barrá-lo mandaria o lead para ninguém num dia
+    // em que ele marcou pausa, e ninguém entenderia por quê.
+    return { destino: 'corretor', corretorId: donoId, motivo: MOTIVOS.DONO_FIXO, tipo };
   }
 
   if (tipo === 'lancamento') {

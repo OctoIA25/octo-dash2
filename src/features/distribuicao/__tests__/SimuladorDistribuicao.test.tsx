@@ -58,7 +58,17 @@ const simularDepoisDaLia = async (user: ReturnType<typeof userEvent.setup>) => {
 describe('o simulador não encosta em lead nenhum', () => {
   it('diz isso na tela, para não restar dúvida', () => {
     montar();
-    expect(screen.getByText(/Não atribui nada/)).toBeInTheDocument();
+    expect(screen.getByText(/não atribui nada/i)).toBeInTheDocument();
+  });
+
+  // 24/09, pedido do chefe: "explicar melhor que o botão serve pra mostrar
+  // para quem a Lia passaria, afinal sempre passa pela mão dela". A frase
+  // antiga era "se este lead chegasse agora, de quem seria?" — dava a
+  // entender que o Octo distribui, e ele não distribui desde 19/09.
+  it('diz que a Lia vem antes, e que o botão mostra PARA QUEM ela passaria', () => {
+    montar();
+    expect(screen.getByText(/Todo lead passa pela Lia primeiro/i)).toBeInTheDocument();
+    expect(screen.getByText(/para quem a Lia passaria este lead/i)).toBeInTheDocument();
   });
 });
 
@@ -93,54 +103,29 @@ describe('a roleta é rodízio — é isso que a sequência mostra', () => {
 });
 
 describe('as regras decididas em 19/09 aparecem na tela', () => {
-  it('imóvel COM captador vai para ele, lead após lead', async () => {
-    const user = userEvent.setup();
+  /*
+   * OS TRÊS TESTES DO CAMPO DE CAPTADOR SAÍRAM EM 24/09.
+   *
+   * Eles dirigiam a tela pelo seletor de captador, e o chefe pediu para tirar
+   * esse campo: "só tirar a parte onde preenchemos o captador". Sem o campo,
+   * não há como escolher um captador pela tela, e os testes não tinham mais
+   * caminho para percorrer.
+   *
+   * O COMPORTAMENTO NÃO FICOU DESCOBERTO. As três coisas que eles afirmavam
+   * continuam verdadeiras na REGRA, e lá continuam testadas, em
+   * `server/distribuicao/regra.test.js`:
+   *
+   *   - 'depois que a Lia passa, vai para o captador do imóvel'
+   *   - 'captador pausado NÃO segura o lead: ele vai para a roleta'
+   *   - 'o captador NÃO consome a vez da roleta'
+   *
+   * O que sumiu foi a porta da tela, não a regra.
+   */
+  it('sem o campo de captador, a tela avisa qual caminho está mostrando', () => {
     montar();
-    // O último seletor da linha é o de captador (tipo, código, captador).
-    const seletores = screen.getAllByRole('combobox');
-    await user.click(seletores[seletores.length - 1]);
-    await user.click(await screen.findByRole('option', { name: 'Ana' }));
-    await simularDepoisDaLia(user);
-
-    const primeira = within(linhas()[0]).getAllByRole('cell');
-    expect(primeira[1]).toHaveTextContent('Ana');
-    expect(primeira[2]).toHaveTextContent(/captador do imóvel/);
-    // Todos os leads deste imóvel vão para o mesmo captador.
-    // (Que o captador não gasta a vez de ninguém é garantia da REGRA, e está
-    //  afirmada em server/distribuicao/regra.test.js — aqui não dá para
-    //  distinguir os dois casos pela tela.)
-    expect(within(linhas()[1]).getAllByRole('cell')[1]).toHaveTextContent('Ana');
-  });
-
-  it('CAPTADOR PAUSADO cai na roleta — a tela não pode prometer o que não acontece', async () => {
-    // O simulador mandava `{ id }` puro para a regra, sem as flags, e então
-    // `podeReceber` dizia sempre que sim: a tela mostrava o captador pausado
-    // recebendo um lead que na prática vai para a roleta.
-    const user = userEvent.setup();
-    montar({ participantes: [p('1', 'Ana'), p('2', 'Bruno')], equipe: [p('1', 'Ana'), p('2', 'Bruno'), p('9', 'Dora', { pausado: true })] });
-    const seletores = screen.getAllByRole('combobox');
-    await user.click(seletores[seletores.length - 1]);
-    await user.click(await screen.findByRole('option', { name: /Dora/ }));
-    await simularDepoisDaLia(user);
-
-    const primeira = within(linhas()[0]).getAllByRole('cell');
-    expect(primeira[1]).not.toHaveTextContent('Dora');
-    expect(primeira[2]).toHaveTextContent(/captador indisponível/);
-  });
-
-  it('o captador pode estar FORA do rodízio e ainda assim receber', async () => {
-    // 15 dos 22 imóveis com captador da Lotus estão neste caso (20/09/2026):
-    // listar só o rodízio esconderia esses imóveis do gestor.
-    const user = userEvent.setup();
-    montar({ participantes: [p('1', 'Ana')], equipe: [p('1', 'Ana'), p('9', 'Dora')] });
-    const seletores = screen.getAllByRole('combobox');
-    await user.click(seletores[seletores.length - 1]);
-    await user.click(await screen.findByRole('option', { name: 'Dora' }));
-    await simularDepoisDaLia(user);
-
-    const primeira = within(linhas()[0]).getAllByRole('cell');
-    expect(primeira[1]).toHaveTextContent('Dora');
-    expect(primeira[2]).toHaveTextContent(/captador do imóvel/);
+    // O tipo padrão é "terceiros", e a nota precisa estar visível logo de cara.
+    expect(screen.getByText(/sem captador cadastrado/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^Captador$/)).not.toBeInTheDocument();
   });
 
   it('lançamento vai para a Lia antes de ela passar, e sem prazo', async () => {
@@ -172,5 +157,67 @@ describe('o prazo vem da mesma conta do servidor', () => {
   it('um prazo razoável da imobiliária é respeitado', () => {
     montar({ configPrazo: { tempo_expiracao_exclusivo: 30 } });
     expect(screen.getByText(/prazo: 30 min de expediente/)).toBeInTheDocument();
+  });
+});
+
+/**
+ * Os dois tipos que o chefe pediu em 24/09 (item 1 da lista dele):
+ * recrutamento vem para ele, vendedor vai para a gestora de terceiros.
+ *
+ * O caso do "sem dono configurado" é o que sustenta este bloco: se o tipo
+ * cair na roleta por omissão, o lead de recrutamento volta a ser distribuído
+ * a um corretor de plantão — que é exatamente o que ele mandou parar de
+ * acontecer, e voltaria calado.
+ */
+describe('os tipos com dono fixo', () => {
+  const escolherTipo = async (user: ReturnType<typeof userEvent.setup>, nome: RegExp) => {
+    await user.click(screen.getAllByRole('combobox')[0]);
+    await user.click(await screen.findByRole('option', { name: nome }));
+  };
+
+  it('recrutamento vai para quem está configurado, e não para a fila', async () => {
+    const user = userEvent.setup();
+    montar({
+      participantes: [p('1', 'Ana'), p('2', 'Bruno')],
+      equipe: [p('1', 'Ana'), p('2', 'Bruno'), p('9', 'Erick')],
+      destinoPorTipo: { recrutamento: '9', vendedores: '1' },
+    });
+    await escolherTipo(user, /Recrutamento/);
+    await simularDepoisDaLia(user);
+
+    const primeira = within(linhas()[0]).getAllByRole('cell');
+    expect(primeira[1]).toHaveTextContent('Erick');
+    expect(primeira[2]).toHaveTextContent(/dono fixo/i);
+  });
+
+  it('vendedor vai para a gestora de terceiros', async () => {
+    const user = userEvent.setup();
+    montar({
+      participantes: [p('1', 'Ana')],
+      equipe: [p('1', 'Ana'), p('7', 'Mariana')],
+      destinoPorTipo: { vendedores: '7' },
+    });
+    await escolherTipo(user, /Vendedor/);
+    await simularDepoisDaLia(user);
+    expect(within(linhas()[0]).getAllByRole('cell')[1]).toHaveTextContent('Mariana');
+  });
+
+  it('SEM dono configurado NÃO cai na roleta — a tela diz que falta configurar', async () => {
+    const user = userEvent.setup();
+    montar({ participantes: [p('1', 'Ana'), p('2', 'Bruno')], destinoPorTipo: null });
+    await escolherTipo(user, /Recrutamento/);
+    await simularDepoisDaLia(user);
+
+    const primeira = within(linhas()[0]).getAllByRole('cell');
+    expect(primeira[1]).toHaveTextContent(/Ningu[ée]m/i);
+    expect(primeira[1]).not.toHaveTextContent('Ana');
+    expect(primeira[2]).toHaveTextContent(/falta dizer quem recebe/i);
+  });
+
+  it('a tela explica que o tipo não entra no rodízio', async () => {
+    const user = userEvent.setup();
+    montar({ destinoPorTipo: { recrutamento: '9' } });
+    await escolherTipo(user, /Recrutamento/);
+    expect(screen.getByText(/não entra no rodízio/i)).toBeInTheDocument();
   });
 });

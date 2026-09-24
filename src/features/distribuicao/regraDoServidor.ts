@@ -20,6 +20,7 @@ import {
   decidirDestino as decidirJs,
   montarFila as montarFilaJs,
   MOTIVOS as MOTIVOS_JS,
+  TIPOS_COM_DONO_FIXO as TIPOS_FIXOS_JS,
 } from '../../../server/distribuicao/regra.js';
 import {
   janelaDaConfiguracao as janelaJs,
@@ -63,7 +64,16 @@ export const decidirDestino: (args: {
   captador?: { id: string } | null;
   participantes: ParticipanteDaRoleta[];
   ultimaPosicao?: number | PonteiroDaRoleta;
+  /** `tenant_bolsao_config.destino_por_tipo` — quem recebe recrutamento e vendedores. */
+  destinoPorTipo?: Record<string, string> | null;
 }) => DecisaoDeDestino = decidirJs;
+
+/**
+ * Os tipos que têm dono fixo e não entram no rodízio (24/09). Exportado da
+ * regra do servidor, e não escrito de novo aqui: uma segunda lista viraria
+ * mentira no dia em que a primeira mudasse.
+ */
+export const TIPOS_COM_DONO_FIXO: string[] = TIPOS_FIXOS_JS;
 
 export const MOTIVOS: Record<string, string> = MOTIVOS_JS;
 
@@ -99,4 +109,7 @@ export const TEXTO_DO_MOTIVO: Record<string, string> = {
   lancamento_atendido_pela_lia: 'lançamento: a Lia atende primeiro',
   roleta_em_ordem: 'roleta, em ordem',
   nenhum_corretor_disponivel: 'ninguém disponível na fila',
+  // 24/09 — os dois tipos que não entram no rodízio.
+  tipo_tem_dono_fixo: 'tipo com dono fixo — não entra na roleta',
+  tipo_sem_dono_configurado: 'falta dizer quem recebe este tipo',
 };

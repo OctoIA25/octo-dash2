@@ -311,3 +311,93 @@ describe('montarFila — a MESMA fila para o servidor e para o simulador', () =>
     expect(montarFila([m('c'), m('a'), m('b')]).map((x) => x.id)).toEqual(['c', 'a', 'b']);
   });
 });
+
+/**
+ * Os dois tipos de dono fixo (24/09).
+ *
+ * Pedido do chefe: "colocar a opção de lead de recrutamento (devem vir pra
+ * mim) e de vendedores (deve ir para a gestora de terceiros - Mariana)".
+ *
+ * O que estes casos protegem não é o caminho feliz — é a OMISSÃO. Sem dono
+ * configurado, o lead NÃO pode cair na roleta: cair na roleta é exatamente o
+ * problema que ele pediu para resolver, e cairia calado.
+ */
+describe('tipos com dono fixo', () => {
+  const fila = [
+    { id: 'c1', nome: 'Ana', atuacao: ['lancamentos', 'prontos'] },
+    { id: 'c2', nome: 'Bruno', atuacao: ['lancamentos', 'prontos'] },
+  ];
+  const destinos = { recrutamento: 'erick-id', vendedores: 'mariana-id' };
+
+  it('recrutamento vai para quem está configurado, e não para a roleta', () => {
+    const d = decidirDestino({
+      lead: { tipoImovel: 'recrutamento', liaPassou: true },
+      participantes: fila,
+      destinoPorTipo: destinos,
+    });
+    expect(d.tipo).toBe('recrutamento');
+    expect(d.destino).toBe('corretor');
+    expect(d.corretorId).toBe('erick-id');
+    expect(d.motivo).toBe(MOTIVOS.DONO_FIXO);
+    // e não consome a vez de ninguém na fila
+    expect(d.posicao).toBeUndefined();
+  });
+
+  it('vendedor vai para a gestora de terceiros', () => {
+    const d = decidirDestino({
+      lead: { tipoImovel: 'vendedores', liaPassou: true },
+      participantes: fila,
+      destinoPorTipo: destinos,
+    });
+    expect(d.corretorId).toBe('mariana-id');
+    expect(d.motivo).toBe(MOTIVOS.DONO_FIXO);
+  });
+
+  it('SEM dono configurado, não cai na roleta — fica em ninguém, e diz por quê', () => {
+    for (const tipoImovel of ['recrutamento', 'vendedores']) {
+      const d = decidirDestino({
+        lead: { tipoImovel, liaPassou: true },
+        participantes: fila,
+        destinoPorTipo: null,
+      });
+      expect(d.destino).toBe('ninguem');
+      expect(d.motivo).toBe(MOTIVOS.SEM_DONO_FIXO);
+      expect(d.corretorId).toBeNull();
+    }
+  });
+
+  it('a Lia continua atendendo primeiro — "sempre passa pela mão dela"', () => {
+    const d = decidirDestino({
+      lead: { tipoImovel: 'recrutamento' },   // sem liaPassou
+      participantes: fila,
+      destinoPorTipo: destinos,
+    });
+    expect(d.destino).toBe('lia');
+    expect(d.motivo).toBe(MOTIVOS.LIA_PRIMEIRO);
+  });
+
+  it('o dono fixo recebe mesmo pausado: pausa é da roleta, não do cargo dele', () => {
+    const d = decidirDestino({
+      lead: { tipoImovel: 'recrutamento', liaPassou: true },
+      participantes: [{ id: 'erick-id', nome: 'Erick', pausado: true, atuacao: ['prontos'] }],
+      destinoPorTipo: destinos,
+    });
+    expect(d.corretorId).toBe('erick-id');
+  });
+
+  it('não confunde com os tipos que continuam na roleta', () => {
+    const d = decidirDestino({
+      lead: { tipoImovel: 'lancamento', liaPassou: true },
+      participantes: fila,
+      destinoPorTipo: destinos,
+    });
+    expect(d.motivo).toBe(MOTIVOS.ROLETA);
+    expect(['c1', 'c2']).toContain(d.corretorId);
+  });
+
+  it('aceita as grafias que alguém digitaria: proprietário conta como vendedor', () => {
+    for (const t of ['vendedor', 'proprietario', 'proprietário', 'VENDEDORES']) {
+      expect(tipoDoLead({ tipoImovel: t })).toBe('vendedores');
+    }
+  });
+});
