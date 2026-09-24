@@ -93,9 +93,6 @@ const GROUPS: SidebarGroup[] = [
           { id: 'cliente-interessado', label: 'Funil Cliente Interessado', icon: Users, route: '/metricas/cliente-interessado' },
           { id: 'cliente-proprietario', label: 'Cliente Proprietário', icon: Building2, route: '/metricas/cliente-proprietario' },
           { id: 'comissionamento', label: 'Comissionamento', icon: Calculator, route: '/metricas/comissionamento' },
-          // P4.4 — a conferência é onde o dinheiro da venda é conferido, e por
-          // isso mora junto do funil, não no Financeiro.
-          { id: 'conferencia-vendas', label: 'Conferência de vendas', icon: Receipt, route: '/comercial/vendas' },
           // P2.2 — o simulador é ferramenta de quem vende: permissão 'leads',
           // a mesma do corretor. Quem edita a TABELA de condição é que precisa
           // administrar a casa, e isso o banco é que decide.
@@ -154,7 +151,6 @@ const GROUPS: SidebarGroup[] = [
         permission: 'financeiro',
         subItems: [
           { id: 'fin-receber', label: 'A receber', icon: Receipt, route: '/financeiro' },
-          { id: 'fin-vendas', label: 'Conferência de vendas', icon: Receipt, route: '/comercial/vendas' },
         ],
       },
     ],
@@ -219,6 +215,19 @@ const GROUPS: SidebarGroup[] = [
           { id: 'juridico-proposta', label: 'Propostas', icon: FileText, route: '/juridico/proposta' },
           // P4.3 — os contratos do corretor moram no Jurídico, como o plano pede.
           { id: 'juridico-contratos', label: 'Contratos do corretor', icon: FileSignature, route: '/juridico/contratos' },
+          // 24/09, a pedido do chefe: "pode liberar na Dash, mas dentro de
+          // Jurídico". Ela estava em dois lugares — Comercial e Financeiro —,
+          // e agora está num só. A ROTA continua `/comercial/vendas`: mudá-la
+          // quebraria os links que alguém já tenha guardado, e o endereço não
+          // é o que o chefe vê.
+          //
+          // A PERMISSÃO continua sendo 'financeiro', e não 'juridico': o menu
+          // tem de concordar com a rota e com o banco. A rota exige
+          // `financeiro`, e as funções do banco conferem `financeiro_pode_ver`
+          // por dentro. Dar a permissão do Jurídico aqui faria o item aparecer
+          // para quem a tela vai recusar — que é o defeito que o P0.1 levou
+          // uma semana para achar, só que ao contrário.
+          { id: 'juridico-vendas', label: 'Conferência de vendas', icon: Receipt, route: '/comercial/vendas', permission: 'financeiro' },
         ],
       },
     ],

@@ -24,6 +24,7 @@ import {
   reaisExatos, repassesDaVenda, rotuloDoNivel, totaisConferem,
   type StatusDaVenda, type VendaNaLista,
 } from './vendas';
+import { ConferenciaDaPlanilha } from './ConferenciaDaPlanilha';
 import {
   carregarConferencia, carregarConstrutoras, carregarDetalhe, carregarEquipe,
   gravarRepasses, importarAssinadas, linkDaNotaFiscal, marcarRepassePago,
@@ -46,6 +47,17 @@ export function ConferenciaDeVendasPage() {
   const [status, setStatus] = useState('');
   const [construtoraId, setConstrutoraId] = useState('');
   const [corretorId, setCorretorId] = useState('');
+  /*
+   * De onde a tela lê — item 5 do chefe, 24/09.
+   *
+   * São dois conjuntos DIFERENTES, e por isso um seletor em vez de uma soma:
+   * a planilha é o histórico importado (congelado em 01/09) e o CRM são as
+   * propostas assinadas. Somar inventaria venda; escolher deixa claro o que
+   * se está olhando.
+   *
+   * A planilha entra como padrão porque foi o que ele pediu para ver.
+   */
+  const [fonte, setFonte] = useState<'planilha' | 'crm'>('planilha');
   const [aberta, setAberta] = useState<VendaNaLista | null>(null);
 
   const filtros = { de, ate, status, construtoraId, corretorId };
@@ -53,7 +65,9 @@ export function ConferenciaDeVendasPage() {
   const conferencia = useQuery({
     queryKey: ['conferencia-vendas', tenantId, de, ate, status, construtoraId, corretorId],
     queryFn: () => carregarConferencia(tenantId!, filtros),
-    enabled: !!tenantId && tenantId !== 'owner',
+    // Não busca o que a tela não vai mostrar: na planilha, esta consulta seria
+    // uma ida ao banco por troca de filtro, sem nada na tela para usá-la.
+    enabled: !!tenantId && tenantId !== 'owner' && fonte === 'crm',
   });
 
   const construtoras = useQuery({
@@ -105,17 +119,37 @@ export function ConferenciaDeVendasPage() {
         <div>
           <h1 className="text-xl font-semibold">Conferência de vendas</h1>
           <p className="text-xs text-muted-foreground">
-            Cada venda nasce de uma proposta assinada no CRM, com a comissão calculada no dia.
+            {fonte === 'planilha'
+              ? 'A planilha comercial importada. Ela parou de receber venda nova em 01/09 — o que entrou depois está no CRM.'
+              : 'Cada venda nasce de uma proposta assinada no CRM, com a comissão calculada no dia.'}
           </p>
         </div>
-        <button
-          onClick={() => importar.mutate()}
-          disabled={importar.isPending}
-          className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-50"
-        >
-          {importar.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <DownloadCloud className="h-3.5 w-3.5" />}
-          Trazer assinadas do CRM
-        </button>
+        <div className="flex items-center gap-2">
+          <div className="inline-flex rounded-md border p-0.5 text-xs">
+            {(['planilha', 'crm'] as const).map((f) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setFonte(f)}
+                className={`rounded px-2.5 py-1 font-medium ${
+                  fonte === f ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent'
+                }`}
+              >
+                {f === 'planilha' ? 'Planilha' : 'CRM'}
+              </button>
+            ))}
+          </div>
+          {fonte === 'crm' && (
+            <button
+              onClick={() => importar.mutate()}
+              disabled={importar.isPending}
+              className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-50"
+            >
+              {importar.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <DownloadCloud className="h-3.5 w-3.5" />}
+              Trazer assinadas do CRM
+            </button>
+          )}
+        </div>
       </header>
 
       <div className="mb-4 flex flex-wrap items-end gap-2">
@@ -125,6 +159,8 @@ export function ConferenciaDeVendasPage() {
         <Campo rotulo="Até">
           <input type="date" value={ate} onChange={(e) => setAte(e.target.value)} className={inputCls} />
         </Campo>
+        {fonte === 'crm' && (
+        <>
         <Campo rotulo="Status">
           <select value={status} onChange={(e) => setStatus(e.target.value)} className={inputCls}>
             <option value="">Todos</option>
@@ -145,20 +181,26 @@ export function ConferenciaDeVendasPage() {
             {corretoresNaLista.map(([id, nome]) => <option key={id} value={id}>{nome}</option>)}
           </select>
         </Campo>
+        </>
+        )}
       </div>
 
-      {conferencia.isLoading && (
+      {/* A planilha tem os filtros dela: o tipo do negocio e o corretor por
+          NOME, porque la o corretor e texto e nem todo nome casa com membro. */}
+      {fonte === 'planilha' && <ConferenciaDaPlanilha de={de} ate={ate} />}
+
+      {fonte === 'crm' && conferencia.isLoading && (
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" /> Carregando…
         </p>
       )}
-      {conferencia.isError && (
+      {fonte === 'crm' && conferencia.isError && (
         <p className="rounded-md border border-rose-200 p-3 text-sm text-rose-700 dark:border-rose-900 dark:text-rose-300">
           Não deu para ler a conferência: {(conferencia.error as Error)?.message}
         </p>
       )}
 
-      {dados && (
+      {fonte === 'crm' && dados && (
         <>
           {totais!.divergentes > 0 && (
             <Aviso tom="rose" icone={<AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />}>
