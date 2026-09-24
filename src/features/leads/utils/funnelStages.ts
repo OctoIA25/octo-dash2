@@ -35,6 +35,32 @@ export const PROPRIETARIO_STAGE_ORDER = [
   'Feitura de Contrato',
 ] as const;
 
+/**
+ * As etapas do funil de Cliente Interessado, de cima para baixo.
+ *
+ * Exportada para o teste: o que se protege aqui é que NENHUMA etapa onde há
+ * lead fique de fora. Ficar de fora não parece bug — o funil continua
+ * desenhando, só que sem aqueles leads, e a conversão vira uma contradição
+ * ("assinou uma proposta que nunca foi criada").
+ */
+export const ETAPAS_DO_FUNIL_INTERESSADO = [
+  'Novos Leads',
+  'Interação',
+  'Visita Agendada',
+  'Visita Realizada',
+  'Negociação',
+  'Proposta Criada',
+  // 24/09 — a etapa que faltava, e a razão da contradição que o chefe viu.
+  // "Proposta Criada" NUNCA foi usada: zero leads nela hoje e zero que
+  // passaram por ela, em todas as 4 imobiliárias. Quem tem proposta na mesa
+  // está em "Proposta Enviada" (Lotus: 2 agora, 3 passaram) — e o funil não
+  // mostrava essa coluna, então a proposta aparecia assinada sem nunca ter
+  // existido. A coluna vazia fica: com "0 passaram" ao lado, ela conta a
+  // própria história, e apagá-la é decisão do chefe, não minha.
+  'Proposta Enviada',
+  'Proposta Assinada'
+] as const;
+
 /** "Não Exclusivo" → "nao-exclusivo". Tolera acento, caixa e o formato slug. */
 const slugEtapa = (valor: string | null | undefined): string =>
   (valor ?? '')

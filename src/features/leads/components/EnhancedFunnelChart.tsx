@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { StandardCardTitle } from '@/components/ui/StandardCardTitle';
 import { TrendingDown, Users, Target, CheckCircle } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
+import { ETAPAS_DO_FUNIL_INTERESSADO } from '@/features/leads/utils/funnelStages';
 import { carregarPassaramPorEtapa, type PassaramPorEtapa } from '@/features/leads/services/funilPassaramService';
 
 interface EnhancedFunnelChartProps {
@@ -42,17 +43,8 @@ export const EnhancedFunnelChart = ({ leads }: EnhancedFunnelChartProps) => {
   const funnelData = useMemo(() => {
     const safeLeads = leads || [];
 
-    // Definir as etapas do funil na ordem específica (de cima para baixo)
-    const etapasOrdem = [
-      'Novos Leads',
-      'Interação',
-      'Visita Agendada',
-      'Visita Realizada',
-      'Negociação',
-      'Proposta Criada',
-      'Proposta Assinada'
-    ];
 
+    const etapasOrdem = ETAPAS_DO_FUNIL_INTERESSADO;
     const totalLeads = safeLeads.length;
     
     // Calcular quantidade real para cada etapa - CONTAGEM EXATA (não acumulativa)
@@ -99,6 +91,12 @@ export const EnhancedFunnelChart = ({ leads }: EnhancedFunnelChartProps) => {
             return etapaAtual === 'proposta criada';
           }).length;
         
+        case 'Proposta Enviada':
+          return safeLeads.filter(l => {
+            const etapaAtual = (l.etapa_atual || '').toLowerCase().trim();
+            return etapaAtual === 'proposta enviada' || etapaAtual === 'propostas respondidas';
+          }).length;
+
         case 'Proposta Assinada':
           return safeLeads.filter(l => {
             const etapaAtual = (l.etapa_atual || '').toLowerCase().trim();
@@ -116,8 +114,10 @@ export const EnhancedFunnelChart = ({ leads }: EnhancedFunnelChartProps) => {
       
       // 🎨 Valores FIXOS harmônicos REDUZIDOS - proporção golden ratio para visual perfeito
       // Cada etapa diminui suavemente mantendo a harmonia visual SEMPRE
-      const valoresFixosHarmonicos = [100, 88, 76, 64, 52, 40, 28]; // Smooth decrease for 7 stages
-      const valorVisualFixo = valoresFixosHarmonicos[index] || (100 - (index * 12));
+      // De 100 a 28, repartido pelo número de etapas. Era uma lista de 7
+      // valores: a oitava etapa cairia no fallback e quebraria o degradê.
+      const ultima = Math.max(1, etapasOrdem.length - 1);
+      const valorVisualFixo = 100 - (index * (72 / ultima));
       
       return {
         y: valorVisualFixo, // Valor SEMPRE FIXO para manter consistência visual
@@ -459,8 +459,11 @@ export const EnhancedFunnelChart = ({ leads }: EnhancedFunnelChartProps) => {
               {funnelData.dataPoints.map((point, index) => {
                 // Posicionamento manual ajustado para corresponder ao formato real do funil
                 // Posições calibradas para alinhar com o centro de cada seção do funil (7 etapas)
-                const positions = [8, 22, 36, 50, 64, 78, 92]; // Distribuição uniforme para 7 etapas
-                const topPercent = positions[index] || (index * 14 + 8);
+                // De 8% a 92%, repartido pelo número de etapas. Com a lista
+                // fixa de 7, a oitava caía no fallback `index * 14 + 8` = 106%,
+                // fora da tela.
+                const ultimaEtapa = Math.max(1, funnelData.dataPoints.length - 1);
+                const topPercent = 8 + index * (84 / ultimaEtapa);
                 
                 // Calcular percentual
                 const percentual = funnelData.metrics && funnelData.metrics.totalLeads > 0 
@@ -523,16 +526,18 @@ export const EnhancedFunnelChart = ({ leads }: EnhancedFunnelChartProps) => {
                           >
                             ({percentual}%)
                           </span>
-                          {quantosPassaram !== null && (
-                            <span
-                              className="text-sm font-bold whitespace-nowrap"
-                              style={{ color: getFunnelColor(point.originalKey, index) }}
-                              title="Quantos leads já passaram por esta etapa, mesmo que hoje estejam em outra"
-                            >
-                              · {quantosPassaram} passaram
-                            </span>
-                          )}
                         </div>
+                        {/* Linha própria: a coluna tem 32% da largura, e em
+                            uma linha só o segundo número era cortado. */}
+                        {quantosPassaram !== null && (
+                          <div
+                            className="text-sm font-bold whitespace-nowrap opacity-80"
+                            style={{ color: getFunnelColor(point.originalKey, index) }}
+                            title="Quantos leads já passaram por esta etapa, mesmo que hoje estejam em outra"
+                          >
+                            {quantosPassaram} passaram
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
