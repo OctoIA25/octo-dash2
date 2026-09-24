@@ -18,11 +18,9 @@ import {
   TrendingUp,
   Bot,
   Pencil,
-  ClipboardList,
   Target,
   GraduationCap,
   Users,
-  Key,
   Filter,
   CheckSquare,
   Calendar,
@@ -148,17 +146,15 @@ const TAB_CONFIGS: TabConfig[] = [
     ],
   },
   {
+    // Sem abas de propósito: Tarefas, OKRs e PDI se alcançam pelo card de cada
+    // membro (EquipeSection), que já navegava para cá com `?tab=`. Duas portas
+    // para a mesma tela é o que se pediu para acabar. As rotas continuam
+    // valendo — o que sai é a barra, não o destino.
     basePath: '/gestao-equipe',
     label: 'Gestão de Equipe',
     matchStrategy: 'query',
     queryKey: 'tab',
-    tabs: [
-      { id: 'tarefas', label: 'Tarefas', icon: ClipboardList, href: '/gestao-equipe?tab=tarefas', isQuery: true },
-      { id: 'okrs', label: 'OKRs', icon: Target, href: '/gestao-equipe?tab=okrs', isQuery: true },
-      { id: 'pdi', label: 'PDI', icon: GraduationCap, href: '/gestao-equipe?tab=pdi', isQuery: true },
-      { id: 'equipes', label: 'Equipes', icon: Users, href: '/gestao-equipe?tab=equipes', isQuery: true },
-      { id: 'acessos-permissoes', label: 'Acessos e Permissões', icon: Key, href: '/gestao-equipe?tab=acessos-permissoes', isQuery: true },
-    ],
+    tabs: [],
   },
   {
     basePath: '/configuracoes',

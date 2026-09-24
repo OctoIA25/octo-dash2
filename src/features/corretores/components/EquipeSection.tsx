@@ -949,15 +949,28 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
         <div className="mb-6">
           <div className="flex items-center justify-between mb-6">
             <h1 className="text-2xl font-semibold text-gray-900 dark:text-slate-100">Membros da Equipe</h1>
-            
-            {/* Botão Novo Membro */}
-            <Button
-              onClick={() => setIsNewMemberModalOpen(true)}
-              className="bg-[#1a5276] hover:bg-[#154360] text-white h-10 px-4 gap-2"
-            >
-              <UserPlus className="h-4 w-4" />
-              Novo Membro
-            </Button>
+
+            <div className="flex items-center gap-2">
+              {/* Equipes perdeu a aba do topo e passou a morar aqui — é a única
+                  porta para criar equipe, definir líder e mexer nos membros. */}
+              <Button
+                variant="outline"
+                onClick={() => navigate('/gestao-equipe?tab=equipes')}
+                className="h-10 px-4 gap-2"
+              >
+                <Users className="h-4 w-4" />
+                Equipes
+              </Button>
+
+              {/* Botão Novo Membro */}
+              <Button
+                onClick={() => setIsNewMemberModalOpen(true)}
+                className="bg-[#1a5276] hover:bg-[#154360] text-white h-10 px-4 gap-2"
+              >
+                <UserPlus className="h-4 w-4" />
+                Novo Membro
+              </Button>
+            </div>
           </div>
 
           {/* Info: Membros do banco */}
