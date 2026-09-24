@@ -7,16 +7,16 @@ e os nomes registrados seguem convenções diferentes).
 **Medido:** 58 tabelas nascem deste plano. **57 não existem em produção**; só
 `lead_toques` já foi aplicada.
 
-**Atualizado em 23/09:** mais uma tabela (`pedido_de_nota`) e mais oito
-migrations — **59 tabelas, 58 migrations**. As oito novas estão no fim da
-lista, da 51 à 58, e não passaram pela conferência objeto-a-objeto de 22/09.
+**Atualizado em 23/09:** mais uma tabela (`pedido_de_nota`) e mais nove
+migrations — **59 tabelas, 59 migrations**. As nove novas estão no fim da
+lista, da 51 à 59, e não passaram pela conferência objeto-a-objeto de 22/09.
 A 53 **já está em produção**: era uma porta aberta e foi fechada no mesmo dia.
 
 ---
 
 ## 1. A ordem
 
-São **58 migrations**. A ordem abaixo é a alfabética **corrigida por
+São **59 migrations**. A ordem abaixo é a alfabética **corrigida por
 dependência** — quatro arquivos precisam sair do lugar natural.
 
 > **A que mais importa:** `20260922_ajuda_manual_e_faq` é a *primeira*
@@ -33,95 +33,95 @@ de `financeiro_fase_1`; `conferencia_de_vendas`, `filtro_por_clique`,
 `construtoras` e a coluna `lancamentos.construtora_id` **não existem em
 produção** — conferido em 22/09) e de `tipologias_do_lancamento`.
 
-  1. `20260916_whatsapp_conversa_completa_vinculo_do_lead.sql`
-  2. `20260916_whatsapp_conversa_segue_corretor_do_lead.sql`
-  3. `20260916_whatsapp_gestor_ve_lead_sem_classificacao.sql`
-  4. `20260917_view_vendas_assinadas.sql`
-  5. `20260918_cadastro_de_construtoras.sql`
-  6. `20260918_cadastro_de_origens.sql`
-  7. `20260918_consistencia_diaria.sql`
-  8. `20260918_lotus_leads_sem_corretor.sql`
-  9. `20260918_seed_construtoras.sql`
- 10. `20260918_seed_kpi_tempo_ate_corretor.sql`
- 11. `20260918_view_primeira_interacao.sql`
- 12. `20260919_distribuicao_eventos.sql`
- 13. `20260920_base_de_conhecimento.sql`
- 14. `20260920_estado_do_handoff_no_lead.sql`
- 15. `20260920_graficos_de_leads.sql`
- 16. `20260920_liga_os_27_leads_por_nome.sql`
- 17. `20260920_lista_de_leads_por_aba.sql`
- 18. `20260920_pesos_do_score.sql`
- 19. `20260920_plantao_da_lia.sql`
- 20. `20260920_prerequisitos_por_etapa.sql`
- 21. `20260920_sinais_do_score.sql`
- 22. `20260920_tipologias_do_lancamento.sql`
- 23. `20260920_ultima_movimentacao_do_lead.sql`
- 24. `20260920_whatsapp_filtros_e_leitura.sql`
- 25. `20260921_agenda_da_lia.sql`
- 26. `20260921_campanhas_e_roi.sql`
- 27. `20260921_cargos_e_permissoes.sql`
- 28. `20260921_conferencia_de_vendas.sql`
- 29. `20260921_contratos_do_corretor.sql`
- 30. `20260921_custo_de_ia.sql`
- 31. `20260921_demandas_de_marketing.sql`
- 32. `20260921_filtro_por_clique.sql`
- 33. `20260921_financeiro_fase_1.sql`
- 34. `20260921_formularios_da_meta.sql`
- 35. `20260921_grafico_de_evolucao.sql`
- 36. `20260921_mapa_interligado.sql`
- 37. `20260921_materiais_de_estudo.sql`
- 38. `20260921_okrs_e_pdi.sql`
- 39. `20260921_painel_comercial.sql`
- 40. `20260921_relatorio_de_anuncios.sql`
- 41. `20260921_relatorio_de_recrutamento.sql`
- 42. `20260922_atas_de_reuniao.sql`
- 43. `20260922_conciliacao_por_extrato.sql`
- 44. `20260922_integracoes_honestas.sql`
- 45. `20260922_leitura_de_documentos.sql`
- 46. `20260922_ajuda_manual_e_faq.sql`
- 47. `20260922_user_profiles_so_colegas.sql` — **JÁ APLICADA EM PRODUÇÃO em 22/09**
+ 1. `20260916_whatsapp_conversa_completa_vinculo_do_lead.sql`
+ 2. `20260916_whatsapp_conversa_segue_corretor_do_lead.sql`
+ 3. `20260916_whatsapp_gestor_ve_lead_sem_classificacao.sql`
+ 4. `20260917_view_vendas_assinadas.sql`
+ 5. `20260918_cadastro_de_construtoras.sql`
+ 6. `20260918_cadastro_de_origens.sql`
+ 7. `20260918_view_primeira_interacao.sql`
+ 8. `20260918_consistencia_diaria.sql`
+ 9. `20260918_lotus_leads_sem_corretor.sql`
+10. `20260918_seed_construtoras.sql`
+11. `20260918_seed_kpi_tempo_ate_corretor.sql`
+12. `20260919_distribuicao_eventos.sql`
+13. `20260920_base_de_conhecimento.sql`
+14. `20260920_ultima_movimentacao_do_lead.sql`
+15. `20260920_estado_do_handoff_no_lead.sql`
+16. `20260920_graficos_de_leads.sql`
+17. `20260920_liga_os_27_leads_por_nome.sql`
+18. `20260920_lista_de_leads_por_aba.sql`
+19. `20260920_pesos_do_score.sql`
+20. `20260920_plantao_da_lia.sql`
+21. `20260920_prerequisitos_por_etapa.sql`
+22. `20260920_sinais_do_score.sql`
+23. `20260920_tipologias_do_lancamento.sql`
+24. `20260920_whatsapp_filtros_e_leitura.sql`
+25. `20260921_agenda_da_lia.sql`
+26. `20260921_campanhas_e_roi.sql`
+27. `20260921_cargos_e_permissoes.sql`
+28. `20260921_conferencia_de_vendas.sql`
+29. `20260921_contratos_do_corretor.sql`
+30. `20260921_custo_de_ia.sql`
+31. `20260921_demandas_de_marketing.sql`
+32. `20260921_painel_comercial.sql`
+33. `20260921_filtro_por_clique.sql`
+34. `20260921_financeiro_fase_1.sql`
+35. `20260921_formularios_da_meta.sql`
+36. `20260921_grafico_de_evolucao.sql`
+37. `20260921_mapa_interligado.sql`
+38. `20260921_materiais_de_estudo.sql`
+39. `20260921_okrs_e_pdi.sql`
+40. `20260921_relatorio_de_anuncios.sql`
+41. `20260921_relatorio_de_recrutamento.sql`
+42. `20260922_atas_de_reuniao.sql`
+43. `20260922_conciliacao_por_extrato.sql`
+44. `20260922_integracoes_honestas.sql`
+45. `20260922_leitura_de_documentos.sql`
+46. `20260922_ajuda_manual_e_faq.sql`
+47. `20260922_user_profiles_so_colegas.sql` — **JÁ APLICADA EM PRODUÇÃO em 22/09**
      (era porta aberta: qualquer logado apagava qualquer conta). Fica na lista
      só para a ordem ficar completa; rodar de novo não faz mal.
- 48. `20260922_condicoes_e_simulador.sql` — **depende da 5**
+48. `20260922_condicoes_e_simulador.sql` — **depende da 5**
      (`cadastro_de_construtoras`): referencia `public.construtoras(id)` e lê
      `lancamentos.construtora_id`. Conferido em produção em 22/09: **nenhuma das
      duas existe lá ainda**, então aplicar esta antes da 5 quebra na hora.
- 49. `20260922_etiqueta_de_quem_enviou.sql` — mexe em `whatsapp_messages`,
+49. `20260922_etiqueta_de_quem_enviou.sql` — mexe em `whatsapp_messages`,
      tabela viva com 28.116 linhas. `ADD COLUMN` anulavel e instantaneo, mas
      os **dois UPDATE de backfill varrem a tabela inteira** e tocam ~14.256
      linhas. Rodar fora do horario de conversa.
- 50. `20260922_rede_de_unidades.sql` — **depende da 27**
+50. `20260922_rede_de_unidades.sql` — **depende da 27**
      (`cargos_e_permissoes`): insere em `permissoes` e le `minhas_permissoes`.
      Acrescenta 2 colunas anulaveis em `tenants` (3 linhas): instantaneo.
- 51. `20260923_pedido_de_nota.sql` — **depende da 28** (`conferencia_de_vendas`,
+51. `20260923_pedido_de_nota.sql` — **depende da 28** (`conferencia_de_vendas`,
      que cria `vendas`) e **da 5** (`cadastro_de_construtoras`, que cria
      `construtoras` e `construtora_cnpjs`). Nenhuma das tres existe em
      producao, entao a ordem alfabetica ja resolve — mas se alguem aplicar
      avulso, quebra na hora.
- 52. `20260923_card_do_site_vem_das_tipologias.sql` — **depende da 22**
+52. `20260923_card_do_site_vem_das_tipologias.sql` — **depende da 22**
      (`tipologias_do_lancamento`), de onde vem a tabela `tipologias` E a funcao
      `lancamento_preco_a_partir`, que esta migration chama.
      **Recria a view `portal_lancamentos`, que o site publico le hoje.** As
      colunas antigas saem iguais, na mesma ordem; as novas entram no fim. Se
      alguma migration futura tambem recriar essa view, ela tem que vir DEPOIS
      desta, ou as colunas `card_*` somem sem ninguem perceber.
- 53. `20260923_count_leads_mensal_fecha_o_publico.sql` — **JA APLICADA EM
+53. `20260923_count_leads_mensal_fecha_o_publico.sql` — **JA APLICADA EM
      PRODUCAO em 23/09**, com autorizacao do chefe. Era porta aberta: o papel
      `anon`, sem login, recebia a contagem de leads de qualquer imobiliaria.
      Nao depende de nada do plano (mexe numa funcao que ja existe la). Fica na
      lista para a ordem ficar completa; rodar de novo nao faz mal.
- 54. `20260923_permissao_financeiro.sql` — **depende da 27**
+54. `20260923_permissao_financeiro.sql` — **depende da 27**
      (`cargos_e_permissoes`, que cria a tabela `permissoes`). Sem ela o INSERT
      do catalogo falha com "relation does not exist".
      **Tambem escreve em `tenants.allowed_features`**, dando `financeiro` a
      quem ja tem `relatorios` — 2 dos 9 tenants. Sem esse UPDATE a chave nasce
      no catalogo e o menu do Financeiro some para TODOS os admins, sem erro
      nenhum na tela.
- 55. `20260923_financeiro_portal_e_liquido.sql` — **depende da 33**
+55. `20260923_financeiro_portal_e_liquido.sql` — **depende da 33**
      (`financeiro_fase_1`, que cria a funcao `financeiro_lancamentos`), **da 28**
      (`conferencia_de_vendas`, de onde vem `vendas` e `venda_repasses`) e da
      coluna `vendas.lead_id`. So troca o corpo da funcao; nao mexe em tabela.
- 56. `20260923_meta_confere_com_a_dash.sql` — **depende da 34**
+56. `20260923_meta_confere_com_a_dash.sql` — **depende da 34**
      (`formularios_da_meta`, dona da tabela `meta_formularios` e da funcao do
      painel) e **da 26** (`campanhas_e_roi`, de onde vem `meta_insights_diarios`).
      Acrescenta 3 colunas anulaveis em `meta_formularios` — instantaneo — e
@@ -129,19 +129,24 @@ produção** — conferido em 22/09) e de `tipologias_do_lancamento`.
      **Precisa de deploy do servidor junto:** quem preenche `leads_na_meta` e
      o `formRoutes.js`, e sem ele a coluna fica nula para sempre e a tela diz
      "nao perguntado" eternamente.
- 57. `20260923_cinco_cargos.sql` — **depende da 27** (`cargos_e_permissoes`) e
+57. `20260923_cinco_cargos.sql` — **depende da 27** (`cargos_e_permissoes`) e
      **da 54** (`permissao_financeiro`, que poe `financeiro` no catalogo: sem
      ela o INSERT do cargo Financeiro nao encontra a permissao).
      Cria 5 cargos por imobiliaria com gente e **nao atribui cargo a ninguem** —
      `cargo_id` fica nulo e a tela de todos continua como esta.
      **Tambem troca `financeiro_pode_ver`**, que e o porteiro de 20 funcoes do
      Financeiro: passa a aceitar tambem quem tem a permissao pelo cargo.
- 58. `20260924_cargo_juridico.sql` — **depende da 57**. Acrescenta o sexto
+58. `20260924_cargo_juridico.sql` — **depende da 57**. Acrescenta o sexto
      cargo, que o chefe pediu a parte ("Adicionaria somente um Juridico") e a
      57 deixou de fora. Como ela, **nao atribui cargo a ninguem**.
 
-> **Estas oito entraram em 23/09, depois do levantamento.** A lista acima foi
-> conferida objeto por objeto contra producao em 22/09; da 51 a 58 nao
+ 59. `20260924_portal_brokers_sem_user_profiles.sql` — **JA APLICADA EM
+     PRODUCAO em 24/09**, para consertar um incidente que a 47 causou: o REVOKE
+     de `user_profiles` para o `anon` derrubou a lista de corretores do SITE da
+     Lotus, que lia essa view atraves de `portal_brokers`. Nao depende de nada
+     do plano. Fica na lista para a ordem ficar completa.
+> **Estas nove entraram em 23/09, depois do levantamento.** A lista acima foi
+> conferida objeto por objeto contra producao em 22/09; da 51 a 59 nao
 > passaram por essa conferencia — a dependencia delas foi lida no codigo.
 
 **Reaplicar `20260921_demandas_de_marketing.sql`**, que mudou DEPOIS de entrar
@@ -151,6 +156,44 @@ com `CREATE TABLE IF NOT EXISTS` e em producao ela ja existe — sem ele a
 correcao da ordem do historico nao chega la.
 
 ---
+
+## 1.1 O ensaio de 24/09 — e os quatro erros de ordem que ele achou
+
+**A lista acima nunca tinha sido executada.** As migrations rodaram uma a uma,
+isoladas, cada uma num banco que já tinha as outras. Em 24/09 a sequência
+inteira foi aplicada do zero, sobre um dump do esquema de produção daquele dia,
+num banco limpo.
+
+**Na primeira tentativa, quatro quebraram.** Todas por ordem — nenhuma por
+defeito do SQL:
+
+| migration | faltava |
+|---|---|
+| `consistencia_diaria` | a view `primeira_interacao`, que nascia depois |
+| `ultima_movimentacao_do_lead` | vinha DEPOIS de `estado_do_handoff_no_lead`, que já recriava a mesma função com 5 colunas — e ela tentava reduzi-la a 3 |
+| `filtro_por_clique` | a tabela `vendas_empreendimento_alias`, criada em `painel_comercial`, que vinha depois |
+| `grafico_de_evolucao` | a mesma tabela |
+
+A segunda linha é a que mais importa: **a ordem alfabética inverteu duas
+migrations da mesma função.** `estado_do_handoff` vem antes de
+`ultima_movimentacao` no alfabeto, mas é ela que ESTENDE o que a outra cria. O
+erro (`cannot change return type of existing function`) não diz isso, e quem o
+encontrasse no dia do deploy levaria um tempo até entender.
+
+**A ordem acima já está corrigida.** Segunda tentativa, banco limpo de novo:
+**58 aplicadas, 0 erros.**
+
+### O que o ensaio NÃO prova
+
+- **Os buckets continuam faltando.** Três testes falharam no banco limpo por
+  causa disso — e é exatamente o que a seção 2.2 avisa. Confirma o aviso em vez
+  de contradizê-lo.
+- **O ensaio roda sem as permissões de `auth` e `storage`** (o dump de esquema
+  sai sem ACL), então dois testes que dependem delas não puderam rodar lá.
+  Passam no banco de desenvolvimento normal.
+- **Dado real não foi testado.** O ensaio parte do ESQUEMA de produção, vazio
+  de linhas. Migration que faz backfill roda sobre nada, e é onde uma surpresa
+  ainda pode morar.
 
 ## 2. As três coisas que falham em silêncio
 
