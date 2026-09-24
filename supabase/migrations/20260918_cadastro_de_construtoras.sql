@@ -36,6 +36,21 @@ CREATE TABLE IF NOT EXISTS public.construtoras (
   nome text NOT NULL,
   razao_social text,
 
+  -- Como esta construtora aparece ESCRITA nas outras fontes: "APLAUSI" para
+  -- Applausi, "GRUPO ZARIN" para Zarin, "Sebel" para Sebel Empreendimentos.
+  --
+  -- Mora aqui, e não dentro da migration que semeia, por um motivo concreto:
+  -- a aba Construtoras casa as linhas da planilha do Google com o cadastro, e
+  -- ela só enxerga o que o banco devolve. Com a lista presa numa TEMP TABLE de
+  -- migration, "APLAUSI" nao acha "Applausi" e 12 das 82 linhas ficam em
+  -- "fora do cadastro" — parecendo cadastro errado quando o cadastro esta certo.
+  --
+  -- Mesma forma de `tenant_lead_origin_map`, que ja resolve isto para origem
+  -- de lead. Coluna, e nao tabela: e uma lista curta e curada por construtora,
+  -- e uma tabela com RLS, policy e grant para guardar meia duzia de textos
+  -- seria peso sem ganho.
+  aliases text[] NOT NULL DEFAULT '{}',
+
   responsavel_nome text,
   responsavel_telefone text,
   responsavel_email text,
@@ -93,6 +108,13 @@ CREATE TABLE IF NOT EXISTS public.construtora_cnpjs (
 );
 
 -- Um principal por construtora, no máximo.
+-- A CREATE acima e IF NOT EXISTS: num banco onde a tabela ja nasceu sem esta
+-- coluna, ela nao chega por ali. O ALTER e o que faz a migration ser
+-- reaplicavel. Vem ANTES do bloco de GRANT abaixo, que monta a lista de
+-- colunas lendo o catalogo — assim `aliases` entra no SELECT sozinha.
+ALTER TABLE public.construtoras
+  ADD COLUMN IF NOT EXISTS aliases text[] NOT NULL DEFAULT '{}';
+
 CREATE UNIQUE INDEX IF NOT EXISTS construtora_cnpjs_principal_uk
   ON public.construtora_cnpjs (construtora_id) WHERE principal;
 
@@ -152,23 +174,30 @@ ALTER TABLE public.construtoras      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.construtora_cnpjs ENABLE ROW LEVEL SECURITY;
 
 -- Qualquer membro LÊ: a tela de lançamento precisa listar para escolher.
+-- Os DROP IF EXISTS abaixo entraram em 24/09: sem eles esta migration nao
+-- reaplica — `CREATE POLICY` quebra com "already exists" e derruba o resto do
+-- arquivo. O ensaio de 24/09 rodou contra um banco limpo e nao pegou isto.
+DROP POLICY IF EXISTS construtoras_select ON public.construtoras;
 CREATE POLICY construtoras_select ON public.construtoras
   FOR SELECT TO authenticated
   USING (tenant_id IN (SELECT tenant_id FROM public.tenant_memberships WHERE user_id = auth.uid())
          OR public.is_platform_owner());
 
 -- Só quem administra ESCREVE.
+DROP POLICY IF EXISTS construtoras_write ON public.construtoras;
 CREATE POLICY construtoras_write ON public.construtoras
   FOR ALL TO authenticated
   USING (tenant_id IN (SELECT tenant_id FROM public.tenant_memberships
                         WHERE user_id = auth.uid() AND role IN ('admin','team_leader','owner'))
          OR public.is_platform_owner());
 
+DROP POLICY IF EXISTS construtora_cnpjs_select ON public.construtora_cnpjs;
 CREATE POLICY construtora_cnpjs_select ON public.construtora_cnpjs
   FOR SELECT TO authenticated
   USING (tenant_id IN (SELECT tenant_id FROM public.tenant_memberships WHERE user_id = auth.uid())
          OR public.is_platform_owner());
 
+DROP POLICY IF EXISTS construtora_cnpjs_write ON public.construtora_cnpjs;
 CREATE POLICY construtora_cnpjs_write ON public.construtora_cnpjs
   FOR ALL TO authenticated
   USING (tenant_id IN (SELECT tenant_id FROM public.tenant_memberships
