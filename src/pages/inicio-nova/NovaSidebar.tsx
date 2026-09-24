@@ -164,9 +164,6 @@ const GROUPS: SidebarGroup[] = [
     items: [
       { id: 'gestao-equipe', label: 'Gestão de Equipe', icon: Users, route: '/gestao-equipe', permission: 'gestao-equipe' },
       { id: 'recrutamento', label: 'Recrutamento', icon: UserCheck, route: '/recrutamento', permission: 'recrutamento' },
-      // P4.1 — o cargo é um pacote de permissões que vale para todo mundo que
-      // o tem. Mora perto da Gestão de Equipe, que é onde as pessoas estão.
-      { id: 'cargos', label: 'Cargos', icon: Shield, route: '/cargos', permission: 'gestao-equipe' },
       // P4.2 — materiais de estudo. Permissão 'leads' de propósito: o plano de
       // carreira e as regras de comissão são para o corretor ler, e ele não
       // tem 'gestao-equipe'. Quem gere edita; todo membro lê.
@@ -234,7 +231,24 @@ const GROUPS: SidebarGroup[] = [
       // P4.9 — Ajuda. Permissão 'leads' de propósito: uma ajuda que só quem
       // administra lê não ajuda ninguém.
       { id: 'ajuda', label: 'Ajuda', icon: HelpCircle, route: '/ajuda', permission: 'leads' },
-      { id: 'configuracoes', label: 'Configurações', icon: Settings, route: '/configuracoes', permission: 'leads' },
+      {
+        id: 'configuracoes', label: 'Configurações', icon: Settings, route: '/configuracoes', permission: 'leads',
+        // P4.1 — Cargos morava em EQUIPE, ao lado de Gestão de Equipe. Mudou
+        // para cá em 24/09/2026 a pedido do chefe: "este item, ideal manter em
+        // configurações".
+        //
+        // A ROTA CONTINUA `/cargos`. Mover o item de menu é mudança de lugar,
+        // não de endereço — trocar a rota quebraria todo link que alguém já
+        // tenha salvo, e ninguém receberia erro: cairia no redirecionamento
+        // padrão, que parece "não tenho acesso".
+        //
+        // A permissão continua `gestao-equipe`, e não a de Configurações
+        // (`leads`, que todo mundo tem): quem monta cargo decide o acesso dos
+        // outros. Ficar dentro de Configurações não pode afrouxar isso.
+        subItems: [
+          { id: 'cargos', label: 'Cargos', icon: Shield, route: '/cargos', permission: 'gestao-equipe' },
+        ],
+      },
     ],
   },
 ];
