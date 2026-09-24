@@ -18,9 +18,15 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import {
   codigoDaConstrutora,
+  digitosDoCnpj,
   type Construtora,
   type EntradaDeConstrutora,
 } from '../services/construtorasService';
+
+/** "12345678000190" -> "12.345.678/0001-90". Só para ler; o banco guarda dígitos. */
+const comMascara = (d: string) =>
+  d.replace(/^(\d{2})(\d{0,3})(\d{0,3})(\d{0,4})(\d{0,2}).*$/,
+    (_, a, b, c, e, f) => [a, b && '.' + b, c && '.' + c, e && '/' + e, f && '-' + f].join(''));
 
 interface ConstrutoraFormDialogProps {
   aberto: boolean;
@@ -31,11 +37,19 @@ interface ConstrutoraFormDialogProps {
   nomeSugerido?: string;
   /** `undefined` = este usuário não pode ver a comissão. */
   comissao?: number | null;
+  /** CNPJ principal já cadastrado (só dígitos), ou null. */
+  cnpj?: string | null;
   salvando: boolean;
   /** Cadastrar nova — nunca sobrescreve uma existente. */
   onCriar: (entrada: EntradaDeConstrutora) => Promise<{ success: boolean; error?: string }>;
   /** Editar a existente, pelo id. */
   onAtualizar: (id: string, entrada: EntradaDeConstrutora) => Promise<{ success: boolean; error?: string }>;
+  /**
+   * Grava o CNPJ principal. Vive em outra tabela, por isso é outra chamada —
+   * e ela roda DEPOIS de a construtora existir, senão não há a quem prender
+   * o CNPJ ao cadastrar uma nova.
+   */
+  onSalvarCnpj?: (construtoraId: string, cnpj: string | null) => Promise<{ success: boolean; error?: string }>;
 }
 
 const vazia = (nome = ''): EntradaDeConstrutora => ({
@@ -58,36 +72,66 @@ export function ConstrutoraFormDialog({
   construtora,
   nomeSugerido,
   comissao,
+  cnpj,
   salvando,
   onCriar,
   onAtualizar,
+  onSalvarCnpj,
 }: ConstrutoraFormDialogProps) {
   const [form, setForm] = useState<EntradaDeConstrutora>(vazia());
+  const [cnpjForm, setCnpjForm] = useState('');
   const [erro, setErro] = useState<string | null>(null);
   const podeVerComissao = comissao !== undefined;
 
   useEffect(() => {
     if (!aberto) return;
     setErro(null);
+    setCnpjForm(cnpj ? comMascara(cnpj) : '');
     if (construtora) {
       const { id: _id, ...resto } = construtora;
       setForm(podeVerComissao ? { ...resto, comissaoPadraoPct: comissao ?? null } : resto);
     } else {
       setForm(podeVerComissao ? { ...vazia(nomeSugerido), comissaoPadraoPct: null } : vazia(nomeSugerido));
     }
-  }, [aberto, construtora, nomeSugerido, comissao, podeVerComissao]);
+  }, [aberto, construtora, nomeSugerido, comissao, podeVerComissao, cnpj]);
 
   const campo = <K extends keyof EntradaDeConstrutora>(k: K, v: EntradaDeConstrutora[K]) =>
     setForm((f) => ({ ...f, [k]: v }));
 
   const salvar = async () => {
     setErro(null);
+
+    const digitos = digitosDoCnpj(cnpjForm);
+    // Conferido ANTES de gravar a construtora: com o CHECK do banco, um CNPJ
+    // pela metade faria a construtora salvar e o CNPJ não — e a tela fecharia
+    // dizendo que deu certo.
+    if (digitos && digitos.length !== 14) {
+      setErro('o CNPJ precisa ter 14 dígitos');
+      return;
+    }
+
     // Criar e editar são operações diferentes de propósito: com upsert,
     // cadastrar "SANTA ANGELA" tendo "Santa Ângela" renomeava a existente em
     // silêncio, porque as duas geram o mesmo código.
     const r = construtora ? await onAtualizar(construtora.id, form) : await onCriar(form);
-    if (r.success) onFechar();
-    else setErro(r.error ?? 'não foi possível salvar');
+    if (!r.success) {
+      setErro(r.error ?? 'não foi possível salvar');
+      return;
+    }
+
+    // O CNPJ só é gravado ao EDITAR: ao criar, a construtora ainda não tem id
+    // aqui. Mais honesto do que adivinhar o id ou reler a lista — quem acabou
+    // de cadastrar abre o cartão e preenche.
+    if (construtora && onSalvarCnpj && digitos !== digitosDoCnpj(cnpj)) {
+      const rc = await onSalvarCnpj(construtora.id, digitos || null);
+      if (!rc.success) {
+        // A construtora JÁ foi salva. Fechar aqui perderia o aviso e a pessoa
+        // acharia que o CNPJ entrou.
+        setErro(`a construtora foi salva, mas o CNPJ não: ${rc.error ?? 'erro desconhecido'}`);
+        return;
+      }
+    }
+    onFechar();
   };
 
   return (
@@ -120,6 +164,23 @@ export function ConstrutoraFormDialog({
           <div className="space-y-1.5">
             <Label htmlFor="c-razao">Razão social</Label>
             <Input id="c-razao" value={form.razaoSocial ?? ''} onChange={(e) => campo('razaoSocial', e.target.value || null)} />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="c-cnpj">CNPJ</Label>
+            <Input
+              id="c-cnpj"
+              inputMode="numeric"
+              placeholder="00.000.000/0000-00"
+              value={cnpjForm}
+              onChange={(e) => setCnpjForm(comMascara(digitosDoCnpj(e.target.value).slice(0, 14)))}
+              disabled={!construtora}
+            />
+            <p className="text-[11px] text-muted-foreground">
+              {construtora
+                ? 'É o tomador da nota fiscal da comissão.'
+                : 'Disponível depois de cadastrar — abra o cartão para preencher.'}
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">

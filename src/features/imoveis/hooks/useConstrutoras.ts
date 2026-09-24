@@ -11,6 +11,8 @@ import { useAuthContext } from '@/contexts/AuthContext';
 import {
   fetchConstrutoras,
   fetchComissoes,
+  fetchCnpjPrincipal,
+  salvarCnpjPrincipal,
   criarConstrutora,
   atualizarConstrutora,
   removerConstrutora,
@@ -23,6 +25,8 @@ export interface UseConstrutorasResult {
   construtoras: Construtora[];
   /** Vazio para quem o banco não autoriza — não é erro, é a regra. */
   comissoes: Map<string, ComissaoDaConstrutora>;
+  /** CNPJ principal por construtora. Ausente = não cadastrado. */
+  cnpjs: Map<string, string>;
   podeVerComissao: boolean;
   carregando: boolean;
   salvando: boolean;
@@ -33,6 +37,8 @@ export interface UseConstrutorasResult {
   criar: (entrada: EntradaDeConstrutora) => Promise<{ success: boolean; error?: string }>;
   /** Editar uma existente, pelo id. O código não muda. */
   atualizar: (id: string, entrada: EntradaDeConstrutora) => Promise<{ success: boolean; error?: string }>;
+  /** Grava o CNPJ principal. Vazio apaga. */
+  salvarCnpj: (construtoraId: string, cnpj: string | null) => Promise<{ success: boolean; error?: string }>;
   remover: (codigo: string) => Promise<{ success: boolean; error?: string }>;
   recarregar: () => void;
 }
@@ -44,6 +50,7 @@ export function useConstrutoras(): UseConstrutorasResult {
   const { tenantId } = useAuthContext();
   const [construtoras, setConstrutoras] = useState<Construtora[]>([]);
   const [comissoes, setComissoes] = useState<Map<string, ComissaoDaConstrutora>>(new Map());
+  const [cnpjs, setCnpjs] = useState<Map<string, string>>(new Map());
   const [carregando, setCarregando] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -54,6 +61,7 @@ export function useConstrutoras(): UseConstrutorasResult {
     if (!tenantId || tenantId === 'owner') {
       setConstrutoras([]);
       setComissoes(new Map());
+      setCnpjs(new Map());
       return;
     }
     setCarregando(true);
@@ -64,10 +72,13 @@ export function useConstrutoras(): UseConstrutorasResult {
         setConstrutoras(lista);
         const com = await fetchComissoes(tenantId);
         if (!cancelado) setComissoes(new Map(com.map((c) => [c.construtoraId, c])));
+        const doc = await fetchCnpjPrincipal(tenantId);
+        if (!cancelado) setCnpjs(doc);
       })
       .catch((e) => {
         if (cancelado) return;
         setConstrutoras([]);
+        setCnpjs(new Map());
         setErro(e?.message || 'não foi possível carregar as construtoras');
       })
       .finally(() => {
@@ -78,8 +89,21 @@ export function useConstrutoras(): UseConstrutorasResult {
 
   const recarregar = useCallback(() => setVersao((v) => v + 1), []);
 
+  /*
+   * O índice inclui os APELIDOS, e não só o nome canônico.
+   *
+   * É aqui que "APLAUSI" passa a achar "Applausi". Colocar isto no índice, e
+   * não em cada tela que pergunta, é o que faz a aba Construtoras, o formulário
+   * de lançamento e o de condomínio responderem igual — as três chamam
+   * `porNome`.
+   *
+   * O nome canônico é escrito por ÚLTIMO de propósito: se dois cadastros
+   * disputarem a mesma chave, quem tem aquele nome de verdade ganha do apelido
+   * alheio.
+   */
   const indicePorNome = useMemo(() => {
     const m = new Map<string, Construtora>();
+    for (const c of construtoras) for (const a of c.aliases) m.set(chave(a), c);
     for (const c of construtoras) m.set(chave(c.nome), c);
     return m;
   }, [construtoras]);
@@ -104,6 +128,7 @@ export function useConstrutoras(): UseConstrutorasResult {
   return {
     construtoras,
     comissoes,
+    cnpjs,
     podeVerComissao: comissoes.size > 0,
     carregando,
     salvando,
@@ -111,6 +136,7 @@ export function useConstrutoras(): UseConstrutorasResult {
     porNome,
     criar: (entrada) => comEscrita(() => criarConstrutora(tenantId as string, entrada)),
     atualizar: (id, entrada) => comEscrita(() => atualizarConstrutora(tenantId as string, id, entrada)),
+    salvarCnpj: (id, cnpj) => comEscrita(() => salvarCnpjPrincipal(tenantId as string, id, cnpj)),
     remover: (codigo) => comEscrita(() => removerConstrutora(tenantId as string, codigo)),
     recarregar,
   };

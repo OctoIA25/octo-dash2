@@ -170,6 +170,62 @@ GRANT INSERT, UPDATE, DELETE ON public.construtoras      TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.construtora_cnpjs TO authenticated;
 GRANT ALL ON public.construtoras, public.construtora_cnpjs TO service_role;
 
+-- ============================================================
+-- RENOMEAR NÃO PODE DERRUBAR OS EMPREENDIMENTOS — 24/09
+--
+-- A aba Construtoras casa as linhas da planilha do Google com o cadastro pelo
+-- NOME (e pelos apelidos). Então renomear "Santa Ângela" para "Santa Ângela
+-- Incorporadora" faz as 14 linhas daquela construtora caírem em "fora do
+-- cadastro", em silêncio: nenhum erro, nenhum aviso, o card simplesmente
+-- esvazia e outro card amarelo aparece.
+--
+-- Achado no navegador em 24/09, com uma construtora que alguém já havia
+-- renomeado à mão nesta base. Nenhum teste de código pegaria: o vínculo do
+-- banco (`construtora_id`) continua intacto — quem quebra é o casamento por
+-- texto, que só a tela faz.
+--
+-- Gatilho, e não guarda dentro da função de gravar: o nome muda pela tela, por
+-- script e por SQL direto, e o terceiro é justamente o caminho de quem está
+-- arrumando cadastro às pressas.
+-- ============================================================
+CREATE OR REPLACE FUNCTION public.tg_construtora_guarda_nome_antigo()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $function$
+BEGIN
+  -- O nome antigo entra como apelido, sem repetir o que já está lá.
+  IF NOT EXISTS (
+    SELECT 1 FROM unnest(COALESCE(NEW.aliases, '{}'::text[])) a
+     WHERE public.normalizar_texto(a) = public.normalizar_texto(OLD.nome)
+  ) THEN
+    NEW.aliases := COALESCE(NEW.aliases, '{}'::text[]) || OLD.nome;
+  END IF;
+
+  -- E um apelido que virou o nome de verdade sai da lista: mantê-lo faria a
+  -- mesma chave apontar duas vezes para o mesmo lugar, e a lista cresceria a
+  -- cada renomeação até ninguém mais conseguir lê-la.
+  --
+  -- É também o que faz mudar só acento ou caixa NÃO virar apelido: o nome
+  -- antigo entra acima e sai aqui, porque normaliza igual ao novo. Havia um
+  -- `RETURN NEW` antecipado para esse caso, e a sabotagem de 24/09 mostrou
+  -- que ele não mudava resultado nenhum — saiu.
+  SELECT COALESCE(array_agg(a ORDER BY a), '{}'::text[]) INTO NEW.aliases
+    FROM unnest(NEW.aliases) a
+   WHERE public.normalizar_texto(a) IS DISTINCT FROM public.normalizar_texto(NEW.nome);
+
+  RETURN NEW;
+END;
+$function$;
+
+DROP TRIGGER IF EXISTS tr_construtoras_guarda_nome_antigo ON public.construtoras;
+CREATE TRIGGER tr_construtoras_guarda_nome_antigo
+  BEFORE UPDATE OF nome ON public.construtoras
+  FOR EACH ROW
+  EXECUTE FUNCTION public.tg_construtora_guarda_nome_antigo();
+
+COMMENT ON FUNCTION public.tg_construtora_guarda_nome_antigo() IS
+  'Renomear uma construtora guarda o nome antigo em `aliases`. Sem isso, os empreendimentos da planilha caem em "fora do cadastro" em silencio, porque a tela casa por texto.';
+
 ALTER TABLE public.construtoras      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.construtora_cnpjs ENABLE ROW LEVEL SECURITY;
 

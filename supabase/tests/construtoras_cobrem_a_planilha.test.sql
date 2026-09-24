@@ -199,6 +199,45 @@ BEGIN
     RAISE EXCEPTION 'FALHOU 7b: a limpeza apagou o apelido de quem tinha um de verdade';
   END IF;
   RAISE NOTICE 'OK 7: apelido errado e corrigido, e o certo fica';
+
+  -- ----------------------------------------------------------
+  -- 8. RENOMEAR NÃO DERRUBA OS EMPREENDIMENTOS
+  --
+  -- Achado no navegador em 24/09: alguém havia renomeado "Santa Ângela" para
+  -- "Santa Ângela Incorporadora" nesta base, e as 14 linhas da planilha caíram
+  -- em "fora do cadastro". Nenhum erro, nenhum aviso — o card esvazia e outro
+  -- amarelo aparece, e quem olha conclui que falta cadastrar.
+  --
+  -- O vínculo do banco continua intacto: quem quebra é o casamento por texto,
+  -- que só a tela faz. Por isso nenhum teste de código pegaria.
+  -- ----------------------------------------------------------
+  UPDATE construtoras SET nome = 'Tebas Incorporadora'
+   WHERE tenant_id = casa AND codigo = 'tebas';
+
+  IF NOT EXISTS (SELECT 1 FROM construtoras c
+                  WHERE c.tenant_id = casa AND c.codigo = 'tebas'
+                    AND public.normalizar_texto('Tebas') = ANY(
+                          SELECT public.normalizar_texto(a) FROM unnest(c.aliases) a)) THEN
+    RAISE EXCEPTION 'FALHOU 8: renomear perdeu o nome antigo — a planilha cairia fora do cadastro';
+  END IF;
+
+  -- Só mudar acento e caixa não vira apelido: a normalização já resolve, e a
+  -- lista encheria de ruído a cada correção de digitação.
+  UPDATE construtoras SET nome = 'TEBAS INCORPORADORA'
+   WHERE tenant_id = casa AND codigo = 'tebas';
+  IF (SELECT cardinality(aliases) FROM construtoras WHERE tenant_id = casa AND codigo = 'tebas') <> 1 THEN
+    RAISE EXCEPTION 'FALHOU 8b: mudanca de caixa virou apelido — a lista vira ruido';
+  END IF;
+
+  -- E voltar ao nome antigo tira o apelido que virou nome: senao a mesma
+  -- chave apontaria duas vezes para o mesmo lugar, e a lista cresceria sem fim.
+  UPDATE construtoras SET nome = 'Tebas' WHERE tenant_id = casa AND codigo = 'tebas';
+  IF EXISTS (SELECT 1 FROM construtoras c, unnest(c.aliases) a
+              WHERE c.tenant_id = casa AND c.codigo = 'tebas'
+                AND public.normalizar_texto(a) = public.normalizar_texto(c.nome)) THEN
+    RAISE EXCEPTION 'FALHOU 8c: o apelido que virou nome continuou na lista';
+  END IF;
+  RAISE NOTICE 'OK 8: renomear guarda o nome antigo, e so o que importa';
 END $$;
 
 ROLLBACK;

@@ -26,7 +26,7 @@ import { OctoDashLoader } from '@/components/ui/OctoDashLoader';
 import { Pencil } from 'lucide-react';
 import { useConstrutoras } from '@/features/imoveis/hooks/useConstrutoras';
 import { ConstrutoraFormDialog } from '@/features/imoveis/components/ConstrutoraFormDialog';
-import type { Construtora } from '@/features/imoveis/services/construtorasService';
+import { oQueFaltaNaConstrutora, type Construtora } from '@/features/imoveis/services/construtorasService';
 
 /** Mesma regra do banco (normalizar_texto): sem acento, minúscula, espaços colapsados. */
 const chaveDoNome = (t: string) =>
@@ -141,16 +141,51 @@ export function ConstrutorasTab() {
   const {
     construtoras: cadastro,
     comissoes,
+    cnpjs,
     salvando,
     erro: erroCadastro,
     criar: criarConstrutora,
     atualizar: atualizarConstrutora,
+    salvarCnpj,
   } = useConstrutoras();
 
-  const codigoPorChave = useMemo(
-    () => new Map(cadastro.map((c) => [chaveDoNome(c.nome), c.codigo])),
-    [cadastro]
-  );
+  /*
+   * Nome E APELIDOS apontando para o mesmo código.
+   *
+   * Sem os apelidos, "APLAUSI" não acha "Applausi" e "GRUPO ZARIN" não acha
+   * "Zarin": 12 das 82 linhas da planilha caem em "fora do cadastro" com o
+   * cadastro inteiro certo — e quem olha conclui que falta cadastrar.
+   *
+   * O nome canônico entra por último: se um apelido disputar a chave com o
+   * nome de outra construtora, quem tem o nome de verdade ganha.
+   */
+  const codigoPorChave = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of cadastro) for (const a of c.aliases) m.set(chaveDoNome(a), c.codigo);
+    for (const c of cadastro) m.set(chaveDoNome(c.nome), c.codigo);
+    return m;
+  }, [cadastro]);
+
+  /*
+   * O QUE FALTA em cada construtora — o marcador vermelho que o chefe pediu
+   * em 24/09, para ir preenchendo uma a uma.
+   *
+   * Os três campos são os que o sistema de fato precisa: CNPJ e razão social
+   * são o tomador da nota fiscal (o P4.6 já lista "falta o CNPJ da X"), e o
+   * responsável é com quem se fala.
+   *
+   * A COMISSÃO fica de fora de propósito. O banco não a concede a todo mundo,
+   * então um marcador que a considerasse acenderia para uns e não para outros
+   * — e um marcador que muda conforme quem olha não serve para ir preenchendo.
+   */
+  const faltaEm = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const c of cadastro) {
+      const falta = oQueFaltaNaConstrutora(c, cnpjs.get(c.id));
+      if (falta.length) m.set(c.codigo, falta);
+    }
+    return m;
+  }, [cadastro, cnpjs]);
 
   const { user } = useAuth();
   const tenantId = user?.tenantId;
@@ -191,12 +226,10 @@ export function ConstrutorasTab() {
     for (const c of cadastro) {
       porCodigo.set(c.codigo, { nome: c.nome, total: 0, cidades: new Set(), cadastro: c });
     }
-    const porChave = new Map(cadastro.map((c) => [chaveDoNome(c.nome), c.codigo]));
-
     const FORA = '__fora_do_cadastro__';
     for (const e of catalogo) {
       if (!e.construtora) continue;
-      const codigo = porChave.get(chaveDoNome(e.construtora)) ?? FORA;
+      const codigo = codigoPorChave.get(chaveDoNome(e.construtora)) ?? FORA;
       if (!porCodigo.has(codigo)) {
         porCodigo.set(codigo, { nome: 'Fora do cadastro', total: 0, cidades: new Set(), cadastro: null });
       }
@@ -217,7 +250,7 @@ export function ConstrutorasTab() {
       .sort((a, b) =>
         a.cadastro === b.cadastro ? a.nome.localeCompare(b.nome, 'pt-BR') : a.cadastro ? -1 : 1
       );
-  }, [catalogo, cadastro]);
+  }, [catalogo, cadastro, codigoPorChave]);
 
   const tipos = useMemo(
     () =>
@@ -278,9 +311,11 @@ export function ConstrutorasTab() {
         onFechar={() => { setEditando(null); setCriando(false); }}
         construtora={editando}
         comissao={editando ? comissoes.get(editando.id)?.comissaoPadraoPct ?? null : undefined}
+        cnpj={editando ? cnpjs.get(editando.id) ?? null : null}
         salvando={salvando}
         onCriar={criarConstrutora}
         onAtualizar={atualizarConstrutora}
+        onSalvarCnpj={salvarCnpj}
       />
 
       <div className="rounded-xl border border-border bg-card/60 p-4">
@@ -322,15 +357,21 @@ export function ConstrutorasTab() {
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
         {construtoras.map(({ codigo, nome, total, cidades, cadastro: c }) => {
           const ativa = construtoraFilter === codigo;
+          const falta = c ? faltaEm.get(codigo) : undefined;
           return (
             <div
               key={codigo}
               className={`relative rounded-xl border transition-colors ${
                 ativa
                   ? 'border-primary bg-primary/5 ring-1 ring-primary'
-                  : c
-                    ? 'border-border bg-card/60 hover:bg-muted/60'
-                    : 'border-amber-300 bg-amber-50/60 dark:border-amber-900 dark:bg-amber-950/20'
+                  : falta
+                    // Vermelho: cadastrada, mas falta dado. Pendência de
+                    // preenchimento, e é o próprio card que diz o quê.
+                    ? 'border-red-300 bg-red-50/50 hover:bg-red-50 dark:border-red-900 dark:bg-red-950/20'
+                    : c
+                      ? 'border-border bg-card/60 hover:bg-muted/60'
+                      // Âmbar: nem cadastrada está. Outra pendência, outra cor.
+                      : 'border-amber-300 bg-amber-50/60 dark:border-amber-900 dark:bg-amber-950/20'
               }`}
             >
             <button
@@ -350,6 +391,13 @@ export function ConstrutorasTab() {
               {!c && (
                 <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">
                   Nomes da planilha que não batem com nenhuma construtora cadastrada.
+                </p>
+              )}
+              {/* Dizer O QUE falta, e não só que falta: senão o cartão vira
+                  enfeite vermelho e ninguém sabe o que ir buscar. */}
+              {falta && (
+                <p className="mt-1 text-[11px] text-red-700 dark:text-red-400">
+                  Falta {falta.join(', ')}
                 </p>
               )}
             </button>

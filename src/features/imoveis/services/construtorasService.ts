@@ -19,7 +19,7 @@ import { supabase } from '@/lib/supabaseClient';
 
 /** Todas as colunas MENOS a comissão — é o que `authenticated` pode ler. */
 const COLUNAS =
-  'id, codigo, nome, razao_social, responsavel_nome, responsavel_telefone, responsavel_email, ' +
+  'id, codigo, nome, aliases, razao_social, responsavel_nome, responsavel_telefone, responsavel_email, ' +
   'prazo_pagamento_dias, dados_nota, e_avulso, ativa, observacao';
 
 export interface Construtora {
@@ -27,6 +27,13 @@ export interface Construtora {
   /** Identificador estável: o nome muda sem quebrar vínculo nem relatório. */
   codigo: string;
   nome: string;
+  /**
+   * Como esta construtora aparece escrita nas OUTRAS fontes — "APLAUSI" para
+   * Applausi, "GRUPO ZARIN" para Zarin. É o que permite à aba Construtoras
+   * casar as linhas da planilha com o cadastro; sem isto, 12 das 82 linhas
+   * ficam em "fora do cadastro" com o cadastro inteiro certo.
+   */
+  aliases: string[];
   razaoSocial: string | null;
   responsavelNome: string | null;
   responsavelTelefone: string | null;
@@ -52,6 +59,7 @@ interface LinhaConstrutora {
   id: string;
   codigo: string;
   nome: string;
+  aliases: string[] | null;
   razao_social: string | null;
   responsavel_nome: string | null;
   responsavel_telefone: string | null;
@@ -67,6 +75,7 @@ const paraConstrutora = (l: LinhaConstrutora): Construtora => ({
   id: l.id,
   codigo: l.codigo,
   nome: l.nome,
+  aliases: l.aliases ?? [],
   razaoSocial: l.razao_social,
   responsavelNome: l.responsavel_nome,
   responsavelTelefone: l.responsavel_telefone,
@@ -128,7 +137,113 @@ export async function fetchComissoes(tenantId: string): Promise<ComissaoDaConstr
   }));
 }
 
-export type EntradaDeConstrutora = Omit<Construtora, 'id'> & {
+// `aliases` fica de fora: nenhuma tela edita a lista de grafias — ela vem do
+// de-para do banco. Incluí-la aqui obrigaria todo formulário a carregá-la só
+// para devolvê-la igual.
+/**
+ * O CNPJ principal de cada construtora.
+ *
+ * Mora em `construtora_cnpjs`, tabela à parte porque uma construtora pode ter
+ * vários — o cadastro aceita isso desde 18/09. A TELA trabalha com um só: é o
+ * que a nota fiscal precisa, e é o que o chefe vai preencher uma a uma. Quem
+ * precisar dos outros usa a tabela direto.
+ *
+ * Falha de leitura NÃO vira "sem CNPJ": o marcador vermelho da aba acusaria
+ * uma pendência que não existe, e alguém iria atrás de um dado já preenchido.
+ */
+export async function fetchCnpjPrincipal(tenantId: string): Promise<Map<string, string>> {
+  const mapa = new Map<string, string>();
+  if (!tenantId || tenantId === 'owner') return mapa;
+
+  const { data, error } = await supabase
+    .from('construtora_cnpjs')
+    .select('construtora_id, cnpj, principal')
+    .eq('tenant_id', tenantId);
+
+  if (error) {
+    console.error('[construtoras] erro ao ler CNPJs:', error.code, error.message);
+    throw error;
+  }
+  for (const l of (data ?? []) as Array<{ construtora_id: string; cnpj: string; principal: boolean }>) {
+    // O primeiro marcado como principal ganha; sem nenhum principal, vale o
+    // primeiro que veio — melhor mostrar um CNPJ do que nenhum.
+    if (l.principal || !mapa.has(l.construtora_id)) mapa.set(l.construtora_id, l.cnpj);
+  }
+  return mapa;
+}
+
+/** Só dígitos. "12.345.678/0001-90" e "12345678000190" são o mesmo CNPJ. */
+export const digitosDoCnpj = (v: string | null | undefined): string => (v || '').replace(/\D/g, '');
+
+/**
+ * O que falta preencher nesta construtora — o marcador vermelho pedido pelo
+ * chefe em 24/09, para ir completando uma a uma.
+ *
+ * Os três são os que o sistema de fato usa: CNPJ e razão social são o tomador
+ * da nota fiscal da comissão (a aba "Notas a emitir" do P4.6 já lista "falta o
+ * CNPJ da X"), e o responsável é com quem se fala.
+ *
+ * A COMISSÃO fica fora de propósito: o banco não concede aquela coluna a todo
+ * mundo, então incluí-la faria o marcador acender para uns e não para outros —
+ * e um marcador que muda conforme quem olha não serve para ir preenchendo.
+ *
+ * Contato é UM dos três (nome, telefone ou e-mail), não os três: exigir os
+ * três deixaria quase todo cartão vermelho para sempre, e marcador que nunca
+ * apaga vira paisagem.
+ */
+export function oQueFaltaNaConstrutora(
+  c: Pick<Construtora, 'razaoSocial' | 'responsavelNome' | 'responsavelTelefone' | 'responsavelEmail'>,
+  cnpj: string | null | undefined,
+): string[] {
+  const falta: string[] = [];
+  if (!digitosDoCnpj(cnpj)) falta.push('CNPJ');
+  if (!c.razaoSocial?.trim()) falta.push('razão social');
+  if (!c.responsavelNome?.trim() && !c.responsavelTelefone?.trim() && !c.responsavelEmail?.trim()) {
+    falta.push('contato do responsável');
+  }
+  return falta;
+}
+
+/**
+ * Grava (ou apaga) o CNPJ principal da construtora.
+ *
+ * Apagar e inserir, em vez de `upsert`: a tabela tem índice único por
+ * `(tenant_id, cnpj)` E um único principal por construtora. Um upsert pela
+ * chave errada renomearia o CNPJ de OUTRA construtora que já use aquele
+ * número — o mesmo acidente que a gravação de construtora teve em 18/09.
+ */
+export async function salvarCnpjPrincipal(
+  tenantId: string,
+  construtoraId: string,
+  cnpj: string | null,
+): Promise<{ success: boolean; error?: string }> {
+  const digitos = digitosDoCnpj(cnpj);
+  if (digitos && digitos.length !== 14) {
+    return { success: false, error: 'o CNPJ precisa ter 14 dígitos' };
+  }
+
+  const { error: erroApagar } = await supabase
+    .from('construtora_cnpjs')
+    .delete()
+    .eq('tenant_id', tenantId)
+    .eq('construtora_id', construtoraId)
+    .eq('principal', true);
+  if (erroApagar) return { success: false, error: erroApagar.message };
+
+  if (!digitos) return { success: true };
+
+  const { error } = await supabase
+    .from('construtora_cnpjs')
+    .insert({ tenant_id: tenantId, construtora_id: construtoraId, cnpj: digitos, principal: true });
+  if (error) {
+    if (error.code === '23505') return { success: false, error: 'este CNPJ já está em outra construtora' };
+    if (error.code === '23514') return { success: false, error: 'CNPJ inválido' };
+    return { success: false, error: error.message };
+  }
+  return { success: true };
+}
+
+export type EntradaDeConstrutora = Omit<Construtora, 'id' | 'aliases'> & {
   /** Só é enviada quando o usuário pode ver a comissão — senão fica de fora. */
   comissaoPadraoPct?: number | null;
 };

@@ -15,6 +15,7 @@ import type { Construtora } from '../../services/construtorasService';
 
 const c = (id: string, nome: string, extra: Partial<Construtora> = {}): Construtora => ({
   id, codigo: nome.toLowerCase().replace(/\W+/g, '_'), nome,
+  aliases: [],
   razaoSocial: null, responsavelNome: null, responsavelTelefone: null, responsavelEmail: null,
   prazoPagamentoDias: null, dadosNota: null, eAvulso: false, ativa: true, observacao: null,
   ...extra,
