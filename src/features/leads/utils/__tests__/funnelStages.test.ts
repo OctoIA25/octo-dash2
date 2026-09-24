@@ -442,3 +442,43 @@ describe('baseTemValorDeImovel', () => {
     expect(baseTemValorDeImovel(null)).toBe(false);
   });
 });
+
+/**
+ * A contradição que o chefe viu em 23/09 (item 3 da lista dele):
+ *
+ *   "o funil mostra 331 em Visita Agendada, e o cartão de conversão ao lado
+ *    diz '0 Visitas Agendadas'"
+ *
+ * O número nunca esteve errado. O RÓTULO estava: o cartão conta
+ * `Visita Realizada` e escrevia "Visitas Agendadas". Duas etapas diferentes
+ * com o mesmo nome na tela, e quem lê conclui que o sistema se contradiz.
+ *
+ * Este bloco prende a distinção: as duas etapas são contadas separadamente e
+ * não podem voltar a se confundir.
+ */
+describe('visita agendada e visita realizada são coisas diferentes', () => {
+  const lead = (etapa: string) => makeLead({ etapa_atual: etapa });
+
+  it('o funil conta as agendadas na posição delas, e o cartão conta as realizadas', () => {
+    const leads = [
+      lead('Visita Agendada'), lead('Visita Agendada'), lead('Visita Agendada'),
+      lead('Visita Realizada'),
+    ];
+    const r = computeFunnelStages(leads, 'geral');
+
+    const iAgendada = r.etapasOriginais.findIndex((e) => e === 'Visita Agendada');
+    expect(r.data[iAgendada]).toBe(3);
+
+    // O cartão de conversão mostra ESTE número, e o rótulo dele tem de ser
+    // "Realizadas". Com 3 agendadas e 1 realizada, os dois não podem coincidir
+    // — é justamente o par que revelou o erro.
+    expect(r.visitasRealizadas).toBe(1);
+    expect(r.visitasRealizadas).not.toBe(r.data[iAgendada]);
+  });
+
+  it('só agendadas, nenhuma realizada: o cartão mostra zero, e isso está certo', () => {
+    const r = computeFunnelStages([lead('Visita Agendada'), lead('Visita Agendada')], 'geral');
+    expect(r.visitasRealizadas).toBe(0);
+    expect(r.data[r.etapasOriginais.findIndex((e) => e === 'Visita Agendada')]).toBe(2);
+  });
+});

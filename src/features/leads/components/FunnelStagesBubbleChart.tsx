@@ -272,8 +272,16 @@ export const FunnelStagesBubbleChart = ({ leads, funnelType = 'comprador', subSe
                     {chartData.taxaConversaoVisitas}%
                   </div>
                   <div className="text-[10px] uppercase tracking-wider text-text-secondary dark:text-slate-400 font-semibold">Taxa de Conversão</div>
+                  {/*
+                    24/09 — o chefe viu a contradição: o funil ao lado mostrava
+                    331 em "Visita Agendada" e este cartão dizia "0 Visitas
+                    Agendadas". O número nunca esteve errado; o RÓTULO estava.
+                    A conta é `countLeadsInStage(leads, 'Visita Realizada')`,
+                    e o texto dizia "Agendadas" — duas etapas diferentes com o
+                    mesmo nome na tela.
+                  */}
                   <div className="text-xs text-purple-400/80 mt-1 font-medium">
-                    {chartData.visitasRealizadas} Visitas Agendadas
+                    {chartData.visitasRealizadas} Visitas Realizadas
                   </div>
                 </div>
               </div>
