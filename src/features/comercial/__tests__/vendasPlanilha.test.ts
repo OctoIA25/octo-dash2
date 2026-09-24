@@ -18,7 +18,11 @@ vi.mock('@/lib/supabaseClient', () => ({ supabase: { rpc: (...a: unknown[]) => r
 const venda = (over: Partial<VendaDaPlanilha> = {}): VendaDaPlanilha => ({
   id: 'v1', data_assinatura: '2026-09-10', empreendimento: 'Reserva Castanheira',
   unidade_codigo: 'B · 27', cliente_nome: null, corretor_nome: 'Ana', nivel_corretor: 'PL',
-  gerente: 'Gisele', tipo_negocio: 'lancamento', valor_vgv: 500000, comissao_total_venda: 25000,
+  gerente: 'Gisele', tipo_negocio: 'lancamento',
+  origem: 'Santa', area_m2: 120, valor_m2: 4166.67, total_unidade: 515463,
+  valor_vgv: 500000, comissao_total_venda: 25000,
+  repasse_corretor: 10000, team_leader_valor: 5000, comissao_imobiliaria: 10000,
+  status_recebimento: null,
   data_recebimento: null, pagamento_forma: null, parcelas_total: null, parcelas_pagas: null,
   ...over,
 });

@@ -26,6 +26,14 @@ import {
 const dataBR = (d: string | null | undefined) =>
   d ? new Date(`${String(d).slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : '—';
 
+/** Número simples, com vírgula decimal. Vazio vira travessão, nunca zero. */
+const numero = (n: number | null | undefined) =>
+  n == null ? '—' : Number(n).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+
+/** Dinheiro. Zero É um valor e aparece; ausente vira travessão. */
+const dinheiro = (n: number | null | undefined) =>
+  n == null ? '—' : reaisExatos(Number(n));
+
 const inputCls =
   'h-8 rounded-md border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-ring';
 
@@ -131,22 +139,43 @@ export function ConferenciaDaPlanilha({ de, ate }: Props) {
       )}
 
       <div className="overflow-x-auto rounded-lg border">
-        <table className="w-full min-w-[980px] text-xs">
+        <table className="w-full min-w-[1680px] text-xs">
           <thead>
+            {/*
+              AS COLUNAS DA PLANILHA DO DRIVE, na ordem dela — 24/09.
+
+              O chefe mandou o arquivo e pediu que esta aba fosse "um espelho
+              daquela", porque se ficar redondo a equipe passa a preencher pela
+              Dash. Então os rótulos são os DELA: "Total Unidade", "Total
+              (-3%)", "Comissão Total", "Team Leader", "Comissão Imobiliária".
+              Renomear para o vocabulário da Dash faria quem confere ter de
+              traduzir coluna por coluna.
+            */}
             <tr className="border-b bg-muted/40 text-left uppercase tracking-wide text-muted-foreground">
-              <th className="px-3 py-2">Data</th>
-              <th className="px-3 py-2">Empreendimento / Código do imóvel</th>
-              <th className="px-3 py-2">Corretor</th>
-              <th className="px-3 py-2">Gerente</th>
-              <th className="px-3 py-2 text-right">VGV</th>
-              <th className="px-3 py-2 text-right">Comissão</th>
-              <th className="px-3 py-2">Recebido</th>
-              <th className="px-3 py-2">Pagamento</th>
+              <th className="px-2.5 py-2">Empreendimento</th>
+              <th className="px-2.5 py-2">Qd · Un</th>
+              <th className="px-2.5 py-2">Origem</th>
+              <th className="px-2.5 py-2 text-right">Área m²</th>
+              <th className="px-2.5 py-2 text-right">R$/m²</th>
+              <th className="px-2.5 py-2 text-right">Total unidade</th>
+              <th className="px-2.5 py-2 text-right">Total (-3%)</th>
+              <th className="px-2.5 py-2 text-right">Comissão total</th>
+              <th className="px-2.5 py-2">Cliente</th>
+              <th className="px-2.5 py-2">Corretor</th>
+              <th className="px-2.5 py-2">Tipo</th>
+              <th className="px-2.5 py-2 text-right">Corretor R$</th>
+              <th className="px-2.5 py-2 text-right">Team leader</th>
+              <th className="px-2.5 py-2 text-right">Comissão imobiliária</th>
+              <th className="px-2.5 py-2">Gerente</th>
+              <th className="px-2.5 py-2">Assinatura</th>
+              <th className="px-2.5 py-2">Recebimento</th>
+              <th className="px-2.5 py-2">Status</th>
+              <th className="px-2.5 py-2">Pagamento</th>
             </tr>
           </thead>
           <tbody>
             {linhas.length === 0 && (
-              <tr><td colSpan={8} className="px-3 py-6 text-center text-muted-foreground">
+              <tr><td colSpan={19} className="px-3 py-6 text-center text-muted-foreground">
                 Nenhuma venda da planilha neste recorte.
               </td></tr>
             )}
@@ -154,36 +183,45 @@ export function ConferenciaDaPlanilha({ de, ate }: Props) {
               const pagamento = rotuloDoPagamento(v);
               return (
                 <tr key={v.id} className="border-b last:border-0 hover:bg-muted/30">
-                  <td className="px-3 py-2 whitespace-nowrap">{dataBR(v.data_assinatura)}</td>
-                  <td className="px-3 py-2">
-                    <span className="font-medium">{v.empreendimento || '—'}</span>
-                    {/* A planilha não tem código de imóvel: tem quadra e
-                        unidade, e é isso que identifica o que foi vendido. */}
-                    {v.unidade_codigo && (
-                      <span className="ml-1.5 text-[11px] text-muted-foreground">{v.unidade_codigo}</span>
-                    )}
+                  <td className="px-2.5 py-2 font-medium whitespace-nowrap">
+                    {v.empreendimento || '—'}
                     {v.tipo_negocio && (
                       <span className="ml-1.5 rounded px-1 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground ring-1 ring-border">
-                        {v.tipo_negocio === 'lancamento' ? 'lançamento' : 'pronto'}
+                        {v.tipo_negocio === 'lancamento' ? 'lanç.' : 'pronto'}
                       </span>
                     )}
                   </td>
-                  <td className="px-3 py-2">{v.corretor_nome || '—'}</td>
-                  <td className="px-3 py-2">
+                  <td className="px-2.5 py-2 whitespace-nowrap">{v.unidade_codigo || '—'}</td>
+                  <td className="px-2.5 py-2 whitespace-nowrap">{v.origem || '—'}</td>
+                  <td className="px-2.5 py-2 text-right tabular-nums">{numero(v.area_m2)}</td>
+                  <td className="px-2.5 py-2 text-right tabular-nums">{dinheiro(v.valor_m2)}</td>
+                  <td className="px-2.5 py-2 text-right tabular-nums">{dinheiro(v.total_unidade)}</td>
+                  <td className="px-2.5 py-2 text-right tabular-nums">{dinheiro(v.valor_vgv)}</td>
+                  <td className="px-2.5 py-2 text-right tabular-nums font-medium">{dinheiro(v.comissao_total_venda)}</td>
+                  <td className="px-2.5 py-2 whitespace-nowrap">{v.cliente_nome || '—'}</td>
+                  <td className="px-2.5 py-2 whitespace-nowrap">{v.corretor_nome || '—'}</td>
+                  <td className="px-2.5 py-2 whitespace-nowrap">{v.nivel_corretor || '—'}</td>
+                  <td className="px-2.5 py-2 text-right tabular-nums">{dinheiro(v.repasse_corretor)}</td>
+                  <td className="px-2.5 py-2 text-right tabular-nums">{dinheiro(v.team_leader_valor)}</td>
+                  {/* É a "Líquida" que o chefe definiu: comissão menos corretor
+                      menos gerente. A planilha chama assim, e o rótulo é dela. */}
+                  <td className="px-2.5 py-2 text-right tabular-nums font-medium">{dinheiro(v.comissao_imobiliaria)}</td>
+                  <td className="px-2.5 py-2 whitespace-nowrap">
                     {v.gerente || <span className="text-muted-foreground">—</span>}
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    {v.valor_vgv ? reaisExatos(Number(v.valor_vgv)) : '—'}
+                  <td className="px-2.5 py-2 whitespace-nowrap">{dataBR(v.data_assinatura)}</td>
+                  <td className="px-2.5 py-2 whitespace-nowrap">{dataBR(v.data_recebimento)}</td>
+                  {/* Texto livre na planilha — mostrado como está, sem virar
+                      selo: transformá-lo em estado obrigaria a inventar
+                      categorias que ninguém combinou. */}
+                  <td className="px-2.5 py-2 max-w-[180px] truncate" title={v.status_recebimento ?? ''}>
+                    {v.status_recebimento || '—'}
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    {v.comissao_total_venda ? reaisExatos(Number(v.comissao_total_venda)) : '—'}
-                  </td>
-                  <td className="px-3 py-2 whitespace-nowrap">{dataBR(v.data_recebimento)}</td>
-                  <td className="px-3 py-2">
+                  <td className="px-2.5 py-2">
                     <button
                       type="button"
                       onClick={() => setEditando(v)}
-                      className={`rounded px-1.5 py-0.5 text-[11px] hover:bg-accent ${
+                      className={`rounded px-1.5 py-0.5 text-[11px] whitespace-nowrap hover:bg-accent ${
                         pagamento ? '' : 'text-muted-foreground ring-1 ring-dashed ring-border'
                       }`}
                     >
@@ -197,10 +235,12 @@ export function ConferenciaDaPlanilha({ de, ate }: Props) {
           {dados && linhas.length > 0 && (
             <tfoot>
               <tr className="border-t bg-muted/30 font-medium">
-                <td className="px-3 py-2" colSpan={4}>{dados.total_linhas} venda(s)</td>
-                <td className="px-3 py-2 text-right tabular-nums">{reaisExatos(Number(dados.total_vgv))}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{reaisExatos(Number(dados.total_comissao))}</td>
-                <td className="px-3 py-2" colSpan={2} />
+                <td className="px-2.5 py-2" colSpan={6}>{dados.total_linhas} venda(s)</td>
+                <td className="px-2.5 py-2 text-right tabular-nums">{dinheiro(dados.total_vgv)}</td>
+                <td className="px-2.5 py-2 text-right tabular-nums">{dinheiro(dados.total_comissao)}</td>
+                <td className="px-2.5 py-2" colSpan={5} />
+                <td className="px-2.5 py-2 text-right tabular-nums">{dinheiro(dados.total_imobiliaria)}</td>
+                <td className="px-2.5 py-2" colSpan={5} />
               </tr>
             </tfoot>
           )}

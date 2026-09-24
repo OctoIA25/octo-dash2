@@ -29,9 +29,25 @@ export interface VendaDaPlanilha {
   gerente: string | null;
   /** Do cadastro de empreendimentos. `null` = ninguém classificou ainda. */
   tipo_negocio: 'lancamento' | 'terceiros' | null;
+  /* As colunas da planilha do Drive, na ordem dela. */
+  origem: string | null;
+  area_m2: number | null;
+  valor_m2: number | null;
+  /** "Total Unidade" na planilha. */
+  total_unidade: number | null;
+  /** "Total (-3%)" na planilha — é o VGV. */
   valor_vgv: number | null;
+  /** "Comissão Total" na planilha — a bruta. */
   comissao_total_venda: number | null;
+  /** Os quatro percentuais somados: cada venda usa um só. */
+  repasse_corretor: number | null;
+  /** "Team Leader" na planilha: é VALOR, não nome. */
+  team_leader_valor: number | null;
+  /** "Comissão Imobiliária" — o que sobra para a casa. */
+  comissao_imobiliaria: number | null;
   data_recebimento: string | null;
+  /** Texto livre na planilha: "ok", "ver na Caixa", "pagou mais 252 em 14/03". */
+  status_recebimento: string | null;
   pagamento_forma: 'a_vista' | 'parcelado' | null;
   parcelas_total: number | null;
   parcelas_pagas: number | null;
@@ -42,6 +58,8 @@ export interface ConferenciaDaPlanilha {
   total_linhas: number;
   total_vgv: number;
   total_comissao: number;
+  total_imobiliaria: number;
+  total_recebido: number;
   /** Quantas linhas ainda não têm cada um dos três. */
   sem_gerente: number;
   sem_tipo: number;

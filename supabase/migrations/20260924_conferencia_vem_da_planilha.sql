@@ -155,9 +155,42 @@ BEGIN
       -- LANÇAMENTO OU PRONTO: do cadastro de empreendimentos, que é onde a
       -- casa já disse o que cada nome é. A planilha não diz.
       al.tipo AS tipo_negocio,
-      cs.valor_vgv,
-      cs.comissao_total_venda,
+      -- ============================================================
+      -- AS COLUNAS DA PLANILHA, na ordem dela — 24/09
+      --
+      -- O chefe mandou o arquivo do Drive e pediu que esta aba fosse "um
+      -- espelho daquela, funciona da mesma forma", porque se ficar redondo a
+      -- equipe passa a preencher pela Dash. Então as colunas saem daqui na
+      -- mesma ordem em que estão lá.
+      -- ============================================================
+      cs.origem,
+      cs.area_m2,
+      cs.valor_m2,
+      cs.total_unidade,          -- "Total Unidade"
+      cs.valor_vgv,              -- "Total (-3%)"
+      cs.comissao_total_venda,   -- "Comissão Total"
+      -- Os quatro percentuais do corretor viram um número só: na planilha
+      -- cada venda usa UM deles, os outros três ficam vazios, e quatro colunas
+      -- quase sempre em branco são ruído numa tabela já larga.
+      COALESCE(cs.repasse_20,0) + COALESCE(cs.repasse_40,0)
+        + COALESCE(cs.repasse_45,0) + COALESCE(cs.repasse_50,0) AS repasse_corretor,
+      cs.team_leader_valor,
+      -- "Comissão Imobiliária" — o que sobra para a casa.
+      --
+      -- CALCULADA, e não lida de `valor_conta_japi`: essa coluna está ZERADA
+      -- na importação, e a planilha traz o valor nas 41 linhas. Conferido numa
+      -- linha da Lotus em 24/09: comissão 23.860,37 menos corretor 9.544,15
+      -- menos Team Leader 4.772,07 dá 9.544,15 — exatamente o que a planilha
+      -- mostra. É a mesma conta que o chefe definiu para a "Líquida".
+      COALESCE(cs.comissao_total_venda,0)
+        - (COALESCE(cs.repasse_20,0) + COALESCE(cs.repasse_40,0)
+           + COALESCE(cs.repasse_45,0) + COALESCE(cs.repasse_50,0))
+        - COALESCE(cs.team_leader_valor,0) AS comissao_imobiliaria,
       cs.data_recebimento,
+      -- "Status recebimento" da planilha é TEXTO LIVRE: "ok", "ver na Caixa",
+      -- "pagou mais 252 em 14/03". Não é uma lista de estados, e transformá-lo
+      -- num selo obrigaria a inventar categorias que ninguém combinou.
+      cs.observacoes AS status_recebimento,
       pg.forma        AS pagamento_forma,
       pg.parcelas_total,
       pg.parcelas_pagas
@@ -186,6 +219,8 @@ BEGIN
     'total_linhas', count(*),
     'total_vgv',     COALESCE(sum(l.valor_vgv), 0),
     'total_comissao',COALESCE(sum(l.comissao_total_venda), 0),
+    'total_imobiliaria', COALESCE(sum(l.comissao_imobiliaria), 0),
+    'total_recebido', COALESCE(sum(l.comissao_total_venda) FILTER (WHERE l.data_recebimento IS NOT NULL), 0),
     -- O QUE A TELA NÃO SABE, contado aqui e dito lá. Sem isto, a coluna vazia
     -- parece defeito da tela em vez de cadastro por fazer.
     'sem_gerente',     count(*) FILTER (WHERE l.gerente IS NULL),
