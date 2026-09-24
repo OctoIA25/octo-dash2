@@ -315,6 +315,15 @@ function Lista({
   if (!dados) return null;
 
   const t = dados.totais;
+  /*
+   * Quantas linhas de comissão ainda não têm líquido — a folha de repasse não
+   * foi calculada, então não há o que subtrair. Elas não entram no total, e
+   * dizer quantas são é o que impede alguém de dividir o líquido pelo total a
+   * receber e chamar aquilo de margem.
+   */
+  const semLiquido = (dados.linhas ?? []).filter(
+    (l) => l.origem === 'venda' && l.tipo === 'receber' && l.valor_liquido == null,
+  ).length;
   const vencidos = avisoDeVencidos(t);
   const semConta = avisoSemConta(t);
   const ehReceber = aba === 'receber';
@@ -452,9 +461,25 @@ function Lista({
         <Total rotulo={ehReceber ? 'A receber' : 'A pagar'}
           valor={reaisExatos(ehReceber ? t.a_receber : t.a_pagar)} forte
           nota={`${t.lancamentos} lançamento(s) no período`} />
+        {/*
+          O rótulo mudou em 24/09 junto com a fórmula: a líquida deixou de ser
+          "menos o imposto" e passou a ser "menos o corretor e o gerente", por
+          decisão do chefe. O card continuava escrito "após o imposto" e teria
+          virado um rótulo mentindo sobre um número certo — que é pior do que
+          um número errado, porque ninguém desconfia.
+
+          E diz de QUANTAS linhas ele é feito: venda sem folha de repasse
+          calculada não tem líquido, e não entra na soma. Sem isto, alguém leria
+          R$ 14.000 de líquido sobre R$ 127.200 a receber e concluiria que a
+          margem da casa é de 11%.
+        */}
         {ehReceber ? (
-          <Total rotulo="Líquido, após o imposto" valor={reaisExatos(t.liquido)}
-            nota="só as comissões — o imposto já sai daqui" />
+          <Total
+            rotulo="Líquido para a casa"
+            valor={reaisExatos(t.liquido)}
+            nota={semLiquido > 0
+              ? `só as comissões, menos corretor e gerente · ${semLiquido} sem folha calculada ficaram de fora`
+              : 'só as comissões, menos corretor e gerente'} />
         ) : (
           <Total rotulo="Pago" valor={reaisExatos(t.pago)} />
         )}

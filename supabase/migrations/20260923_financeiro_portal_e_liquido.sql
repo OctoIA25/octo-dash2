@@ -123,6 +123,8 @@ BEGIN
       -- Só na linha da COMISSÃO. O "líquido" de uma linha de imposto ou de
       -- repasse não quer dizer nada — e um número sem significado numa coluna
       -- de dinheiro é pior que uma célula vazia.
+      -- NULO quando a folha de repasse ainda não foi calculada: sem os
+      -- repasses não há o que subtrair, e a tela mostra "—".
       'valor_liquido', CASE WHEN origem = 'venda' THEN comissao_liquida END
     ) ORDER BY COALESCE(vencimento, competencia), valor DESC) FROM comVenda), '[]'::jsonb),
     (SELECT jsonb_build_object(
@@ -135,9 +137,15 @@ BEGIN
       'valor_vencido', round(COALESCE(sum(valor) FILTER (WHERE status = 'aberto' AND vencimento IS NOT NULL AND vencimento < v_hoje), 0), 2),
       'sem_conta', count(*) FILTER (WHERE conta_id IS NULL),
 
-      -- O líquido do que se tem a receber: a comissão menos o imposto, já
-      -- calculado na venda. Só das linhas de comissão, pelo mesmo motivo de
-      -- cima — somar o "líquido" de uma linha de imposto contaria duas vezes.
+      -- O líquido do que se tem a receber. Só das linhas de comissão, pelo
+      -- mesmo motivo de cima — somar o "líquido" de uma linha de imposto
+      -- contaria duas vezes.
+      --
+      -- ATENÇÃO, 24/09: `comissao_liquida` deixou de ser "menos o imposto" e
+      -- passou a ser "menos o corretor e o gerente", por decisão do chefe
+      -- (ver 20260924_liquida_e_o_que_sobra_para_a_casa). Venda sem folha
+      -- calculada tem a coluna NULA, e `sum` ignora nulo — então este total é
+      -- só das vendas com folha. A tela diz quantas ficaram de fora.
       'liquido', round(COALESCE(sum(comissao_liquida)
         FILTER (WHERE origem = 'venda' AND tipo = 'receber'), 0), 2),
 
