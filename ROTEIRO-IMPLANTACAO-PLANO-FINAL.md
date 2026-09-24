@@ -7,16 +7,16 @@ e os nomes registrados seguem convenções diferentes).
 **Medido:** 58 tabelas nascem deste plano. **57 não existem em produção**; só
 `lead_toques` já foi aplicada.
 
-**Atualizado em 23/09:** mais uma tabela (`pedido_de_nota`) e mais sete
-migrations — **59 tabelas, 57 migrations**. As sete novas estão no fim da
-lista, da 51 à 57, e não passaram pela conferência objeto-a-objeto de 22/09.
+**Atualizado em 23/09:** mais uma tabela (`pedido_de_nota`) e mais oito
+migrations — **59 tabelas, 58 migrations**. As oito novas estão no fim da
+lista, da 51 à 58, e não passaram pela conferência objeto-a-objeto de 22/09.
 A 53 **já está em produção**: era uma porta aberta e foi fechada no mesmo dia.
 
 ---
 
 ## 1. A ordem
 
-São **57 migrations**. A ordem abaixo é a alfabética **corrigida por
+São **58 migrations**. A ordem abaixo é a alfabética **corrigida por
 dependência** — quatro arquivos precisam sair do lugar natural.
 
 > **A que mais importa:** `20260922_ajuda_manual_e_faq` é a *primeira*
@@ -137,8 +137,8 @@ produção** — conferido em 22/09) e de `tipologias_do_lancamento`.
      **Tambem troca `financeiro_pode_ver`**, que e o porteiro de 20 funcoes do
      Financeiro: passa a aceitar tambem quem tem a permissao pelo cargo.
 
-> **Estas sete entraram em 23/09, depois do levantamento.** A lista acima foi
-> conferida objeto por objeto contra producao em 22/09; da 51 a 57 nao
+> **Estas oito entraram em 23/09, depois do levantamento.** A lista acima foi
+> conferida objeto por objeto contra producao em 22/09; da 51 a 58 nao
 > passaram por essa conferencia — a dependencia delas foi lida no codigo.
 
 **Reaplicar `20260921_demandas_de_marketing.sql`**, que mudou DEPOIS de entrar
