@@ -5,7 +5,7 @@
 
 import { useMemo, useState, useEffect } from 'react';
 import { InfoMetrica } from '@/features/kpis/components/KpiComponents';
-import { contarVisitasAgendadasPara } from '@/features/leads/utils/funnelStages';
+import { pipelineDaHome, contarVisitasAgendadasPara } from '@/features/leads/utils/funnelStages';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { TaskManager } from '@/components/TaskManager';
 import { AgendaCalendar } from '@/features/agenda/components/AgendaCalendar';
@@ -248,7 +248,7 @@ interface PipelineStage {
   shade: string;
 }
 
-function PipelineCard({ stages, onViewFull }: { stages: PipelineStage[]; onViewFull: () => void }) {
+function PipelineCard({ stages, foraDoFunil, onViewFull }: { stages: PipelineStage[]; foraDoFunil: number; onViewFull: () => void }) {
   const max = Math.max(1, ...stages.map((s) => s.count));
   return (
     <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4">
@@ -281,6 +281,18 @@ function PipelineCard({ stages, onViewFull }: { stages: PipelineStage[]; onViewF
           );
         })}
       </div>
+      {/*
+        Os leads que não são deste funil, contados e ditos — nunca sumidos.
+        É o que explica o total da tela não bater com o do Funil de Cliente
+        Interessado: a diferença é o proprietário, e sem esta linha alguém
+        compara 1.688 com 1.687 e vai procurar um defeito que não existe.
+      */}
+      {foraDoFunil > 0 && (
+        <p className="mt-2 text-center text-[10.5px] text-slate-400">
+          + {foraDoFunil.toLocaleString('pt-BR')} fora deste funil (proprietário e outros) ·
+          a soma fecha com o total
+        </p>
+      )}
     </div>
   );
 }
@@ -567,23 +579,34 @@ export function InicioNovaPage() {
     esfr: leads.filter((l) => (l.status_temperatura || '').toLowerCase() === 'morno').length,
   };
 
-  const pipelineStages: PipelineStage[] = useMemo(() => {
-    const stagesRaw = [
-      { key: ['novo', 'novos'], label: 'Novos Leads', shade: 'bg-blue-600' },
-      { key: ['atendimento', 'interação', 'interacao'], label: 'Em Atendimento', shade: 'bg-blue-500' },
-      { key: ['visita'], label: 'Visita', shade: 'bg-sky-500' },
-      { key: ['proposta'], label: 'Proposta', shade: 'bg-emerald-500' },
-      { key: ['assinad', 'fechad'], label: 'Fechamento', shade: 'bg-emerald-600' },
-    ];
-    const total = leads.length || 1;
-    return stagesRaw.map((st) => {
-      const count = leads.filter((l) => {
-        const e = (l.etapa_atual || '').toLowerCase();
-        return st.key.some((k) => e.includes(k));
-      }).length;
-      return { label: st.label, count, pct: (count / total) * 100, shade: st.shade };
-    });
-  }, [leads]);
+  /*
+   * A regra de "em que balde este lead cai" mora em `funnelStages`, junto das
+   * outras regras de etapa — não aqui dentro.
+   *
+   * A versão que estava aqui classificava por pedaço de texto e sem exclusão,
+   * e produzia três defeitos ao mesmo tempo na base de 1.688 leads: um lead de
+   * PROPRIETÁRIO entrando em "Novos Leads" (porque `'novos proprietários'`
+   * contém `'novo'`), as 2 assinadas contadas em "Proposta" E em "Fechamento",
+   * e 326 leads em "Negociação" que não casavam com balde nenhum — 19% da base
+   * invisível no Pipeline, sem erro e sem aviso.
+   */
+  const CORES: Record<string, string> = {
+    'Novos Leads': 'bg-blue-600',
+    'Em Atendimento': 'bg-blue-500',
+    'Visita': 'bg-sky-500',
+    'Negociação': 'bg-teal-500',
+    'Proposta': 'bg-emerald-500',
+    'Fechamento': 'bg-emerald-600',
+  };
+
+  const pipeline = useMemo(() => pipelineDaHome(leads), [leads]);
+
+  const pipelineStages: PipelineStage[] = useMemo(
+    () => pipeline.baldes.map((b) => ({
+      label: b.label, count: b.count, pct: b.pct, shade: CORES[b.label] ?? 'bg-slate-400',
+    })),
+    [pipeline],
+  );
 
   const ranking: RankingItem[] = useMemo(() => {
     const map = new Map<string, { closings: number; volume: number }>();
@@ -822,6 +845,7 @@ export function InicioNovaPage() {
               <div className="space-y-4">
                 <PipelineCard
                   stages={pipelineStages}
+                  foraDoFunil={pipeline.outros}
                   onViewFull={() => navigate('/metricas/cliente-interessado')}
                 />
                 <RankingCard items={ranking} onViewAll={() => navigate('/gestao-equipe')} />

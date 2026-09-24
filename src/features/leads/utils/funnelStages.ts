@@ -351,6 +351,84 @@ export function countLeadsInStage(leads: ProcessedLead[], stage: string): number
   }
 }
 
+/**
+ * O Pipeline da tela inicial — um lead em UM balde só.
+ *
+ * A versão anterior classificava por pedaço de texto, sem exclusão:
+ * `etapa.includes('novo')`, `includes('proposta')`, e por aí. Medido na base
+ * em 24/09, com 1.688 leads, isso produzia três defeitos de uma vez:
+ *
+ *   371 em "Novos Leads" — porque `'novos proprietários'` contém `'novo'`, e
+ *       um lead de PROPRIETÁRIO entrava na conta de cliente interessado;
+ *   328 em "Proposta"    — `'proposta assinada'` contém `'proposta'`, então as
+ *       2 assinadas eram contadas aqui E em "Fechamento", duas vezes;
+ *   326 em NENHUM balde  — "Negociação" não casava com nenhuma das chaves, e
+ *       19% da base simplesmente não aparecia no Pipeline.
+ *
+ * Nada disso dava erro, e os cinco números continuavam plausíveis. Foi
+ * comparando a Home com o Funil que a diferença apareceu — e mesmo ali ela
+ * parecia "um a mais", quando eram três causas diferentes.
+ *
+ * A ordem importa: o primeiro balde que casa leva o lead, e ela vai do fim do
+ * funil para o começo, senão "Proposta Assinada" cairia em "Proposta".
+ */
+export type BaldeDoPipeline =
+  | 'Fechamento' | 'Proposta' | 'Negociação' | 'Visita' | 'Em Atendimento' | 'Novos Leads' | 'Outros';
+
+export const ORDEM_DO_PIPELINE: BaldeDoPipeline[] =
+  ['Novos Leads', 'Em Atendimento', 'Visita', 'Negociação', 'Proposta', 'Fechamento'];
+
+/** Em qual balde do Pipeline este lead cai. Sempre exatamente um. */
+export function baldeDoPipeline(etapa: string | null | undefined): BaldeDoPipeline {
+  const e = normalizarEtapa(etapa);
+
+  // Do fim para o começo: 'proposta assinada' tem de virar Fechamento, e não
+  // Proposta. Testar na ordem do funil colocaria o lead no balde errado.
+  if (isEtapaFechamento(e)) return 'Fechamento';
+  if (e.includes('proposta')) return 'Proposta';
+  if (e.includes('negocia')) return 'Negociação';
+  if (isEtapaVisita(e)) return 'Visita';
+  if (e.includes('interaç') || e.includes('interac') || e.includes('atendimento')) return 'Em Atendimento';
+  // `'novos proprietários'` NÃO entra aqui: o Pipeline é do funil de cliente
+  // interessado, e contar o proprietário como lead novo foi exatamente o "um a
+  // mais" que a conferência de 24/09 achou.
+  if (e.includes('proprietár') || e.includes('proprietar')) return 'Outros';
+  if (e === '' || e.includes('novo')) return 'Novos Leads';
+  return 'Outros';
+}
+
+export interface PipelineDaHome {
+  baldes: Array<{ label: BaldeDoPipeline; count: number; pct: number }>;
+  total: number;
+  /** Leads que não pertencem a este funil. Contados, nunca sumidos. */
+  outros: number;
+}
+
+/**
+ * O Pipeline inteiro. A soma dos baldes mais `outros` é SEMPRE o total — é
+ * isso que impede um lead de sumir ou de ser contado duas vezes, e é o que a
+ * conferência entre telas passa a poder verificar.
+ */
+export function pipelineDaHome(
+  leads: Array<{ etapa_atual?: string | null }> | null | undefined,
+): PipelineDaHome {
+  const lista = leads ?? [];
+  const conta = new Map<BaldeDoPipeline, number>();
+  for (const l of lista) {
+    const b = baldeDoPipeline(l.etapa_atual);
+    conta.set(b, (conta.get(b) ?? 0) + 1);
+  }
+  const total = lista.length;
+  return {
+    baldes: ORDEM_DO_PIPELINE.map((label) => {
+      const count = conta.get(label) ?? 0;
+      return { label, count, pct: total > 0 ? (count / total) * 100 : 0 };
+    }),
+    total,
+    outros: conta.get('Outros') ?? 0,
+  };
+}
+
 export interface FunnelStages {
   /** Rótulos das etapas (na ordem do funil). */
   labels: string[];
