@@ -31,9 +31,10 @@ import { makeRequireSupabaseAuth, resolveTenant } from '../kpis/index.js';
 import { isPlatformOwner } from '../utils/ownerAuth.js';
 import { autenticar, papelNoTenant, podeVerCadencia } from '../liaCadencia/index.js';
 import { buscarLead } from '../liaCadencia/query.js';
-import { buscarLeadPorTelefone, carregarEventos, buscarBolsao, gravarEvento } from './query.js';
+import { buscarLeadPorTelefone, carregarEventos, buscarBolsao, gravarEvento, carregarMudancasDeEtapa } from './query.js';
 import { montarHistorico } from './compute.js';
 import { normalizarEvento } from './normalize.js';
+import { contarPassaramPorEtapa, inicioDoHistorico } from './passaramPorEtapa.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -83,6 +84,53 @@ export function registerLeadEventsRoutes(app, supabase, options = {}) {
       return res.json({ ok: true, ...historico });
     } catch (err) {
       console.error('[lead-events] erro lendo histórico:', err?.message);
+      return res.status(500).json({ ok: false, error: 'internal_error' });
+    }
+  });
+
+  /**
+   * Quantos leads PASSARAM por cada etapa — o funil por fluxo, não por foto.
+   *
+   * Pedido do chefe em 23/09: "saber (...) os que passaram, assim consigo
+   * saber quantas visitas tive no período, e o número continua ali mesmo que
+   * o lead tenha migrado para a etapa de negociação".
+   *
+   * Passa pelo servidor porque `lead_events` está com RLS sem policy: lida
+   * pelo PostgREST devolveria lista vazia, em silêncio. É a mesma razão da
+   * rota de histórico acima.
+   *
+   * Devolve `inicio_do_historico` junto, e não é enfeite: o registro começa em
+   * 10/09/2026, e um "passaram" sem essa data parece menor que a realidade
+   * para quem olha.
+   */
+  app.get('/api/v1/funil/passaram-por-etapa', requireAuth, async (req, res) => {
+    try {
+      const resolved = await resolveTenant(supabase, req);
+      if (resolved.error) return res.status(resolved.status).json({ ok: false, error: resolved.error });
+      const { tenantId } = resolved;
+
+      // As etapas vêm de quem pergunta: o funil de Interessado e o de
+      // Proprietário têm listas diferentes, e o servidor não pode escolher uma.
+      const etapas = String(req.query.etapas || '')
+        .split('|')
+        .map((e) => e.trim())
+        .filter(Boolean);
+      if (etapas.length === 0) return res.status(400).json({ ok: false, error: 'etapas_obrigatorias' });
+
+      const { eventos, truncated } = await carregarMudancasDeEtapa(supabase, tenantId, {
+        de: req.query.de || null,
+        ate: req.query.ate || null,
+      });
+
+      return res.json({
+        ok: true,
+        etapas,
+        passaram: contarPassaramPorEtapa(eventos, etapas),
+        inicio_do_historico: inicioDoHistorico(eventos),
+        truncated,
+      });
+    } catch (err) {
+      console.error('[lead-events] erro contando quem passou por etapa:', err?.message);
       return res.status(500).json({ ok: false, error: 'internal_error' });
     }
   });

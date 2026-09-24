@@ -1,11 +1,12 @@
 // Funil cliente interessado
 
-import { useEffect, useRef, useMemo } from 'react';
+import { useEffect, useRef, useMemo, useState } from 'react';
 import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { StandardCardTitle } from '@/components/ui/StandardCardTitle';
 import { TrendingDown, Users, Target, CheckCircle } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
+import { carregarPassaramPorEtapa, type PassaramPorEtapa } from '@/features/leads/services/funilPassaramService';
 
 interface EnhancedFunnelChartProps {
   leads: ProcessedLead[];
@@ -18,6 +19,21 @@ declare global {
 }
 
 export const EnhancedFunnelChart = ({ leads }: EnhancedFunnelChartProps) => {
+  /*
+   * O SEGUNDO NÚMERO: quantos PASSARAM por cada etapa (24/09).
+   *
+   * Pedido do chefe: "não saber somente quantos temos naquele exato momento
+   * naquela etapa, mas sim os que passaram (...) assim saberei exatamente qual
+   * a taxa de conversão de cada etapa".
+   *
+   * Os dois convivem de propósito, e a decisão é de 24/09. Trocar um pelo
+   * outro faria os números DESPENCAREM sem explicação — medido na Lotus:
+   * "Interação" tem 1039 parados agora e 162 que passaram desde o início do
+   * registro, em 10/09. A diferença não é perda: é história anterior ao
+   * registro, e só a data ao lado deixa isso legível.
+   */
+  const [passaram, setPassaram] = useState<PassaramPorEtapa | null>(null);
+  const [erroPassaram, setErroPassaram] = useState<string | null>(null);
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<any>(null);
   const { currentTheme } = useTheme();
@@ -143,6 +159,28 @@ export const EnhancedFunnelChart = ({ leads }: EnhancedFunnelChartProps) => {
 
     return { dataPoints, metrics };
   }, [leads]);
+
+  /*
+   * Quem manda nas etapas é a lista DESENHADA, e não uma cópia da lista aqui:
+   * um número ao lado de uma etapa que o funil não mostra seria pior que
+   * nenhum número. String, e não array, porque array novo a cada render
+   * reentraria no efeito para sempre.
+   */
+  const etapasDoFunil = funnelData.dataPoints.map((p) => p.originalKey).join('|');
+
+  useEffect(() => {
+    let cancelado = false;
+
+    carregarPassaramPorEtapa(etapasDoFunil.split('|'))
+      .then((r) => { if (!cancelado) { setPassaram(r); setErroPassaram(null); } })
+      .catch((e: Error) => {
+        // Erro NÃO vira zero. "0 passaram" é indistinguível de "ninguém
+        // passou", e as duas frases levam a decisões opostas.
+        if (!cancelado) { setPassaram(null); setErroPassaram(e.message); }
+      });
+
+    return () => { cancelado = true; };
+  }, [etapasDoFunil]);
 
   useEffect(() => {
     // Carregar CanvasJS dinamicamente com tratamento de erro
@@ -393,6 +431,13 @@ export const EnhancedFunnelChart = ({ leads }: EnhancedFunnelChartProps) => {
     return colors[index] || colors[colors.length - 1];
   };
 
+  /** `null` = ainda não chegou, ou falhou. Nunca 0 por omissão. */
+  const passaramNaEtapa = (etapa: string): number | null => {
+    if (!passaram) return null;
+    const i = passaram.etapas.indexOf(etapa);
+    return i < 0 ? null : passaram.passaram[i] ?? null;
+  };
+
   return (
     <Card className="bg-bg-card/40 border-bg-secondary/40 shadow-xl shadow-black/20 leads-chart-container h-full flex flex-col">
         <CardHeader className="pb-3 flex-shrink-0">
@@ -421,6 +466,8 @@ export const EnhancedFunnelChart = ({ leads }: EnhancedFunnelChartProps) => {
                 const percentual = funnelData.metrics && funnelData.metrics.totalLeads > 0 
                   ? ((point.quantidade / funnelData.metrics.totalLeads) * 100).toFixed(1)
                   : '0.0';
+                
+                const quantosPassaram = passaramNaEtapa(point.originalKey);
                 
                 return (
                   <div 
@@ -460,18 +507,53 @@ export const EnhancedFunnelChart = ({ leads }: EnhancedFunnelChartProps) => {
                           >
                             {point.quantidade}
                           </span>
+                          {/* A palavra "agora" só aparece quando há o segundo
+                              número: sozinha, ela seria ruído. */}
+                          {quantosPassaram !== null && (
+                            <span
+                              className="text-xs font-semibold opacity-70"
+                              style={{ color: getFunnelColor(point.originalKey, index) }}
+                            >
+                              agora
+                            </span>
+                          )}
                           <span 
                             className="text-sm font-semibold opacity-90"
                             style={{ color: getFunnelColor(point.originalKey, index) }}
                           >
                             ({percentual}%)
                           </span>
+                          {quantosPassaram !== null && (
+                            <span
+                              className="text-sm font-bold whitespace-nowrap"
+                              style={{ color: getFunnelColor(point.originalKey, index) }}
+                              title="Quantos leads já passaram por esta etapa, mesmo que hoje estejam em outra"
+                            >
+                              · {quantosPassaram} passaram
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
                   </div>
                 );
               })}
+
+              {/*
+                * A data NÃO é decoração: o registro de eventos começou em
+                * 10/09/2026, e sem ela "13 passaram" ao lado de "331 agora"
+                * parece erro do sistema em vez de histórico curto.
+                */}
+              {erroPassaram ? (
+                <div className="absolute left-1 bottom-0 max-w-[230px] text-[11px] leading-tight text-red-400/80">
+                  Não deu para contar quem passou por cada etapa: {erroPassaram}
+                </div>
+              ) : passaram?.inicioDoHistorico ? (
+                <div className="absolute left-1 bottom-0 max-w-[230px] text-[11px] leading-tight text-text-secondary/70">
+                  "Passaram" conta desde {new Date(passaram.inicioDoHistorico).toLocaleDateString('pt-BR')}
+                  {passaram.truncado && ' — contagem parcial, período muito grande'}
+                </div>
+              ) : null}
             </div>
           </div>
         </CardContent>

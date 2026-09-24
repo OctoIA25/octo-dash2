@@ -161,3 +161,35 @@ export async function gravarEvento(supabase, tenantId, lead, row) {
 
   return { id: data.id, created: true };
 }
+
+/**
+ * As mudanças de etapa do tenant inteiro, para contar quem PASSOU por cada uma.
+ *
+ * Só as colunas necessárias, e só `lead.stage_changed`: a tabela guarda todo
+ * tipo de evento, e trazer o resto seria carregar milhares de linhas que a
+ * contagem descarta.
+ *
+ * O período é OPCIONAL, e sem ele a conta vale desde o início do registro —
+ * que é o que a tela mostra ao lado do número.
+ */
+export async function carregarMudancasDeEtapa(supabase, tenantId, { de = null, ate = null } = {}) {
+  let q = supabase
+    .from('lead_events')
+    .select('lead_id, para, created_at')
+    .eq('tenant_id', tenantId)
+    .eq('event_type', 'lead.stage_changed')
+    .not('para', 'is', null);
+
+  if (de) q = q.gte('created_at', de);
+  if (ate) q = q.lte('created_at', ate);
+
+  // Ordem ascendente e teto alto: a contagem é por lead DISTINTO, então o que
+  // importa é não truncar no meio de um tenant grande. 50 mil cobre a Lotus
+  // inteira com folga (817 eventos em 24/09) e ainda avisa se estourar.
+  const LIMITE = 50_000;
+  const { data, error } = await q.order('created_at', { ascending: true }).limit(LIMITE);
+  if (error) throw error;
+
+  const linhas = data ?? [];
+  return { eventos: linhas, truncated: linhas.length >= LIMITE };
+}

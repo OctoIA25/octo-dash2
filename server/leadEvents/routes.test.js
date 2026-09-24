@@ -57,6 +57,7 @@ function supabaseFalso(tabelas = {}, usuario = { id: CORRETOR, email: 'corretor@
         eq: (col, val) => { registro.filtros[col] = val; return chain; },
         in: (col, vals) => { registro.in = { col, vals }; return chain; },
         or: () => chain,
+        not: (col, op, val) => { registro.not = { col, op, val }; return chain; },
         order: () => chain,
         limit: () => Promise.resolve({ data: linhas, error: null }),
         maybeSingle: () => Promise.resolve({ data: linhas[0] ?? null, error: null }),
@@ -378,5 +379,82 @@ describe('POST /api/v1/leads/:leadId/requisitos-ignorados', () => {
     expect(gravou.insert.para.length).toBeLessThanOrEqual(80);
     expect(gravou.insert.metadata.pendencias.length).toBeLessThanOrEqual(20);
     expect(Math.max(...gravou.insert.metadata.pendencias.map((p) => p.length))).toBeLessThanOrEqual(60);
+  });
+});
+
+describe('GET /api/v1/funil/passaram-por-etapa', () => {
+  const CHAVE = 'GET /api/v1/funil/passaram-por-etapa';
+  let app;
+  beforeEach(() => { app = appFalso(); });
+
+  const registrar = (tabelas, usuario) => {
+    const sb = supabaseFalso(tabelas, usuario);
+    registerLeadEventsRoutes(app, sb, { verbose: false });
+    return sb;
+  };
+
+  const pedido = (over = {}) => ({
+    params: {},
+    query: { tenantId: TENANT, etapas: 'Novos Leads|Interação|Visita Agendada' },
+    headers: { authorization: 'Bearer jwt' },
+    body: {},
+    ...over,
+  });
+
+  const mudanca = (lead, para, quando) => ({ lead_id: lead, para, created_at: quando });
+
+  it('sem Authorization devolve 401', async () => {
+    registrar({});
+    const res = await app.chamar(CHAVE, pedido({ headers: {} }));
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('sem etapas devolve 400, sem ir ao banco', async () => {
+    const sb = registrar({ tenant_memberships: [{ tenant_id: TENANT, role: 'admin' }] });
+    const res = await app.chamar(CHAVE, pedido({ query: { tenantId: TENANT } }));
+    expect(res.statusCode).toBe(400);
+    expect(res.corpo.error).toBe('etapas_obrigatorias');
+    expect(sb.chamadas.some((c) => c.tabela === 'lead_events')).toBe(false);
+  });
+
+  /*
+   * O caso que sustenta o arquivo. `passaram` é POSICIONAL: a tela casa
+   * número com etapa pelo índice. Se a ordem sair diferente da pedida, cada
+   * etapa mostra o número da vizinha — e o erro é invisível, porque todos os
+   * números continuam plausíveis.
+   */
+  it('devolve um número por etapa, na ORDEM pedida, contando lead distinto', async () => {
+    const sb = registrar({
+      tenant_memberships: [{ tenant_id: TENANT, role: 'admin' }],
+      lead_events: [
+        mudanca('L1', 'Interação', '2026-09-10T10:00:00Z'),
+        mudanca('L1', 'Interação', '2026-09-11T10:00:00Z'),   // mesmo lead, volta: conta 1
+        mudanca('L2', 'Interação', '2026-09-12T10:00:00Z'),
+        mudanca('L3', 'Visita Agendada', '2026-09-13T10:00:00Z'),
+        mudanca('L9', 'Arquivado', '2026-09-14T10:00:00Z'),   // etapa fora da lista: ignorada
+      ],
+    });
+    const res = await app.chamar(CHAVE, pedido());
+
+    expect(res.statusCode).toBe(200);
+    expect(res.corpo.etapas).toEqual(['Novos Leads', 'Interação', 'Visita Agendada']);
+    expect(res.corpo.passaram).toEqual([0, 2, 1]);
+    expect(res.corpo.inicio_do_historico).toBe('2026-09-10T10:00:00.000Z');
+    expect(res.corpo.truncated).toBe(false);
+
+    // E o recorte por imobiliária não é opcional.
+    const leitura = sb.chamadas.find((c) => c.tabela === 'lead_events');
+    expect(leitura.filtros.tenant_id).toBe(TENANT);
+    expect(leitura.filtros.event_type).toBe('lead.stage_changed');
+  });
+
+  it('sem evento nenhum, a data de início vem nula em vez de hoje', async () => {
+    registrar({
+      tenant_memberships: [{ tenant_id: TENANT, role: 'admin' }],
+      lead_events: [],
+    });
+    const res = await app.chamar(CHAVE, pedido());
+    expect(res.corpo.passaram).toEqual([0, 0, 0]);
+    expect(res.corpo.inicio_do_historico).toBeNull();
   });
 });
