@@ -172,24 +172,33 @@ export async function gravarEvento(supabase, tenantId, lead, row) {
  * O período é OPCIONAL, e sem ele a conta vale desde o início do registro —
  * que é o que a tela mostra ao lado do número.
  */
-export async function carregarMudancasDeEtapa(supabase, tenantId, { de = null, ate = null } = {}) {
-  let q = supabase
-    .from('lead_events')
-    .select('lead_id, para, created_at')
-    .eq('tenant_id', tenantId)
-    .eq('event_type', 'lead.stage_changed')
-    .not('para', 'is', null);
+/**
+ * Quantos leads DISTINTOS passaram por cada etapa, contados NO BANCO.
+ *
+ * A primeira versão baixava os eventos e contava aqui, pedindo 50 mil linhas.
+ * O PostgREST corta a resposta em MIL, sem erro e sem aviso — e como vinham em
+ * ordem de data, as mil eram todas da primeira etapa. A tela mostrou
+ * `[1000, 0, 0, 0, 0, 0, 0, 0]`: um funil que despenca, plausível, e falso.
+ *
+ * O aviso de truncagem que existia para isso não disparou: ele comparava com o
+ * teto de 50 mil, e mil é menor. A defesa estava escrita contra o limite
+ * errado.
+ *
+ * Agora a pergunta é um `group by`, que é do banco — e o que volta são oito
+ * linhas, então não há teto que alcance.
+ */
+export async function carregarPassaramPorEtapa(supabase, tenantId, { de = null, ate = null } = {}) {
+  const [contagem, inicio] = await Promise.all([
+    supabase.rpc('funil_passaram_por_etapa', { p_tenant_id: tenantId, p_de: de, p_ate: ate }),
+    supabase.rpc('funil_inicio_do_historico', { p_tenant_id: tenantId, p_de: de, p_ate: ate }),
+  ]);
 
-  if (de) q = q.gte('created_at', de);
-  if (ate) q = q.lte('created_at', ate);
+  if (contagem.error) throw contagem.error;
+  if (inicio.error) throw inicio.error;
 
-  // Ordem ascendente e teto alto: a contagem é por lead DISTINTO, então o que
-  // importa é não truncar no meio de um tenant grande. 50 mil cobre a Lotus
-  // inteira com folga (817 eventos em 24/09) e ainda avisa se estourar.
-  const LIMITE = 50_000;
-  const { data, error } = await q.order('created_at', { ascending: true }).limit(LIMITE);
-  if (error) throw error;
+  const porEtapa = new Map();
+  for (const l of contagem.data ?? []) porEtapa.set(l.etapa, Number(l.passaram) || 0);
 
-  const linhas = data ?? [];
-  return { eventos: linhas, truncated: linhas.length >= LIMITE };
+  return { porEtapa, inicioDoHistorico: inicio.data ?? null };
 }
+

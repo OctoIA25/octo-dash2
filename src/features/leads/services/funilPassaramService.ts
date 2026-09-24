@@ -5,6 +5,12 @@
  * devolveria lista vazia, sem erro. Quem recorta é o servidor, como já faz o
  * histórico do card — ver `server/leadEvents/index.js`.
  *
+ * A CONTA É DO BANCO, não daqui. A primeira versão baixava os eventos e
+ * contava em JavaScript: o PostgREST corta a resposta em MIL linhas sem
+ * avisar, e como vinham em ordem de data a tela mostrou
+ * `[1000, 0, 0, 0, 0, 0, 0, 0]` — um funil que despenca, plausível, e falso.
+ * Achado em 24/09, com 4.900 eventos na base.
+ *
  * Espelha `historicoLeadService`: timeout explícito e falha que a tela pode
  * mostrar. E falha SILENCIOSA é proibida aqui por um motivo específico: se a
  * contagem vier vazia por erro, o funil mostraria "0 passaram" em todas as
@@ -23,15 +29,13 @@ export interface PassaramPorEtapa {
    * nenhum, e aí a tela mostra só o "parados agora".
    */
   inicioDoHistorico: string | null;
-  /** A consulta bateu no teto e o número está incompleto. */
-  truncado: boolean;
 }
 
 export async function carregarPassaramPorEtapa(
   etapas: string[],
   periodo?: { de?: string | null; ate?: string | null },
 ): Promise<PassaramPorEtapa> {
-  if (!etapas?.length) return { etapas: [], passaram: [], inicioDoHistorico: null, truncado: false };
+  if (!etapas?.length) return { etapas: [], passaram: [], inicioDoHistorico: null };
 
   const params = new URLSearchParams({ etapas: etapas.join('|') });
   if (periodo?.de) params.set('de', periodo.de);
@@ -51,7 +55,6 @@ export async function carregarPassaramPorEtapa(
       etapas: corpo.etapas ?? etapas,
       passaram: corpo.passaram ?? [],
       inicioDoHistorico: corpo.inicio_do_historico ?? null,
-      truncado: corpo.truncated === true,
     };
   } finally {
     clearTimeout(timer);

@@ -38,10 +38,17 @@ function appFalso() {
   };
 }
 
-function supabaseFalso(tabelas = {}, usuario = { id: CORRETOR, email: 'corretor@x.com' }) {
+function supabaseFalso(tabelas = {}, usuario = { id: CORRETOR, email: 'corretor@x.com' }, rpcs = {}) {
   const chamadas = [];
   return {
     chamadas,
+    // A contagem do funil passou a ser um `group by` do banco em 24/09 — o
+    // PostgREST cortava a resposta em mil linhas e a conta em JavaScript dava
+    // [1000, 0, 0, ...]. Por isso a rota agora chama `rpc`.
+    rpc: (nome, args) => {
+      chamadas.push({ rpc: nome, args });
+      return Promise.resolve({ data: rpcs[nome] ?? null, error: null });
+    },
     auth: {
       getUser: vi.fn(async () =>
         (usuario ? { data: { user: usuario } } : { data: null, error: new Error('x') })),
@@ -387,8 +394,8 @@ describe('GET /api/v1/funil/passaram-por-etapa', () => {
   let app;
   beforeEach(() => { app = appFalso(); });
 
-  const registrar = (tabelas, usuario) => {
-    const sb = supabaseFalso(tabelas, usuario);
+  const registrar = (tabelas, usuario, rpcs) => {
+    const sb = supabaseFalso(tabelas, usuario, rpcs);
     registerLeadEventsRoutes(app, sb, { verbose: false });
     return sb;
   };
@@ -401,7 +408,8 @@ describe('GET /api/v1/funil/passaram-por-etapa', () => {
     ...over,
   });
 
-  const mudanca = (lead, para, quando) => ({ lead_id: lead, para, created_at: quando });
+  /** O que a função do banco devolve: já agregado, uma linha por etapa. */
+  const contagem = (pares) => Object.entries(pares).map(([etapa, passaram]) => ({ etapa, passaram }));
 
   it('sem Authorization devolve 401', async () => {
     registrar({});
@@ -423,36 +431,39 @@ describe('GET /api/v1/funil/passaram-por-etapa', () => {
    * etapa mostra o número da vizinha — e o erro é invisível, porque todos os
    * números continuam plausíveis.
    */
-  it('devolve um número por etapa, na ORDEM pedida, contando lead distinto', async () => {
-    const sb = registrar({
-      tenant_memberships: [{ tenant_id: TENANT, role: 'admin' }],
-      lead_events: [
-        mudanca('L1', 'Interação', '2026-09-10T10:00:00Z'),
-        mudanca('L1', 'Interação', '2026-09-11T10:00:00Z'),   // mesmo lead, volta: conta 1
-        mudanca('L2', 'Interação', '2026-09-12T10:00:00Z'),
-        mudanca('L3', 'Visita Agendada', '2026-09-13T10:00:00Z'),
-        mudanca('L9', 'Arquivado', '2026-09-14T10:00:00Z'),   // etapa fora da lista: ignorada
-      ],
-    });
+  it('devolve um número por etapa, na ORDEM pedida, e zero para quem não veio', async () => {
+    const sb = registrar(
+      { tenant_memberships: [{ tenant_id: TENANT, role: 'admin' }] },
+      undefined,
+      {
+        // O banco devolve só as etapas que TÊM evento, e em ordem qualquer.
+        funil_passaram_por_etapa: contagem({ 'Visita Agendada': 1, 'Interação': 2, 'Arquivado': 9 }),
+        funil_inicio_do_historico: '2026-09-10T10:00:00Z',
+      },
+    );
     const res = await app.chamar(CHAVE, pedido());
 
     expect(res.statusCode).toBe(200);
     expect(res.corpo.etapas).toEqual(['Novos Leads', 'Interação', 'Visita Agendada']);
+    // Posicional e na ordem pedida: "Novos Leads" não veio do banco e vira 0,
+    // "Arquivado" veio e é descartado por não estar na lista.
     expect(res.corpo.passaram).toEqual([0, 2, 1]);
-    expect(res.corpo.inicio_do_historico).toBe('2026-09-10T10:00:00.000Z');
-    expect(res.corpo.truncated).toBe(false);
+    expect(res.corpo.inicio_do_historico).toBe('2026-09-10T10:00:00Z');
 
-    // E o recorte por imobiliária não é opcional.
-    const leitura = sb.chamadas.find((c) => c.tabela === 'lead_events');
-    expect(leitura.filtros.tenant_id).toBe(TENANT);
-    expect(leitura.filtros.event_type).toBe('lead.stage_changed');
+    // E o recorte por imobiliária vai nos DOIS lados da pergunta.
+    const chamadas = sb.chamadas.filter((c) => c.rpc);
+    expect(chamadas.map((c) => c.rpc).sort()).toEqual(
+      ['funil_inicio_do_historico', 'funil_passaram_por_etapa'],
+    );
+    expect(chamadas.every((c) => c.args.p_tenant_id === TENANT)).toBe(true);
   });
 
   it('sem evento nenhum, a data de início vem nula em vez de hoje', async () => {
-    registrar({
-      tenant_memberships: [{ tenant_id: TENANT, role: 'admin' }],
-      lead_events: [],
-    });
+    registrar(
+      { tenant_memberships: [{ tenant_id: TENANT, role: 'admin' }] },
+      undefined,
+      { funil_passaram_por_etapa: [], funil_inicio_do_historico: null },
+    );
     const res = await app.chamar(CHAVE, pedido());
     expect(res.corpo.passaram).toEqual([0, 0, 0]);
     expect(res.corpo.inicio_do_historico).toBeNull();

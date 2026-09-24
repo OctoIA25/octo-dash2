@@ -31,10 +31,9 @@ import { makeRequireSupabaseAuth, resolveTenant } from '../kpis/index.js';
 import { isPlatformOwner } from '../utils/ownerAuth.js';
 import { autenticar, papelNoTenant, podeVerCadencia } from '../liaCadencia/index.js';
 import { buscarLead } from '../liaCadencia/query.js';
-import { buscarLeadPorTelefone, carregarEventos, buscarBolsao, gravarEvento, carregarMudancasDeEtapa } from './query.js';
+import { buscarLeadPorTelefone, carregarEventos, buscarBolsao, gravarEvento, carregarPassaramPorEtapa } from './query.js';
 import { montarHistorico } from './compute.js';
 import { normalizarEvento } from './normalize.js';
-import { contarPassaramPorEtapa, inicioDoHistorico } from './passaramPorEtapa.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -117,17 +116,17 @@ export function registerLeadEventsRoutes(app, supabase, options = {}) {
         .filter(Boolean);
       if (etapas.length === 0) return res.status(400).json({ ok: false, error: 'etapas_obrigatorias' });
 
-      const { eventos, truncated } = await carregarMudancasDeEtapa(supabase, tenantId, {
-        de: req.query.de || null,
-        ate: req.query.ate || null,
-      });
+      const { porEtapa, inicioDoHistorico: inicio } = await carregarPassaramPorEtapa(
+        supabase, tenantId, { de: req.query.de || null, ate: req.query.ate || null },
+      );
 
       return res.json({
         ok: true,
         etapas,
-        passaram: contarPassaramPorEtapa(eventos, etapas),
-        inicio_do_historico: inicioDoHistorico(eventos),
-        truncated,
+        // Posicional, na ordem PEDIDA: a tela casa número com etapa pelo
+        // índice, e uma ordem diferente poria o número da vizinha em cada uma.
+        passaram: etapas.map((e) => porEtapa.get(e) ?? 0),
+        inicio_do_historico: inicio,
       });
     } catch (err) {
       console.error('[lead-events] erro contando quem passou por etapa:', err?.message);

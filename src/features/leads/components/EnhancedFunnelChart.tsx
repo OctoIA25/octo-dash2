@@ -431,6 +431,20 @@ export const EnhancedFunnelChart = ({ leads }: EnhancedFunnelChartProps) => {
     return colors[index] || colors[colors.length - 1];
   };
 
+  /**
+   * O percentual de um número sobre o total de leads — o denominador dos DOIS
+   * números da etapa, de propósito.
+   *
+   * "Do total desta métrica", como o chefe escreveu. Usar "quantos entraram no
+   * funil" seria o ideal e não é possível: o registro de eventos começou em
+   * 12/09, então a entrada da maioria dos leads nunca foi gravada, e Interação
+   * daria 247% na Lotus.
+   */
+  const pctDoTotal = (n: number): string => {
+    const total = funnelData.metrics?.totalLeads ?? 0;
+    return total > 0 ? ((n / total) * 100).toFixed(1) : '0.0';
+  };
+
   /** `null` = ainda não chegou, ou falhou. Nunca 0 por omissão. */
   const passaramNaEtapa = (etapa: string): number | null => {
     if (!passaram) return null;
@@ -503,39 +517,54 @@ export const EnhancedFunnelChart = ({ leads }: EnhancedFunnelChartProps) => {
                         >
                           {point.label}
                         </div>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span 
+                        {/*
+                          O QUE PASSOU EM CIMA, O QUE ESTÁ AGORA EMBAIXO —
+                          pedido do chefe em 24/09.
+
+                          O destaque é "quantos passaram por esta etapa": é o
+                          número que NÃO cai quando o lead avança, e é dele que
+                          sai a taxa de conversão. O "agora" é a fotografia do
+                          instante, e vira a linha de baixo.
+
+                          O DENOMINADOR DOS DOIS É O TOTAL DE LEADS, e isso é
+                          decisão, não detalhe. O exemplo que ele mandou usa
+                          "quantos entraram" como base — o que, com o registro
+                          de eventos começando em 12/09, daria 247% em Interação
+                          na Lotus: 163 leads passaram por lá, mas só 66 tiveram
+                          a ENTRADA registrada. Sobre o total dá 9,5%: baixo, e
+                          verdadeiro.
+                        */}
+                        <div className="flex items-baseline gap-1.5 mt-1">
+                          <span
                             className="text-xl font-black"
                             style={{ color: getFunnelColor(point.originalKey, index) }}
                           >
-                            {point.quantidade}
+                            {quantosPassaram ?? point.quantidade}
                           </span>
-                          {/* A palavra "agora" só aparece quando há o segundo
-                              número: sozinha, ela seria ruído. */}
-                          {quantosPassaram !== null && (
-                            <span
-                              className="text-xs font-semibold opacity-70"
-                              style={{ color: getFunnelColor(point.originalKey, index) }}
-                            >
-                              agora
-                            </span>
-                          )}
-                          <span 
+                          <span
                             className="text-sm font-semibold opacity-90"
                             style={{ color: getFunnelColor(point.originalKey, index) }}
                           >
-                            ({percentual}%)
+                            ({quantosPassaram !== null ? pctDoTotal(quantosPassaram) : percentual}%)
                           </span>
+                          {quantosPassaram !== null && (
+                            <span
+                              className="text-[11px] font-semibold opacity-60"
+                              style={{ color: getFunnelColor(point.originalKey, index) }}
+                            >
+                              passaram
+                            </span>
+                          )}
                         </div>
                         {/* Linha própria: a coluna tem 32% da largura, e em
                             uma linha só o segundo número era cortado. */}
                         {quantosPassaram !== null && (
                           <div
-                            className="text-sm font-bold whitespace-nowrap opacity-80"
+                            className="text-[13px] font-semibold whitespace-nowrap opacity-75"
                             style={{ color: getFunnelColor(point.originalKey, index) }}
-                            title="Quantos leads já passaram por esta etapa, mesmo que hoje estejam em outra"
+                            title="Quantos leads estão nesta etapa neste momento"
                           >
-                            {quantosPassaram} passaram
+                            {point.quantidade} ({percentual}%) agora
                           </div>
                         )}
                       </div>
@@ -556,7 +585,7 @@ export const EnhancedFunnelChart = ({ leads }: EnhancedFunnelChartProps) => {
               ) : passaram?.inicioDoHistorico ? (
                 <div className="absolute left-1 bottom-0 max-w-[230px] text-[11px] leading-tight text-text-secondary/70">
                   "Passaram" conta desde {new Date(passaram.inicioDoHistorico).toLocaleDateString('pt-BR')}
-                  {passaram.truncado && ' — contagem parcial, período muito grande'}
+
                 </div>
               ) : null}
             </div>
