@@ -222,6 +222,36 @@ export const BolsaoConfigPanel = ({ tenantId, isAdmin }: BolsaoConfigPanelProps)
               : 'O bolsão está desativado, então nenhum lead é movido por tempo. O valor fica guardado.'}
           </p>
         )}
+        {/*
+          OS DOIS CAMINHOS, escritos na tela a pedido do chefe em 24/09.
+
+          Sem isto, os dois campos abaixo pareciam valer para todo lead — e o
+          gestor que colocasse 120 minutos esperaria que eles valessem também
+          para o lead que vai direto ao captador, onde não há cronômetro
+          nenhum. O texto abaixo é o que a regra de `server/distribuicao`
+          realmente faz, conferido linha a linha antes de ser escrito.
+        */}
+        <div className="text-[12px] text-slate-600 dark:text-slate-300 mb-3 rounded-md border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/40">
+          <p className="font-medium mb-1.5">Um lead segue um de dois caminhos:</p>
+          <ol className="list-decimal pl-4 space-y-1.5">
+            <li>
+              <strong>Passa pela Lia.</strong> Ela atende, e quando passa adiante o lead vai
+              para um corretor — <strong>é a partir daí que estes minutos correm</strong>. Se o
+              corretor não responder no prazo, o lead cai no bolsão e fica disponível para os
+              outros.
+            </li>
+            <li>
+              <strong>Não passa pela Lia.</strong> Vai direto para o dono: se for imóvel
+              <strong> de terceiros</strong>, para o <strong>captador do imóvel</strong>; se for
+              <strong> lançamento</strong>, para a <strong>fila de quem atende lançamentos</strong>,
+              em rodízio. Nesse caminho os minutos abaixo <em>não</em> se aplicam.
+            </li>
+          </ol>
+          <p className="mt-2 text-slate-500 dark:text-slate-400">
+            Imóvel de terceiros sem captador, ou com o captador indisponível, também cai na
+            fila — o lead não fica parado esperando alguém que não pode atender.
+          </p>
+        </div>
         <p className="text-[12px] text-slate-500 dark:text-slate-400 mb-3">
           Quanto tempo um lead fica com o corretor antes de cair no bolsão.
         </p>
@@ -241,12 +271,28 @@ export const BolsaoConfigPanel = ({ tenantId, isAdmin }: BolsaoConfigPanelProps)
 
       {/* Verificação automática */}
       <Section icon={RefreshCw} title="Verificação">
+        {/*
+          O CAMPO "INTERVALO DE VERIFICAÇÃO" SAIU — 24/09.
+
+          O chefe pediu para deixá-lo "em tempo real". Fui ver o que ele fazia:
+          NADA. `intervalo_verificacao` é escrito por esta tela e não é lido por
+          ninguém — nem pelo servidor, nem pelo banco. Está em 60 nas quatro
+          imobiliárias porque é o padrão que nunca mudou.
+
+          Quem expira lead é `bolsao-expire-every-minute`, um agendamento do
+          banco que roda `* * * * *`. Ou seja: já é de minuto em minuto, que é o
+          mais perto de tempo real que existe aqui — e o campo só poderia deixar
+          isso MAIS LENTO, nunca mais rápido.
+
+          Um interruptor que não liga nada é pior que um ausente: quem o mexe
+          acredita ter mudado alguma coisa. Por isso o campo sai e a frase fica.
+        */}
+        <p className="text-[12px] rounded-md border border-slate-200 bg-slate-50 p-2.5 text-slate-600 dark:border-slate-700 dark:bg-slate-800/40 dark:text-slate-300 mb-3">
+          A verificação é <strong>de minuto em minuto</strong>, automática. Assim que o prazo
+          de um lead vence, ele aparece no bolsão no minuto seguinte — não há intervalo a
+          configurar.
+        </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <NumberInput
-            label="Intervalo de verificação (s)"
-            value={config.intervaloVerificacao}
-            onChange={(v) => updateConfig({ intervaloVerificacao: v })}
-          />
           <NumberInput
             label="Auto-refresh da UI (s)"
             value={config.intervaloAutoRefresh}
