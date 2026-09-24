@@ -16,7 +16,7 @@ A 53 **já está em produção**: era uma porta aberta e foi fechada no mesmo di
 
 ## 1. A ordem
 
-São **59 migrations**. A ordem abaixo é a alfabética **corrigida por
+São **61 migrations**. A ordem abaixo é a alfabética **corrigida por
 dependência** — quatro arquivos precisam sair do lugar natural.
 
 > **A que mais importa:** `20260922_ajuda_manual_e_faq` é a *primeira*
@@ -145,8 +145,36 @@ produção** — conferido em 22/09) e de `tipologias_do_lancamento`.
      de `user_profiles` para o `anon` derrubou a lista de corretores do SITE da
      Lotus, que lia essa view atraves de `portal_brokers`. Nao depende de nada
      do plano. Fica na lista para a ordem ficar completa.
-> **Estas nove entraram em 23/09, depois do levantamento.** A lista acima foi
-> conferida objeto por objeto contra producao em 22/09; da 51 a 59 nao
+
+ 60. `20260924_so_gestor_redistribui_lead.sql` — **nao depende de nada do
+     plano**: mexe em `leads`, `tenant_memberships` e `is_platform_owner()`,
+     que ja existem em producao (conferido em 24/09). Cria a funcao
+     `tg_leads_so_gestor_redistribui` e o gatilho
+     `tr_leads_zzz_redistribuicao`, BEFORE UPDATE OF `assigned_agent_id`.
+     **O `zzz` do nome nao e enfeite.** Os gatilhos disparam em ordem
+     alfabetica, e `tr_leads_zz_assignee_guard` — que ja esta em producao —
+     ANULA a atribuicao quando o destinatario nao e membro da casa. Este
+     precisa rodar DEPOIS, para julgar o valor final. Renomear para algo que
+     ordene antes inverte os dois e o guarda passa a julgar um valor que o
+     outro ainda vai trocar.
+     **Toca uma tabela em uso, no caminho mais quente do sistema.** Ver a
+     secao 3: o caso 1 do teste (servidor sem JWT redistribui) e o que
+     garante que roleta, bolsao e LIA continuam distribuindo; o caso 5
+     (corretor pega lead sem dono) e o que garante que o botao "Assumir lead"
+     nao quebra para os 14 corretores.
+
+ 61. `20260924_destino_por_tipo_de_lead.sql` — **nao depende de nada do
+     plano**: so `tenant_bolsao_config`, que ja existe em producao. Acrescenta
+     a coluna `destino_por_tipo` (jsonb NOT NULL DEFAULT '{}') — instantaneo —
+     e traz `NOTIFY pgrst`, sem o qual a coluna fica invisivel para o app (ver
+     2.1). O UPDATE que escreve a resposta da Lotus busca as pessoas **pelo
+     nome** em `auth.users`: se o nome nao casar, a chave simplesmente nao e
+     escrita e a tela diz que falta configurar. Nao ha uuid colado a mao.
+     **Precisa de deploy do front junto:** quem le a coluna e o simulador
+     (`server/distribuicao/regra.js` e `SimuladorPanel.tsx`), e sem ele a
+     coluna fica gravada e ninguem consulta.
+> **Estas onze entraram em 23 e 24/09, depois do levantamento.** A lista acima foi
+> conferida objeto por objeto contra producao em 22/09; da 51 a 61 nao
 > passaram por essa conferencia — a dependencia delas foi lida no codigo.
 
 **Reaplicar `20260921_demandas_de_marketing.sql`**, que mudou DEPOIS de entrar
@@ -257,7 +285,7 @@ pela API pública.
 
 ## 3. As que tocam tabelas em uso
 
-Nove mexem em tabelas que produção já usa. Todas são `ADD COLUMN IF NOT EXISTS`
+Onze mexem em tabelas que produção já usa. Todas são `ADD COLUMN IF NOT EXISTS`
 anulável — instantâneas no Postgres, sem reescrever tabela:
 
 | migration | tabela viva | o quê |
@@ -272,11 +300,31 @@ anulável — instantâneas no Postgres, sem reescrever tabela:
 | `etiqueta_de_quem_enviou` | `whatsapp_messages` (28.116 linhas) | `enviado_por` + 2 CHECK + backfill |
 | `agenda_da_lia` | `lia_followups` | — |
 | `relatorio_de_recrutamento` | `recrut_candidato` | — |
+| `destino_por_tipo_de_lead` | `tenant_bolsao_config` (9 linhas) | `destino_por_tipo` jsonb |
 
 `tenant_memberships` é a mais sensível: é o que autentica e dá permissão a todo
 mundo. As duas alterações ali são colunas anuláveis novas, e o CHECK de `nivel`
 valida contra linhas que acabaram de nascer nulas — não há como falhar por dado
 existente.
+
+E uma que **não é coluna**, e por isso é de outra categoria de risco:
+`so_gestor_redistribui_lead` põe um gatilho `BEFORE UPDATE` em `leads`, que é a
+tabela mais escrita do sistema. Coluna anulável nova não pode quebrar nada;
+gatilho pode recusar uma escrita que hoje passa.
+
+Os dois casos que decidem se ele pode subir, e os dois estão no teste:
+
+1. **`auth.uid() IS NULL` passa.** Roleta, bolsão e LIA escrevem sem login. Sem
+   essa porta, a distribuição automática inteira para — e o sintoma seria "os
+   leads pararam de chegar nos corretores", dias depois, sem ninguém ligar ao
+   gatilho novo.
+2. **Corretor pegando lead sem dono passa.** É o botão "Assumir lead" do
+   Bolsão, que os 14 corretores da Lotus usam todo dia. Um bloqueio que olhasse
+   só "a atribuição mudou?" derrubaria esse botão.
+
+Depois de aplicar, conferir os dois em produção com uma sessão de corretor de
+verdade — o teste em SQL prova a regra, não prova que a tela continua
+funcionando.
 
 ---
 
