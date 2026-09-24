@@ -10,6 +10,7 @@
 import { useEffect, useState } from 'react';
 import { Clock, Inbox, Calendar, RefreshCw, Loader2, Check, Settings, Power, Zap, X } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { quemAtendeAgora } from '../utils/quemAtendeAgora';
 import {
   fetchTenantBolsaoConfig,
   saveTenantBolsaoConfig,
@@ -142,34 +143,49 @@ export const BolsaoConfigPanel = ({ tenantId, isAdmin }: BolsaoConfigPanelProps)
     );
   }
 
+  const estado = quemAtendeAgora(config);
+
   return (
     <div className="px-4 py-5 max-w-[900px] mx-auto space-y-5">
       {/* Master switch — ativar/desativar bolsão por completo */}
       <div
         className={`rounded-xl border p-4 flex items-center justify-between gap-4 transition-colors ${
-          config.bolsaoEnabled
+          estado.quem === 'octo'
             ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-900'
-            : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700'
+            : estado.quem === 'lia'
+              ? 'bg-sky-50 dark:bg-sky-950/30 border-sky-200 dark:border-sky-900'
+              : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700'
         }`}
       >
         <div className="flex items-start gap-3 min-w-0">
           <div
             className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-              config.bolsaoEnabled
+              estado.quem === 'octo'
                 ? 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-600 dark:text-emerald-400'
-                : 'bg-slate-200 dark:bg-slate-800 text-slate-400'
+                : estado.quem === 'lia'
+                  ? 'bg-sky-100 dark:bg-sky-900/60 text-sky-600 dark:text-sky-400'
+                  : 'bg-slate-200 dark:bg-slate-800 text-slate-400'
             }`}
           >
             <Power className="w-5 h-5" />
           </div>
           <div className="min-w-0">
+            {/*
+              24/09 — o chefe pediu: "tem que ter uma parte aqui explicando que
+              enquanto o bolsão estiver desativado, a Lia estará em atendimento
+              aos leads".
+
+              A frase antiga olhava SÓ o interruptor do bolsão, e por isso
+              mentia no estado real da Lotus: bolsão "ativado" e nenhum
+              cronômetro correndo, porque quem decide é outro campo — a
+              distribuição automática. Agora são três estados, e o texto sai de
+              `quemAtendeAgora`, testada à parte.
+            */}
             <p className="text-[14px] font-bold text-slate-900 dark:text-slate-100">
-              {config.bolsaoEnabled ? 'Bolsão ativado' : 'Bolsão desativado'}
+              {estado.titulo}
             </p>
             <p className="text-[12px] text-slate-600 dark:text-slate-400 mt-0.5">
-              {config.bolsaoEnabled
-                ? 'Leads expiram conforme a regra de tempo configurada e são redistribuídos via roleta.'
-                : 'Nenhum lead vai pro bolsão. Cronômetros e redistribuição estão pausados.'}
+              {estado.explicacao}
             </p>
           </div>
         </div>
@@ -192,6 +208,20 @@ export const BolsaoConfigPanel = ({ tenantId, isAdmin }: BolsaoConfigPanelProps)
 
       {/* Tempos de expiração */}
       <Section icon={Clock} title="Tempos de expiração">
+        {/*
+          Responde, na própria tela, a pergunta que o chefe fez: "se eu colocar
+          120 min para imóveis exclusivos, ela daria mais tempo?". Quando a Lia
+          está distribuindo, a resposta é não — e é melhor o aviso estar aqui,
+          colado no campo, do que a pessoa descobrir depois de esperar.
+        */}
+        {!estado.cronometrosValem && (
+          <p className="text-[12px] rounded-md border border-amber-300 bg-amber-50 p-2.5 text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300 mb-3">
+            <strong>Estes minutos não estão valendo agora.</strong>{' '}
+            {estado.quem === 'lia'
+              ? 'A Lia está atendendo os leads, e nenhum cronômetro corre enquanto a distribuição automática estiver desligada. O valor fica guardado e volta a valer quando ela for religada.'
+              : 'O bolsão está desativado, então nenhum lead é movido por tempo. O valor fica guardado.'}
+          </p>
+        )}
         <p className="text-[12px] text-slate-500 dark:text-slate-400 mb-3">
           Quanto tempo um lead fica com o corretor antes de cair no bolsão.
         </p>
