@@ -45,7 +45,15 @@ export interface VendaNaLista {
   comissao_bruta: number;
   imposto_pct: number;
   imposto_valor: number;
-  comissao_liquida: number;
+  /**
+   * O que sobra para a casa: bruta menos os repasses de corretor e líder.
+   * Decidido pelo chefe em 23/09, e o imposto NÃO entra ("ainda").
+   *
+   * `null` enquanto a folha não foi calculada — e é diferente de zero e de
+   * "igual à bruta". Deixá-la na bruta afirmaria que a casa fica com 100% da
+   * comissão: um número redondo, plausível e errado.
+   */
+  comissao_liquida: number | null;
   /** O que a proposta trazia escrito. Null quando ela não trazia nada. */
   comissao_da_proposta: number | null;
   nf_numero: string | null;
@@ -64,6 +72,7 @@ export interface TotaisDaConferencia {
   vgv: number;
   comissao_bruta: number;
   imposto: number;
+  /** Soma do que sobra para a casa, ignorando as vendas sem folha calculada. */
   comissao_liquida: number;
   recebido: number;
   a_receber: number;

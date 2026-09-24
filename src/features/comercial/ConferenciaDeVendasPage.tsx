@@ -103,6 +103,13 @@ export function ConferenciaDeVendasPage() {
 
   // Antes do early return: um hook depois dele deixa de rodar quando não há
   // tenant, e o React quebra na próxima renderização com outra contagem.
+  /*
+   * Quantas linhas ainda não têm folha. A líquida delas é desconhecida, e por
+   * isso elas ficam de fora do total — dizer isso é o que impede alguém de
+   * somar o rodapé e achar que é a margem do mês.
+   */
+  const semFolha = (linhas ?? []).filter((l) => l.comissao_liquida == null).length;
+
   const corretoresNaLista = useMemo(() => {
     const m = new Map<string, string>();
     linhas.forEach((l) => { if (l.corretor_id) m.set(l.corretor_id, l.corretor); });
@@ -217,6 +224,14 @@ export function ConferenciaDeVendasPage() {
             </Aviso>
           )}
 
+          {semFolha > 0 && (
+            <Aviso tom="amber" icone={<AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />}>
+              <strong>{semFolha} venda(s) sem folha de repasse calculada.</strong> A líquida delas aparece
+              como “—”, e elas <em>não entram</em> no total de comissão líquida abaixo. A líquida é a comissão
+              menos o corretor e o gerente — sem a folha, não há o que subtrair.
+            </Aviso>
+          )}
+
           {!fechamento.confere && (
             <Aviso tom="rose" icone={<AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />}>
               <strong>O rodapé não bate com as linhas em {fechamento.campo}:</strong> a soma das linhas dá{' '}
@@ -262,7 +277,14 @@ export function ConferenciaDeVendasPage() {
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums">{reaisExatos(v.vgv)}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{reaisExatos(v.comissao_bruta)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums font-medium">{reaisExatos(v.comissao_liquida)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums font-medium">
+                        {/* Sem folha calculada a líquida é DESCONHECIDA, e não
+                            zero nem igual à bruta: mostrar a bruta afirmaria
+                            que a casa fica com 100% da comissão. */}
+                        {v.comissao_liquida == null
+                          ? <span className="font-normal text-muted-foreground" title="Falta calcular a folha de repasse desta venda">—</span>
+                          : reaisExatos(v.comissao_liquida)}
+                      </td>
                       <td className={`px-3 py-2 text-right tabular-nums ${d ? 'text-rose-700 dark:text-rose-300' : ''}`}>
                         {v.valor_recebido == null ? '—' : reaisExatos(v.valor_recebido)}
                       </td>
@@ -488,7 +510,13 @@ function GavetaDaVenda({
             <Linha rotulo="Comissão" valor={`${String(venda.comissao_pct).replace('.', ',')}%`} />
             <Linha rotulo="Bruta" valor={reaisExatos(venda.comissao_bruta)} />
             <Linha rotulo={`Imposto (${String(venda.imposto_pct).replace('.', ',')}%)`} valor={reaisExatos(venda.imposto_valor)} />
-            <Linha rotulo="Líquida" valor={reaisExatos(venda.comissao_liquida)} forte />
+            <Linha
+              rotulo="Líquida"
+              valor={venda.comissao_liquida == null
+                ? 'falta calcular a folha'
+                : reaisExatos(venda.comissao_liquida)}
+              forte
+            />
             <Linha rotulo="Corretor" valor={`${venda.corretor || '—'} · ${rotuloDoNivel(venda.nivel_corretor)}`} />
           </dl>
           <p className="border-t px-3 py-2 text-[11px] text-muted-foreground">
@@ -530,7 +558,9 @@ function GavetaDaVenda({
               <input type="date" value={recebidoEm} onChange={(e) => setRecebidoEm(e.target.value)} className={inputCls} />
             </Campo>
             <Campo rotulo="Valor recebido">
-              <input inputMode="decimal" value={valorRecebido} placeholder={String(venda.comissao_liquida)}
+              {/* A BRUTA, e não a líquida: é ela que a construtora deposita.
+                  O repasse sai depois, da casa para o corretor. */}
+              <input inputMode="decimal" value={valorRecebido} placeholder={String(venda.comissao_bruta)}
                 onChange={(e) => setValorRecebido(e.target.value)} className={inputCls} />
             </Campo>
           </div>
