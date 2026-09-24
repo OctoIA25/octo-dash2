@@ -136,6 +136,9 @@ produção** — conferido em 22/09) e de `tipologias_do_lancamento`.
      `cargo_id` fica nulo e a tela de todos continua como esta.
      **Tambem troca `financeiro_pode_ver`**, que e o porteiro de 20 funcoes do
      Financeiro: passa a aceitar tambem quem tem a permissao pelo cargo.
+ 58. `20260924_cargo_juridico.sql` — **depende da 57**. Acrescenta o sexto
+     cargo, que o chefe pediu a parte ("Adicionaria somente um Juridico") e a
+     57 deixou de fora. Como ela, **nao atribui cargo a ninguem**.
 
 > **Estas oito entraram em 23/09, depois do levantamento.** A lista acima foi
 > conferida objeto por objeto contra producao em 22/09; da 51 a 58 nao
