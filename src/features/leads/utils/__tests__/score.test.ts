@@ -14,7 +14,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-  calcularScore, explicacaoCurta, PESOS_PADRAO, type SinaisDoLead,
+  avaliarLead, calcularScore, explicacaoCurta, faixasDaRegua, PESOS_PADRAO,
+  temperaturaDoScore, type SinaisDoLead,
 } from '../score';
 
 const soma = (r: ReturnType<typeof calcularScore>) => r.motivos.reduce((s, m) => s + m.pontos, 0);
@@ -176,5 +177,97 @@ describe('o "por quê" que o Aether não tem', () => {
     // diferentes, e a tela precisa poder dizer qual é qual.
     expect(calcularScore({}).sinaisObservados).toBe(0);
     expect(calcularScore({ respondeu: true, renda_incompativel: true }).sinaisObservados).toBe(2);
+  });
+});
+
+/*
+ * A RÉGUA DA FICHA (25/09).
+ *
+ * O chefe achou a contradição olhando a tela: o mesmo lead com "50 · Morno" no
+ * selo e "Quente" marcado nos botões logo abaixo. A causa eram duas fontes — o
+ * score e a coluna `temperature`, editável à mão. A régua substituiu os botões,
+ * e o que estes casos protegem é que ela **nunca** discorde do selo.
+ */
+describe('a régua e o selo não podem discordar', () => {
+  /*
+   * O CASO QUE SUSTENTA O ARQUIVO. A régua desenha faixas; o selo chama
+   * `temperaturaDoScore`. Se a régua ganhasse uma aritmética própria, ela
+   * discordaria justo quando alguém mexesse nos limites em Configurações — que
+   * é quando ninguém está olhando.
+   */
+  it.each([
+    ['padrão', PESOS_PADRAO],
+    ['rigoroso', { ...PESOS_PADRAO, limite_morno: 60, limite_quente: 90 }],
+    ['frouxo', { ...PESOS_PADRAO, limite_morno: 10, limite_quente: 20 }],
+    ['sobrepostos', { ...PESOS_PADRAO, limite_morno: 80, limite_quente: 70 }],
+  ])('em %s, todo score de 0 a 100 cai na faixa que a régua desenha', (_nome, pesos) => {
+    const faixas = faixasDaRegua(pesos);
+    for (let n = 0; n <= 100; n++) {
+      const faixa = faixas.find((f) => n >= f.de && n <= f.ate);
+      expect(faixa, `score ${n} não caiu em faixa nenhuma`).toBeDefined();
+      expect(faixa!.temperatura).toBe(temperaturaDoScore(n, pesos));
+    }
+  });
+
+  it('a régua cobre 0..100 sem buraco e sem sobreposição', () => {
+    const faixas = faixasDaRegua();
+    expect(faixas[0].de).toBe(0);
+    expect(faixas[faixas.length - 1].ate).toBe(100);
+    for (let i = 1; i < faixas.length; i++) {
+      expect(faixas[i].de).toBe(faixas[i - 1].ate + 1);
+    }
+  });
+
+  it('com os limites padrão são as três faixas, na ordem', () => {
+    expect(faixasDaRegua()).toEqual([
+      { temperatura: 'Frio', de: 0, ate: 39 },
+      { temperatura: 'Morno', de: 40, ate: 69 },
+      { temperatura: 'Quente', de: 70, ate: 100 },
+    ]);
+  });
+
+  /*
+   * Limites sobrepostos (morno 80, quente 70) fazem Morno não existir: todo
+   * score de 70 para cima é Quente. A régua não pode desenhar uma faixa vazia
+   * — um bloco "Morno" na tela em que nenhum lead pode cair é pior que não
+   * ter, porque alguém ajusta os limites tentando alcançá-lo.
+   */
+  it('faixa em que nenhum score cai não é desenhada', () => {
+    const faixas = faixasDaRegua({ ...PESOS_PADRAO, limite_morno: 80, limite_quente: 70 });
+    expect(faixas.map((f) => f.temperatura)).toEqual(['Frio', 'Quente']);
+    expect(faixas.every((f) => f.ate >= f.de)).toBe(true);
+  });
+
+  it('a temperatura do selo é a mesma função que a régua usa', () => {
+    for (const alvo of [0, 39, 40, 69, 70, 100]) {
+      const r = calcularScore({}, { ...PESOS_PADRAO, ponto_de_partida: alvo });
+      expect(r.temperatura).toBe(temperaturaDoScore(r.score));
+    }
+  });
+});
+
+/*
+ * `avaliarLead` é a regra do "não inventa número", e ela existe uma vez só
+ * porque três telas precisavam dela: o selo do card, a ficha e o filtro do
+ * Kanban. Cada uma tinha a sua cópia.
+ */
+describe('sem sinal, não há avaliação', () => {
+  it('lead sem sinais carregados devolve null, e não 50 · Morno', () => {
+    expect(avaliarLead(null)).toBeNull();
+    expect(avaliarLead(undefined)).toBeNull();
+  });
+
+  it('lead com sinais devolve a mesma conta de calcularScore', () => {
+    const sinais: SinaisDoLead = { pediu_visita: true, respondeu: true };
+    expect(avaliarLead(sinais, 7)).toEqual(calcularScore({ ...sinais, peso_da_origem: 7 }));
+  });
+
+  it('objeto de sinais vazio é avaliação, e não ausência de avaliação', () => {
+    // `{}` chega quando o banco respondeu "não há sinal nenhum para este
+    // lead" — diferente de `null`, que é "ainda não perguntei". A ficha diz
+    // coisas distintas nos dois casos.
+    const r = avaliarLead({});
+    expect(r).not.toBeNull();
+    expect(r!.sinaisObservados).toBe(0);
   });
 });

@@ -88,6 +88,67 @@ export interface ResultadoDoScore {
   sinaisObservados: number;
 }
 
+/**
+ * A faixa em que um score cai. **Esta é a única regra**, e tudo que pinta
+ * temperatura na Dash passa por aqui — o selo do card, a ficha, a régua e o
+ * filtro do Kanban.
+ *
+ * Era isso que faltava: o cálculo ficava dentro de `calcularScore` e a ficha
+ * tinha três botões gravando uma coluna à parte. O lead de 50 aparecia
+ * "Morno" no selo e "Quente" nos botões, na mesma tela.
+ */
+export function temperaturaDoScore(score: number, pesos: PesosDoScore = PESOS_PADRAO): Temperatura {
+  const p = { ...PESOS_PADRAO, ...pesos };
+  const morno = inteiro(p.limite_morno, PESOS_PADRAO.limite_morno);
+  const quente = inteiro(p.limite_quente, PESOS_PADRAO.limite_quente);
+  return score >= quente ? 'Quente' : score >= morno ? 'Morno' : 'Frio';
+}
+
+export interface FaixaDaRegua {
+  temperatura: Temperatura;
+  de: number;
+  ate: number;
+}
+
+/**
+ * A régua: de quanto a quanto vai cada faixa, para a ficha desenhar.
+ *
+ * Varre 0..100 perguntando a `temperaturaDoScore` em vez de refazer a conta
+ * com os limites. É de propósito: uma segunda aritmética aqui poderia
+ * discordar do selo — e discordaria justo quando alguém mexesse nos limites em
+ * Configurações, que é quando ninguém está olhando. 101 perguntas, uma vez por
+ * abertura da ficha.
+ *
+ * Faixa que não existe (limites sobrepostos, como morno 80 e quente 70) não é
+ * desenhada, porque nenhum score cai nela.
+ */
+export function faixasDaRegua(pesos: PesosDoScore = PESOS_PADRAO): FaixaDaRegua[] {
+  const faixas: FaixaDaRegua[] = [];
+  for (let n = 0; n <= 100; n++) {
+    const t = temperaturaDoScore(n, pesos);
+    const ultima = faixas[faixas.length - 1];
+    if (ultima && ultima.temperatura === t) ultima.ate = n;
+    else faixas.push({ temperatura: t, de: n, ate: n });
+  }
+  return faixas;
+}
+
+/**
+ * Avalia um lead, ou devolve `null` quando não há sinal nenhum carregado.
+ *
+ * O `null` é a parte que importa e é o motivo de isto ser uma função só: sem
+ * sinais, `calcularScore({})` devolveria 50 · Morno — um número inventado com
+ * cara de avaliação. Três telas precisavam dessa mesma regra e cada uma a
+ * escrevia de novo.
+ */
+export function avaliarLead(
+  sinais: SinaisDoLead | null | undefined,
+  pesoDaOrigem = 0,
+  pesos: PesosDoScore = PESOS_PADRAO
+): ResultadoDoScore | null {
+  return sinais ? calcularScore({ ...sinais, peso_da_origem: pesoDaOrigem }, pesos) : null;
+}
+
 const inteiro = (v: unknown, padrao = 0) => {
   const n = Number(v);
   return Number.isFinite(n) ? Math.trunc(n) : padrao;
@@ -147,13 +208,9 @@ export function calcularScore(
   const bruto = motivos.reduce((s, m) => s + m.pontos, 0);
   const score = Math.max(0, Math.min(100, bruto));
 
-  const morno = inteiro(p.limite_morno, PESOS_PADRAO.limite_morno);
-  const quente = inteiro(p.limite_quente, PESOS_PADRAO.limite_quente);
-  const temperatura: Temperatura = score >= quente ? 'Quente' : score >= morno ? 'Morno' : 'Frio';
-
   return {
     score,
-    temperatura,
+    temperatura: temperaturaDoScore(score, p),
     motivos,
     cortado: bruto !== score,
     sinaisObservados: motivos.length - 1,

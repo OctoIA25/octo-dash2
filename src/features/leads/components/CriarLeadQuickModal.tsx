@@ -6,8 +6,8 @@
 
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Plus, Save, User as UserIcon, Phone, Mail, Home, Loader2, Thermometer, Inbox, Tag, MessageSquare, IdCard, Archive, Building2, ChevronDown, MapPin, ListChecks } from 'lucide-react';
-import { corDaTemperatura, type ResultadoDoScore } from '../utils/score';
+import { X, Plus, Save, User as UserIcon, Phone, Mail, Home, Loader2, Thermometer, Tag, MessageSquare, IdCard, Archive, Building2, ChevronDown, MapPin, ListChecks } from 'lucide-react';
+import { corDaTemperatura, faixasDaRegua, PESOS_PADRAO, type PesosDoScore, type ResultadoDoScore } from '../utils/score';
 import { supabase } from '@/lib/supabaseClient';
 import { leadsEventEmitter } from '@/lib/leadsEventEmitter';
 import { CLASSIFICACAO_ESTILOS, CLASSIFICACAO_ORDEM } from './ClassificacaoBadge';
@@ -85,6 +85,8 @@ interface CriarLeadQuickModalProps {
    * outro 94". Esta é a tela.
    */
   avaliacao?: ResultadoDoScore | null;
+  /** Os limites da imobiliária, para a régua desenhar as faixas certas. */
+  pesos?: PesosDoScore;
   /**
    * Muda a etapa do lead. É a MESMA função que o arrastar usa — dois caminhos
    * fariam a regra de pré-requisitos valer num e não no outro.
@@ -98,8 +100,7 @@ interface LeadForm {
   email: string;
   interest_reference: string;
   message: string;
-  temperature: string;
-  participa_bolsao: boolean;
+
   /** Só editável em modo edição — no INSERT o trigger sobrescreve. Multi-valor. */
   classification: string[];
   /** O que o cliente procura (Apartamento, Lançamento...). Marcação humana. */
@@ -114,14 +115,12 @@ const EMPTY_FORM: LeadForm = {
   email: '',
   interest_reference: '',
   message: '',
-  temperature: 'Frio',
-  participa_bolsao: true,
+
   classification: ['indefinido'],
   preferences: [],
   cpf: '',
 };
 
-const TEMPERATURES = ['Quente', 'Morno', 'Frio'];
 
 /**
  * Etapas em que a seção Documentação aparece: Propostas em diante.
@@ -137,8 +136,7 @@ const leadToForm = (lead: KanbanLead): LeadForm => ({
   email: lead.email ?? '',
   interest_reference: lead.codigo ?? '',
   message: lead.comments ?? '',
-  temperature: lead.temperature ?? 'Frio',
-  participa_bolsao: (lead as { participa_bolsao?: boolean }).participa_bolsao ?? true,
+
   classification: classificacoesDe(lead.classification),
   preferences: preferenciasDe(lead.preferences),
   // cpf não vem no select do Kanban (coluna nova, fora do hot path) — é
@@ -159,6 +157,7 @@ export const CriarLeadQuickModal = ({
   etapaAtual,
   onMudarEtapa,
   avaliacao,
+  pesos = PESOS_PADRAO,
 }: CriarLeadQuickModalProps) => {
   const isEditMode = Boolean(editingLead);
   const isProprietario = leadType === LEAD_TYPE_PROPRIETARIO;
@@ -449,8 +448,11 @@ export const CriarLeadQuickModal = ({
           email: form.email.trim() || null,
           property_code: form.interest_reference.trim() || null,
           comments: form.message.trim() || null,
-          temperature: form.temperature,
-          participa_bolsao: form.participa_bolsao,
+          // A temperatura passa a sair do score, e so quando ha score: sem
+          // sinal carregado a coluna fica como esta. Gravar "Morno" porque o
+          // ponto de partida e 50 seria inventar uma avaliacao que ninguem
+          // fez — e e ela que o Kenlo, a proposta e o filtro do Kanban leem.
+          ...(avaliacao ? { temperature: avaliacao.temperatura } : {}),
           // A ORIGEM NÃO VAI DAQUI: o trigger tg_classification_source_guard carimba
           // 'dashboard' sozinho. Mandar classification_source do cliente seria o
           // buraco que esta feature existe para fechar.
@@ -483,8 +485,9 @@ export const CriarLeadQuickModal = ({
             client_email: form.email.trim() || null,
             interest_reference: form.interest_reference.trim() || null,
             message: form.message.trim() || null,
-            temperature:
-              form.temperature === 'Quente' ? 'hot' : form.temperature === 'Morno' ? 'warm' : 'cold',
+            ...(avaliacao
+              ? { temperature: avaliacao.temperatura === 'Quente' ? 'hot' : avaliacao.temperatura === 'Morno' ? 'warm' : 'cold' }
+              : {}),
             classification: form.classification,
             preferences: form.preferences.length ? form.preferences : null,
             ...(showDocumentacao ? { cpf: form.cpf.trim() || null } : {}),
@@ -544,11 +547,9 @@ export const CriarLeadQuickModal = ({
           email: form.email.trim() || null,
           property_code: form.interest_reference.trim() || null,
           comments: form.message.trim() || null,
-          temperature: form.temperature,
           source: 'Manual',
           status: isProprietario ? 'Novos Proprietários' : 'Novos Leads',
           lead_type: leadType,
-          participa_bolsao: form.participa_bolsao,
         };
         if (authUserId) payload.assigned_agent_id = authUserId;
         if (authUserName) payload.assigned_agent_name = authUserName;
@@ -843,34 +844,21 @@ export const CriarLeadQuickModal = ({
                 disabled={!canEdit}
               />
 
+              {/* A TEMPERATURA NAO SE ESCOLHE MAIS. Eram tres botoes gravando
+                  uma coluna propria, e o selo do card lia o score: o mesmo lead
+                  aparecia "50 · Morno" em cima e "Quente" aqui embaixo, na
+                  mesma tela. Quem marcava o botao acreditava ter mudado a
+                  temperatura do lead, e nao mudava nada que alguem visse.
+
+                  Agora a regua mostra onde o score caiu e por que — e o unico
+                  jeito de mudar a temperatura e mudar os limites, em
+                  Configuracoes, para todo mundo de uma vez. */}
               <div>
                 <label className="flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
                   <Thermometer className="w-4 h-4 text-slate-400" />
                   Temperatura
                 </label>
-                <div className="flex gap-2">
-                  {TEMPERATURES.map((t) => {
-                    const active = form.temperature === t;
-                    const color =
-                      t === 'Quente' ? '#ef4444' : t === 'Morno' ? '#f59e0b' : '#3b82f6';
-                    return (
-                      <button
-                        key={t}
-                        type="button"
-                        onClick={() => setForm((f) => ({ ...f, temperature: t }))}
-                        disabled={!canEdit}
-                        className="flex-1 py-2 text-xs font-semibold rounded-lg border transition-all bg-white dark:bg-slate-900 disabled:opacity-60 disabled:cursor-not-allowed"
-                        style={{
-                          borderColor: active ? color : '#e2e8f0',
-                          backgroundColor: active ? color + '15' : undefined,
-                          color: active ? color : '#64748b',
-                        }}
-                      >
-                        {t}
-                      </button>
-                    );
-                  })}
-                </div>
+                <ReguaDaTemperatura avaliacao={avaliacao ?? null} pesos={pesos} registrada={editingLead?.temperature ?? null} />
               </div>
             </div>
 
@@ -1193,43 +1181,17 @@ export const CriarLeadQuickModal = ({
               className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all resize-none disabled:opacity-60 disabled:cursor-not-allowed"
             />
 
-            {/* Seção: Bolsão */}
-            <SectionTitle>Bolsão</SectionTitle>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={form.participa_bolsao}
-              onClick={() => setForm((f) => ({ ...f, participa_bolsao: !f.participa_bolsao }))}
-              disabled={!canEdit}
-              className={`w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
-                form.participa_bolsao
-                  ? 'bg-orange-50 dark:bg-orange-950/30 border-orange-200 dark:border-orange-900'
-                  : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
-              }`}
-            >
-              <span className="flex items-center gap-2 min-w-0">
-                <Inbox className={`w-4 h-4 shrink-0 ${form.participa_bolsao ? 'text-orange-600 dark:text-orange-400' : 'text-slate-400'}`} />
-                <span className="flex flex-col items-start min-w-0">
-                  <span className="text-[13px] font-semibold text-slate-900 dark:text-slate-100">Ativar bolsão</span>
-                  <span className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                    {form.participa_bolsao
-                      ? 'Lead expira conforme regra configurada'
-                      : 'Lead fica fora do fluxo de expiração'}
-                  </span>
-                </span>
-              </span>
-              <span
-                className={`relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors ${
-                  form.participa_bolsao ? 'bg-orange-500' : 'bg-slate-300 dark:bg-slate-700'
-                }`}
-              >
-                <span
-                  className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${
-                    form.participa_bolsao ? 'translate-x-[18px]' : 'translate-x-0.5'
-                  }`}
-                />
-              </span>
-            </button>
+            {/* O BOLSAO NAO E MAIS POR LEAD. Decidido pelo chefe em 25/09:
+                "tirar aquela regra de bolsao (vale sempre pra todos)". O
+                interruptor daqui abria excecao para um lead so, e a regra do
+                bolsao e da imobiliaria inteira — fica em Configuracoes.
+
+                A coluna `participa_bolsao` continua existindo e continua sendo
+                respeitada pelo gatilho do banco: a importacao da Santa Angela
+                grava `false` de proposito, para 20 mil leads historicos nao
+                inundarem o bolsao. O que sai e a EDICAO por aqui, e por isso o
+                campo tambem some dos dois payloads — um save comum nao pode
+                devolver um lead importado para o bolsao sem ninguem pedir. */}
 
             </div>
             </div>
@@ -1336,3 +1298,74 @@ const Field = ({ icon, label, type, placeholder, value, onChange, mono, disabled
     )}
   </div>
 );
+
+/**
+ * A RÉGUA DA TEMPERATURA.
+ *
+ * O chefe pediu em 25/09: "a temperatura faltou aquela régua que a gente
+ * comentou", e apontou a contradição — o mesmo lead marcado Morno no selo e
+ * Quente nos botões da ficha.
+ *
+ * Ela desenha as faixas na largura que elas ocupam de verdade, e não em três
+ * pedaços iguais: com os limites em 40 e 70, Frio ocupa 40% da régua e Quente
+ * 31%. Três blocos iguais fariam parecer que as faixas têm o mesmo tamanho, e
+ * é justamente o tamanho delas que muda quando alguém mexe nos limites.
+ */
+function ReguaDaTemperatura({
+  avaliacao, pesos, registrada,
+}: {
+  avaliacao: ResultadoDoScore | null;
+  pesos: PesosDoScore;
+  registrada: string | null;
+}) {
+  const faixas = faixasDaRegua(pesos);
+  const avaliado = avaliacao && avaliacao.sinaisObservados > 0;
+
+  return (
+    <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-2.5">
+      <div className="flex h-6 overflow-hidden rounded-md">
+        {faixas.map((f) => {
+          const atual = avaliacao?.temperatura === f.temperatura;
+          return (
+            <div
+              key={f.temperatura}
+              style={{ width: `${((f.ate - f.de + 1) / 101) * 100}%` }}
+              title={`${f.temperatura}: ${f.de} a ${f.ate}`}
+              className={`flex items-center justify-center text-[10px] font-semibold border-r last:border-r-0 border-white dark:border-slate-900 ${
+                atual ? corDaTemperatura(f.temperatura) : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500'
+              }`}
+            >
+              {f.temperatura}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-1 flex justify-between text-[9.5px] font-mono tabular-nums text-slate-400">
+        {faixas.map((f) => <span key={f.temperatura}>{f.de}</span>)}
+        <span>100</span>
+      </div>
+
+      {/* Os três casos são diferentes e a ficha precisa dizer qual é.
+          Um lead no ponto de partida NÃO é um lead morno: é um lead que
+          ninguém avaliou, e tratar os dois igual é o defeito que o P1.7 veio
+          desfazer. */}
+      {avaliado ? (
+        <p className="mt-1.5 text-[11px] text-slate-600 dark:text-slate-300">
+          <strong>{avaliacao.score}/100 · {avaliacao.temperatura}</strong> — sai do score acima, e não
+          se escolhe à mão. Para mudar a faixa, mexa nos limites em Configurações.
+        </p>
+      ) : avaliacao ? (
+        <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+          Nenhum sinal observado ainda — o lead está no ponto de partida ({avaliacao.score}), não foi
+          avaliado.
+        </p>
+      ) : (
+        <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+          Os sinais deste lead ainda não carregaram.
+          {registrada ? <> A última temperatura registrada foi <strong>{registrada}</strong>.</> : null}
+        </p>
+      )}
+    </div>
+  );
+}

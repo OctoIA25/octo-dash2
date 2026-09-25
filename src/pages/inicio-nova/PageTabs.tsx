@@ -313,6 +313,15 @@ export function PageTabs() {
           .filter((t) => t.id !== 'equipes' || teamQueueEnabled)
           .filter((t) => !['simulador', 'distribuicao'].includes(t.id) || isGestao || isOwner),
       };
+    } else if (baseCfg.basePath === '/meus-leads') {
+      // Arquivados: decidido pelo chefe em 25/09 — "só gestor, diretor e adm
+      // podem ver". `isGestao` é exatamente esse conjunto: o papel do membro
+      // vira 'corretor' ou 'gestao', e 'gestao' cobre admin e líder de equipe.
+      //
+      // Esconder a aba é só metade: `MeusLeadsPage` também recusa o
+      // `?sub=arquivados` digitado à mão, porque menu que esconde uma tela que
+      // a rota entrega é o defeito que o P0.1 veio desfazer.
+      cfg = { ...baseCfg, tabs: baseCfg.tabs.filter((t) => t.id !== 'arquivados' || isGestao || isOwner) };
     } else if (baseCfg.basePath === '/agentes-ia') {
       // Plantão junto da Telemetria: a fila mostra o nome de cada lead e a
       // resposta de cada colega da imobiliária inteira, e aprovar para a base

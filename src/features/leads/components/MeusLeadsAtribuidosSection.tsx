@@ -23,7 +23,7 @@ import {
   CHAVES_PADRAO, type ChavesDeEtapa,
 } from '../utils/preRequisitos';
 import { buscarChavesDeEtapa } from '../services/etapaConfigService';
-import { calcularScore, explicacaoCurta, corDaTemperatura, PESOS_PADRAO, type SinaisDoLead, type PesosDoScore } from '../utils/score';
+import { avaliarLead, explicacaoCurta, corDaTemperatura, PESOS_PADRAO, type SinaisDoLead, type PesosDoScore } from '../utils/score';
 import { buscarSinaisDeScore, buscarConfiguracaoDoScore } from '../services/scoreService';
 import { contextoDoLead } from '../services/preRequisitosService';
 import { registrarRequisitosIgnorados, carimbarAssinatura } from '../services/requisitosService';
@@ -376,7 +376,7 @@ export const KanbanCardContent = memo(({ lead, onClick, mostrarCorretor, isOverl
   // SCORE (P1.7). A temperatura sai DAQUI, e não da coluna `temperature` —
   // dois campos separados se contradizem, e foi isso que o plano mandou tirar.
   // Sem sinais carregados ainda, `sinais` é nulo e o card não inventa número.
-  const avaliacao = sinais ? calcularScore({ ...sinais, peso_da_origem: pesoDaOrigem }, pesos ?? PESOS_PADRAO) : null;
+  const avaliacao = avaliarLead(sinais, pesoDaOrigem, pesos ?? PESOS_PADRAO);
 
   return (
     <div
@@ -1144,11 +1144,21 @@ export const MeusLeadsAtribuidosSection = ({
       if (dataLead < inicio || dataLead > fim) return false;
     }
 
+    // O FILTRO LIA A COLUNA GRAVADA e o selo do card mostrava o score:
+    // filtrar por "Quente" devolvia um conjunto diferente do que as badges na
+    // tela diziam, sem erro e sem jeito de perceber. Agora os dois saem da
+    // mesma conta — e um lead cujos sinais ainda nao carregaram cai na coluna
+    // gravada, que e o unico dado que existe sobre ele.
     if (filtroTemperatura !== 'todos') {
-      const temp = String((leadRecord.temperature ?? leadRecord.status_temperatura ?? '')).toLowerCase();
-      if (filtroTemperatura === 'quente' && temp !== 'quente') return false;
-      if (filtroTemperatura === 'morno' && temp !== 'morno') return false;
-      if (filtroTemperatura === 'frio' && temp !== 'frio') return false;
+      const avaliado = avaliarLead(
+        sinaisPorLead[lead.id],
+        pesoPorOrigem[String(lead.portal ?? '').trim().toLowerCase()] ?? 0,
+        pesos
+      );
+      const temp = (
+        avaliado?.temperatura ?? String(leadRecord.temperature ?? leadRecord.status_temperatura ?? '')
+      ).toLowerCase();
+      if (temp !== filtroTemperatura) return false;
     }
 
     if (filtroTipo !== 'todos') {
@@ -1168,7 +1178,7 @@ export const MeusLeadsAtribuidosSection = ({
     if (!leadCasaBusca(lead, termoBusca)) return false;
 
     return true;
-  }), [meusLeads, filtroPeriodo, debouncedDataInicio, debouncedDataFim, filtroTemperatura, filtroTipo, filtroPortal, termoBusca]);
+  }), [meusLeads, filtroPeriodo, debouncedDataInicio, debouncedDataFim, filtroTemperatura, filtroTipo, filtroPortal, termoBusca, sinaisPorLead, pesoPorOrigem, pesos]);
 
   // Agrupar leads filtrados por etapa do funil (memoizado)
   const leadsAgrupados = useMemo(() => {
@@ -1633,16 +1643,15 @@ const handleDragEnd = useCallback(async (event: DragEndEvent) => {
         etapas={kanbanColumns.map((c) => ({ id: c.id, title: c.title }))}
         etapaAtual={editingLead ? getLeadStatus(editingLead, kanbanColumns) : undefined}
         avaliacao={
-          editingLead && sinaisPorLead[editingLead.id]
-            ? calcularScore(
-                {
-                  ...sinaisPorLead[editingLead.id],
-                  peso_da_origem: pesoPorOrigem[String(editingLead.portal ?? '').trim().toLowerCase()] ?? 0,
-                },
+          editingLead
+            ? avaliarLead(
+                sinaisPorLead[editingLead.id],
+                pesoPorOrigem[String(editingLead.portal ?? '').trim().toLowerCase()] ?? 0,
                 pesos
               )
             : null
         }
+        pesos={pesos}
         onMudarEtapa={mudarEtapa}
         // Corretor edita os leads que aparecem aqui: esta lista é carregada
         // por assigned_agent_id/nome dele (ver carregarMeusLeads).

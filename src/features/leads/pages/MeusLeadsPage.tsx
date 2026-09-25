@@ -8,6 +8,7 @@ import { LeadsArquivadosSection } from '../components/LeadsArquivadosSection';
 import { CentralLeadsPage } from './CentralLeadsPage';
 import { ListaDeLeadsSection } from '../components/ListaDeLeadsSection';
 import { useSearchParams } from 'react-router-dom';
+import { useAuthContext } from '@/contexts/AuthContext';
 import { LEAD_TYPE_INTERESSADO, LEAD_TYPE_PROPRIETARIO } from '../services/leadsService';
 
 interface MeusLeadsPageProps {
@@ -20,11 +21,19 @@ type SubArea = 'kanban' | 'kanban-proprietario' | 'lista' | 'central-leads' | 'a
 
 export const MeusLeadsPage = (_props: MeusLeadsPageProps) => {
   const [searchParams] = useSearchParams();
+  const { isGestao, isOwner } = useAuthContext();
   const sub = searchParams.get('sub');
-  const activeSubArea: SubArea =
+  const pedida: SubArea =
     sub === 'kanban-proprietario' || sub === 'central-leads' || sub === 'arquivados' || sub === 'lista'
       ? sub
       : 'kanban';
+
+  // Arquivados é de gestão (decidido em 25/09). O menu já esconde a aba; isto
+  // fecha o endereço digitado à mão, que é por onde a tela escondida costuma
+  // continuar aberta. Sem barulho: quem chegar aqui cai no Kanban, que é para
+  // onde ele ia de qualquer jeito.
+  const activeSubArea: SubArea =
+    pedida === 'arquivados' && !(isGestao || isOwner) ? 'kanban' : pedida;
 
   return (
     <div className="w-full h-full flex flex-col min-h-0">
