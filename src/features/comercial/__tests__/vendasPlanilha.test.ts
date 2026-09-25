@@ -1,92 +1,75 @@
 /**
- * A coluna de pagamento da Conferência de vendas — item 5 do chefe, 24/09.
+ * A leitura da planilha na Conferência de vendas.
  *
- * O que se protege aqui é o rótulo e a recusa. A planilha não tem forma de
- * pagamento; a coluna é preenchida à mão, e a forma mais fácil de ela mentir é
- * dizer "à vista · 3 de 5" ou "0 de 0 parcelas".
+ * O arquivo era sobre a coluna de pagamento — "à vista / 3 de 5 parcelas",
+ * pedido do chefe em 24/09. Em 25/09 ele pediu o contrário: "deixe apenas as
+ * informações da planilha que enviei", e a coluna saiu junto com o gerente e o
+ * filtro de lançamento/pronto. As travas daquela coluna continuam no banco,
+ * onde a tabela ficou, e são conferidas por
+ * `supabase/tests/conferencia_da_planilha.test.sql`.
  *
- * O banco também recusa (há CHECK), e de propósito: a trava daqui existe para
- * a pessoa ver o motivo em português antes de a gravação sair, em vez de
- * receber uma violação de constraint.
+ * O que sobra para o front proteger são duas coisas pequenas e caras:
+ * **o filtro que saiu não pode voltar pela chamada**, e **falha de leitura não
+ * pode virar lista vazia**.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { rotuloDoPagamento, gravarPagamento, type VendaDaPlanilha } from '../vendasPlanilhaService';
+import { carregarPlanilha } from '../vendasPlanilhaService';
 
 const rpc = vi.fn();
 vi.mock('@/lib/supabaseClient', () => ({ supabase: { rpc: (...a: unknown[]) => rpc(...a) } }));
 
-const venda = (over: Partial<VendaDaPlanilha> = {}): VendaDaPlanilha => ({
-  id: 'v1', data_assinatura: '2026-09-10', empreendimento: 'Reserva Castanheira',
-  unidade_codigo: 'B · 27', cliente_nome: null, corretor_nome: 'Ana', nivel_corretor: 'PL',
-  gerente: 'Gisele', tipo_negocio: 'lancamento',
-  origem: 'Santa', area_m2: 120, valor_m2: 4166.67, total_unidade: 515463,
-  valor_vgv: 500000, comissao_total_venda: 25000,
-  repasse_corretor: 10000, team_leader_valor: 5000, comissao_imobiliaria: 10000,
-  status_recebimento: null,
-  data_recebimento: null, pagamento_forma: null, parcelas_total: null, parcelas_pagas: null,
-  ...over,
+const RESPOSTA = {
+  linhas: [], total_linhas: 0, total_vgv: 0,
+  total_comissao: 0, total_imobiliaria: 0, total_recebido: 0,
+};
+
+beforeEach(() => {
+  rpc.mockReset();
+  rpc.mockResolvedValue({ data: RESPOSTA, error: null });
 });
 
-describe('rótulo do pagamento', () => {
-  it('à vista', () => {
-    expect(rotuloDoPagamento(venda({ pagamento_forma: 'a_vista' }))).toBe('à vista');
-  });
-
-  it('parcelado sai como "3 de 5 parcelas", que foi o que o chefe escreveu', () => {
-    expect(rotuloDoPagamento(venda({ pagamento_forma: 'parcelado', parcelas_total: 5, parcelas_pagas: 3 })))
-      .toBe('3 de 5 parcelas');
-  });
-
+describe('a chamada manda só o que a planilha tem', () => {
   /*
-   * O caso que decide se a coluna serve. `null` NÃO é "à vista" nem
-   * "0 parcelas": é "ninguém preencheu ainda". Devolver um texto aqui faria a
-   * tela afirmar uma forma de pagamento que ninguém informou — e o contador de
-   * pendências zeraria sozinho.
+   * O `p_tipo` saiu da função do banco junto com o filtro Lançamentos/Prontos.
+   * Mandá-lo assim mesmo não daria erro visível — o PostgREST responderia
+   * "function not found" e a tela ficaria vazia, que é indistinguível de "não
+   * houve venda no período".
    */
-  it('sem preenchimento devolve null, e não um texto plausível', () => {
-    expect(rotuloDoPagamento(venda())).toBeNull();
+  it('não manda mais o filtro de lançamento/pronto', async () => {
+    await carregarPlanilha('t1', { de: '2026-09-01', ate: '2026-09-30' });
+    const args = rpc.mock.calls[0][1] as Record<string, unknown>;
+    expect(Object.keys(args)).toEqual(['p_tenant_id', 'p_de', 'p_ate', 'p_corretor']);
+  });
+
+  it('o recorte por período e por corretor continua indo', async () => {
+    await carregarPlanilha('t1', { de: '2026-09-01', ate: '2026-09-30', corretor: 'Ana' });
+    expect(rpc).toHaveBeenCalledWith('vendas_planilha_conferencia', {
+      p_tenant_id: 't1', p_de: '2026-09-01', p_ate: '2026-09-30', p_corretor: 'Ana',
+    });
+  });
+
+  it('filtro em branco vira nulo, e não a string vazia', async () => {
+    await carregarPlanilha('t1', { corretor: '' });
+    const args = rpc.mock.calls[0][1] as Record<string, unknown>;
+    expect(args.p_corretor).toBeNull();
   });
 });
 
-describe('gravar pagamento', () => {
-  beforeEach(() => { rpc.mockReset(); rpc.mockResolvedValue({ error: null }); });
+describe('falha de leitura não vira lista vazia', () => {
+  /*
+   * O CASO QUE SUSTENTA O ARQUIVO. "Nenhuma venda da planilha neste recorte" e
+   * "não deu para ler" levam a conclusões opostas sobre o mês, e a tela só
+   * sabe distinguir se o serviço distinguir.
+   */
+  it('erro do banco sobe, em vez de devolver zero venda', async () => {
+    rpc.mockResolvedValue({ data: null, error: { message: 'sem permissao para a conferencia' } });
+    await expect(carregarPlanilha('t1')).rejects.toMatchObject({
+      message: 'sem permissao para a conferencia',
+    });
+  });
 
-  it('parcelado sem dizer quantas é recusado antes de ir ao banco', async () => {
-    const r = await gravarPagamento('v1', { forma: 'parcelado', parcelasTotal: null });
-    expect(r).toEqual({ success: false, error: 'diga em quantas parcelas' });
+  it('o owner não consulta — ele não tem imobiliária', async () => {
+    expect(await carregarPlanilha('owner')).toBeNull();
     expect(rpc).not.toHaveBeenCalled();
-  });
-
-  it('mais pagas do que parcelas é recusado, e diz o limite', async () => {
-    const r = await gravarPagamento('v1', { forma: 'parcelado', parcelasTotal: 5, parcelasPagas: 6 });
-    expect(r.success).toBe(false);
-    expect(r.error).toContain('0 a 5');
-    expect(rpc).not.toHaveBeenCalled();
-  });
-
-  it('zero parcelas é recusado — "0 de 0" não quer dizer nada', async () => {
-    const r = await gravarPagamento('v1', { forma: 'parcelado', parcelasTotal: 0 });
-    expect(r.success).toBe(false);
-    expect(rpc).not.toHaveBeenCalled();
-  });
-
-  it('à vista não manda parcela nenhuma para o banco', async () => {
-    const r = await gravarPagamento('v1', { forma: 'a_vista', parcelasTotal: 5, parcelasPagas: 3 });
-    expect(r.success).toBe(true);
-    expect(rpc).toHaveBeenCalledWith('venda_pagamento_gravar', expect.objectContaining({
-      p_forma: 'a_vista', p_parcelas_total: null, p_parcelas_pagas: 0,
-    }));
-  });
-
-  it('limpar manda forma nula — apagar é diferente de gravar "à vista"', async () => {
-    const r = await gravarPagamento('v1', { forma: null });
-    expect(r.success).toBe(true);
-    expect(rpc).toHaveBeenCalledWith('venda_pagamento_gravar', expect.objectContaining({ p_forma: null }));
-  });
-
-  it('erro do banco volta como falha, e não como sucesso silencioso', async () => {
-    rpc.mockResolvedValue({ error: { message: 'sem permissao para editar o pagamento' } });
-    const r = await gravarPagamento('v1', { forma: 'a_vista' });
-    expect(r).toEqual({ success: false, error: 'sem permissao para editar o pagamento' });
   });
 });

@@ -5,23 +5,29 @@
  * vendas que nascem das propostas assinadas, com repasse, nota fiscal e
  * divergência. São dois conjuntos diferentes, e misturá-los inventaria venda.
  *
- * O que muda em relação à tela do CRM, item por item do pedido:
- *   - a coluna Empreendimento vira "Empreendimento / Código do imóvel";
- *   - entra o Gerente, derivado da equipe do corretor;
- *   - entra o filtro todas / lançamentos / prontos;
- *   - sai Repasses e entra Pagamento (à vista ou 3 de 5 parcelas).
+ * ESPELHO, E SÓ ESPELHO — 25/09. O chefe pediu: "nas conferências de vendas
+ * deixe apenas as informações da planilha que enviei". Saíram as três colunas
+ * que eu tinha DERIVADO do que a Dash já sabia, e que a planilha não tem:
+ *
+ *   - Gerente (quem lidera a equipe do corretor)
+ *   - o filtro Lançamentos / Prontos (do cadastro de empreendimentos)
+ *   - Pagamento (o "à vista / 3 de 5 parcelas", campo da Dash)
+ *
+ * As três foram pedido DELE no dia anterior, e é por isso que estão nomeadas
+ * aqui em vez de simplesmente sumirem: quem vier depois precisa saber que
+ * existiram, e que voltar é barato. A tabela `venda_pagamento` continua no
+ * banco, com o que já tiver sido preenchido.
+ *
+ * O filtro por CORRETOR fica: corretor é coluna da planilha, e filtrar por uma
+ * coluna que existe não acrescenta informação nenhuma à tela.
  */
 
 import { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Loader2 } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { Loader2 } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
-import { useToast } from '@/hooks/use-toast';
 import { reaisExatos } from './vendas';
-import {
-  carregarPlanilha, gravarPagamento, rotuloDoPagamento,
-  type TipoDoNegocio, type VendaDaPlanilha,
-} from './vendasPlanilhaService';
+import { carregarPlanilha, type VendaDaPlanilha } from './vendasPlanilhaService';
 
 const dataBR = (d: string | null | undefined) =>
   d ? new Date(`${String(d).slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : '—';
@@ -44,43 +50,23 @@ interface Props {
 
 export function ConferenciaDaPlanilha({ de, ate }: Props) {
   const { tenantId } = useAuthContext();
-  const { toast } = useToast();
-  const qc = useQueryClient();
-
-  const [tipo, setTipo] = useState<TipoDoNegocio>('');
   const [corretor, setCorretor] = useState('');
-  const [editando, setEditando] = useState<VendaDaPlanilha | null>(null);
 
-  const chave = ['conferencia-planilha', tenantId, de, ate, tipo, corretor];
   const consulta = useQuery({
-    queryKey: chave,
+    queryKey: ['conferencia-planilha', tenantId, de, ate, corretor],
     enabled: Boolean(tenantId) && tenantId !== 'owner',
-    queryFn: () => carregarPlanilha(tenantId as string, { de, ate, tipo, corretor: corretor || null }),
+    queryFn: () => carregarPlanilha(tenantId as string, { de, ate, corretor: corretor || null }),
   });
 
   const dados = consulta.data;
-  const linhas = dados?.linhas ?? [];
+  const linhas: VendaDaPlanilha[] = dados?.linhas ?? [];
 
   // Os nomes vêm da própria lista: a planilha guarda o corretor como TEXTO, e
-  // só 19 dos 37 casam com alguém cadastrado. Oferecer o cadastro no filtro
-  // esconderia justamente os 18 que precisam de atenção.
+  // só 9 dos 37 casam com alguém cadastrado. Oferecer o cadastro no filtro
+  // esconderia justamente os 28 que precisam de atenção.
   const corretoresNaLista = [...new Set(linhas.map((l) => l.corretor_nome).filter(Boolean))].sort(
     (a, b) => String(a).localeCompare(String(b), 'pt-BR'),
   ) as string[];
-
-  const salvar = useMutation({
-    mutationFn: async (args: { id: string; forma: 'a_vista' | 'parcelado' | null; total?: number | null; pagas?: number | null }) => {
-      const r = await gravarPagamento(args.id, {
-        forma: args.forma, parcelasTotal: args.total, parcelasPagas: args.pagas,
-      });
-      if (!r.success) throw new Error(r.error ?? 'não deu para gravar');
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['conferencia-planilha'] });
-      setEditando(null);
-    },
-    onError: (e: Error) => toast({ title: 'Pagamento não gravado', description: e.message, variant: 'destructive' }),
-  });
 
   if (consulta.isLoading) {
     return (
@@ -102,14 +88,6 @@ export function ConferenciaDaPlanilha({ de, ate }: Props) {
     <>
       <div className="mb-3 flex flex-wrap items-end gap-2">
         <label className="flex flex-col gap-1">
-          <span className="text-[11px] uppercase tracking-wide text-muted-foreground">Tipo</span>
-          <select value={tipo} onChange={(e) => setTipo(e.target.value as TipoDoNegocio)} className={inputCls}>
-            <option value="">Todas</option>
-            <option value="lancamento">Lançamentos</option>
-            <option value="terceiros">Prontos / terceiros</option>
-          </select>
-        </label>
-        <label className="flex flex-col gap-1">
           <span className="text-[11px] uppercase tracking-wide text-muted-foreground">Corretor</span>
           <select value={corretor} onChange={(e) => setCorretor(e.target.value)} className={inputCls}>
             <option value="">Todos</option>
@@ -118,38 +96,16 @@ export function ConferenciaDaPlanilha({ de, ate }: Props) {
         </label>
       </div>
 
-      {/*
-        O que a tela NÃO sabe, dito antes da tabela. Sem isto, três colunas
-        vazias parecem defeito — e a resposta certa é "ninguém preencheu
-        ainda", que é trabalho a fazer, não erro do sistema.
-      */}
-      {dados && (dados.sem_tipo > 0 || dados.sem_gerente > 0 || dados.sem_pagamento > 0) && (
-        <div className="mb-3 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50/60 px-3 py-2 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-200">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span>
-            <strong>O que ainda falta preencher:</strong>{' '}
-            {[
-              dados.sem_tipo > 0 && `${dados.sem_tipo} sem lançamento/pronto (o empreendimento não está no cadastro)`,
-              dados.sem_gerente > 0 && `${dados.sem_gerente} sem gerente (o corretor da planilha não casa com um membro, ou o membro não tem equipe)`,
-              dados.sem_pagamento > 0 && `${dados.sem_pagamento} sem forma de pagamento`,
-            ].filter(Boolean).join(' · ')}
-            . A planilha não traz nenhum dos três — eles são da Dash.
-          </span>
-        </div>
-      )}
-
       <div className="overflow-x-auto rounded-lg border">
-        <table className="w-full min-w-[1680px] text-xs">
+        <table className="w-full min-w-[1480px] text-xs">
           <thead>
             {/*
-              AS COLUNAS DA PLANILHA DO DRIVE, na ordem dela — 24/09.
+              AS COLUNAS DA PLANILHA DO DRIVE, na ordem dela — e só elas.
 
-              O chefe mandou o arquivo e pediu que esta aba fosse "um espelho
-              daquela", porque se ficar redondo a equipe passa a preencher pela
-              Dash. Então os rótulos são os DELA: "Total Unidade", "Total
-              (-3%)", "Comissão Total", "Team Leader", "Comissão Imobiliária".
-              Renomear para o vocabulário da Dash faria quem confere ter de
-              traduzir coluna por coluna.
+              Os rótulos são os DELA: "Total Unidade", "Total (-3%)", "Comissão
+              Total", "Team Leader", "Comissão Imobiliária". Renomear para o
+              vocabulário da Dash faria quem confere ter de traduzir coluna por
+              coluna, que é o oposto de espelho.
             */}
             <tr className="border-b bg-muted/40 text-left uppercase tracking-wide text-muted-foreground">
               <th className="px-2.5 py-2">Empreendimento</th>
@@ -166,165 +122,63 @@ export function ConferenciaDaPlanilha({ de, ate }: Props) {
               <th className="px-2.5 py-2 text-right">Corretor R$</th>
               <th className="px-2.5 py-2 text-right">Team leader</th>
               <th className="px-2.5 py-2 text-right">Comissão imobiliária</th>
-              <th className="px-2.5 py-2">Gerente</th>
               <th className="px-2.5 py-2">Assinatura</th>
               <th className="px-2.5 py-2">Recebimento</th>
               <th className="px-2.5 py-2">Status</th>
-              <th className="px-2.5 py-2">Pagamento</th>
             </tr>
           </thead>
           <tbody>
             {linhas.length === 0 && (
-              <tr><td colSpan={19} className="px-3 py-6 text-center text-muted-foreground">
+              <tr><td colSpan={17} className="px-3 py-6 text-center text-muted-foreground">
                 Nenhuma venda da planilha neste recorte.
               </td></tr>
             )}
-            {linhas.map((v) => {
-              const pagamento = rotuloDoPagamento(v);
-              return (
-                <tr key={v.id} className="border-b last:border-0 hover:bg-muted/30">
-                  <td className="px-2.5 py-2 font-medium whitespace-nowrap">
-                    {v.empreendimento || '—'}
-                    {v.tipo_negocio && (
-                      <span className="ml-1.5 rounded px-1 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground ring-1 ring-border">
-                        {v.tipo_negocio === 'lancamento' ? 'lanç.' : 'pronto'}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-2.5 py-2 whitespace-nowrap">{v.unidade_codigo || '—'}</td>
-                  <td className="px-2.5 py-2 whitespace-nowrap">{v.origem || '—'}</td>
-                  <td className="px-2.5 py-2 text-right tabular-nums">{numero(v.area_m2)}</td>
-                  <td className="px-2.5 py-2 text-right tabular-nums">{dinheiro(v.valor_m2)}</td>
-                  <td className="px-2.5 py-2 text-right tabular-nums">{dinheiro(v.total_unidade)}</td>
-                  <td className="px-2.5 py-2 text-right tabular-nums">{dinheiro(v.valor_vgv)}</td>
-                  <td className="px-2.5 py-2 text-right tabular-nums font-medium">{dinheiro(v.comissao_total_venda)}</td>
-                  <td className="px-2.5 py-2 whitespace-nowrap">{v.cliente_nome || '—'}</td>
-                  <td className="px-2.5 py-2 whitespace-nowrap">{v.corretor_nome || '—'}</td>
-                  <td className="px-2.5 py-2 whitespace-nowrap">{v.nivel_corretor || '—'}</td>
-                  <td className="px-2.5 py-2 text-right tabular-nums">{dinheiro(v.repasse_corretor)}</td>
-                  <td className="px-2.5 py-2 text-right tabular-nums">{dinheiro(v.team_leader_valor)}</td>
-                  {/* É a "Líquida" que o chefe definiu: comissão menos corretor
-                      menos gerente. A planilha chama assim, e o rótulo é dela. */}
-                  <td className="px-2.5 py-2 text-right tabular-nums font-medium">{dinheiro(v.comissao_imobiliaria)}</td>
-                  <td className="px-2.5 py-2 whitespace-nowrap">
-                    {v.gerente || <span className="text-muted-foreground">—</span>}
-                  </td>
-                  <td className="px-2.5 py-2 whitespace-nowrap">{dataBR(v.data_assinatura)}</td>
-                  <td className="px-2.5 py-2 whitespace-nowrap">{dataBR(v.data_recebimento)}</td>
-                  {/* Texto livre na planilha — mostrado como está, sem virar
-                      selo: transformá-lo em estado obrigaria a inventar
-                      categorias que ninguém combinou. */}
-                  <td className="px-2.5 py-2 max-w-[180px] truncate" title={v.status_recebimento ?? ''}>
-                    {v.status_recebimento || '—'}
-                  </td>
-                  <td className="px-2.5 py-2">
-                    <button
-                      type="button"
-                      onClick={() => setEditando(v)}
-                      className={`rounded px-1.5 py-0.5 text-[11px] whitespace-nowrap hover:bg-accent ${
-                        pagamento ? '' : 'text-muted-foreground ring-1 ring-dashed ring-border'
-                      }`}
-                    >
-                      {pagamento ?? 'preencher'}
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
+            {linhas.map((v) => (
+              <tr key={v.id} className="border-b last:border-0 hover:bg-muted/30">
+                <td className="px-2.5 py-2 font-medium whitespace-nowrap">{v.empreendimento || '—'}</td>
+                <td className="px-2.5 py-2 whitespace-nowrap">{v.unidade_codigo || '—'}</td>
+                <td className="px-2.5 py-2 whitespace-nowrap">{v.origem || '—'}</td>
+                <td className="px-2.5 py-2 text-right tabular-nums">{numero(v.area_m2)}</td>
+                <td className="px-2.5 py-2 text-right tabular-nums">{dinheiro(v.valor_m2)}</td>
+                <td className="px-2.5 py-2 text-right tabular-nums">{dinheiro(v.total_unidade)}</td>
+                <td className="px-2.5 py-2 text-right tabular-nums">{dinheiro(v.valor_vgv)}</td>
+                <td className="px-2.5 py-2 text-right tabular-nums font-medium">{dinheiro(v.comissao_total_venda)}</td>
+                <td className="px-2.5 py-2 whitespace-nowrap">{v.cliente_nome || '—'}</td>
+                <td className="px-2.5 py-2 whitespace-nowrap">{v.corretor_nome || '—'}</td>
+                <td className="px-2.5 py-2 whitespace-nowrap">{v.nivel_corretor || '—'}</td>
+                <td className="px-2.5 py-2 text-right tabular-nums">{dinheiro(v.repasse_corretor)}</td>
+                <td className="px-2.5 py-2 text-right tabular-nums">{dinheiro(v.team_leader_valor)}</td>
+                {/* É a "Líquida" que o chefe definiu: comissão menos corretor
+                    menos gerente. A planilha chama assim, e o rótulo é dela. */}
+                <td className="px-2.5 py-2 text-right tabular-nums font-medium">{dinheiro(v.comissao_imobiliaria)}</td>
+                <td className="px-2.5 py-2 whitespace-nowrap">{dataBR(v.data_assinatura)}</td>
+                <td className="px-2.5 py-2 whitespace-nowrap">{dataBR(v.data_recebimento)}</td>
+                {/* Texto livre na planilha — mostrado como está, sem virar
+                    selo: transformá-lo em estado obrigaria a inventar
+                    categorias que ninguém combinou. */}
+                <td className="px-2.5 py-2 max-w-[180px] truncate" title={v.status_recebimento ?? ''}>
+                  {v.status_recebimento || '—'}
+                </td>
+              </tr>
+            ))}
           </tbody>
           {dados && linhas.length > 0 && (
             <tfoot>
+              {/* Os colSpan somam 17 — o mesmo número de colunas do cabeçalho.
+                  Uma conta errada aqui põe o total de um número embaixo da
+                  coluna de outro, e o rodapé continua parecendo certo. */}
               <tr className="border-t bg-muted/30 font-medium">
                 <td className="px-2.5 py-2" colSpan={6}>{dados.total_linhas} venda(s)</td>
                 <td className="px-2.5 py-2 text-right tabular-nums">{dinheiro(dados.total_vgv)}</td>
                 <td className="px-2.5 py-2 text-right tabular-nums">{dinheiro(dados.total_comissao)}</td>
                 <td className="px-2.5 py-2" colSpan={5} />
                 <td className="px-2.5 py-2 text-right tabular-nums">{dinheiro(dados.total_imobiliaria)}</td>
-                <td className="px-2.5 py-2" colSpan={5} />
+                <td className="px-2.5 py-2" colSpan={3} />
               </tr>
             </tfoot>
           )}
         </table>
       </div>
-
-      {editando && (
-        <EditorDePagamento
-          venda={editando}
-          salvando={salvar.isPending}
-          onFechar={() => setEditando(null)}
-          onSalvar={(forma, total, pagas) => salvar.mutate({ id: editando.id, forma, total, pagas })}
-        />
-      )}
     </>
-  );
-}
-
-function EditorDePagamento({
-  venda, salvando, onFechar, onSalvar,
-}: {
-  venda: VendaDaPlanilha;
-  salvando: boolean;
-  onFechar: () => void;
-  onSalvar: (forma: 'a_vista' | 'parcelado' | null, total: number | null, pagas: number | null) => void;
-}) {
-  const [forma, setForma] = useState<'a_vista' | 'parcelado' | ''>(venda.pagamento_forma ?? '');
-  const [total, setTotal] = useState(String(venda.parcelas_total ?? ''));
-  const [pagas, setPagas] = useState(String(venda.parcelas_pagas ?? 0));
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onFechar}>
-      <div className="w-full max-w-sm rounded-lg border bg-background p-4 text-sm" onClick={(e) => e.stopPropagation()}>
-        <h2 className="mb-1 font-semibold">Pagamento</h2>
-        <p className="mb-3 text-xs text-muted-foreground">
-          {venda.empreendimento}{venda.unidade_codigo ? ` · ${venda.unidade_codigo}` : ''}
-        </p>
-
-        <div className="grid gap-3">
-          <label className="flex flex-col gap-1">
-            <span className="text-[11px] uppercase tracking-wide text-muted-foreground">Forma</span>
-            <select value={forma} onChange={(e) => setForma(e.target.value as typeof forma)} className={inputCls}>
-              {/* Vazio LIMPA, e a palavra diz isso: "ninguém preencheu" é
-                  diferente de "foi pago de uma vez". */}
-              <option value="">Ainda não preenchido</option>
-              <option value="a_vista">À vista</option>
-              <option value="parcelado">Parcelado</option>
-            </select>
-          </label>
-
-          {forma === 'parcelado' && (
-            <div className="flex items-end gap-2">
-              <label className="flex flex-1 flex-col gap-1">
-                <span className="text-[11px] uppercase tracking-wide text-muted-foreground">Pagas</span>
-                <input type="number" min={0} value={pagas} onChange={(e) => setPagas(e.target.value)} className={inputCls} />
-              </label>
-              <span className="pb-2 text-xs text-muted-foreground">de</span>
-              <label className="flex flex-1 flex-col gap-1">
-                <span className="text-[11px] uppercase tracking-wide text-muted-foreground">Parcelas</span>
-                <input type="number" min={1} value={total} onChange={(e) => setTotal(e.target.value)} className={inputCls} />
-              </label>
-            </div>
-          )}
-        </div>
-
-        <div className="mt-4 flex justify-end gap-2">
-          <button type="button" onClick={onFechar} className="rounded-md border px-3 py-1.5 text-xs hover:bg-accent">
-            Cancelar
-          </button>
-          <button
-            type="button"
-            disabled={salvando}
-            onClick={() => onSalvar(
-              forma === '' ? null : forma,
-              forma === 'parcelado' ? Number(total) : null,
-              forma === 'parcelado' ? Number(pagas) : null,
-            )}
-            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground disabled:opacity-50"
-          >
-            {salvando && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            Salvar
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }

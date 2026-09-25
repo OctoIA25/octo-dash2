@@ -6,15 +6,19 @@
  * `vendas`, que nasce das propostas assinadas do CRM — por isso as duas
  * convivem na tela com um seletor, e não somadas: somar inventaria vendas.
  *
- * Três colunas que o chefe pediu NÃO existem na planilha, e por isso a função
- * do banco devolve, junto, quantas linhas ficaram sem cada uma. A tela mostra
- * esse número: coluna vazia sem explicação parece defeito da tela.
+ * SÓ AS COLUNAS DA PLANILHA — 25/09. "Nas conferências de vendas deixe apenas
+ * as informações da planilha que enviei". Saíram daqui o gerente (derivado da
+ * equipe do corretor), o tipo do negócio (derivado do cadastro de
+ * empreendimentos) e a forma de pagamento (campo da Dash) — nenhum dos três
+ * existe no arquivo. Saíram junto os três contadores de "quantas linhas estão
+ * sem cada um": eles existiam para explicar coluna vazia, e sem a coluna não
+ * explicam nada.
+ *
+ * A tabela `venda_pagamento` e a função `venda_pagamento_gravar` continuam no
+ * banco, com o que já estiver preenchido. O que saiu foi a tela e a leitura.
  */
 
 import { supabase } from '@/lib/supabaseClient';
-
-/** 'lancamento' | 'terceiros' | '' (todas) */
-export type TipoDoNegocio = 'lancamento' | 'terceiros' | '';
 
 export interface VendaDaPlanilha {
   id: string;
@@ -24,12 +28,8 @@ export interface VendaDaPlanilha {
   unidade_codigo: string | null;
   cliente_nome: string | null;
   corretor_nome: string | null;
+  /** "Tipo" na planilha: o nível do corretor (PL, Tropa, TL, ES, Estagiário). */
   nivel_corretor: string | null;
-  /** Quem lidera a equipe do corretor. Vem do cadastro, não da planilha. */
-  gerente: string | null;
-  /** Do cadastro de empreendimentos. `null` = ninguém classificou ainda. */
-  tipo_negocio: 'lancamento' | 'terceiros' | null;
-  /* As colunas da planilha do Drive, na ordem dela. */
   origem: string | null;
   area_m2: number | null;
   valor_m2: number | null;
@@ -48,9 +48,6 @@ export interface VendaDaPlanilha {
   data_recebimento: string | null;
   /** Texto livre na planilha: "ok", "ver na Caixa", "pagou mais 252 em 14/03". */
   status_recebimento: string | null;
-  pagamento_forma: 'a_vista' | 'parcelado' | null;
-  parcelas_total: number | null;
-  parcelas_pagas: number | null;
 }
 
 export interface ConferenciaDaPlanilha {
@@ -60,16 +57,11 @@ export interface ConferenciaDaPlanilha {
   total_comissao: number;
   total_imobiliaria: number;
   total_recebido: number;
-  /** Quantas linhas ainda não têm cada um dos três. */
-  sem_gerente: number;
-  sem_tipo: number;
-  sem_pagamento: number;
 }
 
 export interface FiltrosDaPlanilha {
   de?: string | null;
   ate?: string | null;
-  tipo?: TipoDoNegocio;
   corretor?: string | null;
 }
 
@@ -83,7 +75,6 @@ export async function carregarPlanilha(
     p_tenant_id: tenantId,
     p_de: f.de || null,
     p_ate: f.ate || null,
-    p_tipo: f.tipo || null,
     p_corretor: f.corretor || null,
   });
 
@@ -92,51 +83,4 @@ export async function carregarPlanilha(
   // conclusões opostas sobre o mês.
   if (error) throw error;
   return (data as ConferenciaDaPlanilha) ?? null;
-}
-
-export interface PagamentoParaGravar {
-  forma: 'a_vista' | 'parcelado' | null;
-  parcelasTotal?: number | null;
-  parcelasPagas?: number | null;
-}
-
-/**
- * Grava a forma de pagamento. `forma: null` LIMPA — e limpar é diferente de
- * gravar "à vista": um diz "ninguém preencheu ainda", o outro afirma que a
- * venda foi paga de uma vez.
- */
-export async function gravarPagamento(
-  vendaPlanilhaId: string,
-  p: PagamentoParaGravar,
-): Promise<{ success: boolean; error?: string }> {
-  if (p.forma === 'parcelado') {
-    const total = Number(p.parcelasTotal);
-    if (!Number.isInteger(total) || total < 1) {
-      return { success: false, error: 'diga em quantas parcelas' };
-    }
-    const pagas = Number(p.parcelasPagas ?? 0);
-    if (!Number.isInteger(pagas) || pagas < 0 || pagas > total) {
-      return { success: false, error: `as parcelas pagas vão de 0 a ${total}` };
-    }
-  }
-
-  const { error } = await supabase.rpc('venda_pagamento_gravar', {
-    p_venda_planilha_id: vendaPlanilhaId,
-    p_forma: p.forma,
-    p_parcelas_total: p.forma === 'parcelado' ? p.parcelasTotal : null,
-    p_parcelas_pagas: p.forma === 'parcelado' ? (p.parcelasPagas ?? 0) : 0,
-  });
-  if (error) return { success: false, error: error.message };
-  return { success: true };
-}
-
-/** "3 de 5 parcelas", "à vista", ou null quando ninguém preencheu. */
-export function rotuloDoPagamento(v: VendaDaPlanilha): string | null {
-  if (v.pagamento_forma === 'a_vista') return 'à vista';
-  if (v.pagamento_forma === 'parcelado') {
-    const total = v.parcelas_total ?? 0;
-    const pagas = v.parcelas_pagas ?? 0;
-    return `${pagas} de ${total} parcelas`;
-  }
-  return null;
 }
