@@ -17,14 +17,15 @@
  *     cargo recém-criado parece defeito.
  */
 
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Check, Info, Loader2, Plus, Shield, Trash2, X } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { useEscapeFecha } from '@/hooks/useEscapeFecha';
 import { useToast } from '@/hooks/use-toast';
 import {
-  O_QUE_O_PAPEL_PODE, ROTULO_DO_PAPEL, agruparPorModulo, resumoDoCargo, semEfeito,
+  O_QUE_O_PAPEL_PODE, ROTULO_DO_PAPEL, agruparPorModulo, matrizDeCargos,
+  permissoesSemNinguem, resumoDoCargo, semEfeito,
   type Cargo, type PermissaoDoCatalogo,
 } from './cargos';
 import {
@@ -60,6 +61,17 @@ export function CargosPage() {
     onError: (e: Error) => toast({ title: 'Não deu para excluir', description: e.message, variant: 'destructive' }),
   });
 
+  /*
+   * Matriz ou lista — pedido do chefe em 25/09, com a print do CORE ao lado:
+   * "assim dá pra ver melhor quem pode fazer o que, sem necessariamente abrir
+   * elas".
+   *
+   * A MATRIZ é o padrão porque é a pergunta que se faz todo dia ("quem aprova
+   * desconto?"). A lista continua, porque é por ela que se edita — e ela
+   * responde a outra pergunta ("o que este cargo tem?").
+   */
+  const [visao, setVisao] = useState<'matriz' | 'lista'>('matriz');
+
   const inertes = useMemo(
     () => (catalogo.data ?? []).filter((p) => !p.em_uso).length,
     [catalogo.data]
@@ -81,10 +93,26 @@ export function CargosPage() {
             Um pacote de permissões que vale para todo mundo que o tem. Mudar o cargo muda para todos.
           </p>
         </div>
-        <button onClick={() => setEditando('novo')}
-          className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-accent">
-          <Plus className="h-3.5 w-3.5" /> Novo cargo
-        </button>
+        <div className="flex items-center gap-2">
+          <div className="inline-flex rounded-md border p-0.5 text-xs">
+            {(['matriz', 'lista'] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setVisao(v)}
+                className={`rounded px-2.5 py-1 font-medium ${
+                  visao === v ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent'
+                }`}
+              >
+                {v === 'matriz' ? 'Quadro' : 'Lista'}
+              </button>
+            ))}
+          </div>
+          <button onClick={() => setEditando('novo')}
+            className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-accent">
+            <Plus className="h-3.5 w-3.5" /> Novo cargo
+          </button>
+        </div>
       </header>
 
       {recusado && (
@@ -134,6 +162,15 @@ export function CargosPage() {
             </div>
           )}
 
+          {visao === 'matriz' && dados.cargos.length > 0 && (
+            <QuadroDePermissoes
+              cargos={dados.cargos}
+              catalogo={catalogo.data ?? []}
+              onAbrir={(c) => setEditando(c)}
+            />
+          )}
+
+          {visao === 'lista' && (
           <ul className="grid gap-2">
             {dados.cargos.map((c) => {
               const inertesNoCargo = semEfeito(c, catalogo.data ?? []);
@@ -173,6 +210,7 @@ export function CargosPage() {
               );
             })}
           </ul>
+          )}
         </>
       )}
 
@@ -432,5 +470,137 @@ function EditorDeCargo({
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * O QUADRO: permissão nas linhas, cargo nas colunas.
+ *
+ * Pedido do chefe em 25/09, com a print do CORE ao lado: "assim dá pra ver
+ * melhor quem pode fazer o que, sem necessariamente abrir elas".
+ *
+ * A lista de cartões responde "o que este cargo tem?". O quadro responde a
+ * pergunta que se faz todo dia — "quem aprova desconto?" — e mostra a LINHA
+ * VAZIA, que é a que ninguém vê: a permissão que nenhum cargo tem some no meio
+ * de trinta linhas cheias de verde, e costuma ser um cargo esquecido no meio
+ * de uma migração.
+ */
+function QuadroDePermissoes({
+  cargos, catalogo, onAbrir,
+}: {
+  cargos: Cargo[];
+  catalogo: PermissaoDoCatalogo[];
+  onAbrir: (c: Cargo) => void;
+}) {
+  const blocos = useMemo(() => matrizDeCargos(catalogo, cargos), [catalogo, cargos]);
+  const semNinguem = useMemo(() => permissoesSemNinguem(blocos), [blocos]);
+
+  if (blocos.length === 0) {
+    return (
+      <p className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
+        O catálogo de permissões está vazio.
+      </p>
+    );
+  }
+
+  return (
+    <>
+      {semNinguem.total > 0 && (
+        <p className="mb-3 flex items-start gap-2 rounded-md border p-2.5 text-xs text-muted-foreground">
+          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>
+            <strong>{semNinguem.total} permissões nenhum cargo tem</strong> — ficam com a linha
+            inteira vazia abaixo.{' '}
+            {semNinguem.com_efeito === 0
+              ? 'Todas são das que não têm efeito, então não falta acesso a ninguém.'
+              : `Destas, ${semNinguem.com_efeito} têm efeito de verdade: é uma tela que existe e, hoje, nenhum cargo alcança.`}
+          </span>
+        </p>
+      )}
+
+      {/* A tabela rola na horizontal: com seis cargos ela não cabe no celular,
+          e espremer as colunas tornaria os checks indistinguíveis. */}
+      <div className="overflow-x-auto rounded-lg border">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b bg-muted/40">
+              <th className="sticky left-0 z-10 bg-muted/40 px-3 py-2 text-left font-medium uppercase tracking-wide text-muted-foreground">
+                Permissão
+              </th>
+              {cargos.map((c) => (
+                <th key={c.id} className="px-2 py-2 text-center align-bottom">
+                  <button
+                    type="button"
+                    onClick={() => onAbrir(c)}
+                    className="w-full rounded px-1 py-0.5 hover:bg-accent"
+                    title={`Abrir ${c.nome}`}
+                  >
+                    <span className="block font-semibold">{c.nome}</span>
+                    {/* O número de pessoas é o que a print do CORE mostra, e é
+                        honesto aqui: hoje quase ninguém tem cargo, e o "0
+                        pessoas" diz isso sem precisar de aviso. */}
+                    <span className="block text-[10px] font-normal text-muted-foreground">
+                      {c.pessoas} {c.pessoas === 1 ? 'pessoa' : 'pessoas'}
+                    </span>
+                  </button>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {blocos.map((b) => (
+              <Fragment key={b.modulo}>
+                <tr className="border-b bg-muted/20">
+                  <td
+                    colSpan={cargos.length + 1}
+                    className="px-3 py-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground"
+                  >
+                    {b.modulo}
+                    {/* O módulo inteiro que o app não lê. Escondê-lo deixaria o
+                        quadro mais limpo e mentiria por omissão: as caixas
+                        estão marcadas, e quem as marcou acha que deu acesso. */}
+                    {!b.em_uso && (
+                      <span className="ml-2 font-normal normal-case text-amber-700 dark:text-amber-400">
+                        — gravadas, mas nenhuma tela as lê ainda
+                      </span>
+                    )}
+                  </td>
+                </tr>
+                {b.linhas.map((l) => (
+                  <tr
+                    key={l.permissao.codigo}
+                    className={`border-b last:border-0 ${l.ninguem ? 'bg-amber-50/40 dark:bg-amber-950/10' : 'hover:bg-muted/30'}`}
+                  >
+                    <td className="sticky left-0 z-10 bg-background px-3 py-1.5">
+                      {l.permissao.descricao || l.permissao.codigo}
+                      {!l.permissao.em_uso && (
+                        <span className="ml-1.5 text-[10px] text-amber-700 dark:text-amber-400">sem efeito</span>
+                      )}
+                    </td>
+                    {l.tem.map((tem, i) => (
+                      <td key={cargos[i].id} className="px-2 py-1.5 text-center">
+                        {tem ? (
+                          <Check
+                            className="mx-auto h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400"
+                            aria-label={`${cargos[i].nome} tem`}
+                          />
+                        ) : (
+                          <span className="text-muted-foreground/30" aria-label={`${cargos[i].nome} não tem`}>—</span>
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <p className="mt-2 text-[11px] text-muted-foreground">
+        Clique no nome de um cargo para editá-lo. O que está marcado aqui vale para todo mundo que
+        tem aquele cargo.
+      </p>
+    </>
   );
 }

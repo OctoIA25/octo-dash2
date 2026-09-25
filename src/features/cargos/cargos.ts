@@ -82,6 +82,84 @@ export function agruparPorModulo(
  * desmarca acredita ter restringido. Medido em 21/09: das 33 permissões do
  * catálogo, 17 são gravadas e nunca lidas.
  */
+/**
+ * A MATRIZ: permissão nas linhas, cargo nas colunas — pedido do chefe em
+ * 25/09, com a print do CORE ao lado: "assim dá pra ver melhor quem pode fazer
+ * o que, sem necessariamente abrir elas".
+ *
+ * A tela de hoje mostra um cartão por cargo, e responder "quem aprova
+ * desconto?" exige abrir os seis e comparar de cabeça. A matriz responde de
+ * relance — e, o que importa mais, mostra a LINHA VAZIA: a permissão que
+ * ninguém tem salta aos olhos, e é a que costuma ser esquecida.
+ *
+ * Função pura, fora do componente, porque é a parte que pode errar em
+ * silêncio: uma coluna fora de ordem põe o check do Corretor na coluna da
+ * Diretoria, e a tela continua bonita.
+ */
+export interface LinhaDaMatriz {
+  permissao: PermissaoDoCatalogo;
+  /** Na MESMA ordem de `cargos`. A tela casa por índice. */
+  tem: boolean[];
+  /** Nenhum cargo tem esta permissão. Falso quando não há cargo nenhum. */
+  ninguem: boolean;
+}
+
+export interface BlocoDaMatriz {
+  modulo: string;
+  em_uso: boolean;
+  linhas: LinhaDaMatriz[];
+}
+
+export function matrizDeCargos(
+  catalogo: PermissaoDoCatalogo[],
+  cargos: Cargo[],
+): BlocoDaMatriz[] {
+  const lista = cargos ?? [];
+  // `Set` por cargo, e não `includes` dentro do laço: com 33 permissões e 6
+  // cargos são 198 buscas, e a lista de permissões de um cargo chega a 20.
+  const tidos = lista.map((c) => new Set(c.permissoes ?? []));
+
+  return agruparPorModulo(catalogo).map((g) => ({
+    modulo: g.modulo,
+    em_uso: g.em_uso,
+    linhas: g.permissoes.map((permissao) => {
+      const tem = tidos.map((s) => s.has(permissao.codigo));
+      return {
+        permissao,
+        tem,
+        ninguem: tem.length > 0 && tem.every((t) => !t),
+      };
+    }),
+  }));
+}
+
+/**
+ * Quantas permissões ninguém tem. A tela diz o número em vez de deixar quem
+ * olha descobrir contando linha por linha — e é o número que costuma revelar
+ * um cargo esquecido no meio de uma migração.
+ */
+/**
+ * Quantas permissões nenhum cargo tem — separando as que fariam diferença.
+ *
+ * Contar as duas juntas seria enganoso no número mais visível da tela: hoje
+ * são 20 órfãs, mas 17 delas são as inertes, que ninguém marca porque não
+ * fariam nada mesmo. Quem lê "20 permissões ninguém tem" sai procurando um
+ * problema que é, quase todo, a lista de inertes já conhecida. As `com_efeito`
+ * são as poucas que valem uma olhada: uma tela que existe e ninguém alcança.
+ */
+export function permissoesSemNinguem(blocos: BlocoDaMatriz[]): { total: number; com_efeito: number } {
+  let total = 0;
+  let com_efeito = 0;
+  for (const b of blocos ?? []) {
+    for (const l of b.linhas) {
+      if (!l.ninguem) continue;
+      total += 1;
+      if (l.permissao.em_uso) com_efeito += 1;
+    }
+  }
+  return { total, com_efeito };
+}
+
 export function semEfeito(cargo: Pick<Cargo, 'permissoes'>, catalogo: PermissaoDoCatalogo[]): number {
   const inertes = new Set((catalogo ?? []).filter((p) => !p.em_uso).map((p) => p.codigo));
   return (cargo?.permissoes ?? []).filter((c) => inertes.has(c)).length;
