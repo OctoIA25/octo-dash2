@@ -23,6 +23,7 @@ import { join } from 'node:path';
 const raiz = process.cwd();
 const aba = readFileSync(join(raiz, 'src/components/imoveis/ConstrutorasTab.tsx'), 'utf8');
 const hook = readFileSync(join(raiz, 'src/features/imoveis/hooks/useConstrutorasCatalogo.ts'), 'utf8');
+const servico = readFileSync(join(raiz, 'src/features/imoveis/services/construtorasService.ts'), 'utf8');
 
 /** Linhas de código, sem comentário — o motivo da trava cita "comissão". */
 const semComentario = (fonte: string) =>
@@ -37,8 +38,28 @@ describe('a comissão não aparece na aba Construtoras', () => {
     expect(colunas).not.toContain('comissao');
   });
 
-  it('nenhum rótulo de Comissão é renderizado', () => {
-    expect(semComentario(aba)).not.toMatch(/Comiss[ãa]o/);
+  /*
+   * ESTE CASO MUDOU EM 25/09, e o motivo importa.
+   *
+   * Ele proibia a PALAVRA "Comissão" em qualquer lugar do arquivo. Em 24/09 a
+   * aba ganhou a gaveta de perfil da construtora, que mostra a comissão vinda
+   * do CADASTRO — e o caso passou a falhar sobre uma tela que está certa.
+   *
+   * Proibir a palavra nunca foi a regra. A regra é DE ONDE O VALOR VEM: a
+   * planilha do Google está numa URL aberta, sem login; o cadastro está atrás
+   * da RPC `construtoras_comissao`, que confere o cargo no próprio banco.
+   * Então é a origem que se trava, não o texto.
+   */
+  it('a planilha aberta não entrega comissão para a tela', () => {
+    expect(semComentario(hook)).not.toMatch(/comiss/i);
+  });
+
+  it('a comissão que a tela mostra vem da RPC que confere cargo', () => {
+    expect(servico).toContain("rpc('construtoras_comissao'");
+    // E ela NÃO pode entrar junto do SELECT comum: se a coluna voltar para a
+    // leitura aberta do cadastro, a RPC vira enfeite e o dado vaza pelo lado.
+    const selects = [...semComentario(servico).matchAll(/\.select\('([^']+)'\)/g)].map((m) => m[1]);
+    expect(selects.some((c) => /comissao/i.test(c))).toBe(false);
   });
 
   it('a trava continua necessária: a aba ainda se alimenta da planilha aberta', () => {

@@ -13,12 +13,13 @@ import { validarCep } from '@/services/viaCepService';
 import { isHttpUrl, normalizeYouTubeUrl } from './mediaUrls';
 
 /** Seções colapsáveis do formulário (ids `secao-*`), para abrir a primeira com problema. */
-export type SecaoPublicacao = 'proprietario' | 'estrutura' | 'localizacao' | 'comissoes' | 'midia';
+export type SecaoPublicacao = 'proprietario' | 'estrutura' | 'localizacao' | 'comissoes' | 'midia' | 'publicacao';
 
 export interface ProblemaPublicacao {
   campo:
     | 'proprietario_nome' | 'proprietario_contato' | 'tipo' | 'codigo' | 'cep' | 'logradouro' | 'numero'
-    | 'bairro' | 'cidade' | 'estado' | 'captador_id' | 'link_video' | 'tour_virtual';
+    | 'bairro' | 'cidade' | 'estado' | 'captador_id' | 'link_video' | 'tour_virtual'
+    | 'titulo' | 'descricao';
   mensagem: string;
   secao: SecaoPublicacao;
 }
@@ -39,7 +40,32 @@ export interface DadosPublicacao {
   captador_id: string;
   link_video: string;
   tour_virtual: string;
+  /** Texto do anúncio: opcionais porque só entram na regra de tamanho. */
+  titulo?: string;
+  descricao?: string;
 }
+
+/**
+ * Limite do texto que vai aos portais (decisão de 21/09/2026). Acima disso o
+ * anúncio é recusado lá, e o imóvel some do portal sem ninguém entender.
+ * Exportados para o formulário usar os MESMOS números no contador e no
+ * maxLength — dois lugares com o número escrito à mão divergem na primeira
+ * mudança.
+ */
+export const LIMITE_TITULO = 100;
+export const LIMITE_DESCRICAO = 3000;
+
+/**
+ * Corta no limite sem partir palavra ao meio. Usado só no texto que a IA gera:
+ * o que a pessoa escreveu nunca é cortado sozinho — ali o contador mostra o
+ * excesso e o salvamento cobra, para ninguém perder texto sem ver.
+ */
+export const cortarNoLimite = (texto: string, limite: number): string => {
+  if (texto.length <= limite) return texto;
+  const corte = texto.slice(0, limite);
+  const ultimoEspaco = corte.lastIndexOf(' ');
+  return (ultimoEspaco > 0 ? corte.slice(0, ultimoEspaco) : corte).trimEnd();
+};
 
 export const validarPublicacaoImovel = (
   dados: DadosPublicacao,
@@ -110,6 +136,22 @@ export const validarPublicacaoImovel = (
       campo: 'tour_virtual',
       mensagem: 'Tour virtual (use uma URL http(s) ou deixe em branco)',
       secao: 'midia',
+    });
+  }
+
+  const tamanho = (valor: string | undefined) => (valor ?? '').trim().length;
+  if (tamanho(dados.titulo) > LIMITE_TITULO) {
+    problemas.push({
+      campo: 'titulo',
+      mensagem: `Título do anúncio com ${tamanho(dados.titulo)} caracteres — o limite é ${LIMITE_TITULO}`,
+      secao: 'publicacao',
+    });
+  }
+  if (tamanho(dados.descricao) > LIMITE_DESCRICAO) {
+    problemas.push({
+      campo: 'descricao',
+      mensagem: `Descrição com ${tamanho(dados.descricao)} caracteres — o limite é ${LIMITE_DESCRICAO}`,
+      secao: 'publicacao',
     });
   }
 

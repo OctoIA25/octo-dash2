@@ -22,7 +22,7 @@ import { formatCurrency, parseCurrency } from '@/features/imoveis/utils/buildEdi
 import { FotosUploader } from './FotosUploader';
 import { PropertyCompleteness } from './PropertyCompleteness';
 import { isHttpUrl, normalizeYouTubeUrl } from '@/features/imoveis/utils/mediaUrls';
-import { validarPublicacaoImovel } from '@/features/imoveis/utils/validarPublicacaoImovel';
+import { validarPublicacaoImovel, cortarNoLimite, LIMITE_TITULO, LIMITE_DESCRICAO } from '@/features/imoveis/utils/validarPublicacaoImovel';
 import { formularioAlterado } from '@/features/imoveis/utils/formularioAlterado';
 import { STATUS_RASCUNHO, type StatusAprovacaoImovel } from '@/features/imoveis/utils/rascunho';
 import { excluirRascunho } from '@/features/imoveis/services/rascunhosService';
@@ -312,7 +312,11 @@ const initialFormData: ImovelFormData = {
   valor_iptu: '',
   titulo: '',
   descricao: '',
-  anunciar: 'nao',
+  // 'sim' desde 21/09/2026: com o padrão 'nao', todo imóvel novo nascia fora dos
+  // portais até alguém lembrar de marcar — três imóveis da Lotus ficaram assim
+  // sem ninguém notar. O imóvel só chega ao portal depois de aprovado, então o
+  // padrão "anuncia" não publica nada sozinho.
+  anunciar: 'sim',
   destaque: 'nao',
   super_destaque: 'nao',
   link_video: '',
@@ -506,6 +510,23 @@ const splitCaracteristicas = (caracteristicas: string[]) => {
     else area_comum.push(item);
   }
   return { area_comum, area_privativa };
+};
+
+/**
+ * Contador do campo de texto do anúncio. Fica vermelho quando passa do limite:
+ * o `maxLength` barra o que se digita agora, mas imóvel antigo pode ter sido
+ * gravado maior (3 títulos e 2 descrições em 21/09/2026), e aí o contador é o
+ * aviso de que precisa encurtar antes de salvar.
+ */
+const ContadorTexto = ({ valor, limite }: { valor: string; limite: number }) => {
+  const tamanho = (valor ?? '').length;
+  const passou = tamanho > limite;
+  return (
+    <p className={`text-[11px] text-right ${passou ? 'text-red-500 font-medium' : 'text-muted-foreground'}`}>
+      {tamanho.toLocaleString('pt-BR')}/{limite.toLocaleString('pt-BR')}
+      {passou && ' — encurte para salvar'}
+    </p>
+  );
 };
 
 export const CriarImovelForm = ({
@@ -920,12 +941,15 @@ export const CriarImovelForm = ({
       }
 
       const textoGerado = result.response.trim();
-      setFormData(prev => ({
-        ...prev,
-        descricao: prev.descricao
-          ? `${prev.descricao.trimEnd()}\n\n${textoGerado}`
-          : textoGerado,
-      }));
+      setFormData(prev => {
+        const juntado = prev.descricao ? `${prev.descricao.trimEnd()}\n\n${textoGerado}` : textoGerado;
+        const descricao = cortarNoLimite(juntado, LIMITE_DESCRICAO);
+        // Cortar calado esconderia texto que a pessoa acha que está lá.
+        if (descricao.length < juntado.length) {
+          setDescricaoIaErro(`A descrição foi cortada em ${LIMITE_DESCRICAO} caracteres, que é o limite do anúncio.`);
+        }
+        return { ...prev, descricao };
+      });
     } catch (err: any) {
       setDescricaoIaErro(err?.message || 'Erro ao gerar descrição.');
     } finally {
@@ -2337,8 +2361,10 @@ export const CriarImovelForm = ({
                   <Input
                     placeholder="Ex: Casa 3 quartos no Jardim Europa"
                     value={formData.titulo}
+                    maxLength={LIMITE_TITULO}
                     onChange={(e) => handleInputChange('titulo', e.target.value)}
                   />
+                  <ContadorTexto valor={formData.titulo} limite={LIMITE_TITULO} />
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-2">
@@ -2365,9 +2391,11 @@ export const CriarImovelForm = ({
                   <Textarea
                     placeholder="Descreva o imóvel, seus diferenciais, acabamentos, etc."
                     value={formData.descricao}
+                    maxLength={LIMITE_DESCRICAO}
                     onChange={(e) => handleInputChange('descricao', e.target.value)}
                     rows={5}
                   />
+                  <ContadorTexto valor={formData.descricao} limite={LIMITE_DESCRICAO} />
                   {descricaoIaErro && (
                     <p className="text-xs text-red-500 flex items-center gap-1">
                       <AlertCircle className="h-3 w-3" />

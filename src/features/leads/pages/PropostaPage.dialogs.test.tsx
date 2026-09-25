@@ -261,4 +261,40 @@ describe('PropostaPage — abrir e fechar dialogs', () => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
   });
+
+  it('a aba Certidões mostra o checklist de documentos para venda', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByText('Ana Souza'));
+    await user.click(await screen.findByRole('tab', { name: /certidões/i }));
+
+    expect(await screen.findByText('Checklist de documentos para venda')).toBeInTheDocument();
+    expect(screen.getByText('Matrícula atualizada do imóvel')).toBeInTheDocument();
+  });
+
+  it('marcar um documento na aba Certidões salva no negócio e registra no histórico', async () => {
+    const service = await import('@/features/leads/services/proposalsService');
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByText('Ana Souza'));
+    await user.click(await screen.findByRole('tab', { name: /certidões/i }));
+    const cpf = await screen.findByRole('checkbox', { name: 'CPF (Vendedor PF)' });
+    await user.click(cpf);
+
+    expect(cpf).toBeChecked();
+    await waitFor(() => {
+      const salvos = [
+        ...vi.mocked(service.updateSavedProposalFields).mock.calls,
+        ...vi.mocked(service.updateSavedProposal).mock.calls,
+      ].map(([input]) => input.transactionForm ?? {});
+      expect(salvos.some((form) => Boolean(form['doc:vendedor_pf:cpf']))).toBe(true);
+    });
+    expect(service.appendSavedProposalHistoryItems).toHaveBeenCalledWith(
+      expect.objectContaining({
+        items: [expect.objectContaining({ label: 'Documento marcado', detail: 'CPF (Vendedor PF)' })],
+      }),
+    );
+  });
 });

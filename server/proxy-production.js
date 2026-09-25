@@ -5118,6 +5118,28 @@ if (process.env.REPORT_MIRROR_SCHEDULER === '1') {
   console.warn('[reportMirror] REPORT_MIRROR_SCHEDULER != 1 — aba ESPELHO não será atualizada.');
 }
 
+// Ranking de vendas lido da planilha de comissionamento (server/rankingPlanilha).
+// Mesmo padrão do espelho: flag-gated, só cron, e falha de partida vira
+// heartbeat — sem isso o job fica parado sem ninguém ver.
+import { startRankingPlanilhaScheduler } from './rankingPlanilha/scheduler.js';
+
+const rankingPlanilhaNaoSubiu = (motivo) => {
+  console.error(`[rankingPlanilha] scheduler não subiu: ${motivo}`);
+  recordHeartbeat(supabase, 'ranking_planilha', { ok: false, error: `scheduler não subiu: ${motivo}` })
+    .catch(() => {});
+};
+
+if (process.env.RANKING_PLANILHA_SCHEDULER === '1') {
+  startRankingPlanilhaScheduler(supabase)
+    .then((task) => {
+      if (task) console.log(`[rankingPlanilha] scheduler ativo (${process.env.RANKING_PLANILHA_CRON || '37 * * * *'})`);
+      else rankingPlanilhaNaoSubiu('node-cron indisponível');
+    })
+    .catch((e) => rankingPlanilhaNaoSubiu(e?.message || String(e)));
+} else {
+  console.warn('[rankingPlanilha] RANKING_PLANILHA_SCHEDULER != 1 — ranking da planilha não será atualizado.');
+}
+
 // 404 para rotas da API não encontradas
 app.use('/api/v1/*', (req, res) => {
   res.status(404).json({

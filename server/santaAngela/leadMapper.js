@@ -20,6 +20,34 @@ const STATUS_VALIDOS = new Set([
   'Negociação', 'Proposta Criada', 'Proposta Enviada', 'Proposta Assinada',
 ]);
 
+/**
+ * Ordem do funil do cliente interessado, igual à do Kanban (INTERESSADO_STATUSES
+ * em proxy-production.js). Inclui 'Em Atendimento', que existe no Octo e a Santa
+ * Ângela nunca produz — o lead pode ESTAR nela, e isso precisa contar na ordem.
+ */
+const ORDEM_ETAPAS = [
+  'Novos Leads', 'Em Atendimento', 'Interação', 'Visita Agendada', 'Visita Realizada',
+  'Negociação', 'Proposta Criada', 'Proposta Enviada', 'Proposta Assinada',
+];
+
+/**
+ * A etapa da origem só vale quando empurra o lead para FRENTE.
+ *
+ * Antes, qualquer diferença fazia a Santa Ângela mandar ("status reflete a
+ * origem"). Na prática o corretor movia o lead no Octo e o ciclo seguinte, um
+ * minuto depois, devolvia para 'Novos Leads' — 23 voltas em 7 leads entre 12 e
+ * 20/09/2026. Decisão de 21/09/2026: a origem pode avançar, nunca retroceder.
+ *
+ * Etapa fora da ordem (lead 'Arquivado', funil de proprietário, valor novo na
+ * origem) não é avanço: o que não entendemos, não mexemos.
+ */
+export function etapaAvanca(atual, nova) {
+  const iNova = ORDEM_ETAPAS.indexOf(nova);
+  const iAtual = ORDEM_ETAPAS.indexOf(atual);
+  if (iNova < 0 || iAtual < 0) return false;
+  return iNova > iAtual;
+}
+
 export function mapSantaAngelaToLead(saLead, tenantId, empreendimento = null) {
   const statusTitulo = saLead.situacaocadastropessoa_titulo || '';
   let status = 'Novos Leads';

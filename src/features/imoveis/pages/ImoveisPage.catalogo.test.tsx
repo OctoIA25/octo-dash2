@@ -12,6 +12,7 @@ const h = vi.hoisted(() => ({
   role: 'admin' as string,
   tenantId: 't1' as string,
   xmlCarregando: false,
+  extras: [] as unknown[],
 }));
 
 vi.mock('@/hooks/useAuth', () => ({
@@ -24,6 +25,9 @@ const LOCAIS = [
   { id: 'l1', tenant_id: 't1', codigo_imovel: 'CA0001', titulo: 'Casa publicada', tipo_simplificado: 'casa', finalidade: 'venda', fotos: [], status_aprovacao: 'aprovado' },
   { id: 'l2', tenant_id: 't1', codigo_imovel: 'CA0002', titulo: 'Casa rascunho', tipo_simplificado: 'casa', finalidade: 'venda', fotos: [], status_aprovacao: 'rascunho' },
 ];
+
+// Só os testes do filtro de aprovação querem este: os outros contam cards.
+const AGUARDANDO = { id: 'l3', tenant_id: 't1', codigo_imovel: 'CA0003', titulo: 'Casa aguardando', tipo_simplificado: 'casa', finalidade: 'venda', fotos: [], status_aprovacao: 'aguardando' };
 
 // Toda query da página termina em await; a cadeia devolve LOCAIS só para imoveis_locais.
 vi.mock('@/lib/supabaseClient', () => {
@@ -41,7 +45,7 @@ vi.mock('@/lib/supabaseClient', () => {
   };
   return {
     supabase: {
-      from: (t: string) => tabela(t === 'imoveis_locais' ? LOCAIS : []),
+      from: (t: string) => tabela(t === 'imoveis_locais' ? [...LOCAIS, ...h.extras] : []),
       rpc: () => Promise.resolve({ data: [], error: null }),
     },
   };
@@ -79,6 +83,7 @@ beforeEach(() => {
   h.role = 'admin';
   h.tenantId = 't1';
   h.xmlCarregando = false;
+  h.extras = [];
 });
 
 describe('Catálogo de imóveis', () => {
@@ -144,3 +149,54 @@ describe('Catálogo de imóveis', () => {
     expect(screen.queryByRole('button', { name: /exportar/i })).not.toBeInTheDocument();
   });
 });
+
+/**
+ * Filtro de aprovação no catálogo: separar o que já está aprovado do que ainda
+ * espera aprovação. Os dois aparecem juntos na lista, e sem o filtro não dá
+ * para saber o que está pendente sem abrir um por um.
+ */
+describe('catálogo — filtro de aprovação', () => {
+  beforeEach(() => {
+    h.role = 'admin';
+    h.tenantId = 't1';
+    h.xmlCarregando = false;
+    h.extras = [AGUARDANDO];
+    // Radix Select precisa destes no jsdom.
+    Element.prototype.hasPointerCapture = vi.fn().mockReturnValue(false) as never;
+    Element.prototype.setPointerCapture = vi.fn() as never;
+    Element.prototype.releasePointerCapture = vi.fn() as never;
+    Element.prototype.scrollIntoView = vi.fn();
+  });
+
+  const escolher = async (opcao: RegExp) => {
+    fireEvent.click(screen.getByRole('combobox', { name: /aprovação/i }));
+    fireEvent.click(await screen.findByRole('option', { name: opcao }));
+  };
+
+  it('sem filtro, aprovado e aguardando aparecem juntos', async () => {
+    montar();
+    expect(await screen.findByText('card:CA0001')).toBeInTheDocument();
+    expect(screen.getByText('card:CA0003')).toBeInTheDocument();
+  });
+
+  it('"Aprovação pendente" mostra só o que aguarda aprovação', async () => {
+    montar();
+    await screen.findByText('card:CA0001');
+
+    await escolher(/pendente/i);
+
+    await waitFor(() => expect(screen.queryByText('card:CA0001')).not.toBeInTheDocument());
+    expect(screen.getByText('card:CA0003')).toBeInTheDocument();
+  });
+
+  it('"Aprovados" mostra só o que já foi aprovado', async () => {
+    montar();
+    await screen.findByText('card:CA0001');
+
+    await escolher(/aprovados/i);
+
+    await waitFor(() => expect(screen.queryByText('card:CA0003')).not.toBeInTheDocument());
+    expect(screen.getByText('card:CA0001')).toBeInTheDocument();
+  });
+});
+

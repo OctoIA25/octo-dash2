@@ -5,7 +5,7 @@
  * é autorização e isolamento por tenant, não o SQL. A validação do corpo está
  * em normalize.test.js.
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -57,8 +57,10 @@ function supabaseFalso(tabelas = {}, usuario = { id: CORRETOR, email: 'ana@imob.
         insert: (row) => { registro.insert = row; return chain; },
         delete: () => { registro.delete = true; return chain; },
         eq: (col, val) => { registro.filtros[col] = val; return chain; },
+        update: (row) => { registro.update = row; return chain; },
         in: () => chain,
         not: () => chain,
+        neq: () => chain,
         order: () => chain,
         limit: () => resposta(),
         maybeSingle: () => Promise.resolve({ data: linhas[0] ?? null, error: null }),
@@ -200,5 +202,54 @@ describe.each(['proxy-production.js', 'api-server.js'])('%s', (arquivo) => {
     const registro = src.indexOf('registerLeadToquesRoutes(app, supabase)');
     expect(registro).toBeGreaterThan(-1);
     expect(registro).toBeLessThan(src.indexOf("app.use('/api/v1/*'"));
+  });
+});
+
+/**
+ * A cadência alimenta a agenda: o próximo toque marcado vira atividade do
+ * corretor e, por ser bloqueante, entra na regra das 24h. Aqui só o caminho da
+ * rota; o formato da atividade está em agenda.test.js.
+ */
+describe('POST de toque e a agenda', () => {
+  let app;
+  // Relógio congelado: a rota recusa toque no passado (normalize.js), então uma
+  // data fixa no fixture envelhece e o teste passaria a falhar sozinho — foi o
+  // que aconteceu em 21/09/2026, horas depois de escrito.
+  beforeEach(() => {
+    app = appFalso();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-21T12:00:00.000Z'));
+  });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('toque com próximo marcado cria a atividade na agenda do corretor', async () => {
+    const sb = supabaseFalso(corretorDono);
+    registerLeadToquesRoutes(app, sb);
+
+    const res = await app.chamar('POST /api/v1/leads/:leadId/toques', req({
+      body: { canal: 'ligacao', resultado: 'nao_respondeu', proximo_toque_em: '2026-09-21T17:00:00.000Z' },
+    }));
+
+    expect(res.statusCode).toBe(201);
+    const criacao = sb.chamadas.find((c) => c.tabela === 'agenda_eventos' && c.insert);
+    expect(criacao.insert).toMatchObject({
+      tipo: 'retornar_cliente',
+      data: '2026-09-21',
+      horario: '14:00',
+      lead_uuid: LEAD,
+      tenant_id: TENANT,
+    });
+  });
+
+  it('toque sem próximo marcado não cria atividade', async () => {
+    const sb = supabaseFalso(corretorDono);
+    registerLeadToquesRoutes(app, sb);
+
+    const res = await app.chamar('POST /api/v1/leads/:leadId/toques', req({
+      body: { canal: 'ligacao', resultado: 'nao_respondeu' },
+    }));
+
+    expect(res.statusCode).toBe(201);
+    expect(sb.chamadas.some((c) => c.tabela === 'agenda_eventos' && c.insert)).toBe(false);
   });
 });

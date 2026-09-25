@@ -117,6 +117,7 @@ import {
   sumParticipations,
 } from '@/features/leads/utils/commissionSplit';
 import { DocumentPreviewDialog } from '@/features/leads/components/DocumentPreviewDialog';
+import { ChecklistDocumentosVenda } from '@/features/leads/components/ChecklistDocumentosVenda';
 import { PdfPreviewDialog } from '@/features/leads/components/PdfPreviewDialog';
 import { ImoveisComboBox } from '@/components/ui/imovel-combobox';
 import { useImoveisData } from '@/features/imoveis/hooks/useImoveisData';
@@ -4796,11 +4797,20 @@ export const PropostaPage = ({
                   </DetailSection>
                 </TabsContent>
 
-                <TabsContent value="certidoes" className="mt-0">
+                <TabsContent value="certidoes" className="mt-0 space-y-4">
                   <DetailSection title="Certidões" icon={ShieldCheck}>
                     <ListaDeLembrete
                       items={CERTIFICATE_CHECKLIST}
                       aviso="Estas certidões são do IMÓVEL, e a Dash ainda não as guarda — a lista serve de lembrete para quem monta o processo no cartório. Os documentos do CLIENTE ficam na aba Documentos, ao lado."
+                    />
+                  </DetailSection>
+                  <DetailSection title="Checklist de documentos para venda" icon={ClipboardCheck}>
+                    <ChecklistDocumentosVenda
+                      valores={transactionForm}
+                      onAlternar={(chave, marcar, descricao) => {
+                        updateTransactionForm(selectedProposal, chave, marcar ? new Date().toISOString() : '');
+                        appendHistory(selectedProposal, marcar ? 'Documento marcado' : 'Documento desmarcado', descricao);
+                      }}
                     />
                   </DetailSection>
                 </TabsContent>
