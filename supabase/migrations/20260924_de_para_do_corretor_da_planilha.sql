@@ -28,6 +28,10 @@
 -- Refeito só com a Lotus: **9 vendas casam, 28 não** — R$ 10,2 milhões. A
 -- diferença é "André Marcondes", com 10 vendas: existe alguém com esse nome
 -- exato, mas vinculado à *imobiliaria 9*, não à Lotus.
+--
+-- Com as respostas do chefe, os 14 nomes da planilha ficam resolvidos: 3
+-- casam pelo nome cadastrado, 5 por apelido, 1 é a venda a quatro mãos e 5
+-- são ex-membros. Nenhuma venda fica sem dono — e nenhuma foi adivinhada.
 -- ============================================================
 
 BEGIN;
@@ -273,7 +277,13 @@ BEGIN
     (tenant_id, nome_na_planilha, user_id, situacao, observacao) VALUES
     (lotus, 'David Venturini', NULL, 'ex_membro', 'chefe em 24/09: "David e ex membro"'),
     (lotus, 'Nathalia Lobo',   NULL, 'ex_membro', 'chefe em 24/09: "Natalia tb ex membro"'),
-    (lotus, 'Eduardo',         NULL, 'ex_membro', 'chefe em 24/09: "Eduardo tb ex membro"')
+    (lotus, 'Eduardo',         NULL, 'ex_membro', 'chefe em 24/09: "Eduardo tb ex membro"'),
+    -- 10 vendas e R$ 1,4 milhão — o maior nome sozinho da lista. Existe uma
+    -- conta com esse nome exato, mas vinculada à *imobiliaria 9*. Sem esta
+    -- linha, o casamento por nome levaria a venda para um corretor de outra
+    -- casa — foi exatamente o erro da minha primeira medição.
+    (lotus, 'André Marcondes', NULL, 'ex_membro', 'chefe em 24/09: "nao trabalha mais com a lotus"'),
+    (lotus, 'Andre',           NULL, 'ex_membro', 'chefe em 24/09: mesma pessoa, sem acento')
   ON CONFLICT DO NOTHING;
 END $$;
 
