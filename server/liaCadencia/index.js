@@ -112,6 +112,42 @@ export function tokenConfere(enviado) {
   return Boolean(esperado) && String(enviado).trim() === String(esperado).trim();
 }
 
+
+/**
+ * Avisa a LIA que o corretor marcou (ou desmarcou) um retorno NA DASH.
+ *
+ * POR QUE DAQUI, E NÃO DE UM GATILHO
+ *
+ * A LIA também escreve em `lia_followups`, e `pedido_por` aceita 'corretor'
+ * do lado dela — um gatilho filtrado por esse campo devolveria a ela os
+ * próprios retornos, e ela dispararia o que acabou de agendar. A rota sabe
+ * que é a Dash; o banco não sabe.
+ *
+ * Vai pela MESMA fila do `lead.created` (`webhook_events`), então herda
+ * assinatura, retentativa e o recorte por tenant sem nenhum código novo de
+ * entrega.
+ *
+ * Falha aqui NÃO derruba a resposta ao corretor: o retorno dele já está
+ * gravado, e o aviso é o que se perde. Loga alto, porque perder em silêncio
+ * é o que faria a LIA nunca avisar e ninguém saber por quê.
+ */
+async function avisarLiaDoRetorno(supabase, tenantId, evento, dados) {
+  try {
+    const { error } = await supabase.from('webhook_events').insert({
+      tenant_id: tenantId,
+      event_type: evento,
+      source_table: 'lia_followups',
+      // A LIA é idempotente por id; o id do followup basta como chave.
+      source_id: String(dados.id),
+      payload: dados,
+    });
+    // 23505 = já enfileirado. É o esperado num clique duplo, não um erro.
+    if (error && error.code !== '23505') throw error;
+  } catch (err) {
+    console.error(`[lia-cadencia] NAO enfileirou ${evento} do followup ${dados?.id}:`, err?.message);
+  }
+}
+
 export async function autenticar(req, supabase) {
   const enviado = req.headers['x-service-token'];
   if (enviado != null) {
@@ -212,6 +248,12 @@ export function registerLiaCadenciaRoutes(app, supabase, options = {}) {
           .eq('lead_id', leadId)
           .eq('id', cancelarId);
         if (error) throw error;
+        await avisarLiaDoRetorno(supabase, tenantId, 'followup.cancelado', {
+          id: cancelarId,
+          tenant_id: tenantId,
+          lead_id: leadId,
+          motivo: 'cancelado_na_dash',
+        });
         return res.json({ ok: true, cancelado: cancelarId });
       }
 
@@ -242,6 +284,14 @@ export function registerLiaCadenciaRoutes(app, supabase, options = {}) {
           .eq('lead_id', leadId)
           .eq('id', idAnterior);
         if (error) throw error;
+        // Remarcar é cancelar + criar. Sem este aviso a LIA dispararia o
+        // horário velho junto com o novo — dois toques no mesmo cliente.
+        await avisarLiaDoRetorno(supabase, tenantId, 'followup.cancelado', {
+          id: idAnterior,
+          tenant_id: tenantId,
+          lead_id: leadId,
+          motivo: 'rescheduled',
+        });
       }
 
       const { id, created } = await gravarCadencia(supabase, tenantId, {
@@ -257,6 +307,29 @@ export function registerLiaCadenciaRoutes(app, supabase, options = {}) {
         channel: 'whatsapp',
         updated_at: new Date().toISOString(),
       });
+
+      /*
+       * Só avisa quando a linha NASCEU. `created: false` é o mesmo clique
+       * chegando duas vezes (a chave de idempotência já existia), e avisar de
+       * novo faria a LIA tratar como retorno novo.
+       */
+      if (created) {
+        await avisarLiaDoRetorno(supabase, tenantId, 'followup.criado', {
+          id,
+          tenant_id: tenantId,
+          lead_id: leadId,
+          lead_phone: lead.phone ?? lead.client_phone ?? null,
+          // `scheduled_at` e `agendado_para` são o mesmo instante de propósito:
+          // o horário da Dash é o que vale, e a LIA combinou usar este.
+          scheduled_at: permitido.quando.toISOString(),
+          agendado_para: permitido.quando.toISOString(),
+          pedido_por: 'corretor',
+          corretor_id: req.userId ?? null,
+          corretor_nome: req.userEmail ?? null,
+          assunto: motivo,
+          criado_em: new Date().toISOString(),
+        });
+      }
 
       return res.status(created ? 201 : 200).json({
         ok: true,
