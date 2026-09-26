@@ -28,6 +28,20 @@ const O_QUE_PAUSAR_FAZ =
   'Com a LIA pausada, as mensagens dos leads ficam na fila e são respondidas ' +
   'quando ela for religada. Nenhuma mensagem é perdida.';
 
+/**
+ * O PLANO PEDE ISTO, e eu tinha deixado de fora: "interruptor liga/desliga
+ * por agente (só Owner), COM AVISO DO QUE PARA DE FUNCIONAR".
+ *
+ * A frase acima diz o que acontece com as mensagens. Não diz o que a casa
+ * deixa de ter — e é essa a pergunta de quem está com o dedo no botão.
+ */
+const O_QUE_PARA = [
+  'A primeira resposta automática ao lead que chega',
+  'A cadência de retomada de quem não respondeu',
+  'Os retornos que a LIA marcou com o lead',
+  'As perguntas ao corretor no plantão',
+];
+
 export function PausarLiaPanel() {
   const { tenantId, isOwner } = useAuthContext();
   const qc = useQueryClient();
@@ -108,14 +122,18 @@ export function PausarLiaPanel() {
   /*
    * QUEM PODE PAUSAR É SÓ O DONO DA PLATAFORMA.
    *
-   * A política de escrita de `tenant_agente_config` é `is_platform_owner()`,
-   * e não a do bolsão (admin/líder/dono). Descobri isto pelo 403 ao testar
-   * com um admin de imobiliária.
+   * É o que o PLANO pede, e está escrito na migration que criou a tabela:
+   * "interruptor liga/desliga por agente (só Owner)" — porque desligar um
+   * agente é decisão de plataforma, e a imobiliária pagou por ele.
    *
-   * Não abri a política por conta própria: pausar a LIA é parar um serviço
-   * que a casa paga, e quem pode fazer isso é decisão de negócio, não minha.
+   * A política é `is_platform_owner()`, e não a do bolsão. Descobri pelo 403
+   * ao testar com um admin de imobiliária, e fui conferir o plano antes de
+   * sair mexendo em RLS.
+   *
    * O que a tela NÃO pode é oferecer um botão que devolve 403 — então ela
-   * mostra o estado para todos e os botões só para quem consegue mudá-lo.
+   * mostra o estado para todos (o corretor precisa saber por que o agente não
+   * respondeu, e é por isso que o SELECT é aberto) e os botões só para quem
+   * consegue mudá-lo.
    */
   const podeMudar = isOwner;
 
@@ -135,7 +153,22 @@ export function PausarLiaPanel() {
         </span>
       </div>
 
-      <p className="mb-3 text-xs text-muted-foreground">{O_QUE_PAUSAR_FAZ}</p>
+      <p className="mb-2 text-xs text-muted-foreground">{O_QUE_PAUSAR_FAZ}</p>
+
+      {/* O aviso que o plano pede: o que a casa deixa de ter. */}
+      <details className="mb-3 text-xs">
+        <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+          O que para de funcionar enquanto ela estiver pausada
+        </summary>
+        <ul className="mt-2 list-disc space-y-0.5 pl-5 text-muted-foreground">
+          {O_QUE_PARA.map((linha) => (
+            <li key={linha}>{linha}</li>
+          ))}
+        </ul>
+        <p className="mt-2 text-muted-foreground">
+          O corretor continua trabalhando normalmente — a Dash não depende da LIA.
+        </p>
+      </details>
 
       {!ativa && config.data?.motivo && (
         <p className="mb-3 rounded-md bg-muted px-3 py-2 text-xs">
