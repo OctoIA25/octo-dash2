@@ -1137,6 +1137,7 @@ export const CriarLeadQuickModal = ({
                 carregando={cadenciaLead.carregando}
                 erro={cadenciaLead.erro}
                 leadId={editingLead?.id}
+                tenantId={tenantId}
                 onMudou={cadenciaLead.recarregar}
               />
             )}

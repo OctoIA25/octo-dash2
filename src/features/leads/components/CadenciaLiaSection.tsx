@@ -22,6 +22,8 @@ interface Props {
   erro: string | null;
   /** Sem o lead não dá para marcar nada; a seção fica só de leitura. */
   leadId?: string | null;
+  /** Obrigatório para o dono da plataforma: a rota não adivinha a casa. */
+  tenantId?: string | null;
   onMudou?: () => void;
 }
 
@@ -74,7 +76,7 @@ const Evento = ({ ev }: { ev: CadenciaEvento }) => {
   );
 };
 
-export const CadenciaLiaSection = ({ cadencia, carregando, erro, leadId, onMudou }: Props) => {
+export const CadenciaLiaSection = ({ cadencia, carregando, erro, leadId, tenantId, onMudou }: Props) => {
   const [verHistorico, setVerHistorico] = useState(false);
 
   if (carregando) {
@@ -110,7 +112,7 @@ export const CadenciaLiaSection = ({ cadencia, carregando, erro, leadId, onMudou
         </p>
         {/* Sem cadência é justamente quando mais se precisa marcar o primeiro
             retorno — esconder o botão aqui seria esconder onde ele mais serve. */}
-        <MarcarRetorno leadId={leadId} onMudou={onMudou} />
+        <MarcarRetorno leadId={leadId} tenantId={tenantId} onMudou={onMudou} />
       </div>
     );
   }
@@ -195,6 +197,7 @@ export const CadenciaLiaSection = ({ cadencia, carregando, erro, leadId, onMudou
 
       <MarcarRetorno
         leadId={leadId}
+        tenantId={tenantId}
         onMudou={onMudou}
         /* Só o retorno PEDIDO pelo lead é desmarcável por aqui: cutucada da
            LIA é cadência automática, e cancelá-la pelo card seria mexer no
@@ -255,10 +258,12 @@ const Cabecalho = ({ total }: { total?: number }) => (
  */
 const MarcarRetorno = ({
   leadId,
+  tenantId,
   onMudou,
   pendente,
 }: {
   leadId?: string | null;
+  tenantId?: string | null;
   onMudou?: () => void;
   pendente?: { id: string; quando: string } | null;
 }) => {
@@ -291,7 +296,7 @@ const MarcarRetorno = ({
         <button
           type="button"
           disabled={ocupado}
-          onClick={() => agir(async () => { await desmarcarRetorno(leadId, pendente.id); setAberto(false); })}
+          onClick={() => agir(async () => { await desmarcarRetorno(leadId, pendente.id, tenantId); setAberto(false); })}
           className="mr-3 text-[11px] font-semibold text-rose-600 dark:text-rose-400 hover:underline disabled:opacity-50"
         >
           {ocupado ? 'Desmarcando…' : 'Desmarcar retorno'}
@@ -332,6 +337,7 @@ const MarcarRetorno = ({
                     new Date(quando).toISOString(),
                     motivo,
                     pendente?.id ?? null,
+                    tenantId,
                   );
                   setAberto(false);
                   setQuando('');

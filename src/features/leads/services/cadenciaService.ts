@@ -85,7 +85,23 @@ const MENSAGEM_POR_ERRO: Record<string, string> = {
   invalid_quando: 'Escolha uma data e hora válidas.',
   quando_no_passado: 'Esse horário já passou.',
   sem_horario_permitido: 'Não há horário permitido para falar com o cliente a partir daí.',
+  // O dono da plataforma precisa dizer de qual imobiliária é o lead; sem o
+  // `?tenantId=` a rota não tem como saber.
+  tenant_required_for_owner: 'Escolha a imobiliária antes de marcar o retorno.',
+  tenant_not_found: 'Imobiliária não encontrada.',
+  no_tenant_access: 'Você não tem acesso a nenhuma imobiliária.',
 };
+
+/*
+ * O CÓDIGO VAI JUNTO NA MENSAGEM DESCONHECIDA.
+ *
+ * "Não foi possível marcar o retorno." escondeu um
+ * `tenant_required_for_owner` e custou uma ida e volta para descobrir. Erro
+ * que a gente não previu tem de sair legível na tela: quem está usando manda
+ * o print e a causa vem junto.
+ */
+const mensagemDoErro = (codigo: string, acao: string) =>
+  MENSAGEM_POR_ERRO[codigo] ?? `Não foi possível ${acao} (${codigo}).`;
 
 export async function fetchCadenciaDoLead(
   leadId: string,
@@ -132,13 +148,26 @@ export interface RetornoMarcado {
   ajustado: boolean;
 }
 
+/**
+ * O `?tenantId=` é obrigatório para o dono da plataforma — `resolveTenant`
+ * devolve `tenant_required_for_owner` sem ele. O GET irmão já mandava; este
+ * não mandava, e foi o que quebrou o botão no primeiro uso em produção.
+ */
+const rotaDoRetorno = (leadId: string, tenantId?: string | null) => {
+  const params = new URLSearchParams();
+  if (tenantId && tenantId !== 'owner') params.set('tenantId', tenantId);
+  const q = params.toString();
+  return `/api/v1/leads/${encodeURIComponent(leadId)}/retorno${q ? `?${q}` : ''}`;
+};
+
 export async function marcarRetorno(
   leadId: string,
   quando: string,
   motivo: string,
   substituir?: string | null,
+  tenantId?: string | null,
 ): Promise<RetornoMarcado> {
-  const res = await authedFetch(`/api/v1/leads/${encodeURIComponent(leadId)}/retorno`, {
+  const res = await authedFetch(rotaDoRetorno(leadId, tenantId), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ quando, motivo, ...(substituir ? { substituir } : {}) }),
@@ -146,7 +175,7 @@ export async function marcarRetorno(
   const json = await res.json().catch(() => ({}));
   if (!res.ok || !json?.ok) {
     const codigo = String(json?.error ?? `HTTP ${res.status}`);
-    throw new Error(MENSAGEM_POR_ERRO[codigo] ?? 'Não foi possível marcar o retorno.');
+    throw new Error(mensagemDoErro(codigo, 'marcar o retorno'));
   }
   return {
     id: json.id,
@@ -156,8 +185,12 @@ export async function marcarRetorno(
   };
 }
 
-export async function desmarcarRetorno(leadId: string, id: string): Promise<void> {
-  const res = await authedFetch(`/api/v1/leads/${encodeURIComponent(leadId)}/retorno`, {
+export async function desmarcarRetorno(
+  leadId: string,
+  id: string,
+  tenantId?: string | null,
+): Promise<void> {
+  const res = await authedFetch(rotaDoRetorno(leadId, tenantId), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ cancelar: id }),
@@ -165,6 +198,6 @@ export async function desmarcarRetorno(leadId: string, id: string): Promise<void
   const json = await res.json().catch(() => ({}));
   if (!res.ok || !json?.ok) {
     const codigo = String(json?.error ?? `HTTP ${res.status}`);
-    throw new Error(MENSAGEM_POR_ERRO[codigo] ?? 'Não foi possível desmarcar o retorno.');
+    throw new Error(mensagemDoErro(codigo, 'desmarcar o retorno'));
   }
 }
