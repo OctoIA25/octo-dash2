@@ -42,7 +42,7 @@ BEGIN
     (casa,'plantao.respondida','lia_perguntas_corretor','e-nafila','{}','pending', NULL);
   -- 'e-dowhats' de proposito SEM evento: e a resposta que veio pelo WhatsApp.
 
-  SELECT plantao_fila(casa, 'respondidas', 90) INTO fila;
+  SELECT plantao_fila(casa, 'respondidas', 200, 90) INTO fila;
 
   -- 1. Aceita: a LIA leva ao lead.
   IF (SELECT l->>'entrega' FROM jsonb_array_elements(fila->'linhas') l

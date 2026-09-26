@@ -14,17 +14,24 @@
 
 BEGIN;
 
-CREATE OR REPLACE FUNCTION public.plantao_fila(
-  p_tenant_id uuid,
-  p_aba       text DEFAULT 'aguardando',
-  p_limite    int  DEFAULT 200,
-  p_dias      int  DEFAULT 90
-)
-RETURNS jsonb
-LANGUAGE plpgsql
-STABLE
-SECURITY DEFINER
-SET search_path TO 'public'
+-- ------------------------------------------------------------
+-- ATENÇÃO A QUEM MEXER AQUI DEPOIS
+--
+-- Esta função tem QUATRO parâmetros (`p_limite` inclusive). Eu a reescrevi a
+-- partir do arquivo `20260926_plantao_nao_estoura_com_nome.sql`, que tem três
+-- — e o `CREATE OR REPLACE` criou uma SOBRECARGA em vez de substituir.
+-- Produção ficou com duas `plantao_fila` por alguns minutos, e a chamada
+-- passou a ser ambígua.
+--
+-- O repositório estava atrás do banco. Antes de tocar numa função, pegue a
+-- definição que está NO AR (`pg_get_functiondef`), não a do arquivo.
+-- ------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION public.plantao_fila(p_tenant_id uuid, p_aba text DEFAULT 'aguardando'::text, p_limite integer DEFAULT 200, p_dias integer DEFAULT 90)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
 AS $function$
 DECLARE
   v_caller uuid := auth.uid();
@@ -108,17 +115,16 @@ BEGIN
           /*
            * O QUE A LIA FEZ COM A RESPOSTA — 26/09/2026.
            *
-           * Respondida na Dash não quer dizer entregue ao lead. A equipe da
-           * LIA pediu isto e tem razão: eles respondem SEMPRE 200 e dizem o
-           * desfecho no corpo. Sem mostrar, a tela diz "respondida" para uma
-           * pergunta que a LIA devolveu como 'desconhecida', e o lead não
-           * recebeu nada.
+           * "Respondida" na Dash NÃO quer dizer entregue ao lead: a LIA
+           * devolve SEMPRE 200 e diz o desfecho no corpo. Uma pergunta que
+           * ela recusou como 'desconhecida' ficava verde aqui, e o gestor ia
+           * embora achando o cliente atendido.
            *
-           *   null          nunca foi respondida pela Dash (veio do WhatsApp)
+           *   null          a resposta não saiu da Dash (veio do WhatsApp)
            *   na_fila       enfileirada, ainda não entregue
            *   entregue      a LIA aceitou e leva ao lead
            *   ja_resolvida  a LIA já tinha resolvido; o lead não recebe este texto
-           *   nao_achou     a LIA não conhece esta pergunta -- ninguém recebeu
+           *   nao_achou     a LIA não conhece a pergunta -- ninguém recebeu
            *   falhou        não chegou à LIA
            */
           'entrega', CASE
@@ -133,6 +139,12 @@ BEGIN
         ) AS linha
       FROM lia_perguntas_corretor p
       LEFT JOIN leads l ON l.id = p.lead_id
+      -- SEM CAST, de proposito. A guarda por regex que estava aqui NAO
+      -- protegia: o Postgres nao garante avaliar as condicoes de um JOIN em
+      -- ordem, e o cast rodava antes do regex. Comparar texto com texto nunca
+      -- estoura, e da o mesmo resultado para um uuid de verdade.
+      LEFT JOIN user_profiles up ON up.id::text = lower(btrim(p.corretor_id))
+      LEFT JOIN lancamentos lan ON lan.id = p.empreendimento_id
       -- O aviso que a Dash enfileirou para esta pergunta, se houve. Só existe
       -- quando a resposta saiu DAQUI: a do WhatsApp não passa pelo nosso
       -- emissor, e por isso `entrega` fica nula nela.
@@ -140,12 +152,6 @@ BEGIN
         ON w.event_type = 'plantao.respondida'
        AND w.source_table = 'lia_perguntas_corretor'
        AND w.source_id = p.id
-      -- SEM CAST, de proposito. A guarda por regex que estava aqui NAO
-      -- protegia: o Postgres nao garante avaliar as condicoes de um JOIN em
-      -- ordem, e o cast rodava antes do regex. Comparar texto com texto nunca
-      -- estoura, e da o mesmo resultado para um uuid de verdade.
-      LEFT JOIN user_profiles up ON up.id::text = lower(btrim(p.corretor_id))
-      LEFT JOIN lancamentos lan ON lan.id = p.empreendimento_id
       WHERE p.tenant_id = p_tenant_id
         AND p.criado_em >= v_desde
         AND CASE v_aba
