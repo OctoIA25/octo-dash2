@@ -21,6 +21,23 @@ import { permissoesDeSidebar, comPermissoesNaoEditaveis, SIDEBAR_PERMISSIONS_EDI
 import { excecoesQuePreservam, cargoDoMesmoNivel } from '../src/features/cargos/converterParaCargo.ts';
 
 const APLICAR = process.argv.includes('--aplicar');
+/*
+ * `--sql` imprime o SQL em vez de gravar. É o modo que se usa para produção:
+ * a carga vira uma migration registrada, revisável antes de rodar, em vez de
+ * uma execução avulsa que ninguém consegue auditar depois.
+ *
+ * O SQL faz o MESMO que `membro_definir_cargo` faria, e não a chama porque
+ * ela é SECURITY DEFINER e confere `auth.uid()` — numa migration não há
+ * usuário logado, e ela devolveria nulo sem gravar nada.
+ *
+ * As duas travas da função (não rebaixar a si mesmo, não deixar a casa sem
+ * admin) não se aplicam aqui: `cargoDoMesmoNivel` escolhe sempre um cargo do
+ * MESMO papel, então nenhum nível de acesso muda nesta carga. O SQL abaixo
+ * confere isso em tempo de execução, por via das dúvidas.
+ */
+const SO_SQL = process.argv.includes('--sql');
+const linhasCargo = [];
+const linhasExtra = [];
 const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (!url || !key) {
@@ -118,13 +135,57 @@ for (const m of membros ?? []) {
   if (forasDoCatalogo.length > 0) perdemForaDoCatalogo.push(`${nomeDaCasa.get(m.tenant_id)}: ${forasDoCatalogo.join(', ')}`);
   convertidos++;
 
-  if (APLICAR) {
+  if (SO_SQL) {
+    linhasCargo.push(`  ('${m.tenant_id}'::uuid,'${m.user_id}'::uuid,'${cargo.id}'::uuid,'${cargo.role}')`);
+    for (const e of extras) {
+      const motivo = e.motivo.replace(/'/g, "''");
+      linhasExtra.push(`  ('${m.tenant_id}'::uuid,'${m.user_id}'::uuid,'${e.codigo}',${e.concede},'${motivo}')`);
+    }
+  } else if (APLICAR) {
     const { error } = await db.rpc('membro_definir_cargo', {
       p_tenant_id: m.tenant_id, p_user_id: m.user_id,
       p_cargo_id: cargo.id, p_extras: extras,
     });
     if (error) { console.error(`  ✗ ${m.user_id}: ${error.message}`); divergentes++; convertidos--; }
   }
+}
+
+if (SO_SQL) {
+  if (divergentes > 0) {
+    console.error('\n-- HOUVE DIVERGENCIA: nenhum SQL gerado. Resolva acima primeiro.');
+    process.exit(1);
+  }
+  const sql = [
+    '-- Carga inicial dos cargos — gerada por scripts/carga-cargos.mjs',
+    `-- ${convertidos} pessoas, ${comExcecao} com excecao. Conferido pessoa a pessoa`,
+    '-- com `permissoesDeSidebar` nos dois estados: nenhuma muda de tela.',
+    '',
+    'WITH atribuicao(tenant_id, user_id, cargo_id, role_do_cargo) AS (VALUES',
+    linhasCargo.join(',\n'),
+    '),',
+    'conferencia AS (',
+    '  -- Esta carga NAO muda nivel de acesso de ninguem. Se mudar, para tudo.',
+    '  SELECT CASE WHEN EXISTS (',
+    '      SELECT 1 FROM atribuicao a JOIN tenant_memberships tm',
+    '        ON tm.tenant_id = a.tenant_id AND tm.user_id = a.user_id',
+    '       WHERE tm.role IS DISTINCT FROM a.role_do_cargo)',
+    "    THEN (SELECT 1/0) ELSE 0 END AS ok",
+    ')',
+    'UPDATE tenant_memberships tm SET cargo_id = a.cargo_id',
+    '  FROM atribuicao a, conferencia',
+    ' WHERE tm.tenant_id = a.tenant_id AND tm.user_id = a.user_id',
+    '   AND tm.cargo_id IS NULL;',
+    '',
+    linhasExtra.length
+      ? 'INSERT INTO membro_permissoes_extra (tenant_id, user_id, permissao_codigo, concede, motivo) VALUES\n'
+        + linhasExtra.join(',\n')
+        + '\nON CONFLICT (tenant_id, user_id, permissao_codigo) DO UPDATE\n'
+        + '  SET concede = EXCLUDED.concede, motivo = EXCLUDED.motivo;'
+      : '-- nenhuma excecao a inserir',
+  ].join('\n');
+  await (await import('node:fs/promises')).writeFile('/tmp/claude-501/carga-cargos.sql', sql + '\n');
+  console.error(`\nSQL gerado: ${convertidos} pessoas, ${linhasExtra.length} excecoes -> /tmp/claude-501/carga-cargos.sql`);
+  process.exit(0);
 }
 
 console.log(`\n${APLICAR ? 'APLICADO' : 'ENSAIO (nada foi gravado)'}`);
