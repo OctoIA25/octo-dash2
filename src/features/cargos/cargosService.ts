@@ -55,6 +55,30 @@ export async function salvarCargo(tenantId: string, c: CargoParaSalvar) {
     'salvar cargos');
 }
 
+/**
+ * Marca ou desmarca UMA permissão de UM cargo — o clique no quadro.
+ *
+ * Não reaproveita `salvarCargo` de propósito. Aquela troca o pacote inteiro, e
+ * a tela teria de montar a lista final a partir do que tem em memória: dois
+ * cliques seguidos no mesmo cargo mandariam duas listas construídas sobre o
+ * MESMO estado antigo, e a segunda apagaria a primeira. Sem erro — a marca
+ * voltaria sozinha, e quem clicou acharia que não pegou.
+ *
+ * Devolve o estado REAL depois da escrita, para a tela confirmar (ou corrigir)
+ * a marca que já pintou.
+ */
+export async function marcarPermissao(
+  cargoId: string, permissao: string, marcar: boolean,
+): Promise<{ marcada: boolean; permissoes: number }> {
+  const { data, error } = await supabase.rpc('cargo_permissao_marcar', {
+    p_cargo_id: cargoId,
+    p_permissao: permissao,
+    p_marcar: marcar,
+  });
+  if (error) throw error;
+  return exigir(data as { marcada: boolean; permissoes: number } | null, 'alterar permissões de cargo');
+}
+
 export async function excluirCargo(cargoId: string) {
   const { data, error } = await supabase.rpc('cargo_excluir', { p_cargo_id: cargoId });
   if (error) throw error;

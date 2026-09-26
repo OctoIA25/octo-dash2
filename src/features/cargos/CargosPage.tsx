@@ -28,7 +28,7 @@ import {
   permissoesSemNinguem, resumoDoCargo, semEfeito,
   type Cargo, type PermissaoDoCatalogo,
 } from './cargos';
-import {
+import { marcarPermissao,
   carregarCargos, carregarCatalogo, definirCargoDoMembro, excluirCargo, salvarCargo,
 } from './cargosService';
 import { fetchTenantMembers } from '@/features/corretores/services/tenantMembersService';
@@ -492,6 +492,41 @@ function QuadroDePermissoes({
   catalogo: PermissaoDoCatalogo[];
   onAbrir: (c: Cargo) => void;
 }) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+
+  /*
+   * A MARCA OTIMISTA, e por que ela é por CÉLULA e não uma cópia do quadro.
+   *
+   * Entre o clique e a resposta do banco há uma ida e volta. Sem isto o visto
+   * só apareceria depois, e quem está preenchendo 210 células clicaria duas
+   * vezes achando que não pegou.
+   *
+   * O mapa guarda só as células em voo, e cada uma some quando a sua resposta
+   * chega. Guardar uma cópia inteira do quadro faria a resposta de uma célula
+   * sobrescrever o que outra pintou meio segundo antes.
+   */
+  const [emVoo, setEmVoo] = useState<Record<string, boolean>>({});
+  const chave = (cargoId: string, codigo: string) => `${cargoId}|${codigo}`;
+
+  const marcar = useMutation({
+    mutationFn: ({ cargoId, codigo, valor }: { cargoId: string; codigo: string; valor: boolean }) =>
+      marcarPermissao(cargoId, codigo, valor),
+    onMutate: ({ cargoId, codigo, valor }) => {
+      setEmVoo((m) => ({ ...m, [chave(cargoId, codigo)]: valor }));
+    },
+    onError: (e: Error, { cargoId, codigo }) => {
+      // Tira a marca otimista: o banco recusou, e insistir nela deixaria a
+      // tela afirmando uma permissão que ninguém tem.
+      setEmVoo((m) => { const n = { ...m }; delete n[chave(cargoId, codigo)]; return n; });
+      toast({ title: 'Permissão não alterada', description: e.message, variant: 'destructive' });
+    },
+    onSuccess: async (_r, { cargoId, codigo }) => {
+      await qc.invalidateQueries({ queryKey: ['cargos'] });
+      setEmVoo((m) => { const n = { ...m }; delete n[chave(cargoId, codigo)]; return n; });
+    },
+  });
+
   const blocos = useMemo(() => matrizDeCargos(catalogo, cargos), [catalogo, cargos]);
   const semNinguem = useMemo(() => permissoesSemNinguem(blocos), [blocos]);
 
@@ -577,18 +612,32 @@ function QuadroDePermissoes({
                         <span className="ml-1.5 text-[10px] text-amber-700 dark:text-amber-400">sem efeito</span>
                       )}
                     </td>
-                    {l.tem.map((tem, i) => (
-                      <td key={cargos[i].id} className="px-2 py-1.5 text-center">
-                        {tem ? (
-                          <Check
-                            className="mx-auto h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400"
-                            aria-label={`${cargos[i].nome} tem`}
-                          />
-                        ) : (
-                          <span className="text-muted-foreground/30" aria-label={`${cargos[i].nome} não tem`}>—</span>
-                        )}
-                      </td>
-                    ))}
+                    {l.tem.map((doBanco, i) => {
+                      const c = cargos[i];
+                      const k = chave(c.id, l.permissao.codigo);
+                      // O que está em voo manda enquanto a resposta não chega.
+                      const tem = k in emVoo ? emVoo[k] : doBanco;
+                      return (
+                        <td key={c.id} className="p-0 text-center">
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={tem}
+                            aria-label={`${l.permissao.descricao || l.permissao.codigo} — ${c.nome}`}
+                            title={`${tem ? 'Tirar de' : 'Dar a'} ${c.nome}`}
+                            disabled={k in emVoo}
+                            onClick={() => marcar.mutate({ cargoId: c.id, codigo: l.permissao.codigo, valor: !tem })}
+                            className={`h-7 w-full transition-colors hover:bg-accent disabled:opacity-50 ${k in emVoo ? 'animate-pulse' : ''}`}
+                          >
+                            {tem ? (
+                              <Check className="mx-auto h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                            ) : (
+                              <span className="text-muted-foreground/30">—</span>
+                            )}
+                          </button>
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))}
               </Fragment>
@@ -598,8 +647,9 @@ function QuadroDePermissoes({
       </div>
 
       <p className="mt-2 text-[11px] text-muted-foreground">
-        Clique no nome de um cargo para editá-lo. O que está marcado aqui vale para todo mundo que
-        tem aquele cargo.
+        <strong>Clique numa célula para dar ou tirar a permissão</strong> — grava na hora, sem
+        confirmar. O que está marcado aqui vale para todo mundo que tem aquele cargo. Clique no
+        nome de um cargo para abrir o editor com nome, papel e nível.
       </p>
     </>
   );
