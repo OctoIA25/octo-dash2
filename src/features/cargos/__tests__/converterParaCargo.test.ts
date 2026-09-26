@@ -176,3 +176,48 @@ describe('a conversão é honesta sobre o que ela faz', () => {
     expect(cargoDoMesmoNivel(cargos, 'team_leader')).toBeNull();
   });
 });
+
+/**
+ * O defeito que o ensaio da carga pegou, e que eu tinha cometido nos DOIS
+ * lugares (no script e no modal) — 26/09.
+ *
+ * Nem toda permissão tem caixa na tela de Acessos: 'metas', 'financeiro' e
+ * 'comunicacao' não têm. Eu calculava as exceções só sobre as que têm,
+ * raciocinando "no resto, o cargo manda". Errado: quando a pessoa TEM uma
+ * dessas e o cargo NÃO dá, ela se perde — sem erro, sem aviso, sem caixa que
+ * o gestor pudesse ter desmarcado.
+ *
+ * A caixa diz o que o gestor pode MEXER. Não diz o que a pessoa TEM.
+ */
+describe('permissão sem caixa na tela também é preservada', () => {
+  const TEM_CAIXA = ['leads', 'imoveis', 'metricas'];
+  const semCaixa = (c: string) => !TEM_CAIXA.includes(c);
+
+  it('o que a pessoa tem e o cargo não dá sobrevive, mesmo sem caixa', () => {
+    const atual = ['leads', 'metas', 'financeiro'];   // 'metas' e 'financeiro' sem caixa
+    const pacote = ['leads', 'imoveis'];
+
+    const extras = excecoesQuePreservam(atual as SidebarPermission[], pacote);
+
+    expect(aplicarExcecoes(pacote, extras).sort()).toEqual(['financeiro', 'leads', 'metas']);
+    expect(extras.filter((e) => semCaixa(e.codigo) && e.concede).map((e) => e.codigo))
+      .toEqual(['financeiro', 'metas']);
+  });
+
+  /*
+   * A forma exata do erro: filtrar as duas listas pelas que têm caixa antes
+   * de comparar. Fica sem exceção nenhuma para 'metas', e ela some.
+   */
+  it('filtrar pelas que têm caixa é o que fazia a permissão sumir', () => {
+    const atual = ['leads', 'metas'];
+    const pacote = ['leads'];
+
+    const errado = excecoesQuePreservam(
+      atual.filter((c) => !semCaixa(c)) as SidebarPermission[],
+      pacote.filter((c) => !semCaixa(c)),
+    );
+
+    expect(errado).toEqual([]);                                   // nenhuma exceção...
+    expect(aplicarExcecoes(pacote, errado)).toEqual(['leads']);   // ...e 'metas' sumiu
+  });
+});

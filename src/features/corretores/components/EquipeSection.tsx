@@ -205,6 +205,13 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
   const [cargosNaoCarregaram, setCargosNaoCarregaram] = useState(false);
   const [editCargoId, setEditCargoId] = useState<string | null>(null);
   const [permissoesAoAbrir, setPermissoesAoAbrir] = useState<string[]>([]);
+  /**
+   * O que o membro aberto vê HOJE, inteiro — inclusive o que não tem caixa
+   * nesta tela ('metas', 'financeiro', 'comunicação'). Guardado porque é o que
+   * precisa ser preservado na conversão para cargo: a caixa diz o que o gestor
+   * pode mexer, não diz o que a pessoa tem.
+   */
+  const [efetivoDoMembro, setEfetivoDoMembro] = useState<string[]>([]);
   /** código → nome legível, da MESMA fonte que a tela de Cargos mostra. */
   const [nomeDaPermissao, setNomeDaPermissao] = useState<Record<string, string>>({});
   const [editRole, setEditRole] = useState<'admin' | 'corretor' | 'team_leader'>('corretor');
@@ -682,6 +689,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
     Object.keys(defaultPerms).forEach((key) => {
       defaultPerms[key] = efetivoHoje.includes(key as SidebarPermission);
     });
+    setEfetivoDoMembro([...efetivoHoje]);
     
     setEditPermissions(defaultPerms);
     // O retrato de abertura: é contra ele que o preview diz o que muda.
@@ -861,12 +869,22 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
        * silêncio. Fora dessa lista, quem manda é o pacote do cargo.
        */
       if (editCargoId && tenantId && tenantId !== 'owner') {
+        /*
+         * O DESEJADO = o que as caixas dizem + o que a pessoa já tem e NÃO
+         * tem caixa aqui.
+         *
+         * A primeira versão desta linha só olhava o que tem caixa, e o ensaio
+         * da carga em massa pegou o estrago: 'metas' e 'financeiro' não têm
+         * caixa nesta tela, e quem os tinha sem o cargo os dar ficaria sem
+         * eles — calado. A caixa diz o que o gestor pode MEXER; não diz o que
+         * a pessoa TEM.
+         */
         const temCaixa = (c: string) => (SIDEBAR_PERMISSIONS_EDITAVEIS as string[]).includes(c);
-        const desejado = Object.entries(editPermissions)
-          .filter(([codigo, marcado]) => marcado && temCaixa(codigo))
-          .map(([codigo]) => codigo);
-        const pacote = (cargosDaCasa.find((c) => c.id === editCargoId)?.permissoes ?? [])
-          .filter(temCaixa);
+        const desejado = [...new Set([
+          ...Object.entries(editPermissions).filter(([, marcado]) => marcado).map(([codigo]) => codigo),
+          ...efetivoDoMembro.filter((c) => !temCaixa(c)),
+        ])];
+        const pacote = cargosDaCasa.find((c) => c.id === editCargoId)?.permissoes ?? [];
 
         try {
           await definirCargoDoMembro(
