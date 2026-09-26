@@ -9,12 +9,21 @@
  * `normalizeEvent` é a ÚNICA fonte de verdade do shape de um evento — usada
  * pelo emissor (leniente: evento inválido é descartado com warn) e pelo
  * ingest HTTP (estrito: inválido vira 422). Mantém app e banco alinhados com
- * os CHECKs da migration 20260724_create_agent_telemetry_events.sql.
+ * os CHECKs da migration 20260724_create_agent_telemetry_events.sql e, para
+ * `source`, da 20260926_custo_separa_escrita_em_cache.sql (que acrescentou
+ * `lia_vps`).
  *
  * Privacidade: um evento carrega métricas, nunca conteúdo de mensagem.
  */
 
-export const EVENT_SOURCES = ['crm_server', 'crm_web', 'n8n'];
+/*
+ * ESTA LISTA É GÊMEA DO CHECK `agent_telemetry_events_source_check` no banco.
+ * Mudar uma sem a outra dá erro em camadas diferentes e parece coisa distinta:
+ * em 26/09 eu liberei `lia_vps` só na constraint, disse à equipe da LIA que
+ * estava feito, e eles levaram 422 invalid_source AQUI — um dia perdido por
+ * eu ter consertado uma das duas pontas e declarado pronto.
+ */
+export const EVENT_SOURCES = ['crm_server', 'crm_web', 'n8n', 'lia_vps'];
 export const EVENT_TYPES = ['execution', 'llm_call', 'tool_call', 'handoff', 'error'];
 export const EVENT_STATUSES = ['ok', 'error', 'timeout', 'empty_response', 'refused'];
 

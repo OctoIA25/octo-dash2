@@ -128,3 +128,31 @@ describe('emitAgentEvent — nunca derruba o chamador', () => {
     ).resolves.toBeUndefined();
   });
 });
+
+/**
+ * `lia_vps` — a origem do servidor da LIA, que roda fora da Dash.
+ *
+ * Em 26/09 eu liberei este valor no CHECK do banco e disse à equipe que estava
+ * feito. A lista da ROTA ficou para trás, e eles levaram 422 invalid_source no
+ * primeiro lote — um dia perdido por eu ter consertado uma ponta das duas.
+ *
+ * A lista aqui e o CHECK `agent_telemetry_events_source_check` são gêmeos.
+ */
+describe('as origens aceitas são as mesmas do banco', () => {
+  it('lia_vps é aceita — o servidor da LIA não é n8n nem crm_server', () => {
+    expect(EVENT_SOURCES).toContain('lia_vps');
+  });
+
+  it('a lista inteira é esta, para mudá-la ser uma decisão e não um descuido', () => {
+    expect([...EVENT_SOURCES].sort()).toEqual(['crm_server', 'crm_web', 'lia_vps', 'n8n']);
+  });
+
+  it('origem que ninguém cadastrou continua sendo recusada', () => {
+    const r = normalizeEvent({
+      tenant_id: '11111111-1111-4111-8111-111111111111',
+      agent_slug: 'lia', event_type: 'llm_call', source: 'inventada',
+    });
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe('invalid_source');
+  });
+});
