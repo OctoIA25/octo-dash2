@@ -8,9 +8,11 @@
  *   GET  /api/v1/agent-telemetry/overview    (agregados das tabelas EXISTENTES)
  *
  * Auth (mesmo padrão dual de agent-actions/routes.js):
- *   1) Header `x-service-token` === AGENT_TELEMETRY_SERVICE_TOKEN (fallback:
- *      DISPARADOR_SERVICE_TOKEN, credencial que o n8n já possui). Fail-closed:
- *      sem env definida, o caminho de serviço fica desativado.
+ *   1) Header `x-service-token` — MESMO segredo e MESMA comparação de /lia/*
+ *      (`segredoDeServico`, em liaCadencia): LIA_SERVICE_TOKEN, senão
+ *      AGENT_TELEMETRY_SERVICE_TOKEN, senão DISPARADOR_SERVICE_TOKEN, sempre
+ *      com trim dos dois lados. Fail-closed: sem env definida, o caminho de
+ *      serviço fica desativado.
  *   2) `Authorization: Bearer <JWT Supabase>` — o tenant do payload/query é
  *      validado contra tenant_memberships (ou owner da plataforma).
  *
@@ -27,7 +29,12 @@
  * índice+motivo e NADA é inserido. Shape/normalização: normalizeEvent (emit.js).
  */
 
+import { createHash } from 'node:crypto';
 import { isPlatformOwner } from '../utils/ownerAuth.js';
+import { tokenConfere, segredoDeServico, nomeDoSegredo } from '../liaCadencia/index.js';
+
+/** Impressão digital de um segredo, para log. Nunca o segredo em si. */
+const digital = (v) => (v ? createHash('sha256').update(String(v).trim()).digest('hex').slice(0, 8) : '-');
 import { normalizeEvent } from './emit.js';
 import { costForModelBreakdown, precosCadastrados } from './pricing.js';
 import { computeEscalationMetrics } from './derive/escalations.js';
@@ -119,9 +126,24 @@ const optionalFilter = (v) => {
 async function authenticate(req, supabase) {
   const providedServiceToken = req.headers['x-service-token'];
   if (providedServiceToken != null) {
-    const serviceToken =
-      process.env.AGENT_TELEMETRY_SERVICE_TOKEN || process.env.DISPARADOR_SERVICE_TOKEN;
-    if (!serviceToken || providedServiceToken !== serviceToken) {
+    /*
+     * MESMA regra de /lia/*, importada e não copiada — 26/09.
+     *
+     * Aqui havia uma segunda cópia: ela lia outra env primeiro e NÃO fazia
+     * trim. A equipe da LIA mandou o mesmo header para as duas rotas e levou
+     * 200 numa e 401 na outra. Eu tinha afirmado por escrito que era "o mesmo
+     * token"; era, e a comparação é que diferia.
+     *
+     * Duas cópias de uma regra de auth divergem no primeiro conserto. O
+     * comentário de `autenticar` já dizia isso, sobre este mesmo arquivo.
+     */
+    if (!tokenConfere(providedServiceToken)) {
+      // 401 sozinho não distingue "env com outro nome" de "valor diferente".
+      console.warn('[telemetria-auth] x-service-token recusado', {
+        env: nomeDoSegredo(),
+        esperado: digital(segredoDeServico()),
+        recebido: digital(providedServiceToken),
+      });
       return { ok: false, status: 401, error: 'invalid_service_token' };
     }
     return { ok: true, isService: true, userId: null, userEmail: null };

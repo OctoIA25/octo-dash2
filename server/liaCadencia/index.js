@@ -76,20 +76,52 @@ export async function papelNoTenant(supabase, userId, tenantId) {
  * quem integra, cadência e histórico são o mesmo app da LIA com um token só.
  * Duplicar a função criaria duas regras de auth que divergem no primeiro fix.
  */
+/**
+ * O segredo de serviço da LIA, em um lugar só.
+ *
+ * `AGENT_TELEMETRY_SERVICE_TOKEN` entra na cadeia porque a telemetria tinha a
+ * sua própria: quem integra manda o MESMO header para /lia/* e para
+ * /agent-telemetry/*, e em 26/09 levou 401 num e 200 no outro. Ou as duas
+ * rotas resolvem o segredo do mesmo jeito, ou a promessa de "um token só" é
+ * falsa — e foi o que eu afirmei a eles por escrito, sem conferir.
+ */
+export function segredoDeServico() {
+  return (
+    process.env.LIA_SERVICE_TOKEN ||
+    process.env.AGENT_TELEMETRY_SERVICE_TOKEN ||
+    process.env.DISPARADOR_SERVICE_TOKEN ||
+    null
+  );
+}
+
+/** Qual env respondeu, para o log dizer o que está configurado. */
+export function nomeDoSegredo() {
+  if (process.env.LIA_SERVICE_TOKEN) return 'LIA_SERVICE_TOKEN';
+  if (process.env.AGENT_TELEMETRY_SERVICE_TOKEN) return 'AGENT_TELEMETRY_SERVICE_TOKEN';
+  if (process.env.DISPARADOR_SERVICE_TOKEN) return 'DISPARADOR_SERVICE_TOKEN (fallback)';
+  return 'NENHUMA CONFIGURADA';
+}
+
+/**
+ * O token bate? `trim()` dos DOIS lados de propósito: colar o valor no painel
+ * do EasyPanel deixa \n no fim, e sem isto a mesma credencial passa numa rota
+ * e é recusada na outra.
+ */
+export function tokenConfere(enviado) {
+  const esperado = segredoDeServico();
+  return Boolean(esperado) && String(enviado).trim() === String(esperado).trim();
+}
+
 export async function autenticar(req, supabase) {
   const enviado = req.headers['x-service-token'];
   if (enviado != null) {
-    const esperado = process.env.LIA_SERVICE_TOKEN || process.env.DISPARADOR_SERVICE_TOKEN;
-    if (!esperado || enviado.trim() !== esperado.trim()) {
+    const esperado = segredoDeServico();
+    if (!tokenConfere(enviado)) {
       // 401 sozinho não distingue "env com outro nome/ausente" de "valor
       // diferente" — foi o que travou a integração da LIA em 10/set/2026.
       // Impressão digital, nunca o segredo.
       console.warn('[lia-auth] x-service-token recusado', {
-        env: process.env.LIA_SERVICE_TOKEN
-          ? 'LIA_SERVICE_TOKEN'
-          : process.env.DISPARADOR_SERVICE_TOKEN
-            ? 'DISPARADOR_SERVICE_TOKEN (fallback)'
-            : 'NENHUMA CONFIGURADA',
+        env: nomeDoSegredo(),
         esperado: digital(esperado),
         recebido: digital(enviado),
       });
