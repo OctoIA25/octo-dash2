@@ -160,7 +160,6 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
   const [editingMember, setEditingMember] = useState<TenantMember | null>(null);
   const [editPermissions, setEditPermissions] = useState<Record<string, boolean>>({});
   const [editSubPermissions, setEditSubPermissions] = useState<Record<string, boolean>>({});
-  const [editSpecialPermissions, setEditSpecialPermissions] = useState<Record<string, boolean>>({ can_manage_roleta: false });
   const [editMemberPhoto, setEditMemberPhoto] = useState<string>('');
   const [editMemberCreci, setEditMemberCreci] = useState<string>('');
   const [editDados, setEditDados] = useState<MemberDados>({ ...EMPTY_MEMBER_DADOS });
@@ -581,22 +580,13 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
       'leads-pdi': subPerms['leads-pdi'] ?? true,
       'leads-tarefas': subPerms['leads-tarefas'] ?? true,
       'leads-agenda': subPerms['leads-agenda'] ?? true,
-      // Comercial/Métricas
-      'metricas-geral': subPerms['metricas-geral'] ?? true,
-      'metricas-equipes': subPerms['metricas-equipes'] ?? true,
-      'metricas-corretores': subPerms['metricas-corretores'] ?? true,
+      'leads-painel': subPerms['leads-painel'] ?? true,
       // Gestão de Equipe
       'gestao-tarefas': subPerms['gestao-tarefas'] ?? true,
-      'gestao-okrs': subPerms['gestao-okrs'] ?? true,
-      'gestao-pdi': subPerms['gestao-pdi'] ?? true,
-      'gestao-metricas': subPerms['gestao-metricas'] ?? true,
+      'gestao-equipes': subPerms['gestao-equipes'] ?? true,
       'gestao-acessos': subPerms['gestao-acessos'] ?? (member.role === 'admin'),
     });
 
-    // Permissões especiais do Bolsão
-    setEditSpecialPermissions({
-      can_manage_roleta: Boolean((currentPerms as any).can_manage_roleta) || member.role === 'team_leader',
-    });
 
     // Override de limite de leads por corretor
     const savedOverride = (currentPerms as any).lead_limit as BrokerLeadLimitOverride | undefined;
@@ -716,7 +706,6 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
         whatsapp_phones: whatsappPhones,
         sidebar_permissions: sidebarPerms,
         sub_permissions: editSubPermissions,
-        can_manage_roleta: editSpecialPermissions.can_manage_roleta,
         nivel_comissao: editNivelComissao || null,
         team: editingMember.team || null,
         lead_limit: Object.keys(editBrokerOverride).length > 0 ? editBrokerOverride : undefined,
@@ -2582,37 +2571,11 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                   {[
                     { id: 'leads-funil', label: 'Funil' },
                     { id: 'leads-okrs', label: 'OKRs' },
+                    { id: 'leads-painel', label: 'Painel comercial' },
                     { id: 'leads-kpis', label: 'KPIs' },
                     { id: 'leads-pdi', label: 'PDI' },
                     { id: 'leads-tarefas', label: 'Tarefas da Semana' },
                     { id: 'leads-agenda', label: 'Agenda' }
-                  ].map((sub) => (
-                    <label key={sub.id} className="flex items-center gap-2 text-xs">
-                      <input
-                        type="checkbox"
-                        checked={editSubPermissions[sub.id] || false}
-                        onChange={(e) => setEditSubPermissions(prev => ({
-                          ...prev,
-                          [sub.id]: e.target.checked
-                        }))}
-                        className="h-3 w-3 text-blue-600 dark:text-blue-300 rounded"
-                      />
-                      {sub.label}
-                    </label>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Sub-permissões: Comercial/Métricas */}
-            {editPermissions.metricas && (
-              <div className="space-y-3 p-3 bg-gray-50 dark:bg-slate-950 rounded-lg">
-                <h4 className="font-medium text-gray-700 dark:text-slate-300 text-sm">Sub-abas de Comercial</h4>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { id: 'metricas-geral', label: 'Métricas Gerais' },
-                    { id: 'metricas-equipes', label: 'Por Equipes' },
-                    { id: 'metricas-corretores', label: 'Por Corretores' }
                   ].map((sub) => (
                     <label key={sub.id} className="flex items-center gap-2 text-xs">
                       <input
@@ -2638,9 +2601,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                 <div className="grid grid-cols-3 gap-2">
                   {[
                     { id: 'gestao-tarefas', label: 'Tarefas' },
-                    { id: 'gestao-okrs', label: 'OKRs' },
-                    { id: 'gestao-pdi', label: 'PDI' },
-                    { id: 'gestao-metricas', label: 'Métricas' },
+                    { id: 'gestao-equipes', label: 'Equipes' },
                     { id: 'gestao-acessos', label: 'Acessos e Permissões' }
                   ].map((sub) => (
                     <label key={sub.id} className="flex items-center gap-2 text-xs">
@@ -2660,41 +2621,14 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
               </div>
             )}
 
-            {/* Permissões Especiais do Bolsão */}
-            <div className="space-y-3">
-              <h3 className="font-semibold text-gray-900 dark:text-slate-100 flex items-center gap-2">
-                <span>🎰</span>
-                Permissões Especiais — Bolsão
-              </h3>
-              <div className="grid grid-cols-1 gap-2">
-                <label
-                  className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
-                    editSpecialPermissions.can_manage_roleta
-                      ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300'
-                      : 'bg-gray-50 dark:bg-slate-950 border-gray-200 dark:border-slate-800 hover:bg-gray-100 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={editSpecialPermissions.can_manage_roleta || false}
-                    onChange={(e) => setEditSpecialPermissions(prev => ({
-                      ...prev,
-                      can_manage_roleta: e.target.checked
-                    }))}
-                    className="h-4 w-4 text-amber-600 dark:text-amber-300 rounded border-gray-300"
-                  />
-                  <div className="flex-1">
-                    <span className="text-sm font-medium text-gray-800 dark:text-slate-200">Gerenciar Roleta</span>
-                    <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
-                      Permite selecionar quais corretores participam da roleta de distribuição de leads no Bolsão. Team Leaders têm isso por padrão.
-                    </p>
-                  </div>
-                  {editSpecialPermissions.can_manage_roleta && (
-                    <span className="text-[10px] text-amber-700 dark:text-amber-300 font-semibold bg-amber-100 dark:bg-amber-950/60 px-2 py-0.5 rounded-full">Ativo</span>
-                  )}
-                </label>
-              </div>
-            </div>
+            {/*
+              A caixa "Gerenciar Roleta" saiu daqui em 25/09/2026.
+              `can_manage_roleta` era gravado e NUNCA lido — nem no front, nem
+              no servidor, nem no RLS. Quem decide a roleta é a política de
+              `tenant_bolsao_config`, pelo role (admin, owner, team_leader), e
+              é a regra que ficou combinada em 21/09: cargo vê, role pode.
+              Marcar a caixa não dava acesso, e desmarcar não tirava.
+            */}
 
             {/* Fila por Equipe — Líder atribuído (apenas corretores) */}
             {editingMember?.role === 'corretor' && (

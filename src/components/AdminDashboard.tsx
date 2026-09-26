@@ -11,6 +11,11 @@ import { EquipeSection } from '@/features/corretores/components/EquipeSection';
 import { EquipesManagerSection } from '@/features/corretores/components/EquipesManagerSection';
 import { Bot, ArrowRight } from 'lucide-react';
 import { useLeadsData } from '@/features/leads/hooks/useLeadsData';
+import { useAuthContext } from '@/contexts/AuthContext';
+import { podeVerAba } from '@/pages/inicio-nova/abasVisiveis';
+
+/** Na ordem do desvio: a primeira que a pessoa puder ver é onde ela cai. */
+const ABAS_DA_GESTAO = ['acessos-permissoes', 'tarefas', 'equipes'] as const;
 
 export const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -21,6 +26,17 @@ export const AdminDashboard = () => {
   // Permissões — é a tela dos cards, de onde se alcança todo o resto.
   const activeTab = (searchParams.get('tab') as 'tarefas' | 'okrs' | 'pdi' | 'acessos-permissoes' | 'equipes') || 'acessos-permissoes';
 
+  /*
+   * As caixas "Sub-abas de Gestão de Equipe" do modal existiam desde sempre e
+   * não eram lidas por ninguém — 45 pessoas tinham "Acessos e Permissões"
+   * desmarcado em produção e viam a tela assim mesmo. Aqui é onde a marcação
+   * passa a valer; `sub_permissions` ausente continua significando liberado.
+   */
+  const { user, isOwner } = useAuthContext();
+  const subPermissoes = user?.permissions?.sub_permissions as Record<string, boolean> | undefined;
+  const podeVer = (aba: string) => podeVerAba('/gestao-equipe', aba, { isOwner, subPermissoes });
+  const abaLiberada = podeVer(activeTab);
+
   useEffect(() => {
     if (searchParams.get('tab') === 'metricas') {
       navigate('/gestao-equipe', { replace: true });
@@ -29,7 +45,7 @@ export const AdminDashboard = () => {
   
   // Leads só para a aba Acessos e Permissões — a varredura do tenant inteiro não
   // roda nas outras abas (a padrão é Tarefas).
-  const { leads } = useLeadsData({ enabled: activeTab === 'acessos-permissoes' });
+  const { leads } = useLeadsData({ enabled: activeTab === 'acessos-permissoes' && abaLiberada });
 
   return (
     <div className="w-full min-h-screen overflow-x-hidden">
@@ -56,18 +72,38 @@ export const AdminDashboard = () => {
 
       {/* Conteúdo */}
       <div>
-        {activeTab === 'tarefas' && <AdminTaskManager />}
+        {!abaLiberada && <AbaBloqueada podeVer={podeVer} />}
+        {abaLiberada && activeTab === 'tarefas' && <AdminTaskManager />}
         
         {/* P3.4 — estas duas abas mostravam "Em breve" para funcionalidades que
             JÁ existiam e funcionavam em /leads?tab=. Quem abria por aqui
             concluía que o recurso não existia. Agora há um endereço só, e
             estas rotas levam até ele em vez de manter uma segunda tela. */}
-        {activeTab === 'okrs' && <Navigate to="/okrs" replace />}
-        {activeTab === 'pdi' && <Navigate to="/pdi" replace />}
+        {abaLiberada && activeTab === 'okrs' && <Navigate to="/okrs" replace />}
+        {abaLiberada && activeTab === 'pdi' && <Navigate to="/pdi" replace />}
 
-        {activeTab === 'equipes' && <EquipesManagerSection />}
-        {activeTab === 'acessos-permissoes' && <EquipeSection leads={leads} />}
+        {abaLiberada && activeTab === 'equipes' && <EquipesManagerSection />}
+        {abaLiberada && activeTab === 'acessos-permissoes' && <EquipeSection leads={leads} />}
       </div>
+    </div>
+  );
+};
+
+/**
+ * A aba que a pessoa pediu está desmarcada para ela.
+ *
+ * Desviar para a primeira liberada é o certo quando existe uma: ninguém
+ * digitou `?tab=` — quem trouxe a pessoa até aqui foi um atalho do card. Sem
+ * nenhuma liberada, dizer o motivo vale mais que um desvio que volta ao menu
+ * e deixa a impressão de tela quebrada.
+ */
+const AbaBloqueada = ({ podeVer }: { podeVer: (aba: string) => boolean }) => {
+  const primeira = ABAS_DA_GESTAO.find(podeVer);
+  if (primeira) return <Navigate to={`/gestao-equipe?tab=${primeira}`} replace />;
+  return (
+    <div className="px-6 py-16 text-center text-sm text-slate-500 dark:text-slate-400">
+      Nenhuma aba da Gestão de Equipe está liberada para o seu acesso. Peça a quem
+      administra a imobiliária para revisar as suas permissões.
     </div>
   );
 };

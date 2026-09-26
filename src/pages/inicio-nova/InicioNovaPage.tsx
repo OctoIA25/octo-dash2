@@ -27,6 +27,7 @@ import {
   Hand,
 } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
+import { podeVerAba } from './abasVisiveis';
 import { buscarMinutosPorLead, medianaMinutos } from '@/features/metricas/services/primeiraInteracaoService';
 import { useFeaturedGoal } from '@/features/metas/hooks/useGoals';
 import { formatGoalValue, formatPercent } from '@/features/metas/domain';
@@ -360,13 +361,18 @@ function RankingCard({ items, onViewAll }: { items: RankingItem[]; onViewAll: ()
 */
 
 // =================== MAIN PAGE ===================
+
+/** Na MESMA ordem de `TAB_CONFIGS['/leads']` — o desvio cai na primeira aba que a barra mostraria. */
+const ABAS_DA_INICIO = ['funil', 'okrs', 'painel-comercial', 'kpis', 'pdi', 'tarefas-semana', 'agenda'];
+
 type TabKey = 'todos' | 'nao-responderam' | 'esfriando';
 
 export function InicioNovaPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const activeInicioTab = searchParams.get('tab') || 'funil';
-  const { user, tenantName, tenantId } = useAuthContext();
+  const { user, tenantName, tenantId, isOwner } = useAuthContext();
+  const subPermissoes = user?.permissions?.sub_permissions as Record<string, boolean> | undefined;
   // `processedLeads` normaliza `leads` + `kenlo_leads` no formato ProcessedLead
   // (etapa_atual, status_temperatura, valor_imovel, corretor_responsavel).
   // `useLeadsMetrics` assina `leadsEventEmitter`, então o Pipeline aqui
@@ -627,6 +633,30 @@ export function InicioNovaPage() {
 
   // Switch de conteúdo baseado na aba da Início
   const ANIM = 'animate-in fade-in-0 slide-in-from-bottom-3 duration-300 ease-out';
+
+  /*
+   * Esconder a aba é METADE do trabalho: quem digita /leads?tab=kpis chega na
+   * tela com a caixa desmarcada, e a permissão vira decoração. É o mesmo
+   * defeito que Arquivados teve, e a razão de a checagem morar aqui também.
+   *
+   * Sem NENHUMA aba liberada não dá para redirecionar: a rota padrão da casa
+   * costuma ser a própria /leads, e o desvio voltaria para cá em laço. Melhor
+   * dizer o que houve — quem lê isso sabe a quem pedir.
+   */
+  if (!podeVerAba('/leads', activeInicioTab, { isOwner, subPermissoes })) {
+    const primeira = ABAS_DA_INICIO.find((id) =>
+      podeVerAba('/leads', id, { isOwner, subPermissoes }),
+    );
+    if (!primeira) {
+      return (
+        <div className="px-6 py-16 text-center text-sm text-slate-500 dark:text-slate-400">
+          Nenhuma aba da Início está liberada para o seu acesso. Peça a quem administra a
+          imobiliária para revisar as suas permissões.
+        </div>
+      );
+    }
+    return <Navigate to={`/leads?tab=${primeira}`} replace />;
+  }
 
   // P3.4 — OKR e PDI saíram daqui para as rotas /okrs e /pdi. Estes dois
   // desvios existem pelos links antigos: quem tiver /leads?tab=okrs salvo nos

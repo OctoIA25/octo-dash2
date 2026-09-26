@@ -22,6 +22,7 @@ import {
   SIDEBAR_PERMISSION_ORDER,
   TEAM_LEADER_SIDEBAR_PERMISSIONS
 } from '@/types/permissions';
+import { podeVerAba } from '@/pages/inicio-nova/abasVisiveis';
 
 const DEBUG_LOGS = import.meta.env?.VITE_DEBUG_LOGS === 'true';
 
@@ -180,6 +181,18 @@ const DashboardLayout = () => {
     return allowedSidebarPermissions.includes(permission);
   }, [allowedSidebarPermissions]);
 
+  /*
+   * OKRs e PDI eram abas da Início e viraram rota própria em 21/09 (P3.4).
+   * A caixa que as governa continua sendo a da sub-aba — esconder a aba sem
+   * fechar a rota deixaria a permissão valendo só para quem não digita o
+   * endereço, que é o mesmo furo que Arquivados teve.
+   */
+  const subPermissoes = user?.permissions?.sub_permissions as Record<string, boolean> | undefined;
+  const podeAbaDaInicio = useCallback(
+    (abaId: string) => podeVerAba('/leads', abaId, { isOwner, subPermissoes }),
+    [isOwner, subPermissoes],
+  );
+
   // O loader de tela cheia só faz sentido para as rotas que REALMENTE consomem o
   // `leads` deste layout por prop. As demais (Início, Meus Leads, Métricas, Imóveis,
   // etc.) fazem seu próprio fetch e têm loading interno — prendê-las
@@ -279,8 +292,14 @@ const DashboardLayout = () => {
           {/* P2.2 — o simulador é ferramenta de corretor: quem vende, simula.
               A tabela de condição é que é de quem administra. */}
           <Route path="ferramentas/simulador" element={<SimuladorPage />} />
-          <Route path="okrs" element={<OkrsPage />} />
-          <Route path="pdi" element={<PdiPage />} />
+          <Route
+            path="okrs"
+            element={podeAbaDaInicio('okrs') ? <OkrsPage /> : <Navigate to={defaultAllowedRoute} replace />}
+          />
+          <Route
+            path="pdi"
+            element={podeAbaDaInicio('pdi') ? <PdiPage /> : <Navigate to={defaultAllowedRoute} replace />}
+          />
           <Route path="marketing/demandas" element={<DemandasPage />} />
           {/*
             Estas duas rotas eram as únicas da seção sem o ternário de acesso:

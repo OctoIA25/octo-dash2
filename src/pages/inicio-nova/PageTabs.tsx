@@ -67,7 +67,8 @@ interface TabConfig {
   queryKey?: string; // for ?tab=... style
 }
 
-const TAB_CONFIGS: TabConfig[] = [
+/** Exportado para o teste cobrar que toda aba de rota governada tenha permissão. */
+export const TAB_CONFIGS: TabConfig[] = [
   {
     basePath: '/meus-leads',
     label: 'Meus Leads',
@@ -277,7 +278,8 @@ function tabButtonClass(active: boolean): string {
 export function PageTabs() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { tenantId, isGestao, isOwner } = useAuthContext();
+  const { tenantId, isGestao, isOwner, user } = useAuthContext();
+  const subPermissoes = user?.permissions?.sub_permissions as Record<string, boolean> | undefined;
 
   // Carrega o config do bolsão pra decidir se a aba "Equipes" aparece
   const [teamQueueEnabled, setTeamQueueEnabled] = useState(false);
@@ -299,7 +301,7 @@ export function PageTabs() {
     // regra de permissão precisa de teste. Aqui é só UX: a trava está no banco.
     const cfg: TabConfig = {
       ...baseCfg,
-      tabs: abasVisiveis(baseCfg.basePath, baseCfg.tabs, { teamQueueEnabled, isGestao, isOwner }),
+      tabs: abasVisiveis(baseCfg.basePath, baseCfg.tabs, { teamQueueEnabled, isGestao, isOwner, subPermissoes }),
     };
 
     let activeId: string | null = null;
@@ -311,7 +313,7 @@ export function PageTabs() {
       activeId = params.get(cfg.queryKey) || cfg.tabs[0]?.id || null;
     }
     return { activeConfig: cfg, activeTabId: activeId };
-  }, [location.pathname, location.search, teamQueueEnabled, isGestao, isOwner]);
+  }, [location.pathname, location.search, teamQueueEnabled, isGestao, isOwner, subPermissoes]);
 
   const tabs = activeConfig?.tabs ?? EMPTY_TABS;
   const { visibleTabs, overflowTabs, containerRef, registerTab } = useOverflowTabs(
