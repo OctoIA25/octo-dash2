@@ -436,6 +436,55 @@ describe('POST /api/v1/leads/:leadId/retorno', () => {
     expect(res.corpo.error).toBe('invalid_quando');
   });
 
+  /*
+   * O QUE O PRIMEIRO EVENTO REAL MOSTROU — 26/09.
+   *
+   * A equipe da LIA conferiu o `followup.criado` que saiu de produção e o
+   * aviso ao corretor chegou assim:
+   *
+   *   "Retorno marcado na Dash por octo.inteligenciaimobiliaria@gmail.com
+   *    com o lead (11994605468) é agora: retorno marcado pelo corretor."
+   *
+   * Duas coisas nossas. Este caso olha o PAYLOAD que sai, e não a regra que o
+   * monta: a primeira versão deste teste cobria só a regra, e a sabotagem de
+   * trocar `assunto: nota` por `assunto: motivo` passou cega.
+   */
+  it('sem nota, o assunto vai NULO — e não o texto de sistema do card', async () => {
+    const sb = supabaseFalso(
+      {
+        leads: [{ id: LEAD, tenant_id: TENANT, assigned_agent_id: CORRETOR, owner_id: CORRETOR }],
+        tenant_memberships: [{ tenant_id: TENANT, role: 'corretor' }],
+      },
+      { id: CORRETOR, email: 'corretor@x.com' },
+    );
+    registerLiaCadenciaRoutes(app, sb, { verbose: false });
+    await app.chamar('POST /api/v1/leads/:leadId/retorno', req({ quando: daquiA(60) }));
+
+    const aviso = sb.chamadas.find((c) => c.insert && c.tabela === 'webhook_events');
+    expect(aviso?.insert?.event_type).toBe('followup.criado');
+    expect(aviso.insert.payload.assunto).toBeNull();
+    // E o e-mail NUNCA entra como nome: perfil sem full_name manda nulo.
+    expect(aviso.insert.payload.corretor_nome).not.toBe('corretor@x.com');
+  });
+
+  it('com nota, o assunto é a nota — é o que o corretor lê', async () => {
+    const sb = supabaseFalso(
+      {
+        leads: [{ id: LEAD, tenant_id: TENANT, assigned_agent_id: CORRETOR, owner_id: CORRETOR }],
+        tenant_memberships: [{ tenant_id: TENANT, role: 'corretor' }],
+      },
+      { id: CORRETOR, email: 'corretor@x.com' },
+    );
+    registerLiaCadenciaRoutes(app, sb, { verbose: false });
+    await app.chamar(
+      'POST /api/v1/leads/:leadId/retorno',
+      req({ quando: daquiA(60), motivo: '  pediu a planta do 3 dorm  ' }),
+    );
+
+    const aviso = sb.chamadas.find((c) => c.insert && c.tabela === 'webhook_events');
+    expect(aviso.insert.payload.assunto).toBe('pediu a planta do 3 dorm');
+  });
+
   it('cancelar não cria linha nova', async () => {
     const sb = supabaseFalso(
       {

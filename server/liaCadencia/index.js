@@ -266,7 +266,19 @@ export function registerLiaCadenciaRoutes(app, supabase, options = {}) {
       const permitido = primeiroHorarioPermitido(new Date(quando), cfg);
       if (!permitido) return res.status(422).json({ ok: false, error: 'sem_horario_permitido' });
 
-      const motivo = String(req.body?.motivo ?? '').trim().slice(0, 4000) || 'retorno marcado pelo corretor';
+      /*
+       * A NOTA DE QUEM MARCOU, E O PADRÃO, SÃO COISAS DIFERENTES.
+       *
+       * `motivo` grava com um texto padrão quando ninguém escreveu nada — é o
+       * que o card mostra. Mas mandar esse padrão como `assunto` para a LIA
+       * fez o corretor receber "Retorno marcado na Dash (...): retorno marcado
+       * pelo corretor", que não diz nada sobre o quê.
+       *
+       * A nota crua vai separada, e NULA quando vazia: a LIA prefere dizer "o
+       * que ficou combinado" a repetir uma frase de sistema.
+       */
+      const nota = String(req.body?.motivo ?? '').trim().slice(0, 4000) || null;
+      const motivo = nota || 'retorno marcado pelo corretor';
       const idAnterior = String(req.body?.substituir ?? '').trim();
 
       // Remarcar é cancelar o anterior e criar o novo: deixar os dois pendentes
@@ -314,6 +326,13 @@ export function registerLiaCadenciaRoutes(app, supabase, options = {}) {
        * novo faria a LIA tratar como retorno novo.
        */
       if (created) {
+        const { data: perfil } = await supabase
+          .from('user_profiles')
+          .select('full_name')
+          .eq('id', req.userId)
+          .maybeSingle();
+        const nomeDeQuemMarcou = perfil?.full_name?.trim() || null;
+
         await avisarLiaDoRetorno(supabase, tenantId, 'followup.criado', {
           id,
           tenant_id: tenantId,
@@ -325,8 +344,12 @@ export function registerLiaCadenciaRoutes(app, supabase, options = {}) {
           agendado_para: permitido.quando.toISOString(),
           pedido_por: 'corretor',
           corretor_id: req.userId ?? null,
-          corretor_nome: req.userEmail ?? null,
-          assunto: motivo,
+          // NOME de exibição, nunca o e-mail: a conta que marcou pode não ter
+          // `full_name`, e mandar o e-mail fez o aviso ao corretor sair com
+          // "octo.inteligenciaimobiliaria@gmail.com" no meio da frase. Nulo é
+          // melhor — a LIA escreve a frase sem o nome.
+          corretor_nome: nomeDeQuemMarcou,
+          assunto: nota,
           criado_em: new Date().toISOString(),
         });
       }

@@ -86,3 +86,51 @@ describe('o aviso vai pela fila do lead.created', () => {
     expect(db.inseridos[0].linha.payload.motivo).toBe('rescheduled');
   });
 });
+
+/**
+ * O que o PRIMEIRO evento real mostrou — 26/09, 23:10 UTC.
+ *
+ * A equipe da LIA conferiu o `followup.criado` que saiu de produção e o aviso
+ * ao corretor chegou assim:
+ *
+ *   "Retorno marcado na Dash por octo.inteligenciaimobiliaria@gmail.com
+ *    com o lead (11994605468) é agora: retorno marcado pelo corretor."
+ *
+ * Duas coisas nossas nessa frase, e as duas viraram teste aqui.
+ */
+describe('o payload não empurra texto de sistema nem e-mail', () => {
+  /** A regra da rota, extraída para o teste poder cobrá-la. */
+  const doCorpo = (body) => {
+    const nota = String(body?.motivo ?? '').trim().slice(0, 4000) || null;
+    return { nota, motivo: nota || 'retorno marcado pelo corretor' };
+  };
+
+  /*
+   * O CASO QUE SUSTENTA O ARQUIVO. Quem não escreve nada não tem assunto —
+   * e o corretor recebia "o assunto é: retorno marcado pelo corretor", que
+   * é a frase de sistema devolvida como se fosse o combinado.
+   */
+  it('sem nota, `assunto` vai NULO — o card é que ganha o texto padrão', () => {
+    const r = doCorpo({ motivo: '   ' });
+    expect(r.nota).toBeNull();
+    expect(r.motivo).toBe('retorno marcado pelo corretor');
+  });
+
+  it('com nota, os dois são a nota — o corretor lê o que foi combinado', () => {
+    const r = doCorpo({ motivo: '  cliente pediu a planta do 3 dorm  ' });
+    expect(r.nota).toBe('cliente pediu a planta do 3 dorm');
+    expect(r.motivo).toBe('cliente pediu a planta do 3 dorm');
+  });
+
+  /*
+   * `corretor_nome` é NOME, e o e-mail não é nome. A conta que marcou pode
+   * não ter `full_name` — e aí nulo é melhor: a LIA escreve a frase sem o
+   * nome, em vez de colar um e-mail no meio dela.
+   */
+  it('nome de exibição ou nulo, nunca o e-mail', () => {
+    const nome = (perfil) => perfil?.full_name?.trim() || null;
+    expect(nome({ full_name: 'Gabriele Fávaro' })).toBe('Gabriele Fávaro');
+    expect(nome({ full_name: '   ' })).toBeNull();
+    expect(nome(null)).toBeNull();
+  });
+});
