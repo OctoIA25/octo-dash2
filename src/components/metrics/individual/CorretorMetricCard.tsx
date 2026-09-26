@@ -29,11 +29,25 @@ import {
 import type { CorretorMetricasCompletas } from '@/types/metricsTypes';
 import { formatarMoeda, getRankingBadgeColor, getRankingLabel, chartColors } from '@/data/metricsData';
 import { Skeleton } from '@/components/ui/skeleton';
+import type { VendasPlanilha } from '@/features/corretores/services/vendasPlanilhaService';
 
 interface CorretorMetricCardProps {
   corretor: CorretorMetricasCompletas;
   isLoading?: boolean;
+  /**
+   * Vendas segundo a PLANILHA de comissionamento (outra fonte que a Dash).
+   * Ausente = a tela não tem esse dado e o campo não aparece — melhor sem
+   * campo do que com zero, que seria dizer "não vendeu".
+   */
+  vendasPlanilha?: VendasPlanilha | null;
 }
+
+/** "23/09 às 14:32" — quando o importador leu a planilha pela última vez. */
+const quandoLeu = (iso: string): string => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+};
 
 // Skeleton do Card
 const CardSkeleton = () => (
@@ -58,7 +72,7 @@ const CardSkeleton = () => (
   </Card>
 );
 
-export const CorretorMetricCard = memo(({ corretor, isLoading = false }: CorretorMetricCardProps) => {
+export const CorretorMetricCard = memo(({ corretor, isLoading = false, vendasPlanilha = null }: CorretorMetricCardProps) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
   if (isLoading) {
@@ -137,6 +151,26 @@ export const CorretorMetricCard = memo(({ corretor, isLoading = false }: Correto
             <Progress value={kpis.percentualAtingimentoMeta} className="h-1 mt-1.5" />
           </div>
         </div>
+
+        {/*
+          Vendas da PLANILHA. Fica fora da grade de KPIs de propósito: é número
+          de outra fonte, e a grade é do que a Dash calcula. O rótulo diz de
+          onde veio, e a data diz de quando é.
+        */}
+        {vendasPlanilha && (
+          <p className="text-[11px] text-gray-500 dark:text-gray-400">
+            <span>Vendas na planilha:</span>{' '}
+            {vendasPlanilha.noPeriodo === null ? (
+              <span>sem número para o período</span>
+            ) : (
+              <>
+                <strong className="text-gray-900 dark:text-white">{vendasPlanilha.noPeriodo}</strong> no período
+              </>
+            )}
+            {' '}· {vendasPlanilha.noAno} no ano
+            {vendasPlanilha.atualizadoEm && ` · lido em ${quandoLeu(vendasPlanilha.atualizadoEm)}`}
+          </p>
+        )}
 
         {/* Conteúdo Expandido */}
         {isExpanded && (

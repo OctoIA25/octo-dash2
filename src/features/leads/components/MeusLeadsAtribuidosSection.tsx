@@ -85,6 +85,7 @@ import { syncProposalStageFromLead } from '../services/proposalsService';
 import { leadStatusToPropostaStage } from '../utils/stageBridge';
 import { leadCasaBusca } from '../utils/buscaLead';
 import { canaisDosLeads, leadCasaCanal, SEM_CANAL } from '../utils/canalLead';
+import { MOTIVOS_ARQUIVAMENTO, MOTIVO_OUTROS, montarMotivoFinal } from '../utils/motivosArquivamento';
 import {
   fetchTenantBolsaoConfig,
   type TenantBolsaoConfig,
@@ -724,9 +725,12 @@ export const MeusLeadsAtribuidosSection = ({
   
   const [meusLeads, setMeusLeads] = useState<KanbanLead[]>([]);
   const [loading, setLoading] = useState(true);
+  // Recarga com o kanban na tela: alimenta só o botão "Atualizar".
+  const [atualizando, setAtualizando] = useState(false);
+  const primeiraCargaRef = useRef(true);
   const [leadParaArquivar, setLeadParaArquivar] = useState<KanbanLead | null>(null);
   const [motivoArquivamento, setMotivoArquivamento] = useState('');
-  const [motivoPredefinido, setMotivoPredefinido] = useState<string>('ja_fechou_outro');
+  const [motivoPredefinido, setMotivoPredefinido] = useState<string>(MOTIVOS_ARQUIVAMENTO[0].value);
   const [arquivando, setArquivando] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   // Estados dos filtros
@@ -846,7 +850,13 @@ export const MeusLeadsAtribuidosSection = ({
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
   );
 
-  // Carregar meus leads
+  /**
+   * Só a PRIMEIRA carga troca o kanban pelo "Carregando seus leads...". As
+   * recargas (salvar um lead avisa o app inteiro, ver leadsEventEmitter) são
+   * silenciosas: trocar as colunas por um spinner as desmonta, e com elas vão
+   * embora a rolagem e o "Mostrar mais" de cada coluna — quem estava no fim de
+   * uma coluna longa voltava ao topo (queixa de 21/09/2026).
+   */
   const carregarMeusLeads = useCallback(async () => {
     // Aguardar auth terminar de carregar antes de buscar leads
     if (authLoading) {
@@ -860,7 +870,8 @@ export const MeusLeadsAtribuidosSection = ({
     // não atende lead nenhum e o kanban vinha VAZIO.
     if (isAdmin || user?.systemRole === 'team_leader') {
       try {
-        setLoading(true);
+        setLoading(primeiraCargaRef.current);
+        setAtualizando(true);
         const data = await fetchTodosLeadsCRM(tenantId || undefined, leadType);
         // Gestor (team_leader) vê o kanban recortado pela PRÓPRIA atuação —
         // mesmo filtro do Bolsão: quantos leads da especialidade dele existem e
@@ -880,6 +891,8 @@ export const MeusLeadsAtribuidosSection = ({
         });
       } finally {
         setLoading(false);
+        setAtualizando(false);
+        primeiraCargaRef.current = false;
       }
       return;
     }
@@ -904,7 +917,8 @@ export const MeusLeadsAtribuidosSection = ({
     }
 
     try {
-      setLoading(true);
+      setLoading(primeiraCargaRef.current);
+      setAtualizando(true);
       // Tentar buscar por ID primeiro
       const effectiveTenantId = tenantId || undefined;
       let data = userId
@@ -926,6 +940,8 @@ export const MeusLeadsAtribuidosSection = ({
       });
     } finally {
       setLoading(false);
+      setAtualizando(false);
+      primeiraCargaRef.current = false;
     }
   }, [authLoading, isAdmin, user?.id, user?.name, user?.email, toast, tenantId, leadType, user?.systemRole, user?.permissions]);
 
@@ -1463,12 +1479,12 @@ const handleDragEnd = useCallback(async (event: DragEndEvent) => {
           </span>
           <Button
             onClick={() => carregarMeusLeads()}
-            disabled={loading}
+            disabled={loading || atualizando}
             variant="outline"
             size="sm"
             className="h-8 text-xs"
           >
-            {loading ? (
+            {(loading || atualizando) ? (
               <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
             ) : (
               <Clock className="h-3.5 w-3.5 mr-1" />
@@ -1684,24 +1700,22 @@ const handleDragEnd = useCallback(async (event: DragEndEvent) => {
                   <SelectTrigger className="h-10">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ja_fechou_outro">Já fechou com outro</SelectItem>
-                    <SelectItem value="contato_errado">Contato errado / inválido</SelectItem>
-                    <SelectItem value="fora_perfil">Fora do perfil</SelectItem>
-                    <SelectItem value="duplicado">Lead duplicado</SelectItem>
-                    <SelectItem value="nao_respondeu">Não respondeu</SelectItem>
-                    <SelectItem value="erro">Erro / cadastro incorreto</SelectItem>
-                    <SelectItem value="outro">Outro (descrever abaixo)</SelectItem>
+                  <SelectContent className="max-h-72">
+                    {MOTIVOS_ARQUIVAMENTO.map((motivo) => (
+                      <SelectItem key={motivo.value} value={motivo.value}>
+                        {motivo.label}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="motivo-arquivar" className="text-xs text-muted-foreground">
-                  {motivoPredefinido === 'outro' ? 'Descreva o motivo' : 'Observações (opcional)'}
+                  {motivoPredefinido === MOTIVO_OUTROS ? 'Descreva o motivo' : 'Observações (opcional)'}
                 </Label>
                 <Textarea
                   id="motivo-arquivar"
-                  placeholder={motivoPredefinido === 'outro' ? 'Descreva o motivo...' : 'Detalhes adicionais (opcional)'}
+                  placeholder={motivoPredefinido === MOTIVO_OUTROS ? 'Descreva o motivo...' : 'Detalhes adicionais (opcional)'}
                   value={motivoArquivamento}
                   onChange={(e) => setMotivoArquivamento(e.target.value)}
                   rows={2}
@@ -1712,23 +1726,12 @@ const handleDragEnd = useCallback(async (event: DragEndEvent) => {
             <DialogFooter>
               <Button variant="outline" onClick={() => setLeadParaArquivar(null)}>Cancelar</Button>
               <Button
-                disabled={arquivando || (motivoPredefinido === 'outro' && !motivoArquivamento.trim())}
+                disabled={arquivando || (motivoPredefinido === MOTIVO_OUTROS && !motivoArquivamento.trim())}
                 onClick={async () => {
                   if (!leadParaArquivar) return;
                   setArquivando(true);
                   try {
-                    const MOTIVO_LABELS: Record<string, string> = {
-                      ja_fechou_outro: 'Já fechou com outro',
-                      contato_errado: 'Contato errado / inválido',
-                      fora_perfil: 'Fora do perfil',
-                      duplicado: 'Lead duplicado',
-                      nao_respondeu: 'Não respondeu',
-                      erro: 'Erro / cadastro incorreto',
-                      outro: 'Outro',
-                    };
-                    const motivoFinal = motivoPredefinido === 'outro'
-                      ? (motivoArquivamento.trim() || 'Outro motivo')
-                      : `${MOTIVO_LABELS[motivoPredefinido] || 'Arquivado'}${motivoArquivamento.trim() ? ` — ${motivoArquivamento.trim()}` : ''}`;
+                    const motivoFinal = montarMotivoFinal(motivoPredefinido, motivoArquivamento);
 
                     const result = await arquivarLeadCRM(
                       leadParaArquivar.id,

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validarPublicacaoImovel, type DadosPublicacao } from './validarPublicacaoImovel';
+import { validarPublicacaoImovel, cortarNoLimite, LIMITE_TITULO, LIMITE_DESCRICAO, type DadosPublicacao } from './validarPublicacaoImovel';
 
 const valido: DadosPublicacao = {
   proprietario_nome: 'Maria Souza',
@@ -88,3 +88,54 @@ describe('validarPublicacaoImovel', () => {
     expect(campos({ link_video: 'https://youtu.be/dQw4w9WgXcQ', tour_virtual: 'https://tour.com/360' })).toEqual([]);
   });
 });
+
+/**
+ * Limites de tamanho do anúncio (decisão de 21/09/2026): 100 no título e 3.000
+ * na descrição. Vale para o texto que vai aos portais — anúncio maior que o
+ * limite deles é recusado. Em produção já existem 3 títulos e 2 descrições
+ * acima disso, de antes da regra: eles precisam APARECER como problema na hora
+ * de salvar, em vez de serem cortados sem avisar.
+ */
+describe('validarPublicacaoImovel — tamanho do título e da descrição', () => {
+  const texto = (n: number) => 'a'.repeat(n);
+
+  it('no limite, passa', () => {
+    expect(campos({ titulo: texto(LIMITE_TITULO), descricao: texto(LIMITE_DESCRICAO) })).toEqual([]);
+  });
+
+  it('título acima de 100 vira problema, com a seção para abrir', () => {
+    const problemas = validarPublicacaoImovel({ ...valido, titulo: texto(LIMITE_TITULO + 1) }, ctx);
+
+    expect(problemas).toEqual([
+      { campo: 'titulo', mensagem: expect.stringContaining('100'), secao: 'publicacao' },
+    ]);
+    expect(problemas[0].mensagem).toContain('101');
+  });
+
+  it('descrição acima de 3.000 vira problema', () => {
+    const problemas = validarPublicacaoImovel({ ...valido, descricao: texto(LIMITE_DESCRICAO + 260) }, ctx);
+
+    expect(problemas.map((p) => p.campo)).toEqual(['descricao']);
+    expect(problemas[0].mensagem).toContain('3260');
+  });
+
+  it('campo vazio ou ausente não é problema de tamanho', () => {
+    expect(campos({ titulo: '', descricao: '' })).toEqual([]);
+    expect(campos({})).toEqual([]);
+  });
+});
+
+describe('cortarNoLimite', () => {
+  it('texto dentro do limite volta inteiro', () => {
+    expect(cortarNoLimite('casa com quintal', 100)).toBe('casa com quintal');
+  });
+
+  it('corta no espaço, sem partir palavra', () => {
+    expect(cortarNoLimite('apartamento reformado no centro', 20)).toBe('apartamento');
+  });
+
+  it('palavra única gigante é cortada no limite mesmo', () => {
+    expect(cortarNoLimite('a'.repeat(50), 10)).toBe('a'.repeat(10));
+  });
+});
+

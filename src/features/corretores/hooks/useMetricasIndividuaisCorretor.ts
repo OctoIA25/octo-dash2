@@ -21,6 +21,7 @@ import {
   type MetricasIndividuaisVendas,
 } from '@/features/relatorios/services/relatoriosService';
 import { buildCorretorMetricasCompletas } from '@/features/relatorios/utils/buildCorretorMetricasCompletas';
+import { buscarVendasPlanilha, type VendasPlanilha } from '../services/vendasPlanilhaService';
 import type { CorretorMetricasCompletas } from '@/types/metricsTypes';
 
 export interface PeriodoMetricas {
@@ -36,6 +37,8 @@ export const periodoMesCorrente = (): PeriodoMetricas => ({
 
 interface Resultado {
   model: CorretorMetricasCompletas | null;
+  /** Vendas segundo a planilha de comissionamento; `null` quando ela não tem esse corretor. */
+  vendasPlanilha: VendasPlanilha | null;
   isLoading: boolean;
   error: string | null;
 }
@@ -43,10 +46,18 @@ interface Resultado {
 export function useMetricasIndividuaisCorretor(
   nomeCorretor: string | null,
   periodo: PeriodoMetricas,
+  /**
+   * Identificador do corretor, quando a tela tem. A planilha casa por ele —
+   * nome é frágil aqui: o card da equipe mostra o começo do e-mail quando o
+   * cadastro não tem nome completo, e a base ainda separa "Fernanda" de
+   * "Fernanda Souza" (P0.2 do plano).
+   */
+  userId?: string | null,
 ): Resultado {
   const { tenantId } = useAuth();
   const [leads, setLeads] = useState<MetricasIndividuaisLeads | null>(null);
   const [vendas, setVendas] = useState<MetricasIndividuaisVendas | null>(null);
+  const [vendasPlanilha, setVendasPlanilha] = useState<VendasPlanilha | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -56,6 +67,7 @@ export function useMetricasIndividuaisCorretor(
     if (!tenantId || tenantId === 'owner' || !nomeCorretor) {
       setLeads(null);
       setVendas(null);
+      setVendasPlanilha(null);
       setError(null);
       return;
     }
@@ -69,11 +81,15 @@ export function useMetricasIndividuaisCorretor(
     Promise.all([
       buscarMetricasIndividuaisLeads(tenantId, nomeCorretor, inicio, fim),
       buscarMetricasIndividuaisVendas(tenantId, nomeCorretor, inicio, fim),
+      // Campo a mais, de outra fonte: se a planilha falhar, o serviço devolve
+      // null e as métricas da Dash continuam na tela.
+      buscarVendasPlanilha(tenantId, { userId, nome: nomeCorretor }, { inicio, fim }),
     ])
-      .then(([leadsData, vendasData]) => {
+      .then(([leadsData, vendasData, planilhaData]) => {
         if (cancelado) return;
         setLeads(leadsData);
         setVendas(vendasData);
+        setVendasPlanilha(planilhaData);
       })
       .catch((e: unknown) => {
         if (cancelado) return;
@@ -81,6 +97,7 @@ export function useMetricasIndividuaisCorretor(
         setError(e instanceof Error ? e.message : 'Erro ao carregar métricas');
         setLeads(null);
         setVendas(null);
+        setVendasPlanilha(null);
       })
       .finally(() => {
         if (!cancelado) setIsLoading(false);
@@ -89,7 +106,7 @@ export function useMetricasIndividuaisCorretor(
     return () => {
       cancelado = true;
     };
-  }, [tenantId, nomeCorretor, inicio, fim]);
+  }, [tenantId, nomeCorretor, userId, inicio, fim]);
 
   const model = nomeCorretor
     ? buildCorretorMetricasCompletas({
@@ -104,5 +121,5 @@ export function useMetricasIndividuaisCorretor(
       })
     : null;
 
-  return { model, isLoading, error };
+  return { model, vendasPlanilha, isLoading, error };
 }

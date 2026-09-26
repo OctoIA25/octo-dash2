@@ -178,6 +178,10 @@ export const CriarLeadQuickModal = ({
   const [carregandoInteresses, setCarregandoInteresses] = useState(false);
   const [verImoveisInteresse, setVerImoveisInteresse] = useState(false);
   const [fichasDuplicadas, setFichasDuplicadas] = useState<FichaDuplicada[]>([]);
+  // Registrar um toque da cadência cria/conclui atividade no servidor. As duas
+  // seções são irmãs e não se falam: este contador é o recado de uma para a
+  // outra, senão a lista de atividades só mostraria o resultado ao reabrir.
+  const [atividadesSinal, setAtividadesSinal] = useState(0);
   // Imóvel aberto a partir da lista de interesses. Modal em cima do modal (o
   // Dialog fica em z-[9999], acima deste portal) para não perder a edição do
   // lead em andamento.
@@ -1092,6 +1096,7 @@ export const CriarLeadQuickModal = ({
                 userId={user?.id}
                 timelineLia={cadenciaLead.cadencia?.timeline}
                 ativo={isOpen}
+                onMudou={() => setAtividadesSinal((n) => n + 1)}
               />
             )}
 
@@ -1107,6 +1112,7 @@ export const CriarLeadQuickModal = ({
                 corretorEmail={userEmail}
                 imovelRef={editingLead.codigo}
                 ativo={isOpen}
+                recarregarSinal={atividadesSinal}
               />
             )}
 

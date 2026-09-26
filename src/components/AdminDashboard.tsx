@@ -16,12 +16,14 @@ export const AdminDashboard = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   
-  // Ler a tab ativa da URL (controlada pelo header superior)
-  const activeTab = (searchParams.get('tab') as 'tarefas' | 'okrs' | 'pdi' | 'acessos-permissoes' | 'equipes') || 'tarefas';
+  // A tab vem da URL. Não há mais barra de abas: quem manda `?tab=` são os
+  // atalhos do card de cada membro. Sem parâmetro, abre em Acessos e
+  // Permissões — é a tela dos cards, de onde se alcança todo o resto.
+  const activeTab = (searchParams.get('tab') as 'tarefas' | 'okrs' | 'pdi' | 'acessos-permissoes' | 'equipes') || 'acessos-permissoes';
 
   useEffect(() => {
     if (searchParams.get('tab') === 'metricas') {
-      navigate('/gestao-equipe?tab=tarefas', { replace: true });
+      navigate('/gestao-equipe', { replace: true });
     }
   }, [navigate, searchParams]);
   

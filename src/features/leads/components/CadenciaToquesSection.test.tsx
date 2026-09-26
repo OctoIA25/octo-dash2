@@ -31,8 +31,12 @@ const envioLia = {
   tempo_ate_resposta_min: null, motivo: null, cancelled_reason: null, template_name: null,
 } satisfies CadenciaEvento;
 
-const renderizar = (timelineLia: CadenciaEvento[] = [envioLia]) =>
-  render(<CadenciaToquesSection leadId="lead-1" tenantId={TENANT} userId={EU} timelineLia={timelineLia} ativo />);
+const renderizar = (timelineLia: CadenciaEvento[] = [envioLia], onMudou?: () => void) =>
+  render(
+    <CadenciaToquesSection
+      leadId="lead-1" tenantId={TENANT} userId={EU} timelineLia={timelineLia} ativo onMudou={onMudou}
+    />,
+  );
 
 describe('CadenciaToquesSection', () => {
   beforeEach(() => vi.clearAllMocks());
@@ -120,5 +124,55 @@ describe('CadenciaToquesSection', () => {
 
     fireEvent.click(await screen.findByLabelText(/^2º toque/));
     expect(screen.getByRole('button', { name: /Desfazer/ })).toBeInTheDocument();
+  });
+  /**
+   * O servidor transforma o toque em atividade (`sincronizarAgendaDoToque`):
+   * conclui a anterior e cria a do próximo toque. Quem mostra atividades é
+   * outra seção, irmã desta — sem este aviso, ela só descobriria ao remontar,
+   * que é o "fechar e abrir o lead" que o corretor tinha de fazer.
+   */
+  it('avisa quem monta depois de registrar, para as atividades relerem', async () => {
+    const onMudou = vi.fn();
+    servico.fetchToques.mockResolvedValue([]);
+    servico.registrarToque.mockResolvedValue(toque({ canal: 'ligacao', resultado: 'respondeu' }));
+    renderizar([], onMudou);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Registrar 1º toque' }));
+    fireEvent.click(screen.getByRole('radio', { name: /Ligação/ }));
+    fireEvent.click(screen.getByRole('radio', { name: /^Respondeu$/ }));
+    fireEvent.click(screen.getByRole('radio', { name: /Amanhã/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar 1º toque' }));
+
+    await waitFor(() => expect(onMudou).toHaveBeenCalledTimes(1));
+  });
+
+  it('avisa também ao desfazer — a atividade do toque vai junto', async () => {
+    const onMudou = vi.fn();
+    servico.fetchToques.mockResolvedValue([toque({ id: 't1' })]);
+    servico.desfazerToque.mockResolvedValue(undefined);
+    renderizar([envioLia], onMudou);
+
+    // `desfazer` pergunta antes; sem isto o jsdom responde "não" e nada acontece.
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    fireEvent.click(await screen.findByLabelText(/^2º toque/));
+    fireEvent.click(screen.getByRole('button', { name: /Desfazer/ }));
+
+    await waitFor(() => expect(onMudou).toHaveBeenCalledTimes(1));
+  });
+
+  it('não avisa quando o registro falha', async () => {
+    const onMudou = vi.fn();
+    servico.fetchToques.mockResolvedValue([]);
+    servico.registrarToque.mockRejectedValue(new Error('sem rede'));
+    renderizar([], onMudou);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Registrar 1º toque' }));
+    fireEvent.click(screen.getByRole('radio', { name: /Ligação/ }));
+    fireEvent.click(screen.getByRole('radio', { name: /^Respondeu$/ }));
+    fireEvent.click(screen.getByRole('radio', { name: /Sem próximo/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar 1º toque' }));
+
+    await waitFor(() => expect(servico.registrarToque).toHaveBeenCalled());
+    expect(onMudou).not.toHaveBeenCalled();
   });
 });
