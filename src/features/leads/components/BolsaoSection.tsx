@@ -183,6 +183,11 @@ const BolsaoSectionContent = (props: BolsaoSectionProps) => {
   }, [setSearchParams]);
   const [leads, setLeads] = useState<BolsaoLead[]>([]);
   const [loading, setLoading] = useState(true);
+  // Mesma regra do kanban de Meus Leads: o spinner grande é só da primeira
+  // carga. Recarga (salvar um lead avisa o app inteiro) mantém a lista na tela,
+  // senão a pessoa perde a rolagem e volta ao topo.
+  const [atualizando, setAtualizando] = useState(false);
+  const primeiraCargaRef = useRef(true);
 
   // Corretor não vê qual imóvel/condomínio o lead procurou — senão a fila vira
   // garimpo de empreendimento de luxo. Owner, admin e team_leader veem.
@@ -354,7 +359,8 @@ const BolsaoSectionContent = (props: BolsaoSectionProps) => {
 
   const carregarLeads = async () => {
     try {
-      setLoading(true);
+      setLoading(primeiraCargaRef.current);
+      setAtualizando(true);
       const existe = await verificarTabelaBolsao();
       setTabelaExiste(existe);
       
@@ -380,6 +386,8 @@ const BolsaoSectionContent = (props: BolsaoSectionProps) => {
       });
     } finally {
       setLoading(false);
+      setAtualizando(false);
+      primeiraCargaRef.current = false;
     }
   };
 
@@ -2180,7 +2188,7 @@ const BolsaoSectionContent = (props: BolsaoSectionProps) => {
               <button
                 type="button"
                 onClick={bolsaoConectado ? handleDesconectarBolsao : () => window.location.reload()}
-                disabled={loading}
+                disabled={loading || atualizando}
                 className="h-9 px-3 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-[12.5px] font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5 transition-colors disabled:opacity-50"
               >
                 {loading

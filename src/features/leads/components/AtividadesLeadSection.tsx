@@ -70,6 +70,13 @@ interface Props {
   onCriada?: (tipo: string) => void | Promise<void>;
   /** O modal do Kanban monta e desmonta o tempo todo; sem isto a consulta sairia fechado. */
   ativo: boolean;
+  /**
+   * Muda quando alguém de fora mexeu na agenda deste lead — hoje, registrar ou
+   * desfazer um toque da cadência, que o servidor vira atividade. Qualquer
+   * valor diferente do anterior relê, e quem avisa não precisa saber o que
+   * mudou. Sem isto, só fechar e reabrir o modal mostrava o resultado.
+   */
+  recarregarSinal?: number;
 }
 
 export const AtividadesLeadSection = ({
@@ -82,6 +89,7 @@ export const AtividadesLeadSection = ({
   imovelTitulo,
   onCriada,
   ativo,
+  recarregarSinal = 0,
 }: Props) => {
   const { toast } = useToast();
   const [atividades, setAtividades] = useState<Atividade[]>([]);
@@ -114,9 +122,11 @@ export const AtividadesLeadSection = ({
     }
   }, [ativo, vinculo.coluna, vinculo.valor, leadVinculavel, tenantId, tenantValido]);
 
+  // `recarregarSinal` não entra em `carregar`: a função não o usa, ele só diz
+  // QUANDO repetir. Por isso mora aqui, onde a releitura acontece.
   useEffect(() => {
     carregar();
-  }, [carregar]);
+  }, [carregar, recarregarSinal]);
 
   const concluir = async (a: Atividade) => {
     setConcluindo(a.id);

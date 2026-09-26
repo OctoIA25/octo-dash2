@@ -19,7 +19,7 @@
  *   por requisição vive no apiClient; o timeout por tenant, no syncAllTenants.
  */
 import crypto from 'node:crypto';
-import { mapSantaAngelaToLead } from './leadMapper.js';
+import { mapSantaAngelaToLead, etapaAvanca } from './leadMapper.js';
 import { chaveTelefone } from '../utils/phone.js';
 import { getDeletedTenantIds } from '../utils/tenantSoftDelete.js';
 
@@ -120,12 +120,15 @@ export function createSantaAngelaSyncService({
     // property_code só entra quando temos um valor NOVO: o detalhe do prospect pode
     // falhar (400 de carteira alheia) e null não pode apagar um código já gravado.
     const fillsPropertyCode = Boolean(lead.property_code) && lead.property_code !== current?.property_code;
-    const changed = !current || current.status !== lead.status || fillsPropertyCode;
+    // A origem só empurra o lead para FRENTE (ver etapaAvanca). Sem `current`
+    // não dá para comparar, e aí a etapa do Octo fica como está.
+    const avanca = etapaAvanca(current?.status, lead.status);
+    const changed = avanca || fillsPropertyCode;
     if (!changed) return 'unchanged';
 
     const { error } = await supabase.from('leads')
       .update({
-        status: lead.status,
+        ...(avanca ? { status: lead.status } : {}),
         custom_fields: lead.custom_fields,
         ...(fillsPropertyCode ? { property_code: lead.property_code } : {}),
         updated_at: new Date().toISOString(),

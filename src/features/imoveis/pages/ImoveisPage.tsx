@@ -303,6 +303,9 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
   const [referenciaFilter, setReferenciaFilter] = useState('');
   const [tipoFilter, setTipoFilter] = useState<string>('todos');
   const [finalidadeFilter, setFinalidadeFilter] = useState<string>('todos');
+  // Aprovação: só imóvel local tem esse ciclo; o que vem do XML fica de fora do
+  // filtro justamente por não passar por aprovação aqui.
+  const [aprovacaoFilter, setAprovacaoFilter] = useState<string>('todos');
   const [cidadeFilter, setCidadeFilter] = useState<string>('todos');
   const [bairroFilter, setBairroFilter] = useState<string>('todos');
   const [valorVendaMin, setValorVendaMin] = useState<string>('');
@@ -568,6 +571,10 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
       filtered = filtered.filter(i => i.finalidade === 'locacao' || i.finalidade === 'venda_locacao');
     }
 
+    if (aprovacaoFilter !== 'todos') {
+      filtered = filtered.filter((i) => i.status_aprovacao === aprovacaoFilter);
+    }
+
     if (cidadeFilter !== 'todos') {
       filtered = filtered.filter((i) => i.cidade === cidadeFilter);
     }
@@ -720,6 +727,7 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
     referenciaFilter,
     tipoFilter,
     finalidadeFilter,
+    aprovacaoFilter,
     cidadeFilter,
     bairroFilter,
     valorVendaMin,
@@ -783,6 +791,7 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
     setReferenciaFilter('');
     setTipoFilter('todos');
     setFinalidadeFilter('todos');
+    setAprovacaoFilter('todos');
     setCidadeFilter('todos');
     setBairroFilter('todos');
     setValorVendaMin('');
@@ -827,6 +836,7 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
     !!referenciaFilter ||
     tipoFilter !== 'todos' ||
     finalidadeFilter !== 'todos' ||
+    aprovacaoFilter !== 'todos' ||
     cidadeFilter !== 'todos' ||
     bairroFilter !== 'todos' ||
     !!valorVendaMin ||
@@ -1046,6 +1056,17 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
                 <SelectItem value="todos">Todas as Finalidades</SelectItem>
                 <SelectItem value="venda">🏷️ Venda</SelectItem>
                 <SelectItem value="locacao">🔑 Locação</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select value={aprovacaoFilter} onValueChange={setAprovacaoFilter}>
+              <SelectTrigger aria-label="Filtrar por aprovação">
+                <SelectValue placeholder="Aprovação" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Toda a aprovação</SelectItem>
+                <SelectItem value="aprovado">✅ Aprovados</SelectItem>
+                <SelectItem value="aguardando">⏳ Aprovação pendente</SelectItem>
               </SelectContent>
             </Select>
 

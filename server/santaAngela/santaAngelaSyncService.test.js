@@ -436,3 +436,32 @@ it('last_full_sync_at só é carimbado no ciclo completo — e o ciclo normal n�
   expect(cfgUpdate(normal.state).payload.last_sync_at).toBeTruthy();
   expect(cfgUpdate(normal.state).payload.last_full_sync_at).toBeUndefined();
 });
+
+it('syncTenant: origem atrasada NÃO devolve o lead para Novos Leads', async () => {
+  // O corretor moveu o lead para Interação no Octo; a Santa Ângela ainda diz
+  // NOVO. Antes, o ciclo de 1 minuto sobrescrevia e o lead voltava.
+  const { supabase, state } = makeSupabase({
+    existing: [{ phone: 'X', source_lead_id: 'joao', status: 'Interação' }],
+  });
+  const svc = createSantaAngelaSyncService({ supabase,
+    apiClient: okClient([{ id: 'joao', nome: 'João', celular: 'X', situacaocadastropessoa_titulo: 'NOVO' }]) });
+
+  const r = await svc.syncTenant('t1');
+
+  expect(r.updatedLeads).toBe(0);
+  expect(state.updated.find((u) => u.table === 'leads')).toBeUndefined();
+});
+
+it('syncTenant: origem à frente ainda avança o lead', async () => {
+  const { supabase, state } = makeSupabase({
+    existing: [{ phone: 'X', source_lead_id: 'joao', status: 'Interação' }],
+  });
+  const svc = createSantaAngelaSyncService({ supabase,
+    apiClient: okClient([{ id: 'joao', nome: 'João', celular: 'X', situacaocadastropessoa_titulo: 'EM NEGOCIACAO' }]) });
+
+  const r = await svc.syncTenant('t1');
+
+  expect(r.updatedLeads).toBe(1);
+  expect(state.updated.find((u) => u.table === 'leads').payload.status).toBe('Negociação');
+});
+

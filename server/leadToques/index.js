@@ -25,6 +25,7 @@ import { isPlatformOwner } from '../utils/ownerAuth.js';
 import { podeVerCadencia, papelNoTenant } from '../liaCadencia/index.js';
 import { buscarLead } from '../liaCadencia/query.js';
 import { normalizarToque } from './normalize.js';
+import { sincronizarAgendaDoToque } from './agenda.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -125,6 +126,17 @@ export function registerLeadToquesRoutes(app, supabase) {
         .select(COLUNAS)
         .single();
       if (error) throw error;
+
+      // O próximo toque vira compromisso na agenda (e prazo da regra das 24h).
+      // A função engole a própria falha e loga: o toque já está gravado e não
+      // pode ser desfeito por um erro da agenda.
+      await sincronizarAgendaDoToque({
+        supabase,
+        toque: data,
+        tenantId: acesso.tenantId,
+        corretorEmail: req.userEmail,
+        lead: acesso.lead,
+      });
 
       return res.status(201).json({ ok: true, toque: data });
     } catch (err) {
