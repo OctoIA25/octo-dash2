@@ -109,10 +109,34 @@ export function normalizeEvent(raw, { now = Date.now() } = {}) {
 
   const inputTokens = toNonNegativeInt(raw.input_tokens);
   const outputTokens = toNonNegativeInt(raw.output_tokens);
+  const cachedTokens = toNonNegativeInt(raw.cached_tokens);
+  /*
+   * `cache_escrita_tokens` — a parcela MAIS CARA, e ela não era mapeada aqui.
+   *
+   * A coluna entrou no banco em 26/09 e eu não trouxe o campo para a rota:
+   * a LIA mandou 27 eventos com 20.426 tokens de escrita cada e os 27
+   * gravaram NULO. Sem esta parcela a conta perde 92% do custo — é
+   * exatamente o erro de 36x que esta mesma semana veio consertar, de volta
+   * por outro caminho.
+   *
+   * Terceira vez seguida que uma ponta entrou no banco e não na rota (antes:
+   * o token de serviço e `lia_vps`). O teste abaixo fixa a lista de colunas
+   * para a próxima passar a doer aqui, e não em produção.
+   */
+  const cacheEscritaTokens = toNonNegativeInt(raw.cache_escrita_tokens);
+
   let totalTokens = toNonNegativeInt(raw.total_tokens);
-  // Conveniência honesta: total derivado das partes reais quando ausente.
-  if (totalTokens == null && (inputTokens != null || outputTokens != null)) {
-    totalTokens = (inputTokens ?? 0) + (outputTokens ?? 0);
+  /*
+   * Total derivado das QUATRO parcelas, não de duas.
+   *
+   * Somando só entrada e saída, um turno da LIA com o prompt inteiro em cache
+   * saía como 423 tokens — 6 de entrada e 417 de saída — escondendo 20 mil de
+   * escrita e 110 mil de leitura. O número existia e mentia, que é pior do
+   * que não existir.
+   */
+  const parcelas = [inputTokens, cachedTokens, cacheEscritaTokens, outputTokens];
+  if (totalTokens == null && parcelas.some((p) => p != null)) {
+    totalTokens = parcelas.reduce((soma, p) => soma + (p ?? 0), 0);
   }
 
   return {
@@ -127,7 +151,8 @@ export function normalizeEvent(raw, { now = Date.now() } = {}) {
       provider: toShortText(raw.provider),
       input_tokens: inputTokens,
       output_tokens: outputTokens,
-      cached_tokens: toNonNegativeInt(raw.cached_tokens),
+      cached_tokens: cachedTokens,
+      cache_escrita_tokens: cacheEscritaTokens,
       total_tokens: totalTokens,
       duration_ms: toNonNegativeInt(raw.duration_ms),
       queue_ms: toNonNegativeInt(raw.queue_ms),

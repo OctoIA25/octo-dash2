@@ -156,3 +156,67 @@ describe('as origens aceitas são as mesmas do banco', () => {
     expect(r.reason).toBe('invalid_source');
   });
 });
+
+/**
+ * A rota grava TODAS as colunas que a tabela tem — 26/09.
+ *
+ * Três vezes seguidas na mesma semana uma ponta entrou no banco e não na
+ * rota: o token de serviço, `lia_vps` e `cache_escrita_tokens`. A última
+ * custou 27 eventos reais da LIA gravados com a parcela mais cara em NULO —
+ * 92% do custo perdido, o mesmo erro de 36x que acabáramos de consertar,
+ * de volta por outro caminho.
+ *
+ * Esta lista é a de `agent_telemetry_events` em produção, menos as colunas
+ * que o banco preenche sozinho. Coluna nova sem mapeamento passa a doer aqui.
+ */
+describe('nenhuma coluna da tabela fica para trás', () => {
+  /** Preenchidas pelo banco ou pela rota, nunca pelo normalizador. */
+  const DO_BANCO = ['id', 'tenant_id', 'received_at'];
+
+  const COLUNAS_EM_PRODUCAO = [
+    'agent_slug', 'source', 'event_type', 'status', 'execution_id', 'model', 'provider',
+    'input_tokens', 'output_tokens', 'cached_tokens', 'cache_escrita_tokens', 'total_tokens',
+    'duration_ms', 'queue_ms', 'error_class', 'error_message', 'tool_name', 'metadata',
+    'occurred_at', 'etapa', 'lead_id', 'conversa_id', 'documento_id',
+  ];
+
+  it('o evento normalizado tem exatamente as colunas da tabela', () => {
+    const r = normalizeEvent({
+      agent_slug: 'lia', event_type: 'llm_call', source: 'lia_vps',
+    });
+    expect(r.ok).toBe(true);
+    expect(Object.keys(r.event).sort()).toEqual([...COLUNAS_EM_PRODUCAO].sort());
+    expect(COLUNAS_EM_PRODUCAO.filter((c) => DO_BANCO.includes(c))).toEqual([]);
+  });
+
+  /*
+   * O CASO QUE SUSTENTA O ARQUIVO: as quatro parcelas chegam inteiras, e o
+   * total é a soma das quatro. Somando só entrada e saída, um turno com o
+   * prompt em cache saía como 423 tokens escondendo 130 mil.
+   */
+  it('as quatro parcelas de token sobrevivem, e o total soma as quatro', () => {
+    const r = normalizeEvent({
+      agent_slug: 'lia', event_type: 'llm_call', source: 'lia_vps',
+      input_tokens: 6, cached_tokens: 110000, cache_escrita_tokens: 20426, output_tokens: 417,
+    });
+
+    expect(r.event.cache_escrita_tokens).toBe(20426);
+    expect(r.event.cached_tokens).toBe(110000);
+    expect(r.event.total_tokens).toBe(6 + 110000 + 20426 + 417);
+  });
+
+  it('total_tokens mandado pelo emissor vence o derivado', () => {
+    const r = normalizeEvent({
+      agent_slug: 'lia', event_type: 'llm_call', source: 'lia_vps',
+      input_tokens: 6, output_tokens: 417, total_tokens: 999,
+    });
+    expect(r.event.total_tokens).toBe(999);
+  });
+
+  /* Ausente ≠ zero: sem parcela nenhuma, o total é NULO e não 0. */
+  it('sem parcela nenhuma, o total é nulo — não zero', () => {
+    const r = normalizeEvent({ agent_slug: 'lia', event_type: 'execution', source: 'lia_vps' });
+    expect(r.event.total_tokens).toBeNull();
+    expect(r.event.cache_escrita_tokens).toBeNull();
+  });
+});
