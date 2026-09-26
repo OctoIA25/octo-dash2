@@ -21,6 +21,12 @@ export function useCadenciaLead(leadId?: string | null, tenantId?: string | null
   const [cadencia, setCadencia] = useState<Cadencia | undefined>(undefined);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  /**
+   * Muda para forçar uma releitura. Marcar ou desmarcar um retorno altera a
+   * cadência, e sem isto o card continuaria mostrando o estado de antes do
+   * clique — a pessoa marcaria de novo achando que não pegou.
+   */
+  const [releitura, setReleitura] = useState(0);
 
   useEffect(() => {
     if (!ativo || !leadId || !tenantReal(tenantId)) {
@@ -46,7 +52,7 @@ export function useCadenciaLead(leadId?: string | null, tenantId?: string | null
       .finally(() => { if (atual) setCarregando(false); });
 
     return () => { atual = false; };
-  }, [leadId, tenantId, ativo]);
+  }, [leadId, tenantId, ativo, releitura]);
 
-  return { cadencia, carregando, erro };
+  return { cadencia, carregando, erro, recarregar: () => setReleitura((n) => n + 1) };
 }

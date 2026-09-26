@@ -82,6 +82,9 @@ const MENSAGEM_POR_ERRO: Record<string, string> = {
   forbidden: 'Você não tem acesso à cadência deste lead.',
   lead_not_found: 'Lead não encontrado neste tenant.',
   invalid_lead_id: 'Lead inválido.',
+  invalid_quando: 'Escolha uma data e hora válidas.',
+  quando_no_passado: 'Esse horário já passou.',
+  sem_horario_permitido: 'Não há horário permitido para falar com o cliente a partir daí.',
 };
 
 export async function fetchCadenciaDoLead(
@@ -106,5 +109,62 @@ export async function fetchCadenciaDoLead(
     return { resumo: json.resumo, timeline: json.timeline ?? [] };
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+/**
+ * Marcar um retorno para a LIA fazer — 26/09/2026.
+ *
+ * A rota existia desde o P2.5 e NENHUMA tela a chamava: o corretor via a
+ * cadência e não tinha como marcar nada. Quando construímos o emissor de
+ * `followup.criado` para a LIA, ele nasceu sem origem — o evento nunca
+ * dispararia, porque ninguém consegue criar o retorno.
+ *
+ * O horário que VALE é o que a resposta devolve, não o que foi pedido: o
+ * servidor empurra para o próximo horário em que dá para falar com o cliente
+ * e avisa em `ajustado`. Mostrar o pedido em vez do agendado faria o card
+ * prometer uma hora que não vai acontecer.
+ */
+export interface RetornoMarcado {
+  id: string;
+  created: boolean;
+  agendado_para: string;
+  ajustado: boolean;
+}
+
+export async function marcarRetorno(
+  leadId: string,
+  quando: string,
+  motivo: string,
+  substituir?: string | null,
+): Promise<RetornoMarcado> {
+  const res = await authedFetch(`/api/v1/leads/${encodeURIComponent(leadId)}/retorno`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ quando, motivo, ...(substituir ? { substituir } : {}) }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json?.ok) {
+    const codigo = String(json?.error ?? `HTTP ${res.status}`);
+    throw new Error(MENSAGEM_POR_ERRO[codigo] ?? 'Não foi possível marcar o retorno.');
+  }
+  return {
+    id: json.id,
+    created: Boolean(json.created),
+    agendado_para: json.agendado_para,
+    ajustado: Boolean(json.ajustado),
+  };
+}
+
+export async function desmarcarRetorno(leadId: string, id: string): Promise<void> {
+  const res = await authedFetch(`/api/v1/leads/${encodeURIComponent(leadId)}/retorno`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cancelar: id }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json?.ok) {
+    const codigo = String(json?.error ?? `HTTP ${res.status}`);
+    throw new Error(MENSAGEM_POR_ERRO[codigo] ?? 'Não foi possível desmarcar o retorno.');
   }
 }

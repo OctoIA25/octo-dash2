@@ -14,11 +14,15 @@ import { useState } from 'react';
 import { ChevronDown, Bot, Clock, AlertTriangle } from 'lucide-react';
 import type { Cadencia, CadenciaEvento } from '../services/cadenciaService';
 import { rotuloDaTag, rotuloDoProximo, estiloDoResultado, duracaoCurta, dataCurta } from './cadenciaLabels';
+import { marcarRetorno, desmarcarRetorno } from '../services/cadenciaService';
 
 interface Props {
   cadencia?: Cadencia;
   carregando: boolean;
   erro: string | null;
+  /** Sem o lead não dá para marcar nada; a seção fica só de leitura. */
+  leadId?: string | null;
+  onMudou?: () => void;
 }
 
 const Kpi = ({ valor, label, destaque }: { valor: string; label: string; destaque?: boolean }) => (
@@ -70,7 +74,7 @@ const Evento = ({ ev }: { ev: CadenciaEvento }) => {
   );
 };
 
-export const CadenciaLiaSection = ({ cadencia, carregando, erro }: Props) => {
+export const CadenciaLiaSection = ({ cadencia, carregando, erro, leadId, onMudou }: Props) => {
   const [verHistorico, setVerHistorico] = useState(false);
 
   if (carregando) {
@@ -104,6 +108,9 @@ export const CadenciaLiaSection = ({ cadencia, carregando, erro }: Props) => {
         <p className="px-3 py-3 text-xs text-slate-500 bg-white dark:bg-slate-900 border border-dashed border-slate-200 dark:border-slate-700 rounded-lg">
           A LIA ainda não iniciou cadência com este lead.
         </p>
+        {/* Sem cadência é justamente quando mais se precisa marcar o primeiro
+            retorno — esconder o botão aqui seria esconder onde ele mais serve. */}
+        <MarcarRetorno leadId={leadId} onMudou={onMudou} />
       </div>
     );
   }
@@ -186,6 +193,19 @@ export const CadenciaLiaSection = ({ cadencia, carregando, erro }: Props) => {
         </p>
       )}
 
+      <MarcarRetorno
+        leadId={leadId}
+        onMudou={onMudou}
+        /* Só o retorno PEDIDO pelo lead é desmarcável por aqui: cutucada da
+           LIA é cadência automática, e cancelá-la pelo card seria mexer no
+           motor dela por uma porta lateral. */
+        pendente={
+          proxima && (proxima.pedido_por === 'lead' || proxima.pedido_por === 'corretor')
+            ? { id: proxima.id, quando: proxima.scheduled_at }
+            : null
+        }
+      />
+
       <button
         type="button"
         onClick={() => setVerHistorico((v) => !v)}
@@ -220,3 +240,126 @@ const Cabecalho = ({ total }: { total?: number }) => (
     {total != null && <span className="font-normal normal-case tracking-normal text-slate-400">({total})</span>}
   </p>
 );
+
+/**
+ * Marcar (ou desmarcar) um retorno para a LIA fazer com este lead.
+ *
+ * A rota existia desde o P2.5 e NENHUMA tela a chamava. Ao construir o
+ * emissor de `followup.criado` para a LIA, ele nasceu sem origem: o evento
+ * nunca dispararia porque ninguém conseguia criar o retorno. Este é o clique
+ * que faltava.
+ *
+ * O horário que a tela mostra é o que o SERVIDOR devolveu, não o pedido: ele
+ * empurra para a próxima hora em que dá para falar com o cliente. Mostrar o
+ * pedido faria o card prometer uma hora que não vai acontecer.
+ */
+const MarcarRetorno = ({
+  leadId,
+  onMudou,
+  pendente,
+}: {
+  leadId?: string | null;
+  onMudou?: () => void;
+  pendente?: { id: string; quando: string } | null;
+}) => {
+  const [aberto, setAberto] = useState(false);
+  const [quando, setQuando] = useState('');
+  const [motivo, setMotivo] = useState('');
+  const [ocupado, setOcupado] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
+
+  if (!leadId) return null;
+
+  const agir = async (fn: () => Promise<void>) => {
+    setOcupado(true);
+    setErro(null);
+    setAviso(null);
+    try {
+      await fn();
+      onMudou?.();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Não deu certo.');
+    } finally {
+      setOcupado(false);
+    }
+  };
+
+  return (
+    <div className="mt-2">
+      {pendente && (
+        <button
+          type="button"
+          disabled={ocupado}
+          onClick={() => agir(async () => { await desmarcarRetorno(leadId, pendente.id); setAberto(false); })}
+          className="mr-3 text-[11px] font-semibold text-rose-600 dark:text-rose-400 hover:underline disabled:opacity-50"
+        >
+          {ocupado ? 'Desmarcando…' : 'Desmarcar retorno'}
+        </button>
+      )}
+
+      {!aberto ? (
+        <button
+          type="button"
+          onClick={() => setAberto(true)}
+          className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+        >
+          {pendente ? 'Remarcar' : 'Marcar retorno'}
+        </button>
+      ) : (
+        <div className="mt-1 space-y-2 rounded-lg border border-slate-200 dark:border-slate-700 p-2">
+          <input
+            type="datetime-local"
+            value={quando}
+            onChange={(e) => setQuando(e.target.value)}
+            className="w-full rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-[12px]"
+          />
+          <input
+            value={motivo}
+            onChange={(e) => setMotivo(e.target.value)}
+            maxLength={200}
+            placeholder="Por quê? (opcional)"
+            className="w-full rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-[12px]"
+          />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={ocupado || !quando}
+              onClick={() =>
+                agir(async () => {
+                  const r = await marcarRetorno(
+                    leadId,
+                    new Date(quando).toISOString(),
+                    motivo,
+                    pendente?.id ?? null,
+                  );
+                  setAberto(false);
+                  setQuando('');
+                  setMotivo('');
+                  // O servidor empurra para o horário permitido. Silenciar
+                  // isso faria o corretor achar que marcou para 22h.
+                  if (r.ajustado) {
+                    setAviso(`Fora do horário de falar com o cliente — ficou para ${dataCurta(r.agendado_para)}.`);
+                  }
+                })
+              }
+              className="rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {ocupado ? 'Marcando…' : 'Marcar'}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setAberto(false); setErro(null); }}
+              className="text-[11px] text-slate-500 hover:underline"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {aviso && <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">{aviso}</p>}
+      {erro && <p className="mt-1 text-[11px] text-rose-600 dark:text-rose-400">{erro}</p>}
+    </div>
+  );
+};

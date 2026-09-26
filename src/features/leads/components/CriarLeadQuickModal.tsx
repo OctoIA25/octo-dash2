@@ -1128,12 +1128,16 @@ export const CriarLeadQuickModal = ({
             )}
 
             {/* Seção: Cadência da LIA — o que a IA já tentou com este lead.
-                Somente leitura: quem agenda e dispara é a LIA; o CRM lê. */}
+                Desde 26/09 também dá para MARCAR um retorno: a rota existia
+                desde o P2.5 e nenhuma tela a chamava, então o corretor via a
+                cadência e não tinha como agendar nada. */}
             {isEditMode && (
               <CadenciaLiaSection
                 cadencia={cadenciaLead.cadencia}
                 carregando={cadenciaLead.carregando}
                 erro={cadenciaLead.erro}
+                leadId={editingLead?.id}
+                onMudou={cadenciaLead.recarregar}
               />
             )}
 

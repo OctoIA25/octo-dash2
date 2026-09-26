@@ -201,3 +201,30 @@ describe('rotuloDoProximo', () => {
     expect(rotuloDoProximo(null, true)).toBe('Cadência atrasada desde');
   });
 });
+
+/**
+ * Marcar retorno pela ficha do lead — 26/09.
+ *
+ * A rota `POST /leads/:id/retorno` existia desde o P2.5 e NENHUMA tela a
+ * chamava. Descobri ao construir o emissor de `followup.criado` para a LIA:
+ * ele nasceu sem origem, porque ninguém conseguia criar o retorno.
+ */
+describe('marcar retorno', () => {
+  it('sem leadId a seção fica só de leitura — nada de botão', () => {
+    render(<CadenciaLiaSection cadencia={cadencia({ total: 0 }, [])} carregando={false} erro={null} />);
+    expect(screen.queryByText('Marcar retorno')).not.toBeInTheDocument();
+  });
+
+  /*
+   * O CASO QUE SUSTENTA O ARQUIVO. Sem cadência é justamente quando mais se
+   * precisa marcar o primeiro retorno; esconder o botão aqui seria escondê-lo
+   * onde ele mais serve.
+   */
+  it('aparece mesmo quando a LIA ainda não falou com o lead', () => {
+    render(
+      <CadenciaLiaSection cadencia={cadencia({ total: 0 }, [])} carregando={false} erro={null} leadId="lead-1" />,
+    );
+    expect(screen.getByText('A LIA ainda não iniciou cadência com este lead.')).toBeInTheDocument();
+    expect(screen.getByText('Marcar retorno')).toBeInTheDocument();
+  });
+});
