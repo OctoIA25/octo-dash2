@@ -39,6 +39,7 @@ import {
   TelemetryTrendChart,
 } from '../components/telemetria/TelemetriaCharts';
 import { CustoDeIaSection } from '../components/CustoDeIaSection';
+import { PausarLiaPanel } from '../components/PausarLiaPanel';
 
 const WINDOW_OPTIONS: Array<{ key: TelemetryWindowKey; label: string }> = [
   { key: '7d', label: '7 dias' },
@@ -320,6 +321,13 @@ export const AgentesTelemetriaPage = () => {
               Um custo parcial apresentado como total é pior que custo nenhum. */}
           <div className="mt-5">
             <CustoDeIaSection dias={30} />
+          </div>
+
+          {/* P2.8 — o kill switch. Fica ao lado do custo de propósito: é aqui
+              que alguém olha quando o gasto assusta, e é aqui que ele precisa
+              poder agir. A tabela existia desde 21/09 sem nenhuma tela. */}
+          <div className="mt-5">
+            <PausarLiaPanel />
           </div>
 
           {!hasTenant ? (

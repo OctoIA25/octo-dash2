@@ -161,6 +161,25 @@ export function FormulariosMetaSection() {
             ))}
           </div>
 
+          {/*
+            O QUE O INTERRUPTOR FAZ, ESCRITO — 26/09/2026.
+
+            Até aqui a coluna dizia só "LIA" e os botões, "Ligar" e
+            "Desligar". Nada explicava o que acontece, e cada gestor concluía
+            uma coisa: silêncio total? só sem abordagem? A equipe da LIA
+            perguntou justamente isso, e a resposta é esta frase.
+
+            O texto é o MESMO que eles implementaram do lado de lá. Tela e
+            comportamento saindo da mesma frase é o que impede a tela de
+            prometer o que o sistema não faz.
+          */}
+          <p className="mb-3 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            <strong>Desligar a LIA num formulário:</strong> ela não faz abordagem nem cadência
+            para os leads dele, mas <strong>responde se o lead escrever</strong>.
+            {' '}<strong>Desligar a captação:</strong> o lead continua entrando e fica com quem
+            a Dash atribuir — a LIA não distribui.
+          </p>
+
           {podeMexer && selecionados.size > 0 && (
             <div className="flex flex-wrap items-center gap-2 rounded-md border bg-accent/40 p-2 text-sm">
               <span className="text-muted-foreground">{selecionados.size} selecionado(s):</span>
