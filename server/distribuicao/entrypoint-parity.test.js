@@ -42,3 +42,37 @@ describe('paridade de entrypoints — distribuição', () => {
     }
   });
 });
+
+/*
+ * A ROTA E O SIMULADOR PRECISAM PERGUNTAR A MESMA COISA — 26/09.
+ *
+ * O simulador da tela passava `destinoPorTipo` para `decidirDestino`; a rota
+ * que a Lia consulta NÃO passava. As duas rodam a mesma função — foi para
+ * isso que ela foi extraída — e mesmo assim davam respostas diferentes para
+ * lead de recrutamento e de vendedores: a tela mandava para o dono
+ * configurado, a rota respondia `tipo_sem_dono_configurado`.
+ *
+ * A equipe da Lia viu o sintoma de fora ("recrutamento/vendedores não existem
+ * no fluxo") sem poder ver a causa.
+ *
+ * Rodar a mesma função não basta: o que decide a resposta é o que cada
+ * chamador ENTREGA a ela. Este teste trava os argumentos, não o resultado.
+ */
+describe('a rota entrega à regra tudo que a decisão precisa', () => {
+  const rota = readFileSync(join(AQUI, 'routes.js'), 'utf8');
+
+  it.each([
+    ['destinoPorTipo', /destinoPorTipo:/, 'recrutamento e vendedores cairiam em "sem dono configurado"'],
+    ['roletaLigada', /roletaLigada:/, 'a rota responderia "roleta_em_ordem" com a roleta desligada'],
+  ])('a rota passa %s', (_nome, padrao, consequencia) => {
+    expect(rota, consequencia).toMatch(padrao);
+  });
+
+  it('e lê do banco as colunas de onde esses dois saem', () => {
+    const dados = readFileSync(join(AQUI, 'dados.js'), 'utf8');
+    // Sem elas no SELECT, os dois chegam indefinidos e o padrão silencioso
+    // volta a valer — sem erro nenhum.
+    expect(dados).toMatch(/roleta_enabled/);
+    expect(dados).toMatch(/destino_por_tipo/);
+  });
+});

@@ -45,6 +45,11 @@ export function registerDistribuicaoRoutes(app, supabase, validateApiKey) {
         captador,
         participantes,
         ultimaPosicao,
+        destinoPorTipo: config?.destino_por_tipo ?? null,
+        // Ausente vale LIGADA: a coluna e NOT NULL DEFAULT true, e 5 das 9
+        // imobiliarias nao tem linha de configuracao. Tratar ausencia como
+        // desligada apagaria o rodizio delas sem ninguem pedir.
+        roletaLigada: config?.roleta_enabled !== false,
       });
 
       // O prazo só existe quando há um corretor com quem o relógio corre.

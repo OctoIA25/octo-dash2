@@ -50,6 +50,11 @@ export const MOTIVOS = {
   // comprador e não entram no rodízio. Têm dono fixo, configurado por casa.
   DONO_FIXO: 'tipo_tem_dono_fixo',
   SEM_DONO_FIXO: 'tipo_sem_dono_configurado',
+  // A roleta está DESLIGADA na configuração da imobiliária. Não é o mesmo que
+  // "ninguém disponível": ali há fila e ninguém pode receber; aqui não há fila
+  // nenhuma. Responder `roleta_em_ordem` com a roleta desligada foi o defeito
+  // que a equipe da Lia achou em 26/09 — a resposta era plausível e falsa.
+  ROLETA_DESLIGADA: 'roleta_desligada',
 };
 
 const norm = (t) => String(t ?? '').trim().toLowerCase();
@@ -146,10 +151,37 @@ export function decidirDestino({
    * exatamente o problema que o chefe pediu para resolver, e voltaria calado.
    */
   destinoPorTipo = null,
+  /**
+   * `tenant_bolsao_config.roleta_enabled`. Ausente vale LIGADA: a coluna é
+   * NOT NULL DEFAULT true, e 5 das 9 imobiliárias não têm linha de
+   * configuração — tratar ausência como desligada apagaria o rodízio delas.
+   */
+  roletaLigada = true,
 }) {
   const tipo = tipoDoLead(lead);
   // Lançamento tem pool próprio; o resto cai em prontos/alugados.
   const pool = tipo === 'lancamento' ? 'lancamentos' : 'prontos';
+
+  /**
+   * O rodízio, com a guarda do `roleta_enabled` num lugar só.
+   *
+   * Os três ramos abaixo chamavam `proximoDaRoleta` cada um por sua conta, e
+   * a guarda repetida três vezes é a que um ramo novo nasce sem — foi assim
+   * que a rota passou a responder `roleta_em_ordem` para a Lotus, que está com
+   * a roleta desligada desde 14/09.
+   *
+   * Desligada devolve `ninguem` com motivo próprio, e não `SEM_CORRETOR`: quem
+   * pergunta precisa distinguir "há fila e ninguém pode" de "não há fila".
+   */
+  const daRoleta = (motivoQuandoAcha) => {
+    if (!roletaLigada) {
+      return { destino: 'ninguem', corretorId: null, motivo: MOTIVOS.ROLETA_DESLIGADA, tipo };
+    }
+    const r = proximoDaRoleta(participantes, ultimaPosicao, pool);
+    return r
+      ? { destino: 'corretor', corretorId: r.corretor.id, posicao: r.posicao, motivo: motivoQuandoAcha, tipo }
+      : { destino: 'ninguem', corretorId: null, motivo: MOTIVOS.SEM_CORRETOR, tipo };
+  };
 
   // A LIA ATENDE PRIMEIRO — TODOS, decisão de 22/09.
   //
@@ -180,10 +212,7 @@ export function decidirDestino({
   }
 
   if (tipo === 'lancamento') {
-    const r = proximoDaRoleta(participantes, ultimaPosicao, pool);
-    return r
-      ? { destino: 'corretor', corretorId: r.corretor.id, posicao: r.posicao, motivo: MOTIVOS.ROLETA, tipo }
-      : { destino: 'ninguem', corretorId: null, motivo: MOTIVOS.SEM_CORRETOR, tipo };
+    return daRoleta(MOTIVOS.ROLETA);
   }
 
   if (tipo === 'terceiros') {
@@ -193,17 +222,10 @@ export function decidirDestino({
     // Decisão de 19/09: sem captador — ou com o captador indisponível — o lead
     // vai para a roleta geral, e não fica parado esperando alguém que não
     // pode atender.
-    const r = proximoDaRoleta(participantes, ultimaPosicao, pool);
-    const motivo = captador ? MOTIVOS.CAPTADOR_INDISPONIVEL : MOTIVOS.SEM_CAPTADOR;
-    return r
-      ? { destino: 'corretor', corretorId: r.corretor.id, posicao: r.posicao, motivo, tipo }
-      : { destino: 'ninguem', corretorId: null, motivo: MOTIVOS.SEM_CORRETOR, tipo };
+    return daRoleta(captador ? MOTIVOS.CAPTADOR_INDISPONIVEL : MOTIVOS.SEM_CAPTADOR);
   }
 
-  const r = proximoDaRoleta(participantes, ultimaPosicao, pool);
-  return r
-    ? { destino: 'corretor', corretorId: r.corretor.id, posicao: r.posicao, motivo: MOTIVOS.ROLETA, tipo }
-    : { destino: 'ninguem', corretorId: null, motivo: MOTIVOS.SEM_CORRETOR, tipo };
+  return daRoleta(MOTIVOS.ROLETA);
 }
 
 /**

@@ -21,7 +21,7 @@ export function criarLeituras({ supabase }) {
   const configuracao = async (tenantId) => {
     const { data, error } = await supabase
       .from('tenant_bolsao_config')
-      .select('horario_funcionamento, tempo_expiracao_exclusivo, tempo_expiracao_nao_exclusivo')
+      .select('horario_funcionamento, tempo_expiracao_exclusivo, tempo_expiracao_nao_exclusivo, roleta_enabled, destino_por_tipo')
       .eq('tenant_id', tenantId)
       .maybeSingle();
     if (error) throw error;

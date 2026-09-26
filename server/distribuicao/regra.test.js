@@ -401,3 +401,85 @@ describe('tipos com dono fixo', () => {
     }
   });
 });
+
+/*
+ * A ROLETA DESLIGADA — achado pela equipe da Lia em 26/09.
+ *
+ * A Lotus está com `roleta_enabled = false` desde 14/09, e a rota respondia
+ * `roleta_em_ordem` assim mesmo: uma resposta plausível e falsa, que é a pior
+ * espécie. A regra não consultava a chave em ponto nenhum.
+ *
+ * A guarda ficou num lugar só. Os três ramos chamavam a roleta cada um por sua
+ * conta, e guarda repetida três vezes é a que um ramo novo nasce sem.
+ */
+describe('a roleta desligada não devolve corretor', () => {
+  const desligada = { participantes: FILA, ultimaPosicao: -1, roletaLigada: false };
+
+  it.each([
+    ['lancamento', { tipoImovel: 'lancamento', liaPassou: true }],
+    ['terceiros sem captador', { tipoImovel: 'terceiros', liaPassou: true }],
+    ['indefinido', { liaPassou: true }],
+  ])('%s cai em ninguém, e o motivo diz que a roleta está desligada', (_nome, lead) => {
+    const r = decidirDestino({ lead, ...desligada });
+    expect(r.destino).toBe('ninguem');
+    expect(r.motivo).toBe(MOTIVOS.ROLETA_DESLIGADA);
+    expect(r.corretorId).toBeNull();
+  });
+
+  /*
+   * O CASO QUE SUSTENTA ESTE BLOCO. "Não há fila" e "há fila e ninguém pode
+   * receber" levam a decisões opostas de quem pergunta: no primeiro caso
+   * ligar a roleta resolve, no segundo não. Um motivo só para os dois faria a
+   * Lia tratar os dois igual.
+   */
+  it('desligada é diferente de ninguém disponível', () => {
+    const lead = { tipoImovel: 'lancamento', liaPassou: true };
+    const semNinguem = decidirDestino({ lead, participantes: [], ultimaPosicao: -1 });
+    const desl = decidirDestino({ lead, ...desligada });
+
+    expect(semNinguem.motivo).toBe(MOTIVOS.SEM_CORRETOR);
+    expect(desl.motivo).toBe(MOTIVOS.ROLETA_DESLIGADA);
+    expect(semNinguem.motivo).not.toBe(desl.motivo);
+  });
+
+  /*
+   * Desligar a roleta não desliga o resto. O captador e o dono fixo não
+   * dependem do rodízio, e barrá-los junto tiraria lead de quem tem dono
+   * declarado — sem ninguém ter pedido isso.
+   */
+  it('o captador continua recebendo com a roleta desligada', () => {
+    const r = decidirDestino({
+      lead: { tipoImovel: 'terceiros', codigoImovel: 'AP0961', liaPassou: true },
+      captador: c('davi'), ...desligada,
+    });
+    expect(r).toMatchObject({ destino: 'corretor', corretorId: 'davi', motivo: MOTIVOS.CAPTADOR });
+  });
+
+  it('o dono fixo continua recebendo com a roleta desligada', () => {
+    const r = decidirDestino({
+      lead: { tipoImovel: 'recrutamento', liaPassou: true },
+      destinoPorTipo: { recrutamento: 'elis' }, ...desligada,
+    });
+    expect(r).toMatchObject({ destino: 'corretor', corretorId: 'elis', motivo: MOTIVOS.DONO_FIXO });
+  });
+
+  /*
+   * Ausência de configuração vale LIGADA. A coluna é NOT NULL DEFAULT true e
+   * 5 das 9 imobiliárias não têm linha em `tenant_bolsao_config`: tratar
+   * ausência como desligada apagaria o rodízio delas de uma vez.
+   */
+  it('sem a chave, a roleta continua ligada', () => {
+    const lead = { tipoImovel: 'lancamento', liaPassou: true };
+    expect(decidirDestino({ lead, participantes: FILA, ultimaPosicao: -1 }).motivo).toBe(MOTIVOS.ROLETA);
+    expect(decidirDestino({ lead, participantes: FILA, ultimaPosicao: -1, roletaLigada: undefined }).motivo)
+      .toBe(MOTIVOS.ROLETA);
+  });
+
+  it('a roleta ligada segue como antes, inclusive a posição', () => {
+    const r = decidirDestino({
+      lead: { tipoImovel: 'lancamento', liaPassou: true },
+      participantes: FILA, ultimaPosicao: 0, roletaLigada: true,
+    });
+    expect(r).toMatchObject({ destino: 'corretor', corretorId: 'bruno', posicao: 1, motivo: MOTIVOS.ROLETA });
+  });
+});
