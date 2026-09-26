@@ -140,6 +140,19 @@ export function CargosPage() {
                 <strong>{dados.sem_cargo} de {dados.membros} pessoas ainda não têm cargo.</strong> Elas
                 seguem com as permissões individuais de hoje, e nada muda na tela delas até alguém
                 escolher um cargo. É de propósito: a virada não tira acesso de ninguém.
+                {/*
+                  Quando é a casa INTEIRA, a frase acima não basta: as colunas
+                  mostram "ninguém neste cargo" e isso se lê como tela quebrada
+                  — "Corretor" com ninguém, numa casa cheia de corretores.
+                  Aqui é onde se diz o que fazer a respeito.
+                */}
+                {dados.sem_cargo === dados.membros && (
+                  <>
+                    {' '}Por isso <strong>todas as colunas abaixo estão vazias</strong>: elas contam
+                    quem recebeu o pacote, não quem exerce a função. Para preencher, abra a pessoa
+                    em Gestão de Equipe e escolha o cargo dela — ou peça a carga de todas de uma vez.
+                  </>
+                )}
               </span>
             </p>
           )}
@@ -568,14 +581,25 @@ function QuadroDePermissoes({
                     type="button"
                     onClick={() => onAbrir(c)}
                     className="w-full rounded px-1 py-0.5 hover:bg-accent"
-                    title={`Abrir ${c.nome}`}
+                    title={
+                      c.pessoas === 0
+                        ? `Abrir ${c.nome} — ninguém foi posto neste cargo ainda. Este número conta quem recebeu o pacote, não quantas pessoas exercem a função.`
+                        : `Abrir ${c.nome} — ${c.pessoas} pessoa(s) receberam este pacote.`
+                    }
                   >
                     <span className="block font-semibold">{c.nome}</span>
-                    {/* O número de pessoas é o que a print do CORE mostra, e é
-                        honesto aqui: hoje quase ninguém tem cargo, e o "0
-                        pessoas" diz isso sem precisar de aviso. */}
+                    {/*
+                      "0 pessoas" embaixo de um cargo chamado "Corretor", numa
+                      casa com 112 corretores, lê-se como defeito — e o chefe
+                      perguntou duas vezes. O número está certo: ele conta quem
+                      foi POSTO neste pacote, não quantas pessoas exercem a
+                      função. Eu tinha escrito aqui que "o 0 diz isso sem
+                      precisar de aviso". Não dizia.
+                    */}
                     <span className="block text-[10px] font-normal text-muted-foreground">
-                      {c.pessoas} {c.pessoas === 1 ? 'pessoa' : 'pessoas'}
+                      {c.pessoas === 0
+                        ? 'ninguém neste cargo'
+                        : `${c.pessoas} ${c.pessoas === 1 ? 'pessoa' : 'pessoas'}`}
                     </span>
                   </button>
                 </th>

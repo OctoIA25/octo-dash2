@@ -155,9 +155,9 @@ describe('a célula do quadro dá e tira permissão', () => {
 
   it('clicar no nome do cargo continua abrindo o editor, e não marca nada', async () => {
     abrir();
-    await waitFor(() => expect(screen.getByTitle('Abrir Corretor')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTitle(/^Abrir Corretor/)).toBeInTheDocument());
 
-    fireEvent.click(screen.getByTitle('Abrir Corretor'));
+    fireEvent.click(screen.getByTitle(/^Abrir Corretor/));
     expect(marcar).not.toHaveBeenCalled();
   });
 });
