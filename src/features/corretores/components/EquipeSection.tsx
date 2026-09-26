@@ -33,7 +33,10 @@ import { CorretorPainel } from '@/features/personalidade/admin/components/Corret
 import { buscarCorretorPorEmail } from '../services/buscarCorretorPorEmailService';
 import { formatCpf, formatCnpj } from '@/lib/documentoMasks';
 import { useLateralDrawer } from '@/hooks/useLateralDrawer';
-import { SidebarPermission, ATUACAO_TIPOS, ATUACAO_LABELS, atuacoesDe, comPermissoesNaoEditaveis, type AtuacaoTipo } from '@/types/permissions';
+import { SidebarPermission, ATUACAO_TIPOS, ATUACAO_LABELS, atuacoesDe, comPermissoesNaoEditaveis, permissoesDeSidebar, SIDEBAR_PERMISSIONS_EDITAVEIS, type AtuacaoTipo } from '@/types/permissions';
+import { carregarCargos, carregarCatalogo, definirCargoDoMembro } from '@/features/cargos/cargosService';
+import { excecoesQuePreservam, cargoDoMesmoNivel } from '@/features/cargos/converterParaCargo';
+import { ROTULO_DO_PAPEL, type Cargo } from '@/features/cargos/cargos';
 import { NIVEIS, nivelValido, type Nivel } from '@/features/comissionamento/commissionRules';
 import {
   DropdownMenu,
@@ -185,6 +188,25 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [editLeaderId, setEditLeaderId] = useState<string | null>(null);
+  /*
+   * P4.1 — o CARGO passa a ser o campo único desta tela (26/09/2026).
+   *
+   * Antes havia três vocabulários chamados de cargo: o rótulo do card (dois
+   * valores, fabricados na hora), o seletor de nível de acesso (três) e os
+   * cargos de verdade (seis, na tela de Cargos, sem caminho até aqui). Promover
+   * alguém exigia mexer em dois lugares, e eles podiam discordar.
+   *
+   * `editRole` continua existindo porque metade do arquivo depende dele (líder
+   * de equipe, atuação, o texto do cabeçalho) — mas ele virou DERIVADO: quem o
+   * escreve é a escolha do cargo, e não há mais seletor próprio para ele.
+   */
+  const [cargosDaCasa, setCargosDaCasa] = useState<Cargo[]>([]);
+  /** `true` = a carga falhou. Lista vazia por falha NÃO é lista vazia. */
+  const [cargosNaoCarregaram, setCargosNaoCarregaram] = useState(false);
+  const [editCargoId, setEditCargoId] = useState<string | null>(null);
+  const [permissoesAoAbrir, setPermissoesAoAbrir] = useState<string[]>([]);
+  /** código → nome legível, da MESMA fonte que a tela de Cargos mostra. */
+  const [nomeDaPermissao, setNomeDaPermissao] = useState<Record<string, string>>({});
   const [editRole, setEditRole] = useState<'admin' | 'corretor' | 'team_leader'>('corretor');
   const [editLeadsTeamIds, setEditLeadsTeamIds] = useState<string[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
@@ -234,6 +256,69 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
   useEffect(() => {
     loadTenantMembers();
   }, [loadTenantMembers]);
+
+  const loadCargos = useCallback(async () => {
+    if (!tenantId || tenantId === 'owner') return;
+    try {
+      const quadro = await carregarCargos(tenantId);
+      setCargosDaCasa(quadro?.cargos ?? []);
+      setCargosNaoCarregaram(false);
+    } catch (error) {
+      // Sem os cargos o seletor fica vazio e o modal continua salvando o
+      // resto. Derrubar a tela inteira por causa disto seria pior.
+      //
+      // Mas a tela NÃO pode dizer "nenhum cargo criado": isso é uma
+      // afirmação, e seria falsa — foi assim que a aba do Plantão dizia
+      // "ninguém esperando" sem enxergar a fila.
+      console.error('Erro ao carregar cargos:', error);
+      setCargosNaoCarregaram(true);
+    }
+  }, [tenantId]);
+
+  useEffect(() => { loadCargos(); }, [loadCargos]);
+
+  useEffect(() => {
+    // O preview mostrava o código cru ("central-leads"), que é como o
+    // programador chama a aba — não como o gestor a conhece.
+    carregarCatalogo()
+      .then((cat) => setNomeDaPermissao(Object.fromEntries(cat.map((p) => [p.codigo, p.descricao]))))
+      .catch(() => { /* sem o catálogo o preview cai no código, que ainda informa */ });
+  }, []);
+
+  const cargoEscolhido = useMemo(
+    () => cargosDaCasa.find((c) => c.id === editCargoId) ?? null,
+    [cargosDaCasa, editCargoId],
+  );
+
+  /**
+   * Escolher o cargo é UMA ação: ela move o nível de acesso e as permissões
+   * juntos. Deixar as caixas como estavam faria o gestor escolher "Gerente" e
+   * a pessoa continuar com o que tinha — que é o defeito de hoje, com um
+   * seletor novo por cima.
+   */
+  const trocarCargo = useCallback((id: string) => {
+    const c = cargosDaCasa.find((x) => x.id === id);
+    if (!c) return;
+    setEditCargoId(id);
+    setEditRole(c.role);
+    setEditPermissions((atual) => {
+      const novo: Record<string, boolean> = {};
+      for (const chave of Object.keys(atual)) novo[chave] = c.permissoes.includes(chave);
+      return novo;
+    });
+  }, [cargosDaCasa]);
+
+  /** O que muda para este membro se o gestor salvar agora. */
+  const oQueMuda = useMemo(() => {
+    const agora = Object.entries(editPermissions).filter(([, v]) => v).map(([k]) => k);
+    const antes = new Set(permissoesAoAbrir);
+    const depois = new Set(agora);
+    const legivel = (c: string) => nomeDaPermissao[c] ?? c;
+    return {
+      ganha: agora.filter((p) => !antes.has(p)).map(legivel).sort(),
+      perde: permissoesAoAbrir.filter((p) => !depois.has(p)).map(legivel).sort(),
+    };
+  }, [editPermissions, permissoesAoAbrir, nomeDaPermissao]);
 
   const loadTeams = useCallback(async () => {
     if (!tenantId || tenantId === 'owner') return;
@@ -518,6 +603,15 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
     setEditingMember(member);
     setEditLeaderId(member.leader_user_id ?? null);
     setEditRole(member.role === 'owner' ? 'admin' : (member.role as 'admin' | 'corretor' | 'team_leader'));
+    /*
+     * Ninguém tem cargo ainda (0 de 127 em 26/09). Para o seletor não abrir
+     * vazio, ele já vem no cargo que corresponde ao nível que a pessoa tem
+     * hoje — sem gravar nada: só ao salvar é que a conversão acontece, e com
+     * as exceções que preservam o que ela vê.
+     */
+    setEditCargoId(
+      member.cargo_id ?? cargoDoMesmoNivel(cargosDaCasa, member.role)?.id ?? null,
+    );
     const ledTeamIds = teams.filter((t) => t.leader_user_ids.includes(member.user_id)).map((t) => t.id);
     setEditLeadsTeamIds(ledTeamIds);
     setCredentialsEmail(member.email || '');
@@ -561,14 +655,37 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
       'excel': member.role === 'admin'
     };
     
-    // Se tem permissões salvas, usar elas
-    if (Array.isArray(sidebarPerms) && sidebarPerms.length > 0) {
-      Object.keys(defaultPerms).forEach(key => {
-        defaultPerms[key] = sidebarPerms.includes(key);
-      });
-    }
+    /*
+     * O QUE A PESSOA VÊ HOJE — pela função que está no ar, não pela lista
+     * gravada.
+     *
+     * A diferença não é acadêmica: `permissoesDeSidebar` IGNORA a lista salva
+     * de admin e de líder de equipe e entrega o contrato inteiro da
+     * imobiliária. Um admin da Lotus tem `sidebar_permissions: ['leads']`
+     * gravado e enxerga o CRM todo.
+     *
+     * Semear as caixas pela lista gravada faria o modal mostrar uma caixa só
+     * marcada — e, ao converter para cargo, arrancar o resto. Seria
+     * exatamente o acidente que esta fatia veio impedir, cometido por ela
+     * mesma.
+     */
+    const efetivoHoje = permissoesDeSidebar({
+      isOwner: member.role === 'owner',
+      isTenantUser: !!tenantId && tenantId !== 'owner',
+      systemRole: member.role as 'admin' | 'team_leader' | 'corretor',
+      tenantAllowedFeatures: currentUser?.tenantAllowedFeatures,
+      sidebarPermissions: Array.isArray(sidebarPerms) && sidebarPerms.length > 0
+        ? comPermissoesNaoEditaveis(sidebarPerms as SidebarPermission[], member.role)
+        : undefined,
+      permissoesDoCargo: null,
+    });
+    Object.keys(defaultPerms).forEach((key) => {
+      defaultPerms[key] = efetivoHoje.includes(key as SidebarPermission);
+    });
     
     setEditPermissions(defaultPerms);
+    // O retrato de abertura: é contra ele que o preview diz o que muda.
+    setPermissoesAoAbrir(Object.entries(defaultPerms).filter(([, v]) => v).map(([k]) => k).sort());
     
     // Sub-permissões (KPIs, OKRs, etc)
     const subPerms = currentPerms.sub_permissions || {};
@@ -729,8 +846,41 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
         }
       }
 
-      // Atualizar cargo se mudou
-      if (editRole !== editingMember.role) {
+      /*
+       * O CARGO, e o nível de acesso junto com ele — uma chamada só.
+       *
+       * `membro_definir_cargo` grava `cargo_id` E `role` na mesma transação, e
+       * já recusa os dois acidentes: rebaixar a si mesmo e deixar a casa sem
+       * administrador. Era esse o motivo de "cargo" e "nível" poderem
+       * discordar: eram duas escritas separadas.
+       *
+       * As EXCEÇÕES são o que impede a promoção de reescrever o menu da
+       * pessoa. Elas são calculadas só sobre as permissões que TÊM caixa nesta
+       * tela — 'financeiro', 'metas' e 'comunicação' não têm, e emitir
+       * `concede: false` para elas as arrancaria de quem o cargo as dá, em
+       * silêncio. Fora dessa lista, quem manda é o pacote do cargo.
+       */
+      if (editCargoId && tenantId && tenantId !== 'owner') {
+        const temCaixa = (c: string) => (SIDEBAR_PERMISSIONS_EDITAVEIS as string[]).includes(c);
+        const desejado = Object.entries(editPermissions)
+          .filter(([codigo, marcado]) => marcado && temCaixa(codigo))
+          .map(([codigo]) => codigo);
+        const pacote = (cargosDaCasa.find((c) => c.id === editCargoId)?.permissoes ?? [])
+          .filter(temCaixa);
+
+        try {
+          await definirCargoDoMembro(
+            tenantId,
+            editingMember.user_id,
+            editCargoId,
+            excecoesQuePreservam(desejado as SidebarPermission[], pacote),
+          );
+        } catch (erroCargo) {
+          toast.error(erroCargo instanceof Error ? erroCargo.message : 'Erro ao salvar cargo');
+          return;
+        }
+      } else if (editRole !== editingMember.role) {
+        // Sem cargos cadastrados a casa segue no caminho antigo, pelo nível.
         const roleResult = await updateMemberRole(editingMember.id, editRole);
         if (!roleResult.success) {
           toast.error(roleResult.error || 'Erro ao salvar cargo');
@@ -842,7 +992,15 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
         cor,
         status: 'online', // Membros do banco são considerados ativos
         equipe: member.role === 'admin' ? 'Gestão' : 'Vendas',
-        cargo: member.role === 'admin' ? 'Admin' : 'Corretor',
+        /*
+         * O rótulo vinha de um ternário de dois valores, e por isso os 5
+         * líderes de equipe apareciam como "Corretor" — o líder não existia
+         * nesta lista. Agora vem do cargo quando a pessoa tem um, e do nível
+         * de acesso quando não tem, que é o caso de todo mundo hoje.
+         */
+        cargo: cargosDaCasa.find((c) => c.id === member.cargo_id)?.nome
+          ?? ROTULO_DO_PAPEL[(member.role === 'owner' ? 'admin' : member.role) as Cargo['role']]
+          ?? 'Corretor',
         totalLeads: 0,
         leadsAtivos: 0,
         taxaConversao: 0,
@@ -921,6 +1079,13 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
 
     return filtered;
   }, [membrosEquipe, searchTerm, statusFilter, equipeFilter, cargoFilter, sortBy]);
+
+  /** Os rótulos que de fato aparecem nos cards — o filtro não oferece vazio. */
+  const rotulosDeCargoEmUso = useMemo(
+    () => [...new Set(membrosEquipe.map((m) => m.cargo).filter(Boolean))].sort(),
+    [membrosEquipe],
+  );
+
 
 
   return (
@@ -1220,9 +1385,12 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="todos">Todos os Cargos</SelectItem>
-                <SelectItem value="Corretor">Corretor</SelectItem>
-                <SelectItem value="Gerente">Gerente</SelectItem>
-                <SelectItem value="Admin">Admin</SelectItem>
+                {/* Vinha de uma lista fixa de três, e "Gerente" NUNCA casava
+                    com ninguém: o rótulo só recebia "Admin" ou "Corretor".
+                    Agora as opções são as que existem de fato nos membros. */}
+                {rotulosDeCargoEmUso.map((r) => (
+                  <SelectItem key={r} value={r}>{r}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
 
@@ -1291,11 +1459,14 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
               const isPaused = brokerOverride?.receives_auto_leads === false;
               const isExempt = brokerOverride?.limit_exempt === true;
 
-              const roleLabel =
-                tenantMember?.role === 'admin' ? 'Admin' :
-                tenantMember?.role === 'team_leader' ? 'Gestor' :
-                tenantMember?.role === 'owner' ? 'Owner' :
-                'Corretor';
+              /*
+               * O rótulo do card era um QUARTO vocabulário — "Admin / Gestor /
+               * Owner / Corretor" — calculado aqui dentro, diferente do filtro
+               * logo acima ("Admin / Gerente / Corretor") e dos seis cargos de
+               * verdade. Agora é o MESMO campo que o filtro usa: sem isso,
+               * filtrar por um rótulo não acha o card que o mostra.
+               */
+              const roleLabel = membro.cargo;
 
               const handleMemberClick = () => {
                 if (tenantMember) {
@@ -2049,19 +2220,62 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                 <span className="text-sm font-medium text-gray-700 dark:text-slate-300">Cargo do membro</span>
               </div>
               <Select
-                value={editRole}
-                onValueChange={(v) => setEditRole(v as 'admin' | 'corretor' | 'team_leader')}
-                disabled={isSavingPermissions || editingMember?.role === 'owner'}
+                value={editCargoId ?? ''}
+                onValueChange={trocarCargo}
+                disabled={isSavingPermissions || editingMember?.role === 'owner' || cargosDaCasa.length === 0}
               >
                 <SelectTrigger className="h-9">
-                  <SelectValue />
+                  <SelectValue placeholder={cargosNaoCarregaram ? 'Cargos não carregaram' : cargosDaCasa.length === 0 ? 'Nenhum cargo criado ainda' : 'Escolha o cargo'} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="corretor">Corretor</SelectItem>
-                  <SelectItem value="team_leader">Líder de Equipe (Gestor)</SelectItem>
-                  <SelectItem value="admin">Administrador</SelectItem>
+                  {[...cargosDaCasa]
+                    .sort((a, b) => b.nivel_acesso - a.nivel_acesso)
+                    .map((c) => (
+                      <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
+
+              {/* O nível de acesso deixou de ser um campo: ele vem do cargo.
+                  Continua VISÍVEL porque é o que o banco lê para liberar ou
+                  barrar, e quem promove precisa saber o que está entregando. */}
+              {cargoEscolhido && (
+                <p className="mt-2 text-xs text-gray-600 dark:text-slate-400">
+                  Dá acesso de <strong>{ROTULO_DO_PAPEL[cargoEscolhido.role]}</strong>
+                  {cargoEscolhido.role !== 'corretor' && ' — alcança dados de toda a equipe.'}
+                </p>
+              )}
+              {cargosDaCasa.length === 0 && !cargosNaoCarregaram && (
+                <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+                  Esta imobiliária ainda não tem cargos. Crie-os em Cargos para poder promover por aqui.
+                </p>
+              )}
+              {cargosNaoCarregaram && (
+                <p className="mt-2 text-xs text-red-600 dark:text-red-400">
+                  Não foi possível carregar os cargos agora — isto não quer dizer que não existam.
+                  Recarregue a página; o resto do formulário continua salvando.
+                </p>
+              )}
+
+              {/* O que a troca faz, ANTES de salvar. Sem isto o gestor acha que
+                  está só promovendo e reescreve o menu da pessoa de quebra —
+                  é o motivo de esta fatia existir. */}
+              {(oQueMuda.ganha.length > 0 || oQueMuda.perde.length > 0) && (
+                <div className="mt-3 rounded-md border border-blue-200 dark:border-blue-900 bg-blue-50 dark:bg-blue-950/40 p-3 text-xs">
+                  <p className="font-medium text-blue-900 dark:text-blue-200 mb-1">Ao salvar, para este membro:</p>
+                  {oQueMuda.ganha.length > 0 && (
+                    <p className="text-emerald-700 dark:text-emerald-400">+ ganha {oQueMuda.ganha.join(', ')}</p>
+                  )}
+                  {oQueMuda.perde.length > 0 && (
+                    <p className="text-red-700 dark:text-red-400">− perde {oQueMuda.perde.join(', ')}</p>
+                  )}
+                </div>
+              )}
+              {editCargoId && oQueMuda.ganha.length === 0 && oQueMuda.perde.length === 0 && (
+                <p className="mt-3 text-xs text-gray-500 dark:text-slate-400">
+                  Nada muda no que este membro enxerga.
+                </p>
+              )}
 
               {editRole !== 'corretor' && (
                 <div className="mt-4">
