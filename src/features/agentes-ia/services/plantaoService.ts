@@ -116,6 +116,38 @@ export async function salvarNaBase(
   return (data as ResultadoDeSalvar) ?? { ok: false, motivo: 'sem_resposta' };
 }
 
+/**
+ * Responder uma pergunta do plantão PELA DASH.
+ *
+ * Até 26/09 não existia: a tela mostrava a pergunta e não havia como
+ * responder — quem respondia era o corretor no WhatsApp. A LIA pediu o evento
+ * `plantao.respondida` com `origem: "dash"`, e o evento não tinha fonte.
+ *
+ * A RPC grava a resposta E enfileira o aviso na MESMA transação: se saísse de
+ * fora, uma falha no meio deixaria a pergunta respondida na tela e o lead sem
+ * resposta nenhuma.
+ */
+export interface ResultadoDeResponder {
+  ok: boolean;
+  motivo?: 'pergunta_nao_encontrada' | 'sem_acesso' | 'resposta_vazia' | 'ja_respondida';
+  /** Quando `ja_respondida`: o que já estava lá, para a tela poder mostrar. */
+  resposta?: string;
+  respondida_em?: string;
+  por?: string;
+}
+
+export async function responderPergunta(
+  perguntaId: string,
+  resposta: string,
+): Promise<ResultadoDeResponder> {
+  const { data, error } = await supabase.rpc('plantao_responder', {
+    p_pergunta_id: perguntaId,
+    p_resposta: resposta,
+  });
+  if (error) throw error;
+  return (data as ResultadoDeResponder) ?? { ok: false, motivo: 'sem_acesso' };
+}
+
 export interface ConfigDoPlantao {
   espera_maxima_minutos: number;
   destino: DestinoDoPlantao;

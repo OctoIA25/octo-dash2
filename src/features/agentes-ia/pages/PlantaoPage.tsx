@@ -23,13 +23,14 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BookPlus, Clock, Loader2, MessageSquare, RefreshCw, Sparkles } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { Input } from '@/components/ui/input';
 import {
-  carregarFila, salvarNaBase, type AbaDoPlantao, type FilaDoPlantao,
+  carregarFila, responderPergunta, salvarNaBase,
+  type AbaDoPlantao, type FilaDoPlantao,
 } from '../services/plantaoService';
 import {
   agruparPorTema, esperaDe, quemRecebeu, tempoDeResposta,
@@ -236,6 +237,7 @@ function ListaAguardando({ fila, agora }: { fila: FilaDoPlantao; agora: number }
                 {p.nudges > 0 && ` · ${p.nudges} lembrete${p.nudges > 1 ? 's' : ''}`}
                 {p.empreendimento_nome && ` · ${p.empreendimento_nome}`}
               </p>
+              <ResponderAqui perguntaId={p.id} />
             </li>
           );
         })}
@@ -433,6 +435,102 @@ function DialogoSalvarNaBase({
             Salvar
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Responder a pergunta sem sair da fila.
+ *
+ * Até 26/09 a tela mostrava o que a LIA não soube responder e não havia
+ * NADA a fazer com aquilo: quem respondia era o corretor, no WhatsApp. O
+ * gestor que estava olhando a fila e sabia a resposta não tinha por onde.
+ *
+ * Ao gravar, a LIA recebe `plantao.respondida` e leva a resposta ao lead na
+ * voz dela — é o que fecha o ciclo que o P2.4 desenhou.
+ */
+function ResponderAqui({ perguntaId }: { perguntaId: string }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const [aberto, setAberto] = useState(false);
+  const [texto, setTexto] = useState('');
+
+  const responder = useMutation({
+    mutationFn: () => responderPergunta(perguntaId, texto),
+    onSuccess: (r) => {
+      if (r.ok) {
+        toast({ title: 'Respondida', description: 'A LIA leva a resposta ao lead.' });
+        setAberto(false);
+        setTexto('');
+        qc.invalidateQueries({ queryKey: ['plantao'] });
+        return;
+      }
+      /*
+       * "Já respondida" não é erro do usuário: é outro gestor que chegou
+       * antes, e o caso é comum. Mostra o que já foi dito em vez de um erro
+       * seco, senão a pessoa reescreve a mesma coisa.
+       */
+      if (r.motivo === 'ja_respondida') {
+        toast({
+          title: 'Outra pessoa já respondeu',
+          description: r.resposta ?? '',
+        });
+        setAberto(false);
+        qc.invalidateQueries({ queryKey: ['plantao'] });
+        return;
+      }
+      toast({
+        title: 'Não deu para responder',
+        description:
+          r.motivo === 'resposta_vazia' ? 'Escreva a resposta antes de enviar.'
+          : r.motivo === 'sem_acesso'   ? 'Você não tem acesso a esta pergunta.'
+          : 'Tente de novo.',
+        variant: 'destructive',
+      });
+    },
+    onError: () =>
+      toast({ title: 'Não deu para responder', description: 'Tente de novo.', variant: 'destructive' }),
+  });
+
+  if (!aberto) {
+    return (
+      <button
+        type="button"
+        onClick={() => setAberto(true)}
+        className="mt-2 text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
+      >
+        Responder
+      </button>
+    );
+  }
+
+  return (
+    <div className="mt-2 space-y-2">
+      <textarea
+        value={texto}
+        onChange={(e) => setTexto(e.target.value)}
+        rows={2}
+        autoFocus
+        placeholder="O que responder ao lead?"
+        className="w-full rounded-md border bg-background p-2 text-sm"
+      />
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => responder.mutate()}
+          disabled={responder.isPending || !texto.trim()}
+          className="h-8 rounded-md bg-blue-600 px-3 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+        >
+          {responder.isPending ? 'Enviando…' : 'Enviar ao lead'}
+        </button>
+        <button
+          type="button"
+          onClick={() => { setAberto(false); setTexto(''); }}
+          className="h-8 rounded-md border px-3 text-xs hover:bg-accent"
+        >
+          Cancelar
+        </button>
       </div>
     </div>
   );
