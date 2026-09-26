@@ -10,6 +10,7 @@ import { ChevronDown, MoreHorizontal } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { fetchTenantBolsaoConfig } from '@/features/leads/services/tenantBolsaoConfigService';
 import { useOverflowTabs } from './useOverflowTabs';
+import { abasVisiveis } from './abasVisiveis';
 import {
   BarChart3,
   MessageSquare,
@@ -20,11 +21,9 @@ import {
   TrendingUp,
   Bot,
   Pencil,
-  ClipboardList,
   Target,
   GraduationCap,
   Users,
-  Key,
   Filter,
   CheckSquare,
   Calendar,
@@ -163,19 +162,15 @@ const TAB_CONFIGS: TabConfig[] = [
     ],
   },
   {
+    // Sem abas de propósito: Tarefas, OKRs e PDI se alcançam pelo card de cada
+    // membro (EquipeSection), que já navegava para cá com `?tab=`. Duas portas
+    // para a mesma tela é o que se pediu para acabar. As rotas continuam
+    // valendo — o que sai é a barra, não o destino.
     basePath: '/gestao-equipe',
     label: 'Gestão de Equipe',
     matchStrategy: 'query',
     queryKey: 'tab',
-    tabs: [
-      { id: 'tarefas', label: 'Tarefas', icon: ClipboardList, href: '/gestao-equipe?tab=tarefas', isQuery: true },
-      // A MESMA rota que a aba de Início abre. Eram duas telas diferentes com
-      // o mesmo nome: uma funcionava, a outra dizia "Em breve".
-      { id: 'okrs', label: 'OKRs', icon: Target, href: '/okrs' },
-      { id: 'pdi', label: 'PDI', icon: GraduationCap, href: '/pdi' },
-      { id: 'equipes', label: 'Equipes', icon: Users, href: '/gestao-equipe?tab=equipes', isQuery: true },
-      { id: 'acessos-permissoes', label: 'Acessos e Permissões', icon: Key, href: '/gestao-equipe?tab=acessos-permissoes', isQuery: true },
-    ],
+    tabs: [],
   },
   {
     basePath: '/configuracoes',
@@ -300,39 +295,12 @@ export function PageTabs() {
     const baseCfg = TAB_CONFIGS.find((c) => location.pathname.startsWith(c.basePath));
     if (!baseCfg) return { activeConfig: null, activeTabId: null };
 
-    // Filtros dinâmicos: aba "Equipes" do Bolsão só com team_queue_enabled;
-    // aba "Telemetria" dos Agentes só para gestão/owner (corretor não vê
-    // custos da empresa — a rota também redireciona, isto é só UX).
-    let cfg: TabConfig = baseCfg;
-    if (baseCfg.basePath === '/bolsao') {
-      // O simulador responde "de quem seria este lead" para a equipe inteira:
-      // é ferramenta de gestão, como a Telemetria em /agentes-ia.
-      cfg = {
-        ...baseCfg,
-        tabs: baseCfg.tabs
-          .filter((t) => t.id !== 'equipes' || teamQueueEnabled)
-          .filter((t) => !['simulador', 'distribuicao'].includes(t.id) || isGestao || isOwner),
-      };
-    } else if (baseCfg.basePath === '/meus-leads') {
-      // Arquivados: decidido pelo chefe em 25/09 — "só gestor, diretor e adm
-      // podem ver". `isGestao` é exatamente esse conjunto: o papel do membro
-      // vira 'corretor' ou 'gestao', e 'gestao' cobre admin e líder de equipe.
-      //
-      // Esconder a aba é só metade: `MeusLeadsPage` também recusa o
-      // `?sub=arquivados` digitado à mão, porque menu que esconde uma tela que
-      // a rota entrega é o defeito que o P0.1 veio desfazer.
-      cfg = { ...baseCfg, tabs: baseCfg.tabs.filter((t) => t.id !== 'arquivados' || isGestao || isOwner) };
-    } else if (baseCfg.basePath === '/agentes-ia') {
-      // Plantão junto da Telemetria: a fila mostra o nome de cada lead e a
-      // resposta de cada colega da imobiliária inteira, e aprovar para a base
-      // é ato de gestão. Abrir para o corretor depois é uma linha; vazar não
-      // tem volta.
-      cfg = { ...baseCfg, tabs: baseCfg.tabs.filter((t) => !['telemetria', 'plantao', 'agenda'].includes(t.id) || isGestao || isOwner) };
-    } else if (baseCfg.basePath === '/imoveis') {
-      // Amarrar anúncio vale para os leads de todos os corretores: só gestão
-      // (a rota do servidor exige admin/líder; isto é só UX).
-      cfg = { ...baseCfg, tabs: baseCfg.tabs.filter((t) => t.id !== 'anuncios-sem-imovel' || isGestao || isOwner) };
-    }
+    // Quem enxerga qual aba está em `abasVisiveis` — é regra de permissão, e
+    // regra de permissão precisa de teste. Aqui é só UX: a trava está no banco.
+    const cfg: TabConfig = {
+      ...baseCfg,
+      tabs: abasVisiveis(baseCfg.basePath, baseCfg.tabs, { teamQueueEnabled, isGestao, isOwner }),
+    };
 
     let activeId: string | null = null;
     if (cfg.matchStrategy === 'pathSegment') {

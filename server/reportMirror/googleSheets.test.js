@@ -83,3 +83,39 @@ describe('makeSheetsClient', () => {
     await expect(client.overwriteTab({ spreadsheetId: 'S', tab: 'ESPELHO', values: [[1]] })).rejects.toThrow(/403.*PERMISSION_DENIED/s);
   });
 });
+
+/**
+ * Leitura de uma aba — usada pelo importador do ranking da planilha de
+ * comissionamento (server/rankingPlanilha). Mesmo cliente e mesma conta de
+ * serviço do espelho: o escopo de spreadsheets já cobre ler.
+ */
+describe('makeSheetsClient.readTab', () => {
+  it('lê a aba inteira e devolve as linhas', async () => {
+    const fetchImpl = vi.fn(async (url) => {
+      if (String(url).includes('oauth2.googleapis.com')) {
+        return { ok: true, json: async () => ({ access_token: 'tok-123', expires_in: 3600 }) };
+      }
+      return { ok: true, json: async () => ({ values: [['RANKING CORRETORES'], ['Fernanda', '1']] }) };
+    });
+    const client = makeSheetsClient({ email: 'sa@x.iam.gserviceaccount.com', privateKeyPem: privateKey, fetchImpl });
+
+    const linhas = await client.readTab({ spreadsheetId: 'SHEET1', tab: "RANKING 'CORRETORES'" });
+
+    expect(linhas).toEqual([['RANKING CORRETORES'], ['Fernanda', '1']]);
+    const leitura = fetchImpl.mock.calls.find(([u]) => String(u).includes('/values/'));
+    // Aspas simples dobradas no nome da aba (mesma regra do overwriteTab).
+    expect(decodeURIComponent(String(leitura[0]))).toContain("'RANKING ''CORRETORES'''");
+    // A planilha é lida como está na tela: número formatado continua texto.
+    expect(String(leitura[0])).toContain('valueRenderOption=FORMATTED_VALUE');
+  });
+
+  it('aba vazia devolve lista vazia, não quebra', async () => {
+    const fetchImpl = vi.fn(async (url) => (String(url).includes('oauth2.googleapis.com')
+      ? { ok: true, json: async () => ({ access_token: 't', expires_in: 3600 }) }
+      : { ok: true, json: async () => ({}) }));
+    const client = makeSheetsClient({ email: 'sa@x.iam.gserviceaccount.com', privateKeyPem: privateKey, fetchImpl });
+
+    expect(await client.readTab({ spreadsheetId: 'S', tab: 'RANKING' })).toEqual([]);
+  });
+});
+

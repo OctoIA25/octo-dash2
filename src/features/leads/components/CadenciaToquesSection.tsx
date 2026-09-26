@@ -102,9 +102,17 @@ interface Props {
   userId: string | undefined;
   timelineLia: CadenciaEvento[] | undefined;
   ativo: boolean;
+  /**
+   * Avisa que o toque mexeu na agenda do lead. O servidor conclui a atividade
+   * do toque anterior e cria a do próximo (`sincronizarAgendaDoToque`), e quem
+   * mostra atividades é outra seção — sem este aviso ela só veria o resultado
+   * ao remontar, que era o "fechar e abrir o lead". Vale para registrar e para
+   * desfazer, porque a atividade acompanha os dois.
+   */
+  onMudou?: () => void;
 }
 
-export const CadenciaToquesSection = ({ leadId, tenantId, userId, timelineLia, ativo }: Props) => {
+export const CadenciaToquesSection = ({ leadId, tenantId, userId, timelineLia, ativo, onMudou }: Props) => {
   const { toast } = useToast();
   const [toques, setToques] = useState<ToqueCorretor[]>([]);
   const [carregando, setCarregando] = useState(false);
@@ -177,6 +185,7 @@ export const CadenciaToquesSection = ({ leadId, tenantId, userId, timelineLia, a
       setRegistrando(false);
       setForm(FORM_VAZIO);
       toast({ title: 'Toque registrado' });
+      onMudou?.();
     } catch (e: unknown) {
       setErroForm(e instanceof Error ? e.message : 'Não foi possível registrar o toque.');
     } finally {
@@ -191,6 +200,7 @@ export const CadenciaToquesSection = ({ leadId, tenantId, userId, timelineLia, a
       await desfazerToque(leadId, tenantId, q.toque.id);
       setToques((prev) => prev.filter((t) => t.id !== q.toque?.id));
       setSelecionado(null);
+      onMudou?.();
     } catch (e: unknown) {
       toast({
         title: 'Não foi possível desfazer',
