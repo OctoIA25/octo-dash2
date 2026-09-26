@@ -2,8 +2,16 @@
  * LIA › Plantão (P2.4). Rota: /agentes-ia/plantao
  *
  * Quando a LIA não sabe responder, ela pergunta ao corretor. Isso já acontece
- * há meses — 1.540 perguntas em produção — mas só existia no WhatsApp dela: o
- * gestor não via a fila, e nada do que o corretor respondeu voltava para a base.
+ * há meses, mas só existia no WhatsApp dela: o gestor não via a fila, e nada
+ * do que o corretor respondeu voltava para a base.
+ *
+ * AS DUAS ESCALAS, medidas em 26/09 — a tela precisa servir às duas:
+ *   Japi   1.540 perguntas (jul–ago), 4 pendentes, 38 expiradas. Calada desde
+ *          27/08. É a base em que esta tela foi desenhada.
+ *   Lotus  11 perguntas (21–24/09), TODAS respondidas, nenhuma pendente. A
+ *          LIA de lá grava só ao responder, então a aba "Aguardando" fica
+ *          vazia por construção — e dizer "ninguém esperando" ali seria
+ *          afirmar o que a tela não sabe.
  *
  * As três abas são as três perguntas do gestor:
  *   Aguardando      — quem está esperando agora, e há quanto tempo
@@ -169,6 +177,36 @@ function Aviso({ texto, carregando, erro }: { texto: string; carregando?: boolea
 
 function ListaAguardando({ fila, agora }: { fila: FilaDoPlantao; agora: number }) {
   if (fila.linhas.length === 0) {
+    /*
+     * FILA VAZIA TEM DOIS MOTIVOS, E ELES SÃO OPOSTOS.
+     *
+     * Esta aba dizia sempre "Ninguém esperando". Na Lotus isso é falso: a LIA
+     * de lá só grava a pergunta QUANDO O CORRETOR RESPONDE, então nenhuma
+     * linha nasce pendente — 11 de 11 estão como respondida, zero pendente,
+     * zero expirada. A tela não vê a fila; a fila não está vazia.
+     *
+     * Medido em 26/09, e é a diferença entre "está tudo em dia" e "não temos
+     * como saber". O gestor que lê a primeira não vai atrás de nada.
+     *
+     * Reconhece pelo formato do que existe: nunca houve pendente NEM expirada,
+     * mas houve resposta. Uma casa em que a fila de fato esvaziou teria pelo
+     * menos uma expirada no histórico, ou nada nenhum.
+     */
+    const naoVeAFila =
+      fila.contadores.aguardando === 0 &&
+      fila.contadores.expiradas === 0 &&
+      fila.contadores.respondidas > 0;
+
+    if (naoVeAFila) {
+      return (
+        <Aviso texto={
+          'Esta tela não consegue mostrar quem está esperando agora. A LIA desta imobiliária ' +
+          'registra a pergunta só no momento em que o corretor responde — por isso ' +
+          `as ${fila.contadores.respondidas} do período aparecem em "Respondidas" e nenhuma passa por aqui. ` +
+          'Não quer dizer que ninguém esteja esperando.'
+        } />
+      );
+    }
     return (
       <Aviso texto="Ninguém esperando. Toda pergunta do período já foi respondida ou expirou fora dele." />
     );
@@ -231,7 +269,7 @@ function ListaRespondidas({
                 <Sparkles className="h-3 w-3" /> na base
               </span>
             ) : p.fora_do_canal ? (
-              /* 331 das 1.540 respostas reais são só o aviso de que o corretor
+              /* Na Japi, 331 das 1.540 respostas são só o aviso de que o corretor
                  falou direto com o cliente. Não há resposta para ensinar. */
               <span className="text-xs text-muted-foreground">
                 resolvida fora do canal — não há resposta para salvar
