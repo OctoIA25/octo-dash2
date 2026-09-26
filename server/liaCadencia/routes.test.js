@@ -447,10 +447,22 @@ describe('POST /api/v1/leads/:leadId/retorno', () => {
     registerLiaCadenciaRoutes(app, sb, { verbose: false });
     const res = await app.chamar('POST /api/v1/leads/:leadId/retorno', req({ cancelar: 'ag1' }));
     expect(res.statusCode).toBe(200);
-    expect(sb.chamadas.some((c) => c.insert)).toBe(false);
+    // O que este caso protege é "cancelar não cria FOLLOWUP novo". Antes ele
+    // dizia "nenhum insert", e passou a acusar quando o cancelamento começou
+    // a enfileirar o aviso à LIA em `webhook_events` — que é insert, e é o
+    // certo. A asserção larga escondia a intenção.
+    expect(sb.chamadas.some((c) => c.insert && c.tabela === 'lia_followups')).toBe(false);
     const upd = sb.chamadas.find((c) => c.update);
     expect(upd.update.status).toBe('cancelled');
     expect(upd.update.cancelled_reason).toBe('cancelado_na_dash');
+
+    // E a LIA precisa saber: sem este aviso ela dispara um retorno que alguém
+    // já desmarcou.
+    const aviso = sb.chamadas.find((c) => c.insert && c.tabela === 'webhook_events');
+    expect(aviso?.insert).toMatchObject({
+      event_type: 'followup.cancelado',
+      source_id: 'ag1',
+    });
   });
 
   /** Remarcar com os dois pendentes mandaria DUAS mensagens ao cliente. */
