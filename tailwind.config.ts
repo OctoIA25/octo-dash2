@@ -2,7 +2,22 @@ import type { Config } from "tailwindcss";
 
 export default {
   darkMode: ["class"],
-  content: ["./pages/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./app/**/*.{ts,tsx}", "./src/**/*.{ts,tsx}"],
+  /*
+   * Os TESTES ficam de fora, e não é só por velocidade.
+   *
+   * O Tailwind varre os fontes procurando classes, e qualquer `[algo:valor]`
+   * no texto vira uma propriedade arbitrária. O teste do OFX tem
+   * `20260921120000[-3` + `:BRT]` como DADO — é o formato real do arquivo do
+   * banco — e o Tailwind gerava dali uma regra inválida no CSS de produção,
+   * com um `[WARNING] Expected identifier but found "-3"` em todo build.
+   *
+   * Teste não renderiza tela, então nenhuma classe legítima se perde aqui.
+   */
+  content: [
+    "./pages/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./app/**/*.{ts,tsx}",
+    "./src/**/*.{ts,tsx}",
+    "!./src/**/*.test.{ts,tsx}", "!./src/**/__tests__/**",
+  ],
   prefix: "",
   theme: {
     container: {

@@ -13,9 +13,16 @@
  *     lido como UTF-8 o extrato vira "TRANSFERNCIA" ou "Transfer�ncia" — a
  *     descrição é o que a pessoa usa para reconhecer o lançamento.
  *
- *  3. A DATA VEM COM FUSO COLADO: `20260921120000[-3:BRT]`. Só os oito
+ *  3. A DATA VEM COM FUSO COLADO: `20260921120000` + `[-3` + `:BRT]`. Só os oito
  *     primeiros dígitos importam; o resto, lido como data, joga o movimento
  *     para o dia anterior.
+ *
+ *     O fuso está escrito PARTIDO de propósito. Junto, ele tem a cara exata
+ *     de uma propriedade arbitrária do Tailwind — que varre os fontes
+ *     procurando classes, achava isto NUM COMENTÁRIO e gerava uma regra
+ *     inválida no CSS de produção, com um `[WARNING] Expected identifier but
+ *     found "-3"` em todo build. Quem lia o log ia procurar um erro de CSS
+ *     que não existia.
  *
  *  4. O `FITID` É O QUE IMPEDE IMPORTAR DUAS VEZES. É o identificador que o
  *     banco dá a cada movimento; sem ele, reimportar o mesmo mês duplicaria o
@@ -47,7 +54,7 @@ function etiqueta(bloco: string, nome: string): string {
 }
 
 /**
- * A data do OFX: `20260921`, `20260921120000` ou `20260921120000[-3:BRT]`.
+ * A data do OFX: `20260921`, `20260921120000` ou `20260921120000` + `[-3` + `:BRT]`.
  *
  * Só os oito primeiros dígitos entram. Mandar a string inteira para o
  * construtor de data faz o fuso puxar o movimento para o dia anterior — e um
