@@ -20,14 +20,20 @@ Podem começar por qualquer um: eles não dependem entre si.
 | 7 | **Formulários da Meta** | Gravar campanha, conjunto e anúncio no lead | O custo por lead e o ROI, que hoje não têm numerador |
 | 8 | **Custo de IA** | Devolver o consumo de tokens de cada chamada | O custo por lead na Telemetria, hoje vazio |
 
-## Duas coisas que valem para todos
+## Duas coisas que valem para todas
 
 **Se a rota do Octo cair ou demorar, a Lia segue com o que ela já faz hoje.**
 Nenhum destes pedidos pode fazer a Lia parar de atender ou de distribuir.
 São consultas e registros, não autorizações.
 
-**Não mandem `tenant_id` no corpo.** Quem diz de qual imobiliária é a chamada
-é a chave de API no cabeçalho.
+**A autenticação não é a mesma em todas.** São três famílias, e cada seção diz
+a sua — confiram antes de reaproveitar código de uma noutra:
+
+| Rotas | Como autentica | Quem diz a imobiliária |
+|---|---|---|
+| `/distribuicao/*`, `/kb/*`, `/lancamentos/:id` | `Authorization: Bearer octo_...` (chave da imobiliária) | a própria chave — **não mandem `tenant_id` no corpo** |
+| `/lia/lead-events`, `/lia/cadencias` | token de serviço, o que vocês já usam | a âncora do lead (`lead_id` ou `lead_phone`) |
+| `/agent-telemetry/events` | autenticação própria | **`tenant_id` no corpo**, e o servidor confere se vocês podem |
 
 ---
 
