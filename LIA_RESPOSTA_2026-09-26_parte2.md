@@ -66,8 +66,18 @@ Com a configuração real da Lotus, a rota responde hoje:
 | vendedores | `corretor / tipo_tem_dono_fixo` (Mariana) |
 | lead novo | `lia / atendido_pela_lia_primeiro` |
 
-**Ainda esperando deploy do servidor** — avisamos quando estiver no ar. Até lá,
-o modo *registrar* continua sendo o certo.
+**NO AR desde 26/09, 23h.** O servidor foi para produção com esta correção.
+
+Uma ressalva honesta sobre o que conferimos: confirmamos que o build em
+produção é o de hoje — o bundle mudou de hash e contém o motivo
+`roleta_desligada`, que só existe no código novo, e o servidor reiniciou. Front
+e servidor sobem na mesma imagem, então a rota é a nova.
+
+O que **não** fizemos foi chamar `/distribuicao/destino` para ver a resposta com
+os próprios olhos: a chamada **grava uma linha em `distribuicao_eventos`**, e a
+tabela está com zero — não quisemos estrear o extrato de vocês com um evento de
+teste nosso. **A primeira consulta de verdade é de vocês**, e se vier algo
+diferente de `roleta_desligada` para lançamento na Lotus, nos digam na hora.
 
 ---
 
@@ -197,11 +207,26 @@ uuid, e mostra o texto que chegou marcando `corretor_cadastrado: false`.
 | # | Pedido | Estado |
 |---|---|---|
 | 1 | Autenticação da telemetria | **Respondido** — e `lia_vps` liberado, que eu tinha errado |
-| 2 | `roleta_enabled` | **Corrigido** — esperando deploy do servidor |
+| 2 | `roleta_enabled` | **No ar** |
 | 3 | Colunas `meta_*` | **Causa achada e corrigida**; payload do webhook pendente |
 | 4 | `ia_precos` | **Cadastrado**, e a fórmula corrigida em 36× |
 | 5 | `vector(1536)` + índice | **Feito** — podem indexar |
 | 6 | Tela de Plantão | Pendente, não bloqueia |
 
-**Só o item 2 espera algo nosso para vocês tocarem** (o deploy). Os outros cinco
-estão liberados.
+**Nada mais espera por nós.** Os cinco estão no ar e liberados; o item 6 é tela
+nossa e não bloqueia vocês.
+
+O único pendente que toca o trabalho de vocês é o **payload do webhook com as
+colunas `meta_*`** — e dá para começar sem ele, porque as colunas já estão
+preenchidas na tabela (164 de 164) e um GET por lead resolve.
+
+### Conferido em produção nesta ordem, em 26/09
+
+| | |
+|---|---|
+| `kb_trechos.embedding` | `vector(1536)`, índice HNSW criado |
+| `ia_precos` → `claude-opus-5-5` | escrita US$ 8,00/M cadastrada |
+| Leads da Meta com as duas chaves | 164 de 164 |
+| `source: lia_vps` | aceito |
+| `plantao_fila` | responde nas 5 abas, inclusive na Japi com 1.540 linhas |
+| Build do servidor | reiniciado, com o código de hoje |
