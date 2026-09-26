@@ -100,6 +100,18 @@ export interface PerguntaDoPlantao {
   aprovada_para_base: boolean;
   aprovada_em: string | null;
   fora_do_canal: boolean;
+  /**
+   * O que a LIA fez com a resposta que saiu DAQUI — 26/09/2026.
+   *
+   * `null` quando a resposta não veio da Dash (o corretor respondeu pelo
+   * WhatsApp): aí não há entrega nossa para relatar.
+   *
+   * A lista é aberta de propósito: se a LIA passar a devolver um desfecho
+   * novo, a tela mostra o nome cru em vez de sumir com o selo — selo ausente
+   * leria como "entregue".
+   */
+  entrega?: 'na_fila' | 'entregue' | 'ja_resolvida' | 'nao_achou' | 'falhou' | string | null;
+  entrega_detalhe?: string | null;
 }
 
 export interface GrupoDeTema {

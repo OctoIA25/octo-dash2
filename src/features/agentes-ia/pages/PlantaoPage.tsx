@@ -265,6 +265,7 @@ function ListaRespondidas({
             </span>
           </div>
           <p className="mt-1 whitespace-pre-wrap text-sm">{p.resposta}</p>
+          <SeloDeEntrega entrega={p.entrega} />
           <div className="mt-2 flex flex-wrap items-center gap-2">
             {p.aprovada_para_base ? (
               <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
@@ -533,5 +534,59 @@ function ResponderAqui({ perguntaId }: { perguntaId: string }) {
         </button>
       </div>
     </div>
+  );
+}
+
+/**
+ * O que a LIA fez com a resposta que saiu daqui.
+ *
+ * "Respondida" na Dash NÃO quer dizer entregue ao lead: a LIA sempre devolve
+ * 200 e diz o desfecho no corpo. Uma pergunta que ela devolveu como
+ * `desconhecida` ficava verde nesta tela, e o gestor ia embora achando o
+ * cliente atendido.
+ *
+ * Nulo = a resposta não saiu da Dash (veio do WhatsApp). Aí não há entrega
+ * nossa para relatar, e inventar um selo aqui seria criar dúvida onde não há.
+ */
+function SeloDeEntrega({ entrega }: { entrega?: string | null }) {
+  if (!entrega) return null;
+
+  const selos: Record<string, { texto: string; classe: string }> = {
+    entregue: {
+      texto: 'a LIA levou ao lead',
+      classe: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300',
+    },
+    na_fila: {
+      texto: 'indo para a LIA…',
+      classe: 'bg-muted text-muted-foreground',
+    },
+    ja_resolvida: {
+      texto: 'a LIA já tinha resolvido — o lead não recebeu este texto',
+      classe: 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300',
+    },
+    nao_achou: {
+      texto: 'a LIA não encontrou esta pergunta — ninguém recebeu',
+      classe: 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300',
+    },
+    falhou: {
+      texto: 'não chegou à LIA',
+      classe: 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300',
+    },
+  };
+
+  const selo = selos[entrega];
+  // Desfecho que a LIA passe a devolver e nós ainda não conheçamos: mostra o
+  // nome cru em vez de sumir. Selo ausente leria como "entregue".
+  if (!selo) {
+    return (
+      <span className="mt-1 inline-block rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+        entrega: {entrega}
+      </span>
+    );
+  }
+  return (
+    <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs ${selo.classe}`}>
+      {selo.texto}
+    </span>
   );
 }
