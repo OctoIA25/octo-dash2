@@ -58,24 +58,25 @@ BEGIN
   -- ---------- líder A ----------
   PERFORM set_config('request.jwt.claims', json_build_object('sub',u_lider_a,'role','authenticated')::text, true);
   r := public.plantao_fila(t, 'todas');
-  IF jsonb_array_length(r->'linhas') <> 2 THEN
-    RAISE EXCEPTION 'FALHOU: lider A devia ver 2 (a sua e a do corretor A), viu %', jsonb_array_length(r->'linhas'); END IF;
+  IF jsonb_array_length(r->'linhas') <> 3 THEN
+    RAISE EXCEPTION 'FALHOU: lider A devia ver 3 (a sua, a do corretor A e a sem dono), viu %', jsonb_array_length(r->'linhas'); END IF;
   IF r::text LIKE '%do corretor B%' OR r::text LIKE '%do lider B%' THEN
     RAISE EXCEPTION 'FALHOU: lider A enxergou o time B'; END IF;
-  IF r::text LIKE '%sem dono%' THEN
-    RAISE EXCEPTION 'FALHOU: lider A enxergou a pergunta sem dono'; END IF;
+  -- A decisao de 27/09: orfa nao pode se perder, entao TODO gestor ve.
+  IF r::text NOT LIKE '%sem dono%' THEN
+    RAISE EXCEPTION 'FALHOU: a pergunta sem dono sumiu para o gestor -- e ela e a que se perde'; END IF;
   IF (r->>'recorte') <> 'equipe' THEN
     RAISE EXCEPTION 'FALHOU: recorte do lider veio %', r->>'recorte'; END IF;
-  RAISE NOTICE 'OK 2: lider A ve a sua e a do seu corretor, e mais nada';
+  RAISE NOTICE 'OK 2: lider A ve a sua, a do seu corretor e a sem dono -- e nada do time B';
 
   -- ---------- os contadores usam o mesmo recorte ----------
-  IF (r->'contadores'->>'aguardando')::int <> 2 THEN
-    RAISE EXCEPTION 'FALHOU: contador diz % e a lista tem 2 -- a tela se contradiria',
+  IF (r->'contadores'->>'aguardando')::int <> 3 THEN
+    RAISE EXCEPTION 'FALHOU: contador diz % e a lista tem 3 -- a tela se contradiria',
       r->'contadores'->>'aguardando'; END IF;
-  IF (r->'contadores'->>'sem_dono_oculto')::int <> 1 THEN
-    RAISE EXCEPTION 'FALHOU: 1 sem dono foi escondida e a tela diz %',
+  IF (r->'contadores'->>'sem_dono_oculto')::int <> 0 THEN
+    RAISE EXCEPTION 'FALHOU: nada foi escondido do gestor, mas a tela diz %',
       r->'contadores'->>'sem_dono_oculto'; END IF;
-  RAISE NOTICE 'OK 3: contador bate com a lista, e a tela sabe quantas escondeu';
+  RAISE NOTICE 'OK 3: contador bate com a lista, e nada fica escondido do gestor';
 
   -- ---------- corretor ----------
   PERFORM set_config('request.jwt.claims', json_build_object('sub',u_corr_a,'role','authenticated')::text, true);
@@ -86,14 +87,20 @@ BEGIN
     RAISE EXCEPTION 'FALHOU: corretor viu a pergunta errada: %', r->'linhas'->0->>'pergunta'; END IF;
   IF (r->>'recorte') <> 'proprias' THEN
     RAISE EXCEPTION 'FALHOU: recorte do corretor veio %', r->>'recorte'; END IF;
-  RAISE NOTICE 'OK 4: corretor ve so a dele -- e nao mais que o proprio lider';
+  -- O corretor NAO herda a orfa: pergunta sem responsavel e de quem coordena.
+  IF r::text LIKE '%sem dono%' THEN
+    RAISE EXCEPTION 'FALHOU: corretor recebeu a pergunta orfa'; END IF;
+  IF (r->'contadores'->>'sem_dono_oculto')::int <> 1 THEN
+    RAISE EXCEPTION 'FALHOU: 1 orfa foi escondida do corretor e a tela diz %',
+      r->'contadores'->>'sem_dono_oculto'; END IF;
+  RAISE NOTICE 'OK 4: corretor ve so a dele, nao herda a orfa, e a tela diz que escondeu 1';
 
   -- ---------- time de vários gestores ----------
   UPDATE teams SET leader_user_ids = ARRAY[u_lider_a, u_lider_b] WHERE id = time_a;
   PERFORM set_config('request.jwt.claims', json_build_object('sub',u_lider_b,'role','authenticated')::text, true);
   r := public.plantao_fila(t, 'todas');
-  IF jsonb_array_length(r->'linhas') <> 4 THEN
-    RAISE EXCEPTION 'FALHOU: lider B virou gestor do time A e devia ver 4, viu %', jsonb_array_length(r->'linhas'); END IF;
+  IF jsonb_array_length(r->'linhas') <> 5 THEN
+    RAISE EXCEPTION 'FALHOU: lider B virou gestor do time A e devia ver 5 (as 4 com dono + a orfa), viu %', jsonb_array_length(r->'linhas'); END IF;
   RAISE NOTICE 'OK 5: o segundo gestor do time (leader_user_ids) tambem alcanca';
 
   -- ---------- de outra casa ----------

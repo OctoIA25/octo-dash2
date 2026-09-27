@@ -167,9 +167,12 @@ export function PlantaoPage() {
 /**
  * Até onde esta pessoa enxerga, e o que ficou de fora.
  *
- * Sem isto a lista do líder chega curta sem explicação, e ele conclui que a
- * casa não trabalhou. O recorte vem do banco — a tela não o recalcula, para
- * não existirem duas respostas para "quem vê o quê".
+ * Sem isto a lista chega curta sem explicação, e quem lê conclui que a casa
+ * não trabalhou. O recorte vem do banco — a tela não o recalcula, para não
+ * existirem duas respostas para "quem vê o quê".
+ *
+ * `sem_dono_oculto` só é maior que zero para o CORRETOR: decisão de 27/09 —
+ * pergunta sem responsável é a que se perde, então todo gestor a vê.
  */
 function RecorteDaFila({ fila }: { fila: FilaDoPlantao }) {
   const ocultas = fila.contadores.sem_dono_oculto;
@@ -181,7 +184,8 @@ function RecorteDaFila({ fila }: { fila: FilaDoPlantao }) {
       {ocultas > 0 && (
         <>
           <strong>{ocultas}</strong> do período {ocultas === 1 ? 'ficou de fora' : 'ficaram de fora'} por não
-          ter corretor identificado — quem administra a imobiliária vê {ocultas === 1 ? 'ela' : 'elas'}.
+          ter corretor identificado — {ocultas === 1 ? 'ela é' : 'elas são'} de quem coordena, e seu gestor{' '}
+          {ocultas === 1 ? 'a vê' : 'as vê'}.
         </>
       )}
     </p>
@@ -286,7 +290,7 @@ function ListaRespondidas({
     return fila.contadores.sem_dono_oculto > 0 ? (
       <Aviso texto={
         `Nenhuma respondida que você possa ver. ${fila.contadores.sem_dono_oculto} do período ` +
-        'não têm corretor identificado, e por isso não entram no recorte da sua equipe.'
+        'não têm corretor identificado, e ficam com quem coordena a equipe.'
       } />
     ) : (
       <Aviso texto="Nenhuma pergunta respondida no período." />
