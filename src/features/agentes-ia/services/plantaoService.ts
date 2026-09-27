@@ -19,6 +19,12 @@ export interface ContadoresDoPlantao {
   na_janela: number;
   por_aprender: number;
   sem_empreendimento: number;
+  /**
+   * Perguntas do período que ficaram de fora porque não dá para dizer de
+   * quem são — `corretor_id` nulo, ou com um nome no lugar do id. Zero para
+   * quem vê a imobiliária inteira: nada lhe foi escondido.
+   */
+  sem_dono_oculto: number;
 }
 
 export interface FilaDoPlantao {
@@ -29,6 +35,9 @@ export interface FilaDoPlantao {
   /** false = ninguém configurou ainda; a tela mostra o padrão como padrão. */
   configurado: boolean;
   dias: number;
+  /** Até onde a pessoa enxerga. A tela diz isso em vez de deixar a lista curta sem explicação. */
+  recorte: 'imobiliaria' | 'equipe' | 'proprias';
+  ve_tudo: boolean;
   contadores: ContadoresDoPlantao;
   linhas: PerguntaDoPlantao[];
 }

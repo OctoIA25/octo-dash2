@@ -16,6 +16,7 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: vi.fn() }) }));
@@ -32,19 +33,23 @@ vi.mock('../services/plantaoService', async (orig) => ({
 
 import { PlantaoPage } from '../pages/PlantaoPage';
 
-const fila = (contadores: Record<string, number>) => ({
+const fila = (contadores: Record<string, number>, extra: Record<string, unknown> = {}) => ({
   aba: 'aguardando',
   espera_maxima_minutos: 30,
   destino: 'corretor_do_lead',
   plantonista_id: null,
   configurado: false,
   dias: 90,
+  recorte: 'imobiliaria',
+  ve_tudo: true,
   contadores: {
     aguardando: 0, respondidas: 0, expiradas: 0,
     na_janela: 0, por_aprender: 0, sem_empreendimento: 0,
+    sem_dono_oculto: 0,
     ...contadores,
   },
   linhas: [],
+  ...extra,
 });
 
 const abrir = () => {
@@ -96,5 +101,42 @@ describe('fila vazia tem dois motivos, e eles são opostos', () => {
     carregar.mockResolvedValue(fila({ respondidas: 11, na_janela: 11 }));
     abrir();
     expect(await screen.findByText(/as 11 do período/i)).toBeInTheDocument();
+  });
+});
+
+/*
+ * O MESMO ERRO, DO OUTRO LADO DA TELA — 27/09.
+ *
+ * Com o recorte por equipe, o líder deixa de ver a pergunta de quem não é
+ * dele. Na Lotus isso pesa: das 95 respondidas, 91 têm `corretor_id` nulo ou
+ * com um nome no lugar do id, e somem para todo mundo que não administra.
+ *
+ * Dizer "Nenhuma pergunta respondida no período" para esse líder é a mesma
+ * mentira do "Ninguém esperando": ele conclui que a casa não trabalhou.
+ */
+describe('a aba Respondidas vazia também tem dois motivos', () => {
+  /** A aba é estado da tela, não do dado: o teste tem de clicar, como o gestor. */
+  const irParaRespondidas = async () => {
+    await screen.findByRole('button', { name: /Respondidas/ });
+    await userEvent.click(screen.getByRole('button', { name: /Respondidas/ }));
+  };
+
+  it('com perguntas escondidas, a tela diz que são as que ELE pode ver', async () => {
+    carregar.mockResolvedValue(
+      fila({}, { recorte: 'equipe', ve_tudo: false,
+             contadores: { aguardando: 0, respondidas: 0, expiradas: 0, na_janela: 0,
+                           por_aprender: 0, sem_empreendimento: 0, sem_dono_oculto: 91 } })
+    );
+    abrir();
+    await irParaRespondidas();
+    expect(await screen.findByText(/não têm corretor identificado/i)).toBeInTheDocument();
+    expect(screen.queryByText('Nenhuma pergunta respondida no período.')).not.toBeInTheDocument();
+  });
+
+  it('sem nada escondido, a afirmação simples volta a ser verdadeira', async () => {
+    carregar.mockResolvedValue(fila({}));
+    abrir();
+    await irParaRespondidas();
+    expect(await screen.findByText('Nenhuma pergunta respondida no período.')).toBeInTheDocument();
   });
 });

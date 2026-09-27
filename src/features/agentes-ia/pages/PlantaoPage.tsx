@@ -128,11 +128,12 @@ export function PlantaoPage() {
 
       {fila && !isLoading && !isError && (
         <>
+          <RecorteDaFila fila={fila} />
           {aba === 'aguardando' && (
             <ListaAguardando fila={fila} agora={agora} />
           )}
           {aba === 'respondidas' && (
-            <ListaRespondidas linhas={fila.linhas} onSalvar={setSalvando} />
+            <ListaRespondidas fila={fila} onSalvar={setSalvando} />
           )}
           {aba === 'mais' && (
             <MaisPerguntadas grupos={grupos} total={fila.contadores.na_janela} onSalvar={setSalvando} />
@@ -162,6 +163,30 @@ export function PlantaoPage() {
 }
 
 // ------------------------------------------------------------
+
+/**
+ * Até onde esta pessoa enxerga, e o que ficou de fora.
+ *
+ * Sem isto a lista do líder chega curta sem explicação, e ele conclui que a
+ * casa não trabalhou. O recorte vem do banco — a tela não o recalcula, para
+ * não existirem duas respostas para "quem vê o quê".
+ */
+function RecorteDaFila({ fila }: { fila: FilaDoPlantao }) {
+  const ocultas = fila.contadores.sem_dono_oculto;
+  if (fila.recorte === 'imobiliaria' && ocultas === 0) return null;
+  return (
+    <p className="text-xs text-muted-foreground">
+      {fila.recorte === 'equipe' && 'Mostrando as suas e as da sua equipe. '}
+      {fila.recorte === 'proprias' && 'Mostrando só as suas. '}
+      {ocultas > 0 && (
+        <>
+          <strong>{ocultas}</strong> do período {ocultas === 1 ? 'ficou de fora' : 'ficaram de fora'} por não
+          ter corretor identificado — quem administra a imobiliária vê {ocultas === 1 ? 'ela' : 'elas'}.
+        </>
+      )}
+    </p>
+  );
+}
 
 function Aviso({ texto, carregando, erro }: { texto: string; carregando?: boolean; erro?: boolean }) {
   return (
@@ -247,13 +272,26 @@ function ListaAguardando({ fila, agora }: { fila: FilaDoPlantao; agora: number }
 }
 
 function ListaRespondidas({
-  linhas,
+  fila,
   onSalvar,
 }: {
-  linhas: PerguntaDoPlantao[];
+  fila: FilaDoPlantao;
   onSalvar: (p: PerguntaDoPlantao) => void;
 }) {
-  if (linhas.length === 0) return <Aviso texto="Nenhuma pergunta respondida no período." />;
+  const linhas = fila.linhas;
+  if (linhas.length === 0) {
+    // "Nenhuma" e "nenhuma que você possa ver" levam a decisões opostas. Com
+    // perguntas escondidas por falta de dono, dizer a primeira seria mentir —
+    // é o mesmo erro do "Ninguém esperando" que esta tela já corrigiu.
+    return fila.contadores.sem_dono_oculto > 0 ? (
+      <Aviso texto={
+        `Nenhuma respondida que você possa ver. ${fila.contadores.sem_dono_oculto} do período ` +
+        'não têm corretor identificado, e por isso não entram no recorte da sua equipe.'
+      } />
+    ) : (
+      <Aviso texto="Nenhuma pergunta respondida no período." />
+    );
+  }
   return (
     <ul className="space-y-2">
       {linhas.map((p) => (
