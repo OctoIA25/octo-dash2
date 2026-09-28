@@ -73,7 +73,10 @@ SET search_path TO 'public'
 AS $function$
 DECLARE
   v_caller uuid := auth.uid();
-  v_assistente uuid := public.usuario_assistente_ia(p_tenant_id);
+  -- TEXT, não uuid: `leads.assigned_agent_id` é text nesta base, e
+  -- comparar text com uuid só estoura em tempo de EXECUÇÃO — a migration
+  -- passa e a função quebra na primeira chamada. Aconteceu em 28/09.
+  v_assistente text := public.usuario_assistente_ia(p_tenant_id)::text;
 BEGIN
   -- SECURITY DEFINER passa por cima da RLS das três tabelas de origem, então
   -- o escopo de imobiliária é checado aqui, à mão.
@@ -95,10 +98,12 @@ BEGIN
   WITH alvo AS (
     SELECT DISTINCT unnest(p_lead_ids) AS lid
   ),
-  -- Quem é a dona do lead. `v_assistente` nulo (casa sem assistente) nunca
-  -- casa, e a coluna sai falsa — que é o comportamento de antes desta mudança.
+  -- Quem é a dona do lead. `assigned_agent_id` é TEXT nesta tabela.
+  -- `v_assistente` nulo (casa sem assistente) nunca casa, e a coluna sai
+  -- falsa — que é o comportamento de antes desta mudança.
   dona AS (
-    SELECT l.id::text AS lid, (l.assigned_agent_id = v_assistente) AS e_a_lia
+    SELECT l.id::text AS lid,
+           (lower(btrim(l.assigned_agent_id)) = v_assistente) AS e_a_lia
     FROM leads l JOIN alvo a ON a.lid = l.id::text
     WHERE l.tenant_id = p_tenant_id
   ),
@@ -205,7 +210,7 @@ BEGIN
   v_novo := replace(
     v_def,
     v_ancora,
-    'WHEN b.assigned_agent_id = public.usuario_assistente_ia(p_tenant_id) THEN ''com_lia''' || chr(10) ||
+    'WHEN lower(btrim(b.assigned_agent_id)) = public.usuario_assistente_ia(p_tenant_id)::text THEN ''com_lia''' || chr(10) ||
     '        ' || v_ancora
   );
 
