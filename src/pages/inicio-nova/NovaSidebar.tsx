@@ -407,10 +407,24 @@ export function NovaSidebar() {
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
+  /**
+   * Clicar no item ABRE A TELA DELE, tendo filhos ou não.
+   *
+   * Até 28/09/2026 um item com filhos só expandia e voltava (`return` antes do
+   * `navigate`). Imóveis e Marketing não sofriam porque o primeiro filho leva
+   * à mesma tela do pai — o menu parecia funcionar por coincidência.
+   *
+   * Configurações é o único cujo filho vai para OUTRO lugar (`/cargos`), e por
+   * isso a tela `/configuracoes` ficou inalcançável pelo menu: clicar abria
+   * uma lista com "Cargos" e nada mais. Quem só usa o menu não tinha como
+   * chegar em Perfil, Aparência, Score, Plantão da LIA nem nas outras onze.
+   *
+   * Expandir continua acontecendo junto: navegar e mostrar o que há dentro não
+   * são coisas concorrentes.
+   */
   const handleItemClick = (item: SidebarItem) => {
     if (item.subItems && item.subItems.length > 0 && !isSearching) {
       toggleExpanded(item.id);
-      return;
     }
     navigate(item.route);
     setQuery('');
