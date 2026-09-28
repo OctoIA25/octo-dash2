@@ -33,7 +33,6 @@ import {
   Calculator,
   Receipt,
   Wallet,
-  Shield,
   BookOpen,
   NotebookPen,
   HelpCircle,
@@ -240,24 +239,10 @@ const GROUPS: SidebarGroup[] = [
       // P4.9 — Ajuda. Permissão 'leads' de propósito: uma ajuda que só quem
       // administra lê não ajuda ninguém.
       { id: 'ajuda', label: 'Ajuda', icon: HelpCircle, route: '/ajuda', permission: 'leads' },
-      {
-        id: 'configuracoes', label: 'Configurações', icon: Settings, route: '/configuracoes', permission: 'leads',
-        // P4.1 — Cargos morava em EQUIPE, ao lado de Gestão de Equipe. Mudou
-        // para cá em 24/09/2026 a pedido do chefe: "este item, ideal manter em
-        // configurações".
-        //
-        // A ROTA CONTINUA `/cargos`. Mover o item de menu é mudança de lugar,
-        // não de endereço — trocar a rota quebraria todo link que alguém já
-        // tenha salvo, e ninguém receberia erro: cairia no redirecionamento
-        // padrão, que parece "não tenho acesso".
-        //
-        // A permissão continua `gestao-equipe`, e não a de Configurações
-        // (`leads`, que todo mundo tem): quem monta cargo decide o acesso dos
-        // outros. Ficar dentro de Configurações não pode afrouxar isso.
-        subItems: [
-          { id: 'cargos', label: 'Cargos', icon: Shield, route: '/cargos', permission: 'gestao-equipe' },
-        ],
-      },
+      // P4.1 — Cargos é uma ABA dentro da tela de Configurações, não um
+      // sub-item daqui: com sub-item, clicar em Configurações só abria um
+      // menu e a tela nunca abria. `/cargos` redireciona para a aba.
+      { id: 'configuracoes', label: 'Configurações', icon: Settings, route: '/configuracoes', permission: 'leads' },
     ],
   },
 ];

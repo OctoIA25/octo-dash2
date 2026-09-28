@@ -4,8 +4,11 @@
  */
 
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { useAuthContext } from '@/contexts/AuthContext';
+import { permissoesDeSidebar } from '@/types/permissions';
+import { CargosPage } from '@/features/cargos/CargosPage';
 import { useToast } from '@/hooks/use-toast';
 import { useTheme } from '@/hooks/useTheme';
 import { Button } from '@/components/ui/button';
@@ -96,11 +99,26 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
   // cinco líderes de equipe da base perdiam onze blocos desta tela por causa
   // disso — e a divergência não aparecia em teste nenhum, porque cada lado
   // estava certo sozinho.
-  const { user, isGestao, isLoading: carregandoPermissao } = useAuthContext();
+  const { user, isGestao, isOwner, tenantId, isLoading: carregandoPermissao } = useAuthContext();
   const { toast } = useToast();
   const { currentTheme, changeTheme, themes } = useTheme();
   
-  const [activeTab, setActiveTab] = useState<'perfil' | 'geral' | 'aparencia' | 'agentes-ia' | 'usuarios' | 'bolsao' | 'limite-leads' | 'etapas' | 'score' | 'plantao' | 'agenda-lia' | 'precos-ia' | 'marca-dagua' | 'canais-lead' | 'recomendacoes'>('perfil');
+  const [searchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState<'perfil' | 'geral' | 'aparencia' | 'agentes-ia' | 'usuarios' | 'bolsao' | 'limite-leads' | 'etapas' | 'score' | 'plantao' | 'agenda-lia' | 'precos-ia' | 'marca-dagua' | 'canais-lead' | 'recomendacoes' | 'cargos'>(
+    () => (searchParams.get('tab') === 'cargos' ? 'cargos' : 'perfil'),
+  );
+
+  // P4.1 — Cargos segue exigindo `gestao-equipe` (a mesma regra da barra
+  // lateral), não a de Configurações, que todo mundo tem: quem monta cargo
+  // decide o acesso dos outros.
+  const podeVerCargos = permissoesDeSidebar({
+    isOwner,
+    isTenantUser: !!tenantId && tenantId !== 'owner',
+    systemRole: user?.systemRole,
+    tenantAllowedFeatures: user?.tenantAllowedFeatures,
+    sidebarPermissions: user?.sidebarPermissions,
+    permissoesDoCargo: user?.permissoesDoCargo,
+  }).includes('gestao-equipe');
   
   // Estados para os campos do perfil
   const [profileData, setProfileData] = useState({
@@ -459,12 +477,22 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
                   </button>
                 </>
               )}
+              {podeVerCargos && (
+                <button type="button" onClick={() => setActiveTab('cargos')} className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all text-left ${activeTab === 'cargos' ? 'bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'}`}>
+                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${activeTab === 'cargos' ? 'bg-amber-100 dark:bg-amber-900/60' : 'bg-slate-100 dark:bg-slate-800'}`}><Shield className={`w-3.5 h-3.5 ${activeTab === 'cargos' ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`} /></div>
+                  Cargos
+                </button>
+              )}
             </div>
           </div>
 
           {/* Content area */}
           <div className="flex-1 min-w-0">
             <div className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-6">
+          {activeTab === 'cargos' && podeVerCargos && (
+            <div className="-m-4 sm:-m-6"><CargosPage /></div>
+          )}
+
           {/* ABA PERFIL */}
           {activeTab === 'perfil' && (
             <div className="space-y-6">

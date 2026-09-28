@@ -100,9 +100,6 @@ const ConferenciaDeVendasPage = lazyWithRetry(() => import('@/features/comercial
 // P4.5 — o Financeiro fase 1.
 const FinanceiroPage = lazyWithRetry(() => import('@/features/financeiro/FinanceiroPage').then(m => ({ default: m.FinanceiroPage })));
 
-// P4.1 — cargos com pacote de permissões.
-const CargosPage = lazyWithRetry(() => import('@/features/cargos/CargosPage').then(m => ({ default: m.CargosPage })));
-
 // P4.2 — materiais de estudo.
 const MateriaisPage = lazyWithRetry(() => import('@/features/materiais/MateriaisPage').then(m => ({ default: m.MateriaisPage })));
 const ReunioesPage = lazyWithRetry(() => import('@/features/atas/ReunioesPage').then(m => ({ default: m.ReunioesPage })));
@@ -315,7 +312,8 @@ const DashboardLayout = () => {
             path="financeiro"
             element={canAccess('financeiro') ? <FinanceiroPage /> : <Navigate to={defaultAllowedRoute} replace />}
           />
-          <Route path="cargos" element={<CargosPage />} />
+          {/* Cargos virou aba de Configurações; o endereço antigo continua valendo. */}
+          <Route path="cargos" element={<Navigate to="/configuracoes?tab=cargos" replace />} />
           <Route path="materiais" element={<MateriaisPage />} />
           <Route path="reunioes" element={<ReunioesPage />} />
           <Route path="ajuda" element={<AjudaPage />} />

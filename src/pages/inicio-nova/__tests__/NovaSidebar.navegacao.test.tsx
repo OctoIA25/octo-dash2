@@ -42,25 +42,33 @@ import { NovaSidebar } from '../NovaSidebar';
 
 beforeEach(() => navigate.mockClear());
 
-describe('item com filhos também abre a própria tela', () => {
+describe('clicar no item abre a própria tela', () => {
   it('Configurações leva a /configuracoes — o caso relatado', async () => {
     render(<NovaSidebar />);
     await userEvent.click(await screen.findByText('Configurações'));
     expect(navigate).toHaveBeenCalledWith('/configuracoes');
   });
 
-  it('e ainda expande, mostrando Cargos', async () => {
+  it('e não é mais um menu expansível: Cargos virou aba da tela', async () => {
     render(<NovaSidebar />);
     await userEvent.click(await screen.findByText('Configurações'));
+    expect(screen.queryByText('Cargos')).not.toBeInTheDocument();
+  });
+
+  // A regra vale para todo pai com filhos, não só para Configurações.
+  it('pai com filhos navega E expande', async () => {
+    render(<NovaSidebar />);
+    await userEvent.click(await screen.findByText('Agentes de IA'));
+    expect(navigate).toHaveBeenCalledWith('/agentes-ia/agente-marketing');
     // Navegar e mostrar o que há dentro não são coisas concorrentes.
-    expect(await screen.findByText('Cargos')).toBeInTheDocument();
+    expect(await screen.findByText('Comunicação')).toBeInTheDocument();
   });
 
   it('o filho continua levando ao endereço dele', async () => {
     render(<NovaSidebar />);
-    await userEvent.click(await screen.findByText('Configurações'));
+    await userEvent.click(await screen.findByText('Agentes de IA'));
     navigate.mockClear();
-    await userEvent.click(await screen.findByText('Cargos'));
-    expect(navigate).toHaveBeenCalledWith('/cargos');
+    await userEvent.click(await screen.findByText('Comunicação'));
+    expect(navigate).toHaveBeenCalledWith('/comunicacao/disparador');
   });
 });
