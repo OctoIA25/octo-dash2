@@ -79,3 +79,48 @@ describe('o selo no card', () => {
     }
   });
 });
+
+/*
+ * A DONA É A PRÓPRIA LIA — pedido da equipe da LIA em 28/09/2026.
+ *
+ * Desde 17/09 todo lead novo da Lotus nasce com a conta da Lia como dona no
+ * CRM. Medido em produção: 77 leads ativos assim, todos mostrando "Com o
+ * corretor" com o nome "Lia" embaixo, e contados como atendidos por gente no
+ * gráfico por equipe.
+ */
+describe('quando a dona do lead é a própria Lia', () => {
+  it('vence o "tem corretor" — é o caso dos 77 cards', () => {
+    expect(subStatusDoLead('Lia', false, true, true)).toBe('com_lia');
+  });
+
+  /*
+   * O CASO QUE SUSTENTA O ARQUIVO. 76 dos 77 já têm `lia.lead_distribuido`
+   * ("a Lia atribuiu o lead à Lia"), que a regra lê como "a Lia passou".
+   * Sem a pergunta ZERO eles cairiam em "Aguardando corretor" — e o gestor
+   * iria cobrar uma entrega que não é devida.
+   */
+  it('vence também o "a Lia passou", que é o caso de 76 dos 77', () => {
+    expect(subStatusDoLead('Lia', true, true, true)).toBe('com_lia');
+  });
+
+  it('o selo aparece no card — "Com o corretor" é o único que não ganha selo', () => {
+    const selo = seloDeSubStatus('Lia', true, true, true);
+    expect(selo?.estado).toBe('com_lia');
+    expect(selo?.texto).toBe('Com a Lia');
+  });
+
+  it('sem a marca, nada muda: corretor de verdade segue com o lead', () => {
+    expect(subStatusDoLead('Mariana Mamede', true, true, false)).toBe('com_corretor');
+    // Ausente é o mesmo que falso: casa sem assistente cadastrado.
+    expect(subStatusDoLead('Mariana Mamede', true, true)).toBe('com_corretor');
+  });
+
+  /*
+   * A tela NÃO decide quem é a Lia. Se um dia alguém tentar por nome, este
+   * caso quebra: é a mesma confusão de identidade do P0.2, onde a mesma
+   * pessoa aparecia como texto em quatro grafias.
+   */
+  it('não é pelo nome: uma corretora chamada Lia continua sendo corretora', () => {
+    expect(subStatusDoLead('Lia', false, false, false)).toBe('com_corretor');
+  });
+});

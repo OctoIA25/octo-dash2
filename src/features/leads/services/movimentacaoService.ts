@@ -19,6 +19,11 @@ export interface Movimentacao {
   liaPassou: boolean;
   /** A Lia encostou no lead alguma vez. */
   liaAtendeu: boolean;
+  /**
+   * A DONA do lead é a própria Lia — o estado em que todo lead novo da Lotus
+   * nasce desde 17/09. Quem decide é `usuario_assistente_ia()` no banco.
+   */
+  donaEhLia: boolean;
 }
 
 /** Leads por chamada. O array vai na URL do PostgREST, que tem limite de tamanho. */
@@ -53,6 +58,7 @@ export async function buscarUltimaMovimentacao(
     type Linha = {
       lead_id: string; ultima: string | null; fonte: string | null;
       lia_passou: boolean | null; lia_atendeu: boolean | null;
+      dona_lia: boolean | null;
     };
     for (const linha of (data ?? []) as Linha[]) {
       // A linha entra mesmo sem data: o estado do handoff é um fato à parte,
@@ -64,6 +70,7 @@ export async function buscarUltimaMovimentacao(
           fonte: linha.fonte ?? null,
           liaPassou: linha.lia_passou === true,
           liaAtendeu: linha.lia_atendeu === true,
+          donaEhLia: linha.dona_lia === true,
         };
       }
     }

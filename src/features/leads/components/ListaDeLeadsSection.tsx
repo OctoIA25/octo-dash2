@@ -212,7 +212,7 @@ export function ListaDeLeadsSection() {
                 {dados.linhas.map((l) => {
                   const mv = movimentacoes[l.id];
                   const parado = seloDeParado(mv?.ultima ?? l.ultima_movimentacao, mv?.fonte);
-                  const bola = seloDeSubStatus(l.corretor, mv?.liaPassou, mv?.liaAtendeu);
+                  const bola = seloDeSubStatus(l.corretor, mv?.liaPassou, mv?.liaAtendeu, mv?.donaEhLia);
                   const sn = sinais[l.id];
                   const av = sn
                     ? calcularScore(

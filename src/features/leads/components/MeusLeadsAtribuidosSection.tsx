@@ -372,7 +372,7 @@ export const KanbanCardContent = memo(({ lead, onClick, mostrarCorretor, isOverl
   // De quem é a bola. "Com o corretor" não desenha nada: o nome do corretor
   // já está no rodapé, e repetir a mesma informação em 98% dos cards é o que
   // transforma selo em paisagem.
-  const bola = seloDeSubStatus(corretorResponsavel, movimentacao?.liaPassou, movimentacao?.liaAtendeu);
+  const bola = seloDeSubStatus(corretorResponsavel, movimentacao?.liaPassou, movimentacao?.liaAtendeu, movimentacao?.donaEhLia);
 
   // SCORE (P1.7). A temperatura sai DAQUI, e não da coluna `temperature` —
   // dois campos separados se contradizem, e foi isso que o plano mandou tirar.

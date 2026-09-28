@@ -62,12 +62,27 @@ const SELOS: Record<SubStatus, Omit<SeloDeSubStatus, 'estado'>> = {
  * A ordem das perguntas é a decisão: ter corretor vence tudo. Um lead que a
  * Lia passou E que já tem corretor está COM O CORRETOR — chamá-lo de
  * "aguardando" faria o gestor cobrar uma entrega que já aconteceu.
+ *
+ * A EXCEÇÃO, PEDIDA PELA EQUIPE DA LIA EM 28/09: quando a dona do lead é a
+ * PRÓPRIA Lia, ela vence até o "tem corretor". Desde 17/09 todo lead novo da
+ * Lotus nasce assim, e eram 77 cards dizendo "Com o corretor" com o nome
+ * "Lia" embaixo.
+ *
+ * `donaEhLia` é o ÚLTIMO argumento e a PRIMEIRA pergunta — desconfortável,
+ * e de propósito: pôr o parâmetro novo no começo trocaria a ordem em onze
+ * chamadas de teste e duas de tela, e trocar posição de booleano é como se
+ * passa o valor errado sem o compilador notar.
+ *
+ * Quem responde `donaEhLia` é o banco, por `usuario_assistente_ia()`. A tela
+ * não sabe — e não deve saber — qual conta é a da Lia.
  */
 export function subStatusDoLead(
   corretor: string | null | undefined,
   liaPassou?: boolean | null,
-  liaAtendeu?: boolean | null
+  liaAtendeu?: boolean | null,
+  donaEhLia?: boolean | null
 ): SubStatus {
+  if (donaEhLia) return 'com_lia';
   if (temCorretor(corretor)) return 'com_corretor';
   if (liaPassou) return 'aguardando_corretor';
   if (liaAtendeu) return 'com_lia';
@@ -85,9 +100,10 @@ export function subStatusDoLead(
 export function seloDeSubStatus(
   corretor: string | null | undefined,
   liaPassou?: boolean | null,
-  liaAtendeu?: boolean | null
+  liaAtendeu?: boolean | null,
+  donaEhLia?: boolean | null
 ): SeloDeSubStatus | null {
-  const estado = subStatusDoLead(corretor, liaPassou, liaAtendeu);
+  const estado = subStatusDoLead(corretor, liaPassou, liaAtendeu, donaEhLia);
   if (estado === 'com_corretor') return null;
   return { estado, ...SELOS[estado] };
 }
