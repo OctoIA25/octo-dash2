@@ -5,7 +5,7 @@
 
 import { useState, useEffect } from 'react';
 import { ProcessedLead } from '@/data/realLeadsProcessor';
-import { useAuth } from "@/hooks/useAuth";
+import { useAuthContext } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { useTheme } from '@/hooks/useTheme';
 import { Button } from '@/components/ui/button';
@@ -87,7 +87,16 @@ interface ConfiguracoesSectionProps {
 }
 
 export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
-  const { user } = useAuth();
+  // FONTE ÚNICA DA PERMISSÃO — 28/09.
+  //
+  // Esta tela lia `useAuth()`, que é uma SEGUNDA implementação de
+  // autenticação, com sua própria busca de sessão e de membership. As duas
+  // discordavam: o contexto trata admin, líder e owner como gestão
+  // (`role !== 'corretor'`), e o hook só o admin (`role === 'admin'`). Os
+  // cinco líderes de equipe da base perdiam onze blocos desta tela por causa
+  // disso — e a divergência não aparecia em teste nenhum, porque cada lado
+  // estava certo sozinho.
+  const { user, isGestao, isLoading: carregandoPermissao } = useAuthContext();
   const { toast } = useToast();
   const { currentTheme, changeTheme, themes } = useTheme();
   
@@ -400,7 +409,12 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${activeTab === 'agentes-ia' ? 'bg-indigo-100 dark:bg-indigo-900/60' : 'bg-slate-100 dark:bg-slate-800'}`}><Bot className={`w-3.5 h-3.5 ${activeTab === 'agentes-ia' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`} /></div>
                 Agentes de IA
               </button>
-              {user?.role === 'gestao' && (
+              {carregandoPermissao && (
+                <p className="px-3 py-2.5 text-[12px] text-slate-500 dark:text-slate-400">
+                  Carregando suas permissões…
+                </p>
+              )}
+              {isGestao && (
                 <>
                   <div className="mx-2 my-1.5 h-px bg-slate-100 dark:bg-slate-800" />
                   <button type="button" onClick={() => setActiveTab('limite-leads')} className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all text-left ${activeTab === 'limite-leads' ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'}`}>
@@ -797,7 +811,7 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
           )}
 
           {/* ABA LIMITE DE LEADS */}
-          {activeTab === 'score' && user?.role === 'gestao' && (
+          {activeTab === 'score' && isGestao && (
             <div className="space-y-6">
               <div className="-mx-6 -mt-6 mb-6 px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-rose-100 dark:bg-rose-900/40 flex items-center justify-center">
@@ -808,11 +822,11 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
                   <p className="text-[12px] text-slate-500 dark:text-slate-400">A tabela de pontos, visível e editável</p>
                 </div>
               </div>
-              <ScoreConfigPanel tenantId={user?.tenantId} isAdmin={user?.role === 'gestao'} />
+              <ScoreConfigPanel tenantId={user?.tenantId} isAdmin={isGestao} />
             </div>
           )}
 
-          {activeTab === 'precos-ia' && user?.role === 'gestao' && (
+          {activeTab === 'precos-ia' && isGestao && (
             <div className="space-y-6">
               <div className="-mx-6 -mt-6 mb-6 px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center">
@@ -827,7 +841,7 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
             </div>
           )}
 
-          {activeTab === 'agenda-lia' && user?.role === 'gestao' && (
+          {activeTab === 'agenda-lia' && isGestao && (
             <div className="space-y-6">
               <div className="-mx-6 -mt-6 mb-6 px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-violet-100 dark:bg-violet-900/40 flex items-center justify-center">
@@ -838,11 +852,11 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
                   <p className="text-[12px] text-slate-500 dark:text-slate-400">O horário em que ela pode falar com o cliente</p>
                 </div>
               </div>
-              <AgendaLiaConfigPanel tenantId={user?.tenantId} isAdmin={user?.role === 'gestao'} />
+              <AgendaLiaConfigPanel tenantId={user?.tenantId} isAdmin={isGestao} />
             </div>
           )}
 
-          {activeTab === 'plantao' && user?.role === 'gestao' && (
+          {activeTab === 'plantao' && isGestao && (
             <div className="space-y-6">
               <div className="-mx-6 -mt-6 mb-6 px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-violet-100 dark:bg-violet-900/40 flex items-center justify-center">
@@ -853,11 +867,11 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
                   <p className="text-[12px] text-slate-500 dark:text-slate-400">Quem recebe a pergunta, e quanto tempo pode esperar</p>
                 </div>
               </div>
-              <PlantaoConfigPanel tenantId={user?.tenantId} isAdmin={user?.role === 'gestao'} />
+              <PlantaoConfigPanel tenantId={user?.tenantId} isAdmin={isGestao} />
             </div>
           )}
 
-          {activeTab === 'etapas' && user?.role === 'gestao' && (
+          {activeTab === 'etapas' && isGestao && (
             <div className="space-y-6">
               <div className="-mx-6 -mt-6 mb-6 px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-sky-100 dark:bg-sky-900/40 flex items-center justify-center">
@@ -868,11 +882,11 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
                   <p className="text-[12px] text-slate-500 dark:text-slate-400">O quão rígido é o processo, sem mexer no código</p>
                 </div>
               </div>
-              <EtapaConfigPanel tenantId={user?.tenantId} isAdmin={user?.role === 'gestao'} />
+              <EtapaConfigPanel tenantId={user?.tenantId} isAdmin={isGestao} />
             </div>
           )}
 
-          {activeTab === 'limite-leads' && user?.role === 'gestao' && (
+          {activeTab === 'limite-leads' && isGestao && (
             <div className="space-y-6">
               <div className="-mx-6 -mt-6 mb-6 px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center">
@@ -1107,7 +1121,7 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
           )}
 
           {/* ABA CANAIS DE LEAD */}
-          {activeTab === 'canais-lead' && user?.role === 'gestao' && (
+          {activeTab === 'canais-lead' && isGestao && (
             <div>
               <div className="-mx-6 -mt-6 mb-6 px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-orange-100 dark:bg-orange-900/40 flex items-center justify-center">
