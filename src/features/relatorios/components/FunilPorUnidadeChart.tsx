@@ -33,7 +33,7 @@ import { Badge } from '@/components/ui/badge';
 import { Building2, Layers } from 'lucide-react';
 import { ImovelTipoInfo, UnidadeCategoria } from '@/features/relatorios/utils/unidadeClassifier';
 import { buildFunilPorUnidade } from '@/features/relatorios/utils/funilPorUnidade';
-import { FunnelSubSection, getFunnelStageOrder } from '@/features/leads/utils/funnelStages';
+import { FunnelSubSection, getFunnelStageOrder, rotuloDaEtapa } from '@/features/leads/utils/funnelStages';
 
 // Registro idempotente dos elementos de barra do Chart.js.
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
@@ -72,7 +72,7 @@ export const FunilPorUnidadeChart = ({
 
   const chartData = useMemo(
     () => ({
-      labels: etapas,
+      labels: etapas.map(rotuloDaEtapa),
       datasets: grupos.map((g) => ({
         label: `${g.categoria} (${g.total.toLocaleString('pt-BR')})`,
         data: g.funnel.data,

@@ -55,7 +55,6 @@ import {
   CalendarRange,
   CheckCircle2,
   Handshake,
-  FileText,
   Send,
   FileCheck,
   Filter,
@@ -159,8 +158,9 @@ const KANBAN_INTERESSADO_COLUMNS: KanbanColumnDef[] = [
   { id: 'visita-agendada',   title: 'Visita Agendada',   color: '#22c55e', icon: Calendar },
   { id: 'visita-realizada',  title: 'Visita Realizada',  color: '#16a34a', icon: CheckCircle2 },
   { id: 'negociacao',        title: 'Negociação',        color: '#f97316', icon: Handshake },
-  { id: 'proposta-criada',   title: 'Proposta Criada',   color: '#f59e0b', icon: FileText },
-  { id: 'proposta-enviada',  title: 'Proposta Enviada',  color: '#ef4444', icon: Send },
+  // "Proposta" = Proposta Criada + Enviada, juntas desde 28/09. A coluna grava
+  // 'Proposta Enviada'; o banco não mudou (ver rotuloDaEtapa em funnelStages).
+  { id: 'proposta-enviada',  title: 'Proposta',          color: '#ef4444', icon: Send },
   { id: 'proposta-assinada', title: 'Proposta Assinada', color: '#dc2626', icon: FileCheck },
 ];
 
@@ -216,7 +216,7 @@ const getLeadStatus = (lead: KanbanLead, columns: KanbanColumnDef[]): KanbanStat
   if (statusLower === 'atendido' || statusLower === 'visita-agendada') return 'visita-agendada';
   if (statusLower === 'visita-realizada') return 'visita-realizada';
   if (statusLower === 'negociacao') return 'negociacao';
-  if (statusLower === 'proposta-criada') return 'proposta-criada';
+  if (statusLower === 'proposta-criada') return 'proposta-enviada';
   if (statusLower === 'proposta-enviada') return 'proposta-enviada';
   if (statusLower === 'proposta-assinada' || statusLower === 'finalizado') return 'proposta-assinada';
 

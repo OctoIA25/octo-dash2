@@ -49,17 +49,21 @@ export const ETAPAS_DO_FUNIL_INTERESSADO = [
   'Visita Agendada',
   'Visita Realizada',
   'Negociação',
-  'Proposta Criada',
-  // 24/09 — a etapa que faltava, e a razão da contradição que o chefe viu.
-  // "Proposta Criada" NUNCA foi usada: zero leads nela hoje e zero que
-  // passaram por ela, em todas as 4 imobiliárias. Quem tem proposta na mesa
-  // está em "Proposta Enviada" (Lotus: 2 agora, 3 passaram) — e o funil não
-  // mostrava essa coluna, então a proposta aparecia assinada sem nunca ter
-  // existido. A coluna vazia fica: com "0 passaram" ao lado, ela conta a
-  // própria história, e apagá-la é decisão do chefe, não minha.
+  // 'Proposta Criada' saiu em 28/09, por decisão do chefe: nunca teve lead em
+  // nenhuma casa. Ver rotuloDaEtapa — "Proposta Enviada" aparece como "Proposta".
   'Proposta Enviada',
   'Proposta Assinada'
 ] as const;
+
+/**
+ * 28/09/2026 — "Proposta Criada" e "Proposta Enviada" viraram UMA etapa na
+ * tela, chamada "Proposta" (pedido do chefe; Criada tinha zero leads em todas
+ * as casas). SÓ A TELA mudou: o banco segue gravando 'Proposta Enviada' — é o
+ * que Kenlo, LIA, gatilhos e relatórios leem —, e um 'Proposta Criada' que
+ * ainda apareça (integração, lead antigo) é contado junto dela.
+ */
+const ROTULO_NA_TELA: Record<string, string> = { 'Proposta Enviada': 'Proposta' };
+export const rotuloDaEtapa = (etapa: string): string => ROTULO_NA_TELA[etapa] ?? etapa;
 
 /** "Não Exclusivo" → "nao-exclusivo". Tolera acento, caixa e o formato slug. */
 const slugEtapa = (valor: string | null | undefined): string =>
@@ -116,7 +120,6 @@ export function getFunnelStageOrder(subSection: FunnelSubSection): string[] {
       'Bolsão',
       'Visita Realizada',
       'Negociação',
-      'Proposta Criada',
       'Proposta Enviada',
       'Proposta Assinada',
     ];
@@ -130,7 +133,6 @@ export function getFunnelStageOrder(subSection: FunnelSubSection): string[] {
     'Visita Agendada',
     'Visita Realizada',
     'Negociação',
-    'Proposta Criada',
     'Proposta Enviada',
     'Proposta Assinada',
   ];
@@ -331,8 +333,13 @@ export function countLeadsInStage(leads: ProcessedLead[], stage: string): number
         (l) => l.etapa_atual === 'Proposta Criada' || l.etapa_atual === 'Proposta criada'
       ).length;
     case 'Proposta Enviada':
+      // Inclui 'Proposta Criada': as duas são a etapa "Proposta" (ver rotuloDaEtapa).
       return safeLeads.filter(
-        (l) => l.etapa_atual === 'Proposta Enviada' || l.etapa_atual === 'Proposta enviada'
+        (l) =>
+          l.etapa_atual === 'Proposta Enviada' ||
+          l.etapa_atual === 'Proposta enviada' ||
+          l.etapa_atual === 'Proposta Criada' ||
+          l.etapa_atual === 'Proposta criada'
       ).length;
     case 'Proposta Assinada':
       return safeLeads.filter(
@@ -468,7 +475,7 @@ export function computeFunnelStages(
   const safeLeads = leads || [];
   const totalLeads = safeLeads.length;
 
-  const labels = etapasOrdem.map((e) => e.replace('\n', ' '));
+  const labels = etapasOrdem.map((e) => rotuloDaEtapa(e.replace('\n', ' ')));
   const data = etapasOrdem.map((etapa) =>
     subSection === 'proprietario'
       ? countProprietariosInStage(safeLeads, etapa)

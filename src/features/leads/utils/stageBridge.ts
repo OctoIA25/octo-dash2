@@ -56,13 +56,14 @@ export function propostaStageToLeadStatus(
   // Interessado (lead_type=1 ou null/undefined)
   switch (stageId) {
     case 'negociacao': return 'Negociação';
-    case 'proposta-criada': return 'Proposta Criada';
+    // Criada e Enviada são a etapa "Proposta" desde 28/09: grava-se Enviada.
+    case 'proposta-criada': return 'Proposta Enviada';
     case 'proposta-enviada': return 'Proposta Enviada';
     case 'propostas-respondidas': return 'Proposta Enviada';
     case 'feitura-contrato': return 'Proposta Assinada';
     case 'proposta-assinada': return 'Proposta Assinada';
     case 'arquivado': return 'Arquivado';
-    default: return 'Proposta Criada';
+    default: return 'Proposta Enviada';
   }
 }
 
@@ -87,7 +88,7 @@ export function leadStatusToPropostaStage(
   if (normalized.includes('feitura') || normalized.includes('contrato')) return 'feitura-contrato';
   if (normalized.includes('respondid')) return 'propostas-respondidas';
   if (normalized.includes('enviad')) return 'proposta-enviada';
-  if (normalized.includes('proposta') && normalized.includes('criad')) return 'proposta-criada';
+  if (normalized.includes('proposta') && normalized.includes('criad')) return 'proposta-enviada';
   if (normalized.includes('negoci')) return 'negociacao';
   return null;
 }

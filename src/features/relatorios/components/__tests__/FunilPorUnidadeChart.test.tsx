@@ -61,8 +61,7 @@ describe('FunilPorUnidadeChart (colunas agrupadas)', () => {
       'Visita Agendada',
       'Visita Realizada',
       'Negociação',
-      'Proposta Criada',
-      'Proposta Enviada',
+      'Proposta',
       'Proposta Assinada',
     ]);
   });

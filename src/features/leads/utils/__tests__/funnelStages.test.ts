@@ -35,10 +35,10 @@ function makeLead(overrides: Partial<ProcessedLead> = {}): ProcessedLead {
 }
 
 describe('getFunnelStageOrder', () => {
-  it('retorna 4 etapas no pré-atendimento, 6 no atendimento e 9 no geral', () => {
+  it('retorna 4 etapas no pré-atendimento, 5 no atendimento e 8 no geral', () => {
     expect(getFunnelStageOrder('pre-atendimento')).toHaveLength(4);
-    expect(getFunnelStageOrder('atendimento')).toHaveLength(6);
-    expect(getFunnelStageOrder('geral')).toHaveLength(9);
+    expect(getFunnelStageOrder('atendimento')).toHaveLength(5);
+    expect(getFunnelStageOrder('geral')).toHaveLength(8);
   });
 
   it('mantém a ordem canônica do funil geral', () => {
@@ -49,7 +49,6 @@ describe('getFunnelStageOrder', () => {
       'Visita Agendada',
       'Visita Realizada',
       'Negociação',
-      'Proposta Criada',
       'Proposta Enviada',
       'Proposta Assinada',
     ]);
@@ -117,15 +116,15 @@ describe('computeFunnelStages', () => {
 
     expect(r.totalLeads).toBe(4);
     // data alinhado a labels (9 etapas)
-    expect(r.data).toHaveLength(9);
-    expect(r.labels).toHaveLength(9);
+    expect(r.data).toHaveLength(8);
+    expect(r.labels).toHaveLength(8);
     // Novos Leads = total
     expect(r.data[0]).toBe(4);
     // Em Atendimento = 1 → 25%
     expect(r.data[1]).toBe(1);
     expect(r.percentuais[1]).toBe('25.0');
     // Proposta Assinada (última etapa) = 1
-    expect(r.data[8]).toBe(1);
+    expect(r.data[7]).toBe(1);
     expect(r.propostasAssinadas).toBe(1);
   });
 

@@ -22,7 +22,7 @@ const getStageFromStatus = (
   if (value.includes('respondid')) return 'propostas-respondidas';
   if (value === 'proposta') return 'propostas-respondidas';
   if (value.includes('enviad')) return 'proposta-enviada';
-  if (value.includes('criad')) return 'proposta-criada';
+  if (value.includes('criad')) return 'proposta-enviada';
   if (value.includes('negoci')) return 'negociacao';
   return null;
 };

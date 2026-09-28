@@ -13,7 +13,10 @@
  * leads que o funil simplesmente não desenhava.
  */
 import { describe, it, expect } from 'vitest';
-import { ETAPAS_DO_FUNIL_INTERESSADO, getFunnelStageOrder } from '../../utils/funnelStages';
+import {
+  ETAPAS_DO_FUNIL_INTERESSADO, countLeadsInStage, getFunnelStageOrder, rotuloDaEtapa,
+} from '../../utils/funnelStages';
+import type { ProcessedLead } from '@/data/realLeadsProcessor';
 
 /**
  * As etapas que o quadro de Propostas sabe gravar em `leads.status` entre
@@ -22,7 +25,6 @@ import { ETAPAS_DO_FUNIL_INTERESSADO, getFunnelStageOrder } from '../../utils/fu
  * arrastaria meia aplicação para dentro do teste.
  */
 const ETAPAS_DE_PROPOSTA = [
-  'Proposta Criada',
   'Proposta Enviada',
   'Proposta Assinada',
 ];
@@ -47,10 +49,32 @@ describe('etapas do funil de Cliente Interessado', () => {
     expect(ETAPAS_DO_FUNIL_INTERESSADO[0]).toBe('Novos Leads');
     expect(ETAPAS_DO_FUNIL_INTERESSADO[ETAPAS_DO_FUNIL_INTERESSADO.length - 1]).toBe('Proposta Assinada');
 
-    // "Enviada" depois de "Criada", e as duas antes de "Assinada": a ordem é o
-    // que faz a taxa de conversão de cada etapa querer dizer alguma coisa.
+    // A ordem é o que faz a taxa de conversão de cada etapa querer dizer algo.
     const pos = (e: string) => ETAPAS_DO_FUNIL_INTERESSADO.indexOf(e as never);
-    expect(pos('Proposta Criada')).toBeLessThan(pos('Proposta Enviada'));
+    expect(pos('Negociação')).toBeLessThan(pos('Proposta Enviada'));
     expect(pos('Proposta Enviada')).toBeLessThan(pos('Proposta Assinada'));
+  });
+});
+
+// 28/09 — o chefe juntou "Proposta Criada" e "Proposta Enviada" numa etapa só.
+describe('as três etapas de proposta viram duas', () => {
+  it('"Proposta Criada" sai das listas do funil', () => {
+    expect(ETAPAS_DO_FUNIL_INTERESSADO).not.toContain('Proposta Criada');
+    expect(getFunnelStageOrder('geral')).not.toContain('Proposta Criada');
+    expect(getFunnelStageOrder('atendimento')).not.toContain('Proposta Criada');
+  });
+
+  it('mas o lead que ainda estiver nela NÃO some: conta em "Proposta"', () => {
+    const leads = [
+      { etapa_atual: 'Proposta Criada' },
+      { etapa_atual: 'Proposta Enviada' },
+    ] as unknown as ProcessedLead[];
+    expect(countLeadsInStage(leads, 'Proposta Enviada')).toBe(2);
+  });
+
+  it('"Proposta Enviada" aparece na tela como "Proposta"; o resto não muda', () => {
+    expect(rotuloDaEtapa('Proposta Enviada')).toBe('Proposta');
+    expect(rotuloDaEtapa('Proposta Assinada')).toBe('Proposta Assinada');
+    expect(rotuloDaEtapa('Negociação')).toBe('Negociação');
   });
 });

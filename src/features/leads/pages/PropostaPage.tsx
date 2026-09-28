@@ -135,18 +135,13 @@ const PROPOSAL_STAGES = [
     icon: Clock3,
     probability: 35,
   },
-  {
-    id: 'proposta-criada',
-    dbStatus: 'Proposta Criada',
-    label: 'Proposta Criada',
-    color: '#f59e0b',
-    icon: FileText,
-    probability: 50,
-  },
+  // "Proposta" = Proposta Criada + Enviada, juntas desde 28/09 por decisão do
+  // chefe (Criada nunca teve lead). O banco segue gravando 'Proposta Enviada';
+  // proposta antiga em 'proposta-criada' cai nesta coluna (ver savedProposalToUiState).
   {
     id: 'proposta-enviada',
     dbStatus: 'Proposta Enviada',
-    label: 'Proposta Enviada',
+    label: 'Proposta',
     color: '#dc2626',
     icon: Send,
     probability: 65,
@@ -332,7 +327,7 @@ const INITIAL_DRAFT_FORM: DraftFormState = {
   parceirosExternos: false,
   revisado: false,
   tipoNegocio: 'Venda',
-  stageId: 'proposta-criada',
+  stageId: 'proposta-enviada',
   compradores: [],
   vendedores: [],
   transactionDraft: {},
@@ -700,7 +695,7 @@ const getStageFromStatus = (status: string | null | undefined, finalSaleValue?: 
   if (value.includes('respondid')) return 'propostas-respondidas';
   if (value === 'proposta') return 'propostas-respondidas';
   if (value.includes('enviad')) return 'proposta-enviada';
-  if (value.includes('criad')) return 'proposta-criada';
+  if (value.includes('criad')) return 'proposta-enviada';
   if (value.includes('negoci')) return 'negociacao';
   return null;
 };
@@ -878,7 +873,8 @@ const savedHistoryToHistoryItem = (item: SavedProposalHistory): HistoryItem => (
 });
 
 const savedProposalToUiState = (saved: SavedProposal): { proposal: ProposalItem; detail: ProposalDetailState } => {
-  const stageId = isStageId(saved.stage_id) ? saved.stage_id : 'proposta-criada';
+  // Inclui a proposta antiga gravada em 'proposta-criada', etapa que saiu da tela.
+  const stageId = isStageId(saved.stage_id) ? saved.stage_id : 'proposta-enviada';
   const endereco: ProposalAddress = {
     cep: saved.cep || '',
     numero: saved.numero || '',

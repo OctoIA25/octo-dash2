@@ -8,7 +8,9 @@ export interface JuridicoKanbanColumn {
 }
 
 export const JURIDICO_KANBAN_COLUMNS: JuridicoKanbanColumn[] = [
-  { id: 'proposta-criada', title: 'PROPOSTA CRIADA', color: '#8b5cf6' },
+  // Tudo que ainda não chegou em contrato. Era "PROPOSTA CRIADA" até 28/09,
+  // quando Criada e Enviada viraram a etapa "Proposta" (o id ficou).
+  { id: 'proposta-criada', title: 'PROPOSTA', color: '#8b5cf6' },
   { id: 'feitura-contrato', title: 'FEITURA DE CONTRATO', color: '#f59e0b' },
   { id: 'em-analise-leitura', title: 'EM ANÁLISE', subtitle: 'Leitura', color: '#3b82f6' },
   { id: 'andamento', title: 'ANDAMENTO', color: '#6366f1' },

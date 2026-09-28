@@ -17,8 +17,8 @@ const FUNNEL_STAGES: { key: string; colorFrom: string; colorTo: string; textColo
   { key: 'Visita Agendada',   colorFrom: '#3B82F6', colorTo: '#2563EB', textColor: '#ffffff' },
   { key: 'Visita Realizada',  colorFrom: '#2563EB', colorTo: '#1D4ED8', textColor: '#ffffff' },
   { key: 'Negociação',        colorFrom: '#1D4ED8', colorTo: '#1E40AF', textColor: '#ffffff' },
-  { key: 'Proposta Criada',   colorFrom: '#1E40AF', colorTo: '#1e3a8a', textColor: '#ffffff' },
-  { key: 'Proposta Enviada',  colorFrom: '#1e3a8a', colorTo: '#172554', textColor: '#ffffff' },
+  // "Proposta" = Proposta Criada + Enviada, juntas desde 28/09 (ver rotuloDaEtapa).
+  { key: 'Proposta',          colorFrom: '#1E40AF', colorTo: '#172554', textColor: '#ffffff' },
   { key: 'Proposta Assinada', colorFrom: '#0D9488', colorTo: '#0F766E', textColor: '#ffffff' },
 ];
 
@@ -48,8 +48,7 @@ export const LeadsFunnelChart = ({ leads: propsLeads }: LeadsFunnelChartProps) =
       count(l => isEtapaVisitaAgendada(l.etapa_atual)),
       count(l => isEtapaVisitaRealizada(l.etapa_atual)),
       count(l => ['Negociação','Em Negociação'].includes(l.etapa_atual || '')),
-      count(l => l.etapa_atual === 'Proposta Criada'),
-      count(l => l.etapa_atual === 'Proposta Enviada'),
+      count(l => l.etapa_atual === 'Proposta Criada' || l.etapa_atual === 'Proposta Enviada'),
       count(l => ['Proposta Assinada','Fechamento','Finalizado'].includes(l.etapa_atual || '')),
     ];
 

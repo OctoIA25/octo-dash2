@@ -22,8 +22,8 @@ export interface ForecastEtapa {
  */
 export const FORECAST_ETAPAS: ForecastEtapa[] = [
   { id: 'negociacao', title: 'Negociação', color: '#64748b' },
-  { id: 'proposta-criada', title: 'Proposta Criada', color: '#8b5cf6' },
-  { id: 'proposta-enviada', title: 'Proposta Enviada', color: '#3b82f6' },
+  // "Proposta" = Criada + Enviada, juntas desde 28/09 (ver etapaDoForecast).
+  { id: 'proposta-enviada', title: 'Proposta', color: '#3b82f6' },
   { id: 'propostas-respondidas', title: 'Propostas Respondidas', color: '#6366f1' },
   { id: 'feitura-contrato', title: 'Feitura de Contrato', color: '#f59e0b' },
   { id: 'proposta-assinada', title: 'Proposta Assinada', color: '#10b981' },
@@ -36,8 +36,9 @@ export const FORECAST_ETAPAS: ForecastEtapa[] = [
  * FORECAST_ETAPAS — e nesse dia é melhor a linha mostrar o id cru do que nada.
  */
 export function etapaDoForecast(stageId: string): ForecastEtapa {
+  const id = stageId === 'proposta-criada' ? 'proposta-enviada' : stageId;
   return (
-    FORECAST_ETAPAS.find((e) => e.id === stageId) ?? {
+    FORECAST_ETAPAS.find((e) => e.id === id) ?? {
       id: stageId,
       title: stageId || '—',
       color: '#94a3b8',

@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { StandardCardTitle } from '@/components/ui/StandardCardTitle';
 import { TrendingDown, Users, Target, CheckCircle } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
-import { ETAPAS_DO_FUNIL_INTERESSADO } from '@/features/leads/utils/funnelStages';
+import { ETAPAS_DO_FUNIL_INTERESSADO, rotuloDaEtapa } from '@/features/leads/utils/funnelStages';
 import { carregarPassaramPorEtapa, type PassaramPorEtapa } from '@/features/leads/services/funilPassaramService';
 import { useAuthContext } from '@/contexts/AuthContext';
 
@@ -95,7 +95,8 @@ export const EnhancedFunnelChart = ({ leads }: EnhancedFunnelChartProps) => {
         case 'Proposta Enviada':
           return safeLeads.filter(l => {
             const etapaAtual = (l.etapa_atual || '').toLowerCase().trim();
-            return etapaAtual === 'proposta enviada' || etapaAtual === 'propostas respondidas';
+            // A etapa "Proposta" (ver rotuloDaEtapa): Criada conta junto.
+            return etapaAtual === 'proposta enviada' || etapaAtual === 'proposta criada' || etapaAtual === 'propostas respondidas';
           }).length;
 
         case 'Proposta Assinada':
@@ -122,9 +123,9 @@ export const EnhancedFunnelChart = ({ leads }: EnhancedFunnelChartProps) => {
       
       return {
         y: valorVisualFixo, // Valor SEMPRE FIXO para manter consistência visual
-        label: etapa,
+        label: rotuloDaEtapa(etapa),
         originalKey: etapa,
-        description: `${quantidade} leads em ${etapa}`,
+        description: `${quantidade} leads em ${rotuloDaEtapa(etapa)}`,
         quantidade: quantidade,
         index: index,
         percentual: totalLeads > 0 ? ((quantidade / totalLeads) * 100) : 0
@@ -137,7 +138,7 @@ export const EnhancedFunnelChart = ({ leads }: EnhancedFunnelChartProps) => {
     const visitaAgendada = calcularEtapa('Visita Agendada');
     const visitaRealizada = calcularEtapa('Visita Realizada');
     const negociacao = calcularEtapa('Negociação');
-    const propostaCriada = calcularEtapa('Proposta Criada');
+    const propostaCriada = calcularEtapa('Proposta Enviada');
     const propostaAssinada = calcularEtapa('Proposta Assinada');
     
     const metrics = {

@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { StandardCardTitle } from '@/components/ui/StandardCardTitle';
 import { TrendingUp } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
+import { rotuloDaEtapa } from '@/features/leads/utils/funnelStages';
 
 interface AtendimentoFunnelChartProps {
   leads: ProcessedLead[];
@@ -34,7 +35,6 @@ export const AtendimentoFunnelChart = ({ leads }: AtendimentoFunnelChartProps) =
       'Bolsão',
       'Visita Realizada',
       'Negociação',
-      'Proposta Criada',
       'Proposta Enviada',
       'Proposta Assinada'
     ];
@@ -76,9 +76,12 @@ export const AtendimentoFunnelChart = ({ leads }: AtendimentoFunnelChartProps) =
           ).length;
         
         case 'Proposta Enviada':
+          // A etapa "Proposta" (ver rotuloDaEtapa): Criada conta junto.
           return safeLeads.filter(l => 
             l.etapa_atual === 'Proposta Enviada' ||
-            l.etapa_atual === 'Proposta enviada'
+            l.etapa_atual === 'Proposta enviada' ||
+            l.etapa_atual === 'Proposta Criada' ||
+            l.etapa_atual === 'Proposta criada'
           ).length;
         
         case 'Proposta Assinada':
@@ -106,9 +109,9 @@ export const AtendimentoFunnelChart = ({ leads }: AtendimentoFunnelChartProps) =
       
       return {
         y: valorVisualFixo,
-        label: etapa,
+        label: rotuloDaEtapa(etapa),
         originalKey: etapa,
-        description: `${quantidade} leads em ${etapa}`,
+        description: `${quantidade} leads em ${rotuloDaEtapa(etapa)}`,
         quantidade: quantidade,
         index: index,
         percentual: totalLeads > 0 ? ((quantidade / totalLeads) * 100) : 0
@@ -119,7 +122,7 @@ export const AtendimentoFunnelChart = ({ leads }: AtendimentoFunnelChartProps) =
     const bolsao = calcularEtapa('Bolsão');
     const visitaRealizada = calcularEtapa('Visita Realizada');
     const negociacao = calcularEtapa('Negociação');
-    const propostaCriada = calcularEtapa('Proposta Criada');
+    const propostaCriada = calcularEtapa('Proposta Enviada');
     const propostaEnviada = calcularEtapa('Proposta Enviada');
     const propostaAssinada = calcularEtapa('Proposta Assinada');
     
