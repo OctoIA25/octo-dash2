@@ -1046,10 +1046,9 @@ export async function fetchImoveisDeInteresse(
   const [crm, kenlo] = await Promise.all([
     supabase
       .from(LEADS_TABLE)
-      .select('property_code,source,created_at')
+      .select('id,property_code,source,created_at')
       .eq('tenant_id', tenantId)
       .in('phone', phoneVariants)
-      .not('property_code', 'is', null)
       .order('created_at', { ascending: false })
       .limit(200),
     supabase
@@ -1065,11 +1064,26 @@ export async function fetchImoveisDeInteresse(
   if (crm.error) console.error('❌ Imóveis de interesse (leads):', crm.error);
   if (kenlo.error) console.error('❌ Imóveis de interesse (kenlo_leads):', kenlo.error);
 
+  // Os que o corretor acrescentou às mesmas fichas.
+  const idsDasFichas = (crm.data ?? []).map((r: Record<string, unknown>) => r.id as string);
+  const extras = idsDasFichas.length
+    ? await supabase
+        .from('lead_imoveis_interesse')
+        .select('codigo,criado_em')
+        .in('lead_id', idsDasFichas)
+    : { data: [], error: null };
+  if (extras.error) console.error('❌ Imóveis de interesse (lead_imoveis_interesse):', extras.error);
+
   const brutos: ImovelInteresse[] = [
     ...(crm.data ?? []).map((r: Record<string, unknown>) => ({
       codigo: String(r.property_code ?? '').trim(),
       portal: (r.source as string) || null,
       data: (r.created_at as string) || null,
+    })),
+    ...(extras.data ?? []).map((r: Record<string, unknown>) => ({
+      codigo: String(r.codigo ?? '').trim(),
+      portal: 'Corretor',
+      data: (r.criado_em as string) || null,
     })),
     ...(kenlo.data ?? []).map((r: Record<string, unknown>) => ({
       codigo: String(r.interest_reference ?? '').trim(),
@@ -1088,6 +1102,72 @@ export async function fetchImoveisDeInteresse(
   }
 
   return [...porCodigo.values()].sort((a, b) => (b.data ?? '').localeCompare(a.data ?? ''));
+}
+
+/**
+ * Imóveis a mais que o corretor pendurou no lead.
+ *
+ * O PRIMEIRO imóvel não mora aqui: é `leads.property_code` (o que integração,
+ * relatório e LIA leem). Esta lista é só o que vem depois dele — ver a
+ * migration 20260928_lead_imoveis_interesse.
+ */
+export interface ImovelExtraDoLead {
+  id: string;
+  codigo: string;
+  criadoEm: string;
+}
+
+export async function fetchImoveisExtrasDoLead(leadId: string): Promise<ImovelExtraDoLead[]> {
+  const { data, error } = await supabase
+    .from('lead_imoveis_interesse')
+    .select('id, codigo, criado_em')
+    .eq('lead_id', leadId)
+    .order('criado_em', { ascending: true });
+  if (error) throw error;
+  return (data ?? []).map((r) => ({ id: r.id, codigo: r.codigo, criadoEm: r.criado_em }));
+}
+
+/**
+ * Acrescenta um imóvel ao lead. Sem principal, o código VIRA o principal
+ * (`property_code`); com principal, entra na lista de extras.
+ *
+ * `principal` é o que está no campo "Código do Imóvel" agora — inclusive
+ * digitado e ainda não salvo, que o Salvar do modal vai gravar.
+ */
+export async function adicionarImovelAoLead(args: {
+  tenantId: string;
+  leadId: string;
+  principal: string;
+  codigo: string;
+}): Promise<'principal' | 'extra'> {
+  const codigo = args.codigo.trim().toUpperCase();
+  if (!codigo) throw new Error('Informe o código do imóvel.');
+
+  if (!args.principal.trim()) {
+    const { error } = await supabase
+      .from(LEADS_TABLE)
+      .update({ property_code: codigo })
+      .eq('id', args.leadId);
+    if (error) throw error;
+    return 'principal';
+  }
+
+  if (chaveCodigo(args.principal) === chaveCodigo(codigo)) {
+    throw new Error(`${codigo} já é o imóvel principal deste lead.`);
+  }
+  const { error } = await supabase
+    .from('lead_imoveis_interesse')
+    .insert({ tenant_id: args.tenantId, lead_id: args.leadId, codigo });
+  if (error) {
+    if (error.code === '23505') throw new Error(`${codigo} já está neste lead.`);
+    throw error;
+  }
+  return 'extra';
+}
+
+export async function removerImovelExtraDoLead(id: string): Promise<void> {
+  const { error } = await supabase.from('lead_imoveis_interesse').delete().eq('id', id);
+  if (error) throw error;
 }
 
 /** Outra ficha do mesmo contato, para o aviso de possível duplicidade. */

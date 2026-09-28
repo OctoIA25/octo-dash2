@@ -12,6 +12,7 @@ const TENANT = 'tenant-1';
 const respostas: Record<string, { data: unknown[] | null; error: unknown }> = {
   leads: { data: [], error: null },
   kenlo_leads: { data: [], error: null },
+  lead_imoveis_interesse: { data: [], error: null },
 };
 
 function builder(tabela: string) {
@@ -32,10 +33,25 @@ const carregar = async () => {
 beforeEach(() => {
   respostas.leads = { data: [], error: null };
   respostas.kenlo_leads = { data: [], error: null };
+  respostas.lead_imoveis_interesse = { data: [], error: null };
   vi.spyOn(console, 'error').mockImplementation(() => {});
 });
 
 describe('fetchImoveisDeInteresse', () => {
+  it('inclui os imóveis que o corretor acrescentou, mesmo em ficha sem property_code', async () => {
+    respostas.leads = {
+      data: [{ id: 'l1', property_code: null, source: 'Manual', created_at: '2026-03-01T10:00:00Z' }],
+      error: null,
+    };
+    respostas.lead_imoveis_interesse = {
+      data: [{ codigo: 'CA300', criado_em: '2026-09-28T10:00:00Z' }],
+      error: null,
+    };
+
+    const imoveis = await carregar();
+    expect(imoveis).toEqual([{ codigo: 'CA300', portal: 'Corretor', data: '2026-09-28T10:00:00Z' }]);
+  });
+
   it('junta as duas fontes e ordena do mais recente para o mais antigo', async () => {
     respostas.leads = {
       data: [{ property_code: 'AP100', source: 'ZAP', created_at: '2026-03-01T10:00:00Z' }],

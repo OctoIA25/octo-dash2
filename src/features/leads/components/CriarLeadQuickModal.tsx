@@ -36,6 +36,7 @@ import { CadenciaToquesSection } from './CadenciaToquesSection';
 import { AtividadesLeadSection } from './AtividadesLeadSection';
 import { useCadenciaLead } from '../hooks/useCadenciaLead';
 import { HistoricoLeadSection } from './HistoricoLeadSection';
+import { ImoveisDoLeadEditor } from './ImoveisDoLeadEditor';
 import { useHistoricoLead } from '../hooks/useHistoricoLead';
 import { fetchCatalogoImoveis } from '@/features/imoveis/services/catalogoImoveisService';
 import { ImovelDetalhesModal } from '@/components/imoveis/ImovelDetalhesModal';
@@ -207,6 +208,9 @@ export const CriarLeadQuickModal = ({
   const [destinoId, setDestinoId] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // O lead já tinha imóvel gravado (ou ganhou o primeiro agora, pela lista).
+  // Lead que tem imóvel nunca volta a ficar sem — ver handleSubmit.
+  const [tinhaImovel, setTinhaImovel] = useState(false);
   const { toast } = useToast();
 
   // Gestão cria e edita qualquer lead. Corretor cria (para si) e edita os
@@ -235,6 +239,7 @@ export const CriarLeadQuickModal = ({
       setForm(EMPTY_FORM);
     }
     setError(null);
+    setTinhaImovel(Boolean(editingLead?.codigo?.trim()));
     setDestinoId('');
     // Outro lead, outro histórico: fecha e descarta o que estava carregado.
     setImoveisInteresse(null);
@@ -356,6 +361,10 @@ export const CriarLeadQuickModal = ({
   const handleSubmit = async () => {
     if (!canEdit) {
       setError('Você não tem permissão para editar este lead.');
+      return;
+    }
+    if (isEditMode && tinhaImovel && !form.interest_reference.trim()) {
+      setError('O lead precisa de pelo menos um imóvel. Troque o código em vez de apagar.');
       return;
     }
     if (!form.name.trim()) {
@@ -847,6 +856,18 @@ export const CriarLeadQuickModal = ({
                 mono
                 disabled={!canEdit}
               />
+              {isEditMode && editingLead && tenantId && !isProprietario && (
+                <ImoveisDoLeadEditor
+                  tenantId={tenantId}
+                  leadId={editingLead.id}
+                  principal={form.interest_reference}
+                  canEdit={canEdit}
+                  onPrincipalGravado={(codigo) => {
+                    setForm((f) => ({ ...f, interest_reference: codigo }));
+                    setTinhaImovel(true);
+                  }}
+                />
+              )}
 
               {/* A TEMPERATURA NAO SE ESCOLHE MAIS. Eram tres botoes gravando
                   uma coluna propria, e o selo do card lia o score: o mesmo lead
