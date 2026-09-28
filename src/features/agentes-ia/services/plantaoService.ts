@@ -161,6 +161,13 @@ export interface ConfigDoPlantao {
   espera_maxima_minutos: number;
   destino: DestinoDoPlantao;
   plantonista_id: string | null;
+  /**
+   * Perguntas de LANÇAMENTO (28/09): quem responde, depois de quantas horas o
+   * diretor é avisado, e quem é o diretor. Vazio = segue o `destino` e não escala.
+   */
+  lancamento_responsavel_id: string | null;
+  lancamento_escala_horas: number;
+  lancamento_escala_para_id: string | null;
 }
 
 /** O padrão do plano: 30 minutos, para o corretor do lead. */
@@ -168,13 +175,16 @@ export const CONFIG_PADRAO: ConfigDoPlantao = {
   espera_maxima_minutos: 30,
   destino: 'corretor_do_lead',
   plantonista_id: null,
+  lancamento_responsavel_id: null,
+  lancamento_escala_horas: 24,
+  lancamento_escala_para_id: null,
 };
 
 export async function carregarConfig(tenantId: string): Promise<ConfigDoPlantao> {
   if (!tenantId || tenantId === 'owner') return CONFIG_PADRAO;
   const { data, error } = await supabase
     .from('tenant_plantao_config')
-    .select('espera_maxima_minutos, destino, plantonista_id')
+    .select('espera_maxima_minutos, destino, plantonista_id, lancamento_responsavel_id, lancamento_escala_horas, lancamento_escala_para_id')
     .eq('tenant_id', tenantId)
     .maybeSingle();
   if (error) throw error;
@@ -191,6 +201,9 @@ export async function salvarConfig(tenantId: string, cfg: ConfigDoPlantao): Prom
       // Plantonista só faz sentido quando o destino é ele; guardar o resto
       // deixaria uma pessoa apontada para um destino que ninguém usa.
       plantonista_id: cfg.destino === 'plantonista' ? cfg.plantonista_id : null,
+      lancamento_responsavel_id: cfg.lancamento_responsavel_id,
+      lancamento_escala_horas: cfg.lancamento_escala_horas,
+      lancamento_escala_para_id: cfg.lancamento_escala_para_id,
       updated_at: new Date().toISOString(),
     },
     { onConflict: 'tenant_id' }

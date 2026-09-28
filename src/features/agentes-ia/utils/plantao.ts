@@ -89,6 +89,8 @@ export interface PerguntaDoPlantao {
   respondida_em: string | null;
   resposta: string | null;
   nudges: number;
+  /** Quando a LIA avisou o diretor (pergunta de lançamento sem resposta no prazo). */
+  escalada_em?: string | null;
   lead_id: string | null;
   lead_nome: string | null;
   corretor_id: string | null;

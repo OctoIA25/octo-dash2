@@ -265,6 +265,14 @@ function ListaAguardando({ fila, agora }: { fila: FilaDoPlantao; agora: number }
                 {p.lead_nome ?? 'lead sem nome'} · com {quemRecebeu(p)}
                 {p.nudges > 0 && ` · ${p.nudges} lembrete${p.nudges > 1 ? 's' : ''}`}
                 {p.empreendimento_nome && ` · ${p.empreendimento_nome}`}
+                {p.escalada_em && (
+                  <span className="font-medium text-amber-700 dark:text-amber-400">
+                    {' · '}diretor avisado em{' '}
+                    {new Date(p.escalada_em).toLocaleString('pt-BR', {
+                      timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+                    })}
+                  </span>
+                )}
               </p>
               <ResponderAqui perguntaId={p.id} />
             </li>

@@ -140,3 +140,29 @@ describe('a aba Respondidas vazia também tem dois motivos', () => {
     expect(await screen.findByText('Nenhuma pergunta respondida no período.')).toBeInTheDocument();
   });
 });
+
+// 28/09 — pergunta de lançamento sem resposta no prazo sobe para o diretor.
+describe('a fila diz quando a pergunta subiu ao diretor', () => {
+  const linha = (extra: Record<string, unknown>) => ({
+    id: 'p1', pergunta: 'Tem vaga coberta?', contexto: null, status: 'pendente',
+    criado_em: new Date(Date.now() - 30 * 3600_000).toISOString(), respondida_em: null, resposta: null,
+    nudges: 0, lead_id: null, lead_nome: 'Sandra', corretor_id: 'u1', corretor_nome: 'Fernanda',
+    corretor_email: null, empreendimento_id: 'e1', empreendimento_nome: 'Reserva', kb_documento_id: null,
+    aprovada_para_base: false, ...extra,
+  });
+
+  it('escalada: mostra "diretor avisado em …"', async () => {
+    carregar.mockResolvedValue(fila({ aguardando: 1, na_janela: 1 }, {
+      linhas: [linha({ escalada_em: '2026-09-28T13:00:00-03:00' })],
+    }));
+    abrir();
+    expect(await screen.findByText(/diretor avisado em 28\/09/)).toBeInTheDocument();
+  });
+
+  it('não escalada: não inventa aviso', async () => {
+    carregar.mockResolvedValue(fila({ aguardando: 1, na_janela: 1 }, { linhas: [linha({ escalada_em: null })] }));
+    abrir();
+    expect(await screen.findByText('Tem vaga coberta?')).toBeInTheDocument();
+    expect(screen.queryByText(/diretor avisado/)).not.toBeInTheDocument();
+  });
+});

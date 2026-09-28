@@ -17,6 +17,7 @@ import { Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { useToast } from '@/hooks/use-toast';
 import { Input } from '@/components/ui/input';
+import { isOwnerEmail } from '@/lib/ownerEmails';
 import {
   CONFIG_PADRAO, DESTINOS, carregarConfig, salvarConfig, simularRegua,
   type ConfigDoPlantao, type DestinoDoPlantao,
@@ -31,7 +32,11 @@ interface Membro {
   user_id: string;
   name?: string;
   email?: string;
+  permissions?: { whatsapp_phones?: string[] } | null;
 }
+
+/** Nome quando existe, e-mail quando não — UUID nunca. */
+const nomeDoMembro = (m: Membro) => m.name || m.email || m.user_id.slice(0, 8);
 
 export function PlantaoConfigPanel({ tenantId, isAdmin }: Props) {
   const { toast } = useToast();
@@ -78,10 +83,15 @@ export function PlantaoConfigPanel({ tenantId, isAdmin }: Props) {
     queryFn: async () => {
       const { data, error } = await supabase.rpc('get_tenant_members', { p_tenant_id: tenantId });
       if (error) throw error;
-      return (data ?? []) as Membro[];
+      // A conta dona da plataforma é membro de toda casa, mas não é da equipe:
+      // não pode ser escolhida para responder nem para receber escalonamento.
+      return ((data ?? []) as Membro[]).filter((m) => !isOwnerEmail(m.email));
     },
-    enabled: !!tenantId && tenantId !== 'owner' && cfg.destino === 'plantonista',
+    enabled: !!tenantId && tenantId !== 'owner',
   });
+
+  const diretor = (membros ?? []).find((m) => m.user_id === cfg.lancamento_escala_para_id);
+  const diretorSemWhatsapp = !!diretor && !(diretor.permissions?.whatsapp_phones?.length);
 
   const gravar = async () => {
     if (!tenantId) return;
@@ -158,14 +168,79 @@ export function PlantaoConfigPanel({ tenantId, isAdmin }: Props) {
           >
             <option value="">Escolha alguém</option>
             {(membros ?? []).map((m) => (
-              /* Nome quando existe, e-mail quando não — UUID nunca. */
               <option key={m.user_id} value={m.user_id}>
-                {m.name || m.email || m.user_id.slice(0, 8)}
+                {nomeDoMembro(m)}
               </option>
             ))}
           </select>
         </label>
       )}
+
+      {/* 28/09 — pedido do chefe: a pergunta de lançamento espera o gestor, e
+          passou do prazo sobe para o diretor. */}
+      <fieldset className="space-y-3 rounded-md border p-3">
+        <legend className="px-1 text-sm font-medium">Perguntas de lançamento</legend>
+        <p className="text-xs text-muted-foreground">
+          Dúvida do cliente sobre um empreendimento. A LIA espera quem responde; se passar do prazo sem
+          resposta, ela avisa quem você escolher abaixo. A pergunta continua com quem responde — os dois
+          podem responder.
+        </p>
+
+        <label className="block text-sm">
+          Quem responde
+          <select
+            disabled={!isAdmin}
+            className="mt-1 block w-full rounded-md border bg-background p-2 text-sm"
+            value={cfg.lancamento_responsavel_id ?? ''}
+            onChange={(e) => setCfg({ ...cfg, lancamento_responsavel_id: e.target.value || null })}
+          >
+            <option value="">Segue a regra acima</option>
+            {(membros ?? []).map((m) => (
+              <option key={m.user_id} value={m.user_id}>{nomeDoMembro(m)}</option>
+            ))}
+          </select>
+        </label>
+
+        <div className="text-sm">
+          Avisar depois de
+          <div className="mt-1 flex items-center gap-2">
+            <Input
+              type="number"
+              min={1}
+              max={720}
+              disabled={!isAdmin}
+              className="w-24"
+              value={cfg.lancamento_escala_horas}
+              onChange={(e) =>
+                setCfg({ ...cfg, lancamento_escala_horas: Math.min(720, Math.max(1, Number(e.target.value) || 1)) })
+              }
+            />
+            <span className="text-muted-foreground">horas sem resposta</span>
+          </div>
+        </div>
+
+        <label className="block text-sm">
+          Quem é avisado
+          <select
+            disabled={!isAdmin}
+            className="mt-1 block w-full rounded-md border bg-background p-2 text-sm"
+            value={cfg.lancamento_escala_para_id ?? ''}
+            onChange={(e) => setCfg({ ...cfg, lancamento_escala_para_id: e.target.value || null })}
+          >
+            <option value="">Ninguém — não escala</option>
+            {(membros ?? []).map((m) => (
+              <option key={m.user_id} value={m.user_id}>{nomeDoMembro(m)}</option>
+            ))}
+          </select>
+        </label>
+
+        {diretorSemWhatsapp && (
+          <p className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
+            {nomeDoMembro(diretor!)} não tem WhatsApp cadastrado em Gestão de Equipe. Sem número, a LIA não
+            tem como avisar — a pergunta aparece como escalada na fila, mas ninguém recebe a mensagem.
+          </p>
+        )}
+      </fieldset>
 
       <p className="text-xs text-muted-foreground">
         Quem envia a pergunta ao corretor é a LIA. Esta configuração é o que ela consulta para
