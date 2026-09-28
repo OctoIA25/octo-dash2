@@ -97,10 +97,12 @@ const SO_GESTAO: Record<string, readonly string[]> = {
   // Distribuição mostra o que a roleta fez com o lead de todo mundo: são
   // ferramentas de gestão, como as Configurações ao lado.
   '/bolsao': ['configuracoes', 'equipes', 'simulador', 'distribuicao'],
-  // Plantão e Agenda junto da Telemetria: a fila mostra o nome de cada lead e
-  // a resposta de cada colega da imobiliária, e aprovar para a base é ato de
-  // gestão. Abrir para o corretor depois é uma linha; vazar não tem volta.
-  '/agentes-ia': ['telemetria', 'plantao', 'agenda'],
+  // A Telemetria mostra custo e consumo de IA da casa inteira: é leitura de
+  // gestão. Plantão e Agenda SAÍRAM desta lista em 28/09 porque deixaram de
+  // ser abas — viraram a categoria LIA no menu, e a restrição foi junto
+  // (`soGestao` em NovaSidebar). Nenhuma das duas ficou mais aberta: as
+  // próprias telas redirecionam quem não é gestão.
+  '/agentes-ia': ['telemetria'],
   '/imoveis': ['anuncios-sem-imovel'],
   // Arquivados: decidido pelo chefe em 25/09 — "só gestor, diretor e adm podem
   // ver". Esconder a aba é só metade: `MeusLeadsPage` também recusa o

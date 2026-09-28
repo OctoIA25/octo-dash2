@@ -16,6 +16,7 @@ import {
   Bot,
   MessageCircle,
   MessageSquare,
+  CalendarClock,
   Plug,
   ChevronRight,
   Search,
@@ -63,6 +64,12 @@ interface SidebarItem {
   route: string;
   permission: SidebarPermission;
   subItems?: SubItem[];
+  /**
+   * Só gestão e owner veem. A tela em si JÁ se protege (Plantão e Agenda
+   * redirecionam quem não é gestão), então isto não é a tranca — é evitar o
+   * clique que termina em redirecionamento.
+   */
+  soGestao?: boolean;
 }
 
 interface SidebarGroup {
@@ -170,6 +177,37 @@ const GROUPS: SidebarGroup[] = [
     ],
   },
   {
+    /*
+     * A LIA TEM CATEGORIA PRÓPRIA — pedido do chefe em 28/09: "muito difícil
+     * encontrar elas assim".
+     *
+     * Plantão e Agenda moravam como ABAS dentro de Agentes de IA, ao lado do
+     * Caio (Marketing) e da Elaine (Comportamental). Quem procurava a fila de
+     * dúvidas tinha de saber que ela estava escondida numa aba de outra tela.
+     *
+     * Só entra aqui o que é 100% dela. Ficaram DE FORA de propósito:
+     * Telemetria (mede todos os agentes, não só a Lia), Comunicação (disparo
+     * em massa, que não é ela) e o WhatsApp (a conversa é dela e dos
+     * corretores).
+     *
+     * As ROTAS não mudaram: `/agentes-ia/plantao` e `/agentes-ia/agenda`
+     * continuam valendo. Mover o item de menu é mudança de lugar, não de
+     * endereço — trocar a rota quebraria todo link já salvo, e sem erro: a
+     * pessoa cairia no redirecionamento padrão, que parece "não tenho acesso".
+     */
+    title: 'LIA',
+    items: [
+      {
+        id: 'lia-plantao', label: 'Plantão', icon: MessageSquare,
+        route: '/agentes-ia/plantao', permission: 'agentes-ia', soGestao: true,
+      },
+      {
+        id: 'lia-agenda', label: 'Agenda da LIA', icon: CalendarClock,
+        route: '/agentes-ia/agenda', permission: 'agentes-ia', soGestao: true,
+      },
+    ],
+  },
+  {
     title: 'INTELIGÊNCIA',
     items: [
       {
@@ -254,7 +292,7 @@ function routeBase(route: string): string {
 export function NovaSidebar() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { tenantName, user, isOwner, tenantId } = useAuthContext();
+  const { tenantName, user, isOwner, isGestao, tenantId } = useAuthContext();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [query, setQuery] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
@@ -323,8 +361,12 @@ export function NovaSidebar() {
    * Agentes de IA continua visível para quem só tem 'comunicacao').
    */
   const isItemVisible = useCallback(
-    (item: SidebarItem) => canAccess(item.permission) || visibleSubItems(item).length > 0,
-    [canAccess, visibleSubItems],
+    (item: SidebarItem) => {
+      // Mesma pergunta do filtro de abas (`abasVisiveis`): gestão ou owner.
+      if (item.soGestao && !isGestao && !isOwner) return false;
+      return canAccess(item.permission) || visibleSubItems(item).length > 0;
+    },
+    [canAccess, visibleSubItems, isGestao, isOwner],
   );
 
   const filteredGroups = useMemo(() => {

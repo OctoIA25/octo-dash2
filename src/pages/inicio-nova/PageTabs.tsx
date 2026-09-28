@@ -130,8 +130,9 @@ export const TAB_CONFIGS: TabConfig[] = [
       { id: 'agente-comportamental', label: 'Comportamental', icon: Headphones, href: '/agentes-ia/agente-comportamental' },
       // Telemetria é gestão/owner — filtrada dinamicamente no useMemo (mesmo
       // padrão da aba "Equipes" do Bolsão).
-      { id: 'agenda', label: 'Agenda', icon: CalendarClock, href: '/agentes-ia/agenda' },
-      { id: 'plantao', label: 'Plantão', icon: MessageSquare, href: '/agentes-ia/plantao' },
+      // Agenda e Plantão SAÍRAM daqui em 28/09: viraram a categoria LIA no
+      // menu lateral. Eram as duas telas 100% dela escondidas numa aba de
+      // outra tela, ao lado do Caio e da Elaine. As rotas não mudaram.
       { id: 'telemetria', label: 'Telemetria', icon: BarChart3, href: '/agentes-ia/telemetria' },
     ],
   },

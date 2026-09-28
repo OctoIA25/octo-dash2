@@ -26,11 +26,15 @@ vi.mock('react-router-dom', () => ({
   useLocation: () => ({ pathname: '/inicio', search: '' }),
 }));
 
+/** Mutável para trocar de perfil entre os casos. */
+const quem = { isOwner: true, isGestao: true };
+
 vi.mock('@/contexts/AuthContext', () => ({
   useAuthContext: () => ({
     tenantName: 'Lotus Brokers',
     user: { id: 'u1', role: 'gestao', systemRole: 'admin', tenantId: 't1' },
-    isOwner: true,
+    isOwner: quem.isOwner,
+    isGestao: quem.isGestao,
     tenantId: 't1',
   }),
 }));
@@ -40,7 +44,11 @@ vi.mock('@/assets/octodash-logo.png', () => ({ default: 'logo.png' }));
 
 import { NovaSidebar } from '../NovaSidebar';
 
-beforeEach(() => navigate.mockClear());
+beforeEach(() => {
+  navigate.mockClear();
+  quem.isOwner = true;
+  quem.isGestao = true;
+});
 
 describe('clicar no item abre a própria tela', () => {
   it('Configurações leva a /configuracoes — o caso relatado', async () => {
@@ -70,5 +78,43 @@ describe('clicar no item abre a própria tela', () => {
     navigate.mockClear();
     await userEvent.click(await screen.findByText('Comunicação'));
     expect(navigate).toHaveBeenCalledWith('/comunicacao/disparador');
+  });
+});
+
+/*
+ * A CATEGORIA DA LIA — pedido do chefe em 28/09: "muito difícil encontrar
+ * elas assim".
+ *
+ * Plantão e Agenda moravam como abas dentro de Agentes de IA, ao lado do
+ * Caio e da Elaine. Quem procurava a fila de dúvidas precisava saber que ela
+ * estava escondida numa aba de outra tela.
+ */
+describe('a Lia tem categoria própria no menu', () => {
+  it('Plantão aparece e leva à rota de sempre', async () => {
+    render(<NovaSidebar />);
+    await userEvent.click(await screen.findByText('Plantão'));
+    // A rota NÃO mudou: mover o item é mudança de lugar, não de endereço.
+    expect(navigate).toHaveBeenCalledWith('/agentes-ia/plantao');
+  });
+
+  it('Agenda da LIA também', async () => {
+    render(<NovaSidebar />);
+    await userEvent.click(await screen.findByText('Agenda da LIA'));
+    expect(navigate).toHaveBeenCalledWith('/agentes-ia/agenda');
+  });
+
+  /*
+   * O CASO QUE SUSTENTA O ARQUIVO. Ao sair das abas, as duas perderiam a
+   * trava de `SO_GESTAO` — e a fila mostra o nome de cada lead e a resposta
+   * de cada colega da casa. Mover a tela não pode abri-la.
+   */
+  it('corretor NÃO vê a fila nem a agenda', async () => {
+    quem.isOwner = false;
+    quem.isGestao = false;
+    render(<NovaSidebar />);
+    // O menu carregou: outra coisa qualquer continua lá.
+    expect(await screen.findByText('Configurações')).toBeInTheDocument();
+    expect(screen.queryByText('Plantão')).not.toBeInTheDocument();
+    expect(screen.queryByText('Agenda da LIA')).not.toBeInTheDocument();
   });
 });
