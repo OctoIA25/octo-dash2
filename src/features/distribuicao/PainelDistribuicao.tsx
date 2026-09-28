@@ -14,7 +14,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { OctoDashLoader } from '@/components/ui/OctoDashLoader';
-import { ExtratoDistribuicao, type EventoDistribuicao } from './ExtratoDistribuicao';
+import { usePodeAbrirConversa } from '@/features/chat/components/OpenConversationLink';
+import { chatPathForPhone } from '@/features/chat/services/chatService';
+import { ExtratoDistribuicao, type EventoDistribuicao, type LeadDoExtrato } from './ExtratoDistribuicao';
 
 interface Props {
   tenantId?: string;
@@ -28,6 +30,7 @@ const TETO = 200;
 interface Estado {
   eventos: EventoDistribuicao[];
   nomes: Record<string, string>;
+  leads: Record<string, LeadDoExtrato>;
   jaHouveAlgum: boolean;
   lidoAs: Date;
 }
@@ -39,6 +42,10 @@ export function PainelDistribuicao({ tenantId }: Props) {
   // Os nomes não mudam a cada 30 s; buscá-los de novo a cada ciclo seria uma
   // consulta por minuto para nada.
   const nomesRef = useRef<Record<string, string> | null>(null);
+  // Nome e telefone do lead também não mudam a cada ciclo: só se busca quem
+  // apareceu pela primeira vez.
+  const contatosRef = useRef<Record<string, { nome: string | null; telefone: string | null }>>({});
+  const podeAbrirConversa = usePodeAbrirConversa();
 
   const carregar = useCallback(async () => {
     if (!tenantId || tenantId === 'owner') return;
@@ -66,6 +73,57 @@ export function PainelDistribuicao({ tenantId }: Props) {
 
       if (eventos.error) throw eventos.error;
 
+      const lista = (eventos.data ?? []) as EventoDistribuicao[];
+      const idsDosLeads = [...new Set(lista.map((e) => e.lead_id).filter((id): id is string => Boolean(id)))];
+
+      // A finalidade só vem gravada na CONSULTA; os outros acontecimentos do
+      // lead a herdam. Para quem não foi consultado dentro da janela, busca-se
+      // a consulta mais antiga fora dela.
+      const tipoPorLead: Record<string, string> = {};
+      for (const e of lista) if (e.lead_id && e.tipo && !tipoPorLead[e.lead_id]) tipoPorLead[e.lead_id] = e.tipo;
+      const semTipo = idsDosLeads.filter((id) => !tipoPorLead[id]);
+      const semContato = idsDosLeads.filter((id) => !contatosRef.current[id]);
+
+      const [tipos, contatos] = await Promise.all([
+        semTipo.length
+          ? supabase
+              .from('distribuicao_eventos')
+              .select('lead_id, tipo')
+              .eq('tenant_id', tenantId)
+              .in('lead_id', semTipo)
+              .not('tipo', 'is', null)
+              .order('created_at', { ascending: false })
+          : Promise.resolve({ data: [], error: null }),
+        semContato.length
+          ? supabase.from('leads').select('id, name, phone').in('id', semContato)
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+      // Falhar aqui não derruba o extrato: a linha continua dizendo o que
+      // aconteceu, só sem o nome do lead.
+      if (tipos.error) console.error('[distribuicao] finalidade dos leads:', tipos.error);
+      if (contatos.error) console.error('[distribuicao] nome dos leads:', contatos.error);
+      for (const t of (tipos.data ?? []) as Array<{ lead_id: string; tipo: string }>) {
+        if (!tipoPorLead[t.lead_id]) tipoPorLead[t.lead_id] = t.tipo;
+      }
+      if (!contatos.error) {
+        // Quem não voltou (lead apagado) também fica guardado, como sem nome —
+        // senão seria consultado de novo a cada 30 s.
+        for (const id of semContato) contatosRef.current[id] = { nome: null, telefone: null };
+        for (const c of (contatos.data ?? []) as Array<{ id: string; name: string | null; phone: string | null }>) {
+          contatosRef.current[c.id] = { nome: c.name, telefone: c.phone };
+        }
+      }
+
+      const leads: Record<string, LeadDoExtrato> = {};
+      for (const id of idsDosLeads) {
+        const contato = contatosRef.current[id];
+        leads[id] = {
+          nome: contato?.nome ?? null,
+          tipo: tipoPorLead[id] ?? null,
+          conversa: podeAbrirConversa ? chatPathForPhone(contato?.telefone, contato?.nome) : null,
+        };
+      }
+
       if (membros.data) {
         nomesRef.current = Object.fromEntries(
           (membros.data as Array<{ user_id: string; name?: string; email?: string }>).map((m) => [
@@ -77,8 +135,9 @@ export function PainelDistribuicao({ tenantId }: Props) {
 
       setErro(null);
       setEstado({
-        eventos: (eventos.data ?? []) as EventoDistribuicao[],
+        eventos: lista,
         nomes: nomesRef.current ?? {},
+        leads,
         jaHouveAlgum: (algum.count ?? 0) > 0,
         lidoAs: new Date(),
       });
@@ -89,7 +148,7 @@ export function PainelDistribuicao({ tenantId }: Props) {
     } finally {
       setAtualizando(false);
     }
-  }, [tenantId]);
+  }, [tenantId, podeAbrirConversa]);
 
   useEffect(() => {
     carregar();
@@ -141,6 +200,7 @@ export function PainelDistribuicao({ tenantId }: Props) {
       <ExtratoDistribuicao
         eventos={estado.eventos}
         nomes={estado.nomes}
+        leads={estado.leads}
         jaHouveAlgum={estado.jaHouveAlgum}
       />
     </div>

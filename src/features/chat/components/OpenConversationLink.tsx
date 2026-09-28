@@ -24,10 +24,13 @@ interface OpenConversationLinkProps {
  * usa o componente abaixo.
  */
 export function useChatPath(phone: string | null | undefined, contactName?: string | null) {
+  return usePodeAbrirConversa() ? chatPathForPhone(phone, contactName) : null;
+}
+
+/** A permissão 'chat', para quem monta VÁRIOS links de uma vez (uma lista). */
+export function usePodeAbrirConversa() {
   const { user } = useAuthContext();
-  return (user?.sidebarPermissions ?? []).includes('chat')
-    ? chatPathForPhone(phone, contactName)
-    : null;
+  return (user?.sidebarPermissions ?? []).includes('chat');
 }
 
 export function OpenConversationLink({ phone, contactName, className }: OpenConversationLinkProps) {

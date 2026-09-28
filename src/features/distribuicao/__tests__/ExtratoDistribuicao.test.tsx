@@ -8,6 +8,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { ExtratoDistribuicao, contar, situacaoDoPrazo, type EventoDistribuicao } from '../ExtratoDistribuicao';
 
 const AGORA = new Date('2026-09-20T15:00:00-03:00');
@@ -138,5 +139,50 @@ describe('a linha do tempo explica, não só registra', () => {
   it('origem "dashboard" é marcada — quem mexeu na mão precisa aparecer', () => {
     montar({ eventos: [ev({ evento: 'manual', origem: 'dashboard' })] });
     expect(screen.getByText(/por dashboard/)).toBeInTheDocument();
+  });
+});
+
+// 28/09 — pedido do chefe: "colocar o nome do Lead, qual finalidade
+// (Lançamentos x Prontos) e um link pra ver a conversa do lead".
+describe('cada linha diz de QUAL lead é', () => {
+  const comRota = (props: Partial<React.ComponentProps<typeof ExtratoDistribuicao>>) =>
+    render(
+      <MemoryRouter>
+        <ExtratoDistribuicao eventos={[]} nomes={{}} jaHouveAlgum agora={AGORA} {...props} />
+      </MemoryRouter>
+    );
+
+  it('mostra o nome do lead, a finalidade e o link da conversa', () => {
+    comRota({
+      eventos: [ev({ evento: 'consultado', lead_id: 'L1', tipo: 'lancamento' })],
+      leads: { L1: { nome: 'Sandra', tipo: 'lancamento', conversa: '/chat?phone=5511999990000' } },
+    });
+    expect(screen.getByText('Sandra')).toBeInTheDocument();
+    expect(screen.getByText('Lançamento')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Abrir conversa/ })).toHaveAttribute('href', '/chat?phone=5511999990000');
+  });
+
+  it('"terceiros" aparece como Pronto — é o imóvel pronto do Catálogo', () => {
+    comRota({ eventos: [ev({ lead_id: 'L1', tipo: 'terceiros' })], leads: { L1: { nome: 'Ana', tipo: 'terceiros', conversa: null } } });
+    expect(screen.getByText('Pronto')).toBeInTheDocument();
+  });
+
+  it('o acontecimento sem tipo herda a finalidade da consulta do mesmo lead', () => {
+    comRota({
+      eventos: [ev({ evento: 'expirou', lead_id: 'L1', tipo: null })],
+      leads: { L1: { nome: 'Sandra', tipo: 'lancamento', conversa: null } },
+    });
+    expect(screen.getByText('Lançamento')).toBeInTheDocument();
+  });
+
+  it('sem telefone ou sem permissão de WhatsApp, não oferece link quebrado', () => {
+    comRota({ eventos: [ev({ lead_id: 'L1' })], leads: { L1: { nome: 'Sandra', tipo: null, conversa: null } } });
+    expect(screen.queryByRole('link', { name: /Abrir conversa/ })).not.toBeInTheDocument();
+  });
+
+  it('a referência gravada é o imóvel, não o lead', () => {
+    comRota({ eventos: [ev({ lead_ref: 'L020' })] });
+    expect(screen.getByText(/imóvel L020/)).toBeInTheDocument();
+    expect(screen.queryByText(/lead L020/)).not.toBeInTheDocument();
   });
 });

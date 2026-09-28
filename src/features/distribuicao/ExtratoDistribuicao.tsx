@@ -14,7 +14,8 @@
  * diferente de painel vazio porque não chegou lead — e a tela diz qual é.
  */
 
-import { AlertTriangle, CheckCircle2, Send, Search } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { AlertTriangle, CheckCircle2, MessageSquare, Send, Search } from 'lucide-react';
 import { TEXTO_DO_MOTIVO } from './regraDoServidor';
 
 export interface EventoDistribuicao {
@@ -30,10 +31,21 @@ export interface EventoDistribuicao {
   created_at: string;
 }
 
+/** O lead por trás do acontecimento (pedido do chefe em 28/09). */
+export interface LeadDoExtrato {
+  nome: string | null;
+  /** 'lancamento' | 'terceiros' | ... — o `tipo` da consulta mais recente. */
+  tipo: string | null;
+  /** Caminho da conversa no WhatsApp; nulo sem telefone ou sem permissão 'chat'. */
+  conversa: string | null;
+}
+
 interface Props {
   eventos: EventoDistribuicao[];
   /** id do corretor -> como chamá-lo na tela. */
   nomes: Record<string, string>;
+  /** id do lead -> nome, finalidade e conversa. */
+  leads?: Record<string, LeadDoExtrato>;
   /** Houve algum acontecimento algum dia? Separa "ainda não começou" de "hoje não veio". */
   jaHouveAlgum: boolean;
   agora?: Date;
@@ -47,6 +59,23 @@ const TEXTO_DO_EVENTO: Record<string, string> = {
   roleta: 'foi para o próximo da fila',
   bolsao: 'foi para o bolsão',
   manual: 'alguém atribuiu na mão',
+};
+
+/**
+ * A finalidade na língua da imobiliária. `terceiros` é o imóvel pronto do
+ * Catálogo (ver tipoDoLead, no servidor) — "Lançamentos x Prontos".
+ */
+export const TEXTO_DA_FINALIDADE: Record<string, string> = {
+  lancamento: 'Lançamento',
+  terceiros: 'Pronto',
+  recrutamento: 'Recrutamento',
+  vendedores: 'Proprietário',
+  indefinido: 'finalidade não identificada',
+};
+
+const COR_DA_FINALIDADE: Record<string, string> = {
+  lancamento: 'bg-violet-100 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300',
+  terceiros: 'bg-sky-100 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300',
 };
 
 const COR_DO_EVENTO: Record<string, string> = {
@@ -125,7 +154,7 @@ const Contador = ({ icone: Icone, rotulo, valor, cor }: {
   </div>
 );
 
-export function ExtratoDistribuicao({ eventos, nomes, jaHouveAlgum, agora = new Date() }: Props) {
+export function ExtratoDistribuicao({ eventos, nomes, leads = {}, jaHouveAlgum, agora = new Date() }: Props) {
   const c = contar(eventos);
   const parados = relogioParado(eventos);
   const nomeDe = (id: string | null) => (id ? nomes[id] || id.slice(0, 8) : null);
@@ -154,6 +183,10 @@ export function ExtratoDistribuicao({ eventos, nomes, jaHouveAlgum, agora = new 
             const chave = ev.lead_id ?? ev.lead_ref;
             const prazo = chave && parados.has(chave) ? null : situacaoDoPrazo(ev.prazo_ate, agora);
             const quem = nomeDe(ev.corretor_id);
+            const lead = ev.lead_id ? leads[ev.lead_id] : undefined;
+            // A consulta grava o tipo; os outros acontecimentos do mesmo lead
+            // herdam o da consulta mais recente.
+            const finalidade = ev.tipo ?? lead?.tipo ?? null;
             return (
               <li
                 key={ev.id}
@@ -169,9 +202,36 @@ export function ExtratoDistribuicao({ eventos, nomes, jaHouveAlgum, agora = new 
                   </p>
                   <span className="shrink-0 text-[11px] tabular-nums text-text-secondary">{hora(ev.created_at)}</span>
                 </div>
+                {lead || finalidade ? (
+                  <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12px]">
+                    {lead ? <span className="font-medium">{lead.nome?.trim() || 'Lead sem nome'}</span> : null}
+                    {finalidade ? (
+                      <span
+                        className={`rounded px-1.5 py-px text-[10px] font-semibold ${
+                          COR_DA_FINALIDADE[finalidade] ?? 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                        }`}
+                      >
+                        {TEXTO_DA_FINALIDADE[finalidade] ?? finalidade}
+                      </span>
+                    ) : null}
+                    {lead?.conversa ? (
+                      <Link
+                        to={lead.conversa}
+                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400"
+                      >
+                        <MessageSquare className="h-3 w-3" strokeWidth={2.4} />
+                        Abrir conversa
+                      </Link>
+                    ) : null}
+                  </p>
+                ) : null}
                 <p className="truncate text-[12px] text-text-secondary">
                   {TEXTO_DO_MOTIVO[ev.motivo] ?? ev.motivo}
-                  {ev.lead_ref ? ` · lead ${ev.lead_ref}` : ''}
+                  {/* O servidor grava aqui o código do imóvel quando a Lia não
+                      manda outra referência — é o caso de todas as linhas até
+                      28/09 (L020, RESERVA CASTANHEIRA…). Com o nome do lead na
+                      linha de cima, "lead L020" confundiria. */}
+                  {ev.lead_ref ? ` · imóvel ${ev.lead_ref}` : ''}
                   {ev.origem !== 'lia' ? ` · por ${ev.origem}` : ''}
                   {prazo ? <span className={`ml-1 ${prazo.cor}`}>· {prazo.texto}</span> : null}
                 </p>
