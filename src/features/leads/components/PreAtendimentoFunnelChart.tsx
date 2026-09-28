@@ -249,12 +249,16 @@ export const PreAtendimentoFunnelChart = ({ leads }: PreAtendimentoFunnelChartPr
 
     loadCanvasJS();
 
+    // O redesenho espera a transição da sidebar (300 ms). Guardado para a
+    // limpeza cancelar: sem isso, ele disparava DEPOIS de sair da tela, num
+    // gráfico já destruído, e o CanvasJS quebrava ("reading 'style'").
+    let redesenho: ReturnType<typeof setTimeout> | undefined;
     const handleResize = () => {
-      if (chartInstance.current) {
-        setTimeout(() => {
-          chartInstance.current?.render();
-        }, 350);
-      }
+      if (!chartInstance.current) return;
+      clearTimeout(redesenho);
+      redesenho = setTimeout(() => {
+        chartInstance.current?.render();
+      }, 350);
     };
 
     window.addEventListener('resize', handleResize);
@@ -265,9 +269,9 @@ export const PreAtendimentoFunnelChart = ({ leads }: PreAtendimentoFunnelChartPr
     }
 
     return () => {
-      if (chartInstance.current) {
-        chartInstance.current.destroy();
-      }
+      clearTimeout(redesenho);
+      chartInstance.current?.destroy();
+      chartInstance.current = null;
       window.removeEventListener('resize', handleResize);
       resizeObserver.disconnect();
     };
