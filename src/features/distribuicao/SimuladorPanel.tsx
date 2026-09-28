@@ -18,6 +18,12 @@ interface SimuladorPanelProps {
 interface Estado {
   participantes: ParticipanteDaRoleta[];
   equipe: ParticipanteDaRoleta[];
+  /**
+   * TODA a gente da imobiliária, para o simulador saber dizer o nome de quem
+   * NÃO está na roleta — o dono fixo do Recrutamento, por exemplo. Sem isto a
+   * tela mostrava um pedaço de UUID.
+   */
+  pessoas: Array<{ id: string; nome: string }>;
   horario: unknown;
   config: { tempo_expiracao_exclusivo?: number | null } | null;
   /** Quem recebe recrutamento e vendedores nesta imobiliária (24/09). */
@@ -76,6 +82,12 @@ export function SimuladorPanel({ tenantId }: SimuladorPanelProps) {
         ),
         // Sem curadoria: quem pode ser CAPTADOR não é quem está no rodízio.
         equipe: montarFila(ordenados as never, []),
+        // A lista crua, sem filtro de roleta nem de curadoria: é dela que sai
+        // o nome de quem recebe por dono fixo.
+        pessoas: ordenados.map((m) => ({
+          id: String(m.user_id ?? m.id ?? ''),
+          nome: String(m.name || m.email || '').trim(),
+        })).filter((p) => p.id),
         horario: config.data?.horario_funcionamento ?? {},
         config: config.data ?? null,
         destinoPorTipo: (config.data?.destino_por_tipo as Record<string, string>) ?? null,
@@ -119,6 +131,7 @@ export function SimuladorPanel({ tenantId }: SimuladorPanelProps) {
       configPrazo={estado.config}
       destinoPorTipo={estado.destinoPorTipo}
       ponteiro={estado.ponteiro}
+      pessoas={estado.pessoas}
     />
   );
 }

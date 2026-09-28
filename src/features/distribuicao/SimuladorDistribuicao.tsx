@@ -50,6 +50,8 @@ interface SimuladorProps {
   destinoPorTipo?: Record<string, string> | null;
   /** Quem recebeu por último, para a simulação começar de onde a fila está. */
   ponteiro?: PonteiroDaRoleta;
+  /** Toda a gente da casa, para nomear quem não está na roleta. */
+  pessoas?: Array<{ id: string; nome: string }>;
 }
 
 interface Passo {
@@ -59,6 +61,34 @@ interface Passo {
   corretor: string;
   motivo: string;
   prazo: string | null;
+}
+
+/**
+ * O nome de quem vai receber o lead.
+ *
+ * FORA DO COMPONENTE DE PROPÓSITO: assim o teste chama ESTA função, e não uma
+ * cópia dela escrita no arquivo de teste. Testar a cópia é como o emissor de
+ * follow-up passou verde enquanto a tela mandava o campo errado.
+ *
+ * O DEFEITO QUE ELA CONSERTA — relatado em 28/09: procurava só entre os
+ * candidatos da roleta e, não achando, imprimia `id.slice(0, 8)`. O dono fixo
+ * do Recrutamento não entra no rodízio por desenho, então a tela anunciava
+ * "Vai para 4a58f324" — o começo do UUID do dono da imobiliária.
+ *
+ * Pedaço de identificador não responde nada a quem lê. Se não achar o nome em
+ * lugar nenhum, diz isso em palavras.
+ */
+export function nomeDeQuemRecebe(
+  id: string | null,
+  // `nome` é OPCIONAL no participante da roleta, e por isso o parâmetro
+  // aceita ausência: exigir `string` aqui rejeitava a própria fila.
+  candidatos: Array<{ id: string; nome?: string }>,
+  pessoas: Array<{ id: string; nome?: string }>,
+): string {
+  if (!id) return '—';
+  const achado =
+    candidatos.find((p) => p.id === id)?.nome || pessoas.find((p) => p.id === id)?.nome;
+  return achado?.trim() || 'pessoa não encontrada no cadastro';
 }
 
 const hora = (d: Date | null) =>
@@ -71,6 +101,7 @@ export function SimuladorDistribuicao({
   configPrazo,
   destinoPorTipo = null,
   ponteiro = { posicao: -1, corretorId: null },
+  pessoas = [],
 }: SimuladorProps) {
   const candidatos = equipe?.length ? equipe : participantes;
   const [tipo, setTipo] = useState('terceiros');
@@ -82,8 +113,7 @@ export function SimuladorDistribuicao({
   const janela = useMemo(() => janelaDaConfiguracao(horarioFuncionamento), [horarioFuncionamento]);
   const minutos = useMemo(() => minutosDePrazo(configPrazo), [configPrazo]);
 
-  const nomeDe = (id: string | null) =>
-    id ? candidatos.find((p) => p.id === id)?.nome || id.slice(0, 8) : '—';
+  const nomeDe = (id: string | null) => nomeDeQuemRecebe(id, candidatos, pessoas);
 
   const rodar = () => {
     // A simulação parte de onde a fila está HOJE, não do começo: um gestor que

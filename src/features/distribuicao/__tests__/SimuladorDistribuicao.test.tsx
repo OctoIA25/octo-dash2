@@ -10,7 +10,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { render, screen, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { SimuladorDistribuicao } from '../SimuladorDistribuicao';
+import { SimuladorDistribuicao, nomeDeQuemRecebe } from '../SimuladorDistribuicao';
 import type { ParticipanteDaRoleta } from '../regraDoServidor';
 
 // O Select do Radix usa três APIs de ponteiro/rolagem que o jsdom não
@@ -219,5 +219,45 @@ describe('os tipos com dono fixo', () => {
     montar({ destinoPorTipo: { recrutamento: '9' } });
     await escolherTipo(user, /Recrutamento/);
     expect(screen.getByText(/não entra no rodízio/i)).toBeInTheDocument();
+  });
+});
+
+/*
+ * O NOME DE QUEM NÃO ESTÁ NA ROLETA — relatado pelo chefe em 28/09.
+ *
+ * O simulador anunciava "Vai para 4a58f324" para leads de Recrutamento. Esse
+ * é o começo do UUID do próprio dono da imobiliária: ele é o dono FIXO desse
+ * tipo, que por desenho não entra no rodízio. A busca do nome só olhava os
+ * candidatos da roleta e, não achando, imprimia `id.slice(0, 8)`.
+ *
+ * Pedaço de identificador não responde nada a quem lê — e este teste chama a
+ * função DE VERDADE, não uma cópia dela escrita aqui.
+ */
+describe('quem recebe por dono fixo aparece pelo nome', () => {
+  const DONO = '4a58f324-400e-4330-b3dd-0b7264969a13';
+
+  it('acha o nome fora da roleta, na lista da casa', () => {
+    expect(nomeDeQuemRecebe(DONO, [], [{ id: DONO, nome: 'Erick Ferrigatti' }]))
+      .toBe('Erick Ferrigatti');
+  });
+
+  it('nunca imprime pedaco de UUID -- o defeito exato', () => {
+    expect(nomeDeQuemRecebe(DONO, [], [{ id: DONO, nome: 'Erick Ferrigatti' }]))
+      .not.toContain('4a58f324');
+  });
+
+  it('a roleta continua valendo quando a pessoa esta nela', () => {
+    expect(nomeDeQuemRecebe('x', [{ id: 'x', nome: 'Mariana' }], [])).toBe('Mariana');
+  });
+
+  it('sem achar em lugar nenhum, diz em palavras -- nao mostra o id', () => {
+    const saida = nomeDeQuemRecebe(DONO, [], []);
+    expect(saida).toBe('pessoa não encontrada no cadastro');
+    expect(saida).not.toContain('4a58f324');
+  });
+
+  it('nome so com espacos nao passa por nome', () => {
+    expect(nomeDeQuemRecebe(DONO, [], [{ id: DONO, nome: '   ' }]))
+      .toBe('pessoa não encontrada no cadastro');
   });
 });
