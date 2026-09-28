@@ -74,19 +74,32 @@ describe('Classificação no CriarLeadQuickModal', () => {
     expect(screen.queryByRole('button', { name: 'Locação' })).not.toBeInTheDocument();
   });
 
-  it('aparece em modo edição, com os quatro valores', () => {
+  it('aparece em modo edição, com os quatro valores escolhíveis', () => {
     render(<CriarLeadQuickModal {...props} editingLead={LEAD} />);
     expect(screen.getByText('Classificação')).toBeInTheDocument();
-    for (const label of ['Lançamento', 'Pronto', 'Locação', 'Sem classificação']) {
+    for (const label of ['Lançamento', 'Pronto', 'Locação', 'Parceiro']) {
       // getAll: 'Lançamento' também existe como botão de preferência padrão.
       expect(screen.getAllByRole('button', { name: label }).length).toBeGreaterThan(0);
     }
   });
 
+  /**
+   * 28/09/2026: "Sem classificação" é o que o trigger grava quando NÃO consegue
+   * decidir — ausência, não escolha. Como botão, convidava a marcar à mão o que
+   * o sistema usa para dizer "ainda não sei". Sai da escolha; continua na badge,
+   * e desmarcar tudo ainda volta para ele.
+   */
+  it('NÃO oferece "Sem classificação" como opção de marcar', () => {
+    render(<CriarLeadQuickModal {...props} editingLead={LEAD} />);
+
+    expect(screen.queryByRole('button', { name: 'Sem classificação' })).not.toBeInTheDocument();
+  });
+
   it('grava a classificação escolhida e NUNCA manda classification_source', async () => {
     render(<CriarLeadQuickModal {...props} editingLead={LEAD} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Sem classificação' })); // zera o 'pronto' do lead
+    // Sem o botão "Sem classificação", zerar é desmarcar o que está marcado.
+    fireEvent.click(screen.getByRole('button', { name: 'Pronto' })); // desmarca o 'pronto' do lead
     fireEvent.click(screen.getByRole('button', { name: 'Locação' }));
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
 

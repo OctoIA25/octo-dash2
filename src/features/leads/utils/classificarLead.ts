@@ -16,7 +16,7 @@
 
 import { ATUACAO_TIPOS, atuacoesDe, type AtuacaoTipo } from '@/types/permissions';
 
-export type TipoLead = 'lancamento' | 'pronto' | 'locacao' | 'indefinido';
+export type TipoLead = 'lancamento' | 'pronto' | 'locacao' | 'parceiro' | 'indefinido';
 
 export { ATUACAO_TIPOS, atuacoesDe, type AtuacaoTipo };
 
@@ -40,7 +40,7 @@ export interface LinhaClassificavel {
 }
 
 /** Ordem canônica de gravação e exibição — a mesma de `SECOES_BOLSAO`. */
-const ORDEM_CANONICA: readonly string[] = ['lancamento', 'pronto', 'locacao', 'indefinido'];
+const ORDEM_CANONICA: readonly string[] = ['lancamento', 'pronto', 'locacao', 'parceiro', 'indefinido'];
 
 /**
  * Normaliza o valor cru em lista. Vazio (null, `[]`, string em branco) vira
@@ -101,7 +101,7 @@ export function opcoesFiltroBolsao({
 }
 
 /**
- * Seções do Bolsão, na ordem de exibição. São as mesmas quatro classificações —
+ * Seções do Bolsão, na ordem de exibição. São as mesmas classificações —
  * o Bolsão não tem vocabulário próprio, só rótulos comerciais.
  * `indefinido` por último: é a sobra (inclui `classification = null`).
  */
@@ -109,6 +109,7 @@ export const SECOES_BOLSAO: ReadonlyArray<{ tipo: TipoLead; titulo: string }> = 
   { tipo: 'lancamento', titulo: 'Venda de Lançamentos' },
   { tipo: 'pronto', titulo: 'Venda de Prontos' },
   { tipo: 'locacao', titulo: 'Locação' },
+  { tipo: 'parceiro', titulo: 'Parceiro' },
   { tipo: 'indefinido', titulo: 'Sem classificação' },
 ];
 
@@ -126,7 +127,7 @@ export const SECOES_BOLSAO: ReadonlyArray<{ tipo: TipoLead; titulo: string }> = 
 export function agruparPorSecao<T extends LinhaClassificavel>(
   linhas: ReadonlyArray<T>,
 ): Record<TipoLead, T[]> {
-  const grupos: Record<TipoLead, T[]> = { lancamento: [], pronto: [], locacao: [], indefinido: [] };
+  const grupos: Record<TipoLead, T[]> = { lancamento: [], pronto: [], locacao: [], parceiro: [], indefinido: [] };
   for (const linha of linhas) {
     const tipos = classificacoesDe(linha.classification);
     const conhecidos = tipos.filter((t) => t in grupos);

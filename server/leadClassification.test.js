@@ -184,3 +184,21 @@ describe('handleClassificationPatch', () => {
     expect(sb.updates[0].patch.classification).toEqual(['locacao']);
   });
 });
+
+describe('parceiro — classificação marcada à mão (28/09/2026)', () => {
+  it('aceita o valor e os sinônimos que a Lia costuma mandar', () => {
+    expect(resolveClassification('parceiro').value).toEqual(['parceiro']);
+    expect(resolveClassification('Parceiro').value).toEqual(['parceiro']);
+    expect(resolveClassification('parceria').value).toEqual(['parceiro']);
+    expect(resolveClassification('parceiros').value).toEqual(['parceiro']);
+  });
+
+  it('combina com as outras, na ordem canônica', () => {
+    expect(resolveClassification(['parceiro', 'lancamento']).value)
+      .toEqual(['lancamento', 'parceiro']);
+  });
+
+  it('continua sendo exclusiva só a ausência: indefinido some junto', () => {
+    expect(resolveClassification(['parceiro', 'indefinido']).value).toEqual(['parceiro']);
+  });
+});

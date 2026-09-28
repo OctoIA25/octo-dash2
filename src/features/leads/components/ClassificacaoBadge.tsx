@@ -32,6 +32,11 @@ export const CLASSIFICACAO_ESTILOS: Record<
     className: 'bg-amber-100 text-amber-700 border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800',
     dot: 'bg-amber-500',
   },
+  parceiro: {
+    label: 'Parceiro',
+    className: 'bg-emerald-100 text-emerald-700 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800',
+    dot: 'bg-emerald-500',
+  },
   indefinido: {
     label: 'Sem classificação',
     className: 'bg-muted/30 text-muted-foreground border-muted',
@@ -39,8 +44,16 @@ export const CLASSIFICACAO_ESTILOS: Record<
   },
 };
 
-/** Ordem de exibição nos controles de edição. `indefinido` por último: é a saída. */
-export const CLASSIFICACAO_ORDEM: TipoLead[] = ['lancamento', 'pronto', 'locacao', 'indefinido'];
+/**
+ * Ordem de exibição nos controles de edição.
+ *
+ * `indefinido` saiu daqui em 28/09/2026: ele é o "ainda não sei" que o trigger
+ * `classificar_lead` grava quando não consegue decidir — hoje 62% da base —,
+ * não uma opção de escolha. Como botão, convidava a marcar à mão o que é
+ * ausência. Continua na badge e como sobra do Bolsão, e desmarcar tudo ainda
+ * volta para ele (ver `toggleClassificacao`).
+ */
+export const CLASSIFICACAO_ORDEM: TipoLead[] = ['lancamento', 'pronto', 'locacao', 'parceiro'];
 
 /**
  * `tipo` aceita array desde a 20260818: um lead pode carregar Lançamento E

@@ -10,13 +10,18 @@
  * contexto de autenticação; a rota da IA passa 'lia' fixo.
  */
 
-export const CLASSIFICACOES = ['lancamento', 'pronto', 'locacao', 'indefinido'];
+// `parceiro` entrou em 28/09/2026: lead que chega por parceria. Vai ANTES de
+// `indefinido` porque a ordem desta lista É a ordem canônica de gravação — a
+// mesma de ORDEM_CANONICA no front. Divergir faria o guard e o espelho do
+// bolsão dispararem à toa, comparando arrays iguais em ordens diferentes.
+export const CLASSIFICACOES = ['lancamento', 'pronto', 'locacao', 'parceiro', 'indefinido'];
 
 /** Sinônimos que a Lia e o n8n podem mandar, no espírito do /temperature. */
 const SINONIMOS = {
   lancamento: 'lancamento', lancamentos: 'lancamento',
   pronto: 'pronto', prontos: 'pronto', 'imovel pronto': 'pronto',
   locacao: 'locacao', aluguel: 'locacao', alugado: 'locacao', alugados: 'locacao', rent: 'locacao',
+  parceiro: 'parceiro', parceiros: 'parceiro', parceria: 'parceiro', parcerias: 'parceiro',
   indefinido: 'indefinido', desconhecido: 'indefinido',
 };
 

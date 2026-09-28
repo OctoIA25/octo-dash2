@@ -229,3 +229,30 @@ describe('multi-classificação no Bolsão', () => {
     expect(agruparPorSecao([{ classification: ['valor_novo'] }]).indefinido).toHaveLength(1);
   });
 });
+
+describe('parceiro — a classificação nova (28/09/2026)', () => {
+  it('lead de parceiro cai na seção dele, não na sobra', () => {
+    const grupos = agruparPorSecao([{ classification: ['parceiro'] }]);
+
+    expect(grupos.parceiro).toHaveLength(1);
+    expect(grupos.indefinido).toHaveLength(0);
+  });
+
+  it('combina com lançamento e grava em ordem canônica', () => {
+    expect(toggleClassificacao(['lancamento'], 'parceiro')).toEqual(['lancamento', 'parceiro']);
+  });
+
+  it('marcar parceiro tira a ausência de classificação', () => {
+    expect(toggleClassificacao(['indefinido'], 'parceiro')).toEqual(['parceiro']);
+  });
+
+  it('desmarcar o último volta para a ausência — é a única forma de chegar nela', () => {
+    expect(toggleClassificacao(['parceiro'], 'parceiro')).toEqual(['indefinido']);
+  });
+
+  it('aparece para todo mundo: não é atuação de ninguém', () => {
+    const linhas = [{ classification: ['parceiro'] }];
+
+    expect(filtrarPorAtuacao(linhas, { ativo: true, atuacoes: ['lancamentos'] })).toHaveLength(1);
+  });
+});
