@@ -31,13 +31,20 @@ export interface PassaramPorEtapa {
   inicioDoHistorico: string | null;
 }
 
+/**
+ * `tenantId` é obrigatório para o dono da plataforma: a rota passa por
+ * `resolveTenant`, que devolve `tenant_required_for_owner` sem ele. Mesmo
+ * defeito que já tinha quebrado o retorno da cadência (ver cadenciaService).
+ */
 export async function carregarPassaramPorEtapa(
   etapas: string[],
   periodo?: { de?: string | null; ate?: string | null },
+  tenantId?: string | null,
 ): Promise<PassaramPorEtapa> {
   if (!etapas?.length) return { etapas: [], passaram: [], inicioDoHistorico: null };
 
   const params = new URLSearchParams({ etapas: etapas.join('|') });
+  if (tenantId && tenantId !== 'owner') params.set('tenantId', tenantId);
   if (periodo?.de) params.set('de', periodo.de);
   if (periodo?.ate) params.set('ate', periodo.ate);
 

@@ -8,6 +8,7 @@ import { TrendingDown, Users, Target, CheckCircle } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import { ETAPAS_DO_FUNIL_INTERESSADO } from '@/features/leads/utils/funnelStages';
 import { carregarPassaramPorEtapa, type PassaramPorEtapa } from '@/features/leads/services/funilPassaramService';
+import { useAuthContext } from '@/contexts/AuthContext';
 
 interface EnhancedFunnelChartProps {
   leads: ProcessedLead[];
@@ -168,10 +169,12 @@ export const EnhancedFunnelChart = ({ leads }: EnhancedFunnelChartProps) => {
    */
   const etapasDoFunil = funnelData.dataPoints.map((p) => p.originalKey).join('|');
 
+  const { tenantId } = useAuthContext();
+
   useEffect(() => {
     let cancelado = false;
 
-    carregarPassaramPorEtapa(etapasDoFunil.split('|'))
+    carregarPassaramPorEtapa(etapasDoFunil.split('|'), undefined, tenantId)
       .then((r) => { if (!cancelado) { setPassaram(r); setErroPassaram(null); } })
       .catch((e: Error) => {
         // Erro NÃO vira zero. "0 passaram" é indistinguível de "ninguém
@@ -180,7 +183,7 @@ export const EnhancedFunnelChart = ({ leads }: EnhancedFunnelChartProps) => {
       });
 
     return () => { cancelado = true; };
-  }, [etapasDoFunil]);
+  }, [etapasDoFunil, tenantId]);
 
   useEffect(() => {
     // Carregar CanvasJS dinamicamente com tratamento de erro
