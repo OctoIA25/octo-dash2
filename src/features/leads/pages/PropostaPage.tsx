@@ -2964,7 +2964,14 @@ export const PropostaPage = ({
         description: `${proposal.cliente} agora está em ${STAGE_BY_ID[nextStage].label}.`,
       });
 
-      appendHistory(proposal, 'Etapa alterada', `Movida para ${STAGE_BY_ID[nextStage].label}.`);
+      // Com a etapa NOVA: o histórico agenda um salvamento desta proposta, e,
+      // se ela ainda não tem linha, é esse salvamento que a cria. Com a etapa
+      // antiga, a proposta nascia de volta na coluna de onde acabou de sair.
+      appendHistory(
+        { ...proposal, stageId: nextStage, status: STAGE_BY_ID[nextStage].dbStatus },
+        'Etapa alterada',
+        `Movida para ${STAGE_BY_ID[nextStage].label}.`,
+      );
 
       // Não bloqueia a UI no refetch: o card já está na coluna certa via override
       // otimista e o atualizarStatusLeadCRM acima já dispara o refetch pelo

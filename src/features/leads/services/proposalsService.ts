@@ -366,10 +366,28 @@ export async function createSavedProposal(input: SaveProposalInput): Promise<Sav
   return composeSavedProposal(proposal, parties, history);
 }
 
+/**
+ * O que o salvamento automático PODE regravar numa proposta que já existe.
+ *
+ * Ficam de fora quatro colunas que ele reescrevia com o que a tela tinha na
+ * memória — e a tela não sabe:
+ *  - `lead_id` e `source`: toda proposta salva vira `source: 'draft'` na tela,
+ *    então o autosave gravava lead_id NULL e 'draft' por cima da proposta do
+ *    CRM. A proposta perdia o lead, o gatilho do lead criava outra, e ficava
+ *    duplicada (5 pares assim na Lotus em 28/09).
+ *  - `stage_id` e `status`: o autosave espera 650 ms e grava a etapa de quando
+ *    foi agendado. Arquivar nesse meio-tempo era desfeito — o "às vezes não
+ *    arquiva". Etapa tem escritor próprio: updateSavedProposalStage.
+ */
+const mapProposalUpdate = (input: SaveProposalInput) => {
+  const { lead_id, source, stage_id, status, ...editavel } = mapProposalRow(input);
+  return editavel;
+};
+
 export async function updateSavedProposal(input: SaveProposalInput & { id: string }): Promise<SavedProposal> {
   const { data: proposalRow, error: proposalError } = await supabase
     .from('proposals')
-    .update(mapProposalRow(input))
+    .update(mapProposalUpdate(input))
     .eq('id', input.id)
     .eq('tenant_id', input.tenantId)
     .select('*')
@@ -402,7 +420,7 @@ export async function updateSavedProposalFields(
 ): Promise<void> {
   const { error } = await supabase
     .from('proposals')
-    .update(mapProposalRow(input))
+    .update(mapProposalUpdate(input))
     .eq('id', input.id)
     .eq('tenant_id', input.tenantId);
 
