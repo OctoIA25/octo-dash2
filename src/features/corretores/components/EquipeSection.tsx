@@ -36,7 +36,7 @@ import { useLateralDrawer } from '@/hooks/useLateralDrawer';
 import { SidebarPermission, ATUACAO_TIPOS, ATUACAO_LABELS, atuacoesDe, comPermissoesNaoEditaveis, permissoesDeSidebar, SIDEBAR_PERMISSIONS_EDITAVEIS, type AtuacaoTipo } from '@/types/permissions';
 import { carregarCargos, carregarCatalogo, definirCargoDoMembro } from '@/features/cargos/cargosService';
 import { excecoesQuePreservam, cargoDoMesmoNivel } from '@/features/cargos/converterParaCargo';
-import { ROTULO_DO_PAPEL, type Cargo } from '@/features/cargos/cargos';
+import { ROTULO_DO_PAPEL, type Cargo, type PermissaoDoCatalogo } from '@/features/cargos/cargos';
 import { NIVEIS, nivelValido, type Nivel } from '@/features/comissionamento/commissionRules';
 import {
   DropdownMenu,
@@ -214,6 +214,8 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
   const [efetivoDoMembro, setEfetivoDoMembro] = useState<string[]>([]);
   /** código → nome legível, da MESMA fonte que a tela de Cargos mostra. */
   const [nomeDaPermissao, setNomeDaPermissao] = useState<Record<string, string>>({});
+  // As abas do menu, na ordem e com os nomes da tela de Cargos (29/09).
+  const [abasDoMenu, setAbasDoMenu] = useState<PermissaoDoCatalogo[]>([]);
   const [editRole, setEditRole] = useState<'admin' | 'corretor' | 'team_leader'>('corretor');
   const [editLeadsTeamIds, setEditLeadsTeamIds] = useState<string[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
@@ -288,7 +290,10 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
     // O preview mostrava o código cru ("central-leads"), que é como o
     // programador chama a aba — não como o gestor a conhece.
     carregarCatalogo()
-      .then((cat) => setNomeDaPermissao(Object.fromEntries(cat.map((p) => [p.codigo, p.descricao]))))
+      .then((cat) => {
+        setNomeDaPermissao(Object.fromEntries(cat.map((p) => [p.codigo, p.descricao])));
+        setAbasDoMenu(cat.filter((p) => p.modulo === 'Abas do menu').sort((a, b) => a.ordem - b.ordem));
+      })
       .catch(() => { /* sem o catálogo o preview cai no código, que ainda informa */ });
   }, []);
 
@@ -296,6 +301,9 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
     () => cargosDaCasa.find((c) => c.id === editCargoId) ?? null,
     [cargosDaCasa, editCargoId],
   );
+  /** A aba do menu, pelo cargo — é ele que manda (ver o bloco "Abas do Menu Principal"). */
+  const temAbaNoMenu = (codigo: string) =>
+    cargoEscolhido ? cargoEscolhido.permissoes.includes(codigo) : !!editPermissions[codigo];
 
   /**
    * Escolher o cargo é UMA ação: ela move o nível de acesso e as permissões
@@ -2745,58 +2753,54 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                 Marque uma ou mais. Define quais leads o corretor vê no Bolsão e recebe na roleta.
               </p>
             </div>
-            {/* Permissões de Abas Principais */}
-            <div className="space-y-3">
+            {/* Abas do Menu Principal — VÊM DO CARGO (29/09, pedido do chefe).
+                Eram 14 caixas por pessoa, mas com cargo o cargo manda
+                (permissoesDeSidebar) e a lista salva é ignorada. Em 29/09 todos
+                os membros das três casas tinham cargo: as caixas estavam
+                inertes para 100% deles — quem marcava achava que tinha mudado o
+                acesso, e não tinha. Agora a tela mostra o que o cargo libera, e
+                muda-se no cargo, igual para todo mundo que o tem. */}
+            <div className="space-y-2">
               <h3 className="font-semibold text-gray-900 dark:text-slate-100 flex items-center gap-2">
                 <Lock className="h-4 w-4" />
                 Abas do Menu Principal
               </h3>
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  { id: 'leads', label: 'Início', icon: '🏠' },
-                  { id: 'notificacoes', label: 'Notificações', icon: '🔔' },
-                  { id: 'metricas', label: 'Comercial', icon: '📊' },
-                  { id: 'juridico', label: 'Jurídico', icon: '⚖️' },
-                  { id: 'estudo-mercado', label: 'Estudo de Mercado', icon: '📈' },
-                  { id: 'recrutamento', label: 'Recrutamento', icon: '✅', restricted: true },
-                  { id: 'gestao-equipe', label: 'Gestão de Equipe', icon: '👥', restricted: true },
-                  { id: 'imoveis', label: 'Imóveis', icon: '🏢' },
-                  { id: 'agentes-ia', label: 'Agentes de IA', icon: '🤖', restricted: true },
-                  { id: 'chat', label: 'WhatsApp', icon: '💬' },
-                  { id: 'integracoes', label: 'Integrações', icon: '🔌', restricted: true },
-                  { id: 'central-leads', label: 'Central Leads', icon: '📥', restricted: true },
-                  { id: 'relatorios', label: 'Relatórios', icon: '📄', restricted: true },
-                  { id: 'excel', label: 'Excel', icon: '📝', restricted: true }
-                ].map((section) => (
-                  <label
-                    key={section.id}
-                    className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-all ${
-                      editPermissions[section.id]
-                        ? 'bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-900'
-                        : 'bg-gray-50 dark:bg-slate-950 border-gray-200 dark:border-slate-800 hover:bg-gray-100 dark:hover:bg-slate-800'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={editPermissions[section.id] || false}
-                      onChange={(e) => setEditPermissions(prev => ({
-                        ...prev,
-                        [section.id]: e.target.checked
-                      }))}
-                      className="h-4 w-4 text-blue-600 dark:text-blue-300 rounded border-gray-300"
-                    />
-                    <span className="text-sm">{section.icon}</span>
-                    <span className="text-xs font-medium text-gray-700 dark:text-slate-300">{section.label}</span>
-                    {section.restricted && (
-                      <span className="text-[10px] text-orange-600 dark:text-orange-300 ml-auto">Restrito</span>
+              {cargoEscolhido ? (
+                <>
+                  <p className="text-xs text-gray-500 dark:text-slate-400">
+                    Vêm do cargo <strong className="text-gray-700 dark:text-slate-200">{cargoEscolhido.nome}</strong>.
+                    Para mudar, troque o cargo acima — ou edite o cargo, e a mudança vale para todos que o têm.
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {abasDoMenu.filter((a) => cargoEscolhido.permissoes.includes(a.codigo)).map((a) => (
+                      <span
+                        key={a.codigo}
+                        className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-800 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200"
+                      >
+                        {a.descricao}
+                      </span>
+                    ))}
+                    {abasDoMenu.length > 0 && !abasDoMenu.some((a) => cargoEscolhido.permissoes.includes(a.codigo)) && (
+                      <span className="text-xs text-gray-500 dark:text-slate-400">Este cargo não libera nenhuma aba do menu.</span>
                     )}
-                  </label>
-                ))}
-              </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/configuracoes?tab=cargos')}
+                    className="text-xs font-semibold text-blue-600 hover:underline dark:text-blue-400"
+                  >
+                    Editar o cargo em Configurações › Cargos →
+                  </button>
+                </>
+              ) : (
+                <p className="text-xs text-amber-700 dark:text-amber-400">
+                  Sem cargo. Escolha um cargo acima — é ele que define as abas do menu.
+                </p>
+              )}
             </div>
 
             {/* Sub-permissões: Início */}
-            {editPermissions.leads && (
+            {temAbaNoMenu('leads') && (
               <div className="space-y-3 p-3 bg-gray-50 dark:bg-slate-950 rounded-lg">
                 <h4 className="font-medium text-gray-700 dark:text-slate-300 text-sm">Sub-abas de Início</h4>
                 <div className="grid grid-cols-3 gap-2">
@@ -2827,7 +2831,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
             )}
 
             {/* Sub-permissões: Gestão de Equipe */}
-            {editPermissions['gestao-equipe'] && (
+            {temAbaNoMenu('gestao-equipe') && (
               <div className="space-y-3 p-3 bg-gray-50 dark:bg-slate-950 rounded-lg">
                 <h4 className="font-medium text-gray-700 dark:text-slate-300 text-sm">Sub-abas de Gestão de Equipe</h4>
                 <div className="grid grid-cols-3 gap-2">
