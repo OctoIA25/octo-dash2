@@ -17,6 +17,10 @@ export interface FiltrosDaConferencia {
   status?: string;
   construtoraId?: string | null;
   corretorId?: string | null;
+  equipeId?: string | null;
+  /** 'lancamento' | 'terceiros' — os prontos. */
+  tipo?: string | null;
+  lancamentoId?: string | null;
 }
 
 export async function carregarConferencia(
@@ -31,6 +35,9 @@ export async function carregarConferencia(
     p_status: f.status || null,
     p_construtora_id: f.construtoraId || null,
     p_corretor_id: f.corretorId || null,
+    p_equipe_id: f.equipeId || null,
+    p_tipo: f.tipo || null,
+    p_lancamento_id: f.lancamentoId || null,
   });
   if (error) throw error;
   return (data as Conferencia) ?? null;
@@ -179,6 +186,28 @@ export async function carregarConstrutoras(tenantId: string) {
     .order('nome');
   if (error) throw error;
   return (data ?? []) as Array<{ id: string; nome: string }>;
+}
+
+/** As equipes, para o filtro. */
+export async function carregarEquipes(tenantId: string) {
+  const { data, error } = await supabase
+    .from('teams')
+    .select('id, name')
+    .eq('tenant_id', tenantId)
+    .order('name');
+  if (error) throw error;
+  return (data ?? []) as Array<{ id: string; name: string }>;
+}
+
+/** Os empreendimentos (lançamentos), com a construtora — o filtro abre por ela. */
+export async function carregarEmpreendimentos(tenantId: string) {
+  const { data, error } = await supabase
+    .from('lancamentos')
+    .select('id, nome, construtora_id')
+    .eq('tenant_id', tenantId)
+    .order('nome');
+  if (error) throw error;
+  return (data ?? []) as Array<{ id: string; nome: string; construtora_id: string | null }>;
 }
 
 /**

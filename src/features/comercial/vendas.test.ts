@@ -8,7 +8,7 @@ import {
 const venda = (over: Partial<VendaNaLista> = {}): VendaNaLista => ({
   id: 'v1', data_venda: '2026-09-15', empreendimento: 'Reserva Castanheira',
   construtora: 'Santa Ângela', tipo: 'lancamento', corretor: 'Ana',
-  corretor_id: 'u-ana', nivel_corretor: 'junior', lead_id: 'l1',
+  corretor_id: 'u-ana', nivel_corretor: 'junior', lead_id: 'l1', origem: null,
   vgv: 600000, comissao_pct: 5, comissao_bruta: 30000,
   imposto_pct: 6, imposto_valor: 1800, comissao_liquida: 28200,
   comissao_da_proposta: null, nf_numero: null, nf_data: null,

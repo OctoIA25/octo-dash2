@@ -8,18 +8,22 @@
  * onde a tabela ficou, e são conferidas por
  * `supabase/tests/conferencia_da_planilha.test.sql`.
  *
- * O que sobra para o front proteger são duas coisas pequenas e caras:
- * **o filtro que saiu não pode voltar pela chamada**, e **falha de leitura não
- * pode virar lista vazia**.
+ * 29/09: os filtros voltaram — equipe, pronto/lançamento, construtora,
+ * empreendimento e situação — como RECORTE, na barra de cima da página.
+ *
+ * O que o front protege são duas coisas pequenas e caras: **os nomes da
+ * chamada são os da função do banco**, e **falha de leitura não pode virar
+ * lista vazia**.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { carregarPlanilha } from '../vendasPlanilhaService';
+import { carregarConferencia } from '../vendasService';
 
 const rpc = vi.fn();
 vi.mock('@/lib/supabaseClient', () => ({ supabase: { rpc: (...a: unknown[]) => rpc(...a) } }));
 
 const RESPOSTA = {
-  linhas: [], total_linhas: 0, total_vgv: 0,
+  linhas: [], total_linhas: 0, total_unidade: 0,
   total_comissao: 0, total_imobiliaria: 0, total_recebido: 0,
 };
 
@@ -28,30 +32,45 @@ beforeEach(() => {
   rpc.mockResolvedValue({ data: RESPOSTA, error: null });
 });
 
-describe('a chamada manda só o que a planilha tem', () => {
+describe('a chamada usa os nomes da função do banco', () => {
   /*
-   * O `p_tipo` saiu da função do banco junto com o filtro Lançamentos/Prontos.
-   * Mandá-lo assim mesmo não daria erro visível — o PostgREST responderia
-   * "function not found" e a tela ficaria vazia, que é indistinguível de "não
-   * houve venda no período".
+   * Um nome que o banco não conhece não dá erro visível — o PostgREST
+   * responde "function not found" e a tela fica vazia, que é indistinguível
+   * de "não houve venda no período". Os nomes abaixo são os da migration
+   * 20260929_conferencia_filtros_em_cima.
    */
-  it('não manda mais o filtro de lançamento/pronto', async () => {
-    await carregarPlanilha('t1', { de: '2026-09-01', ate: '2026-09-30' });
-    const args = rpc.mock.calls[0][1] as Record<string, unknown>;
-    expect(Object.keys(args)).toEqual(['p_tenant_id', 'p_de', 'p_ate', 'p_corretor']);
-  });
-
-  it('o recorte por período e por corretor continua indo', async () => {
-    await carregarPlanilha('t1', { de: '2026-09-01', ate: '2026-09-30', corretor: 'Ana' });
+  it('planilha: os nove filtros, com os nomes do banco', async () => {
+    await carregarPlanilha('t1', {
+      de: '2026-09-01', ate: '2026-09-30', corretor: 'Ana', equipeId: 'e1', tipo: 'lancamento',
+      construtoraId: 'c1', lancamentoId: 'l1', situacao: 'parcelado',
+    });
     expect(rpc).toHaveBeenCalledWith('vendas_planilha_conferencia', {
       p_tenant_id: 't1', p_de: '2026-09-01', p_ate: '2026-09-30', p_corretor: 'Ana',
+      p_equipe_id: 'e1', p_tipo: 'lancamento', p_construtora_id: 'c1',
+      p_lancamento_id: 'l1', p_situacao: 'parcelado',
     });
   });
 
+  it('CRM: os filtros novos vão com os nomes do banco', async () => {
+    rpc.mockResolvedValue({ data: null, error: null });
+    await carregarConferencia('t1', {
+      de: '2026-09-01', ate: '2026-09-30', equipeId: 'e1', tipo: 'terceiros', lancamentoId: 'l1',
+    });
+    expect(rpc).toHaveBeenCalledWith('vendas_conferencia', {
+      p_tenant_id: 't1', p_de: '2026-09-01', p_ate: '2026-09-30', p_status: null,
+      p_construtora_id: null, p_corretor_id: null,
+      p_equipe_id: 'e1', p_tipo: 'terceiros', p_lancamento_id: 'l1',
+    });
+  });
+
+  /*
+   * O select da tela manda '' para "Todos". Se isso chegasse ao banco como
+   * texto, "tipo = ''" não casaria com nada e a lista viria vazia.
+   */
   it('filtro em branco vira nulo, e não a string vazia', async () => {
-    await carregarPlanilha('t1', { corretor: '' });
+    await carregarPlanilha('t1', { corretor: '', equipeId: '', tipo: '', situacao: '' });
     const args = rpc.mock.calls[0][1] as Record<string, unknown>;
-    expect(args.p_corretor).toBeNull();
+    expect([args.p_corretor, args.p_equipe_id, args.p_tipo, args.p_situacao]).toEqual([null, null, null, null]);
   });
 });
 

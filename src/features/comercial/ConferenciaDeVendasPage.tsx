@@ -26,9 +26,12 @@ import {
 } from './vendas';
 import { ConferenciaDaPlanilha } from './ConferenciaDaPlanilha';
 import {
-  carregarConferencia, carregarConstrutoras, carregarDetalhe, carregarEquipe,
-  gravarRepasses, importarAssinadas, linkDaNotaFiscal, marcarRepassePago,
-  salvarConferencia, subirNotaFiscal,
+  ROTULO_DA_SITUACAO, carregarPlanilha, type SituacaoDaPlanilha,
+} from './vendasPlanilhaService';
+import {
+  carregarConferencia, carregarConstrutoras, carregarDetalhe, carregarEmpreendimentos,
+  carregarEquipe, carregarEquipes, gravarRepasses, importarAssinadas, linkDaNotaFiscal,
+  marcarRepassePago, salvarConferencia, subirNotaFiscal,
 } from './vendasService';
 import { sincronizarVendasComerciais } from '@/features/metricas/services/commercialSalesService';
 
@@ -46,8 +49,17 @@ export function ConferenciaDeVendasPage() {
   const [de, setDe] = useState(primeiroDoMes);
   const [ate, setAte] = useState(hoje);
   const [status, setStatus] = useState('');
+  /*
+   * O corretor é o ID do membro no CRM e o NOME escrito na planilha: lá ele é
+   * texto, e só parte dos nomes casa com alguém cadastrado — oferecer o
+   * cadastro esconderia justamente os que precisam de atenção. Por isso ele
+   * e o status zeram na troca de aba; os outros filtros valem para as duas.
+   */
+  const [corretor, setCorretor] = useState('');
+  const [equipeId, setEquipeId] = useState('');
+  const [tipo, setTipo] = useState<'' | 'lancamento' | 'terceiros'>('');
   const [construtoraId, setConstrutoraId] = useState('');
-  const [corretorId, setCorretorId] = useState('');
+  const [lancamentoId, setLancamentoId] = useState('');
   /*
    * De onde a tela lê — item 5 do chefe, 24/09.
    *
@@ -61,14 +73,51 @@ export function ConferenciaDeVendasPage() {
   const [fonte, setFonte] = useState<'planilha' | 'crm'>('planilha');
   const [aberta, setAberta] = useState<VendaNaLista | null>(null);
 
-  const filtros = { de, ate, status, construtoraId, corretorId };
+  const trocarFonte = (f: 'planilha' | 'crm') => {
+    setFonte(f);
+    setCorretor('');
+    setStatus('');
+  };
+
+  // Construtora e empreendimento só existem dentro de "Lançamentos". Fora
+  // dele, o que ficou escolhido não pode continuar filtrando escondido.
+  const soLancamento = tipo === 'lancamento';
+  const construtoraFiltro = soLancamento ? construtoraId : '';
+  const lancamentoFiltro = soLancamento ? lancamentoId : '';
+
+  const filtros = {
+    de, ate, status, corretorId: corretor, equipeId, tipo,
+    construtoraId: construtoraFiltro, lancamentoId: lancamentoFiltro,
+  };
 
   const conferencia = useQuery({
-    queryKey: ['conferencia-vendas', tenantId, de, ate, status, construtoraId, corretorId],
+    queryKey: ['conferencia-vendas', tenantId, filtros],
     queryFn: () => carregarConferencia(tenantId!, filtros),
     // Não busca o que a tela não vai mostrar: na planilha, esta consulta seria
     // uma ida ao banco por troca de filtro, sem nada na tela para usá-la.
     enabled: !!tenantId && tenantId !== 'owner' && fonte === 'crm',
+  });
+
+  const filtrosDaPlanilha = {
+    de, ate, corretor, equipeId, tipo, situacao: status,
+    construtoraId: construtoraFiltro, lancamentoId: lancamentoFiltro,
+  };
+  const planilha = useQuery({
+    queryKey: ['conferencia-planilha', tenantId, filtrosDaPlanilha],
+    queryFn: () => carregarPlanilha(tenantId!, filtrosDaPlanilha),
+    enabled: !!tenantId && tenantId !== 'owner' && fonte === 'planilha',
+  });
+
+  const equipes = useQuery({
+    queryKey: ['equipes-filtro', tenantId],
+    queryFn: () => carregarEquipes(tenantId!),
+    enabled: !!tenantId && tenantId !== 'owner',
+  });
+
+  const empreendimentos = useQuery({
+    queryKey: ['empreendimentos-filtro', tenantId],
+    queryFn: () => carregarEmpreendimentos(tenantId!),
+    enabled: !!tenantId && tenantId !== 'owner',
   });
 
   const construtoras = useQuery({
@@ -141,11 +190,23 @@ export function ConferenciaDeVendasPage() {
    */
   const semFolha = (linhas ?? []).filter((l) => l.comissao_liquida == null).length;
 
-  const corretoresNaLista = useMemo(() => {
+  // [valor, rótulo] da aba aberta. Vêm da própria lista, como antes.
+  const corretoresNaLista = useMemo((): Array<[string, string]> => {
+    if (fonte === 'planilha') {
+      const nomes = new Set((planilha.data?.linhas ?? []).map((l) => l.corretor_nome).filter(Boolean) as string[]);
+      return [...nomes].sort((a, b) => a.localeCompare(b, 'pt-BR')).map((n) => [n, n]);
+    }
     const m = new Map<string, string>();
     linhas.forEach((l) => { if (l.corretor_id) m.set(l.corretor_id, l.corretor); });
     return [...m.entries()];
-  }, [linhas]);
+  }, [fonte, planilha.data, linhas]);
+
+  const empreendimentosDaConstrutora = (empreendimentos.data ?? [])
+    .filter((e) => !construtoraId || e.construtora_id === construtoraId);
+
+  const statusDaAba: Array<[string, string]> = fonte === 'planilha'
+    ? (Object.keys(ROTULO_DA_SITUACAO) as SituacaoDaPlanilha[]).map((s) => [s, ROTULO_DA_SITUACAO[s]])
+    : (Object.keys(ROTULO_DO_STATUS) as StatusDaVenda[]).map((s) => [s, ROTULO_DO_STATUS[s]]);
 
   if (!tenantId || tenantId === 'owner') {
     return <p className="p-6 text-sm text-muted-foreground">Escolha uma imobiliária para conferir as vendas.</p>;
@@ -168,7 +229,7 @@ export function ConferenciaDeVendasPage() {
               <button
                 key={f}
                 type="button"
-                onClick={() => setFonte(f)}
+                onClick={() => trocarFonte(f)}
                 className={`rounded px-2.5 py-1 font-medium ${
                   fonte === f ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent'
                 }`}
@@ -207,35 +268,61 @@ export function ConferenciaDeVendasPage() {
         <Campo rotulo="Até">
           <input type="date" value={ate} onChange={(e) => setAte(e.target.value)} className={inputCls} />
         </Campo>
-        {fonte === 'crm' && (
-        <>
+        <Campo rotulo="Corretor">
+          <select value={corretor} onChange={(e) => setCorretor(e.target.value)} className={inputCls}>
+            <option value="">Todos</option>
+            {corretoresNaLista.map(([valor, nome]) => <option key={valor} value={valor}>{nome}</option>)}
+          </select>
+        </Campo>
+        <Campo rotulo="Equipe">
+          <select value={equipeId} onChange={(e) => setEquipeId(e.target.value)} className={inputCls}>
+            <option value="">Todas</option>
+            {(equipes.data ?? []).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        </Campo>
+        <Campo rotulo="Prontos / Lançamentos">
+          <select value={tipo} onChange={(e) => setTipo(e.target.value as typeof tipo)} className={inputCls}>
+            <option value="">Todos</option>
+            <option value="terceiros">Prontos</option>
+            <option value="lancamento">Lançamentos</option>
+          </select>
+        </Campo>
+        {soLancamento && (
+          <>
+            <Campo rotulo="Construtora">
+              {/* Trocar a construtora zera o empreendimento: um empreendimento
+                  de outra construtora deixaria a lista vazia sem motivo à vista. */}
+              <select value={construtoraId}
+                onChange={(e) => { setConstrutoraId(e.target.value); setLancamentoId(''); }}
+                className={inputCls}>
+                <option value="">Todas</option>
+                {(construtoras.data ?? []).map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+              </select>
+            </Campo>
+            <Campo rotulo="Empreendimento">
+              <select value={lancamentoId} onChange={(e) => setLancamentoId(e.target.value)} className={inputCls}>
+                <option value="">Todos</option>
+                {empreendimentosDaConstrutora.map((e) => <option key={e.id} value={e.id}>{e.nome}</option>)}
+              </select>
+            </Campo>
+          </>
+        )}
         <Campo rotulo="Status">
           <select value={status} onChange={(e) => setStatus(e.target.value)} className={inputCls}>
             <option value="">Todos</option>
-            {(Object.keys(ROTULO_DO_STATUS) as StatusDaVenda[]).map((s) => (
-              <option key={s} value={s}>{ROTULO_DO_STATUS[s]}</option>
-            ))}
+            {statusDaAba.map(([valor, rotulo]) => <option key={valor} value={valor}>{rotulo}</option>)}
           </select>
         </Campo>
-        <Campo rotulo="Construtora">
-          <select value={construtoraId} onChange={(e) => setConstrutoraId(e.target.value)} className={inputCls}>
-            <option value="">Todas</option>
-            {(construtoras.data ?? []).map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
-          </select>
-        </Campo>
-        <Campo rotulo="Corretor">
-          <select value={corretorId} onChange={(e) => setCorretorId(e.target.value)} className={inputCls}>
-            <option value="">Todos</option>
-            {corretoresNaLista.map(([id, nome]) => <option key={id} value={id}>{nome}</option>)}
-          </select>
-        </Campo>
-        </>
-        )}
       </div>
 
-      {/* A planilha tem os filtros dela: o tipo do negocio e o corretor por
-          NOME, porque la o corretor e texto e nem todo nome casa com membro. */}
-      {fonte === 'planilha' && <ConferenciaDaPlanilha de={de} ate={ate} />}
+      {fonte === 'planilha' && (
+        <ConferenciaDaPlanilha
+          dados={planilha.data}
+          carregando={planilha.isLoading}
+          erro={planilha.error as Error | null}
+          soPeriodo={!corretor && !equipeId && !tipo && !status}
+        />
+      )}
 
       {fonte === 'crm' && conferencia.isLoading && (
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -287,6 +374,7 @@ export function ConferenciaDeVendasPage() {
                 <tr className="border-b bg-muted/40 text-left uppercase tracking-wide text-muted-foreground">
                   <th className="px-3 py-2">Data</th>
                   <th className="px-3 py-2">Empreendimento</th>
+                  <th className="px-3 py-2">Origem</th>
                   <th className="px-3 py-2">Corretor</th>
                   <th className="px-3 py-2 text-right">VGV</th>
                   <th className="px-3 py-2 text-right">Bruta</th>
@@ -298,7 +386,7 @@ export function ConferenciaDeVendasPage() {
               </thead>
               <tbody className="divide-y">
                 {linhas.length === 0 && (
-                  <tr><td colSpan={9} className="px-3 py-6 text-center text-muted-foreground">
+                  <tr><td colSpan={10} className="px-3 py-6 text-center text-muted-foreground">
                     Nenhuma venda no período. A venda aparece aqui quando a proposta entra em “Proposta Assinada”.
                   </td></tr>
                 )}
@@ -312,13 +400,16 @@ export function ConferenciaDeVendasPage() {
                         <span className="font-medium">{v.empreendimento || '—'}</span>
                         {v.construtora && <span className="ml-1 text-muted-foreground">· {v.construtora}</span>}
                       </td>
+                      {/* De onde veio o lead. "Manual" é a proposta que nasceu
+                          à mão, sem lead — é o que se sabe, e aparece. */}
+                      <td className="px-3 py-2 whitespace-nowrap">{v.origem || '—'}</td>
                       <td className="px-3 py-2">
                         {v.corretor || '—'}
                         <span className="ml-1 text-[10px] text-muted-foreground">({rotuloDoNivel(v.nivel_corretor)})</span>
                       </td>
-                      <td className="px-3 py-2 text-right tabular-nums">{reaisExatos(v.vgv)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{reaisExatos(v.comissao_bruta)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums font-medium">
+                      <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">{reaisExatos(v.vgv)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">{reaisExatos(v.comissao_bruta)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap font-medium">
                         {/* Sem folha calculada a líquida é DESCONHECIDA, e não
                             zero nem igual à bruta: mostrar a bruta afirmaria
                             que a casa fica com 100% da comissão. */}
@@ -326,7 +417,7 @@ export function ConferenciaDeVendasPage() {
                           ? <span className="font-normal text-muted-foreground" title="Falta calcular a folha de repasse desta venda">—</span>
                           : reaisExatos(v.comissao_liquida)}
                       </td>
-                      <td className={`px-3 py-2 text-right tabular-nums ${d ? 'text-rose-700 dark:text-rose-300' : ''}`}>
+                      <td className={`px-3 py-2 text-right tabular-nums whitespace-nowrap ${d ? 'text-rose-700 dark:text-rose-300' : ''}`}>
                         {v.valor_recebido == null ? '—' : reaisExatos(v.valor_recebido)}
                       </td>
                       <td className="px-3 py-2">

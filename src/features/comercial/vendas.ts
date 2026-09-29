@@ -40,6 +40,8 @@ export interface VendaNaLista {
   corretor_id: string | null;
   nivel_corretor: string | null;
   lead_id: string | null;
+  /** De onde veio o lead ("Santa Angela", "ZAP Imóveis"). "Manual" quando a proposta nasceu à mão. */
+  origem: string | null;
   vgv: number;
   comissao_pct: number;
   comissao_bruta: number;

@@ -34,12 +34,14 @@ DECLARE
   esperadas text[] := ARRAY[
     -- As colunas do arquivo do Drive, lidas em 24/09, mais o `id` que a tela
     -- usa como chave de linha. Esta lista é a definição de "só a planilha".
+    -- 29/09: saíram Área M², R$ M² e Total (-3%) a pedido do chefe, e entrou
+    -- `situacao` (pago/parcelado/pendente), lida da própria planilha.
     'id',
-    'empreendimento', 'unidade_codigo', 'origem', 'area_m2', 'valor_m2',
-    'total_unidade', 'valor_vgv', 'comissao_total_venda', 'cliente_nome',
+    'empreendimento', 'unidade_codigo', 'origem',
+    'total_unidade', 'comissao_total_venda', 'cliente_nome',
     'corretor_nome', 'nivel_corretor', 'repasse_corretor', 'team_leader_valor',
     'comissao_imobiliaria', 'data_assinatura', 'data_recebimento',
-    'status_recebimento'
+    'status_recebimento', 'situacao'
   ];
 BEGIN
   INSERT INTO tenants (id, code, name) VALUES (casa,'teste-conferencia','Casa')
@@ -119,7 +121,7 @@ BEGIN
       (SELECT coalesce(array_agg(x), '{}') FROM unnest(achadas) x WHERE x <> ALL(esperadas)),
       (SELECT coalesce(array_agg(x), '{}') FROM unnest(esperadas) x WHERE x <> ALL(achadas));
   END IF;
-  RAISE NOTICE 'OK 1: a linha traz as 18 chaves da planilha, e nenhuma a mais';
+  RAISE NOTICE 'OK 1: a linha traz as 16 chaves da planilha, e nenhuma a mais';
 
   -- E no topo da resposta, o mesmo: os três contadores de "quantas linhas
   -- estão sem cada coluna" existiam para explicar coluna vazia. Sem a coluna,

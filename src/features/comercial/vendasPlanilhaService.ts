@@ -16,6 +16,11 @@
  *
  * A tabela `venda_pagamento` e a função `venda_pagamento_gravar` continuam no
  * banco, com o que já estiver preenchido. O que saiu foi a tela e a leitura.
+ *
+ * FILTROS EM CIMA — 29/09. Equipe, pronto/lançamento, construtora e
+ * empreendimento voltam como RECORTE, não como coluna: a tela continua
+ * mostrando só o que a planilha tem. Saíram Área, R$/m² e Total (-3%), e
+ * entrou a situação (pago / parcelado / pendente), lida da própria planilha.
  */
 
 import { supabase } from '@/lib/supabaseClient';
@@ -30,13 +35,10 @@ export interface VendaDaPlanilha {
   corretor_nome: string | null;
   /** "Tipo" na planilha: o nível do corretor (PL, Tropa, TL, ES, Estagiário). */
   nivel_corretor: string | null;
+  /** De onde veio o lead: "Santa", "Dejoy", "Permuta". Como foi escrito. */
   origem: string | null;
-  area_m2: number | null;
-  valor_m2: number | null;
-  /** "Total Unidade" na planilha. */
+  /** "Total Unidade" na planilha. Zerado nas linhas de parcela, de propósito. */
   total_unidade: number | null;
-  /** "Total (-3%)" na planilha — é o VGV. */
-  valor_vgv: number | null;
   /** "Comissão Total" na planilha — a bruta. */
   comissao_total_venda: number | null;
   /** Os quatro percentuais somados: cada venda usa um só. */
@@ -48,12 +50,22 @@ export interface VendaDaPlanilha {
   data_recebimento: string | null;
   /** Texto livre na planilha: "ok", "ver na Caixa", "pagou mais 252 em 14/03". */
   status_recebimento: string | null;
+  /** Lida da própria planilha pelo banco — ver a migration de 29/09. */
+  situacao: SituacaoDaPlanilha;
 }
+
+export type SituacaoDaPlanilha = 'pago' | 'parcelado' | 'pendente';
+
+export const ROTULO_DA_SITUACAO: Record<SituacaoDaPlanilha, string> = {
+  pago: 'Pago',
+  parcelado: 'Parcelado',
+  pendente: 'Pendente',
+};
 
 export interface ConferenciaDaPlanilha {
   linhas: VendaDaPlanilha[];
   total_linhas: number;
-  total_vgv: number;
+  total_unidade: number;
   total_comissao: number;
   total_imobiliaria: number;
   total_recebido: number;
@@ -63,6 +75,12 @@ export interface FiltrosDaPlanilha {
   de?: string | null;
   ate?: string | null;
   corretor?: string | null;
+  equipeId?: string | null;
+  /** 'lancamento' | 'terceiros' — os prontos. */
+  tipo?: string | null;
+  construtoraId?: string | null;
+  lancamentoId?: string | null;
+  situacao?: string | null;
 }
 
 export async function carregarPlanilha(
@@ -76,6 +94,11 @@ export async function carregarPlanilha(
     p_de: f.de || null,
     p_ate: f.ate || null,
     p_corretor: f.corretor || null,
+    p_equipe_id: f.equipeId || null,
+    p_tipo: f.tipo || null,
+    p_construtora_id: f.construtoraId || null,
+    p_lancamento_id: f.lancamentoId || null,
+    p_situacao: f.situacao || null,
   });
 
   // Lança em vez de devolver vazio: lista vazia por falha de leitura é
