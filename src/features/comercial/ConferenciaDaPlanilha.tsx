@@ -28,6 +28,7 @@ import { Loader2 } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { reaisExatos } from './vendas';
 import { carregarPlanilha, type VendaDaPlanilha } from './vendasPlanilhaService';
+import { ondeEstaoAsVendas } from './ondeEstaoAsVendas';
 
 const dataBR = (d: string | null | undefined) =>
   d ? new Date(`${String(d).slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : '—';
@@ -52,6 +53,17 @@ export function ConferenciaDaPlanilha({ de, ate }: Props) {
   const { tenantId } = useAuthContext();
   const [corretor, setCorretor] = useState('');
 
+  /**
+   * A PLANILHA INTEIRA, sem filtro de data.
+   *
+   * Serve a uma coisa só: quando o recorte escolhido não devolve nada, dizer
+   * ONDE as vendas estão. A tela abre no mês corrente e a planilha parou de
+   * receber venda em 01/09 — então ela nascia dizendo "nenhuma venda neste
+   * recorte", com 37 vendas guardadas logo atrás. Quem lê conclui que não há
+   * venda nenhuma, e é o mesmo erro do "Ninguém esperando" do Plantão.
+   *
+   * Só roda quando a lista filtrada volta vazia: em dia normal não custa nada.
+   */
   const consulta = useQuery({
     queryKey: ['conferencia-planilha', tenantId, de, ate, corretor],
     enabled: Boolean(tenantId) && tenantId !== 'owner',
@@ -60,6 +72,14 @@ export function ConferenciaDaPlanilha({ de, ate }: Props) {
 
   const dados = consulta.data;
   const linhas: VendaDaPlanilha[] = dados?.linhas ?? [];
+
+  // Só quando o recorte volta vazio. Em dia normal não custa uma chamada.
+  const inteira = useQuery({
+    queryKey: ['conferencia-planilha-inteira', tenantId],
+    enabled: Boolean(tenantId) && tenantId !== 'owner' && !consulta.isLoading && linhas.length === 0,
+    queryFn: () => carregarPlanilha(tenantId as string, {}),
+  });
+  const ondeEstao = ondeEstaoAsVendas(inteira.data?.linhas ?? []);
 
   // Os nomes vêm da própria lista: a planilha guarda o corretor como TEXTO, e
   // só 9 dos 37 casam com alguém cadastrado. Oferecer o cadastro no filtro
@@ -130,7 +150,9 @@ export function ConferenciaDaPlanilha({ de, ate }: Props) {
           <tbody>
             {linhas.length === 0 && (
               <tr><td colSpan={17} className="px-3 py-6 text-center text-muted-foreground">
-                Nenhuma venda da planilha neste recorte.
+                {ondeEstao
+                  ? `Nenhuma no período escolhido. A planilha tem ${ondeEstao.quantas} ${ondeEstao.quantas === 1 ? 'venda' : 'vendas'}, ${ondeEstao.periodo}.`
+                  : 'Nenhuma venda da planilha neste recorte.'}
               </td></tr>
             )}
             {linhas.map((v) => (

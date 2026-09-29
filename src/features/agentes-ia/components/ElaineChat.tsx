@@ -21,7 +21,7 @@
  */
 
 import { useState, useRef, useEffect } from 'react';
-import { useAuth } from "@/hooks/useAuth";
+import { useAuthContext } from '@/contexts/AuthContext';
 import { emitChatTelemetry, chatStatusFrom } from '../services/agentTelemetryService';
 import { EvaluationButtons } from './EvaluationButtons';
 import { useToast } from '@/hooks/use-toast';
@@ -121,7 +121,14 @@ export const ElaineChat = ({
   addMessage,
   loadingHistory = false,
 }: ElaineChatProps = {}) => {
-  const { user } = useAuth();
+  // FONTE ÚNICA DA PERMISSÃO — 28/09.
+  //
+  // Lia `useAuth()`, uma SEGUNDA implementação de autenticação que discorda
+  // da oficial: o contexto trata líder de equipe como gestão
+  // (`role !== 'corretor'`), o hook só o admin (`role === 'admin'`). Os cinco
+  // líderes da base eram tratados como corretor aqui — não viam o resultado
+  // anexado nem o seletor de liderados.
+  const { user, isGestao } = useAuthContext();
   const { toast } = useToast();
   const { currentTheme } = useTheme();
   const isDarkMode = currentTheme === 'preto' || currentTheme === 'cinza';
@@ -307,7 +314,7 @@ export const ElaineChat = ({
     setIsSending(true);
 
     try {
-      const resultadoUsuario = user?.role === 'gestao' ? adminResultadosAnexados?.texto : undefined;
+      const resultadoUsuario = isGestao ? adminResultadosAnexados?.texto : undefined;
       
       // Preparar dados comportamentais do corretor selecionado
       const dadosComportamentais: DadosComportamentais = {};
@@ -413,7 +420,7 @@ export const ElaineChat = ({
       // SE FOR ADMIN, usar corretores selecionados (como antes)
       else {
         // 👥 GESTÃO DE LIDERADOS: Buscar dados completos do corretor selecionado
-        if (selectedCorretorGestaoLiderados && user?.role === 'gestao') {
+        if (selectedCorretorGestaoLiderados && isGestao) {
           try {
             const { getSupabaseConfig, getAuthenticatedHeaders } = await import('@/utils/encryption');
             const config = getSupabaseConfig();
@@ -523,7 +530,7 @@ export const ElaineChat = ({
         corretorNome = corretorNomeResolvido || user?.name;
       }
       // Se for admin, usar corretor selecionado
-      else if (user?.role === 'gestao') {
+      else if (isGestao) {
         corretorNome = selectedCorretorGestaoLiderados || selectedCorretor?.nome || selectedCorretorEneagrama?.nome || selectedCorretorMBTI?.nome;
       }
       
@@ -535,15 +542,15 @@ export const ElaineChat = ({
         tipoMBTI = dadosComportamentais.mbti.tipo;
       }
       // Se for admin com corretor selecionado no seletor MBTI, usar do seletor
-      else if (user?.role === 'gestao' && selectedCorretorMBTI) {
+      else if (isGestao && selectedCorretorMBTI) {
         tipoMBTI = selectedCorretorMBTI.tipoMBTI;
       }
       // Se for admin com corretor selecionado na Gestão de Liderados, usar dos dados já buscados
-      else if (user?.role === 'gestao' && selectedCorretorGestaoLiderados && dadosComportamentais.mbti) {
+      else if (isGestao && selectedCorretorGestaoLiderados && dadosComportamentais.mbti) {
         tipoMBTI = dadosComportamentais.mbti.tipo;
       }
       // Se for admin com corretor_nome mas sem seletor MBTI, buscar do banco
-      else if (user?.role === 'gestao' && corretorNome) {
+      else if (isGestao && corretorNome) {
         try {
           const { buscarMBTICorretor } = await import('@/features/corretores/services/mbtiResultsService');
           const mbtiData = await buscarMBTICorretor(corretorNome);
@@ -939,7 +946,7 @@ export const ElaineChat = ({
           </div>
         </div>
       )}
-      {user?.role === 'gestao' && adminResultadosAnexados && (
+      {isGestao && adminResultadosAnexados && (
         <div className={`flex-shrink-0 px-4 py-2 border-t ${isDarkMode ? 'border-neutral-800/60 bg-neutral-900/40' : 'border-pink-100 bg-pink-50/40'}`}>
           <div className="flex items-center gap-2 flex-wrap">
             <Paperclip className={`w-3.5 h-3.5 ${isDarkMode ? 'text-pink-400' : 'text-pink-500'}`} />

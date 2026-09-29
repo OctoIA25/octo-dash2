@@ -22,6 +22,10 @@
  * A lista abaixo é o estado congelado, com o motivo de cada um. Se você
  * ADICIONOU um arquivo aqui, pare: use `useAuthContext().isGestao`. Ao
  * corrigir um dos pendentes, REMOVA a linha dele.
+ *
+ * Já saiu daqui: `ElaineChat.tsx`, corrigido em 28/09 — era o único pendente
+ * que mudava COMPORTAMENTO (os cinco líderes não viam o resultado anexado
+ * nem o seletor de liderados). Os dois que restam são cosméticos.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -50,7 +54,6 @@ const CONHECIDOS: Record<string, string> = {
   'src/components/AppSidebar.tsx': 'PENDENTE — cosmético: só escolhe o rótulo Admin/Líder/Corretor.',
   'src/components/LogoutConfirmModal.tsx': 'PENDENTE — cosmético: líder aparece escrito "Corretor".',
   'src/components/LoginScreen.tsx': 'Não é permissão: dica de senha da tela de demonstração.',
-  'src/features/agentes-ia/components/ElaineChat.tsx': 'PENDENTE — muda comportamento para o líder.',
 };
 
 function varre(dir: string, achados: string[] = []): string[] {
