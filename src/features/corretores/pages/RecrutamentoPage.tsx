@@ -6,6 +6,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -13,16 +14,21 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { RecrutamentoFunnelChart } from '../components/RecrutamentoFunnelChart';
 import { RelatorioSection } from '../recrutamento/RelatorioSection';
 import { useRecruitment } from '../hooks/useRecruitment';
-import { ESTAGIOS, LABEL_ESTAGIO, MOTIVOS_PERDA, nivelAlcancado } from '../domain/recruitmentStages';
+import { ESTAGIOS, ESTAGIO_POR_LABEL, LABEL_ESTAGIO, MOTIVOS_PERDA, classeDoStatus, podeMover, type EstagioId } from '../domain/recruitmentStages';
+import { filtrarCandidatos, recorteCanalPeriodo } from '../domain/filtrarCandidatos';
+import { RecrutamentoKanban } from '../components/RecrutamentoKanban';
+import { useRecrutamentoQuadro } from '../hooks/useRecrutamentoQuadro';
+import { aplicarMudancaDeEtapa } from '../services/mudancaDeEtapa';
 import { FilaDeAcao } from '../components/FilaDeAcao';
 import { CondicoesDeEntrada } from '../components/CondicoesDeEntrada';
 import { MarcosDeAtivacao } from '../components/MarcosDeAtivacao';
 import { IndicadoresDoProcesso } from '../components/IndicadoresDoProcesso';
-import { recruitmentService } from '../services/recruitmentService';
-import { createTenantMember } from '../services/tenantMembersService';
+import { recruitmentService, type CandidatoComEtapas } from '../services/recruitmentService';
+import { fetchTenantMembers } from '../services/tenantMembersService';
 import { useAuth } from '@/hooks/useAuth';
 import {
   Users,
@@ -45,10 +51,11 @@ import {
   ExternalLink,
   FileDown,
   ChevronRight,
-  ChevronLeft
+  ChevronLeft,
+  LayoutGrid,
+  List
 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
 
 interface Candidato {
@@ -93,7 +100,6 @@ export const RecrutamentoPage = () => {
     createCandidato,
     updateCandidato,
     deleteCandidato,
-    changeCandidateStatus,
     setCurrentPage,
     nextPage,
     previousPage,
@@ -106,6 +112,7 @@ export const RecrutamentoPage = () => {
     periodoDe, setPeriodoDe,
     periodoAte, setPeriodoAte,
     candidatosNoRecorte,
+    filtros,
     clearFilters,
     selectCandidato,
     candidatosFiltrados,
@@ -146,6 +153,38 @@ export const RecrutamentoPage = () => {
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
+  // Kanban | Lista — Kanban é o padrão; a escolha vive na URL (?view=lista) para
+  // sobreviver a recarga e poder ser compartilhada.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const view: 'kanban' | 'lista' = searchParams.get('view') === 'lista' ? 'lista' : 'kanban';
+  const setView = (v: string) => {
+    if (v !== 'kanban' && v !== 'lista') return; // o ToggleGroup manda '' ao desmarcar
+    setSearchParams((prev) => { const n = new URLSearchParams(prev); n.set('view', v); return n; }, { replace: true });
+  };
+
+  // A carga COMPLETA: o hook acima pede 10 por vez ao servidor, que serve à
+  // lista paginada e a mais nada. O quadro e o funil precisam de todos.
+  const quadro = useRecrutamentoQuadro({ tenantId, usuarioEmail: user?.email });
+  const candidatosQuadro = useMemo(() => filtrarCandidatos(quadro.candidatos, filtros), [quadro.candidatos, filtros]);
+  // O funil conta todos os candidatos no recorte de canal+período (antes
+  // contava só os 10 da página). Se a carga completa falhou, fica com a página.
+  const candidatosDoFunil = useMemo(
+    () => (quadro.erro ? candidatosNoRecorte : recorteCanalPeriodo(quadro.candidatos, filtros)),
+    [quadro.erro, quadro.candidatos, candidatosNoRecorte, filtros],
+  );
+  const refreshTudo = async () => { await Promise.all([refresh(), quadro.refresh()]); };
+
+  // user_id → e-mail do coordenador, para o rodapé do card (é o que a ficha mostra).
+  const [coordenadores, setCoordenadores] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!tenantId) return;
+    let vivo = true;
+    fetchTenantMembers(tenantId)
+      .then((ms) => { if (vivo) setCoordenadores(Object.fromEntries(ms.map((m) => [m.user_id, m.email]))); })
+      .catch(() => { /* sem nome de coordenador o card continua inteiro */ });
+    return () => { vivo = false; };
+  }, [tenantId]);
+
   // Sincronizar com localStorage
   useEffect(() => {
     localStorage.setItem('selectedSection', 'recrutamento');
@@ -169,107 +208,42 @@ export const RecrutamentoPage = () => {
   };
 
   // Handle candidate selection
-  const handleVerDetalhes = (candidato: any) => {
+  const handleVerDetalhes = (candidato: CandidatoComEtapas) => {
+    setEncerrando(false);
+    setMotivoPerda('');
     selectCandidato(candidato);
     setModalOpen(true);
   };
 
-  // Handle status change
-const handleMudarStatus = async (novoStatus: string) => {
-  if (!candidatoSelecionado) return;
+  // Soltar o card em Perdido: abre a ficha já com a caixa do motivo — o
+  // encerramento nunca acontece sem motivo, arrastando ou clicando.
+  const handleEncerrarPeloQuadro = (candidato: CandidatoComEtapas) => {
+    selectCandidato(candidato);
+    setMotivoPerda('');
+    setEncerrando(true);
+    setModalOpen(true);
+  };
 
-  try {
-    // 1. O e-mail já tem conta na plataforma?
-    //
-    // Pergunta de sim ou não, de propósito. Antes isto era um SELECT * na view
-    // `user_profiles`, que devolvia nome, telefone e imobiliária de QUALQUER
-    // pessoa da plataforma — inclusive de quem trabalha na concorrência. Quem
-    // recruta precisa saber que o e-mail está em uso, não de quem ele é.
-    const { data: jaTemConta, error: verifyErr } = await supabase
-      .rpc('usuario_ja_tem_conta', { p_email: candidatoSelecionado.email });
-
-    if (verifyErr) {
-      console.error('❌ Erro ao verificar usuário:', verifyErr);
-      toast.error('Erro ao verificar usuário existente');
-      return;
-    }
-
-    // 2. Lógica baseada no novo status
-    if (novoStatus === LABEL_ESTAGIO.onboard) {
-      if (jaTemConta) {
-        toast.error('Usuário já existe como corretor');
-        return;
-      }
-
-      // Criar usuario e vincular ao tenant via fluxo de Acessos e Permissoes
-      const effectiveTenantId = candidatoSelecionado.tenant_id || tenantId;
-      if (!effectiveTenantId) {
-        toast.error('Tenant ID nao encontrado para adicionar o candidato a equipe');
-        return;
-      }
-
-      const cleanEmail = candidatoSelecionado.email.trim().toLowerCase();
-      const result = await createTenantMember(effectiveTenantId, {
-        email: cleanEmail,
-        password: cleanEmail,
-        name: candidatoSelecionado.nome,
-        phone: candidatoSelecionado.telefone || undefined,
-        role: 'corretor',
-        permissions: {
-          origem: 'recrutamento',
-          candidato_id: candidatoSelecionado.id
-        }
+  // Mudança de etapa pelo modal. Os efeitos colaterais (conta em Onboard,
+  // desvincular em onboard→perdido) moram em services/mudancaDeEtapa — o
+  // MESMO caminho que o arrastar no Kanban usa.
+  const handleMudarStatus = async (novoStatus: string) => {
+    if (!candidatoSelecionado) return;
+    try {
+      await aplicarMudancaDeEtapa({
+        candidato: candidatoSelecionado,
+        novoLabel: novoStatus,
+        usuarioEmail: user?.email,
+        tenantId,
       });
-
-
-      if (!result.success) {
-        toast.error(result.error || 'Erro ao adicionar candidato a equipe');
-        return;
-      }
-
-      toast.success('Candidato aprovado e adicionado à equipe!');
-
-    } else {
-      // Saiu de "Aprovado": tira o candidato da EQUIPE, não da plataforma.
-      //
-      // Aqui havia um DELETE na view `user_profiles`, que é auto-atualizável e
-      // escrevia direto em `auth.users`: mudar o status de um candidato APAGAVA
-      // a conta da pessoa. Se o e-mail já pertencia a alguém de outra
-      // imobiliária, apagava a conta dessa pessoa — e conta apagada não volta.
-      const effectiveTenantId = candidatoSelecionado.tenant_id || tenantId;
-      if (jaTemConta && effectiveTenantId) {
-        const { data: desvinculo, error: errDesvincular } = await supabase
-          .rpc('recrutamento_desvincular', {
-            p_tenant_id: effectiveTenantId,
-            p_email: candidatoSelecionado.email
-          });
-
-        if (errDesvincular) {
-          console.error('❌ Erro ao desvincular usuário:', errDesvincular);
-          toast.error('Erro ao remover usuário da equipe');
-          return;
-        }
-        // `null` = quem chamou não administra esta imobiliária.
-        if (!desvinculo) {
-          toast.error('Você não tem permissão para remover este usuário da equipe');
-          return;
-        }
-        if (desvinculo.desvinculado) {
-          toast.success('Usuário removido da equipe');
-        }
-      }
+      selectCandidato(null);
+      setModalOpen(false);
+      await refreshTudo();
+    } catch (error) {
+      console.error('❌ Erro ao mudar status:', error);
+      toast.error(error instanceof Error ? error.message : 'Erro ao processar mudança de status');
     }
-
-    // 3. Mudar status do candidato (sempre executa)
-    await changeCandidateStatus(candidatoSelecionado.id, novoStatus, user?.email);
-    selectCandidato(null);
-    setModalOpen(false);
-
-  } catch (error) {
-    console.error('❌ Erro ao mudar status:', error);
-    toast.error('Erro ao processar mudança de status');
-  }
-};
+  };
 
   const formatTelefone = (value: string) => {
     const cleaned = value.replace(/\D/g, '');
@@ -357,7 +331,7 @@ const handleMudarStatus = async (novoStatus: string) => {
       };
 
       await createCandidato(newCandidato);
-
+      void quadro.refresh();
 
       // Reset form
       setNovoFormData({
@@ -386,27 +360,6 @@ const handleMudarStatus = async (novoStatus: string) => {
   // Clear filters function
   const limparFiltros = () => {
     clearFilters();
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'Lead':
-        return 'bg-[#88C0E5]/10 text-[#88C0E5] dark:bg-[#88C0E5]/20 dark:text-[#88C0E5]';
-      case 'Interação':
-        return 'bg-[#598DC6]/10 text-[#598DC6] dark:bg-[#598DC6]/20 dark:text-[#88C0E5]';
-      case 'Qualificado':
-        return 'bg-[#598DC6]/10 text-[#598DC6] dark:bg-[#598DC6]/20 dark:text-[#88C0E5]';
-      case 'Reunião realizada':
-        return 'bg-[#234992]/10 text-[#234992] dark:bg-[#234992]/20 dark:text-[#598DC6]';
-      case 'Matrícula':
-        return 'bg-[#324F74]/10 text-[#324F74] dark:bg-[#324F74]/20 dark:text-[#598DC6]';
-      case 'Onboard':
-        return 'bg-[#324F74]/10 text-[#324F74] dark:bg-[#324F74]/20 dark:text-[#598DC6]';
-      case 'Perdido':
-        return 'bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300 dark:bg-red-900/30 dark:text-red-400';
-      default:
-        return 'bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-slate-300 dark:bg-gray-900/30 dark:text-gray-400';
-    }
   };
 
   return (
@@ -478,7 +431,7 @@ const handleMudarStatus = async (novoStatus: string) => {
           </div>
 
           <div className="h-[735px]">
-            <RecrutamentoFunnelChart candidatos={candidatosNoRecorte} />
+            <RecrutamentoFunnelChart candidatos={candidatosDoFunil} />
           </div>
         </div>
 
@@ -490,9 +443,19 @@ const handleMudarStatus = async (novoStatus: string) => {
 
         {/* Seção de Candidatos */}
         <div>
-          <div className="flex items-center gap-2 mb-6">
-            <UserPlus className="h-5 w-5 text-gray-900 dark:text-slate-100 dark:text-white" />
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-slate-100 dark:text-white">Candidatos</h2>
+          <div className="flex items-center justify-between gap-3 mb-6">
+            <div className="flex items-center gap-2">
+              <UserPlus className="h-5 w-5 text-gray-900 dark:text-slate-100 dark:text-white" />
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-slate-100 dark:text-white">Candidatos</h2>
+            </div>
+            <ToggleGroup type="single" value={view} onValueChange={setView} variant="outline" size="sm" aria-label="Modo de visualização">
+              <ToggleGroupItem value="kanban" aria-label="Kanban" className="gap-1.5">
+                <LayoutGrid className="h-3.5 w-3.5" /> Kanban
+              </ToggleGroupItem>
+              <ToggleGroupItem value="lista" aria-label="Lista" className="gap-1.5">
+                <List className="h-3.5 w-3.5" /> Lista
+              </ToggleGroupItem>
+            </ToggleGroup>
           </div>
 
           {/* Filtros e Busca */}
@@ -659,7 +622,29 @@ const handleMudarStatus = async (novoStatus: string) => {
             </CardContent>
           </Card>
 
+          {/* Kanban: todos os candidatos, filtrados pelos mesmos filtros da lista. */}
+          {view === 'kanban' && (
+            <>
+              {quadro.erro && (
+                <p className="mb-3 text-sm text-red-600 dark:text-red-400">Não foi possível carregar o quadro: {quadro.erro}</p>
+              )}
+              <RecrutamentoKanban
+                candidatos={candidatosQuadro}
+                coordenadores={coordenadores}
+                carregando={quadro.carregando}
+                onAbrir={(c) => handleVerDetalhes(c as CandidatoComEtapas)}
+                onEncerrar={(c) => handleEncerrarPeloQuadro(c as CandidatoComEtapas)}
+                onMover={async (candidato, para) => {
+                  const ok = await quadro.moverEstagio(candidato as CandidatoComEtapas, para);
+                  // Fila, indicadores e a lista leem pelo hook antigo: só recarrega se gravou.
+                  if (ok) await refresh();
+                }}
+              />
+            </>
+          )}
+
           {/* Lista de Candidatos */}
+          {view === 'lista' && (
           <Card className="border-gray-200/60 dark:border-gray-700/60">
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-lg font-medium">Candidatos</CardTitle>
@@ -690,7 +675,7 @@ const handleMudarStatus = async (novoStatus: string) => {
                                 <h3 className="font-medium text-gray-900 dark:text-slate-100 dark:text-white">
                                   {candidato.nome}
                                 </h3>
-                                <Badge className={`text-xs ${getStatusColor(candidato.status)}`}>
+                                <Badge className={`text-xs ${classeDoStatus(candidato.status)}`}>
                                   {candidato.status}
                                 </Badge>
                                 <span className="text-xs text-gray-400 dark:text-slate-500">
@@ -811,6 +796,7 @@ const handleMudarStatus = async (novoStatus: string) => {
               )}
             </CardContent>
           </Card>
+          )}
         </div>
 
         {/* Modal de Detalhes do Candidato */}
@@ -852,25 +838,33 @@ const handleMudarStatus = async (novoStatus: string) => {
                 <div className="mb-6">
                   <div className="flex items-center gap-3 mb-4">
                     <span className="text-sm font-medium text-gray-700 dark:text-slate-300 dark:text-gray-300">Status atual:</span>
-                    <Badge className={`${getStatusColor(candidatoSelecionado.status)}`}>
+                    <Badge className={`${classeDoStatus(candidatoSelecionado.status)}`}>
                       {candidatoSelecionado.status}
                     </Badge>
                   </div>
 
                   {/* Botões de Mudança de Status */}
                   <div className="flex flex-wrap gap-2">
-                    {[...ESTAGIOS.slice(1).map((e) => e.label), LABEL_ESTAGIO.perdido].map((status) => (
-                      <Button
-                        key={status}
-                        size="sm"
-                        variant={candidatoSelecionado.status === status ? 'default' : 'outline'}
-                        onClick={() => (status === LABEL_ESTAGIO.perdido
-                          ? setEncerrando(true)
-                          : handleMudarStatus(status))}
-                      >
-                        {status}
-                      </Button>
-                    ))}
+                    {[...ESTAGIOS.slice(1).map((e) => e.label), LABEL_ESTAGIO.perdido].map((status) => {
+                      // A mesma regra do arrastar: para trás, para Lead e a partir de
+                      // Perdido o botão nem liga — um clique gravava evento falso na
+                      // timeline e carimbava ts_* errado.
+                      const mover = podeMover((candidatoSelecionado.estagio ?? 'lead') as EstagioId, ESTAGIO_POR_LABEL[status]);
+                      return (
+                        <Button
+                          key={status}
+                          size="sm"
+                          variant={candidatoSelecionado.status === status ? 'default' : 'outline'}
+                          disabled={mover.ok === false}
+                          title={mover.ok === false && mover.motivo ? mover.motivo : undefined}
+                          onClick={() => (status === LABEL_ESTAGIO.perdido
+                            ? setEncerrando(true)
+                            : handleMudarStatus(status))}
+                        >
+                          {status}
+                        </Button>
+                      );
+                    })}
                   </div>
 
                   {encerrando && (
@@ -899,7 +893,7 @@ const handleMudarStatus = async (novoStatus: string) => {
                               setMotivoPerda('');
                               selectCandidato(null);
                               setModalOpen(false);
-                              await refresh();
+                              await refreshTudo();
                             } catch (e) {
                               toast.error(e instanceof Error ? e.message : 'Não foi possível encerrar');
                             }
@@ -921,7 +915,7 @@ const handleMudarStatus = async (novoStatus: string) => {
                 <CondicoesDeEntrada
                   candidato={candidatoSelecionado as unknown as Record<string, unknown>}
                   tenantId={tenantId}
-                  onSaved={refresh}
+                  onSaved={refreshTudo}
                 />
 
                 <MarcosDeAtivacao candidatoId={String(candidatoSelecionado.id)} />

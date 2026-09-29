@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { recruitmentService, type CandidatoComEtapas, type RecruitmentMetrics, type SearchParams } from '../services/recruitmentService';
+import { filtrarCandidatos, recorteCanalPeriodo, temFiltroAtivo, type FiltrosCandidato } from '../domain/filtrarCandidatos';
 
 export interface UseRecruitmentOptions {
   tenantId: string;
@@ -60,6 +61,8 @@ export interface UseRecruitmentReturn {
   setPeriodoDe: (data: string) => void;
   setPeriodoAte: (data: string) => void;
   candidatosNoRecorte: CandidatoComEtapas[];
+  /** Os oito filtros num objeto só — o Kanban aplica os mesmos sobre a carga completa. */
+  filtros: FiltrosCandidato;
   clearFilters: () => void;
 
   // Selection
@@ -105,43 +108,19 @@ export const useRecruitment = ({ tenantId, autoRefresh = false, refreshInterval 
   // Computed values
   const totalPages = useMemo(() => Math.ceil(totalCount / itemsPerPage), [totalCount, itemsPerPage]);
 
+  const filtros = useMemo<FiltrosCandidato>(() => ({
+    searchTerm, filtroStatus, filtroCargo, filtroExperiencia, filtroCanal, filtroCondicao, periodoDe, periodoAte,
+  }), [searchTerm, filtroStatus, filtroCargo, filtroExperiencia, filtroCanal, filtroCondicao, periodoDe, periodoAte]);
+
   /**
    * Recorte de PERÍODO e CANAL: vale para o funil, os indicadores e a lista.
    * Fica separado dos demais filtros de propósito — filtrar o funil por estágio
    * faria cada barra mostrar só quem está nela, que é o bug que ele corrige.
+   * A regra mora em domain/filtrarCandidatos, junto com a do Kanban.
    */
-  const candidatosNoRecorte = useMemo(() => {
-    return candidatos.filter(candidato => {
-      const canal = (candidato as any).fonte;
-      const matchCanal = filtroCanal === 'todos' || canal === filtroCanal;
-      const dia = String((candidato as any).data_inscricao || '').slice(0, 10);
-      const matchDe = periodoDe === '' || dia >= periodoDe;
-      const matchAte = periodoAte === '' || dia <= periodoAte;
-      return matchCanal && matchDe && matchAte;
-    });
-  }, [candidatos, filtroCanal, periodoDe, periodoAte]);
+  const candidatosNoRecorte = useMemo(() => recorteCanalPeriodo(candidatos, filtros), [candidatos, filtros]);
 
-  const candidatosFiltrados = useMemo(() => {
-    return candidatosNoRecorte.filter(candidato => {
-      const tres = ['cond_regiao', 'cond_tempo', 'cond_verba'].map((k) => (candidato as any)[k]);
-      const matchCondicao =
-        filtroCondicao === 'todas' ? true
-        : filtroCondicao === 'aprovadas' ? tres.every((v) => v === 'aprovado')
-        : filtroCondicao === 'reprovada' ? tres.some((v) => v === 'reprovado')
-        : tres.some((v) => v === 'pendente' || v == null);
-      if (!matchCondicao) return false;
-      const matchSearch = searchTerm === '' ||
-        candidato.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        candidato.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        candidato.cargo.toLowerCase().includes(searchTerm.toLowerCase());
-
-      const matchStatus = filtroStatus === 'todos' || candidato.status === filtroStatus;
-      const matchCargo = filtroCargo === 'todos' || candidato.cargo === filtroCargo;
-      const matchExperiencia = filtroExperiencia === 'todos' || candidato.experiencia === filtroExperiencia;
-
-      return matchSearch && matchStatus && matchCargo && matchExperiencia;
-    });
-  }, [candidatosNoRecorte, searchTerm, filtroStatus, filtroCargo, filtroExperiencia, filtroCondicao]);
+  const candidatosFiltrados = useMemo(() => filtrarCandidatos(candidatos, filtros), [candidatos, filtros]);
 
   const candidatosPorStatus = useMemo(() => {
     const statusCounts: Record<string, number> = {};
@@ -182,11 +161,7 @@ export const useRecruitment = ({ tenantId, autoRefresh = false, refreshInterval 
     }
   }, [candidatos.length, loadCandidateSources]);
 
-  const filtrosAtivos = useMemo(() => {
-    return filtroStatus !== 'todos' || filtroCargo !== 'todos' || filtroExperiencia !== 'todos'
-      || filtroCanal !== 'todos' || filtroCondicao !== 'todas'
-      || periodoDe !== '' || periodoAte !== '' || searchTerm !== '';
-  }, [filtroStatus, filtroCargo, filtroExperiencia, searchTerm]);
+  const filtrosAtivos = useMemo(() => temFiltroAtivo(filtros), [filtros]);
 
   // API calls
   const loadCandidatos = useCallback(async (params?: SearchParams) => {
@@ -441,6 +416,7 @@ export const useRecruitment = ({ tenantId, autoRefresh = false, refreshInterval 
 
     // Computed values
     candidatosNoRecorte,
+    filtros,
     candidatosFiltrados,
     candidatosPorStatus,
     candidatosPorCargo,

@@ -49,6 +49,8 @@ export interface Candidato {
   cond_tempo?: string;
   cond_verba?: string;
   motivo_perda?: string;
+  coordenador_id?: string | null;
+  ts_candidatura?: string;
   created_at: string;
   updated_at: string;
 }
@@ -242,6 +244,31 @@ export class RecruitmentService {
       })),
       count: count || 0,
     };
+  }
+
+  /**
+   * TODOS os candidatos do tenant, em blocos de 500 até acabar. É a carga do
+   * Kanban e do funil: a página de 10 do getCandidatos fazia o funil contar só
+   * os dez mais recentes. O volume é de dezenas por trimestre; centenas cabem
+   * em uma ou duas idas ao banco.
+   */
+  async getTodosCandidatos(tenantId: string, tamanhoDoBloco = 500): Promise<CandidatoComEtapas[]> {
+    const todos: CandidatoComEtapas[] = [];
+    for (let offset = 0; ; offset += tamanhoDoBloco) {
+      const { data, error } = await this.supabase
+        .from('recrut_candidato')
+        .select(`${CAMPOS}, recrut_evento (id, tipo, autor, payload, created_at)`)
+        .eq('tenant_id', tenantId)
+        .order('ts_candidatura', { ascending: false })
+        .range(offset, offset + tamanhoDoBloco - 1);
+      if (error) throw error;
+      const bloco = (data ?? []) as unknown as Array<Record<string, unknown> & { recrut_evento?: unknown[] }>;
+      for (const row of bloco) {
+        todos.push({ ...paraCandidato(row), etapas: (row.recrut_evento ?? []).map(paraEtapa) });
+      }
+      if (bloco.length < tamanhoDoBloco) break;
+    }
+    return todos;
   }
 
   async getCandidatoById(id: string, tenantId: string): Promise<CandidatoComEtapas | null> {

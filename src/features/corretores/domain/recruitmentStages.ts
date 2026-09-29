@@ -131,6 +131,12 @@ export function diasDesde(iso: string | null | undefined): number {
   return Math.max(0, Math.floor(ms / 86_400_000));
 }
 
+/** "hoje", "há 1 dia", "há N dias" — o rodapé do card do Kanban. */
+export function textoHaDias(dias: number): string {
+  if (dias <= 0) return 'hoje';
+  return dias === 1 ? 'há 1 dia' : `há ${dias} dias`;
+}
+
 /** Os cinco marcos da ativação de 30 dias, na ordem em que a spec os lista. */
 export const MARCOS_ATIVACAO = [
   { id: 'matricula', label: 'Matrícula paga', dias: 5 },
@@ -143,3 +149,95 @@ export const MARCOS_ATIVACAO = [
 export const LABEL_MARCO: Record<string, string> = Object.fromEntries(
   MARCOS_ATIVACAO.map((m) => [m.id, m.label]),
 );
+
+/**
+ * A regra do arrastar no Kanban, ANTES de tocar o banco. O trigger já garante
+ * que `estagio` nunca anda para trás e que 'perdido' não reabre — mas ele faz
+ * isso em silêncio: o card voltaria sozinho e ninguém saberia por quê. Aqui o
+ * motivo vira aviso na tela.
+ *
+ * `motivo: null` = não move, mas também não há o que avisar (mesma coluna).
+ */
+export type ResultadoMover = { ok: true } | { ok: false; motivo: string | null };
+
+export function podeMover(de: EstagioId, para: EstagioId): ResultadoMover {
+  if (de === para) return { ok: false, motivo: null };
+  if (para === 'lead') return { ok: false, motivo: 'O funil só anda para frente: Lead é a entrada' };
+  if (de === 'perdido') return { ok: false, motivo: 'Candidato perdido não volta ao funil' };
+  if (para === 'perdido') return { ok: true };
+  const iDe = ESTAGIOS.findIndex((e) => e.id === de);
+  const iPara = ESTAGIOS.findIndex((e) => e.id === para);
+  if (iPara < iDe) return { ok: false, motivo: 'O funil só anda para frente' };
+  return { ok: true };
+}
+
+/**
+ * A cor de cada etapa — a mesma paleta azul da badge da lista, para a bolinha
+ * e a pílula de contagem das colunas do Kanban. Perdido é cinza no quadro
+ * (saída, não etapa) e vermelho na badge (chama atenção na ficha).
+ */
+export const COR_ESTAGIO: Record<EstagioId, string> = {
+  lead: '#88C0E5',
+  interacao: '#598DC6',
+  qualificado: '#598DC6',
+  reuniao_realizada: '#234992',
+  matricula: '#324F74',
+  onboard: '#324F74',
+  perdido: '#94A3B8',
+};
+
+/** Classes Tailwind da badge de status, pelo LABEL — era `getStatusColor` na página. */
+export function classeDoStatus(status: string): string {
+  switch (status) {
+    case 'Lead':
+      return 'bg-[#88C0E5]/10 text-[#88C0E5] dark:bg-[#88C0E5]/20 dark:text-[#88C0E5]';
+    case 'Interação':
+    case 'Qualificado':
+      return 'bg-[#598DC6]/10 text-[#598DC6] dark:bg-[#598DC6]/20 dark:text-[#88C0E5]';
+    case 'Reunião realizada':
+      return 'bg-[#234992]/10 text-[#234992] dark:bg-[#234992]/20 dark:text-[#598DC6]';
+    case 'Matrícula':
+    case 'Onboard':
+      return 'bg-[#324F74]/10 text-[#324F74] dark:bg-[#324F74]/20 dark:text-[#598DC6]';
+    case 'Perdido':
+      return 'bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300';
+    default:
+      return 'bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-slate-300';
+  }
+}
+
+/** Cor da bolinha de cada situação de condição no card do Kanban. */
+export const COR_SITUACAO_CONDICAO: Record<string, string> = {
+  pendente: '#CBD5E1',
+  aprovado: '#22C55E',
+  reprovado: '#EF4444',
+  decisao_erick: '#F59E0B',
+};
+
+/** As colunas do Kanban de candidatos: as seis etapas e, por último, Perdido. */
+export const COLUNAS_KANBAN: { id: EstagioId; title: string; color: string }[] = [
+  ...ESTAGIOS.map((e) => ({ id: e.id as EstagioId, title: e.label, color: COR_ESTAGIO[e.id] })),
+  { id: 'perdido', title: LABEL_ESTAGIO.perdido, color: COR_ESTAGIO.perdido },
+];
+
+export type DecisaoSolta =
+  | { acao: 'nada' }
+  | { acao: 'aviso'; motivo: string }
+  | { acao: 'encerrar' }
+  | { acao: 'mover'; para: EstagioId };
+
+/**
+ * O que fazer quando o card é solto sobre `overId` — puro, para teste. Solto
+ * fora de coluna ou na mesma: nada. Movimento proibido: aviso com o motivo.
+ * Em Perdido: pede o motivo (encerrar) em vez de mover. Senão: move.
+ */
+export function resolverSolta(candidato: { estagio?: EstagioId | string | null }, overId: string | null): DecisaoSolta {
+  if (!overId) return { acao: 'nada' };
+  const coluna = COLUNAS_KANBAN.find((c) => c.id === overId);
+  if (!coluna) return { acao: 'nada' };
+  const r = podeMover((candidato.estagio ?? 'lead') as EstagioId, coluna.id);
+  // `=== false`, não `!r.ok`: com strictNullChecks desligado o TS não estreita por verdade.
+  if (r.ok === false) return r.motivo ? { acao: 'aviso', motivo: r.motivo } : { acao: 'nada' };
+  if (coluna.id === 'perdido') return { acao: 'encerrar' };
+  return { acao: 'mover', para: coluna.id };
+}
