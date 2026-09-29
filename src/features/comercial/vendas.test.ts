@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   avisoDaComissaoDaProposta, divergencia, entradaDoMotor, repassesDaVenda,
-  rotuloDoNivel, totaisConferem,
+  resumoDaReleitura, rotuloDoNivel, totaisConferem,
   type PessoaDoRepasse, type TotaisDaConferencia, type VendaNaLista,
 } from './vendas';
 
@@ -172,5 +172,26 @@ describe('rótulo do nível', () => {
   it('diz "sem nível" em vez de mostrar vazio', () => {
     expect(rotuloDoNivel(null)).toBe('sem nível');
     expect(rotuloDoNivel('inventado')).toBe('sem nível');
+  });
+});
+
+describe('resumoDaReleitura', () => {
+  it('trata ok:false como falha, mesmo vindo num HTTP 200', () => {
+    const r = resumoDaReleitura({ ok: false, error: 'planilha sem cabeçalho' });
+    expect(r.falhou).toBe(true);
+    expect(r.descricao).toContain('planilha sem cabeçalho');
+  });
+
+  it('não promete mudança quando nada mudou', () => {
+    const r = resumoDaReleitura({ ok: true, inserted: 0, updated: 0, deactivated: 0, unchanged: 66 });
+    expect(r.falhou).toBe(false);
+    expect(r.titulo).toContain('nada mudou');
+    expect(r.descricao).toContain('66');
+  });
+
+  it('conta a linha que sumiu da planilha, e não só as que chegaram', () => {
+    const r = resumoDaReleitura({ ok: true, inserted: 0, updated: 0, deactivated: 1, unchanged: 65 });
+    expect(r.titulo).toBe('Planilha relida');
+    expect(r.descricao).toContain('1 sumiram');
   });
 });

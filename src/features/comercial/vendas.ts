@@ -289,3 +289,51 @@ const formatar = (v: number) =>
     .replace(/\u00A0/g, ' ');
 
 const percentual = (v: number) => `${String(v).replace('.', ',')}%`;
+
+/**
+ * O que dizer depois de reler a planilha do Drive — 29/09.
+ *
+ * Existe como função separada por um motivo só: a edge function devolve
+ * `ok: false` DENTRO de uma resposta HTTP 200. Quem só olha o status vê
+ * sucesso e avisa "planilha relida" em cima de uma falha. A distinção entre
+ * "deu errado", "nada mudou" e "mudou isto" é a regra desta tela, e regra sem
+ * teste é promessa.
+ */
+export interface ReleituraDaPlanilha {
+  ok: boolean;
+  error?: string;
+  inserted?: number;
+  updated?: number;
+  unchanged?: number;
+  deactivated?: number;
+}
+
+export function resumoDaReleitura(r: ReleituraDaPlanilha): {
+  falhou: boolean; titulo: string; descricao: string;
+} {
+  if (!r.ok) {
+    return {
+      falhou: true,
+      titulo: 'Não deu para reler a planilha',
+      descricao: r.error || 'A planilha respondeu, mas a importação não terminou.',
+    };
+  }
+
+  const nova = r.inserted ?? 0;
+  const alterada = r.updated ?? 0;
+  const sumiu = r.deactivated ?? 0;
+
+  if (nova + alterada + sumiu === 0) {
+    return {
+      falhou: false,
+      titulo: 'Planilha relida — nada mudou',
+      descricao: `As ${r.unchanged ?? 0} linhas já estavam iguais aqui.`,
+    };
+  }
+
+  return {
+    falhou: false,
+    titulo: 'Planilha relida',
+    descricao: `${nova} nova(s), ${alterada} alterada(s), ${sumiu} sumiram da planilha.`,
+  };
+}

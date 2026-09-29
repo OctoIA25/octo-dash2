@@ -14,14 +14,14 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  AlertTriangle, Calculator, Check, DownloadCloud, FileText, Info, Loader2, X,
+  AlertTriangle, Calculator, Check, DownloadCloud, FileText, Info, Loader2, RefreshCw, X,
 } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { useEscapeFecha } from '@/hooks/useEscapeFecha';
 import { useToast } from '@/hooks/use-toast';
 import {
   COR_DO_STATUS, ROTULO_DO_STATUS, avisoDaComissaoDaProposta, divergencia,
-  reaisExatos, repassesDaVenda, rotuloDoNivel, totaisConferem,
+  reaisExatos, repassesDaVenda, resumoDaReleitura, rotuloDoNivel, totaisConferem,
   type StatusDaVenda, type VendaNaLista,
 } from './vendas';
 import { ConferenciaDaPlanilha } from './ConferenciaDaPlanilha';
@@ -30,6 +30,7 @@ import {
   gravarRepasses, importarAssinadas, linkDaNotaFiscal, marcarRepassePago,
   salvarConferencia, subirNotaFiscal,
 } from './vendasService';
+import { sincronizarVendasComerciais } from '@/features/metricas/services/commercialSalesService';
 
 const hoje = () => new Date().toISOString().slice(0, 10);
 const primeiroDoMes = () => `${new Date().toISOString().slice(0, 7)}-01`;
@@ -96,6 +97,36 @@ export function ConferenciaDeVendasPage() {
     onError: (e: Error) => toast({ title: 'Não deu para importar', description: e.message, variant: 'destructive' }),
   });
 
+  /*
+   * Reler a planilha do Drive — resposta do chefe em 29/09.
+   *
+   * A função `sync-commercial-sales-google-sheet` era chamada de hora em hora
+   * por um agendador de fora e parou em 01/09 às 19h32. Nenhuma tela jamais a
+   * chamou: `sincronizarVendasComerciais` estava no código sem um único
+   * chamador. Este botão é a diferença entre "alguém desligou algo que eu não
+   * enxergo" e "eu aperto quando quero".
+   *
+   * Sem `spreadsheetId`: a função usa a planilha que já está no ar — a mesma
+   * dos 66 registros de hoje. Trocar de planilha continua sendo decisão dele,
+   * e em 29/09 a decisão foi não trocar.
+   *
+   * A função devolve `ok: false` DENTRO do corpo em vez de estourar, então o
+   * sucesso do HTTP não é o sucesso da importação e precisa ser lido à mão.
+   */
+  const relerPlanilha = useMutation({
+    mutationFn: () => sincronizarVendasComerciais({ tenantId: tenantId! }),
+    onSuccess: (r) => {
+      const aviso = resumoDaReleitura(r);
+      if (aviso.falhou) {
+        toast({ title: aviso.titulo, description: aviso.descricao, variant: 'destructive' });
+        return;
+      }
+      qc.invalidateQueries({ queryKey: ['conferencia-planilha'] });
+      toast({ title: aviso.titulo, description: aviso.descricao });
+    },
+    onError: (e: Error) => toast({ title: 'Não deu para reler a planilha', description: e.message, variant: 'destructive' }),
+  });
+
   const dados = conferencia.data;
   const linhas = useMemo(() => dados?.linhas ?? [], [dados]);
   const totais = dados?.totais;
@@ -146,6 +177,16 @@ export function ConferenciaDeVendasPage() {
               </button>
             ))}
           </div>
+          {fonte === 'planilha' && (
+            <button
+              onClick={() => relerPlanilha.mutate()}
+              disabled={relerPlanilha.isPending}
+              className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-50"
+            >
+              {relerPlanilha.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+              Reler a planilha do Drive
+            </button>
+          )}
           {fonte === 'crm' && (
             <button
               onClick={() => importar.mutate()}
