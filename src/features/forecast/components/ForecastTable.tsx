@@ -10,7 +10,7 @@
  * planilha pedida; cada um desses entra quando alguém sentir falta de verdade.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { X } from 'lucide-react';
 import { etapaDoForecast } from '../utils/etapas';
 import { moeda, dataBR } from '../utils/format';
@@ -35,21 +35,39 @@ function CelulaEditavel({
   ariaLabel,
   placeholder,
   type = 'text',
+  sugestoes,
 }: {
   value: string;
   onCommit: (novo: string) => void;
   ariaLabel: string;
   placeholder?: string;
   type?: 'text' | 'date';
+  /** Nomes oferecidos enquanto se digita. Não restringe: o campo segue livre. */
+  sugestoes?: string[];
 }) {
   const [rascunho, setRascunho] = useState(value);
+  const listaId = useId();
 
   // O refetch pode trazer valor novo (outro usuário editou o mesmo negócio).
   useEffect(() => setRascunho(value), [value]);
 
   return (
+    <>
+    {/*
+      `<datalist>` do próprio navegador, e não um combobox: sugere sem
+      restringir, funciona com teclado e leitor de tela sem uma linha de JS, e
+      some sozinho quando não há o que sugerir. Uma lista vazia não renderiza:
+      um `list` apontando para datalist vazio deixa a setinha de autocompletar
+      prometendo opções que não existem.
+    */}
+    {sugestoes && sugestoes.length > 0 && (
+      <datalist id={listaId}>
+        {sugestoes.map((s) => <option key={s} value={s} />)}
+      </datalist>
+    )}
     <input
       type={type}
+      list={sugestoes && sugestoes.length > 0 ? listaId : undefined}
       value={rascunho}
       aria-label={ariaLabel}
       placeholder={placeholder}
@@ -67,6 +85,7 @@ function CelulaEditavel({
                  focus:bg-white dark:text-slate-200 dark:placeholder:text-slate-500
                  dark:hover:border-slate-600 dark:focus:border-slate-500 dark:focus:bg-slate-900"
     />
+    </>
   );
 }
 
@@ -75,9 +94,15 @@ interface ForecastTableProps {
   onSave: (proposalId: string, patch: ForecastPatch) => void;
   /** Tira a linha da planilha (reversível — não arquiva o lead). */
   onRemove: (proposalId: string) => void;
+  /**
+   * Os nomes dos lançamentos cadastrados. É o que amarra a venda à construtora
+   * na Conferência, por igualdade de nome — digitar "Castanheira" em vez de
+   * "Reserva Castanheira" custou 11 vendas sem comissão e sem nota.
+   */
+  nomesDeLancamento?: string[];
 }
 
-export function ForecastTable({ rows, onSave, onRemove }: ForecastTableProps) {
+export function ForecastTable({ rows, onSave, onRemove, nomesDeLancamento }: ForecastTableProps) {
   const totais = somarForecast(rows);
 
   return (
@@ -128,6 +153,7 @@ export function ForecastTable({ rows, onSave, onRemove }: ForecastTableProps) {
                     value={row.empreendimento}
                     placeholder="Empreendimento…"
                     ariaLabel={`Empreendimento de ${quem}`}
+                    sugestoes={nomesDeLancamento}
                     onCommit={(v) => onSave(row.proposalId, { empreendimento: v })}
                   />
                 </td>

@@ -22,6 +22,7 @@ import {
 } from '../services/forecastService';
 import { somarForecast, type ForecastRow } from '../utils/forecastRow';
 import { moeda } from '../utils/format';
+import { fetchLancamentosRef } from '@/features/imoveis/services/lancamentosLookup';
 import { AdicionarLeadDialog } from './AdicionarLeadDialog';
 import { ForecastTable } from './ForecastTable';
 
@@ -51,6 +52,34 @@ export function ForecastSection() {
   });
 
   const rows = data ?? [];
+
+  /*
+   * Os nomes do cadastro, para sugerir enquanto se digita — 29/09.
+   *
+   * Empreendimento é TEXTO LIVRE nesta planilha, e é o que amarra a venda à
+   * construtora lá na Conferência: o gatilho casa `forecast_empreendimento`
+   * com `lancamentos.nome` por IGUALDADE (sem acento, sem caixa). Onze pessoas
+   * digitaram "Castanheira" e dezesseis digitaram "Reserva Castanheira" — a
+   * campanha da Meta se chama "[CAST] Reserva Castanheira" e cada um encurtou
+   * de um jeito. As onze ficaram sem construtora, e por isso sem comissão e
+   * sem nota fiscal.
+   *
+   * Sugerir, e não obrigar: aqui também se digita "Terceiros" e "PARCERIA",
+   * que não são lançamento nenhum. Um `<select>` apagaria esses casos.
+   *
+   * Lista vazia (erro de leitura, tenant sem cadastro) só tira a sugestão; o
+   * campo continua funcionando como sempre funcionou.
+   */
+  const lancamentos = useQuery({
+    queryKey: ['forecast-lancamentos', tenantId],
+    queryFn: () => fetchLancamentosRef(tenantId as string),
+    enabled: Boolean(tenantId) && tenantId !== 'owner',
+  });
+
+  const nomesDeLancamento = (lancamentos.data ?? [])
+    .map((l) => l.nome)
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, 'pt-BR'));
 
   const salvar = useMutation({
     mutationFn: ({ proposalId, patch }: { proposalId: string; patch: ForecastPatch }) =>
@@ -197,7 +226,12 @@ export function ForecastSection() {
           aparece aqui — ou use “Colocar lead” para adicionar um manualmente.
         </div>
       ) : (
-        <ForecastTable rows={rows} onSave={handleSave} onRemove={(id) => tirar.mutate(id)} />
+        <ForecastTable
+          rows={rows}
+          onSave={handleSave}
+          onRemove={(id) => tirar.mutate(id)}
+          nomesDeLancamento={nomesDeLancamento}
+        />
       )}
 
       <AdicionarLeadDialog
