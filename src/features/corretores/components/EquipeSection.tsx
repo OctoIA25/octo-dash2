@@ -216,6 +216,8 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
   const [nomeDaPermissao, setNomeDaPermissao] = useState<Record<string, string>>({});
   // As abas do menu, na ordem e com os nomes da tela de Cargos (29/09).
   const [abasDoMenu, setAbasDoMenu] = useState<PermissaoDoCatalogo[]>([]);
+  // As sub-abas também vêm do cargo (29/09): os grupos "Sub-abas de …" do catálogo.
+  const [subAbasDoCatalogo, setSubAbasDoCatalogo] = useState<PermissaoDoCatalogo[]>([]);
   const [editRole, setEditRole] = useState<'admin' | 'corretor' | 'team_leader'>('corretor');
   const [editLeadsTeamIds, setEditLeadsTeamIds] = useState<string[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
@@ -293,6 +295,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
       .then((cat) => {
         setNomeDaPermissao(Object.fromEntries(cat.map((p) => [p.codigo, p.descricao])));
         setAbasDoMenu(cat.filter((p) => p.modulo === 'Abas do menu').sort((a, b) => a.ordem - b.ordem));
+        setSubAbasDoCatalogo(cat.filter((p) => p.modulo.startsWith('Sub-abas')).sort((a, b) => a.ordem - b.ordem));
       })
       .catch(() => { /* sem o catálogo o preview cai no código, que ainda informa */ });
   }, []);
@@ -301,9 +304,6 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
     () => cargosDaCasa.find((c) => c.id === editCargoId) ?? null,
     [cargosDaCasa, editCargoId],
   );
-  /** A aba do menu, pelo cargo — é ele que manda (ver o bloco "Abas do Menu Principal"). */
-  const temAbaNoMenu = (codigo: string) =>
-    cargoEscolhido ? cargoEscolhido.permissoes.includes(codigo) : !!editPermissions[codigo];
 
   /**
    * Escolher o cargo é UMA ação: ela move o nível de acesso e as permissões
@@ -2784,6 +2784,28 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                       <span className="text-xs text-gray-500 dark:text-slate-400">Este cargo não libera nenhuma aba do menu.</span>
                     )}
                   </div>
+                  {/* As sub-abas também saíram das caixas por pessoa (29/09): vêm do cargo. */}
+                  {[...new Set(subAbasDoCatalogo.map((p) => p.modulo))].map((modulo) => {
+                    const liberadas = subAbasDoCatalogo.filter(
+                      (p) => p.modulo === modulo && cargoEscolhido.permissoes.includes(p.codigo),
+                    );
+                    if (liberadas.length === 0) return null;
+                    return (
+                      <div key={modulo} className="space-y-1">
+                        <p className="text-[11px] font-medium text-gray-500 dark:text-slate-400">{modulo}</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {liberadas.map((p) => (
+                            <span
+                              key={p.codigo}
+                              className="rounded-md border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] text-gray-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                            >
+                              {p.descricao}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
                   <button
                     type="button"
                     onClick={() => navigate('/configuracoes?tab=cargos')}
@@ -2798,64 +2820,6 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                 </p>
               )}
             </div>
-
-            {/* Sub-permissões: Início */}
-            {temAbaNoMenu('leads') && (
-              <div className="space-y-3 p-3 bg-gray-50 dark:bg-slate-950 rounded-lg">
-                <h4 className="font-medium text-gray-700 dark:text-slate-300 text-sm">Sub-abas de Início</h4>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { id: 'leads-funil', label: 'Funil' },
-                    { id: 'leads-okrs', label: 'OKRs' },
-                    { id: 'leads-painel', label: 'Painel comercial' },
-                    { id: 'leads-kpis', label: 'KPIs' },
-                    { id: 'leads-pdi', label: 'PDI' },
-                    { id: 'leads-tarefas', label: 'Tarefas da Semana' },
-                    { id: 'leads-agenda', label: 'Agenda' }
-                  ].map((sub) => (
-                    <label key={sub.id} className="flex items-center gap-2 text-xs">
-                      <input
-                        type="checkbox"
-                        checked={editSubPermissions[sub.id] || false}
-                        onChange={(e) => setEditSubPermissions(prev => ({
-                          ...prev,
-                          [sub.id]: e.target.checked
-                        }))}
-                        className="h-3 w-3 text-blue-600 dark:text-blue-300 rounded"
-                      />
-                      {sub.label}
-                    </label>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Sub-permissões: Gestão de Equipe */}
-            {temAbaNoMenu('gestao-equipe') && (
-              <div className="space-y-3 p-3 bg-gray-50 dark:bg-slate-950 rounded-lg">
-                <h4 className="font-medium text-gray-700 dark:text-slate-300 text-sm">Sub-abas de Gestão de Equipe</h4>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { id: 'gestao-tarefas', label: 'Tarefas' },
-                    { id: 'gestao-equipes', label: 'Equipes' },
-                    { id: 'gestao-acessos', label: 'Acessos e Permissões' }
-                  ].map((sub) => (
-                    <label key={sub.id} className="flex items-center gap-2 text-xs">
-                      <input
-                        type="checkbox"
-                        checked={editSubPermissions[sub.id] || false}
-                        onChange={(e) => setEditSubPermissions(prev => ({
-                          ...prev,
-                          [sub.id]: e.target.checked
-                        }))}
-                        className="h-3 w-3 text-blue-600 dark:text-blue-300 rounded"
-                      />
-                      {sub.label}
-                    </label>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {/*
               A caixa "Gerenciar Roleta" saiu daqui em 25/09/2026.

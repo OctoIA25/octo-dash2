@@ -186,8 +186,8 @@ const DashboardLayout = () => {
    */
   const subPermissoes = user?.permissions?.sub_permissions as Record<string, boolean> | undefined;
   const podeAbaDaInicio = useCallback(
-    (abaId: string) => podeVerAba('/leads', abaId, { isOwner, subPermissoes }),
-    [isOwner, subPermissoes],
+    (abaId: string) => podeVerAba('/leads', abaId, { isOwner, subPermissoes, permissoesDoCargo: user?.permissoesDoCargo }),
+    [isOwner, subPermissoes, user?.permissoesDoCargo],
   );
 
   // O loader de tela cheia só faz sentido para as rotas que REALMENTE consomem o

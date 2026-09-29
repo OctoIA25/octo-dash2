@@ -303,7 +303,9 @@ export function PageTabs() {
     // regra de permissão precisa de teste. Aqui é só UX: a trava está no banco.
     const cfg: TabConfig = {
       ...baseCfg,
-      tabs: abasVisiveis(baseCfg.basePath, baseCfg.tabs, { teamQueueEnabled, isGestao, isOwner, subPermissoes }),
+      tabs: abasVisiveis(baseCfg.basePath, baseCfg.tabs, {
+        teamQueueEnabled, isGestao, isOwner, subPermissoes, permissoesDoCargo: user?.permissoesDoCargo,
+      }),
     };
 
     let activeId: string | null = null;
@@ -315,7 +317,7 @@ export function PageTabs() {
       activeId = params.get(cfg.queryKey) || cfg.tabs[0]?.id || null;
     }
     return { activeConfig: cfg, activeTabId: activeId };
-  }, [location.pathname, location.search, teamQueueEnabled, isGestao, isOwner, subPermissoes]);
+  }, [location.pathname, location.search, teamQueueEnabled, isGestao, isOwner, subPermissoes, user?.permissoesDoCargo]);
 
   const tabs = activeConfig?.tabs ?? EMPTY_TABS;
   const { visibleTabs, overflowTabs, containerRef, registerTab } = useOverflowTabs(

@@ -34,7 +34,8 @@ export const AdminDashboard = () => {
    */
   const { user, isOwner } = useAuthContext();
   const subPermissoes = user?.permissions?.sub_permissions as Record<string, boolean> | undefined;
-  const podeVer = (aba: string) => podeVerAba('/gestao-equipe', aba, { isOwner, subPermissoes });
+  const podeVer = (aba: string) =>
+    podeVerAba('/gestao-equipe', aba, { isOwner, subPermissoes, permissoesDoCargo: user?.permissoesDoCargo });
   const abaLiberada = podeVer(activeTab);
 
   useEffect(() => {

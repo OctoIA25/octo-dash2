@@ -643,9 +643,10 @@ export function InicioNovaPage() {
    * costuma ser a própria /leads, e o desvio voltaria para cá em laço. Melhor
    * dizer o que houve — quem lê isso sabe a quem pedir.
    */
-  if (!podeVerAba('/leads', activeInicioTab, { isOwner, subPermissoes })) {
+  const permissoesDoCargo = user?.permissoesDoCargo;
+  if (!podeVerAba('/leads', activeInicioTab, { isOwner, subPermissoes, permissoesDoCargo })) {
     const primeira = ABAS_DA_INICIO.find((id) =>
-      podeVerAba('/leads', id, { isOwner, subPermissoes }),
+      podeVerAba('/leads', id, { isOwner, subPermissoes, permissoesDoCargo }),
     );
     if (!primeira) {
       return (

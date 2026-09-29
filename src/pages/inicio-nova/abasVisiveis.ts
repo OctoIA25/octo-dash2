@@ -25,6 +25,12 @@ export interface QuemOlha {
    * desmarcada vendo a aba assim mesmo.
    */
   subPermissoes?: Record<string, boolean> | null;
+  /**
+   * As permissões do CARGO da pessoa (`minhas_permissoes`). Com cargo, é ele que
+   * libera a sub-aba — igual às abas do menu (permissoesDeSidebar). `null` =
+   * sem cargo, e vale `subPermissoes`.
+   */
+  permissoesDoCargo?: readonly string[] | null;
 }
 
 /**
@@ -68,7 +74,13 @@ const PERMISSAO_DA_ABA: Record<string, Readonly<Record<string, string>>> = {
 /**
  * A pessoa pode ver esta aba?
  *
- * AUSENTE É LIBERADO, e só `false` esconde. Em produção 78 dos 127 membros não
+ * COM CARGO, O CARGO MANDA (29/09, pedido do chefe: "deve ser uma liberação
+ * padrão praquela área de Cargos"). As caixas de sub-aba por pessoa saíram do
+ * modal; medido em produção no mesmo dia, a troca não tirou sub-aba de
+ * ninguém — só devolveu a 1 corretor e 1 gerente da Lotus o que o cargo deles
+ * libera e alguém tinha desmarcado na pessoa.
+ *
+ * SEM CARGO, AUSENTE É LIBERADO, e só `false` esconde. Em produção 78 dos 127 membros não
  * têm `sub_permissions` gravado — tratar ausência como negada apagaria a barra
  * de abas da maioria da casa no primeiro deploy. É também o que a caixa do
  * modal promete: ela nasce marcada (`?? true`), então `false` só existe onde
@@ -77,11 +89,12 @@ const PERMISSAO_DA_ABA: Record<string, Readonly<Record<string, string>>> = {
 export function podeVerAba(
   basePath: string,
   abaId: string,
-  quem: { isOwner?: boolean; subPermissoes?: Record<string, boolean> | null },
+  quem: Partial<Pick<QuemOlha, 'isOwner' | 'subPermissoes' | 'permissoesDoCargo'>>,
 ): boolean {
   if (quem.isOwner) return true;
   const codigo = PERMISSAO_DA_ABA[basePath]?.[abaId];
   if (!codigo) return true;
+  if (Array.isArray(quem.permissoesDoCargo)) return quem.permissoesDoCargo.includes(codigo);
   return quem.subPermissoes?.[codigo] !== false;
 }
 

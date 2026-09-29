@@ -164,3 +164,35 @@ describe('toda aba de rota governada tem permissão', () => {
     expect(semCodigo).toEqual([]);
   });
 });
+
+// 29/09 — "deve ser uma liberação padrão praquela área de Cargos".
+describe('com cargo, é o cargo que libera a sub-aba', () => {
+  it('o cargo libera: aparece, mesmo com a caixa antiga da pessoa desmarcada', () => {
+    expect(podeVerAba('/leads', 'funil', {
+      permissoesDoCargo: ['leads', 'leads-funil'], subPermissoes: { 'leads-funil': false },
+    })).toBe(true);
+  });
+
+  it('o cargo não libera: some, mesmo sem nada desmarcado na pessoa', () => {
+    expect(podeVerAba('/leads', 'kpis', { permissoesDoCargo: ['leads', 'leads-funil'] })).toBe(false);
+    expect(podeVerAba('/gestao-equipe', 'equipes', { permissoesDoCargo: ['gestao-equipe'] })).toBe(false);
+  });
+
+  it('sem cargo, continua valendo a caixa da pessoa (ausente é liberado)', () => {
+    expect(podeVerAba('/leads', 'kpis', { permissoesDoCargo: null })).toBe(true);
+    expect(podeVerAba('/leads', 'kpis', { permissoesDoCargo: null, subPermissoes: { 'leads-kpis': false } })).toBe(false);
+  });
+
+  it('dono da plataforma vê tudo, com ou sem cargo', () => {
+    expect(podeVerAba('/leads', 'kpis', { isOwner: true, permissoesDoCargo: [] })).toBe(true);
+  });
+
+  it('a barra de abas segue a mesma regra', () => {
+    const abas = [{ id: 'funil' }, { id: 'kpis' }, { id: 'okrs' }];
+    const vistas = abasVisiveis('/leads', abas, {
+      teamQueueEnabled: false, isGestao: false, isOwner: false,
+      permissoesDoCargo: ['leads', 'leads-funil', 'leads-okrs'],
+    }).map((a) => a.id);
+    expect(vistas).toEqual(['funil', 'okrs']);
+  });
+});
