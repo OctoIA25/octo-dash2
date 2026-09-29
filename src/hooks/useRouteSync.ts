@@ -146,7 +146,7 @@ export const useRouteSync = ({
         return `/metricas/${subsection || 'cliente-interessado'}`;
       })(),
       'estudo-mercado': `/estudo-mercado/${subsection || 'avaliacao'}`,
-      'recrutamento': '/recrutamento',
+      'recrutamento': '/recrutamento/geral',
       'gestao-equipe': '/gestao-equipe',
       'bolsao': '/bolsao',
       'imoveis': '/imoveis',

@@ -49,6 +49,7 @@ import {
   Megaphone,
   HelpCircle,
   FilePen,
+  UserCheck,
 } from 'lucide-react';
 
 interface Tab {
@@ -229,10 +230,14 @@ export const TAB_CONFIGS: TabConfig[] = [
     ],
   },
   {
+    // A ORDEM importa: em `/recrutamento` (sem segmento) a ativa é `tabs[0]`.
     basePath: '/recrutamento',
     label: 'Recrutamento',
     matchStrategy: 'pathSegment',
-    tabs: [],
+    tabs: [
+      { id: 'geral', label: 'Visão geral', icon: UserCheck, href: '/recrutamento/geral' },
+      { id: 'kanban', label: 'Kanban', icon: LayoutGrid, href: '/recrutamento/kanban' },
+    ],
   },
   {
     basePath: '/octo-chat',

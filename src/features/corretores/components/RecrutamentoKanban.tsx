@@ -172,8 +172,10 @@ export const RecrutamentoKanban = ({ candidatos, coordenadores, carregando = fal
       onDragEnd={handleDragEnd}
       onDragCancel={() => setAtivoId(null)}
     >
-      <div className="overflow-x-auto pb-4">
-        <div className="flex gap-3 h-[calc(100vh-260px)] min-h-[420px]" style={{ minWidth: 'fit-content' }}>
+      {/* Ocupa a altura que o pai der (a sub-área /recrutamento/kanban dá a página
+          inteira abaixo dos filtros); as colunas rolam na horizontal. */}
+      <div className="h-full overflow-x-auto">
+        <div className="flex gap-3 h-full min-h-[420px]" style={{ minWidth: 'fit-content' }}>
           {COLUNAS_KANBAN.map((coluna) => (
             <KanbanColuna
               key={coluna.id}

@@ -40,7 +40,7 @@ const DEFAULT_ROUTE_BY_PERMISSION: Partial<Record<SidebarPermission, string>> = 
   metricas: '/metricas/cliente-interessado',
   juridico: '/juridico/visao-geral',
   'estudo-mercado': '/estudo-mercado/avaliacao',
-  recrutamento: '/recrutamento',
+  recrutamento: '/recrutamento/geral',
   'gestao-equipe': '/gestao-equipe',
   imoveis: '/imoveis',
   'agentes-ia': '/agentes-ia/agente-marketing',
@@ -262,15 +262,20 @@ const DashboardLayout = () => {
             element={canAccess('metricas') ? <ClienteProprietarioPage /> : <Navigate to={defaultAllowedRoute} replace />} 
           />
           
+          {/* Recrutamento é uma área com duas sub-áreas (29/09): a visão geral e o
+              Kanban de candidatos. Mesmo formato de Estudo de Mercado: cada uma com
+              o seu segmento, e a rota nua redireciona para a primeira. */}
+          <Route 
+            path="recrutamento/geral" 
+            element={canAccess('recrutamento') ? <RecrutamentoPage vista="geral" /> : <Navigate to={defaultAllowedRoute} replace />} 
+          />
+          <Route 
+            path="recrutamento/kanban" 
+            element={canAccess('recrutamento') ? <RecrutamentoPage vista="kanban" /> : <Navigate to={defaultAllowedRoute} replace />} 
+          />
           <Route 
             path="recrutamento" 
-            element={
-              canAccess('recrutamento') ? (
-                <RecrutamentoPage />
-              ) : (
-                <Navigate to={defaultAllowedRoute} replace />
-              )
-            } 
+            element={<Navigate to={canAccess('recrutamento') ? '/recrutamento/geral' : defaultAllowedRoute} replace />} 
           />
           
           <Route 

@@ -6,7 +6,6 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -14,7 +13,6 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { RecrutamentoFunnelChart } from '../components/RecrutamentoFunnelChart';
 import { RelatorioSection } from '../recrutamento/RelatorioSection';
 import { useRecruitment } from '../hooks/useRecruitment';
@@ -51,9 +49,7 @@ import {
   ExternalLink,
   FileDown,
   ChevronRight,
-  ChevronLeft,
-  LayoutGrid,
-  List
+  ChevronLeft
 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { toast } from 'sonner';
@@ -79,7 +75,16 @@ interface Candidato {
   }[];
 }
 
-export const RecrutamentoPage = () => {
+interface RecrutamentoPageProps {
+  /**
+   * Qual sub-área a rota pediu (DashboardLayout): 'geral' em /recrutamento/geral
+   * (fila, indicadores, funil, relatório e a lista) ou 'kanban' em
+   * /recrutamento/kanban (só o quadro, com os mesmos filtros e a mesma ficha).
+   */
+  vista?: 'geral' | 'kanban';
+}
+
+export const RecrutamentoPage = ({ vista = 'geral' }: RecrutamentoPageProps = {}) => {
   const { user, tenantId } = useAuth();
 
   // Use recruitment hook with real data
@@ -152,15 +157,6 @@ export const RecrutamentoPage = () => {
   const [filtrosOpen, setFiltrosOpen] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-
-  // Kanban | Lista — Kanban é o padrão; a escolha vive na URL (?view=lista) para
-  // sobreviver a recarga e poder ser compartilhada.
-  const [searchParams, setSearchParams] = useSearchParams();
-  const view: 'kanban' | 'lista' = searchParams.get('view') === 'lista' ? 'lista' : 'kanban';
-  const setView = (v: string) => {
-    if (v !== 'kanban' && v !== 'lista') return; // o ToggleGroup manda '' ao desmarcar
-    setSearchParams((prev) => { const n = new URLSearchParams(prev); n.set('view', v); return n; }, { replace: true });
-  };
 
   // A carga COMPLETA: o hook acima pede 10 por vez ao servidor, que serve à
   // lista paginada e a mais nada. O quadro e o funil precisam de todos.
@@ -363,7 +359,219 @@ export const RecrutamentoPage = () => {
   };
 
   return (
-    <div className="w-full h-full overflow-auto">
+    <div className={vista === 'kanban' ? 'w-full h-full flex flex-col overflow-hidden' : 'w-full h-full overflow-auto'}>
+      {vista === 'kanban' ? (
+        <>
+          {/* Sub-área Kanban: cabeçalho e filtros fixos em cima; o quadro ocupa o
+              resto da altura e rola na horizontal. A ficha e a caixa "encerrar"
+              são as mesmas da visão geral — o modal é um só, mais abaixo. */}
+          <div className="p-6 md:p-8 pb-0 shrink-0">
+            {/* Header */}
+            <div className="mb-8">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h1 className="text-2xl font-medium text-gray-900 dark:text-slate-100 dark:text-white mb-2">
+                    Recrutamento
+                  </h1>
+                  <p className="text-sm text-gray-600 dark:text-slate-400 dark:text-gray-400 font-normal">
+                    Gestão de processos de recrutamento e seleção de novos corretores
+                  </p>
+                </div>
+                <Button
+                  className="novo-candidato-button gap-2 !bg-blue-600 hover:!bg-blue-700 shadow-sm hover:shadow-md transition-all [&_svg]:!text-white"
+                  onClick={() => setNovoModalOpen(true)}
+                  style={{ color: '#ffffff' }}
+                >
+                  <Plus className="h-4 w-4 stroke-[2.5]" />
+                  <span className="novo-candidato-button-text">Novo Candidato</span>
+                </Button>
+              </div>
+            </div>
+
+            {/* Filtros e Busca */}
+            <Card className="mb-6 border-gray-200/60 dark:border-gray-700/60">
+              <CardContent className="p-4">
+                <div className="flex flex-col md:flex-row gap-4">
+                  <div className="flex-1 relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-slate-500" />
+                    <Input
+                      placeholder="Buscar candidatos por nome, email ou cargo..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="pl-10"
+                    />
+                  </div>
+                  <Popover open={filtrosOpen} onOpenChange={setFiltrosOpen}>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className={`gap-2 ${filtrosAtivos ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/40 dark:bg-blue-900/20' : ''}`}>
+                        <Filter className="h-4 w-4" />
+                        Filtros
+                        {filtrosAtivos && (
+                          <span className="ml-1 px-1.5 py-0.5 text-xs bg-blue-500 text-white rounded-full">
+                            {[filtroStatus !== 'todos', filtroCargo !== 'todos', filtroExperiencia !== 'todos', filtroCanal !== 'todos', filtroCondicao !== 'todas', periodoDe !== '' || periodoAte !== ''].filter(Boolean).length}
+                          </span>
+                        )}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-80 p-4" align="end">
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-semibold text-gray-900 dark:text-slate-100 dark:text-white">Filtros</h4>
+                          {filtrosAtivos && (
+                            <Button variant="ghost" size="sm" onClick={limparFiltros} className="text-xs text-blue-600 dark:text-blue-300 hover:text-blue-700">
+                              Limpar todos
+                            </Button>
+                          )}
+                        </div>
+
+                        {/* Filtro por Status */}
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-gray-700 dark:text-slate-300 dark:text-gray-300">Status</label>
+                          <Select value={filtroStatus} onValueChange={setFiltroStatus}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Todos os status" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="todos">Todos os estágios</SelectItem>
+                              {ESTAGIOS.map((e) => (
+                                <SelectItem key={e.id} value={e.label}>{e.label}</SelectItem>
+                              ))}
+                              <SelectItem value={LABEL_ESTAGIO.perdido}>{LABEL_ESTAGIO.perdido}</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {/* Filtro por Canal */}
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-gray-700 dark:text-slate-300">Canal</label>
+                          <Select value={filtroCanal} onValueChange={setFiltroCanal}>
+                            <SelectTrigger><SelectValue placeholder="Todos os canais" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="todos">Todos os canais</SelectItem>
+                              {['Indicação', 'Meta', 'LinkedIn', 'Site Institucional', 'Email Marketing', 'Portal de vagas', 'Instagram', 'Panfletagem', 'Outros'].map((f) => (
+                                <SelectItem key={f} value={f}>{f}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {/* Filtro pelas três condições */}
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-gray-700 dark:text-slate-300">Condições de entrada</label>
+                          <Select value={filtroCondicao} onValueChange={setFiltroCondicao}>
+                            <SelectTrigger><SelectValue placeholder="Todas" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="todas">Todas</SelectItem>
+                              <SelectItem value="aprovadas">As três aprovadas</SelectItem>
+                              <SelectItem value="pendentes">Alguma pendente</SelectItem>
+                              <SelectItem value="reprovada">Alguma reprovada</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {/* Período da candidatura — vale também para o funil e os indicadores */}
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-gray-700 dark:text-slate-300">Período da candidatura</label>
+                          <div className="flex items-center gap-2">
+                            <Input type="date" value={periodoDe} onChange={(e) => setPeriodoDe(e.target.value)} />
+                            <span className="text-xs text-gray-500 dark:text-slate-400">até</span>
+                            <Input type="date" value={periodoAte} onChange={(e) => setPeriodoAte(e.target.value)} />
+                          </div>
+                        </div>
+
+                        {/* Filtro por Cargo */}
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-gray-700 dark:text-slate-300 dark:text-gray-300">Cargo</label>
+                          <Select value={filtroCargo} onValueChange={setFiltroCargo}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Todos os cargos" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="todos">Todos os cargos</SelectItem>
+                              <SelectItem value="Corretor Júnior">Corretor Júnior</SelectItem>
+                              <SelectItem value="Corretor Pleno">Corretor Pleno</SelectItem>
+                              <SelectItem value="Corretor Sênior">Corretor Sênior</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {/* Filtro por Experiência */}
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-gray-700 dark:text-slate-300 dark:text-gray-300">Experiência</label>
+                          <Select value={filtroExperiencia} onValueChange={setFiltroExperiencia}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Todas as experiências" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="todos">Todas as experiências</SelectItem>
+                              <SelectItem value="0-2 anos">0-2 anos</SelectItem>
+                              <SelectItem value="1-3 anos">1-3 anos</SelectItem>
+                              <SelectItem value="2 anos">2 anos</SelectItem>
+                              <SelectItem value="3-5 anos">3-5 anos</SelectItem>
+                              <SelectItem value="3-6 anos">3-6 anos</SelectItem>
+                              <SelectItem value="5 anos">5 anos</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <Button
+                          className="w-full mt-2"
+                          onClick={() => setFiltrosOpen(false)}
+                        >
+                          Aplicar Filtros
+                        </Button>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
+                {/* Indicador de filtros ativos */}
+                {filtrosAtivos && (
+                  <div className="flex items-center gap-2 mt-3 flex-wrap">
+                    <span className="text-xs text-gray-500 dark:text-slate-400 dark:text-gray-400">Filtros ativos:</span>
+                    {filtroStatus !== 'todos' && (
+                      <Badge variant="secondary" className="text-xs gap-1">
+                        Status: {filtroStatus}
+                        <button onClick={() => setFiltroStatus('todos')} className="ml-1 hover:text-red-500">×</button>
+                      </Badge>
+                    )}
+                    {filtroCargo !== 'todos' && (
+                      <Badge variant="secondary" className="text-xs gap-1">
+                        Cargo: {filtroCargo}
+                        <button onClick={() => setFiltroCargo('todos')} className="ml-1 hover:text-red-500">×</button>
+                      </Badge>
+                    )}
+                    {filtroExperiencia !== 'todos' && (
+                      <Badge variant="secondary" className="text-xs gap-1">
+                        Exp: {filtroExperiencia}
+                        <button onClick={() => setFiltroExperiencia('todos')} className="ml-1 hover:text-red-500">×</button>
+                      </Badge>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+          </div>
+          <div className="flex-1 min-h-0 px-6 md:px-8 pb-6">
+            {quadro.erro && (
+              <p className="mb-3 text-sm text-red-600 dark:text-red-400">Não foi possível carregar o quadro: {quadro.erro}</p>
+            )}
+            <RecrutamentoKanban
+              candidatos={candidatosQuadro}
+              coordenadores={coordenadores}
+              carregando={quadro.carregando}
+              onAbrir={(c) => handleVerDetalhes(c as CandidatoComEtapas)}
+              onEncerrar={(c) => handleEncerrarPeloQuadro(c as CandidatoComEtapas)}
+              onMover={async (candidato, para) => {
+                const ok = await quadro.moverEstagio(candidato as CandidatoComEtapas, para);
+                // Fila, indicadores e a lista leem pelo hook antigo: só recarrega se gravou.
+                if (ok) await refresh();
+              }}
+            />
+          </div>
+        </>
+      ) : (
       <div className="p-6 md:p-8">
         {/* Header */}
         <div className="mb-8">
@@ -443,19 +651,9 @@ export const RecrutamentoPage = () => {
 
         {/* Seção de Candidatos */}
         <div>
-          <div className="flex items-center justify-between gap-3 mb-6">
-            <div className="flex items-center gap-2">
-              <UserPlus className="h-5 w-5 text-gray-900 dark:text-slate-100 dark:text-white" />
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-slate-100 dark:text-white">Candidatos</h2>
-            </div>
-            <ToggleGroup type="single" value={view} onValueChange={setView} variant="outline" size="sm" aria-label="Modo de visualização">
-              <ToggleGroupItem value="kanban" aria-label="Kanban" className="gap-1.5">
-                <LayoutGrid className="h-3.5 w-3.5" /> Kanban
-              </ToggleGroupItem>
-              <ToggleGroupItem value="lista" aria-label="Lista" className="gap-1.5">
-                <List className="h-3.5 w-3.5" /> Lista
-              </ToggleGroupItem>
-            </ToggleGroup>
+          <div className="flex items-center gap-2 mb-6">
+            <UserPlus className="h-5 w-5 text-gray-900 dark:text-slate-100 dark:text-white" />
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-slate-100 dark:text-white">Candidatos</h2>
           </div>
 
           {/* Filtros e Busca */}
@@ -622,29 +820,7 @@ export const RecrutamentoPage = () => {
             </CardContent>
           </Card>
 
-          {/* Kanban: todos os candidatos, filtrados pelos mesmos filtros da lista. */}
-          {view === 'kanban' && (
-            <>
-              {quadro.erro && (
-                <p className="mb-3 text-sm text-red-600 dark:text-red-400">Não foi possível carregar o quadro: {quadro.erro}</p>
-              )}
-              <RecrutamentoKanban
-                candidatos={candidatosQuadro}
-                coordenadores={coordenadores}
-                carregando={quadro.carregando}
-                onAbrir={(c) => handleVerDetalhes(c as CandidatoComEtapas)}
-                onEncerrar={(c) => handleEncerrarPeloQuadro(c as CandidatoComEtapas)}
-                onMover={async (candidato, para) => {
-                  const ok = await quadro.moverEstagio(candidato as CandidatoComEtapas, para);
-                  // Fila, indicadores e a lista leem pelo hook antigo: só recarrega se gravou.
-                  if (ok) await refresh();
-                }}
-              />
-            </>
-          )}
-
           {/* Lista de Candidatos */}
-          {view === 'lista' && (
           <Card className="border-gray-200/60 dark:border-gray-700/60">
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-lg font-medium">Candidatos</CardTitle>
@@ -796,8 +972,10 @@ export const RecrutamentoPage = () => {
               )}
             </CardContent>
           </Card>
-          )}
         </div>
+
+      </div>
+      )}
 
         {/* Modal de Detalhes do Candidato */}
         {modalOpen && candidatoSelecionado && (
@@ -1326,7 +1504,6 @@ export const RecrutamentoPage = () => {
           </div>,
           document.body
         )}
-      </div>
     </div>
   );
 };

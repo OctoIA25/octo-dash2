@@ -118,3 +118,27 @@ describe('a Lia tem categoria própria no menu', () => {
     expect(screen.queryByText('Agenda da LIA')).not.toBeInTheDocument();
   });
 });
+
+/*
+ * RECRUTAMENTO VIROU PAI COM DOIS FILHOS (29/09): "Visão geral" e "Kanban",
+ * no mesmo formato de Estudo de Mercado — cada filho com o seu segmento de
+ * rota, porque a regra de "ativo" da barra usa startsWith(base + '/'): um
+ * filho na rota nua `/recrutamento` acenderia junto com o Kanban.
+ */
+describe('Recrutamento tem Visão geral e Kanban como filhos', () => {
+  it('clicar em Recrutamento abre a visão geral E mostra os filhos', async () => {
+    render(<NovaSidebar />);
+    await userEvent.click(await screen.findByText('Recrutamento'));
+    expect(navigate).toHaveBeenCalledWith('/recrutamento/geral');
+    expect(await screen.findByText('Visão geral')).toBeInTheDocument();
+    expect(screen.getByText('Kanban')).toBeInTheDocument();
+  });
+
+  it('o filho Kanban leva à sub-área dele', async () => {
+    render(<NovaSidebar />);
+    await userEvent.click(await screen.findByText('Recrutamento'));
+    navigate.mockClear();
+    await userEvent.click(screen.getByText('Kanban'));
+    expect(navigate).toHaveBeenCalledWith('/recrutamento/kanban');
+  });
+});

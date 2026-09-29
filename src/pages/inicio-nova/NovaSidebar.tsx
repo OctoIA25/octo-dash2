@@ -165,7 +165,17 @@ const GROUPS: SidebarGroup[] = [
     title: 'EQUIPE',
     items: [
       { id: 'gestao-equipe', label: 'Gestão de Equipe', icon: Users, route: '/gestao-equipe', permission: 'gestao-equipe' },
-      { id: 'recrutamento', label: 'Recrutamento', icon: UserCheck, route: '/recrutamento', permission: 'recrutamento' },
+      {
+        id: 'recrutamento',
+        label: 'Recrutamento',
+        icon: UserCheck,
+        route: '/recrutamento/geral',
+        permission: 'recrutamento',
+        subItems: [
+          { id: 'recrutamento-geral', label: 'Visão geral', icon: UserCheck, route: '/recrutamento/geral' },
+          { id: 'recrutamento-kanban', label: 'Kanban', icon: LayoutGrid, route: '/recrutamento/kanban' },
+        ],
+      },
       // P4.2 — materiais de estudo. Permissão 'leads' de propósito: o plano de
       // carreira e as regras de comissão são para o corretor ler, e ele não
       // tem 'gestao-equipe'. Quem gere edita; todo membro lê.
