@@ -189,7 +189,7 @@ const PIE_COLORS = [
 ];
 
 export const RelatoriosPage = () => {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { tenantId } = useAuth();
 
   // Declarados antes do hook: os KPIs são buscados para este período.
@@ -229,17 +229,22 @@ export const RelatoriosPage = () => {
   const activeSubArea: 'marketing' | 'leads' | 'metricas' | 'metricas-individuais' | 'imoveis' | 'financeiro' | 'excel' | 'enps' | 'formularios-meta' =
     _tab === 'metricas' || _tab === 'leads' || _tab === 'imoveis' || _tab === 'metricas-individuais' || _tab === 'excel' || _tab === 'financeiro' || _tab === 'enps' || _tab === 'formularios-meta' ? _tab : 'marketing';
 
-  // Sub-visão do Marketing: 'geral' (conteúdo atual) | 'site' (Google Analytics).
-  // Não há setSearchParams neste arquivo (só o getter de useSearchParams), então seguimos o
-  // padrão já usado abaixo (activeMetricasSubArea): estado local + window.history.replaceState.
-  const initialMktView = useMemo(
-    () => {
-      const v = searchParams.get('view');
-      return v === 'site' || v === 'campanhas' || v === 'anuncios' ? v : 'geral';
-    },
-    [searchParams],
-  );
-  const [mktView, setMktView] = useState<'geral' | 'site' | 'campanhas' | 'anuncios'>(initialMktView);
+  // Sub-visão do Marketing: geral | campanhas | anuncios | site. O ENDEREÇO é a
+  // única fonte (29/09). Antes era um useState que só lia o ?view= na primeira
+  // montagem, e os botões mudavam a URL por fora do roteador: pela lateral,
+  // "Anúncios" abria a tela de Campanhas, porque a página já estava montada.
+  const viewDaUrl = searchParams.get('view');
+  const mktView: 'geral' | 'site' | 'campanhas' | 'anuncios' =
+    viewDaUrl === 'site' || viewDaUrl === 'campanhas' || viewDaUrl === 'anuncios' ? viewDaUrl : 'geral';
+  const setMktView = (value: typeof mktView) =>
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      // 'geral' é o padrão e não vai para a URL; as outras vão, para o link
+      // levar à visão certa.
+      if (value === 'geral') params.delete('view');
+      else params.set('view', value);
+      return params;
+    }, { replace: true });
 
   const initialMetricasSubArea = useMemo(() => {
     const fromQuery = searchParams.get('metricasSubArea');
@@ -1995,15 +2000,7 @@ export const RelatoriosPage = () => {
           {([['geral', 'Geral'], ['campanhas', 'Campanhas'], ['anuncios', 'Anúncios'], ['site', 'Site']] as const).map(([value, label]) => (
             <button
               key={value}
-              onClick={() => {
-                setMktView(value);
-                const params = new URLSearchParams(searchParams);
-                // 'geral' é o padrão e não vai para a URL; as outras vão, para
-                // o link levar à visão certa.
-                if (value === 'geral') params.delete('view');
-                else params.set('view', value);
-                window.history.replaceState(null, '', `?${params.toString()}`);
-              }}
+              onClick={() => setMktView(value)}
               className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
                 mktView === value
                   ? 'bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 shadow-sm'

@@ -12,6 +12,7 @@
  * faria parecer que ninguém pensou nele.
  */
 
+import { Link } from 'react-router-dom';
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, ChevronDown, ChevronRight, Info, Loader2, RefreshCw } from 'lucide-react';
@@ -203,10 +204,16 @@ export function CampanhasTab() {
           {buraco.pct != null && buraco.falta > 0 && (
             <p className="flex items-start gap-2 rounded-md border p-2.5 text-xs text-muted-foreground">
               <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              Nas campanhas de formulário, a Meta contou <strong>{buraco.meta}</strong> leads e a Dash amarrou{' '}
-              <strong>{buraco.dash}</strong> — faltam {buraco.falta} ({buraco.pct}%). O lead existe; o que
-              falta é a campanha gravada nele. Em <strong>Formulários da Meta</strong>, "Baixar leads"
-              completa o que falta nos que já entraram.
+              {/* Um <span> só: no <p> flex, cada pedaço de texto virava uma coluna. */}
+              <span>
+                Nas campanhas de formulário, a Meta contou <strong>{buraco.meta}</strong> leads e a Dash amarrou{' '}
+                <strong>{buraco.dash}</strong> — faltam {buraco.falta} ({buraco.pct}%). O lead existe; o que
+                falta é a campanha gravada nele. Em{' '}
+                <Link to="/relatorios?tab=formularios-meta" className="font-semibold text-primary hover:underline">
+                  Formulários da Meta
+                </Link>
+                , "Baixar leads" completa o que falta nos que já entraram.
+              </span>
             </p>
           )}
 
