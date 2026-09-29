@@ -50,6 +50,7 @@ import {
   Search, 
   RefreshCw, 
   Home, 
+  FilePen,
   Building2, 
   Plus,
   Key,
@@ -259,6 +260,19 @@ interface ImovelLocal {
   updated_at?: string | null;
 }
 
+/** As três visões do Catálogo Completo (29/09): antes eram abas do topo. */
+type VisaoDoCatalogo = 'completo' | 'prontos' | 'rascunhos';
+const VISOES_DO_CATALOGO: Array<{ id: VisaoDoCatalogo; rotulo: string; Icone: typeof Home }> = [
+  { id: 'completo', rotulo: 'Catálogo completo', Icone: Home },
+  { id: 'prontos', rotulo: 'Prontos', Icone: User },
+  { id: 'rascunhos', rotulo: 'Rascunhos', Icone: FilePen },
+];
+/** O endereço antigo de cada uma, para link salvo não quebrar. */
+const VISAO_DA_ABA_ANTIGA: Record<string, VisaoDoCatalogo> = {
+  'meus-imoveis': 'prontos',
+  rascunhos: 'rascunhos',
+};
+
 export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
   const { user } = useAuth();
   const tenantId = user?.tenantId;
@@ -266,10 +280,32 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
   const { data: captadoresLista = [] } = useCaptadores(tenantId);
   const mapaCaptadores = useMemo(() => mapCaptadoresPorId(captadoresLista), [captadoresLista]);
 
-  // Tab ativo vem do query string (?tab=catalogo|meus-imoveis|condominios)
+  // Tab ativo vem do query string (?tab=catalogo|condominios|...)
   // — controlado pelas tabs do NovoHeader (PageTabs)
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab = searchParams.get('tab') ?? 'catalogo';
+  const tabDaUrl = searchParams.get('tab') ?? 'catalogo';
+  // 29/09, pedido do chefe: Prontos e Rascunhos saíram do topo e viraram botões
+  // DENTRO do Catálogo Completo (?tab=catalogo&ver=prontos|rascunhos). Assim o
+  // topo e a lateral continuam marcando "Catálogo". Link antigo
+  // (?tab=meus-imoveis, ?tab=rascunhos) é convertido no efeito abaixo.
+  const visaoLegada = VISAO_DA_ABA_ANTIGA[tabDaUrl];
+  const activeTab = visaoLegada ? 'catalogo' : tabDaUrl;
+  const verDaUrl = searchParams.get('ver');
+  const visao: VisaoDoCatalogo =
+    visaoLegada ?? (verDaUrl === 'prontos' || verDaUrl === 'rascunhos' ? verDaUrl : 'completo');
+  const setVisao = (v: VisaoDoCatalogo) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('tab', 'catalogo');
+      if (v === 'completo') next.delete('ver');
+      else next.set('ver', v);
+      return next;
+    });
+  };
+  useEffect(() => {
+    if (visaoLegada) setVisao(visaoLegada);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visaoLegada]);
   const setActiveTab = (value: string) => {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
@@ -353,8 +389,8 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
 
   // Registra ação do botão "Novo" do header quando a aba Catálogo está ativa.
   useRegisterNovoActions(
-    activeTab === 'catalogo' ? 'imoveis:catalogo' : 'imoveis:inactive',
-    activeTab === 'catalogo'
+    activeTab === 'catalogo' && visao === 'completo' ? 'imoveis:catalogo' : 'imoveis:inactive',
+    activeTab === 'catalogo' && visao === 'completo'
       ? [{ id: 'novo-imovel', label: 'Novo Imóvel', onClick: () => setIsCriarImovelOpen(true) }]
       : []
   );
@@ -958,14 +994,6 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
 
       {/* Tabs são renderizadas no NovoHeader via PageTabs. Aqui usamos Tabs controlado pelo query param. */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsContent value="meus-imoveis">
-          <MeusImoveisTab 
-            allImoveis={imoveis} 
-            onViewDetails={handleViewDetails}
-            onPropertyCreated={reloadCatalogoBanco}
-          />
-        </TabsContent>
-
         <TabsContent value="condominios">
           <CondominiosTab />
         </TabsContent>
@@ -978,15 +1006,39 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
           <ConstrutorasTab />
         </TabsContent>
 
-        <TabsContent value="rascunhos">
-          <RascunhosTab onPublicado={reloadCatalogoBanco} />
-        </TabsContent>
-
         <TabsContent value="anuncios-sem-imovel">
           <AnunciosSemImovelTab />
         </TabsContent>
 
         <TabsContent value="catalogo">
+        <div className="mb-4 inline-flex rounded-lg border border-border bg-card/60 p-1" role="tablist" aria-label="O que ver no catálogo">
+          {VISOES_DO_CATALOGO.map(({ id, rotulo, Icone }) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={visao === id}
+              onClick={() => setVisao(id)}
+              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                visao === id
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-text-secondary hover:bg-muted hover:text-text-primary'
+              }`}
+            >
+              <Icone className="h-4 w-4" />
+              {rotulo}
+            </button>
+          ))}
+        </div>
+        {visao === 'prontos' ? (
+          <MeusImoveisTab
+            allImoveis={imoveis}
+            onViewDetails={handleViewDetails}
+            onPropertyCreated={reloadCatalogoBanco}
+          />
+        ) : visao === 'rascunhos' ? (
+          <RascunhosTab onPublicado={reloadCatalogoBanco} />
+        ) : (
       <div className="space-y-4">
         <div className="rounded-xl border border-border bg-card/60 p-4 space-y-4">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
@@ -1597,6 +1649,7 @@ export const ImoveisPage = ({ onRefresh, isRefreshing }: ImoveisPageProps) => {
           </div>
         )}
       </div>
+        )}
         </TabsContent>
 
         <TabsContent value="mapa-imoveis">
