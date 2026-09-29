@@ -37,7 +37,6 @@ import {
 } from 'lucide-react';
 import { 
   fetchBolsaoLeads,
-  fetchTodosLeadsBolsao,
   fetchLeadsDoCorretor,
   fetchListaCorretores,
   assumirLeadDoBolsao, 
@@ -101,7 +100,9 @@ import { PainelDistribuicao } from '@/features/distribuicao/PainelDistribuicao';
 
 interface BolsaoSectionProps {}
 
-type BolsaoTab = 'geral' | 'disponiveis' | 'configuracoes' | 'equipes' | 'simulador' | 'distribuicao';
+// 'geral' ("Todos os Leads") saiu em 28/09, a pedido do chefe: "não tem
+// necessidade". Link antigo com ?tab=geral cai em Disponíveis.
+type BolsaoTab = 'disponiveis' | 'configuracoes' | 'equipes' | 'simulador' | 'distribuicao';
 
 /**
  * O subtítulo era fixo em "leads que esfriaram" nas cinco abas — inclusive nas
@@ -110,7 +111,6 @@ type BolsaoTab = 'geral' | 'disponiveis' | 'configuracoes' | 'equipes' | 'simula
  */
 const SUBTITULO_DA_ABA: Record<BolsaoTab, string> = {
   disponiveis: 'Leads que esfriaram e estão disponíveis para qualquer corretor assumir.',
-  geral: 'Todos os leads da imobiliária, com o corretor de cada um.',
   equipes: 'A fila por equipe, quando a distribuição por equipe está ligada.',
   configuracoes: 'Horário de funcionamento, prazo de atendimento e quem entra na roleta.',
   simulador: 'De quem seria um lead que chegasse agora — sem atribuir nada.',
@@ -175,7 +175,7 @@ const BolsaoSectionContent = (props: BolsaoSectionProps) => {
   // Aba "equipes" só vale quando team_queue_enabled — senão volta pra disponiveis
   // (efeito é aplicado num useEffect abaixo, depois da config carregar)
   const activeTab: BolsaoTab =
-    tabParam === 'geral' || tabParam === 'configuracoes' || tabParam === 'equipes' || tabParam === 'simulador' || tabParam === 'distribuicao'
+    tabParam === 'configuracoes' || tabParam === 'equipes' || tabParam === 'simulador' || tabParam === 'distribuicao'
       ? tabParam
       : 'disponiveis';
   const setActiveTab = useCallback((tab: BolsaoTab) => {
@@ -335,18 +335,6 @@ const BolsaoSectionContent = (props: BolsaoSectionProps) => {
     }
   }, [tenantId, anuncioSelecionado, toast, carregarAnunciosPendentes]);
 
-  // Proteção: Redirecionar não-admins que tentarem acessar "Todos os Leads"
-  useEffect(() => {
-    if (!isAdmin && activeTab === 'geral') {
-      setActiveTab('disponiveis');
-      toast({
-        title: "Acesso Restrito",
-        description: "Apenas administradores podem acessar 'Todos os Leads'.",
-        variant: "destructive"
-      });
-    }
-  }, [isAdmin, activeTab]);
-
   // Aba "Equipes" só faz sentido quando team_queue_enabled. Se acessada sem
   // estar habilitada (ex: admin desligou no painel de configs), volta pra Disponíveis.
   useEffect(() => {
@@ -370,10 +358,7 @@ const BolsaoSectionContent = (props: BolsaoSectionProps) => {
         return;
       }
       
-      // Proteção: Apenas admins podem ver todos os leads
-      const data = (activeTab === 'geral' && isAdmin)
-        ? await fetchTodosLeadsBolsao(tenantId)
-        : await fetchBolsaoLeads(tenantId);
+      const data = await fetchBolsaoLeads(tenantId);
       
       setLeads(data);
       

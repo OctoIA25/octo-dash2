@@ -188,7 +188,6 @@ export const TAB_CONFIGS: TabConfig[] = [
     queryKey: 'tab',
     tabs: [
       { id: 'disponiveis', label: 'Disponíveis', icon: Zap, href: '/bolsao?tab=disponiveis', isQuery: true },
-      { id: 'geral', label: 'Todos os Leads', icon: Tag, href: '/bolsao?tab=geral', isQuery: true },
       { id: 'equipes', label: 'Equipes', icon: Users, href: '/bolsao?tab=equipes', isQuery: true },
       { id: 'distribuicao', label: 'Distribuição', icon: Activity, href: '/bolsao?tab=distribuicao', isQuery: true },
       { id: 'simulador', label: 'Simulador', icon: Play, href: '/bolsao?tab=simulador', isQuery: true },

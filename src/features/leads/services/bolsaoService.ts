@@ -88,33 +88,6 @@ export async function fetchBolsaoLeads(tenantId: string): Promise<BolsaoLead[]> 
 }
 
 /**
- * Busca todos os leads que passaram pelo Bolsão em algum momento.
- * Critério: `data_expiracao IS NOT NULL` — só o `expire_bolsao_leads()` (pg_cron)
- * seta, ao mover pro pool; portanto identifica de forma confiável leads que cairam no pool.
- * Inclui status atuais 'bolsao', 'assumido', 'atendido', 'finalizado'.
- */
-export async function fetchTodosLeadsBolsao(tenantId: string): Promise<BolsaoLead[]> {
-  try {
-    const { data, error } = await supabase
-      .from(BOLSAO_TABLE)
-      .select('*')
-      .not('data_expiracao', 'is', null)
-      .eq('tenant_id', tenantId)
-      .order('data_expiracao', { ascending: false });
-
-    if (error) {
-      throw new Error(`Erro ao buscar leads que passaram pelo bolsão: ${error.message}`);
-    }
-
-    return data || [];
-
-  } catch (error) {
-    console.error('❌ Erro ao buscar leads que passaram pelo bolsão:', error);
-    return [];
-  }
-}
-
-/**
  * Busca leads de um corretor específico
  */
 export async function fetchLeadsDoCorretor(nomeCorretor: string): Promise<BolsaoLead[]> {
