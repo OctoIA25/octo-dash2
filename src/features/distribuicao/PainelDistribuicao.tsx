@@ -16,6 +16,9 @@ import { supabase } from '@/lib/supabaseClient';
 import { OctoDashLoader } from '@/components/ui/OctoDashLoader';
 import { usePodeAbrirConversa } from '@/features/chat/components/OpenConversationLink';
 import { chatPathForPhone } from '@/features/chat/services/chatService';
+import { CriarLeadQuickModal } from '@/features/leads/components/CriarLeadQuickModal';
+import { fetchKanbanLeadDaConversa, type KanbanLead } from '@/features/leads/services/leadsService';
+import { useToast } from '@/hooks/use-toast';
 import { ExtratoDistribuicao, type EventoDistribuicao, type LeadDoExtrato } from './ExtratoDistribuicao';
 
 interface Props {
@@ -46,6 +49,22 @@ export function PainelDistribuicao({ tenantId }: Props) {
   // apareceu pela primeira vez.
   const contatosRef = useRef<Record<string, { nome: string | null; telefone: string | null }>>({});
   const podeAbrirConversa = usePodeAbrirConversa();
+  const [leadAberto, setLeadAberto] = useState<KanbanLead | null>(null);
+  const { toast } = useToast();
+
+  // Mesmo caminho do Chat: busca a ficha por id e abre o modal de Meus Leads.
+  const abrirLead = useCallback(async (leadId: string) => {
+    if (!tenantId) return;
+    const lead = await fetchKanbanLeadDaConversa(tenantId, leadId, []);
+    if (lead) setLeadAberto(lead);
+    else toast({ title: 'Não foi possível abrir este lead', variant: 'destructive' });
+  }, [tenantId, toast]);
+
+  const fecharLead = useCallback(() => {
+    // O nome pode ter sido editado no modal: o próximo ciclo busca de novo.
+    if (leadAberto) delete contatosRef.current[leadAberto.id];
+    setLeadAberto(null);
+  }, [leadAberto]);
 
   const carregar = useCallback(async () => {
     if (!tenantId || tenantId === 'owner') return;
@@ -202,6 +221,14 @@ export function PainelDistribuicao({ tenantId }: Props) {
         nomes={estado.nomes}
         leads={estado.leads}
         jaHouveAlgum={estado.jaHouveAlgum}
+        onAbrirLead={abrirLead}
+      />
+      <CriarLeadQuickModal
+        isOpen={leadAberto !== null}
+        onClose={fecharLead}
+        tenantId={tenantId}
+        editingLead={leadAberto}
+        leadType={leadAberto?.lead_type}
       />
     </div>
   );

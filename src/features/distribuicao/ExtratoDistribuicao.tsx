@@ -49,6 +49,8 @@ interface Props {
   /** Houve algum acontecimento algum dia? Separa "ainda não começou" de "hoje não veio". */
   jaHouveAlgum: boolean;
   agora?: Date;
+  /** Clique no nome do lead — abre o mesmo modal de Meus Leads. */
+  onAbrirLead?: (leadId: string) => void;
 }
 
 const TEXTO_DO_EVENTO: Record<string, string> = {
@@ -154,7 +156,7 @@ const Contador = ({ icone: Icone, rotulo, valor, cor }: {
   </div>
 );
 
-export function ExtratoDistribuicao({ eventos, nomes, leads = {}, jaHouveAlgum, agora = new Date() }: Props) {
+export function ExtratoDistribuicao({ eventos, nomes, leads = {}, jaHouveAlgum, agora = new Date(), onAbrirLead }: Props) {
   const c = contar(eventos);
   const parados = relogioParado(eventos);
   const nomeDe = (id: string | null) => (id ? nomes[id] || id.slice(0, 8) : null);
@@ -204,7 +206,17 @@ export function ExtratoDistribuicao({ eventos, nomes, leads = {}, jaHouveAlgum, 
                 </div>
                 {lead || finalidade ? (
                   <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12px]">
-                    {lead ? <span className="font-medium">{lead.nome?.trim() || 'Lead sem nome'}</span> : null}
+                    {lead && ev.lead_id && onAbrirLead ? (
+                      <button
+                        type="button"
+                        onClick={() => onAbrirLead(ev.lead_id!)}
+                        className="font-medium text-blue-600 hover:underline dark:text-blue-400"
+                      >
+                        {lead.nome?.trim() || 'Lead sem nome'}
+                      </button>
+                    ) : lead ? (
+                      <span className="font-medium">{lead.nome?.trim() || 'Lead sem nome'}</span>
+                    ) : null}
                     {finalidade ? (
                       <span
                         className={`rounded px-1.5 py-px text-[10px] font-semibold ${

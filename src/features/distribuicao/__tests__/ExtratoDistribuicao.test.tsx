@@ -6,8 +6,8 @@
  * Zero é um número plausível, e foi assim que meia dúzia de contadores desta
  * base mentiram por meses.
  */
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { ExtratoDistribuicao, contar, situacaoDoPrazo, type EventoDistribuicao } from '../ExtratoDistribuicao';
 
@@ -178,6 +178,18 @@ describe('cada linha diz de QUAL lead é', () => {
   it('sem telefone ou sem permissão de WhatsApp, não oferece link quebrado', () => {
     comRota({ eventos: [ev({ lead_id: 'L1' })], leads: { L1: { nome: 'Sandra', tipo: null, conversa: null } } });
     expect(screen.queryByRole('link', { name: /Abrir conversa/ })).not.toBeInTheDocument();
+  });
+
+  it('clicar no nome abre o lead — o mesmo modal de Meus Leads', () => {
+    const onAbrirLead = vi.fn();
+    comRota({ eventos: [ev({ lead_id: 'L1' })], leads: { L1: { nome: 'Sandra', tipo: null, conversa: null } }, onAbrirLead });
+    fireEvent.click(screen.getByRole('button', { name: 'Sandra' }));
+    expect(onAbrirLead).toHaveBeenCalledWith('L1');
+  });
+
+  it('sem quem abra o modal, o nome é só texto', () => {
+    comRota({ eventos: [ev({ lead_id: 'L1' })], leads: { L1: { nome: 'Sandra', tipo: null, conversa: null } } });
+    expect(screen.queryByRole('button', { name: 'Sandra' })).not.toBeInTheDocument();
   });
 
   it('a referência gravada é o imóvel, não o lead', () => {
