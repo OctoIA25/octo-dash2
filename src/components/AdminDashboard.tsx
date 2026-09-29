@@ -9,7 +9,7 @@ import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { AdminTaskManager } from './AdminTaskManager';
 import { EquipeSection } from '@/features/corretores/components/EquipeSection';
 import { EquipesManagerSection } from '@/features/corretores/components/EquipesManagerSection';
-import { Bot, ArrowRight } from 'lucide-react';
+import { Bot, ArrowLeft, ArrowRight } from 'lucide-react';
 import { useLeadsData } from '@/features/leads/hooks/useLeadsData';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { podeVerAba } from '@/pages/inicio-nova/abasVisiveis';
@@ -50,7 +50,22 @@ export const AdminDashboard = () => {
   return (
     <div className="w-full min-h-screen overflow-x-hidden">
       {/* Action bar — CTA para Agente Elaine no padrão do dashboard */}
-      <div className="mb-6 flex justify-end">
+      <div className="mb-6 flex items-center justify-between gap-3">
+        {/* 29/09: Equipes e Tarefas não tinham caminho de volta — a Gestão de
+            Equipe não tem barra de abas, e o único jeito de sair era achar o
+            item na lateral. A tela dos membros é o ponto de partida de tudo. */}
+        {activeTab !== 'acessos-permissoes' && podeVer('acessos-permissoes') ? (
+          <button
+            type="button"
+            onClick={() => navigate('/gestao-equipe')}
+            className="inline-flex items-center gap-2 h-10 px-3 rounded-xl text-[13px] font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Membros da Equipe
+          </button>
+        ) : (
+          <span />
+        )}
         <button
           onClick={() => navigate('/agentes-ia/elaine')}
           className="group inline-flex items-center gap-3 h-11 pl-3 pr-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-blue-400 dark:hover:border-blue-600 hover:shadow-lg hover:shadow-blue-500/10 transition-all"
