@@ -167,3 +167,25 @@ describe('Imóveis na lateral', () => {
     }
   });
 });
+
+// 29/09 — "Aba Financeiro devem aparecer os mesmos que aparecem lá em cima,
+// hoje só aparece o 'a receber'".
+describe('Financeiro na lateral', () => {
+  it('mostra as mesmas abas do topo da tela, na mesma ordem', async () => {
+    const { ABAS_DO_FINANCEIRO } = await import('@/features/financeiro/abas');
+    render(<NovaSidebar />);
+    await userEvent.click(await screen.findByText('Financeiro'));
+    const botoes = screen.getAllByRole('button').map((b) => b.textContent?.trim());
+    const onde = ABAS_DO_FINANCEIRO.map((a) => botoes.indexOf(a.rotulo));
+    expect(onde.every((i) => i >= 0)).toBe(true);
+    expect(onde).toEqual([...onde].sort((x, y) => x - y));
+  });
+
+  it('cada atalho abre a aba dele', async () => {
+    render(<NovaSidebar />);
+    await userEvent.click(await screen.findByText('Financeiro'));
+    navigate.mockClear();
+    await userEvent.click(screen.getByText('DRE gerencial'));
+    expect(navigate).toHaveBeenCalledWith('/financeiro?tab=dre');
+  });
+});

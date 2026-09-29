@@ -43,6 +43,7 @@ import {
 import { useAuthContext } from '@/contexts/AuthContext';
 import { TenantSwitcher } from '@/components/TenantSwitcher';
 import { SidebarPermission, permissoesDeSidebar } from '@/types/permissions';
+import { ABAS_DO_FINANCEIRO, rotaDaAba, type AbaDoFinanceiro } from '@/features/financeiro/abas';
 import octoLogo from '@/assets/octodash-logo.png';
 
 interface SubItem {
@@ -77,6 +78,15 @@ interface SidebarGroup {
   title?: string;
   items: SidebarItem[];
 }
+
+const ICONE_DA_ABA_DO_FINANCEIRO: Record<AbaDoFinanceiro, typeof Receipt> = {
+  receber: Receipt,
+  pagar: Wallet,
+  fluxo: TrendingUp,
+  dre: BarChart3,
+  conciliacao: Scale,
+  notas: FileText,
+};
 
 const GROUPS: SidebarGroup[] = [
   {
@@ -158,11 +168,13 @@ const GROUPS: SidebarGroup[] = [
         id: 'financeiro',
         label: 'Financeiro',
         icon: Wallet,
-        route: '/financeiro',
+        route: rotaDaAba('receber'),
         permission: 'financeiro',
-        subItems: [
-          { id: 'fin-receber', label: 'A receber', icon: Receipt, route: '/financeiro' },
-        ],
+        // As mesmas abas do topo da tela, da mesma lista (29/09). Antes só
+        // havia "A receber".
+        subItems: ABAS_DO_FINANCEIRO.map(({ id, rotulo }) => ({
+          id: `fin-${id}`, label: rotulo, icon: ICONE_DA_ABA_DO_FINANCEIRO[id], route: rotaDaAba(id),
+        })),
       },
     ],
   },

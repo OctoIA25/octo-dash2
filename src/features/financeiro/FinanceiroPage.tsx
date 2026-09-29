@@ -14,6 +14,7 @@
  */
 
 import { useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle, Check, Download, Info, Loader2, Lock, Plus, Undo2, X,
@@ -34,8 +35,9 @@ import {
 } from './financeiroService';
 import { ConciliacaoPanel } from './ConciliacaoPanel';
 import { NotasAEmitir } from './NotasAEmitir';
+import { ABAS_DO_FINANCEIRO, abaDoEndereco, type AbaDoFinanceiro } from './abas';
 
-type Aba = 'receber' | 'pagar' | 'fluxo' | 'dre' | 'conciliacao' | 'notas';
+type Aba = AbaDoFinanceiro;
 
 const hoje = () => new Date().toISOString().slice(0, 10);
 const primeiroDoMes = () => `${new Date().toISOString().slice(0, 7)}-01`;
@@ -53,7 +55,15 @@ export function FinanceiroPage() {
   const { toast } = useToast();
   const qc = useQueryClient();
 
-  const [aba, setAba] = useState<Aba>('receber');
+  // A aba mora no endereço (?tab=), para a lateral abrir cada uma (29/09).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const aba: Aba = abaDoEndereco(searchParams.get('tab'));
+  const setAba = (id: Aba) =>
+    setSearchParams((prev) => {
+      const p = new URLSearchParams(prev);
+      p.set('tab', id);
+      return p;
+    }, { replace: true });
   const [de, setDe] = useState(primeiroDoMes);
   const [ate, setAte] = useState(ultimoDoMes);
   const [gran, setGran] = useState<'dia' | 'semana' | 'mes'>('dia');
@@ -170,14 +180,7 @@ export function FinanceiroPage() {
       </header>
 
       <nav className="mb-4 flex flex-wrap gap-1 border-b">
-        {([
-          ['receber', 'A receber'],
-          ['pagar', 'A pagar'],
-          ['fluxo', 'Fluxo de caixa'],
-          ['dre', 'DRE gerencial'],
-          ['conciliacao', 'Conciliação'],
-          ['notas', 'Notas a emitir'],
-        ] as Array<[Aba, string]>).map(([id, rotulo]) => (
+        {ABAS_DO_FINANCEIRO.map(({ id, rotulo }) => (
           <button key={id} onClick={() => setAba(id)}
             className={`-mb-px border-b-2 px-3 py-1.5 text-sm ${
               aba === id ? 'border-primary font-medium' : 'border-transparent text-muted-foreground hover:text-foreground'
