@@ -86,4 +86,19 @@ describe('RecrutamentoKanbanCardContent', () => {
     expect(screen.getByText('Lançamentos')).toBeInTheDocument();
     expect(screen.getByText(/fabio@lotus.com/)).toBeInTheDocument();
   });
+
+  it('lixeira: chama onExcluir e não abre a ficha; sem onExcluir não há lixeira', () => {
+    const onAbrir = vi.fn();
+    const onExcluir = vi.fn();
+    const c = fazCandidato();
+    render(<RecrutamentoKanbanCardContent candidato={c} onAbrir={onAbrir} onExcluir={onExcluir} />);
+    fireEvent.click(screen.getByRole('button', { name: /excluir candidato/i }));
+    expect(onExcluir).toHaveBeenCalledWith(c);
+    expect(onAbrir).not.toHaveBeenCalled();
+  });
+
+  it('sem onExcluir não há lixeira', () => {
+    render(<RecrutamentoKanbanCardContent candidato={fazCandidato()} onAbrir={() => {}} />);
+    expect(screen.queryByRole('button', { name: /excluir candidato/i })).toBeNull();
+  });
 });

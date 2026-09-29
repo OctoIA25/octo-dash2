@@ -1,6 +1,6 @@
 import { memo, type ReactNode } from 'react';
 import { useDraggable } from '@dnd-kit/core';
-import { ChevronRight, GripVertical, MessageCircle } from 'lucide-react';
+import { GripVertical, MessageCircle, Trash2 } from 'lucide-react';
 import { linkWhatsapp } from '@/lib/contato';
 import {
   CONDICOES, COR_SITUACAO_CONDICAO, SITUACOES_CONDICAO, diasDesde, textoHaDias, type EstagioId,
@@ -37,6 +37,8 @@ interface ConteudoProps {
   candidato: CandidatoKanban;
   coordenadorNome?: string | null;
   onAbrir: (candidato: CandidatoKanban) => void;
+  /** Lixeira no canto do card. Quem confirma é a página (AlertDialog). */
+  onExcluir?: (candidato: CandidatoKanban) => void;
   /** A alça do dnd-kit, desenhada à esquerda do nome. Ausente no overlay. */
   dragHandle?: ReactNode;
   isOverlay?: boolean;
@@ -46,7 +48,7 @@ interface ConteudoProps {
  * Conteúdo visual do card — puro, exportado para teste. O arrastar fica em
  * `RecrutamentoKanbanCard`, que embrulha isto com `useDraggable`.
  */
-export const RecrutamentoKanbanCardContent = memo(({ candidato, coordenadorNome, onAbrir, dragHandle, isOverlay = false }: ConteudoProps) => {
+export const RecrutamentoKanbanCardContent = memo(({ candidato, coordenadorNome, onAbrir, onExcluir, dragHandle, isOverlay = false }: ConteudoProps) => {
   const dias = diasDesde(candidato.ts_candidatura ?? candidato.data_inscricao);
   const whatsapp = linkWhatsapp(candidato.telefone);
   const funcao = candidato.cargo || candidato.area || '';
@@ -64,7 +66,17 @@ export const RecrutamentoKanbanCardContent = memo(({ candidato, coordenadorNome,
             {candidato.nome}
           </p>
         </div>
-        <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-400 dark:text-slate-500" />
+        {onExcluir && !isOverlay && (
+          <button
+            type="button"
+            aria-label="Excluir candidato"
+            title="Excluir candidato"
+            onClick={(e) => { e.stopPropagation(); onExcluir(candidato); }}
+            className="shrink-0 rounded p-0.5 text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        )}
       </div>
 
       <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
@@ -122,17 +134,14 @@ interface CardProps {
   candidato: CandidatoKanban;
   coordenadorNome?: string | null;
   onAbrir: (candidato: CandidatoKanban) => void;
+  onExcluir?: (candidato: CandidatoKanban) => void;
 }
 
-/** O card arrastável. Em `perdido` não arrasta: perdido não volta ao funil. */
-export const RecrutamentoKanbanCard = memo(({ candidato, coordenadorNome, onAbrir }: CardProps) => {
-  const perdido = candidato.estagio === 'perdido';
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: String(candidato.id),
-    disabled: perdido,
-  });
+/** O card arrastável — inclusive em Perdido, que desde 29/09 pode ser reaberto. */
+export const RecrutamentoKanbanCard = memo(({ candidato, coordenadorNome, onAbrir, onExcluir }: CardProps) => {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: String(candidato.id) });
 
-  const dragHandle = perdido ? undefined : (
+  const dragHandle = (
     <div
       {...listeners}
       {...attributes}
@@ -150,6 +159,7 @@ export const RecrutamentoKanbanCard = memo(({ candidato, coordenadorNome, onAbri
         candidato={candidato}
         coordenadorNome={coordenadorNome}
         onAbrir={onAbrir}
+        onExcluir={onExcluir}
         dragHandle={dragHandle}
       />
     </div>

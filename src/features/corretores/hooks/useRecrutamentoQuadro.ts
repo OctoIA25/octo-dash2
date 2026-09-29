@@ -27,6 +27,8 @@ export interface UseRecrutamentoQuadroReturn {
   refresh: () => Promise<void>;
   /** Devolve true quando a etapa foi gravada. */
   moverEstagio: (candidato: CandidatoComEtapas, paraId: EstagioId) => Promise<boolean>;
+  /** Apaga o candidato (histórico e marcos vão junto, em cascata). true = apagou. */
+  excluir: (candidato: CandidatoComEtapas) => Promise<boolean>;
 }
 
 export function useRecrutamentoQuadro({
@@ -77,5 +79,19 @@ export function useRecrutamentoQuadro({
     }
   }, [usuarioEmail, tenantId, refresh]);
 
-  return { candidatos, carregando, erro, refresh, moverEstagio };
+  const excluir = useCallback(async (candidato: CandidatoComEtapas): Promise<boolean> => {
+    if (!tenantId) { toast.error('Sem imobiliária na sessão'); return false; }
+    try {
+      await recruitmentService.deleteCandidato(String(candidato.id), tenantId);
+      setCandidatos((prev) => prev.filter((c) => c.id !== candidato.id));
+      toast.success(`${candidato.nome} excluído`);
+      return true;
+    } catch (e) {
+      console.error('Erro ao excluir candidato:', e);
+      toast.error(e instanceof Error ? e.message : 'Não foi possível excluir o candidato');
+      return false;
+    }
+  }, [tenantId]);
+
+  return { candidatos, carregando, erro, refresh, moverEstagio, excluir };
 }

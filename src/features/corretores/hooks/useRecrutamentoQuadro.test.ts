@@ -1,13 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 
-const { getTodosCandidatos, aplicarMudancaDeEtapa, toast } = vi.hoisted(() => ({
+const { getTodosCandidatos, deleteCandidato, aplicarMudancaDeEtapa, toast } = vi.hoisted(() => ({
   getTodosCandidatos: vi.fn(),
+  deleteCandidato: vi.fn(),
   aplicarMudancaDeEtapa: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
 
-vi.mock('../services/recruitmentService', () => ({ recruitmentService: { getTodosCandidatos } }));
+vi.mock('../services/recruitmentService', () => ({ recruitmentService: { getTodosCandidatos, deleteCandidato } }));
 vi.mock('../services/mudancaDeEtapa', () => ({ aplicarMudancaDeEtapa }));
 vi.mock('sonner', () => ({ toast }));
 
@@ -67,5 +68,38 @@ describe('useRecrutamentoQuadro', () => {
     await waitFor(() => expect(result.current.carregando).toBe(false));
     expect(result.current.erro).toBe('rede caiu');
     expect(result.current.candidatos).toEqual([]);
+  });
+});
+
+describe('useRecrutamentoQuadro — excluir', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    getTodosCandidatos.mockResolvedValue([ana, bia]);
+  });
+
+  it('apaga no banco (com o tenant), some do quadro e devolve true', async () => {
+    deleteCandidato.mockResolvedValue(undefined);
+    const { result } = renderHook(() => useRecrutamentoQuadro({ tenantId: 't1', autoRefresh: false }));
+    await waitFor(() => expect(result.current.carregando).toBe(false));
+
+    let ok: boolean | undefined;
+    await act(async () => { ok = await result.current.excluir(ana); });
+    expect(ok).toBe(true);
+    expect(deleteCandidato).toHaveBeenCalledWith('a', 't1');
+    expect(result.current.candidatos.map((c) => c.id)).toEqual(['b']);
+    expect(toast.success).toHaveBeenCalledWith(expect.stringMatching(/Ana/));
+  });
+
+  it('erro: fica no quadro, mostra a mensagem real e devolve false', async () => {
+    deleteCandidato.mockRejectedValue(new Error('permission denied for table recrut_candidato'));
+    const { result } = renderHook(() => useRecrutamentoQuadro({ tenantId: 't1', autoRefresh: false }));
+    await waitFor(() => expect(result.current.carregando).toBe(false));
+
+    let ok: boolean | undefined;
+    await act(async () => { ok = await result.current.excluir(ana); });
+    expect(ok).toBe(false);
+    expect(result.current.candidatos.map((c) => c.id)).toEqual(['a', 'b']);
+    expect(toast.error).toHaveBeenCalledWith('permission denied for table recrut_candidato');
   });
 });

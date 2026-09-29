@@ -1,15 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { rpc, createTenantMember, changeCandidateStatus, toast } = vi.hoisted(() => ({
+const { rpc, createTenantMember, changeCandidateStatus, retrocederEtapa, toast } = vi.hoisted(() => ({
   rpc: vi.fn(),
   createTenantMember: vi.fn(),
   changeCandidateStatus: vi.fn(),
+  retrocederEtapa: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
 
 vi.mock('@/lib/supabaseClient', () => ({ supabase: { rpc } }));
 vi.mock('./tenantMembersService', () => ({ createTenantMember }));
-vi.mock('./recruitmentService', () => ({ recruitmentService: { changeCandidateStatus } }));
+vi.mock('./recruitmentService', () => ({ recruitmentService: { changeCandidateStatus, retrocederEtapa } }));
 vi.mock('sonner', () => ({ toast }));
 
 import { efeitoDaEtapa, aplicarMudancaDeEtapa, type MudancaDeEtapa } from './mudancaDeEtapa';
@@ -143,5 +144,41 @@ describe('aplicarMudancaDeEtapa — os efeitos em um lugar só', () => {
     createTenantMember.mockResolvedValue({ success: false, error: 'Formato de email inválido' });
     await expect(aplicarMudancaDeEtapa({ candidato: { ...candidato, email: null }, novoLabel: 'Onboard', tenantId: 't1' })).resolves.toBeTruthy();
     expect(toast.error).toHaveBeenCalledWith(expect.stringMatching(/Formato de email inválido/));
+  });
+});
+
+describe('aplicarMudancaDeEtapa — voltar de etapa e reabrir (29/09)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    retrocederEtapa.mockResolvedValue({ ...candidato, estagio: 'interacao', status: 'Interação' });
+  });
+
+  it('para trás grava o evento de retrocesso, com quem moveu, e NÃO passa pelo caminho de avançar', async () => {
+    const r = await aplicarMudancaDeEtapa({ candidato: { ...candidato, estagio: 'qualificado' }, novoLabel: 'Interação', usuarioEmail: 'erick@lotus.com', tenantId: 't1' });
+    expect(retrocederEtapa).toHaveBeenCalledWith('c1', 'interacao', 'erick@lotus.com');
+    expect(changeCandidateStatus).not.toHaveBeenCalled();
+    expect(r.status).toBe('Interação');
+  });
+
+  it('voltar de Onboard NÃO mexe na conta do corretor: nem cria, nem desvincula', async () => {
+    await aplicarMudancaDeEtapa({ candidato: { ...candidato, estagio: 'onboard' }, novoLabel: 'Matrícula', tenantId: 't1' });
+    expect(retrocederEtapa).toHaveBeenCalledWith('c1', 'matricula', undefined);
+    expect(rpc).not.toHaveBeenCalled();
+    expect(createTenantMember).not.toHaveBeenCalled();
+  });
+
+  it('reabrir um perdido é retroceder — mesmo para Onboard, sem criar conta', async () => {
+    await aplicarMudancaDeEtapa({ candidato: { ...candidato, estagio: 'perdido' }, novoLabel: 'Onboard', tenantId: 't1' });
+    expect(retrocederEtapa).toHaveBeenCalledWith('c1', 'onboard', undefined);
+    expect(createTenantMember).not.toHaveBeenCalled();
+    expect(changeCandidateStatus).not.toHaveBeenCalled();
+  });
+
+  it('mesma etapa: recusa antes de gravar qualquer coisa', async () => {
+    await expect(aplicarMudancaDeEtapa({ candidato: { ...candidato, estagio: 'lead' }, novoLabel: 'Lead', tenantId: 't1' }))
+      .rejects.toThrow(/já está/);
+    expect(retrocederEtapa).not.toHaveBeenCalled();
+    expect(changeCandidateStatus).not.toHaveBeenCalled();
   });
 });

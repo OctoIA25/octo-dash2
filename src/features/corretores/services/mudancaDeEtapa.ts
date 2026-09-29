@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
-import { ESTAGIO_POR_LABEL, LABEL_ESTAGIO, type EstagioId } from '../domain/recruitmentStages';
+import { ESTAGIO_POR_LABEL, LABEL_ESTAGIO, podeMover, type EstagioId } from '../domain/recruitmentStages';
 import { recruitmentService, type Candidato } from './recruitmentService';
 import { createTenantMember } from './tenantMembersService';
 
@@ -24,6 +24,10 @@ import { createTenantMember } from './tenantMembersService';
  *     coordenador), e a retentativa caía em "Usuário já existe" para sempre.
  *     Agora, se a conta falhar depois do evento, a etapa fica gravada e a
  *     tela avisa para criar o acesso à mão; "já existe" na criação é sucesso.
+ *
+ * Desde 29/09 o funil também VOLTA: para trás, ou saindo de Perdido, o evento
+ * é `estagio_retrocedido` (retrocederEtapa) e NENHUM efeito de conta roda —
+ * voltar de Onboard não mexe na conta do corretor.
  *
  * Falha antes de gravar = throw com a mensagem real para a tela.
  */
@@ -54,6 +58,18 @@ export interface MudancaDeEtapa {
 }
 
 export async function aplicarMudancaDeEtapa({ candidato, novoLabel, usuarioEmail, tenantId }: MudancaDeEtapa): Promise<Candidato> {
+  const paraId = (ESTAGIO_POR_LABEL[novoLabel] ?? novoLabel) as EstagioId;
+  const deId = (candidato.estagio ?? 'lead') as EstagioId;
+  const mover = podeMover(deId, paraId);
+  if (mover.ok === false) {
+    throw new Error(`${candidato.nome} já está em ${LABEL_ESTAGIO[paraId] ?? novoLabel}`);
+  }
+  if (mover.sentido === 'volta' || mover.sentido === 'reabre') {
+    // Sem conta, sem desvincular: voltar (inclusive de Onboard) e reabrir só
+    // mexem no funil. O acesso do corretor é assunto de Gestão de Equipe.
+    return recruitmentService.retrocederEtapa(String(candidato.id), paraId, usuarioEmail);
+  }
+
   const efeito = efeitoDaEtapa(candidato.estagio, novoLabel);
   const effectiveTenantId = candidato.tenant_id || tenantId;
   const email = String(candidato.email ?? '').trim();

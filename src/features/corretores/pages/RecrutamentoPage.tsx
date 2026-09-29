@@ -19,6 +19,7 @@ import { useRecruitment } from '../hooks/useRecruitment';
 import { ESTAGIOS, ESTAGIO_POR_LABEL, LABEL_ESTAGIO, MOTIVOS_PERDA, classeDoStatus, podeMover, type EstagioId } from '../domain/recruitmentStages';
 import { filtrarCandidatos, recorteCanalPeriodo } from '../domain/filtrarCandidatos';
 import { RecrutamentoKanban } from '../components/RecrutamentoKanban';
+import { ConfirmarExclusaoCandidato } from '../components/ConfirmarExclusaoCandidato';
 import { useRecrutamentoQuadro } from '../hooks/useRecrutamentoQuadro';
 import { aplicarMudancaDeEtapa } from '../services/mudancaDeEtapa';
 import { FilaDeAcao } from '../components/FilaDeAcao';
@@ -49,7 +50,8 @@ import {
   ExternalLink,
   FileDown,
   ChevronRight,
-  ChevronLeft
+  ChevronLeft,
+  Trash2
 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { toast } from 'sonner';
@@ -169,6 +171,24 @@ export const RecrutamentoPage = ({ vista = 'geral' }: RecrutamentoPageProps = {}
     [quadro.erro, quadro.candidatos, candidatosNoRecorte, filtros],
   );
   const refreshTudo = async () => { await Promise.all([refresh(), quadro.refresh()]); };
+
+  // Excluir: a lixeira do card e o botão do modal abrem o MESMO diálogo.
+  const [excluindo, setExcluindo] = useState<CandidatoComEtapas | null>(null);
+  const [excluindoAgora, setExcluindoAgora] = useState(false);
+  const confirmarExclusao = async (c: { id: string | number }) => {
+    const alvo = excluindo && excluindo.id === c.id ? excluindo : null;
+    if (!alvo) return;
+    setExcluindoAgora(true);
+    const ok = await quadro.excluir(alvo);
+    setExcluindoAgora(false);
+    if (!ok) return;
+    setExcluindo(null);
+    if (candidatoSelecionado?.id === alvo.id) {
+      selectCandidato(null);
+      setModalOpen(false);
+    }
+    await refresh();
+  };
 
   // user_id → e-mail do coordenador, para o rodapé do card (é o que a ficha mostra).
   const [coordenadores, setCoordenadores] = useState<Record<string, string>>({});
@@ -563,6 +583,7 @@ export const RecrutamentoPage = ({ vista = 'geral' }: RecrutamentoPageProps = {}
               carregando={quadro.carregando}
               onAbrir={(c) => handleVerDetalhes(c as CandidatoComEtapas)}
               onEncerrar={(c) => handleEncerrarPeloQuadro(c as CandidatoComEtapas)}
+              onExcluir={(c) => setExcluindo(c as CandidatoComEtapas)}
               onMover={async (candidato, para) => {
                 const ok = await quadro.moverEstagio(candidato as CandidatoComEtapas, para);
                 // Fila, indicadores e a lista leem pelo hook antigo: só recarrega se gravou.
@@ -1023,10 +1044,10 @@ export const RecrutamentoPage = ({ vista = 'geral' }: RecrutamentoPageProps = {}
 
                   {/* Botões de Mudança de Status */}
                   <div className="flex flex-wrap gap-2">
-                    {[...ESTAGIOS.slice(1).map((e) => e.label), LABEL_ESTAGIO.perdido].map((status) => {
-                      // A mesma regra do arrastar: para trás, para Lead e a partir de
-                      // Perdido o botão nem liga — um clique gravava evento falso na
-                      // timeline e carimbava ts_* errado.
+                    {[...ESTAGIOS.map((e) => e.label), LABEL_ESTAGIO.perdido].map((status) => {
+                      // A mesma regra do arrastar: só a etapa atual fica desligada.
+                      // Para trás (inclusive Lead) e sair de Perdido gravam o evento
+                      // de retrocesso; entrar em Perdido continua pedindo o motivo.
                       const mover = podeMover((candidatoSelecionado.estagio ?? 'lead') as EstagioId, ESTAGIO_POR_LABEL[status]);
                       return (
                         <Button
@@ -1224,13 +1245,19 @@ export const RecrutamentoPage = ({ vista = 'geral' }: RecrutamentoPageProps = {}
               </div>
 
               {/* Footer do Modal */}
-              <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200 dark:border-slate-800 dark:border-gray-700">
-                <Button variant="outline" onClick={() => setModalOpen(false)}>
-                  Fechar
+              <div className="flex items-center justify-between gap-3 p-6 border-t border-gray-200 dark:border-slate-800 dark:border-gray-700">
+                <Button variant="destructive" className="gap-2" onClick={() => setExcluindo(candidatoSelecionado)}>
+                  <Trash2 className="h-4 w-4" />
+                  Excluir candidato
                 </Button>
-                <Button>
-                  Salvar Alterações
-                </Button>
+                <div className="flex items-center gap-3">
+                  <Button variant="outline" onClick={() => setModalOpen(false)}>
+                    Fechar
+                  </Button>
+                  <Button>
+                    Salvar Alterações
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
@@ -1504,6 +1531,13 @@ export const RecrutamentoPage = ({ vista = 'geral' }: RecrutamentoPageProps = {}
           </div>,
           document.body
         )}
+
+        <ConfirmarExclusaoCandidato
+          candidato={excluindo}
+          excluindo={excluindoAgora}
+          onConfirmar={confirmarExclusao}
+          onCancelar={() => { if (!excluindoAgora) setExcluindo(null); }}
+        />
     </div>
   );
 };

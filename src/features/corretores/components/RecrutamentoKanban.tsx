@@ -14,7 +14,6 @@ import {
   type Modifier,
 } from '@dnd-kit/core';
 import { getEventCoordinates } from '@dnd-kit/utilities';
-import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import { COLUNAS_KANBAN, resolverSolta, type EstagioId } from '../domain/recruitmentStages';
 import { RecrutamentoKanbanCard, RecrutamentoKanbanCardContent, type CandidatoKanban } from './RecrutamentoKanbanCard';
@@ -23,8 +22,9 @@ import { RecrutamentoKanbanCard, RecrutamentoKanbanCardContent, type CandidatoKa
  * Kanban de candidatos: uma coluna por etapa do funil + Perdido, por último e
  * em cinza (é saída, não etapa). Copiado do Kanban de leads
  * (MeusLeadsAtribuidosSection) no que é mecânica — sensores, colisão pelo
- * cursor, overlay, "Mostrar mais" — e diferente no que é regra: aqui o funil
- * só anda para frente, e soltar em Perdido pede o motivo em vez de mover.
+ * cursor, overlay, "Mostrar mais" — e diferente no que é regra: soltar em
+ * Perdido pede o motivo em vez de mover, e para trás (ou saindo de Perdido) o
+ * serviço grava o evento de retrocesso.
  */
 
 const cursorCollisionDetection: CollisionDetection = (args) => {
@@ -53,9 +53,10 @@ interface ColunaProps {
   candidatos: CandidatoKanban[];
   coordenadores?: Record<string, string>;
   onAbrir: (c: CandidatoKanban) => void;
+  onExcluir?: (c: CandidatoKanban) => void;
 }
 
-const KanbanColuna = memo(({ coluna, candidatos, coordenadores, onAbrir }: ColunaProps) => {
+const KanbanColuna = memo(({ coluna, candidatos, coordenadores, onAbrir, onExcluir }: ColunaProps) => {
   const { setNodeRef, isOver } = useDroppable({ id: coluna.id });
   const [visiveis, setVisiveis] = useState(CARDS_POR_PAGINA);
   const mostrados = candidatos.slice(0, visiveis);
@@ -95,6 +96,7 @@ const KanbanColuna = memo(({ coluna, candidatos, coordenadores, onAbrir }: Colun
             candidato={c}
             coordenadorNome={c.coordenador_id ? coordenadores?.[c.coordenador_id] : undefined}
             onAbrir={onAbrir}
+            onExcluir={onExcluir}
           />
         ))}
 
@@ -121,9 +123,11 @@ export interface RecrutamentoKanbanProps {
   onAbrir: (candidato: CandidatoKanban) => void;
   onMover: (candidato: CandidatoKanban, para: EstagioId) => void | Promise<unknown>;
   onEncerrar: (candidato: CandidatoKanban) => void;
+  /** Lixeira do card; a confirmação é da página. */
+  onExcluir?: (candidato: CandidatoKanban) => void;
 }
 
-export const RecrutamentoKanban = ({ candidatos, coordenadores, carregando = false, onAbrir, onMover, onEncerrar }: RecrutamentoKanbanProps) => {
+export const RecrutamentoKanban = ({ candidatos, coordenadores, carregando = false, onAbrir, onMover, onEncerrar, onExcluir }: RecrutamentoKanbanProps) => {
   const [ativoId, setAtivoId] = useState<string | null>(null);
 
   // distance=6 evita "pick-up" acidental ao clicar para abrir a ficha.
@@ -150,7 +154,6 @@ export const RecrutamentoKanban = ({ candidatos, coordenadores, carregando = fal
     const decisao = resolverSolta(candidato, e.over ? String(e.over.id) : null);
     switch (decisao.acao) {
       case 'nada': return;
-      case 'aviso': toast.warning(decisao.motivo); return;
       case 'encerrar': onEncerrar(candidato); return;
       case 'mover': void onMover(candidato, decisao.para); return;
     }
@@ -183,6 +186,7 @@ export const RecrutamentoKanban = ({ candidatos, coordenadores, carregando = fal
               candidatos={porColuna[coluna.id] ?? []}
               coordenadores={coordenadores}
               onAbrir={onAbrir}
+              onExcluir={onExcluir}
             />
           ))}
         </div>

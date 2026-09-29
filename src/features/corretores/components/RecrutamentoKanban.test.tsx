@@ -50,8 +50,8 @@ describe('resolverSolta — o que acontece quando o card é solto', () => {
     expect(resolverSolta(ana, 'coluna-que-nao-existe')).toEqual({ acao: 'nada' });
   });
 
-  it('para trás: aviso com o motivo, e nada muda', () => {
-    expect(resolverSolta(ana, 'lead')).toEqual({ acao: 'aviso', motivo: 'O funil só anda para frente: Lead é a entrada' });
+  it('para trás move — inclusive para Lead', () => {
+    expect(resolverSolta(ana, 'lead')).toEqual({ acao: 'mover', para: 'lead' });
   });
 
   it('em Perdido: abre o encerramento em vez de mover direto', () => {
@@ -62,7 +62,7 @@ describe('resolverSolta — o que acontece quando o card é solto', () => {
     expect(resolverSolta(ana, 'matricula')).toEqual({ acao: 'mover', para: 'matricula' });
   });
 
-  it('card perdido não vai a lugar nenhum', () => {
-    expect(resolverSolta(c('perdido'), 'lead').acao).toBe('aviso');
+  it('card perdido volta ao funil (reabre)', () => {
+    expect(resolverSolta(c('perdido'), 'lead')).toEqual({ acao: 'mover', para: 'lead' });
   });
 });

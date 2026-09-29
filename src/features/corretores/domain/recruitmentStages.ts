@@ -76,7 +76,20 @@ export const LABEL_EVENTO: Record<string, string> = {
   prazo_matricula_vencido: 'Prazo da matrícula vencido',
   marco_ativacao: 'Marco de ativação',
   encerrado: 'Encerrado',
+  estagio_retrocedido: 'Voltou de etapa',
 };
+
+/**
+ * Rótulo de um evento para a timeline. `estagio_retrocedido` diz PARA ONDE
+ * voltou (payload.para); os demais usam o mapa fixo.
+ */
+export function rotuloDoEvento(tipo: string, payload?: Record<string, unknown> | null): string {
+  if (tipo === 'estagio_retrocedido') {
+    const para = payload?.para as string | undefined;
+    return para ? `Voltou para ${LABEL_ESTAGIO[para as EstagioId] ?? para}` : LABEL_EVENTO.estagio_retrocedido;
+  }
+  return LABEL_EVENTO[tipo] ?? tipo;
+}
 
 /**
  * Taxonomia fechada de motivo de perda (enum recrut_motivo_perda). A spec a
@@ -151,24 +164,23 @@ export const LABEL_MARCO: Record<string, string> = Object.fromEntries(
 );
 
 /**
- * A regra do arrastar no Kanban, ANTES de tocar o banco. O trigger já garante
- * que `estagio` nunca anda para trás e que 'perdido' não reabre — mas ele faz
- * isso em silêncio: o card voltaria sozinho e ninguém saberia por quê. Aqui o
- * motivo vira aviso na tela.
+ * A regra do arrastar no Kanban. Desde 29/09 o funil anda nos dois sentidos:
+ * para frente grava o evento da etapa; para trás (ou saindo de Perdido) grava
+ * `estagio_retrocedido`, que o gatilho do banco aplica. A única coisa que não
+ * move é soltar na mesma coluna — e isso não merece aviso.
  *
- * `motivo: null` = não move, mas também não há o que avisar (mesma coluna).
+ * `sentido` diz ao serviço qual caminho seguir; `motivo: null` = nada a dizer.
  */
-export type ResultadoMover = { ok: true } | { ok: false; motivo: string | null };
+export type SentidoMover = 'avanca' | 'volta' | 'reabre' | 'encerra';
+export type ResultadoMover = { ok: true; sentido: SentidoMover } | { ok: false; motivo: string | null };
 
 export function podeMover(de: EstagioId, para: EstagioId): ResultadoMover {
   if (de === para) return { ok: false, motivo: null };
-  if (para === 'lead') return { ok: false, motivo: 'O funil só anda para frente: Lead é a entrada' };
-  if (de === 'perdido') return { ok: false, motivo: 'Candidato perdido não volta ao funil' };
-  if (para === 'perdido') return { ok: true };
+  if (para === 'perdido') return { ok: true, sentido: 'encerra' };
+  if (de === 'perdido') return { ok: true, sentido: 'reabre' };
   const iDe = ESTAGIOS.findIndex((e) => e.id === de);
   const iPara = ESTAGIOS.findIndex((e) => e.id === para);
-  if (iPara < iDe) return { ok: false, motivo: 'O funil só anda para frente' };
-  return { ok: true };
+  return { ok: true, sentido: iPara > iDe ? 'avanca' : 'volta' };
 }
 
 /**
@@ -222,14 +234,13 @@ export const COLUNAS_KANBAN: { id: EstagioId; title: string; color: string }[] =
 
 export type DecisaoSolta =
   | { acao: 'nada' }
-  | { acao: 'aviso'; motivo: string }
   | { acao: 'encerrar' }
   | { acao: 'mover'; para: EstagioId };
 
 /**
  * O que fazer quando o card é solto sobre `overId` — puro, para teste. Solto
- * fora de coluna ou na mesma: nada. Movimento proibido: aviso com o motivo.
- * Em Perdido: pede o motivo (encerrar) em vez de mover. Senão: move.
+ * fora de coluna ou na mesma: nada. Em Perdido: pede o motivo (encerrar) em
+ * vez de mover. Senão: move — para frente ou para trás, o serviço decide o evento.
  */
 export function resolverSolta(candidato: { estagio?: EstagioId | string | null }, overId: string | null): DecisaoSolta {
   if (!overId) return { acao: 'nada' };
@@ -237,7 +248,7 @@ export function resolverSolta(candidato: { estagio?: EstagioId | string | null }
   if (!coluna) return { acao: 'nada' };
   const r = podeMover((candidato.estagio ?? 'lead') as EstagioId, coluna.id);
   // `=== false`, não `!r.ok`: com strictNullChecks desligado o TS não estreita por verdade.
-  if (r.ok === false) return r.motivo ? { acao: 'aviso', motivo: r.motivo } : { acao: 'nada' };
+  if (r.ok === false) return { acao: 'nada' };
   if (coluna.id === 'perdido') return { acao: 'encerrar' };
   return { acao: 'mover', para: coluna.id };
 }

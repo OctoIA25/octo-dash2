@@ -32,6 +32,8 @@ const EVENTOS = new Set([
   'condicoes_respondidas', 'reuniao_agendada', 'reuniao_confirmada',
   'reuniao_realizada', 'no_show', 'decisao', 'link_matricula_enviado',
   'matricula_confirmada', 'prazo_matricula_vencido', 'marco_ativacao', 'encerrado',
+  // 29/09: voltar de etapa / reabrir (migration 20260929_recrut_retroceder_etapa).
+  'estagio_retrocedido',
 ]);
 const CAMPOS_COND = ['cond_regiao', 'cond_tempo', 'cond_verba'];
 const FILA_LIMIT = 500; // PostgREST corta em 1000 sem avisar; teto explícito + flag.

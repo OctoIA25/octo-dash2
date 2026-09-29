@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   contarEtapas, nivelAlcancado, ESTAGIO_POR_LABEL, EVENTO_PARA_ESTAGIO,
-  podeMover, COR_ESTAGIO, classeDoStatus, ESTAGIOS,
+  podeMover, COR_ESTAGIO, classeDoStatus, ESTAGIOS, rotuloDoEvento,
 } from './recruitmentStages';
 
 describe('estágios do recrutamento', () => {
@@ -41,41 +41,45 @@ describe('estágios do recrutamento', () => {
   });
 });
 
-describe('podeMover — a regra do arrastar no Kanban', () => {
+describe('podeMover — a regra do arrastar no Kanban (29/09: para trás também vai)', () => {
   it('mesma etapa: não move e não avisa', () => {
     expect(podeMover('lead', 'lead')).toEqual({ ok: false, motivo: null });
     expect(podeMover('perdido', 'perdido')).toEqual({ ok: false, motivo: null });
   });
 
-  it('ninguém volta para Lead: é a entrada do funil', () => {
-    expect(podeMover('interacao', 'lead')).toEqual({
-      ok: false,
-      motivo: 'O funil só anda para frente: Lead é a entrada',
-    });
+  it('para frente avança, mesmo pulando etapas', () => {
+    expect(podeMover('lead', 'interacao')).toEqual({ ok: true, sentido: 'avanca' });
+    expect(podeMover('lead', 'matricula')).toEqual({ ok: true, sentido: 'avanca' });
   });
 
-  it('perdido não reabre', () => {
-    expect(podeMover('perdido', 'interacao')).toEqual({
-      ok: false,
-      motivo: 'Candidato perdido não volta ao funil',
-    });
-    expect(podeMover('perdido', 'onboard').ok).toBe(false);
+  it('para trás volta — inclusive para Lead', () => {
+    expect(podeMover('qualificado', 'interacao')).toEqual({ ok: true, sentido: 'volta' });
+    expect(podeMover('interacao', 'lead')).toEqual({ ok: true, sentido: 'volta' });
+    expect(podeMover('onboard', 'matricula')).toEqual({ ok: true, sentido: 'volta' });
   });
 
-  it('para trás não vai', () => {
-    expect(podeMover('qualificado', 'interacao')).toEqual({ ok: false, motivo: 'O funil só anda para frente' });
-    expect(podeMover('onboard', 'matricula').ok).toBe(false);
+  it('sair de Perdido reabre, para qualquer etapa do funil', () => {
+    expect(podeMover('perdido', 'lead')).toEqual({ ok: true, sentido: 'reabre' });
+    expect(podeMover('perdido', 'onboard')).toEqual({ ok: true, sentido: 'reabre' });
   });
 
-  it('para frente vai, mesmo pulando etapas', () => {
-    expect(podeMover('lead', 'interacao')).toEqual({ ok: true });
-    expect(podeMover('lead', 'matricula')).toEqual({ ok: true });
-    expect(podeMover('reuniao_realizada', 'onboard')).toEqual({ ok: true });
+  it('entrar em Perdido encerra, de qualquer etapa', () => {
+    expect(podeMover('lead', 'perdido')).toEqual({ ok: true, sentido: 'encerra' });
+    expect(podeMover('onboard', 'perdido')).toEqual({ ok: true, sentido: 'encerra' });
   });
+});
 
-  it('de qualquer etapa dá para encerrar como perdido', () => {
-    expect(podeMover('lead', 'perdido')).toEqual({ ok: true });
-    expect(podeMover('onboard', 'perdido')).toEqual({ ok: true });
+describe('rotuloDoEvento — a timeline diz para onde voltou', () => {
+  it('evento comum usa o mapa fixo', () => {
+    expect(rotuloDoEvento('reuniao_realizada')).toBe('Reunião realizada');
+    expect(rotuloDoEvento('sei_la')).toBe('sei_la');
+  });
+  it('estagio_retrocedido lê payload.para', () => {
+    expect(rotuloDoEvento('estagio_retrocedido', { para: 'qualificado' })).toBe('Voltou para Qualificado');
+    expect(rotuloDoEvento('estagio_retrocedido', { para: 'lead', de: 'perdido' })).toBe('Voltou para Lead');
+  });
+  it('sem payload não quebra', () => {
+    expect(rotuloDoEvento('estagio_retrocedido')).toBe('Voltou de etapa');
   });
 });
 

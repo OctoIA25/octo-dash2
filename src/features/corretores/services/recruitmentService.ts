@@ -5,8 +5,8 @@ import {
   ESTAGIO_POR_LABEL,
   EVENTO_PARA_ESTAGIO,
   LABEL_ESTAGIO,
-  LABEL_EVENTO,
   contarEtapas,
+  rotuloDoEvento,
   type EstagioId,
 } from '../domain/recruitmentStages';
 
@@ -185,7 +185,7 @@ function paraCandidato(row: any): Candidato {
 function paraEtapa(evento: any): Etapa {
   return {
     id: String(evento.id),
-    etapa: LABEL_EVENTO[evento.tipo] ?? evento.tipo,
+    etapa: rotuloDoEvento(evento.tipo, evento.payload),
     data: evento.created_at,
     responsavel: evento.payload?.responsavel ?? evento.autor,
     notas: evento.payload?.notas ?? undefined,
@@ -368,6 +368,46 @@ export class RecruitmentService {
       }
       if (error.code === '23514' && estagio === 'perdido') {
         throw new Error('Registre o motivo da perda antes de encerrar o candidato.');
+      }
+      throw error;
+    }
+
+    const { data, error: leituraErr } = await this.supabase
+      .from('recrut_candidato').select(CAMPOS).eq('id', candidateId).single();
+    if (leituraErr) throw leituraErr;
+    return paraCandidato(data);
+  }
+
+  /**
+   * VOLTA o candidato para uma etapa anterior — ou o tira de Perdido — gravando
+   * o evento `estagio_retrocedido` (migration 20260929). O gatilho do banco
+   * zera as datas das etapas seguintes, zera o motivo da perda e escreve o
+   * estágio; aqui só se grava o evento e se relê a linha.
+   *
+   * Voltar de Onboard NÃO mexe na conta do corretor: acesso é assunto de
+   * Gestão de Equipe, e apagar membership por causa de um arrasto no quadro é
+   * o tipo de efeito que ninguém pediu.
+   */
+  async retrocederEtapa(candidateId: string, paraId: EstagioId, responsavel?: string): Promise<Candidato> {
+    if (!ESTAGIOS.some((e) => e.id === paraId)) {
+      throw new Error(`Não dá para retroceder para "${paraId}": só para uma etapa do funil (Perdido tem o encerramento).`);
+    }
+
+    const { data: atual, error: leituraAtualErr } = await this.supabase
+      .from('recrut_candidato').select('estagio').eq('id', candidateId).maybeSingle();
+    if (leituraAtualErr) throw leituraAtualErr;
+
+    const { error } = await this.supabase.from('recrut_evento').insert({
+      candidato_id: candidateId,
+      tipo: 'estagio_retrocedido',
+      autor: 'erick',
+      payload: { de: (atual as { estagio?: string } | null)?.estagio ?? null, para: paraId, responsavel: responsavel || 'Sistema' },
+    });
+    if (error) {
+      // Reabrir DIRETO em Onboard sem coordenador bate na regra D062 — é a
+      // constraint recusando o evento, e a mensagem é a mesma de avançar.
+      if (error.code === '23514' && paraId === 'onboard') {
+        throw new Error('Defina o Coordenador do candidato antes de ativá-lo (regra D062).');
       }
       throw error;
     }
