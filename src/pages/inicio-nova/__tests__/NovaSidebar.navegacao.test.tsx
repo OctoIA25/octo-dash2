@@ -142,3 +142,28 @@ describe('Recrutamento tem Visão geral e Kanban como filhos', () => {
     expect(navigate).toHaveBeenCalledWith('/recrutamento/kanban');
   });
 });
+
+// 28/09 — pedido do chefe: "Catálogo, Lançamentos, Construtoras, Mapa de imóveis".
+describe('Imóveis na lateral', () => {
+  it('mostra os quatro atalhos, nesta ordem', async () => {
+    render(<NovaSidebar />);
+    await userEvent.click(await screen.findByText('Imóveis'));
+    const botoes = screen.getAllByRole('button').map((b) => b.textContent?.trim());
+    const onde = ['Catálogo', 'Lançamentos', 'Construtoras', 'Mapa de Imóveis'].map((r) => botoes.indexOf(r));
+    expect(onde.every((i) => i >= 0)).toBe(true);
+    expect(onde).toEqual([...onde].sort((x, y) => x - y));
+  });
+
+  it('cada atalho abre a aba dele em Imóveis', async () => {
+    render(<NovaSidebar />);
+    await userEvent.click(await screen.findByText('Imóveis'));
+    for (const [rotulo, rota] of [
+      ['Lançamentos', '/imoveis?tab=lancamentos'],
+      ['Construtoras', '/imoveis?tab=construtoras'],
+    ]) {
+      navigate.mockClear();
+      await userEvent.click(screen.getByText(rotulo));
+      expect(navigate).toHaveBeenCalledWith(rota);
+    }
+  });
+});

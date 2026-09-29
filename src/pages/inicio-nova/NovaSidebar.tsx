@@ -28,6 +28,7 @@ import {
   Pencil,
   Settings,
   MapPin,
+  Sparkles,
   Scale,
   LayoutGrid,
   Target,
@@ -113,6 +114,10 @@ const GROUPS: SidebarGroup[] = [
         permission: 'imoveis',
         subItems: [
           { id: 'imoveis-catalogo', label: 'Catálogo', icon: Home, route: '/imoveis?tab=catalogo' },
+          // 28/09, pedido do chefe: atalhos para abas que já existiam em Imóveis.
+          // Sem permissão própria — herdam a de Imóveis, como a própria tela.
+          { id: 'imoveis-lancamentos', label: 'Lançamentos', icon: Sparkles, route: '/imoveis?tab=lancamentos' },
+          { id: 'imoveis-construtoras', label: 'Construtoras', icon: Building2, route: '/imoveis?tab=construtoras' },
           { id: 'mapa-imoveis', label: 'Mapa de Imóveis', icon: MapPin, route: '/imoveis?tab=mapa-imoveis' },
         ],
       },
