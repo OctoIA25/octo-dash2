@@ -50,8 +50,11 @@ import { FunilPorUnidadeChart } from '@/features/relatorios/components/FunilPorU
 import { useLeadsMetrics } from '@/features/leads/hooks/useLeadsMetrics';
 import { useImovelTipoMap } from '@/features/leads/hooks/useImovelTipoMap';
 import { useAuth } from '@/hooks/useAuth';
+import { useAuthContext } from '@/contexts/AuthContext';
 import { fetchTenantMembers, type TenantMember } from '@/features/corretores/services/tenantMembersService';
 import { LEAD_TYPE_INTERESSADO, LEAD_TYPE_PROPRIETARIO } from '@/features/leads/services/leadsService';
+import { fetchMotivosArquivamento } from '@/features/leads/services/leadsMetricsService';
+import { motivoDoRelatorio } from '@/features/leads/utils/motivosArquivamento';
 import { ProcessedLead, canonicalizeOrigemLeads } from '@/data/realLeadsProcessor';
 import { useOrigemRegistry } from '../hooks/useOrigemRegistry';
 import { getRankingColor } from '@/utils/colors';
@@ -191,6 +194,7 @@ const PIE_COLORS = [
 export const RelatoriosPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { tenantId } = useAuth();
+  const { user, isAdmin } = useAuthContext();
 
   // Declarados antes do hook: os KPIs são buscados para este período.
   const [dataInicial, setDataInicial] = useState(format(subDays(new Date(), 30), 'yyyy-MM-dd'));
@@ -1726,17 +1730,34 @@ export const RelatoriosPage = () => {
     }
   };
 
-  // Calcular totais e percentuais para a legenda customizada (dados reais por etapa)
+  // Motivos dos leads arquivados. `allLeads` não serve: a busca de métricas
+  // exclui os arquivados — o gráfico contava as etapas do kanban no lugar.
+  const [motivosArquivados, setMotivosArquivados] = useState<string[]>([]);
+  const agentIdMotivos = isAdmin ? null : user?.id ?? null;
+  useEffect(() => {
+    if (!tenantId || tenantId === 'owner') return;
+    let ativo = true;
+    fetchMotivosArquivamento(tenantId, agentIdMotivos)
+      .then((motivos) => { if (ativo) setMotivosArquivados(motivos); })
+      .catch((error) => console.error('Erro ao carregar motivos de arquivamento:', error));
+    return () => { ativo = false; };
+  }, [tenantId, agentIdMotivos]);
+
+  // Percentual de cada motivo sobre o total de arquivados (legenda customizada)
   const motivosData = useMemo(() => {
-    const etapaEntries = Object.entries(etapaCounts).sort((a, b) => b[1] - a[1]);
-    const total = etapaEntries.reduce((sum, e) => sum + e[1], 0);
-    return etapaEntries.map(([label, value], idx) => ({
+    const counts: Record<string, number> = {};
+    motivosArquivados.forEach((m) => {
+      const motivo = motivoDoRelatorio(m);
+      counts[motivo] = (counts[motivo] || 0) + 1;
+    });
+    const total = motivosArquivados.length;
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([label, value], idx) => ({
       label,
       value,
       percentage: total > 0 ? ((value / total) * 100).toFixed(1) : '0',
       color: PIE_COLORS[idx % PIE_COLORS.length]
     }));
-  }, [etapaCounts]);
+  }, [motivosArquivados]);
 
   // 10. Motivo de arquivamento (Doughnut)
   const motivosArquivamentoData = useMemo(() => {

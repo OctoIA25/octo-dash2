@@ -7,7 +7,7 @@
  * quebra esse agrupamento, então o teste fixa os rótulos que já existem na base.
  */
 import { describe, expect, it } from 'vitest';
-import { MOTIVOS_ARQUIVAMENTO, MOTIVO_OUTROS, montarMotivoFinal } from './motivosArquivamento';
+import { MOTIVOS_ARQUIVAMENTO, MOTIVO_OUTROS, montarMotivoFinal, motivoDoRelatorio } from './motivosArquivamento';
 
 const rotulos = MOTIVOS_ARQUIVAMENTO.map((m) => m.label);
 
@@ -58,5 +58,27 @@ describe('montarMotivoFinal', () => {
 
   it('código desconhecido não inventa motivo', () => {
     expect(montarMotivoFinal('nao_existe', 'algo')).toBe('Arquivado — algo');
+  });
+});
+
+describe('motivoDoRelatorio', () => {
+  it('agrupa pelo rótulo, sem a observação', () => {
+    expect(motivoDoRelatorio('Lead duplicado — cliente já tem ficha')).toBe('Lead duplicado');
+    expect(motivoDoRelatorio('Preço alto')).toBe('Preço alto');
+  });
+
+  it('texto livre de "Outros" cai em Outros, não vira fatia própria', () => {
+    expect(motivoDoRelatorio(montarMotivoFinal(MOTIVO_OUTROS, 'mudou de cidade'))).toBe('Outros');
+    expect(motivoDoRelatorio('Arquivado via API')).toBe('Outros');
+  });
+
+  it('rótulo antigo conta junto com o que o substituiu', () => {
+    expect(motivoDoRelatorio('Não respondeu')).toBe('Cliente não respondeu');
+    expect(motivoDoRelatorio('Contato errado / inválido — número não existe')).toBe('Contato inválido');
+  });
+
+  it('sem motivo gravado não finge ser "Outros"', () => {
+    expect(motivoDoRelatorio(null)).toBe('Não informado');
+    expect(motivoDoRelatorio('  ')).toBe('Não informado');
   });
 });

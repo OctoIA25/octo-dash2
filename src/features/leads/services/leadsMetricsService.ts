@@ -381,6 +381,35 @@ export async function fetchLeadsForMetrics(
 }
 
 /**
+ * `archive_reason` de cada lead arquivado, para o gráfico de motivos.
+ *
+ * Só `leads`: é onde a Dash grava o motivo escolhido na lista. Os arquivados
+ * de `kenlo_leads` são histórico importado do Kenlo (em 29/09, 59 mil dos 66
+ * mil sem motivo nenhum) e afogariam o gráfico em "Não informado".
+ */
+export async function fetchMotivosArquivamento(
+  tenantId: string,
+  agentId: string | null = null
+): Promise<string[]> {
+  if (tenantId === TEST_TENANT_ID) {
+    return TEST_TENANT_LEADS
+      .filter((l) => l.archived_at && (!agentId || l.assigned_agent_id === agentId))
+      .map((l) => l.archive_reason ?? '');
+  }
+
+  const rows = await fetchPagesInBatches((from) => {
+    let query = supabase
+      .from('leads')
+      .select('id, archive_reason')
+      .eq('tenant_id', tenantId)
+      .not('archived_at', 'is', null);
+    if (agentId) query = query.eq('assigned_agent_id', agentId);
+    return query.order('id').range(from, from + PAGE_SIZE - 1);
+  });
+  return rows.map((r) => (r.archive_reason as string | null) ?? '');
+}
+
+/**
  * Calcular métricas do funil
  * @param leads Lista de leads
  * @param leadType Tipo de lead (1=Interessado, 2=Proprietário)

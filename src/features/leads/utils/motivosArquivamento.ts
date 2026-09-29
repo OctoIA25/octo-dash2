@@ -68,3 +68,25 @@ export function montarMotivoFinal(value: string, observacao: string): string {
   const rotulo = rotuloMotivo(value) ?? 'Arquivado';
   return texto ? `${rotulo} — ${texto}` : rotulo;
 }
+
+// Rótulos que a lista de 22/09 trocou por outro de mesmo sentido (28c21d7).
+// Leads arquivados antes disso ainda os carregam.
+const ROTULOS_RENOMEADOS: Record<string, string> = {
+  'Não respondeu': 'Cliente não respondeu',
+  'Já fechou com outro': 'Fechou negócio em outro lugar',
+  'Contato errado / inválido': 'Contato inválido',
+  'Outro': 'Outros',
+};
+
+/**
+ * Fatia do relatório para um `archive_reason` gravado: o rótulo, sem a
+ * observação. Texto que não começa por um rótulo da lista é o que o corretor
+ * escreveu em "Outros" (ou veio pela API) e entra em "Outros" — senão cada
+ * frase livre vira uma fatia própria de 0,5%.
+ */
+export function motivoDoRelatorio(archiveReason: string | null | undefined): string {
+  const rotulo = (archiveReason ?? '').split(' — ')[0].trim();
+  if (!rotulo) return 'Não informado';
+  if (MOTIVOS_ARQUIVAMENTO.some((m) => m.label === rotulo)) return rotulo;
+  return ROTULOS_RENOMEADOS[rotulo] ?? 'Outros';
+}
