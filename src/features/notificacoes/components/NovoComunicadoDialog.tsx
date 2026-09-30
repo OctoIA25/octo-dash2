@@ -5,6 +5,7 @@
  */
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
+import { ArrowRight } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
@@ -145,8 +146,14 @@ export function NovoComunicadoDialog({ open, onOpenChange, tenantId, userId, soE
             </span>
           </label>
 
-          <p className="text-xs text-slate-500">
-            Vai para: {publico === 'todos' ? 'toda a imobiliária' : nomesEscolhidos || 'escolha ao menos uma equipe'}
+          {/* A mesma linha "de quem → para quem" que o aviso vai mostrar na lista. */}
+          <p className="flex flex-wrap items-center gap-x-1.5 rounded-lg bg-slate-50 px-3 py-2 text-[13px] text-slate-500 dark:bg-slate-800/60 dark:text-slate-400">
+            <span className="font-semibold text-slate-800 dark:text-slate-200">Você</span>
+            <ArrowRight className="h-3.5 w-3.5 text-slate-400" aria-hidden />
+            <span className="sr-only">para</span>
+            <span className="text-slate-700 dark:text-slate-300">
+              {publico === 'todos' ? 'Toda a imobiliária' : nomesEscolhidos || 'escolha ao menos uma equipe'}
+            </span>
           </p>
 
           {erro && <p role="alert" className="text-sm text-rose-600 dark:text-rose-400">{erro}</p>}

@@ -1,5 +1,5 @@
 /**
- * Tipo de notificação → aba, ícone, cor, etiquetas, tempo na tela e destino.
+ * Tipo de notificação → aba, ícone, cor, rota (de quem → para quem), tempo na tela e destino.
  *
  * TABELAS, não cadeias de if: tipo novo é uma linha nova. `Map` e não objeto
  * literal: um `type` chamado "constructor" ou "toString" acharia a propriedade
@@ -53,21 +53,55 @@ export const CLASSES_DO_TOM: Record<Tom, { fundo: string; icone: string; borda: 
   cinza: { fundo: 'bg-slate-100 dark:bg-slate-800', icone: 'text-slate-500 dark:text-slate-400', borda: 'border-l-slate-400' },
 };
 
-export interface Etiqueta {
-  texto: string;
-  destaque?: boolean;
+/** Quem mandou o aviso: uma pessoa, a LIA, ou a parte do sistema que o gerou. */
+export type Origem =
+  | { tipo: 'usuario'; nome: string; papel?: string; iniciais: string }
+  | { tipo: 'lia'; nome: string }
+  | { tipo: 'sistema'; nome: string };
+
+export interface Rota {
+  origem: Origem;
+  /** Para quem foi. Ausente nas notificações de antes de 01/10. */
+  destino?: string;
+  importante: boolean;
 }
 
-/** De onde veio, para quem foi, sobre quem é, e se é importante. */
-export function etiquetasDe(item: ItemComMetadata): Etiqueta[] {
-  const m = item.metadata ?? {};
+/** "Gil Gerente" → "GG"; "Ana" → "A"; e-mail (sem nome no cadastro) → a 1ª letra. */
+export function iniciaisDe(nome: string): string {
+  const partes = nome.trim().split(/\s+/).filter(Boolean);
+  if (partes.length === 0) return '?';
+  const ultima = partes.length > 1 ? partes[partes.length - 1][0] : '';
+  return (partes[0][0] + ultima).toUpperCase();
+}
+
+/**
+ * De onde veio e para quem foi — a linha que a tela mostra em cada aviso.
+ * A cópia do gestor diz de quem é o problema ("Você, como gestor de João").
+ */
+export function rotaDe(item: ItemComMetadata): Rota {
+  // metadata é jsonb: pode chegar string, número ou null das linhas antigas.
+  const m = item.metadata && typeof item.metadata === 'object' ? item.metadata : {};
   const r = m.remetente;
-  const origem = r?.nome ? [r.cargo, r.nome].filter(Boolean).join(' · ') : tipoDe(item.type).origem;
-  const etiquetas: Etiqueta[] = [{ texto: origem }];
-  if (m.publico) etiquetas.push({ texto: `Para: ${m.publico}` });
-  if (m.sobre) etiquetas.push({ texto: `Sobre: ${m.sobre}` });
-  if (m.prioridade === 'importante') etiquetas.push({ texto: 'Importante', destaque: true });
-  return etiquetas;
+  const origem: Origem =
+    r?.tipo === 'lia'
+      ? { tipo: 'lia', nome: r.nome || 'LIA' }
+      : r?.nome
+        ? { tipo: 'usuario', nome: r.nome, papel: r.cargo, iniciais: iniciaisDe(r.nome) }
+        : { tipo: 'sistema', nome: tipoDe(item.type).origem };
+  const destino = m.sobre ? `Você, como gestor de ${m.sobre}` : m.publico;
+  return { origem, destino, importante: m.prioridade === 'importante' };
+}
+
+/**
+ * A faixa à esquerda só onde há urgência: alerta ou comunicado importante em
+ * âmbar, bloqueio em rosa. Comunicado comum não tem faixa — o avatar já diz tudo.
+ * Devolve a classe de cor (Tailwind) ou null.
+ */
+export function acentoDoAviso(item: ItemComMetadata): string | null {
+  const tipo = tipoDe(item.type);
+  if (tipo.tom === 'rosa') return 'bg-rose-500';
+  if (tipo.categoria === 'alerta' || rotaDe(item).importante) return 'bg-amber-500';
+  return null;
 }
 
 /**
@@ -80,20 +114,25 @@ export function duracaoDoAviso(item: ItemComMetadata): number {
   return 6_000;
 }
 
-const ROTAS = new Map<string, (id: string) => string>([
+const ROTAS = new Map<string, { rota: (id: string) => string; rotulo: string }>([
   // /lead/:id usa um número montado na tela (id_lead), não o UUID do banco:
   // o lead abre na própria página de notificações, como o Chat faz.
-  ['lead', (id) => `/notificacoes?lead=${encodeURIComponent(id)}`],
-  ['mkt_demanda', () => '/marketing/demandas'],
-  ['recrutamento', () => '/recrutamento'],
-  ['bolsao', () => '/bolsao'],
-  ['imovel', () => '/imoveis'],
-  ['condominio', () => '/imoveis'],
-  ['agenda_event', () => '/atividades'],
+  ['lead', { rota: (id) => `/notificacoes?lead=${encodeURIComponent(id)}`, rotulo: 'Abrir lead' }],
+  ['mkt_demanda', { rota: () => '/marketing/demandas', rotulo: 'Ver demanda' }],
+  ['recrutamento', { rota: () => '/recrutamento', rotulo: 'Ver candidato' }],
+  ['bolsao', { rota: () => '/bolsao', rotulo: 'Ver no bolsão' }],
+  ['imovel', { rota: () => '/imoveis', rotulo: 'Ver imóvel' }],
+  ['condominio', { rota: () => '/imoveis', rotulo: 'Ver condomínio' }],
+  ['agenda_event', { rota: () => '/atividades', rotulo: 'Ver atividades' }],
 ]);
 
 /** Para onde o clique leva. null = o item não é clicável. */
 export function destinoDoLink(linkType?: string, linkId?: string): string | null {
-  const rota = linkType ? ROTAS.get(linkType) : undefined;
-  return rota && linkId ? rota(linkId) : null;
+  const link = linkType ? ROTAS.get(linkType) : undefined;
+  return link && linkId ? link.rota(linkId) : null;
+}
+
+/** O nome do botão diz o que acontece ao clicar ("Abrir lead", não "Abrir"). */
+export function rotuloDoLink(linkType?: string): string {
+  return (linkType && ROTAS.get(linkType)?.rotulo) || 'Abrir';
 }
