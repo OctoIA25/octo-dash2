@@ -257,4 +257,64 @@ BEGIN
   RAISE NOTICE 'OK 2: publicar_comunicado';
 END $$;
 
+-- ----------------------------------------------------------
+-- 3. enviar_comunicado: quem pode enviar para quem
+-- ----------------------------------------------------------
+CREATE FUNCTION pg_temp.enviar_como(p_user uuid, p_email text, p_tenant uuid, p_publico text, p_equipes uuid[])
+RETURNS text LANGUAGE plpgsql AS $$
+DECLARE v_resultado text;
+BEGIN
+  PERFORM set_config('request.jwt.claims', json_build_object(
+    'sub', p_user, 'role', 'authenticated', 'email', p_email)::text, true);
+  SET LOCAL ROLE authenticated;
+  BEGIN
+    SELECT 'ok:' || destinatarios INTO v_resultado
+      FROM public.enviar_comunicado(p_tenant, 'Aviso', 'Texto', 'normal', p_publico, p_equipes, NULL);
+  EXCEPTION WHEN OTHERS THEN
+    v_resultado := SQLERRM;
+  END;
+  RESET ROLE;
+  RETURN v_resultado;
+END $$;
+
+DO $$
+DECLARE f fx%ROWTYPE; v text;
+BEGIN
+  SELECT * INTO f FROM fx;
+
+  v := pg_temp.enviar_como(f.diretora, 'diretora@teste-comunicados.dev', f.t, 'todos', '{}');
+  PERFORM pg_temp.checa(v = 'ok:6', 'Diretoria envia para todos (veio ' || v || ')');
+
+  v := pg_temp.enviar_como(f.gerente_a, 'gerente-a@teste-comunicados.dev', f.t, 'equipes', ARRAY[f.equipe_a]);
+  PERFORM pg_temp.checa(v = 'ok:2', 'gerente envia para a própria equipe, sem receber de volta (veio ' || v || ')');
+
+  v := pg_temp.enviar_como(f.gerente_a, 'gerente-a@teste-comunicados.dev', f.t, 'equipes', ARRAY[f.equipe_a, f.equipe_b]);
+  PERFORM pg_temp.checa(v = 'sem_permissao', 'gerente não envia para equipe alheia, nem misturada com a dele');
+
+  v := pg_temp.enviar_como(f.gerente_a, 'gerente-a@teste-comunicados.dev', f.t, 'todos', '{}');
+  PERFORM pg_temp.checa(v = 'sem_permissao', 'gerente não envia para a casa inteira');
+
+  v := pg_temp.enviar_como(f.cor_a1, 'joao-a1@teste-comunicados.dev', f.t, 'equipes', ARRAY[f.equipe_a]);
+  PERFORM pg_temp.checa(v = 'sem_permissao', 'corretor não envia');
+
+  v := pg_temp.enviar_como(f.vizinho, 'vizinho@teste-comunicados.dev', f.t, 'todos', '{}');
+  PERFORM pg_temp.checa(v = 'sem_permissao', 'admin da vizinha não envia para a casa ao lado');
+
+  v := pg_temp.enviar_como(f.diretora, 'diretora@teste-comunicados.dev', f.t, 'pessoas', '{}');
+  PERFORM pg_temp.checa(v = 'publico_invalido', 'a tela não envia para pessoas avulsas');
+
+  v := pg_temp.enviar_como(f.dono, 'dono@teste-comunicados.dev', f.t2, 'todos', '{}');
+  PERFORM pg_temp.checa(v = 'ok:1', 'owner da plataforma envia mesmo sem ser membro da casa (veio ' || v || ')');
+
+  -- O remetente da tela é SEMPRE quem está logado.
+  PERFORM pg_temp.checa((SELECT metadata->'remetente'->>'nome' FROM public.notifications n
+                          JOIN public.comunicados c ON c.id = n.comunicado_id
+                         WHERE c.autor_user_id = f.gerente_a LIMIT 1) = 'Gil Gerente', 'remetente é o chamador');
+
+  PERFORM pg_temp.checa(NOT has_function_privilege('anon',
+    'public.enviar_comunicado(uuid,text,text,text,text,uuid[],text)', 'execute'), 'anon não executa enviar_comunicado');
+
+  RAISE NOTICE 'OK 3: enviar_comunicado';
+END $$;
+
 ROLLBACK;

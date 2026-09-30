@@ -268,3 +268,54 @@ revoke execute on function public.publicar_comunicado(uuid, text, uuid, text, te
   from public, anon, authenticated;
 grant execute on function public.publicar_comunicado(uuid, text, uuid, text, text, text, text, text, uuid[], text[], boolean, text, text, text)
   to service_role;
+
+-- 6. Enviar pela tela: autoriza pelo auth.uid() e delega -----------------
+-- Enviar é AÇÃO: quem decide é o role, não o cargo (decidido em 21/09).
+create or replace function public.enviar_comunicado(
+  p_tenant_id uuid,
+  p_titulo text,
+  p_mensagem text,
+  p_prioridade text,
+  p_publico_tipo text,
+  p_equipe_ids uuid[],
+  p_idempotency_key text
+) returns table (comunicado_id uuid, destinatarios int, criado boolean)
+language plpgsql security definer set search_path = public as $$
+#variable_conflict use_column
+declare
+  v_uid uuid := auth.uid();
+  v_role text;
+begin
+  if v_uid is null then
+    raise exception 'sem_permissao';
+  end if;
+  select tm.role into v_role
+    from public.tenant_memberships tm
+   where tm.tenant_id = p_tenant_id and tm.user_id = v_uid;
+
+  if public.is_platform_owner() or v_role = 'admin' then
+    if p_publico_tipo not in ('todos', 'equipes') then
+      raise exception 'publico_invalido';
+    end if;
+  elsif v_role = 'team_leader' then
+    -- Só as equipes que ele lidera — TODAS as pedidas.
+    if p_publico_tipo is distinct from 'equipes' or exists (
+         select 1 from unnest(coalesce(p_equipe_ids, '{}')) e(id)
+          where not exists (
+            select 1 from public.teams t
+             where t.id = e.id and t.tenant_id = p_tenant_id
+               and (t.leader_user_id = v_uid or v_uid = any(t.leader_user_ids)))) then
+      raise exception 'sem_permissao';
+    end if;
+  else
+    raise exception 'sem_permissao';
+  end if;
+
+  return query select * from public.publicar_comunicado(
+    p_tenant_id => p_tenant_id, p_origem => 'usuario', p_autor_user_id => v_uid,
+    p_categoria => 'comunicado', p_titulo => p_titulo, p_mensagem => p_mensagem,
+    p_prioridade => p_prioridade, p_publico_tipo => p_publico_tipo,
+    p_equipe_ids => coalesce(p_equipe_ids, '{}'), p_idempotency_key => p_idempotency_key);
+end $$;
+revoke execute on function public.enviar_comunicado(uuid, text, text, text, text, uuid[], text) from public, anon;
+grant execute on function public.enviar_comunicado(uuid, text, text, text, text, uuid[], text) to authenticated;
