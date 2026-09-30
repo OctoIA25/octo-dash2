@@ -177,8 +177,8 @@ export function NovoHeader() {
         <button
           type="button"
           onClick={() => navigate('/notificacoes')}
-          aria-label={unreadCount > 0 ? `Notificações (${unreadCount} não lidas)` : 'Notificações'}
-          title="Notificações"
+          aria-label={unreadCount > 0 ? `Comunicados (${unreadCount} não lidos)` : 'Comunicados'}
+          title="Comunicados"
           className="relative w-9 h-9 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center transition-colors"
         >
           <Bell className="w-[18px] h-[18px] text-slate-600 dark:text-slate-300" strokeWidth={2} />

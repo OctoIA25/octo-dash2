@@ -229,7 +229,7 @@ export const TAB_CONFIGS: TabConfig[] = [
   },
   {
     basePath: '/notificacoes',
-    label: 'Notificações',
+    label: 'Comunicados',
     matchStrategy: 'pathSegment',
     tabs: [],
   },

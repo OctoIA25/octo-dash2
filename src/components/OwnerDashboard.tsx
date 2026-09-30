@@ -16,7 +16,7 @@ import {
 // Lista completa de features disponíveis para tenants
 const ALL_TENANT_FEATURES: { id: SidebarPermission; label: string; description: string }[] = [
   { id: 'leads', label: 'Início/Leads', description: 'Página inicial e gestão de leads' },
-  { id: 'notificacoes', label: 'Notificações', description: 'Sistema de notificações' },
+  { id: 'notificacoes', label: 'Comunicados', description: 'Comunicados e alertas' },
   { id: 'metricas', label: 'Comercial/Métricas', description: 'Análises e métricas de desempenho' },
   { id: 'juridico', label: 'Jurídico', description: 'Visão geral jurídica e propostas' },
   { id: 'estudo-mercado', label: 'Estudo de Mercado', description: 'Análise de mercado e tendências' },

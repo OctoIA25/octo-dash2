@@ -103,7 +103,7 @@ const GROUPS: SidebarGroup[] = [
   {
     items: [
       { id: 'leads', label: 'Início', icon: Home, route: '/leads', permission: 'leads' },
-      { id: 'notificacoes', label: 'Notificações', icon: Bell, route: '/notificacoes', permission: 'notificacoes' },
+      { id: 'notificacoes', label: 'Comunicados', icon: Bell, route: '/notificacoes', permission: 'notificacoes' },
     ],
   },
   {

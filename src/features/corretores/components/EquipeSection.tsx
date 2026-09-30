@@ -2085,7 +2085,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                   <div className="grid grid-cols-2 gap-2">
                     {[
                       { id: 'leads', label: 'Início', icon: '🏠' },
-                      { id: 'notificacoes', label: 'Notificações', icon: '🔔' },
+                      { id: 'notificacoes', label: 'Comunicados', icon: '🔔' },
                       { id: 'metricas', label: 'Comercial', icon: '📊' },
                       { id: 'juridico', label: 'Jurídico', icon: '⚖️' },
                       { id: 'estudo-mercado', label: 'Estudo de Mercado', icon: '📈' },
