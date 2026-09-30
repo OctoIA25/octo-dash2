@@ -198,12 +198,14 @@ const BolsaoSectionContent = (props: BolsaoSectionProps) => {
   // aparece para todos. Admin e owner não são filtrados — auditam o tenant inteiro.
   // O sigilo do imóvel é aplicado AQUI, na lista: card, modal de detalhes e
   // formulário de atividade leem todos o mesmo `codigo`.
-  // O telefone some para TODOS pelo mesmo motivo: com o número à mostra, qualquer
-  // corretor chama o lead no WhatsApp sem assumir. Quem assume vê em Meus Leads.
+  // O telefone some pelo mesmo motivo: com o número à mostra, qualquer corretor
+  // chama o lead no WhatsApp sem assumir. Quem assume vê em Meus Leads. Só
+  // admin e owner o veem aqui (30/09): auditam se a LIA chegou a falar com o
+  // lead. O team_leader fica de fora — ele também recebe lead na roleta.
   // ponytail: esconde na tela; a RLS de `bolsao` ainda entrega a coluna `lead`
   // a quem consultar a API direto — fechar lá se virar problema.
-  const leadsVisiveis = useMemo(
-    () => ocultarImovelDoBolsao(
+  const leadsVisiveis = useMemo(() => {
+    const linhas = ocultarImovelDoBolsao(
       filtrarPorAtuacao(
         leads,
         opcoesFiltroBolsao({
@@ -213,9 +215,9 @@ const BolsaoSectionContent = (props: BolsaoSectionProps) => {
         }),
       ),
       podeVerImovel,
-    ).map((lead) => ({ ...lead, lead: null })),
-    [leads, isCorretor, user?.systemRole, user?.permissions, podeVerImovel],
-  );
+    );
+    return isAdmin ? linhas : linhas.map((lead) => ({ ...lead, lead: null }));
+  }, [leads, isCorretor, isAdmin, user?.systemRole, user?.permissions, podeVerImovel]);
   const [assumindoLead, setAssumindoLead] = useState<number | null>(null);
   const [confirmandoLead, setConfirmandoLead] = useState<number | null>(null);
   const [tabelaExiste, setTabelaExiste] = useState(true);

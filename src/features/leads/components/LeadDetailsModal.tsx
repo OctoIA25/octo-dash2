@@ -53,6 +53,11 @@ import { EnviarRecomendacoesModal } from '@/features/recommendations/components/
 import { bolsaoLeadToRecommendationInput } from '@/features/recommendations/adapters';
 import type { Imovel } from '@/features/imoveis/services/kenloService';
 import { fetchImovelDoTenantPorCodigo } from '@/features/imoveis/services/catalogoImoveisService';
+import {
+  acharLancamentoPorCodigo,
+  fetchLancamentosRef,
+  type LancamentoRef,
+} from '@/features/imoveis/services/lancamentosLookup';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from "@/hooks/useAuth";
 import { useImoveisData } from '@/features/imoveis/hooks/useImoveisData';
@@ -98,6 +103,9 @@ export const LeadDetailsModal = ({
   const { imoveis = [] } = useImoveisData();
   
   const [imovel, setImovel] = useState<Imovel | null>(null);
+  // Código de lançamento (L027, 'RESERVA CASTANHEIRA') não está no catálogo de
+  // prontos: sem isto o modal dizia "não encontrado" e ninguém sabia qual era.
+  const [lancamento, setLancamento] = useState<LancamentoRef | null>(null);
   const [carregandoImovel, setCarregandoImovel] = useState(false);
   const [recomendacoesOpen, setRecomendacoesOpen] = useState(false);
 
@@ -192,20 +200,28 @@ export const LeadDetailsModal = ({
   // existe na aba Imóveis.
   useEffect(() => {
     if (isOpen && lead?.codigo && tenantId) {
+      const codigo = lead.codigo;
       setCarregandoImovel(true);
-      fetchImovelDoTenantPorCodigo(tenantId, lead.codigo)
-        .then(imovelEncontrado => {
+      Promise.all([
+        fetchImovelDoTenantPorCodigo(tenantId, codigo),
+        fetchLancamentosRef(tenantId),
+      ])
+        .then(([imovelEncontrado, lancamentos]) => {
           setImovel(imovelEncontrado);
+          // O catálogo vence: só procura lançamento quando o código não é de pronto.
+          setLancamento(imovelEncontrado ? null : acharLancamentoPorCodigo(codigo, lancamentos) ?? null);
         })
         .catch(error => {
           console.error('Erro ao buscar imóvel:', error);
           setImovel(null);
+          setLancamento(null);
         })
         .finally(() => {
           setCarregandoImovel(false);
         });
     } else {
       setImovel(null);
+      setLancamento(null);
     }
   }, [isOpen, lead?.codigo, tenantId]);
   
@@ -249,7 +265,7 @@ export const LeadDetailsModal = ({
     switch (status?.toLowerCase()) {
       case 'novo':
         return { label: '🆕 Novo', cor: 'bg-blue-500' };
-      case 'bolsão':
+      case 'bolsao':
         return { label: '📦 Bolsão', cor: 'bg-purple-500' };
       case 'assumido':
         return { label: '🔄 Assumido', cor: 'bg-orange-500' };
@@ -301,7 +317,10 @@ export const LeadDetailsModal = ({
   const tempo = calcularTempoNoBolsao(lead.created_at);
   const urgencia = calcularUrgencia(lead.created_at);
   const statusConfig = getStatusConfig(lead.status);
-  const isDisponivel = lead.status === 'bolsão';
+  // 'bolsao' sem acento, como o banco grava (fetchBolsaoLeads filtra por ele).
+  // Com acento, nenhuma linha casava: o selo dizia "Desconhecido", o botão
+  // Assumir sumia do modal e a seção de atividades aparecia antes de assumir.
+  const isDisponivel = lead.status === 'bolsao';
 
   // Verificar se deve mostrar botões (no Bolsão, apenas mostrar botão Assumir)
   const mostrarBotaoAssumir = isDisponivel && (isCorretor || isAdmin);
@@ -571,6 +590,19 @@ export const LeadDetailsModal = ({
                     </div>
                   )}
                 </div>
+              ) : lancamento ? (
+                // Aba nova, como no card do lead: a página do lançamento não
+                // cabe em modal.
+                <a
+                  href={`/imoveis/lancamentos/${lancamento.id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block bg-muted/50 p-4 rounded-lg hover:bg-muted transition-colors"
+                >
+                  <p className="text-xs text-muted-foreground mb-1">Lançamento</p>
+                  <p className="font-bold text-foreground text-lg">{lancamento.nome}</p>
+                  <p className="text-xs text-primary mt-1">Abrir a página do lançamento</p>
+                </a>
               ) : (
                 <div className="bg-muted/50 p-4 rounded-lg">
                   <div className="flex items-center gap-2">
