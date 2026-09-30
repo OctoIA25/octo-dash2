@@ -10,10 +10,14 @@ import {
 
 /** O que publicar_comunicado grava em metadata: a fotografia do envio. */
 export type NotificationMetadata = {
-  remetente?: { tipo?: string; nome?: string; cargo?: string };
+  remetente?: { tipo?: string; nome?: string; cargo?: string; equipe?: string };
   publico?: string;
   prioridade?: 'normal' | 'importante';
   sobre?: string;
+  /** Retrato de quem recebeu (nome, cargo, equipe), gravado pelo banco. */
+  destinatario?: { nome?: string; cargo?: string; equipe?: string };
+  /** Na cópia do gestor: retrato de sobre quem é. */
+  sobre_perfil?: { nome?: string; cargo?: string; equipe?: string };
   [chave: string]: unknown;
 };
 

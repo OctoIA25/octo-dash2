@@ -26,11 +26,22 @@ export interface TipoDeNotificacao {
 export interface ItemComMetadata {
   type?: string;
   metadata?: {
-    remetente?: { tipo?: string; nome?: string; cargo?: string };
+    remetente?: { tipo?: string } & Perfil;
     publico?: string;
     prioridade?: string;
     sobre?: string;
+    /** Retrato de quem recebeu, gravado pelo banco (20261002_destinatario_nos_avisos). */
+    destinatario?: Perfil;
+    /** Na cópia do gestor: retrato de sobre quem é o aviso. */
+    sobre_perfil?: Perfil;
   } | null;
+}
+
+/** Retrato de uma pessoa no momento do aviso. */
+export interface Perfil {
+  nome?: string;
+  cargo?: string;
+  equipe?: string;
 }
 
 const TIPOS = new Map<string, TipoDeNotificacao>([
@@ -53,16 +64,24 @@ export const CLASSES_DO_TOM: Record<Tom, { fundo: string; icone: string; borda: 
   cinza: { fundo: 'bg-slate-100 dark:bg-slate-800', icone: 'text-slate-500 dark:text-slate-400', borda: 'border-l-slate-400' },
 };
 
+/** Uma pessoa (ou um público) na linha de rota: o nome e, quando há, "Corretor da Equipe Jardins". */
+export interface Pessoa {
+  nome: string;
+  detalhe?: string;
+}
+
 /** Quem mandou o aviso: uma pessoa, a LIA, ou a parte do sistema que o gerou. */
 export type Origem =
-  | { tipo: 'usuario'; nome: string; papel?: string; iniciais: string }
+  | ({ tipo: 'usuario'; iniciais: string; papel?: string } & Pessoa)
   | { tipo: 'lia'; nome: string }
   | { tipo: 'sistema'; nome: string };
 
 export interface Rota {
   origem: Origem;
-  /** Para quem foi. Ausente nas notificações de antes de 01/10. */
-  destino?: string;
+  /** Para quem foi: a equipe/casa inteira, ou a pessoa que recebeu. */
+  destino?: Pessoa;
+  /** Na cópia do gestor: sobre quem é o problema. */
+  sobre?: Pessoa;
   importante: boolean;
 }
 
@@ -74,9 +93,19 @@ export function iniciaisDe(nome: string): string {
   return (partes[0][0] + ultima).toUpperCase();
 }
 
+/** Cargo e equipe em texto corrido: "Corretor da Equipe Jardins", "Diretoria", "Equipe Centro". */
+export function detalheDe(perfil?: Perfil): string | undefined {
+  if (perfil?.cargo && perfil.equipe) return `${perfil.cargo} da ${perfil.equipe}`;
+  return perfil?.cargo || perfil?.equipe || undefined;
+}
+
+/** Públicos que não dizem quem é a pessoa ("Você" não ajuda quem vê a caixa de outro). */
+const PUBLICOS_PESSOAIS = new Set(['Você', 'Você, como gestor']);
+
 /**
  * De onde veio e para quem foi — a linha que a tela mostra em cada aviso.
- * A cópia do gestor diz de quem é o problema ("Você, como gestor de João").
+ * Para uma equipe ou a casa toda, o destino é o público; para uma pessoa, é o
+ * nome dela com cargo e equipe. A cópia do gestor diz também sobre quem é.
  */
 export function rotaDe(item: ItemComMetadata): Rota {
   // metadata é jsonb: pode chegar string, número ou null das linhas antigas.
@@ -86,10 +115,22 @@ export function rotaDe(item: ItemComMetadata): Rota {
     r?.tipo === 'lia'
       ? { tipo: 'lia', nome: r.nome || 'LIA' }
       : r?.nome
-        ? { tipo: 'usuario', nome: r.nome, papel: r.cargo, iniciais: iniciaisDe(r.nome) }
+        ? { tipo: 'usuario', nome: r.nome, papel: r.cargo, detalhe: detalheDe(r), iniciais: iniciaisDe(r.nome) }
         : { tipo: 'sistema', nome: tipoDe(item.type).origem };
-  const destino = m.sobre ? `Você, como gestor de ${m.sobre}` : m.publico;
-  return { origem, destino, importante: m.prioridade === 'importante' };
+
+  const d = m.destinatario;
+  const destino: Pessoa | undefined =
+    m.publico && !PUBLICOS_PESSOAIS.has(m.publico)
+      ? { nome: m.publico }
+      : d?.nome
+        ? { nome: d.nome, detalhe: detalheDe(d) }
+        : m.publico
+          ? { nome: m.publico }
+          : undefined;
+
+  const sobre: Pessoa | undefined = m.sobre ? { nome: m.sobre, detalhe: detalheDe(m.sobre_perfil) } : undefined;
+
+  return { origem, destino, sobre, importante: m.prioridade === 'importante' };
 }
 
 /**

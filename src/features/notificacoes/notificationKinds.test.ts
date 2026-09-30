@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Info, Megaphone } from 'lucide-react';
-import { acentoDoAviso, destinoDoLink, duracaoDoAviso, iniciaisDe, rotaDe, rotuloDoLink, tipoDe } from './notificationKinds';
+import { acentoDoAviso, destinoDoLink, detalheDe, duracaoDoAviso, iniciaisDe, rotaDe, rotuloDoLink, tipoDe } from './notificationKinds';
 
 describe('tipoDe', () => {
   it('cada tipo conhecido cai na aba certa', () => {
@@ -25,35 +25,74 @@ describe('tipoDe', () => {
 });
 
 describe('rotaDe', () => {
-  it('comunicado de uma pessoa: nome, cargo, iniciais e para quem foi', () => {
+  it('comunicado para uma equipe: quem mandou (cargo e equipe) → a equipe', () => {
     expect(rotaDe({
       type: 'comunicado',
-      metadata: { remetente: { tipo: 'usuario', nome: 'Ana Souza', cargo: 'Diretoria' }, publico: 'Equipe Prontos', prioridade: 'importante' },
+      metadata: {
+        remetente: { tipo: 'usuario', nome: 'Gil Moraes', cargo: 'Gerência', equipe: 'Equipe Jardins' },
+        publico: 'Equipe Jardins', prioridade: 'importante',
+        destinatario: { nome: 'Rafaela Nunes', cargo: 'Corretor', equipe: 'Equipe Jardins' },
+      },
     })).toEqual({
-      origem: { tipo: 'usuario', nome: 'Ana Souza', papel: 'Diretoria', iniciais: 'AS' },
-      destino: 'Equipe Prontos',
+      origem: { tipo: 'usuario', nome: 'Gil Moraes', papel: 'Gerência', detalhe: 'Gerência da Equipe Jardins', iniciais: 'GM' },
+      destino: { nome: 'Equipe Jardins' },
+      sobre: undefined,
       importante: true,
     });
   });
 
-  it('alerta da LIA com cópia ao gestor diz de quem é o problema', () => {
+  it('aviso do sistema diz qual pessoa recebeu, com cargo e equipe', () => {
+    expect(rotaDe({
+      type: 'blocked',
+      metadata: { destinatario: { nome: 'Rafaela Nunes', cargo: 'Corretor', equipe: 'Equipe Jardins' } },
+    })).toEqual({
+      origem: { tipo: 'sistema', nome: 'Distribuição' },
+      destino: { nome: 'Rafaela Nunes', detalhe: 'Corretor da Equipe Jardins' },
+      sobre: undefined,
+      importante: false,
+    });
+  });
+
+  it('"Você" dá lugar ao nome de quem recebeu', () => {
     expect(rotaDe({
       type: 'alerta',
-      metadata: { remetente: { tipo: 'lia', nome: 'LIA' }, publico: 'Você, como gestor', sobre: 'João Silva' },
-    })).toEqual({ origem: { tipo: 'lia', nome: 'LIA' }, destino: 'Você, como gestor de João Silva', importante: false });
+      metadata: { remetente: { tipo: 'lia', nome: 'LIA' }, publico: 'Você', destinatario: { nome: 'Rafaela Nunes', cargo: 'Corretor' } },
+    }).destino).toEqual({ nome: 'Rafaela Nunes', detalhe: 'Corretor' });
   });
 
-  it('cópia do cron (sem publico) também diz de quem é', () => {
-    expect(rotaDe({ type: 'blocked', metadata: { sobre: 'Téo B1', copia_gestor: true } as never }).destino)
-      .toBe('Você, como gestor de Téo B1');
+  it('cópia do gestor: para o gestor, sobre o corretor (com cargo e equipe)', () => {
+    const rota = rotaDe({
+      type: 'alerta',
+      metadata: {
+        remetente: { tipo: 'lia', nome: 'LIA' }, publico: 'Você, como gestor', sobre: 'Rafaela Nunes',
+        destinatario: { nome: 'Gil Moraes', cargo: 'Gerência', equipe: 'Equipe Jardins' },
+        sobre_perfil: { nome: 'Rafaela Nunes', cargo: 'Corretor', equipe: 'Equipe Jardins' },
+      },
+    });
+    expect(rota.origem).toEqual({ tipo: 'lia', nome: 'LIA' });
+    expect(rota.destino).toEqual({ nome: 'Gil Moraes', detalhe: 'Gerência da Equipe Jardins' });
+    expect(rota.sobre).toEqual({ nome: 'Rafaela Nunes', detalhe: 'Corretor da Equipe Jardins' });
   });
 
-  it('as notificações antigas (metadata vazio, nulo ou não-objeto) mostram a origem do tipo', () => {
+  it('sem retrato (linha antiga): cai no público gravado ou em nada, sem quebrar', () => {
+    expect(rotaDe({ type: 'alerta', metadata: { publico: 'Você', sobre: 'Téo B1' } })).toEqual({
+      origem: { tipo: 'sistema', nome: 'Alerta' }, destino: { nome: 'Você' }, sobre: { nome: 'Téo B1', detalhe: undefined }, importante: false,
+    });
     expect(rotaDe({ type: 'activity_pending', metadata: {} })).toEqual({
-      origem: { tipo: 'sistema', nome: 'Agenda' }, destino: undefined, importante: false,
+      origem: { tipo: 'sistema', nome: 'Agenda' }, destino: undefined, sobre: undefined, importante: false,
     });
     expect(rotaDe({ type: 'info', metadata: null }).origem).toEqual({ tipo: 'sistema', nome: 'Sistema' });
     expect(rotaDe({ type: 'info', metadata: 'lixo' as never }).origem).toEqual({ tipo: 'sistema', nome: 'Sistema' });
+  });
+});
+
+describe('detalheDe', () => {
+  it('cargo e equipe em texto corrido', () => {
+    expect(detalheDe({ cargo: 'Corretor', equipe: 'Equipe Jardins' })).toBe('Corretor da Equipe Jardins');
+    expect(detalheDe({ cargo: 'Diretoria' })).toBe('Diretoria');
+    expect(detalheDe({ equipe: 'Equipe Centro' })).toBe('Equipe Centro');
+    expect(detalheDe({ nome: 'Só nome' })).toBeUndefined();
+    expect(detalheDe(undefined)).toBeUndefined();
   });
 });
 

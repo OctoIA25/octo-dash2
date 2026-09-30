@@ -31,18 +31,36 @@ export function AvatarDoAviso({ item, pequeno = false }: { item: NotificationIte
   );
 }
 
-export function LinhaDeRota({ item, compacta = false }: { item: NotificationItem; compacta?: boolean }) {
-  const { origem, destino } = rotaDe(item);
-  const papel = origem.tipo === 'usuario' ? origem.papel : undefined;
+/** Nome em destaque e, ao lado, cargo e equipe em tom mais baixo. O sufixo cola no fim, sem espaço. */
+function PessoaNaRota({ nome, detalhe, forte = false, sufixo }: { nome: string; detalhe?: string; forte?: boolean; sufixo?: string }) {
   return (
-    <p className={`flex min-w-0 flex-wrap items-center gap-x-1.5 text-slate-500 dark:text-slate-400 ${compacta ? 'text-xs' : 'text-[13px] leading-5'}`}>
-      <span className="font-semibold text-slate-800 dark:text-slate-200">{origem.nome}</span>
-      {papel && <span>{papel}</span>}
+    <span className="inline-flex min-w-0 flex-wrap items-baseline gap-x-1.5">
+      <span className={forte ? 'font-semibold text-slate-800 dark:text-slate-200' : 'font-medium text-slate-700 dark:text-slate-300'}>
+        {nome}{!detalhe && sufixo}
+      </span>
+      {detalhe && <span>{detalhe}{sufixo}</span>}
+    </span>
+  );
+}
+
+export function LinhaDeRota({ item, compacta = false }: { item: NotificationItem; compacta?: boolean }) {
+  const { origem, destino, sobre } = rotaDe(item);
+  const detalheDaOrigem = origem.tipo === 'usuario' ? origem.detalhe : undefined;
+  return (
+    <p className={`flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-slate-500 dark:text-slate-400 ${compacta ? 'text-xs' : 'text-[13px] leading-5'}`}>
+      <PessoaNaRota nome={origem.nome} detalhe={detalheDaOrigem} forte />
       {destino && (
         <>
           <ArrowRight className="h-3.5 w-3.5 shrink-0 text-slate-400 dark:text-slate-500" aria-hidden />
           <span className="sr-only">para</span>
-          <span className="min-w-0 truncate text-slate-700 dark:text-slate-300">{destino}</span>
+          {/* Na cópia do gestor, o que importa é sobre quem: o gestor fica só com o nome. */}
+          <PessoaNaRota nome={destino.nome} detalhe={sobre ? undefined : destino.detalhe} sufixo={sobre ? ',' : undefined} />
+        </>
+      )}
+      {sobre && (
+        <>
+          <span>sobre</span>
+          <PessoaNaRota nome={sobre.nome} detalhe={sobre.detalhe} />
         </>
       )}
     </p>
