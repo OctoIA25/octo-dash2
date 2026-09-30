@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  avisoDePendentes, filtrar, paraQuem, planoDeCarreira, porCategoria,
-  quantosFaltam, saltoEntreNiveis, type Material,
+  avisoDePendentes, filtrar, formatoDoArquivo, nomeParaBaixar, paraQuem, planoDeCarreira,
+  porCategoria, quantosFaltam, saltoEntreNiveis, type Material,
 } from './materiais';
 import { NIVEIS } from '@/features/comissionamento/commissionRules';
 
@@ -59,6 +59,31 @@ describe('a lista por categoria', () => {
       material({ id: 'b', categoria: 'plano_de_carreira' }),
     ]);
     expect(g[0].categoria).toBe('plano_de_carreira');
+  });
+});
+
+describe('o arquivo do material', () => {
+  it('mostra aqui dentro o que o navegador sabe abrir', () => {
+    expect(formatoDoArquivo('t/1_Gest_o_de_tempo.pdf')).toBe('pdf');
+    expect(formatoDoArquivo('t/1_BOOK.PDF')).toBe('pdf');
+    expect(formatoDoArquivo('t/1_planta.jpeg')).toBe('imagem');
+    expect(formatoDoArquivo('t/1_tour.mp4')).toBe('video');
+  });
+
+  it('Word, PowerPoint e zip ficam só no baixar', () => {
+    expect(formatoDoArquivo('t/1_Artes_edit_veis_no_Canva.docx')).toBe('outro');
+    expect(formatoDoArquivo('t/1_apresentacao.pptx')).toBe('outro');
+    expect(formatoDoArquivo(null)).toBe('outro');
+  });
+
+  it('baixa com o título, que tem os acentos que o nome guardado perdeu', () => {
+    expect(nomeParaBaixar('Gestão de tempo', 't/1790779503999_Gest_o_de_tempo.pdf'))
+      .toBe('Gestão de tempo.pdf');
+  });
+
+  it('tira do nome o que o sistema de arquivos recusa', () => {
+    expect(nomeParaBaixar('Compra/venda: SFH?', 't/1_x.pdf')).toBe('Compra-venda- SFH-.pdf');
+    expect(nomeParaBaixar('   ', 't/1_x.docx')).toBe('material.docx');
   });
 });
 

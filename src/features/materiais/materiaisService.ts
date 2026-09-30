@@ -152,11 +152,14 @@ export async function subirArquivo(tenantId: string, arquivo: File) {
   return caminho;
 }
 
-/** Link temporário: o bucket é privado, não tem endereço público. */
-export async function linkDoArquivo(caminho: string): Promise<string | null> {
+/**
+ * Link temporário: o bucket é privado, não tem endereço público.
+ * Com `baixarComo`, o storage manda o arquivo como download, com esse nome.
+ */
+export async function linkDoArquivo(caminho: string, baixarComo?: string): Promise<string | null> {
   const { data, error } = await supabase.storage
     .from('materiais-estudo')
-    .createSignedUrl(caminho, 60 * 10);
+    .createSignedUrl(caminho, 60 * 10, baixarComo ? { download: baixarComo } : undefined);
   if (error) return null;
   return data?.signedUrl ?? null;
 }

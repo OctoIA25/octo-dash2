@@ -14,7 +14,8 @@
 import { NIVEIS, type Nivel } from '@/features/comissionamento/commissionRules';
 
 export type CategoriaDeMaterial =
-  | 'plano_de_carreira' | 'comissao' | 'regimento' | 'scripts' | 'treinamentos' | 'outros';
+  | 'plano_de_carreira' | 'lancamentos' | 'prontos' | 'comissao' | 'regimento' | 'scripts'
+  | 'treinamentos' | 'outros';
 
 export type TipoDeMaterial = 'texto' | 'arquivo' | 'link' | 'niveis_de_comissao';
 
@@ -50,16 +51,19 @@ export interface QuadroDeMateriais {
 
 export const ROTULO_DA_CATEGORIA: Record<CategoriaDeMaterial, string> = {
   plano_de_carreira: 'Plano de carreira',
+  lancamentos: 'Lançamentos',
+  prontos: 'Prontos',
   comissao: 'Regras de comissão',
   regimento: 'Regimento',
   scripts: 'Scripts',
-  treinamentos: 'Treinamentos',
+  treinamentos: 'Cursos e treinamentos',
   outros: 'Outros',
 };
 
 /** A ordem em que as categorias aparecem — da carreira para o resto. */
 export const ORDEM_DAS_CATEGORIAS: CategoriaDeMaterial[] = [
-  'plano_de_carreira', 'comissao', 'regimento', 'scripts', 'treinamentos', 'outros',
+  'plano_de_carreira', 'lancamentos', 'prontos', 'comissao', 'regimento', 'scripts',
+  'treinamentos', 'outros',
 ];
 
 export interface DegrauDaCarreira {
@@ -112,6 +116,30 @@ export function porCategoria(
       materiais: (materiais ?? []).filter((m) => m.categoria === categoria),
     }))
     .filter((g) => g.materiais.length > 0);
+}
+
+export type FormatoDoArquivo = 'pdf' | 'imagem' | 'video' | 'outro';
+
+/**
+ * O que o navegador consegue mostrar dentro da tela. Word, PowerPoint e zip não
+ * abrem sem mandar o arquivo para um serviço de fora — esses ficam só no baixar.
+ */
+export function formatoDoArquivo(caminho: string | null | undefined): FormatoDoArquivo {
+  const ext = (caminho ?? '').split('.').pop()?.toLowerCase() ?? '';
+  if (ext === 'pdf') return 'pdf';
+  if (['jpg', 'jpeg', 'png', 'webp'].includes(ext)) return 'imagem';
+  if (ext === 'mp4') return 'video';
+  return 'outro';
+}
+
+/**
+ * O nome do arquivo baixado: o título do material, e não o nome guardado no
+ * storage, que perdeu os acentos na subida ("Gest_o_de_tempo.pdf").
+ */
+export function nomeParaBaixar(titulo: string, caminho: string): string {
+  const ext = caminho.includes('.') ? `.${caminho.split('.').pop()}` : '';
+  const base = titulo.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'material';
+  return `${base}${ext}`;
 }
 
 /** A busca: título, resumo e o corpo do texto. */

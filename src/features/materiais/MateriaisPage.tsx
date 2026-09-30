@@ -19,14 +19,14 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  AlertTriangle, BookOpen, Check, ExternalLink, FileText, Loader2, Plus, Search, X,
+  AlertTriangle, BookOpen, Check, Download, ExternalLink, FileText, Loader2, Plus, Search, X,
 } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { useEscapeFecha } from '@/hooks/useEscapeFecha';
 import { useToast } from '@/hooks/use-toast';
 import {
-  ORDEM_DAS_CATEGORIAS, ROTULO_DA_CATEGORIA, avisoDePendentes, filtrar, paraQuem,
-  planoDeCarreira, porCategoria, quantosFaltam, saltoEntreNiveis,
+  ORDEM_DAS_CATEGORIAS, ROTULO_DA_CATEGORIA, avisoDePendentes, filtrar, formatoDoArquivo,
+  nomeParaBaixar, paraQuem, planoDeCarreira, porCategoria, quantosFaltam, saltoEntreNiveis,
   type CategoriaDeMaterial, type Material, type TipoDeMaterial,
 } from './materiais';
 import {
@@ -75,7 +75,19 @@ export function MateriaisPage() {
   }, [quadro.data, busca, categoria]);
 
   const grupos = useMemo(() => porCategoria(lista), [lista]);
+  // Os filtros saem do que existe: um botão que leva a uma lista vazia só ensina a não clicar.
+  const filtros = useMemo(() => porCategoria(quadro.data?.materiais ?? []), [quadro.data]);
   const aviso = avisoDePendentes(pendentes.data);
+
+  const abrir = (m: Material) => {
+    setAberto(m);
+    // "Abriu" alimenta o "Quem leu" do gestor. Falhar aqui não impede a leitura.
+    if (!m.lido_em) {
+      registrarLeitura(m.id)
+        .then(() => qc.invalidateQueries({ queryKey: ['materiais'] }))
+        .catch((e) => console.warn('[materiais] não registrou a abertura', e));
+    }
+  };
 
   if (!tenantId || tenantId === 'owner') {
     return <p className="p-6 text-sm text-muted-foreground">Escolha uma imobiliária para ver os materiais.</p>;
@@ -87,7 +99,7 @@ export function MateriaisPage() {
         <div>
           <h1 className="text-xl font-semibold">Materiais de estudo</h1>
           <p className="text-xs text-muted-foreground">
-            Plano de carreira, regras de comissão, regimento, scripts e treinamentos.
+            Lançamentos, prontos, plano de carreira, regras, scripts, cursos e treinamentos.
           </p>
         </div>
         {podeGerir && (
@@ -105,26 +117,33 @@ export function MateriaisPage() {
         </p>
       )}
 
-      <div className="mb-4 flex flex-wrap items-end gap-2">
-        <label className="flex min-w-[200px] flex-1 flex-col gap-1">
-          <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Buscar</span>
-          <span className="relative">
-            <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <input value={busca} onChange={(e) => setBusca(e.target.value)}
-              placeholder="Título, resumo ou dentro do texto" className={`${inputCls} pl-7`} />
-          </span>
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Categoria</span>
-          <select value={categoria} onChange={(e) => setCategoria(e.target.value as CategoriaDeMaterial | '')}
-            className={`${inputCls} w-auto`}>
-            <option value="">Todas</option>
-            {ORDEM_DAS_CATEGORIAS.map((c) => (
-              <option key={c} value={c}>{ROTULO_DA_CATEGORIA[c]}</option>
-            ))}
-          </select>
-        </label>
-      </div>
+      <label className="mb-3 flex flex-col gap-1">
+        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Buscar</span>
+        <span className="relative">
+          <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <input value={busca} onChange={(e) => setBusca(e.target.value)}
+            placeholder="Título, resumo ou dentro do texto" className={`${inputCls} pl-7`} />
+        </span>
+      </label>
+
+      {filtros.length > 0 && (
+        <div className="mb-4 flex flex-wrap gap-1.5" role="group" aria-label="Filtrar por categoria">
+          {[
+            { categoria: '' as const, rotulo: 'Geral', total: quadro.data?.materiais.length ?? 0 },
+            ...filtros.map((f) => ({ categoria: f.categoria, rotulo: f.rotulo, total: f.materiais.length })),
+          ].map((f) => (
+            <button key={f.categoria || 'geral'} onClick={() => setCategoria(f.categoria)}
+              aria-pressed={categoria === f.categoria}
+              className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                categoria === f.categoria
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'hover:bg-accent'
+              }`}>
+              {f.rotulo} <span className="tabular-nums opacity-60">{f.total}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {quadro.isLoading && (
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -148,7 +167,7 @@ export function MateriaisPage() {
               {g.materiais.map((m) => (
                 <li key={m.id} className="rounded-lg border p-3">
                   <div className="flex flex-wrap items-start justify-between gap-2">
-                    <button onClick={() => setAberto(m)} className="min-w-0 flex-1 text-left">
+                    <button onClick={() => abrir(m)} className="min-w-0 flex-1 text-left">
                       <div className="flex flex-wrap items-baseline gap-1.5">
                         <span className="font-medium">{m.titulo}</span>
                         {m.novo && (
@@ -272,6 +291,14 @@ function LeitorDeMaterial({
   const [marcando, setMarcando] = useState(false);
   const [rolouAteOFim, setRolouAteOFim] = useState(false);
 
+  const formato = formatoDoArquivo(material.arquivo);
+  const mostraAqui = material.tipo === 'arquivo' && !!material.arquivo && formato !== 'outro';
+  const visualizacao = useQuery({
+    queryKey: ['material-arquivo', material.arquivo],
+    queryFn: () => linkDoArquivo(material.arquivo!),
+    enabled: mostraAqui,
+  });
+
   const abrirArquivo = async () => {
     if (!material.arquivo) return;
     const url = await linkDoArquivo(material.arquivo);
@@ -279,11 +306,19 @@ function LeitorDeMaterial({
     else toast({ title: 'Não deu para abrir o arquivo', variant: 'destructive' });
   };
 
+  const baixarArquivo = async () => {
+    if (!material.arquivo) return;
+    const url = await linkDoArquivo(material.arquivo, nomeParaBaixar(material.titulo, material.arquivo));
+    // O storage responde como anexo: o navegador baixa e continua nesta tela.
+    if (url) window.location.assign(url);
+    else toast({ title: 'Não deu para baixar o arquivo', variant: 'destructive' });
+  };
+
   const jaAceitou = !!material.aceito_em;
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onFechar} role="presentation">
-      <div className="flex h-full w-full max-w-2xl flex-col bg-background shadow-xl"
+      <div className={`flex h-full w-full flex-col bg-background shadow-xl ${mostraAqui ? 'max-w-4xl' : 'max-w-2xl'}`}
         onClick={(e) => e.stopPropagation()} role="dialog" aria-label={material.titulo}>
         <div className="flex items-start justify-between gap-3 border-b p-5">
           <div>
@@ -300,7 +335,7 @@ function LeitorDeMaterial({
         </div>
 
         <div
-          className="flex-1 overflow-y-auto p-5"
+          className="flex flex-1 flex-col overflow-y-auto p-5"
           // MEDIR AO MONTAR, e não só ao rolar: um material curto cabe na tela
           // inteira, nenhum evento de rolagem dispara, e o botão "Li e entendi"
           // ficaria travado para sempre — o material obrigatório seria
@@ -320,14 +355,50 @@ function LeitorDeMaterial({
           )}
 
           {material.tipo === 'arquivo' && (
-            <div className="grid gap-3">
+            <div className="flex flex-1 flex-col gap-3">
               {material.conteudo && (
                 <p className="whitespace-pre-wrap text-sm text-muted-foreground">{material.conteudo}</p>
               )}
-              <button onClick={abrirArquivo}
-                className="inline-flex w-fit items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-accent">
-                <FileText className="h-3.5 w-3.5" /> Abrir o arquivo
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={baixarArquivo}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground">
+                  <Download className="h-3.5 w-3.5" /> Baixar
+                </button>
+                <button onClick={abrirArquivo}
+                  className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-accent">
+                  <ExternalLink className="h-3.5 w-3.5" /> Abrir em outra aba
+                </button>
+              </div>
+
+              {formato === 'outro' && (
+                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <FileText className="h-3.5 w-3.5" />
+                  Este formato não abre aqui dentro — baixe para ver.
+                </p>
+              )}
+              {mostraAqui && visualizacao.isLoading && (
+                <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Carregando o arquivo…
+                </p>
+              )}
+              {mostraAqui && !visualizacao.isLoading && !visualizacao.data && (
+                <p className="text-xs text-muted-foreground">
+                  Não deu para mostrar o arquivo aqui. Use “Baixar” ou “Abrir em outra aba”.
+                </p>
+              )}
+              {visualizacao.data && formato === 'pdf' && (
+                // ponytail: usa o leitor de PDF do próprio navegador. O Chrome do Android não
+                // tem um e mostra a moldura vazia — lá valem os dois botões acima. Se a leitura
+                // no celular importar, trocar por pdf.js.
+                <iframe src={visualizacao.data} title={material.titulo}
+                  className="min-h-[60vh] w-full flex-1 rounded-md border" />
+              )}
+              {visualizacao.data && formato === 'imagem' && (
+                <img src={visualizacao.data} alt={material.titulo} className="max-w-full rounded-md border" />
+              )}
+              {visualizacao.data && formato === 'video' && (
+                <video src={visualizacao.data} controls className="w-full rounded-md border" />
+              )}
             </div>
           )}
 
