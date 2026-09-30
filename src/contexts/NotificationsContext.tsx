@@ -1,17 +1,21 @@
-import React, { createContext, useContext, useMemo, useState, ReactNode, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useMemo, useState, ReactNode, useCallback, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { toast } from '@/hooks/use-toast';
 import {
   fetchNotificationsForUser,
   markNotificationAsRead as apiMarkAsRead,
   markAllNotificationsAsRead as apiMarkAllAsRead,
-  clearAllNotifications as apiClearAll,
-  createNotification as apiCreateNotification,
-  type CreateNotificationInput,
+  clearReadNotifications as apiClearRead,
+  type NotificationRow,
 } from '@/features/notificacoes/services/notificationsService';
 
-/** Tipo gravado por public.avisar_proximos_toques() (20260916_lead_toques_aviso_e_atraso.sql). */
-const TIPO_AVISO_TOQUE = 'cadencia_toque';
+/** O que publicar_comunicado grava em metadata: a fotografia do envio. */
+export type NotificationMetadata = {
+  remetente?: { tipo?: string; nome?: string; cargo?: string };
+  publico?: string;
+  prioridade?: 'normal' | 'importante';
+  sobre?: string;
+  [chave: string]: unknown;
+};
 
 export type NotificationItem = {
   id: string;
@@ -22,38 +26,32 @@ export type NotificationItem = {
   type?: string;
   linkType?: string;
   linkId?: string;
+  metadata: NotificationMetadata;
 };
 
 type NotificationsContextValue = {
   notifications: NotificationItem[];
   unreadCount: number;
   loading: boolean;
-  /** Carrega notificações do Supabase (multitenant). Chamar quando tiver tenantId e userId. */
+  /** A última carga falhou (rede/banco). A lista na tela pode estar velha. */
+  loadError: boolean;
+  /** A última notificação entregue pelo Realtime — o gatilho do aviso na tela. */
+  novaChegada: NotificationItem | null;
+  /** Carrega as notificações do usuário naquela imobiliária. */
   loadNotifications: (tenantId: string, userId: string) => Promise<void>;
   markAllAsRead: () => Promise<void>;
   markAsRead: (id: string) => void;
-  clearAll: () => Promise<void>;
-  /** Adiciona notificação de teste (persiste no Supabase se tenantId/userId estiverem setados) */
-  addTestNotification: (tenantId: string, userId: string) => Promise<void>;
-  /** Para o sistema criar notificação (ex.: atividade pendente, bloqueio). */
-  addNotification: (input: CreateNotificationInput) => Promise<string | null>;
-  /** Último tenant/user usados no load (para markAllAsRead/clearAll) */
+  /** Apaga só as lidas. */
+  clearRead: () => Promise<void>;
   currentTenantId: string | null;
   currentUserId: string | null;
 };
 
 const NotificationsContext = createContext<NotificationsContextValue | undefined>(undefined);
 
-function mapRowToItem(row: {
-  id: string;
-  title: string;
-  body?: string | null;
-  created_at: string;
-  read_at: string | null;
-  type?: string;
-  link_type?: string | null;
-  link_id?: string | null;
-}): NotificationItem {
+type Linha = Pick<NotificationRow, 'id' | 'title' | 'body' | 'created_at' | 'read_at' | 'type' | 'link_type' | 'link_id' | 'metadata'>;
+
+function mapRowToItem(row: Linha): NotificationItem {
   return {
     id: row.id,
     title: row.title,
@@ -63,54 +61,58 @@ function mapRowToItem(row: {
     type: row.type,
     linkType: row.link_type ?? undefined,
     linkId: row.link_id ?? undefined,
+    // As linhas de antes de 01/10 têm metadata {} ou null.
+    metadata: (row.metadata ?? {}) as NotificationMetadata,
   };
 }
+
+const maisNovasPrimeiro = (a: NotificationItem, b: NotificationItem) =>
+  new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
 
 export const NotificationsProvider = ({ children }: { children: ReactNode }) => {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const [novaChegada, setNovaChegada] = useState<NotificationItem | null>(null);
   const [currentTenantId, setCurrentTenantId] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  /** De quem é a lista na tela. Trocar de imobiliária ou de conta começa do zero. */
+  const donoDaLista = useRef<string | null>(null);
 
   const unreadCount = useMemo(() => notifications.filter((n) => !n.read).length, [notifications]);
 
   const loadNotifications = useCallback(async (tenantId: string, userId: string) => {
     if (!tenantId || !userId) return;
+    const dono = `${tenantId}:${userId}`;
+    if (donoDaLista.current !== dono) {
+      donoDaLista.current = dono;
+      setNotifications([]);
+      setNovaChegada(null);
+    }
+    setCurrentTenantId(tenantId);
+    setCurrentUserId(userId);
     setLoading(true);
     try {
-      const rows = await fetchNotificationsForUser(tenantId, userId);
-      const fetched = rows.map((r) =>
-        mapRowToItem({
-          id: r.id,
-          title: r.title,
-          body: r.body,
-          created_at: r.created_at,
-          read_at: r.read_at,
-          type: r.type,
-          link_type: r.link_type,
-          link_id: r.link_id,
-        })
-      );
-
+      const fetched = (await fetchNotificationsForUser(tenantId, userId)).map(mapRowToItem);
+      // A casa mudou enquanto buscava: esta resposta é da lista antiga.
+      if (donoDaLista.current !== dono) return;
+      // Mescla para não perder o que o Realtime entregou durante a busca.
       setNotifications((prev) => {
-        const map = new Map<string, NotificationItem>();
-        for (const n of prev) map.set(n.id, n);
-        for (const n of fetched) map.set(n.id, n);
-        return Array.from(map.values()).sort(
-          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        );
+        const porId = new Map(prev.map((n) => [n.id, n]));
+        for (const n of fetched) porId.set(n.id, n);
+        return [...porId.values()].sort(maisNovasPrimeiro);
       });
-      setCurrentTenantId(tenantId);
-      setCurrentUserId(userId);
+      setLoadError(false);
     } catch (e) {
+      if (donoDaLista.current !== dono) return;
       console.error('Erro ao carregar notificações:', e);
-      // Mantém as notificações locais (seed/optimistic) caso a busca falhe
+      setLoadError(true);
     } finally {
-      setLoading(false);
+      if (donoDaLista.current === dono) setLoading(false);
     }
   }, []);
 
-  // Realtime: novas notificações do usuário aparecem no sininho sem F5.
+  // Realtime: o que chega aparece sem F5 e vira `novaChegada` (o aviso na tela).
   // Mesmo padrão de useChatConversations (postgres_changes + removeChannel).
   useEffect(() => {
     if (!currentTenantId || !currentUserId || currentTenantId === 'owner') return;
@@ -125,26 +127,11 @@ export const NotificationsProvider = ({ children }: { children: ReactNode }) => 
           filter: `user_id=eq.${currentUserId}`,
         },
         (payload) => {
-          const row = payload.new as {
-            id: string;
-            tenant_id: string;
-            title: string;
-            body?: string | null;
-            created_at: string;
-            read_at: string | null;
-            type?: string;
-            link_type?: string | null;
-            link_id?: string | null;
-          };
+          const row = payload.new as Linha & { tenant_id: string };
           if (row.tenant_id !== currentTenantId) return;
-          setNotifications((prev) =>
-            prev.some((n) => n.id === row.id) ? prev : [mapRowToItem(row), ...prev]
-          );
-          // Hora do próximo toque (cron avisar_proximos_toques): só o sininho
-          // mudando de número passa batido — o aviso precisa ser visto na hora.
-          if (row.type === TIPO_AVISO_TOQUE) {
-            toast({ title: row.title, description: row.body ?? undefined, duration: 60_000 });
-          }
+          const item = mapRowToItem(row);
+          setNotifications((prev) => (prev.some((n) => n.id === item.id) ? prev : [item, ...prev]));
+          setNovaChegada(item);
         }
       )
       .subscribe();
@@ -154,108 +141,40 @@ export const NotificationsProvider = ({ children }: { children: ReactNode }) => 
   }, [currentTenantId, currentUserId]);
 
   const markAsRead = useCallback((id: string) => {
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, read: true } : n))
-    );
+    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
     apiMarkAsRead(id).catch(console.error);
   }, []);
 
   const markAllAsRead = useCallback(async () => {
     if (!currentTenantId || !currentUserId) return;
     const ok = await apiMarkAllAsRead(currentTenantId, currentUserId);
-    if (ok) {
-      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-    }
+    if (ok) setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
   }, [currentTenantId, currentUserId]);
 
-  const clearAll = useCallback(async () => {
+  const clearRead = useCallback(async () => {
     if (!currentTenantId || !currentUserId) return;
-    const ok = await apiClearAll(currentTenantId, currentUserId);
-    if (ok) setNotifications([]);
+    const ok = await apiClearRead(currentTenantId, currentUserId);
+    if (ok) setNotifications((prev) => prev.filter((n) => !n.read));
   }, [currentTenantId, currentUserId]);
-
-  const addTestNotification = useCallback(async (tenantId: string, userId: string) => {
-    const id = await apiCreateNotification({
-      tenant_id: tenantId,
-      user_id: userId,
-      title: 'Nova notificação (teste)',
-      body: `Criada em ${new Date().toLocaleString('pt-BR')}.`,
-      type: 'info',
-    });
-    if (id) {
-      setNotifications((prev) => [
-        {
-          id,
-          title: 'Nova notificação (teste)',
-          body: `Criada em ${new Date().toLocaleString('pt-BR')}.`,
-          createdAt: new Date().toISOString(),
-          read: false,
-        },
-        ...prev,
-      ]);
-    }
-  }, []);
-
-  const addNotification = useCallback(async (input: CreateNotificationInput) => {
-    let id: string | null = null;
-    try {
-      id = await apiCreateNotification(input);
-    } catch (e) {
-      console.error('Erro ao criar notificação:', e);
-    }
-
-    const finalId = id ?? `local-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    setNotifications((prev) => [
-      {
-        id: finalId,
-        title: input.title,
-        body: input.body,
-        createdAt: new Date().toISOString(),
-        read: false,
-        type: input.type,
-        linkType: input.link_type,
-        linkId: input.link_id,
-      },
-      ...prev,
-    ]);
-
-    return id ?? finalId;
-  }, []);
 
   const value = useMemo(
     () => ({
       notifications,
       unreadCount,
       loading,
+      loadError,
+      novaChegada,
       loadNotifications,
       markAllAsRead,
       markAsRead,
-      clearAll,
-      addTestNotification,
-      addNotification,
+      clearRead,
       currentTenantId,
       currentUserId,
     }),
-    [
-      notifications,
-      unreadCount,
-      loading,
-      loadNotifications,
-      markAllAsRead,
-      markAsRead,
-      clearAll,
-      addTestNotification,
-      addNotification,
-      currentTenantId,
-      currentUserId,
-    ]
+    [notifications, unreadCount, loading, loadError, novaChegada, loadNotifications, markAllAsRead, markAsRead, clearRead, currentTenantId, currentUserId]
   );
 
-  return (
-    <NotificationsContext.Provider value={value}>
-      {children}
-    </NotificationsContext.Provider>
-  );
+  return <NotificationsContext.Provider value={value}>{children}</NotificationsContext.Provider>;
 };
 
 export const useNotifications = () => {
