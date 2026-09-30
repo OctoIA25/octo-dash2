@@ -39,7 +39,9 @@ import { ABAS_DO_FINANCEIRO, abaDoEndereco, type AbaDoFinanceiro } from './abas'
 
 type Aba = AbaDoFinanceiro;
 
-const hoje = () => new Date().toISOString().slice(0, 10);
+// O dia de São Paulo, não o de Greenwich: com `toISOString`, a baixa feita
+// depois das 21h caía no dia seguinte.
+const hoje = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
 const primeiroDoMes = () => `${new Date().toISOString().slice(0, 7)}-01`;
 const ultimoDoMes = () => {
   const d = new Date();
@@ -49,6 +51,10 @@ const dataBR = (d: string | null | undefined) =>
   d ? new Date(`${String(d).slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : '—';
 
 const inputCls = 'h-8 rounded-md border bg-background px-2 text-xs';
+
+type Acao =
+  | { tipo: 'baixar'; l: Lancamento; pagoEm: string }
+  | { tipo: 'desfazer' | 'cancelar'; l: Lancamento };
 
 export function FinanceiroPage() {
   const { tenantId } = useAuthContext();
@@ -133,8 +139,9 @@ export function FinanceiroPage() {
   };
 
   const acao = useMutation({
-    mutationFn: async (a: { tipo: 'baixar' | 'desfazer' | 'cancelar'; l: Lancamento }) => {
-      if (a.tipo === 'baixar') return baixar(a.l.id, hoje(), a.l.valor);
+    mutationFn: async (a: Acao) => {
+      // `valor_pago` primeiro: mudar a data de uma baixa não mexe no valor pago.
+      if (a.tipo === 'baixar') return baixar(a.l.id, a.pagoEm, a.l.valor_pago ?? a.l.valor);
       if (a.tipo === 'desfazer') return baixar(a.l.id, null, null);
       return cancelar(a.l.id);
     },
@@ -302,13 +309,53 @@ function Carregando() {
 // ------------------------------------------------------------
 // A receber / A pagar
 // ------------------------------------------------------------
+
+// Sem data no futuro: a baixa diz que o dinheiro já saiu, e o fluxo de caixa
+// a conta como realizada.
+function DataDaBaixa({ data, onMudar, onConfirmar, onCancelar, ocupado }: {
+  data: string;
+  onMudar: (data: string) => void;
+  onConfirmar: () => void;
+  onCancelar: () => void;
+  ocupado: boolean;
+}) {
+  const valida = !!data && data <= hoje();
+  return (
+    <span className="inline-flex items-center gap-1">
+      <input type="date" value={data} max={hoje()} autoFocus aria-label="Data do pagamento"
+        onChange={(e) => onMudar(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && valida) onConfirmar();
+          if (e.key === 'Escape') onCancelar();
+        }}
+        className="h-6 rounded-md border bg-background px-1 text-[11px]" />
+      <button onClick={onConfirmar} disabled={!valida || ocupado} aria-label="Confirmar data"
+        className="rounded-md border p-0.5 hover:bg-accent disabled:opacity-50">
+        <Check className="h-3 w-3" />
+      </button>
+      <button onClick={onCancelar} aria-label="Cancelar"
+        className="rounded-md border p-0.5 text-muted-foreground hover:bg-accent">
+        <X className="h-3 w-3" />
+      </button>
+    </span>
+  );
+}
+
 function Lista({
   q, aba, acao,
 }: {
   q: { isLoading: boolean; isError: boolean; error: unknown; data: ListaDeLancamentos | null | undefined };
   aba: 'receber' | 'pagar';
-  acao: { mutate: (a: { tipo: 'baixar' | 'desfazer' | 'cancelar'; l: Lancamento }) => void; isPending: boolean };
+  acao: { mutate: (a: Acao) => void; isPending: boolean };
 }) {
+  /*
+   * A data da baixa é perguntada, não presumida (30/09/2026). Antes, pagar
+   * gravava o dia do clique, e as 88 contas lançadas de uma vez como pagas
+   * ficaram todas com 30/09 — algumas eram de fevereiro de 2025. Pagar abre
+   * a data com hoje já preenchido; clicar na data de uma baixa a corrige.
+   */
+  const [dataDaBaixa, setDataDaBaixa] = useState<{ id: string; data: string } | null>(null);
+
   if (q.isLoading) return <Carregando />;
   if (q.isError) {
     return <Aviso tom="rose"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -408,10 +455,23 @@ function Lista({
                     : <span className="text-muted-foreground/60">—</span>}
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap">
-                  {l.status === 'baixado' ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                  {dataDaBaixa?.id === l.id ? (
+                    <DataDaBaixa
+                      data={dataDaBaixa.data}
+                      onMudar={(data) => setDataDaBaixa({ id: l.id, data })}
+                      onConfirmar={() => {
+                        acao.mutate({ tipo: 'baixar', l, pagoEm: dataDaBaixa.data });
+                        setDataDaBaixa(null);
+                      }}
+                      onCancelar={() => setDataDaBaixa(null)}
+                      ocupado={acao.isPending}
+                    />
+                  ) : l.status === 'baixado' ? (
+                    <button onClick={() => setDataDaBaixa({ id: l.id, data: String(l.pago_em).slice(0, 10) })}
+                      title="Mudar a data do pagamento"
+                      className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-800 hover:ring-1 hover:ring-emerald-400 dark:bg-emerald-950 dark:text-emerald-300">
                       <Check className="h-3 w-3" /> {dataBR(l.pago_em)}
-                    </span>
+                    </button>
                   ) : (
                     <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${
                       l.vencido
@@ -429,7 +489,7 @@ function Lista({
                       <Undo2 className="h-3 w-3" /> desfazer
                     </button>
                   ) : (
-                    <button onClick={() => acao.mutate({ tipo: 'baixar', l })} disabled={acao.isPending}
+                    <button onClick={() => setDataDaBaixa({ id: l.id, data: hoje() })} disabled={acao.isPending}
                       className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] hover:bg-accent disabled:opacity-50">
                       {ehReceber ? 'receber' : 'pagar'}
                     </button>
