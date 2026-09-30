@@ -76,14 +76,35 @@ describe('NotificationsContext', () => {
     expect(result.current.notifications[0].metadata).toEqual({});
   });
 
-  it('o que chega pelo Realtime entra no topo e vira novaChegada', async () => {
+  it('o que chega pelo Realtime entra no topo e avisa quem assina aoChegar', async () => {
     buscar.mockResolvedValueOnce([linha('antiga')]);
     const { result } = montar();
     await act(async () => { await result.current.loadNotifications('t-a', 'u-1'); });
     await waitFor(() => expect(canal.handler).not.toBeNull());
+    const ouvinte = vi.fn();
+    let cancelar: () => void = () => {};
+    act(() => { cancelar = result.current.aoChegar(ouvinte); });
     act(() => canal.handler!({ new: linha('nova', { created_at: '2026-10-01T13:00:00Z' }) }));
     expect(ids(result)).toEqual(['nova', 'antiga']);
-    expect(result.current.novaChegada?.id).toBe('nova');
+    expect(ouvinte).toHaveBeenCalledTimes(1);
+    expect(ouvinte.mock.calls[0][0].id).toBe('nova');
+    cancelar();
+    act(() => canal.handler!({ new: linha('outra') }));
+    expect(ouvinte).toHaveBeenCalledTimes(1);
+  });
+
+  it('rajada dentro de um único render avisa uma vez por chegada', async () => {
+    buscar.mockResolvedValueOnce([]);
+    const { result } = montar();
+    await act(async () => { await result.current.loadNotifications('t-a', 'u-1'); });
+    await waitFor(() => expect(canal.handler).not.toBeNull());
+    const ouvinte = vi.fn();
+    act(() => { result.current.aoChegar(ouvinte); });
+    act(() => {
+      canal.handler!({ new: linha('um') });
+      canal.handler!({ new: linha('dois') });
+    });
+    expect(ouvinte.mock.calls.map((c) => c[0].id)).toEqual(['um', 'dois']);
   });
 
   it('Realtime de outra imobiliária é ignorado', async () => {
@@ -91,9 +112,11 @@ describe('NotificationsContext', () => {
     const { result } = montar();
     await act(async () => { await result.current.loadNotifications('t-a', 'u-1'); });
     await waitFor(() => expect(canal.handler).not.toBeNull());
+    const ouvinte = vi.fn();
+    act(() => { result.current.aoChegar(ouvinte); });
     act(() => canal.handler!({ new: linha('de-outra', { tenant_id: 't-z' }) }));
     expect(ids(result)).toEqual([]);
-    expect(result.current.novaChegada).toBeNull();
+    expect(ouvinte).not.toHaveBeenCalled();
   });
 
   it('Limpar lidas mantém as não lidas', async () => {

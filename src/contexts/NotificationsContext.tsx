@@ -35,8 +35,12 @@ type NotificationsContextValue = {
   loading: boolean;
   /** A última carga falhou (rede/banco). A lista na tela pode estar velha. */
   loadError: boolean;
-  /** A última notificação entregue pelo Realtime — o gatilho do aviso na tela. */
-  novaChegada: NotificationItem | null;
+  /**
+   * Assina as chegadas pelo Realtime; devolve o cancelamento. É um evento, não estado:
+   * não há o que agrupar num render (uma rajada avisa uma vez por item) e nada a
+   * repetir quando quem assina desmonta e monta de novo.
+   */
+  aoChegar: (ouvinte: (item: NotificationItem) => void) => () => void;
   /** Carrega as notificações do usuário naquela imobiliária. */
   loadNotifications: (tenantId: string, userId: string) => Promise<void>;
   markAllAsRead: () => Promise<void>;
@@ -73,11 +77,18 @@ export const NotificationsProvider = ({ children }: { children: ReactNode }) => 
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
-  const [novaChegada, setNovaChegada] = useState<NotificationItem | null>(null);
   const [currentTenantId, setCurrentTenantId] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   /** De quem é a lista na tela. Trocar de imobiliária ou de conta começa do zero. */
   const donoDaLista = useRef<string | null>(null);
+  const ouvintes = useRef(new Set<(item: NotificationItem) => void>());
+
+  const aoChegar = useCallback((ouvinte: (item: NotificationItem) => void) => {
+    ouvintes.current.add(ouvinte);
+    return () => {
+      ouvintes.current.delete(ouvinte);
+    };
+  }, []);
 
   const unreadCount = useMemo(() => notifications.filter((n) => !n.read).length, [notifications]);
 
@@ -87,7 +98,6 @@ export const NotificationsProvider = ({ children }: { children: ReactNode }) => 
     if (donoDaLista.current !== dono) {
       donoDaLista.current = dono;
       setNotifications([]);
-      setNovaChegada(null);
     }
     setCurrentTenantId(tenantId);
     setCurrentUserId(userId);
@@ -112,7 +122,7 @@ export const NotificationsProvider = ({ children }: { children: ReactNode }) => 
     }
   }, []);
 
-  // Realtime: o que chega aparece sem F5 e vira `novaChegada` (o aviso na tela).
+  // Realtime: o que chega aparece sem F5 e é repassado a quem assina `aoChegar` (o aviso na tela).
   // Mesmo padrão de useChatConversations (postgres_changes + removeChannel).
   useEffect(() => {
     if (!currentTenantId || !currentUserId || currentTenantId === 'owner') return;
@@ -131,14 +141,18 @@ export const NotificationsProvider = ({ children }: { children: ReactNode }) => 
           if (row.tenant_id !== currentTenantId) return;
           const item = mapRowToItem(row);
           setNotifications((prev) => (prev.some((n) => n.id === item.id) ? prev : [item, ...prev]));
-          setNovaChegada(item);
+          ouvintes.current.forEach((ouvir) => ouvir(item));
         }
       )
-      .subscribe();
+      // Refaz a lista ao entrar no ar: o que chegou antes do canal (ou numa reconexão) não fica de fora.
+      // Só a lista; bloop vem apenas do INSERT acima.
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') loadNotifications(currentTenantId, currentUserId);
+      });
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [currentTenantId, currentUserId]);
+  }, [currentTenantId, currentUserId, loadNotifications]);
 
   const markAsRead = useCallback((id: string) => {
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
@@ -163,7 +177,7 @@ export const NotificationsProvider = ({ children }: { children: ReactNode }) => 
       unreadCount,
       loading,
       loadError,
-      novaChegada,
+      aoChegar,
       loadNotifications,
       markAllAsRead,
       markAsRead,
@@ -171,7 +185,7 @@ export const NotificationsProvider = ({ children }: { children: ReactNode }) => 
       currentTenantId,
       currentUserId,
     }),
-    [notifications, unreadCount, loading, loadError, novaChegada, loadNotifications, markAllAsRead, markAsRead, clearRead, currentTenantId, currentUserId]
+    [notifications, unreadCount, loading, loadError, aoChegar, loadNotifications, markAllAsRead, markAsRead, clearRead, currentTenantId, currentUserId]
   );
 
   return <NotificationsContext.Provider value={value}>{children}</NotificationsContext.Provider>;
