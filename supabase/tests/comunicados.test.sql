@@ -133,4 +133,128 @@ BEGIN
   RAISE NOTICE 'OK 1: responsáveis, nome e fechamento';
 END $$;
 
+CREATE FUNCTION pg_temp.entregas(p_comunicado uuid) RETURNS uuid[] LANGUAGE sql AS $$
+  SELECT coalesce(array_agg(user_id ORDER BY user_id), '{}') FROM public.notifications WHERE comunicado_id = p_comunicado
+$$;
+CREATE FUNCTION pg_temp.erro(p_sql text) RETURNS text LANGUAGE plpgsql AS $$
+DECLARE v_detalhe text;
+BEGIN
+  EXECUTE p_sql;
+  RETURN NULL;
+EXCEPTION WHEN OTHERS THEN
+  GET STACKED DIAGNOSTICS v_detalhe = PG_EXCEPTION_DETAIL;
+  RETURN SQLERRM || coalesce(' | ' || nullif(v_detalhe, ''), '');
+END $$;
+
+-- ----------------------------------------------------------
+-- 2. publicar_comunicado
+-- ----------------------------------------------------------
+DO $$
+DECLARE
+  f fx%ROWTYPE;
+  r record;
+  n public.notifications%ROWTYPE;
+  v_antes bigint;
+  v_erro text;
+BEGIN
+  SELECT * INTO f FROM fx;
+
+  -- 2a. "todos": a casa inteira, menos o autor e o owner da plataforma.
+  SELECT * INTO r FROM public.publicar_comunicado(
+    p_tenant_id => f.t, p_origem => 'usuario', p_autor_user_id => f.diretora,
+    p_categoria => 'comunicado', p_titulo => '  Reunião geral  ', p_mensagem => 'Amanhã às 9h.',
+    p_prioridade => 'importante', p_publico_tipo => 'todos');
+  PERFORM pg_temp.checa(r.criado AND r.destinatarios = 6, 'todos = 6 pessoas (veio ' || r.destinatarios || ')');
+  PERFORM pg_temp.checa(pg_temp.entregas(r.comunicado_id) = (SELECT array_agg(x ORDER BY x) FROM unnest(ARRAY[
+    f.gerente_a, f.gerente_b, f.cor_a1, f.cor_a2, f.cor_b1, f.cor_sem]) x), 'todos: nem autora, nem owner, nem vizinha');
+  SELECT * INTO n FROM public.notifications WHERE comunicado_id = r.comunicado_id AND user_id = f.cor_a1;
+  PERFORM pg_temp.checa(n.title = 'Reunião geral' AND n.type = 'comunicado', 'título sem espaços nas pontas e type = categoria');
+  PERFORM pg_temp.checa(n.metadata->'remetente' = '{"tipo":"usuario","nome":"Ana Diretora","cargo":"Diretoria Comercial"}'::jsonb,
+    'remetente é a fotografia do nome e do cargo (veio ' || (n.metadata->'remetente')::text || ')');
+  PERFORM pg_temp.checa(n.metadata->>'publico' = 'Toda a imobiliária' AND n.metadata->>'prioridade' = 'importante', 'público e prioridade');
+
+  -- 2b. equipe A: membros da equipe + gestores dela.
+  SELECT * INTO r FROM public.publicar_comunicado(f.t, 'usuario', f.diretora, 'comunicado', 'Só A', 'x', 'normal',
+    'equipes', ARRAY[f.equipe_a]);
+  PERFORM pg_temp.checa(pg_temp.entregas(r.comunicado_id) = (SELECT array_agg(x ORDER BY x) FROM unnest(ARRAY[
+    f.gerente_a, f.cor_a1, f.cor_a2]) x), 'equipe A = gerente + 2 corretores');
+  PERFORM pg_temp.checa((SELECT metadata->>'publico' FROM public.notifications WHERE comunicado_id = r.comunicado_id LIMIT 1) = 'Equipe A',
+    'rótulo da equipe');
+  PERFORM pg_temp.checa((SELECT metadata->'remetente'->>'cargo' FROM public.notifications WHERE comunicado_id = r.comunicado_id LIMIT 1) = 'Diretoria Comercial',
+    'cargo vem de cargos.nome');
+
+  -- 2c. equipe B: o ex-gestor (fora da casa) não recebe.
+  SELECT * INTO r FROM public.publicar_comunicado(f.t, 'usuario', f.gerente_b, 'comunicado', 'Só B', 'x', 'normal',
+    'equipes', ARRAY[f.equipe_b]);
+  PERFORM pg_temp.checa(pg_temp.entregas(r.comunicado_id) = ARRAY[f.cor_b1], 'equipe B enviada pela própria gerente = só o corretor');
+  PERFORM pg_temp.checa((SELECT metadata->'remetente'->>'cargo' FROM public.notifications WHERE comunicado_id = r.comunicado_id) = 'Gerência',
+    'sem cargo, team_leader vira Gerência');
+
+  -- 2d. equipe vazia: erro e NADA gravado.
+  SELECT count(*) INTO v_antes FROM public.comunicados WHERE tenant_id = f.t;
+  v_erro := pg_temp.erro(format($f$select public.publicar_comunicado(%L, 'usuario', %L, 'comunicado', 't', 'm', 'normal', 'equipes', ARRAY[%L]::uuid[])$f$,
+    f.t, f.diretora, f.equipe_vazia));
+  PERFORM pg_temp.checa(v_erro LIKE 'sem_destinatarios%', 'equipe vazia = sem_destinatarios (veio ' || coalesce(v_erro, 'nada') || ')');
+  PERFORM pg_temp.checa((SELECT count(*) FROM public.comunicados WHERE tenant_id = f.t) = v_antes, 'sem destinatário não grava comunicado');
+
+  -- 2e. equipe de outra casa.
+  v_erro := pg_temp.erro(format($f$select public.publicar_comunicado(%L, 'usuario', %L, 'comunicado', 't', 'm', 'normal', 'equipes', ARRAY[%L]::uuid[])$f$,
+    f.t, f.diretora, f.equipe_vizinha));
+  PERFORM pg_temp.checa(v_erro LIKE 'equipe_invalida%', 'equipe da vizinha = equipe_invalida');
+
+  -- 2f. LIA, pessoa por e-mail com maiúsculas/espaço/repetido, com cópia ao gestor e link.
+  SELECT * INTO r FROM public.publicar_comunicado(f.t, 'lia', NULL, 'alerta', 'Lead sem resposta há 2h', 'Maria espera.',
+    'importante', 'pessoas', '{}', ARRAY[' JOAO-A1@Teste-Comunicados.dev', 'joao-a1@teste-comunicados.dev'], true,
+    'lead', f.lead_t::text, 'lia:teste:1');
+  PERFORM pg_temp.checa(r.destinatarios = 2 AND pg_temp.entregas(r.comunicado_id) = (SELECT array_agg(x ORDER BY x) FROM unnest(ARRAY[f.gerente_a, f.cor_a1]) x),
+    'LIA: corretor + gerente dele, uma vez cada');
+  SELECT * INTO n FROM public.notifications WHERE comunicado_id = r.comunicado_id AND user_id = f.gerente_a;
+  PERFORM pg_temp.checa(n.type = 'alerta' AND n.link_type = 'lead' AND n.link_id = f.lead_t::text, 'alerta com link do lead');
+  PERFORM pg_temp.checa(n.metadata->>'sobre' = 'João A1' AND n.metadata->>'publico' = 'Você, como gestor'
+    AND (n.metadata->>'copia_gestor')::boolean, 'cópia do gestor diz sobre quem é');
+  PERFORM pg_temp.checa(n.metadata->'remetente' = '{"tipo":"lia","nome":"LIA"}'::jsonb, 'remetente LIA');
+  PERFORM pg_temp.checa((SELECT metadata->>'publico' FROM public.notifications WHERE comunicado_id = r.comunicado_id AND user_id = f.cor_a1) = 'Você',
+    'destinatário direto: Para: Você');
+
+  -- 2g. reenvio: mesma chave → mesmo comunicado, nenhuma entrega nova, mesmo com gente nova na casa.
+  INSERT INTO public.tenant_memberships (tenant_id, user_id, role, team_id, leader_user_id)
+  VALUES (f.t, f.ex_gerente, 'corretor', f.equipe_a, f.gerente_a);
+  SELECT count(*) INTO v_antes FROM public.notifications WHERE tenant_id = f.t;
+  SELECT * INTO r FROM public.publicar_comunicado(f.t, 'lia', NULL, 'alerta', 'OUTRO TÍTULO', 'outra', 'normal', 'todos',
+    '{}', '{}', false, NULL, NULL, 'lia:teste:1');
+  PERFORM pg_temp.checa(NOT r.criado AND r.destinatarios = 2, 'reenvio devolve o original (criado = false)');
+  PERFORM pg_temp.checa((SELECT count(*) FROM public.notifications WHERE tenant_id = f.t) = v_antes, 'reenvio não entrega nada');
+  DELETE FROM public.tenant_memberships WHERE tenant_id = f.t AND user_id = f.ex_gerente;
+
+  -- 2h. e-mail desconhecido (inclusive de membro de OUTRA casa): erro com a lista.
+  v_erro := pg_temp.erro(format($f$select public.publicar_comunicado(%L, 'lia', NULL, 'alerta', 't', 'm', 'normal', 'pessoas', '{}',
+    ARRAY['ninguem@x.dev', 'vizinho@teste-comunicados.dev', 'sol@teste-comunicados.dev'])$f$, f.t));
+  PERFORM pg_temp.checa(v_erro = 'destinatario_desconhecido | ninguem@x.dev, vizinho@teste-comunicados.dev',
+    'desconhecidos listados, conhecidos não (veio ' || coalesce(v_erro, 'nada') || ')');
+
+  -- 2i. sem gestor, a cópia vai para a Diretoria.
+  SELECT * INTO r FROM public.publicar_comunicado(f.t, 'lia', NULL, 'alerta', 't', 'm', 'normal', 'pessoas', '{}',
+    ARRAY['sol@teste-comunicados.dev'], true);
+  PERFORM pg_temp.checa(pg_temp.entregas(r.comunicado_id) = (SELECT array_agg(x ORDER BY x) FROM unnest(ARRAY[f.diretora, f.cor_sem]) x),
+    'corretor sem gestor: cópia para a Diretoria, nunca para o owner');
+
+  -- 2j. lead de outra casa.
+  v_erro := pg_temp.erro(format($f$select public.publicar_comunicado(%L, 'lia', NULL, 'alerta', 't', 'm', 'normal', 'todos', '{}', '{}', false, 'lead', %L)$f$,
+    f.t, f.lead_t2::text));
+  PERFORM pg_temp.checa(v_erro LIKE 'lead_nao_encontrado%', 'lead da vizinha = lead_nao_encontrado');
+
+  -- 2k. só o service_role executa.
+  PERFORM pg_temp.checa(NOT has_function_privilege('authenticated',
+    'public.publicar_comunicado(uuid,text,uuid,text,text,text,text,text,uuid[],text[],boolean,text,text,text)', 'execute'),
+    'authenticated não executa publicar_comunicado');
+  PERFORM pg_temp.checa(NOT has_function_privilege('anon',
+    'public.publicar_comunicado(uuid,text,uuid,text,text,text,text,text,uuid[],text[],boolean,text,text,text)', 'execute'),
+    'anon não executa publicar_comunicado');
+  PERFORM pg_temp.checa(has_function_privilege('service_role',
+    'public.publicar_comunicado(uuid,text,uuid,text,text,text,text,text,uuid[],text[],boolean,text,text,text)', 'execute'),
+    'service_role executa publicar_comunicado');
+
+  RAISE NOTICE 'OK 2: publicar_comunicado';
+END $$;
+
 ROLLBACK;
