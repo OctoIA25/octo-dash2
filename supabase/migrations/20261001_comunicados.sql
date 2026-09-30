@@ -461,3 +461,39 @@ BEGIN
   END IF;
 END;
 $function$;
+
+-- 8. Demandas avisam pelo banco ------------------------------------------
+-- Até 30/09 o navegador gravava este aviso direto em notifications — o único
+-- motivo para a policy de INSERT existir. O módulo de Demandas já grava o
+-- histórico por gatilho ("tela esquece quando o status muda por outro
+-- caminho"); o aviso segue a mesma regra. Destinatário sai da LINHA, nunca do
+-- cliente. Ninguém é avisado da própria ação.
+create or replace function public.tg_mkt_demanda_avisa()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  v_quem uuid := auth.uid();
+begin
+  if new.responsavel_id is not null
+     and new.responsavel_id is distinct from old.responsavel_id
+     and new.responsavel_id is distinct from v_quem then
+    insert into public.notifications (tenant_id, user_id, title, body, type, link_type, link_id)
+    values (new.tenant_id, new.responsavel_id, 'Nova demanda para você',
+            '"' || new.titulo || '" foi atribuída a você.', 'info', 'mkt_demanda', new.id::text);
+  end if;
+
+  if new.status = 'aprovado' and old.status is distinct from 'aprovado'
+     and new.solicitante_id is not null
+     and new.solicitante_id is distinct from v_quem then
+    insert into public.notifications (tenant_id, user_id, title, body, type, link_type, link_id)
+    values (new.tenant_id, new.solicitante_id, 'Sua demanda foi aprovada',
+            '"' || new.titulo || '" está aprovada e pronta para publicar.', 'info', 'mkt_demanda', new.id::text);
+  end if;
+
+  return new;
+end $$;
+revoke execute on function public.tg_mkt_demanda_avisa() from public, anon, authenticated;
+
+drop trigger if exists tg_mkt_demanda_avisa on public.mkt_demandas;
+create trigger tg_mkt_demanda_avisa
+  after update of responsavel_id, status on public.mkt_demandas
+  for each row execute function public.tg_mkt_demanda_avisa();

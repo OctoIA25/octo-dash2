@@ -7,9 +7,8 @@
  */
 
 import { supabase } from '@/lib/supabaseClient';
-import { createNotification } from '@/features/notificacoes/services/notificationsService';
 import { fetchTenantMembers } from '@/features/corretores/services/tenantMembersService';
-import { avisoDeAprovacao, quemAvisar, type Anexo, type Demanda, type Status } from './demandas';
+import { type Anexo, type Demanda, type Status } from './demandas';
 
 const BUCKET = 'mkt-demandas';
 
@@ -72,20 +71,12 @@ export async function criarDemanda(
   return data as unknown as Demanda;
 }
 
-/**
- * Move ou edita, e dispara os avisos que o plano pede.
- *
- * Os avisos saem DEPOIS de o banco confirmar: notificar alguém sobre uma
- * mudança que não foi gravada é pior do que não notificar.
- */
+/** Move ou edita a demanda. Os avisos saem do gatilho, não daqui. */
 export async function salvarDemanda(
   tenantId: string,
   antes: Demanda,
   mudancas: Partial<Demanda>
 ): Promise<Demanda> {
-  const { data: sessao } = await supabase.auth.getUser();
-  const quemMexeu = sessao?.user?.id ?? null;
-
   const { data, error } = await supabase
     .from('mkt_demandas')
     .update(mudancas)
@@ -94,31 +85,9 @@ export async function salvarDemanda(
     .single();
   if (error) throw error;
 
-  const depois = { ...antes, ...(data as unknown as Demanda) };
-
-  const avisos = quemAvisar(antes, depois, quemMexeu);
-  const aprovacao = avisoDeAprovacao(antes, depois, quemMexeu);
-  if (aprovacao) avisos.push(aprovacao);
-
-  for (const a of avisos) {
-    // Falhar em notificar NÃO desfaz a mudança: a demanda já andou, e um
-    // throw aqui faria a tela dizer que não salvou quando salvou.
-    try {
-      await createNotification({
-        tenant_id: tenantId,
-        user_id: a.userId,
-        title: a.titulo,
-        body: a.corpo,
-        type: 'info',
-        link_type: 'mkt_demanda',
-        link_id: antes.id,
-      });
-    } catch (e) {
-      console.error('[demandas] não deu para notificar:', e);
-    }
-  }
-
-  return depois;
+  // O aviso ao responsável e ao solicitante é gravado pelo gatilho
+  // tg_mkt_demanda_avisa (20261001_comunicados.sql), como o histórico.
+  return { ...antes, ...(data as unknown as Demanda) };
 }
 
 export async function apagarDemanda(id: string): Promise<void> {

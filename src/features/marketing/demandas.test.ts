@@ -8,8 +8,8 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  avisoDeAprovacao, diasAte, estaAtrasada, faltaParaPedir, pedidoParaOCaio,
-  porColuna, quemAvisar, textoDoPrazo, type Demanda,
+  diasAte, estaAtrasada, faltaParaPedir, pedidoParaOCaio,
+  porColuna, textoDoPrazo, type Demanda,
 } from './demandas';
 
 const HOJE = '2026-09-21';
@@ -145,72 +145,5 @@ describe('porColuna', () => {
 
   it('lista vazia não quebra', () => {
     expect(porColuna([]).solicitado).toEqual([]);
-  });
-});
-
-describe('quemAvisar', () => {
-  it('avisa quem recebeu a demanda', () => {
-    const a = quemAvisar(
-      { status: 'solicitado', responsavel_id: null },
-      { status: 'briefing', responsavel_id: 'u-bruno', titulo: 'Post do Gioviale' },
-      'u-gestor'
-    );
-    expect(a).toHaveLength(1);
-    expect(a[0]).toMatchObject({ userId: 'u-bruno' });
-    expect(a[0].corpo).toContain('Post do Gioviale');
-  });
-
-  /**
-   * Ninguém é avisado da própria ação. Quem se atribui a demanda já sabe que a
-   * pegou — a notificação só ensina a ignorar notificação.
-   */
-  it('quem se atribuiu não recebe aviso', () => {
-    expect(quemAvisar(
-      { status: 'solicitado', responsavel_id: null },
-      { status: 'briefing', responsavel_id: 'u-bruno', titulo: 'Post' },
-      'u-bruno'
-    )).toEqual([]);
-  });
-
-  it('responsável que não mudou não é avisado de novo', () => {
-    expect(quemAvisar(
-      { status: 'briefing', responsavel_id: 'u-bruno' },
-      { status: 'producao', responsavel_id: 'u-bruno', titulo: 'Post' },
-      'u-gestor'
-    )).toEqual([]);
-  });
-});
-
-describe('avisoDeAprovacao', () => {
-  it('avisa quem pediu quando a peça é aprovada', () => {
-    const a = avisoDeAprovacao(
-      { status: 'revisao' },
-      { status: 'aprovado', titulo: 'Post do Gioviale', solicitante_id: 'u-ana' },
-      'u-gestor'
-    );
-    expect(a?.userId).toBe('u-ana');
-    expect(a?.corpo).toContain('Post do Gioviale');
-  });
-
-  it('não avisa quem aprovou a própria demanda', () => {
-    expect(avisoDeAprovacao(
-      { status: 'revisao' },
-      { status: 'aprovado', titulo: 'Post', solicitante_id: 'u-ana' },
-      'u-ana'
-    )).toBeNull();
-  });
-
-  /** Voltar para aprovado depois de publicado não é uma aprovação nova. */
-  it('só a passagem PARA aprovado conta', () => {
-    expect(avisoDeAprovacao(
-      { status: 'aprovado' },
-      { status: 'aprovado', titulo: 'Post', solicitante_id: 'u-ana' },
-      'u-gestor'
-    )).toBeNull();
-    expect(avisoDeAprovacao(
-      { status: 'revisao' },
-      { status: 'producao', titulo: 'Post', solicitante_id: 'u-ana' },
-      'u-gestor'
-    )).toBeNull();
   });
 });
