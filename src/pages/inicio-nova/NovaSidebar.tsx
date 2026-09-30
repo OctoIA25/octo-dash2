@@ -39,11 +39,13 @@ import {
   NotebookPen,
   HelpCircle,
   FileSignature,
+  Globe,
 } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { TenantSwitcher } from '@/components/TenantSwitcher';
 import { SidebarPermission, permissoesDeSidebar } from '@/types/permissions';
 import { ABAS_DO_FINANCEIRO, rotaDaAba, type AbaDoFinanceiro } from '@/features/financeiro/abas';
+import { ABAS_DO_MARKETING, rotaDoMarketing, type AbaDoMarketing } from '@/features/marketing/abas';
 import octoLogo from '@/assets/octodash-logo.png';
 
 interface SubItem {
@@ -86,6 +88,15 @@ const ICONE_DA_ABA_DO_FINANCEIRO: Record<AbaDoFinanceiro, typeof Receipt> = {
   dre: BarChart3,
   conciliacao: Scale,
   notas: FileText,
+};
+
+const ICONE_DA_ABA_DO_MARKETING: Record<AbaDoMarketing, typeof Receipt> = {
+  demandas: ClipboardList,
+  geral: TrendingUp,
+  campanhas: Target,
+  anuncios: BarChart3,
+  site: Globe,
+  formularios: Megaphone,
 };
 
 const GROUPS: SidebarGroup[] = [
@@ -135,23 +146,21 @@ const GROUPS: SidebarGroup[] = [
     ],
   },
   {
-    // P3.7 — o plano pede uma seção Marketing no menu, junto com Formulários
-    // da Meta, Campanhas e ROI. As telas continuam onde estão; o que muda é
-    // haver um caminho direto até elas.
+    // P3.7 — o plano pede uma seção Marketing no menu. Até 29/09 três dos
+    // atalhos abriam DENTRO de Relatórios, e a lateral acendia as duas seções.
+    // Agora tudo mora em /marketing, e os atalhos são as abas do topo
+    // (features/marketing/abas), como no Financeiro.
     title: 'MARKETING',
     items: [
       {
         id: 'mkt-demandas',
         label: 'Marketing',
         icon: Megaphone,
-        route: '/marketing/demandas',
+        route: rotaDoMarketing('demandas'),
         permission: 'relatorios',
-        subItems: [
-          { id: 'mkt-demandas', label: 'Demandas', icon: ClipboardList, route: '/marketing/demandas' },
-          { id: 'mkt-campanhas', label: 'Campanhas e ROI', icon: Target, route: '/relatorios?tab=marketing&view=campanhas' },
-          { id: 'mkt-anuncios', label: 'Anúncios', icon: BarChart3, route: '/relatorios?tab=marketing&view=anuncios' },
-          { id: 'mkt-formularios', label: 'Formulários da Meta', icon: ClipboardList, route: '/relatorios?tab=formularios-meta' },
-        ],
+        subItems: ABAS_DO_MARKETING.map(({ id, rotulo }) => ({
+          id: `mkt-${id}`, label: rotulo, icon: ICONE_DA_ABA_DO_MARKETING[id], route: rotaDoMarketing(id),
+        })),
       },
     ],
   },

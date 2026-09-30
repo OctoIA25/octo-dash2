@@ -18,7 +18,7 @@ import {
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import { Loader2 } from 'lucide-react';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuthContext } from '@/contexts/AuthContext';
 import {
   buscarGraficosDeLeads, mediaMovel, type GraficosDeLeads,
 } from '../services/graficosDeLeadsService';
@@ -52,7 +52,7 @@ const Caixa = ({ titulo, legenda, children }: {
 );
 
 export function GraficosDeLeadsSection() {
-  const { tenantId } = useAuth();
+  const { tenantId } = useAuthContext();
   const [dias, setDias] = useState<number>(90);
   const [dados, setDados] = useState<GraficosDeLeads | null>(null);
   const [carregando, setCarregando] = useState(true);

@@ -189,3 +189,19 @@ describe('Financeiro na lateral', () => {
     expect(navigate).toHaveBeenCalledWith('/financeiro?tab=dre');
   });
 });
+
+// 29/09 — "tudo o que for de marketing tem que tá na aba de marketing e
+// pronto". Três atalhos abriam DENTRO de Relatórios, e a lateral acendia as
+// duas seções ao mesmo tempo.
+describe('Marketing na lateral', () => {
+  it('mostra as mesmas abas do topo, e cada uma abre em /marketing — nenhuma em Relatórios', async () => {
+    const { ABAS_DO_MARKETING } = await import('@/features/marketing/abas');
+    render(<NovaSidebar />);
+    await userEvent.click(await screen.findByText('Marketing'));
+    for (const { id, rotulo } of ABAS_DO_MARKETING) {
+      navigate.mockClear();
+      await userEvent.click(screen.getByText(rotulo));
+      expect(navigate).toHaveBeenCalledWith(`/marketing/${id}`);
+    }
+  });
+});

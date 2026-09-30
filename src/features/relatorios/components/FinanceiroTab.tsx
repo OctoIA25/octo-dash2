@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect, type ReactNode } from 'react';
 import { DollarSign, TrendingUp, Users, Target, Percent, Info, type LucideIcon } from 'lucide-react';
 import { TermoFinanceiro } from '@/components/ui/termo-financeiro';
 import { ProcessedLead } from '@/data/realLeadsProcessor';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuthContext } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { useLeadSourceCosts } from '../hooks/useLeadSourceCosts';
 import { gastoDaMetaNoPeriodo } from '../marketing/campanhasService';
@@ -49,7 +49,7 @@ interface FinanceiroTabProps {
 // Componente
 // ─────────────────────────────────────────────────────────────
 export function FinanceiroTab({ leads }: FinanceiroTabProps) {
-  const { user, isOwner } = useAuth();
+  const { user, isOwner } = useAuthContext();
   const { toast } = useToast();
   const { costs, loading, saving, saveCost } = useLeadSourceCosts();
 

@@ -5,7 +5,7 @@
 
 import { useState, useEffect } from 'react';
 import { format, startOfMonth, endOfMonth, subDays } from 'date-fns';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuthContext } from '@/contexts/AuthContext';
 import {
   buscarKPIsGerais,
   buscarRankingCorretores,
@@ -84,7 +84,7 @@ const PERIODO_PADRAO: PeriodoKPIs = {
 };
 
 export const useRelatorios = (periodo: PeriodoKPIs = PERIODO_PADRAO) => {
-  const { tenantId } = useAuth();
+  const { tenantId } = useAuthContext();
   
   // Estados para dados reais
   const [kpisGerais, setKpisGerais] = useState<KPIsGerais | null>(null);

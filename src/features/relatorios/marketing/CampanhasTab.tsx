@@ -209,7 +209,7 @@ export function CampanhasTab() {
                 Nas campanhas de formulário, a Meta contou <strong>{buraco.meta}</strong> leads e a Dash amarrou{' '}
                 <strong>{buraco.dash}</strong> — faltam {buraco.falta} ({buraco.pct}%). O lead existe; o que
                 falta é a campanha gravada nele. Em{' '}
-                <Link to="/relatorios?tab=formularios-meta" className="font-semibold text-primary hover:underline">
+                <Link to="/marketing/formularios" className="font-semibold text-primary hover:underline">
                   Formulários da Meta
                 </Link>
                 , "Baixar leads" completa o que falta nos que já entraram.

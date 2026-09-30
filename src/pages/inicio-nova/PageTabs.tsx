@@ -49,7 +49,10 @@ import {
   Megaphone,
   HelpCircle,
   UserCheck,
+  ClipboardList,
+  Globe,
 } from 'lucide-react';
+import { ABAS_DO_MARKETING, rotaDoMarketing, type AbaDoMarketing } from '@/features/marketing/abas';
 
 interface Tab {
   id: string;
@@ -66,6 +69,15 @@ interface TabConfig {
   matchStrategy: 'pathSegment' | 'query';
   queryKey?: string; // for ?tab=... style
 }
+
+const ICONE_DA_ABA_DO_MARKETING: Record<AbaDoMarketing, Tab['icon']> = {
+  demandas: ClipboardList,
+  geral: TrendingUp,
+  campanhas: Target,
+  anuncios: BarChart3,
+  site: Globe,
+  formularios: Megaphone,
+};
 
 /** Exportado para o teste cobrar que toda aba de rota governada tenha permissão. */
 export const TAB_CONFIGS: TabConfig[] = [
@@ -142,9 +154,9 @@ export const TAB_CONFIGS: TabConfig[] = [
     matchStrategy: 'query',
     queryKey: 'tab',
     tabs: [
-      { id: 'marketing', label: 'Marketing', icon: TrendingUp, href: '/relatorios?tab=marketing', isQuery: true },
+      // Marketing e Formulários da Meta saíram daqui em 29/09 — moram em
+      // /marketing. Leads é a primeira, e por isso a aba de quem abre Relatórios.
       { id: 'leads', label: 'Leads', icon: Tag, href: '/relatorios?tab=leads', isQuery: true },
-      { id: 'formularios-meta', label: 'Formulários da Meta', icon: Megaphone, href: '/relatorios?tab=formularios-meta', isQuery: true },
       { id: 'metricas', label: 'Métricas da Equipe', icon: Users, href: '/relatorios?tab=metricas', isQuery: true },
       { id: 'metricas-individuais', label: 'Métricas Individuais', icon: User, href: '/relatorios?tab=metricas-individuais', isQuery: true },
       { id: 'imoveis', label: 'Imóveis', icon: Building2, href: '/relatorios?tab=imoveis', isQuery: true },
@@ -152,6 +164,14 @@ export const TAB_CONFIGS: TabConfig[] = [
       { id: 'enps', label: 'eNPS', icon: Sparkles, href: '/relatorios?tab=enps', isQuery: true },
       { id: 'excel', label: 'Excel', icon: FileText, href: '/relatorios?tab=excel', isQuery: true },
     ],
+  },
+  {
+    basePath: '/marketing',
+    label: 'Marketing',
+    matchStrategy: 'pathSegment',
+    tabs: ABAS_DO_MARKETING.map(({ id, rotulo }) => ({
+      id, label: rotulo, icon: ICONE_DA_ABA_DO_MARKETING[id], href: rotaDoMarketing(id),
+    })),
   },
   {
     basePath: '/estudo-mercado',

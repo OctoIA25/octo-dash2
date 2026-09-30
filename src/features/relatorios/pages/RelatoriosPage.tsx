@@ -6,7 +6,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { InfoMetrica } from '@/features/kpis/components/KpiComponents';
-import { useSearchParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { GraficosDeLeadsSection } from '../components/GraficosDeLeadsSection';
 import { FormulariosMetaSection } from '../components/FormulariosMetaSection';
 import {
@@ -49,7 +49,6 @@ import { FunnelStagesBubbleChart } from '@/features/leads/components/FunnelStage
 import { FunilPorUnidadeChart } from '@/features/relatorios/components/FunilPorUnidadeChart';
 import { useLeadsMetrics } from '@/features/leads/hooks/useLeadsMetrics';
 import { useImovelTipoMap } from '@/features/leads/hooks/useImovelTipoMap';
-import { useAuth } from '@/hooks/useAuth';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { fetchTenantMembers, type TenantMember } from '@/features/corretores/services/tenantMembersService';
 import { LEAD_TYPE_INTERESSADO, LEAD_TYPE_PROPRIETARIO } from '@/features/leads/services/leadsService';
@@ -191,10 +190,23 @@ const PIE_COLORS = [
   'rgba(252, 205, 229, 0.85)',
 ];
 
-export const RelatoriosPage = () => {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const { tenantId } = useAuth();
-  const { user, isAdmin } = useAuthContext();
+interface RelatoriosPageProps {
+  /**
+   * 'marketing' = a tela aberta por /marketing/:visao. Desde 29/09 o Marketing
+   * não é aba de Relatórios: é a mesma tela (a Visão geral divide filtros e
+   * exportação com as outras), mas o endereço e o cabeçalho são do Marketing.
+   */
+  secao?: 'marketing';
+}
+
+export const RelatoriosPage = ({ secao }: RelatoriosPageProps = {}) => {
+  const [searchParams] = useSearchParams();
+  const { visao } = useParams<{ visao?: string }>();
+  // useAuthContext, e não o useAuth antigo: o antigo tem uma trava global que
+  // deixa só UMA instância buscar a sessão. Aberta sem o cache do navegador, a
+  // tela ficava sem imobiliária e mostrava "—" em tudo, até recarregar — era o
+  // "às vezes carrega completamente vazia" (reproduzido em 29/09).
+  const { user, isAdmin, tenantId } = useAuthContext();
 
   // Declarados antes do hook: os KPIs são buscados para este período.
   const [dataInicial, setDataInicial] = useState(format(subDays(new Date(), 30), 'yyyy-MM-dd'));
@@ -230,25 +242,18 @@ export const RelatoriosPage = () => {
   const [vendasDoPeriodo, setVendasDoPeriodo] = useState<VendaAssinada[] | null>(null);
   const [exibirValores, setExibirValores] = useState(true);
   const _tab = searchParams.get('tab');
+  // Em Relatórios, sem aba (ou com uma desconhecida) abre Leads. Até 29/09 o
+  // padrão era Marketing — clicar em "Relatórios" levava ao Marketing.
   const activeSubArea: 'marketing' | 'leads' | 'metricas' | 'metricas-individuais' | 'imoveis' | 'financeiro' | 'excel' | 'enps' | 'formularios-meta' =
-    _tab === 'metricas' || _tab === 'leads' || _tab === 'imoveis' || _tab === 'metricas-individuais' || _tab === 'excel' || _tab === 'financeiro' || _tab === 'enps' || _tab === 'formularios-meta' ? _tab : 'marketing';
+    secao === 'marketing'
+      ? (visao === 'formularios' ? 'formularios-meta' : 'marketing')
+      : _tab === 'metricas' || _tab === 'imoveis' || _tab === 'metricas-individuais' || _tab === 'excel' || _tab === 'financeiro' || _tab === 'enps' ? _tab : 'leads';
 
-  // Sub-visão do Marketing: geral | campanhas | anuncios | site. O ENDEREÇO é a
-  // única fonte (29/09). Antes era um useState que só lia o ?view= na primeira
-  // montagem, e os botões mudavam a URL por fora do roteador: pela lateral,
-  // "Anúncios" abria a tela de Campanhas, porque a página já estava montada.
-  const viewDaUrl = searchParams.get('view');
+  // A visão do Marketing vem do ENDEREÇO (/marketing/:visao), a única fonte.
+  // Os botões Geral | Campanhas | Anúncios | Site saíram da tela: são as abas
+  // do cabeçalho agora.
   const mktView: 'geral' | 'site' | 'campanhas' | 'anuncios' =
-    viewDaUrl === 'site' || viewDaUrl === 'campanhas' || viewDaUrl === 'anuncios' ? viewDaUrl : 'geral';
-  const setMktView = (value: typeof mktView) =>
-    setSearchParams((prev) => {
-      const params = new URLSearchParams(prev);
-      // 'geral' é o padrão e não vai para a URL; as outras vão, para o link
-      // levar à visão certa.
-      if (value === 'geral') params.delete('view');
-      else params.set('view', value);
-      return params;
-    }, { replace: true });
+    visao === 'site' || visao === 'campanhas' || visao === 'anuncios' ? visao : 'geral';
 
   const initialMetricasSubArea = useMemo(() => {
     const fromQuery = searchParams.get('metricasSubArea');
@@ -2016,23 +2021,6 @@ export const RelatoriosPage = () => {
       {activeSubArea === 'leads' && <GraficosDeLeadsSection />}
       {activeSubArea === 'formularios-meta' && <div className="p-4 md:p-6"><FormulariosMetaSection /></div>}
 
-      {activeSubArea === 'marketing' && (
-        <div className="mb-4 inline-flex rounded-lg border border-gray-200 dark:border-slate-700 p-0.5 bg-gray-50 dark:bg-slate-800">
-          {([['geral', 'Geral'], ['campanhas', 'Campanhas'], ['anuncios', 'Anúncios'], ['site', 'Site']] as const).map(([value, label]) => (
-            <button
-              key={value}
-              onClick={() => setMktView(value)}
-              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                mktView === value
-                  ? 'bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 shadow-sm'
-                  : 'text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
       {activeSubArea === 'marketing' && mktView === 'site' && <MarketingSiteTab />}
       {/* P3.5 — gasto de anúncio, custo por lead e o ROI que ainda não tem
           numerador. Entra ao lado do "Geral", e não no lugar: o Geral traz

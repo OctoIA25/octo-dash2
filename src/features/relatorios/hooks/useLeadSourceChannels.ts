@@ -5,7 +5,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuthContext } from '@/contexts/AuthContext';
 import {
   fetchLeadSourceChannels,
   saveLeadSourceChannel,
@@ -28,7 +28,7 @@ export interface UseLeadSourceChannelsResult {
 }
 
 export function useLeadSourceChannels(): UseLeadSourceChannelsResult {
-  const { tenantId } = useAuth();
+  const { tenantId } = useAuthContext();
   const [channels, setChannels] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);

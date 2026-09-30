@@ -23,6 +23,7 @@ import {
   TEAM_LEADER_SIDEBAR_PERMISSIONS
 } from '@/types/permissions';
 import { podeVerAba } from '@/pages/inicio-nova/abasVisiveis';
+import { destinoDoEnderecoAntigo } from '@/features/marketing/abas';
 
 const DEBUG_LOGS = import.meta.env?.VITE_DEBUG_LOGS === 'true';
 
@@ -303,6 +304,15 @@ const DashboardLayout = () => {
             element={podeAbaDaInicio('pdi') ? <PdiPage /> : <Navigate to={defaultAllowedRoute} replace />}
           />
           <Route path="marketing/demandas" element={<DemandasPage />} />
+          <Route path="marketing" element={<Navigate to="/marketing/demandas" replace />} />
+          {/* 29/09 — as outras abas do Marketing, que moravam dentro de
+              Relatórios. A tela é a mesma (a Visão geral divide filtros e
+              exportação com Relatórios); o endereço e o cabeçalho são do
+              Marketing. Mesma trava de acesso que tinham lá. */}
+          <Route
+            path="marketing/:visao"
+            element={canAccess('relatorios') ? <RelatoriosPage secao="marketing" /> : <Navigate to={defaultAllowedRoute} replace />}
+          />
           {/*
             Estas duas rotas eram as únicas da seção sem o ternário de acesso:
             quem digitasse a URL entrava, mesmo sem o item no menu. Só não
@@ -443,7 +453,7 @@ const DashboardLayout = () => {
           
           <Route 
             path="relatorios" 
-            element={canAccess('relatorios') ? <RelatoriosPage /> : <Navigate to={defaultAllowedRoute} replace />} 
+            element={canAccess('relatorios') ? <RelatoriosSemMarketing /> : <Navigate to={defaultAllowedRoute} replace />} 
           />
 
           {/* eNPS: página de resposta do corretor (in-app, autenticada, sem gate de
@@ -494,6 +504,17 @@ const DashboardLayout = () => {
     </NovoLayout>
   );
 };
+
+/**
+ * Relatórios sem o Marketing — 29/09. Link e favorito antigos
+ * (`?tab=marketing…`, `?tab=formularios-meta`) seguem para a aba nova em vez
+ * de caírem numa aba de Relatórios que não é a que a pessoa guardou.
+ */
+function RelatoriosSemMarketing() {
+  const { search } = useLocation();
+  const destino = destinoDoEnderecoAntigo(search);
+  return destino ? <Navigate to={destino} replace /> : <RelatoriosPage />;
+}
 
 export default DashboardLayout;
 

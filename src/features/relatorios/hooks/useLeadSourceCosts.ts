@@ -5,7 +5,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuthContext } from '@/contexts/AuthContext';
 import {
   fetchLeadSourceCosts,
   saveLeadSourceCost,
@@ -22,7 +22,7 @@ export interface UseLeadSourceCostsResult {
 }
 
 export function useLeadSourceCosts(): UseLeadSourceCostsResult {
-  const { tenantId } = useAuth();
+  const { tenantId } = useAuthContext();
   const [costs, setCosts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
