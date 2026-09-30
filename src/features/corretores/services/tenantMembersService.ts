@@ -14,6 +14,11 @@ export interface TenantMember {
   tenant_id: string;
   role: 'admin' | 'corretor' | 'team_leader' | 'owner';
   email: string;
+  /**
+   * O nome da pessoa no cadastro de corretores (`tenant_brokers.name`).
+   * `null` quando ninguém preencheu — quem mostra cai no e-mail.
+   */
+  name?: string | null;
   team?: TeamColor;
   permissions?: Record<string, unknown>;
   sidebar_permissions?: SidebarPermission[];
@@ -85,6 +90,7 @@ function mapTenantMemberRow(
   if (String(email).trim().toLowerCase() === 'email não disponível') return null;
 
   const extra = extraMap[member.user_id];
+  const nome = String(member.name ?? '').trim();
 
   return {
     id: member.id,
@@ -92,6 +98,8 @@ function mapTenantMemberRow(
     tenant_id: member.tenant_id,
     role: member.role,
     email,
+    // Nome igual ao e-mail é o fallback de cima, não um nome.
+    name: nome && nome !== email ? nome : null,
     team,
     permissions: rawPermissions,
     sidebar_permissions: sidebarPerms,
@@ -121,21 +129,27 @@ async function fetchTenantMembersDirectly(tenantId: string): Promise<TenantMembe
   // tenant_memberships não tem e-mail; tenant_brokers tem, e a RLS deixa o membro
   // ler os brokers do próprio tenant.
   const emailPorUserId = new Map<string, string>();
+  const nomePorUserId = new Map<string, string>();
   const userIds = (data || []).map((member: { user_id: string }) => member.user_id);
   if (userIds.length > 0) {
     const { data: brokers, error: brokersError } = await supabase
       .from('tenant_brokers')
-      .select('auth_user_id, email')
+      .select('auth_user_id, email, name')
       .eq('tenant_id', tenantId)
       .in('auth_user_id', userIds);
     if (brokersError) console.error('Erro ao buscar e-mails em tenant_brokers:', brokersError);
-    (brokers || []).forEach((b: { auth_user_id: string | null; email: string | null }) => {
+    (brokers || []).forEach((b: { auth_user_id: string | null; email: string | null; name: string | null }) => {
       if (b.auth_user_id && b.email) emailPorUserId.set(b.auth_user_id, b.email);
+      if (b.auth_user_id && b.name) nomePorUserId.set(b.auth_user_id, b.name);
     });
   }
 
   return (data || [])
-    .map((member: any) => mapTenantMemberRow({ ...member, email: emailPorUserId.get(member.user_id) }))
+    .map((member: any) => mapTenantMemberRow({
+      ...member,
+      email: emailPorUserId.get(member.user_id),
+      name: nomePorUserId.get(member.user_id),
+    }))
     .filter((member): member is TenantMember => Boolean(member));
 }
 

@@ -43,7 +43,7 @@ describe('fetchTenantMembers — leitura direta (RPC falhou)', () => {
       error: null,
     };
     tabelas.tenant_brokers = {
-      data: [{ auth_user_id: '11111111-1111-4111-8111-111111111111', email: 'gestora@imob.com' }],
+      data: [{ auth_user_id: '11111111-1111-4111-8111-111111111111', email: 'gestora@imob.com', name: 'Mariana Mamede' }],
       error: null,
     };
 
@@ -53,6 +53,46 @@ describe('fetchTenantMembers — leitura direta (RPC falhou)', () => {
     expect(membros.map((m) => [m.user_id, m.email])).toEqual([
       ['11111111-1111-4111-8111-111111111111', 'gestora@imob.com'],
     ]);
+    // E o nome vem do mesmo cadastro — é o que o card de Gestão de Equipe mostra.
+    expect(membros[0].name).toBe('Mariana Mamede');
+  });
+});
+
+// 30/09 — o card de membro mostra o NOME, e não mais o e-mail.
+describe('fetchTenantMembers — o nome da pessoa', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    tabelas.tenant_memberships = { data: [], error: null };
+  });
+
+  it('vem da RPC (tenant_brokers.name), aparado', async () => {
+    rpc.mockResolvedValue({
+      data: [{ id: 'm1', user_id: 'u1', tenant_id: 't1', role: 'corretor', email: 'alexandra.niero@lotus.com', name: '  Alexandra Niero ' }],
+      error: null,
+    });
+    const [m] = await fetchTenantMembers('t1');
+    expect([m.email, m.name]).toEqual(['alexandra.niero@lotus.com', 'Alexandra Niero']);
+  });
+
+  // A RPC devolve '' quando o cadastro não tem nome; o card cai no e-mail.
+  it('nome vazio vira null, e nunca um nome inventado', async () => {
+    rpc.mockResolvedValue({
+      data: [{ id: 'm1', user_id: 'u1', tenant_id: 't1', role: 'corretor', email: 'sem.nome@lotus.com', name: '' }],
+      error: null,
+    });
+    const [m] = await fetchTenantMembers('t1');
+    expect(m.name).toBeNull();
+  });
+
+  // Sem e-mail, o mapper usa o `name` no lugar do e-mail. Aí o nome não pode
+  // aparecer duas vezes como se fossem dois dados.
+  it('nome que foi parar no lugar do e-mail não conta como nome', async () => {
+    rpc.mockResolvedValue({
+      data: [{ id: 'm1', user_id: 'u1', tenant_id: 't1', role: 'corretor', email: '', name: 'Fulano' }],
+      error: null,
+    });
+    const [m] = await fetchTenantMembers('t1');
+    expect([m.email, m.name]).toEqual(['Fulano', null]);
   });
 });
 

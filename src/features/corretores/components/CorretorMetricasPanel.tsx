@@ -17,14 +17,17 @@ import {
 } from '../hooks/useMetricasIndividuaisCorretor';
 
 interface CorretorMetricasPanelProps {
+  /** A CHAVE da busca das métricas (hoje, o e-mail do membro). */
   nome: string;
+  /** O que o cartão mostra no título. Ausente = mostra a própria chave. */
+  nomeExibido?: string;
   /** Identificador do membro: é por ele que a planilha casa. */
   userId?: string | null;
   /** Abre a aba completa de Métricas Individuais em Relatórios. */
   onAbrirRelatorios?: () => void;
 }
 
-export const CorretorMetricasPanel = ({ nome, userId, onAbrirRelatorios }: CorretorMetricasPanelProps) => {
+export const CorretorMetricasPanel = ({ nome, nomeExibido, userId, onAbrirRelatorios }: CorretorMetricasPanelProps) => {
   // periodoMesCorrente() devolve objeto novo a cada chamada; congelado aqui para
   // o efeito do hook não reiniciar a cada re-render do card.
   const periodo = useMemo(() => periodoMesCorrente(), []);
@@ -59,7 +62,13 @@ export const CorretorMetricasPanel = ({ nome, userId, onAbrirRelatorios }: Corre
         </p>
       ) : (
         <div className="max-w-md">
-          {model && <CorretorMetricCard corretor={model} isLoading={isLoading} vendasPlanilha={vendasPlanilha} />}
+          {model && (
+            <CorretorMetricCard
+              corretor={nomeExibido ? { ...model, nome: nomeExibido } : model}
+              isLoading={isLoading}
+              vendasPlanilha={vendasPlanilha}
+            />
+          )}
         </div>
       )}
     </div>

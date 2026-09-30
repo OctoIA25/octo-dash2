@@ -73,7 +73,14 @@ interface EquipeSectionProps {
 interface MembroEquipe {
   id: string;
   broker_uuid?: string; // UUID do corretor na tabela brokers do Supabase
+  /**
+   * O E-MAIL, apesar do nome do campo: é a chave que as métricas individuais e
+   * os atalhos usam para achar a pessoa. Não trocar por nome sem trocar a
+   * busca das métricas junto.
+   */
   nome: string;
+  /** O que o card mostra: o nome da pessoa, ou o e-mail quando não há nome. */
+  nomeExibido: string;
   iniciais: string;
   cor: string;
   status: 'online' | 'offline' | 'ausente';
@@ -1037,6 +1044,10 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
         id: member.id,
         broker_uuid: member.user_id,
         nome: member.email,
+        // 30/09, pedido do chefe: o card mostra o NOME. Em 14/09 tinha ficado o
+        // e-mail porque o título era a chave das métricas — por isso a chave
+        // (`nome`) continua sendo o e-mail, e só o que aparece mudou.
+        nomeExibido: member.name || member.email,
         iniciais,
         cor,
         status: 'online', // Membros do banco são considerados ativos
@@ -1092,8 +1103,10 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
 
     // Filtro de pesquisa
     if (searchTerm) {
+      const termo = searchTerm.toLowerCase();
+      // Pelo nome que o card mostra E pelo e-mail: quem conhece só um dos dois acha.
       filtered = filtered.filter(membro =>
-        membro.nome.toLowerCase().includes(searchTerm.toLowerCase())
+        membro.nomeExibido.toLowerCase().includes(termo) || membro.nome.toLowerCase().includes(termo)
       );
     }
 
@@ -1116,7 +1129,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
     filtered.sort((a, b) => {
       switch (sortBy) {
         case 'nome':
-          return a.nome.localeCompare(b.nome);
+          return a.nomeExibido.localeCompare(b.nomeExibido, 'pt-BR');
         case 'leads':
           return b.totalLeads - a.totalLeads;
         case 'conversao':
@@ -1537,10 +1550,12 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
               // minúsculo porque é assim que a tela de Tarefas monta as opções do
               // filtro (get_tenant_members → email.toLowerCase()); comparação é exata.
               const emailCorretor = (tenantMember?.email || membro.email || '').toLowerCase();
-              // Nome sem lixo de encoding — é o que a tela mostra E a chave que as
-              // métricas casam contra `assigned_agent_name` (normalizarNome não
-              // remove \uFFFD, então o nome sujo não bateria com o do banco).
-              const nomeLimpo = (membro.nome || '').replace(/[\uFFFD\u0000-\u001F]/g, '').trim();
+              // Sem lixo de encoding (normalizarNome não remove \uFFFD, então o
+              // texto sujo não bateria com o do banco). `nomeLimpo` é a CHAVE que
+              // as métricas casam; `nomeNaTela` é o que o card mostra.
+              const limpar = (texto?: string) => (texto || '').replace(/[\uFFFD\u0000-\u001F]/g, '').trim();
+              const nomeLimpo = limpar(membro.nome);
+              const nomeNaTela = limpar(membro.nomeExibido) || nomeLimpo;
 
               // Atalhos por corretor. Tarefas, OKRs e PDI levam o e-mail na URL
               // porque as três telas filtram por ele — o `?pessoa=` do P3.4.
@@ -1593,7 +1608,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                       id: 'comportamental',
                       label: buscandoPerfilId === membro.id ? 'Abrindo…' : 'Comportamental',
                       icon: Brain,
-                      onClick: () => abrirPerfilComportamental(membro.id, emailCorretor, nomeLimpo),
+                      onClick: () => abrirPerfilComportamental(membro.id, emailCorretor, nomeNaTela),
                       disabled: buscandoPerfilId === membro.id,
                     }]
                   : []),
@@ -1623,7 +1638,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                   <div className="relative shrink-0">
                     <div className="w-14 h-14 rounded-2xl overflow-hidden bg-gradient-to-br from-blue-600 to-blue-500 shadow-md shadow-blue-500/20 flex items-center justify-center">
                       {fotoSrc ? (
-                        <img src={fotoSrc} alt={membro.nome} className="h-full w-full object-cover" />
+                        <img src={fotoSrc} alt={nomeNaTela} className="h-full w-full object-cover" />
                       ) : (
                         <span className="text-white text-lg font-semibold">{membro.iniciais}</span>
                       )}
@@ -1642,7 +1657,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 mb-0.5">
                       <h3 className="text-[13px] font-semibold text-slate-900 dark:text-slate-100 truncate">
-                        {nomeLimpo || '—'}
+                        {nomeNaTela || '—'}
                       </h3>
                     </div>
                     <div className="flex items-center gap-1.5">
@@ -1726,6 +1741,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                   {isMetricasAberta && (
                     <CorretorMetricasPanel
                       nome={nomeLimpo}
+                      nomeExibido={nomeNaTela}
                       userId={tenantMember?.user_id ?? null}
                       onAbrirRelatorios={() => navigate('/relatorios?tab=metricas-individuais')}
                     />
