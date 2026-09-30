@@ -164,7 +164,7 @@ export const NotificacoesPage = () => {
         </div>
       </div>
 
-      <section className="mt-4" aria-live="polite">
+      <section className="mt-4">
         {loadError && (
           <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
             Não deu para carregar as notificações.

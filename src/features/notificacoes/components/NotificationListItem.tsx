@@ -53,6 +53,7 @@ export function NotificationListItem({ item, onAbrir, onMarcarLida }: Props) {
           </p>
         )}
         <Etiquetas item={item} />
+        {(temDestino || longo || !item.read) && (
         <div className="mt-2 flex items-center gap-3">
           {temDestino && (
             <button type="button" onClick={() => onAbrir(item)}
@@ -73,6 +74,7 @@ export function NotificationListItem({ item, onAbrir, onMarcarLida }: Props) {
             </button>
           )}
         </div>
+        )}
       </div>
     </li>
   );
