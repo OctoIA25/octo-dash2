@@ -315,7 +315,11 @@ begin
     p_tenant_id => p_tenant_id, p_origem => 'usuario', p_autor_user_id => v_uid,
     p_categoria => 'comunicado', p_titulo => p_titulo, p_mensagem => p_mensagem,
     p_prioridade => p_prioridade, p_publico_tipo => p_publico_tipo,
-    p_equipe_ids => coalesce(p_equipe_ids, '{}'), p_idempotency_key => p_idempotency_key);
+    p_equipe_ids => coalesce(p_equipe_ids, '{}'),
+    -- A chave da tela leva o remetente: nunca colide com outro remetente nem com a LIA
+    -- (a dedup do publicar_comunicado é por casa); o mesmo remetente reenviando ainda dedup.
+    p_idempotency_key => case when p_idempotency_key is null then null
+                              else 'tela:' || v_uid::text || ':' || p_idempotency_key end);
 end $$;
 revoke execute on function public.enviar_comunicado(uuid, text, text, text, text, uuid[], text) from public, anon;
 grant execute on function public.enviar_comunicado(uuid, text, text, text, text, uuid[], text) to authenticated;

@@ -277,6 +277,19 @@ BEGIN
   RETURN v_resultado;
 END $$;
 
+CREATE FUNCTION pg_temp.enviar_com_chave(p_user uuid, p_tenant uuid, p_equipe uuid, p_chave text)
+RETURNS text LANGUAGE plpgsql AS $$
+DECLARE v_resultado text;
+BEGIN
+  PERFORM set_config('request.jwt.claims', json_build_object(
+    'sub', p_user, 'role', 'authenticated')::text, true);
+  SET LOCAL ROLE authenticated;
+  SELECT 'criado:' || criado INTO v_resultado
+    FROM public.enviar_comunicado(p_tenant, 'Aviso', 'Texto', 'normal', 'equipes', ARRAY[p_equipe], p_chave);
+  RESET ROLE;
+  RETURN v_resultado;
+END $$;
+
 DO $$
 DECLARE f fx%ROWTYPE; v text;
 BEGIN
@@ -313,6 +326,15 @@ BEGIN
 
   PERFORM pg_temp.checa(NOT has_function_privilege('anon',
     'public.enviar_comunicado(uuid,text,text,text,text,uuid[],text)', 'execute'), 'anon não executa enviar_comunicado');
+
+  -- Chave da tela não colide com a da LIA, e o replay do mesmo remetente continua deduplicando.
+  v := pg_temp.enviar_com_chave(f.gerente_a, f.t, f.equipe_a, 'lia:colisao:1');
+  PERFORM pg_temp.checa(v = 'criado:true', 'gerente envia com chave nova (veio ' || v || ')');
+  PERFORM pg_temp.checa((SELECT criado FROM public.publicar_comunicado(f.t, 'lia', NULL, 'alerta', 't', 'm',
+    'normal', 'todos', '{}', '{}', false, NULL, NULL, 'lia:colisao:1')),
+    'publicação da LIA com a mesma chave não é suprimida');
+  v := pg_temp.enviar_com_chave(f.gerente_a, f.t, f.equipe_a, 'lia:colisao:1');
+  PERFORM pg_temp.checa(v = 'criado:false', 'mesmo remetente reenviando com a mesma chave deduplica (veio ' || v || ')');
 
   RAISE NOTICE 'OK 3: enviar_comunicado';
 END $$;
