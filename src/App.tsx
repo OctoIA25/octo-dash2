@@ -154,7 +154,10 @@ const App = () => {
               cai no vazio (nada aparece). Montados aqui, dentro do ThemeProvider,
               para que o Sonner herde o tema. */}
           <Toaster />
-          <SonnerToaster />
+          {/* top: 64 = cabeçalho (h-14, 56 px) + 8: o aviso de notificação
+              (top-right) não cobre o cabeçalho. Os lados sem valor ficam no
+              padrão do Sonner — os toasts de sucesso/erro (bottom-right) não mudam. */}
+          <SonnerToaster offset={{ top: 64 }} mobileOffset={{ top: 64 }} />
           <AuthProvider>
             <NotificationsProvider>
               <AppContent />

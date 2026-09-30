@@ -12,6 +12,7 @@ import { SupportButton } from '@/components/support/SupportButton';
 // P4.9 — o (?) de cada tela. Montado aqui, e não em trinta páginas: o botão de
 // suporte já aparece em toda a Dash, e este mora ao lado dele.
 import { BotaoDeAjuda } from '@/features/ajuda/BotaoDeAjuda';
+import { AvisosNaTela } from '@/features/notificacoes/components/AvisosNaTela';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { SupportService } from '@/components/support/SupportService';
 
@@ -49,6 +50,7 @@ export function NovoLayout({ children }: NovoLayoutProps) {
             </main>
           </div>
           <BotaoDeAjuda />
+          <AvisosNaTela />
           <SupportButton
           position='bottom-right'
           config={{
