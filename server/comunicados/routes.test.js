@@ -21,7 +21,8 @@ const OK = { data: [{ comunicado_id: 'c-1', destinatarios: 2, criado: true }], e
 
 function montar({ rpc = async () => OK, limiter } = {}) {
   const rotas = new Map();
-  const app = { post: (caminho, ...handlers) => rotas.set(caminho, handlers) };
+  const erros = [];
+  const app = { post: (caminho, ...handlers) => rotas.set(caminho, handlers), use: (_caminho, h) => erros.push(h) };
   const supabase = { rpc: vi.fn(rpc) };
   const validateApiKey = (req, _res, next) => { req.tenantId = 't-da-chave'; next(); };
   registerComunicadosRoutes(app, supabase, validateApiKey, limiter ? { limiter } : undefined);
@@ -33,7 +34,7 @@ function montar({ rpc = async () => OK, limiter } = {}) {
     await handler(req, res);
     return res;
   };
-  return { chamar, supabase };
+  return { chamar, supabase, erros };
 }
 
 const VALIDO = {
@@ -45,6 +46,26 @@ const VALIDO = {
   publico: { tipo: 'pessoas', emails: ['Joao@Lotus.com.br'], copiar_gestor: true },
   link: { tipo: 'lead', id: '8f0c2b1e-1111-4222-8333-444455556666' },
 };
+
+describe('JSON quebrado', () => {
+  it('erro de parse do express.json vira 400 BODY_INVALIDO', () => {
+    const { erros } = montar();
+    const res = resposta();
+    const next = vi.fn();
+    erros[0]({ type: 'entity.parse.failed' }, {}, res, next);
+    expect(res.code).toBe(400);
+    expect(res.corpo.error.code).toBe('BODY_INVALIDO');
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('outro erro segue adiante', () => {
+    const { erros } = montar();
+    const boom = new Error('x');
+    const next = vi.fn();
+    erros[0](boom, {}, resposta(), next);
+    expect(next).toHaveBeenCalledWith(boom);
+  });
+});
 
 describe('POST /api/v1/comunicados', () => {
   it('201 e chama publicar_comunicado com a casa da CHAVE', async () => {

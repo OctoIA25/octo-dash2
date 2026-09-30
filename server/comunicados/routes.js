@@ -84,4 +84,11 @@ export function registerComunicadosRoutes(
       return erro(res, 500, 'SERVER_ERROR', 'erro inesperado');
     }
   });
+
+  // JSON quebrado para antes da rota (express.json). Sem isto, em produção vira o 500 genérico do
+  // servidor — e a LIA tentaria de novo um corpo que nunca vai passar.
+  app.use('/api/v1/comunicados', (err, _req, res, next) =>
+    err?.type === 'entity.parse.failed'
+      ? erro(res, 400, 'BODY_INVALIDO', 'mande um objeto JSON')
+      : next(err));
 }
