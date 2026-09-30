@@ -234,8 +234,10 @@ const GROUPS: SidebarGroup[] = [
     title: 'LIA',
     items: [
       {
+        // Sem `soGestao` desde 30/09: o corretor vê e responde os chamados dele.
+        // O recorte é do banco (plantao_visiveis), não do menu.
         id: 'lia-plantao', label: 'Plantão', icon: MessageSquare,
-        route: '/agentes-ia/plantao', permission: 'agentes-ia', soGestao: true,
+        route: '/agentes-ia/plantao', permission: 'agentes-ia',
       },
       {
         id: 'lia-agenda', label: 'Agenda da LIA', icon: CalendarClock,

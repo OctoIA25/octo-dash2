@@ -18,29 +18,54 @@
  *   Respondidas     — o que foi respondido, e o que já virou conhecimento
  *   Mais perguntadas— o que a LIA pergunta toda semana e devia saber sozinha
  *
+ * 30/09 — O CORRETOR ENTRA, E A TELA GANHA RESUMO, PERÍODO E ÁREA.
+ * Pedido do chefe: cada chamado diz a equipe e o corretor e abre a conversa,
+ * como em Comunicados; em cima, quantos a LIA abriu e quantos esperam, por
+ * área (Lançamentos × Prontos) e por período, o mês por padrão. Quem vê o quê
+ * é do banco (`plantao_visiveis`): corretor as suas, gestor a equipe e as sem
+ * dono, diretoria tudo. A tela não recalcula o recorte — só esconde o que o
+ * corretor não usa ("Mais perguntadas" e "Salvar na base", que ensinam a LIA
+ * para a casa inteira), e o banco recusa do mesmo jeito.
+ *
+ * Sem agrupar por dia, ao contrário de Comunicados: é uma fila, e a pergunta
+ * que espera há mais tempo tem de ficar no topo, não num grupo "Anteriores".
+ *
  * O relógio anda no navegador (30 s), como no Painel de Distribuição do P1.3.
  */
 
-import { useEffect, useMemo, useState } from 'react';
-import { Navigate } from 'react-router-dom';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BookPlus, Clock, Loader2, MessageSquare, RefreshCw, Sparkles } from 'lucide-react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  ArrowRight, ArrowUpRight, BookPlus, Bot, Clock, Loader2, MessageSquare, RefreshCw, Sparkles,
+} from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { Input } from '@/components/ui/input';
+import { OpenConversationLink } from '@/features/chat/components/OpenConversationLink';
+import { CriarLeadQuickModal } from '@/features/leads/components/CriarLeadQuickModal';
+import { fetchKanbanLeadDaConversa, type KanbanLead } from '@/features/leads/services/leadsService';
 import {
   carregarFila, responderPergunta, salvarNaBase,
-  type AbaDoPlantao, type FilaDoPlantao,
+  type AbaDoPlantao, type AreaDoPlantao, type FilaDoPlantao, type FiltroDoPlantao,
 } from '../services/plantaoService';
 import {
-  agruparPorTema, esperaDe, quemRecebeu, tempoDeResposta,
-  type PerguntaDoPlantao,
+  agruparPorTema, datasDoPeriodo, esperaDe, quemRecebeu, tempoDeResposta, textoDaEspera,
+  type PerguntaDoPlantao, type PeriodoPronto,
 } from '../utils/plantao';
 
-const ABAS: Array<{ id: AbaDoPlantao; rotulo: string; conta: (f: FilaDoPlantao) => number }> = [
+const ABAS: Array<{ id: AbaDoPlantao; rotulo: string; conta: (f: FilaDoPlantao) => number; soGestao?: boolean }> = [
   { id: 'aguardando', rotulo: 'Aguardando', conta: (f) => f.contadores.aguardando + f.contadores.expiradas },
   { id: 'respondidas', rotulo: 'Respondidas', conta: (f) => f.contadores.respondidas },
-  { id: 'mais', rotulo: 'Mais perguntadas', conta: (f) => f.contadores.por_aprender },
+  { id: 'mais', rotulo: 'Mais perguntadas', conta: (f) => f.contadores.por_aprender, soGestao: true },
+];
+
+type Periodo = PeriodoPronto | 'personalizado';
+
+const PERIODOS: Array<{ id: Periodo; rotulo: string }> = [
+  { id: 'mes', rotulo: 'Este mês' },
+  { id: 'mes_passado', rotulo: 'Mês passado' },
+  { id: '7dias', rotulo: '7 dias' },
+  { id: 'personalizado', rotulo: 'Personalizado' },
 ];
 
 export function PlantaoPage() {
@@ -48,10 +73,15 @@ export function PlantaoPage() {
   const tenantId = user?.tenantId;
   const { toast } = useToast();
   const qc = useQueryClient();
+  const gestao = isGestao || isOwner;
 
   const [aba, setAba] = useState<AbaDoPlantao>('aguardando');
+  const [periodo, setPeriodo] = useState<Periodo>('mes');
+  const [personalizado, setPersonalizado] = useState(() => datasDoPeriodo('mes'));
+  const [equipe, setEquipe] = useState<string | null>(null);
   const [agora, setAgora] = useState(() => Date.now());
   const [salvando, setSalvando] = useState<PerguntaDoPlantao | null>(null);
+  const [leadAberto, setLeadAberto] = useState<KanbanLead | null>(null);
 
   // O relógio da aba Aguardando precisa andar sozinho; nas outras não há relógio.
   useEffect(() => {
@@ -60,10 +90,22 @@ export function PlantaoPage() {
     return () => clearInterval(id);
   }, [aba]);
 
-  const { data: fila, isLoading, isError, error, refetch, isFetching } = useQuery({
-    queryKey: ['plantao', tenantId, aba],
-    queryFn: () => carregarFila(tenantId!, aba),
-    enabled: !!tenantId && tenantId !== 'owner',
+  const filtro: FiltroDoPlantao = {
+    ...(periodo === 'personalizado' ? personalizado : datasDoPeriodo(periodo)),
+    equipe,
+  };
+  // Datas trocadas não são período: não vai ao banco, e a tela diz por quê.
+  const periodoValido = !!filtro.de && !!filtro.ate && filtro.de <= filtro.ate;
+
+  // Com filtros, cada clique é uma consulta nova. Sem guardar a anterior, o
+  // resumo e os próprios filtros sumiam a cada clique até o banco responder.
+  // A lista não aproveita a anterior (seriam as linhas de outra aba): ela
+  // espera, e o resumo fica esmaecido enquanto isso.
+  const { data: fila, isLoading, isError, error, refetch, isFetching, isPlaceholderData } = useQuery({
+    queryKey: ['plantao', tenantId, aba, filtro.de, filtro.ate, filtro.equipe],
+    queryFn: () => carregarFila(tenantId!, aba, filtro),
+    enabled: !!tenantId && tenantId !== 'owner' && periodoValido,
+    placeholderData: keepPreviousData,
   });
 
   const grupos = useMemo(
@@ -71,16 +113,28 @@ export function PlantaoPage() {
     [aba, fila]
   );
 
-  // Mesmo portão da Telemetria: a fila expõe o nome de cada lead e a resposta
-  // de cada colega da imobiliária inteira.
-  if (!isGestao && !isOwner) return <Navigate to="/agentes-ia/agente-marketing" replace />;
+  // Trocar o período zera a área: o chip escolhido pode não existir no novo
+  // período, e a lista ficaria filtrada por algo que a tela não mostra.
+  const trocarPeriodo = (p: Periodo) => {
+    setPeriodo(p);
+    setEquipe(null);
+  };
+
+  const abrirLead = async (leadId: string) => {
+    const lead = await fetchKanbanLeadDaConversa(tenantId!, leadId, []);
+    if (lead) setLeadAberto(lead);
+    else toast({ title: 'Lead não encontrado', description: 'Ele pode ter sido arquivado ou transferido.', variant: 'destructive' });
+  };
 
   if (!tenantId || tenantId === 'owner') {
     return <Aviso texto="Escolha uma imobiliária para ver o plantão." />;
   }
 
+  // O corretor só tem as suas; escolher área não lhe diz nada.
+  const areas = fila && fila.recorte !== 'proprias' ? fila.equipes ?? [] : [];
+
   return (
-    <div className="space-y-4 p-4 md:p-6">
+    <div className="mx-auto w-full max-w-5xl space-y-5 p-4 md:p-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-xl font-semibold">
@@ -88,7 +142,7 @@ export function PlantaoPage() {
             Plantão da LIA
           </h1>
           <p className="text-sm text-muted-foreground">
-            O que a LIA não soube responder e mandou para um corretor. Últimos {fila?.dias ?? 90} dias.
+            O que a LIA não soube responder e mandou para um corretor.
           </p>
         </div>
         <button
@@ -100,42 +154,77 @@ export function PlantaoPage() {
         </button>
       </header>
 
-      <nav className="flex flex-wrap gap-1 border-b">
-        {ABAS.map((a) => (
-          <button
-            key={a.id}
-            onClick={() => setAba(a.id)}
-            className={`-mb-px border-b-2 px-3 py-2 text-sm ${
-              aba === a.id
-                ? 'border-primary font-medium text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            {a.rotulo}
-            {fila && (
-              <span className="ml-2 rounded-full bg-muted px-1.5 py-0.5 text-xs tabular-nums">
-                {a.conta(fila)}
-              </span>
-            )}
-          </button>
-        ))}
-      </nav>
+      <div className="flex flex-wrap items-center gap-3">
+        <Escolha
+          rotulo="Período"
+          opcoes={PERIODOS.map((p) => ({ id: p.id, rotulo: p.rotulo }))}
+          valor={periodo}
+          onEscolher={trocarPeriodo}
+        />
+        {periodo === 'personalizado' && (
+          <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+            <Input
+              type="date"
+              aria-label="De"
+              value={personalizado.de}
+              onChange={(e) => { setPersonalizado((v) => ({ ...v, de: e.target.value })); setEquipe(null); }}
+              className="h-8 w-auto"
+            />
+            até
+            <Input
+              type="date"
+              aria-label="Até"
+              value={personalizado.ate}
+              onChange={(e) => { setPersonalizado((v) => ({ ...v, ate: e.target.value })); setEquipe(null); }}
+              className="h-8 w-auto"
+            />
+          </div>
+        )}
+        {areas.length > 1 && (
+          <Escolha
+            rotulo="Área"
+            opcoes={[
+              { id: null, rotulo: 'Todas' },
+              ...areas.map((a) => ({ id: a.id, rotulo: nomeDaArea(a), conta: a.total })),
+            ]}
+            valor={equipe}
+            onEscolher={setEquipe}
+          />
+        )}
+      </div>
 
-      {isLoading && <Aviso texto="Carregando o plantão…" carregando />}
+      {!periodoValido && <Aviso texto="A data inicial está depois da final." erro />}
+
+      {fila && periodoValido && !isError && (
+        <div className={isPlaceholderData ? 'opacity-60 transition-opacity' : 'transition-opacity'}>
+          <Resumo fila={fila} />
+        </div>
+      )}
+
+      <Escolha
+        rotulo="Situação"
+        opcoes={ABAS.filter((a) => gestao || !a.soGestao).map((a) => ({
+          id: a.id, rotulo: a.rotulo, conta: fila ? a.conta(fila) : undefined,
+        }))}
+        valor={aba}
+        onEscolher={(id) => setAba(id)}
+      />
+
+      {periodoValido && (isLoading || isPlaceholderData) && <Aviso texto="Carregando o plantão…" carregando />}
       {isError && (
         <Aviso texto={`Não deu para ler o plantão: ${(error as Error)?.message ?? 'erro desconhecido'}`} erro />
       )}
 
-      {fila && !isLoading && !isError && (
+      {fila && periodoValido && !isLoading && !isPlaceholderData && !isError && (
         <>
           <RecorteDaFila fila={fila} />
           {aba === 'aguardando' && (
-            <ListaAguardando fila={fila} agora={agora} />
+            <ListaAguardando fila={fila} agora={agora} onAbrirLead={abrirLead} />
           )}
           {aba === 'respondidas' && (
-            <ListaRespondidas fila={fila} onSalvar={setSalvando} />
+            <ListaRespondidas fila={fila} onSalvar={gestao ? setSalvando : undefined} onAbrirLead={abrirLead} />
           )}
-          {aba === 'mais' && (
+          {aba === 'mais' && gestao && (
             <MaisPerguntadas grupos={grupos} total={fila.contadores.na_janela} onSalvar={setSalvando} />
           )}
         </>
@@ -158,11 +247,107 @@ export function PlantaoPage() {
           onErro={(m) => toast({ title: 'Não deu para salvar', description: m, variant: 'destructive' })}
         />
       )}
+
+      <CriarLeadQuickModal
+        isOpen={leadAberto !== null}
+        onClose={() => setLeadAberto(null)}
+        tenantId={tenantId}
+        editingLead={leadAberto}
+        leadType={leadAberto?.lead_type}
+      />
     </div>
   );
 }
 
 // ------------------------------------------------------------
+
+/** Pergunta sem corretor identificado não tem equipe: é da coordenação. */
+const nomeDaArea = (a: Pick<AreaDoPlantao, 'nome'>) => a.nome ?? 'Sem equipe';
+
+/** Grupo de botões do jeito de Comunicados: um escolhido por vez (aria-pressed). */
+function Escolha<T extends string | null>({
+  rotulo,
+  opcoes,
+  valor,
+  onEscolher,
+}: {
+  rotulo: string;
+  opcoes: Array<{ id: T; rotulo: string; conta?: number }>;
+  valor: T;
+  onEscolher: (id: T) => void;
+}) {
+  return (
+    <div role="group" aria-label={rotulo} className="inline-flex flex-wrap gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+      {opcoes.map((o) => (
+        <button
+          key={o.id ?? 'todas'}
+          type="button"
+          aria-pressed={valor === o.id}
+          onClick={() => onEscolher(o.id)}
+          className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+            valor === o.id
+              ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-900 dark:text-slate-50'
+              : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
+          }`}
+        >
+          {o.rotulo}
+          {o.conta !== undefined && (
+            <span className={`min-w-5 rounded-full px-1.5 text-center text-[11px] font-semibold leading-5 tabular-nums ${
+              valor === o.id ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200'
+            }`}>
+              {o.conta}
+            </span>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** "2h43", "45 min", "3 dias" — a mesma escrita do relógio da fila. */
+const duracao = (min: number) => (min < 1 ? 'menos de 1 min' : textoDaEspera(min).replace('há ', ''));
+
+/**
+ * Os números do período e da área escolhidos. Vêm do mesmo recorte da lista,
+ * no banco — a tela não soma nada, para o cartão nunca dizer 20 com a lista
+ * mostrando 12.
+ */
+function Resumo({ fila }: { fila: FilaDoPlantao }) {
+  const c = fila.contadores;
+  const atrasadas = c.atrasadas ?? 0;
+  const mediana = c.mediana_resposta_min ?? null;
+  const cartoes: Array<{ rotulo: string; valor: string | number; nota?: string; alerta?: boolean }> = [
+    { rotulo: 'Abertos pela LIA', valor: c.na_janela },
+    {
+      rotulo: 'Pendentes',
+      valor: c.aguardando + c.expiradas,
+      nota: atrasadas > 0 ? `${atrasadas} além de ${fila.espera_maxima_minutos} min` : 'nenhum atrasado',
+      alerta: atrasadas > 0,
+    },
+    { rotulo: 'Respondidos', valor: c.respondidas },
+    {
+      rotulo: 'Tempo de resposta',
+      valor: mediana === null ? '—' : duracao(mediana),
+      // null é "não houve resposta", não "zero minutos".
+      nota: mediana === null ? 'nada respondido no período' : 'mediana',
+    },
+  ];
+  return (
+    <dl aria-label="Resumo do período" className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      {cartoes.map((k) => (
+        <div key={k.rotulo} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <dt className="text-xs font-medium text-slate-500 dark:text-slate-400">{k.rotulo}</dt>
+          <dd className="mt-1 text-2xl font-semibold tabular-nums text-slate-900 dark:text-slate-50">{k.valor}</dd>
+          {k.nota && (
+            <dd className={`mt-0.5 text-xs ${k.alerta ? 'font-medium text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
+              {k.nota}
+            </dd>
+          )}
+        </div>
+      ))}
+    </dl>
+  );
+}
 
 /**
  * Até onde esta pessoa enxerga, e o que ficou de fora.
@@ -205,7 +390,118 @@ function Aviso({ texto, carregando, erro }: { texto: string; carregando?: boolea
   );
 }
 
-function ListaAguardando({ fila, agora }: { fila: FilaDoPlantao; agora: number }) {
+/** Acima disto o contexto abre cortado em 2 linhas, com "Ver mais" — como em Comunicados. */
+const CONTEXTO_LONGO = 180;
+
+/**
+ * Um chamado, no desenho de Comunicados: de quem → para quem e de que área,
+ * o tempo à direita, a pergunta como assunto, o contexto e as ações.
+ * `atrasado` pinta a faixa à esquerda — é a urgência de Comunicados.
+ */
+function Chamado({
+  p,
+  tempo,
+  atrasado,
+  onAbrirLead,
+  acao,
+  children,
+}: {
+  p: PerguntaDoPlantao;
+  tempo: ReactNode;
+  atrasado?: boolean;
+  onAbrirLead: (leadId: string) => void;
+  /** A ação principal, primeira da linha de ações (ex.: Responder). */
+  acao?: ReactNode;
+  children?: ReactNode;
+}) {
+  const [expandido, setExpandido] = useState(false);
+  const longo = (p.contexto?.length ?? 0) > CONTEXTO_LONGO;
+  return (
+    <li className="relative flex gap-3.5 px-4 py-4 sm:px-5">
+      {atrasado && <span className="absolute inset-y-0 left-0 w-1 bg-rose-500" aria-hidden />}
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-violet-600 text-white" aria-hidden>
+        <Bot className="h-4 w-4" />
+      </span>
+
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start gap-3">
+          <p className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 text-[13px] leading-5 text-slate-500 dark:text-slate-400">
+            <span className="font-semibold text-slate-800 dark:text-slate-200">LIA</span>
+            <ArrowRight className="h-3.5 w-3.5 shrink-0 text-slate-400 dark:text-slate-500" aria-hidden />
+            <span className="sr-only">para</span>
+            <span className="text-slate-700 dark:text-slate-300">{quemRecebeu(p)}</span>
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+              {nomeDaArea({ nome: p.equipe_nome ?? null })}
+            </span>
+          </p>
+          <span className="shrink-0 pt-0.5 text-xs">{tempo}</span>
+        </div>
+
+        <h3 className="mt-1 text-[15px] font-semibold leading-6 text-slate-900 dark:text-slate-50">{p.pergunta}</h3>
+
+        {p.contexto && (
+          <p className={`mt-1 max-w-[75ch] whitespace-pre-line text-sm leading-relaxed text-slate-600 dark:text-slate-400 ${
+            longo && !expandido ? 'line-clamp-2' : ''
+          }`}>
+            {p.contexto}
+          </p>
+        )}
+
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          {p.lead_nome ?? 'lead sem nome'}
+          {p.nudges > 0 && ` · ${p.nudges} lembrete${p.nudges > 1 ? 's' : ''}`}
+          {p.empreendimento_nome && ` · ${p.empreendimento_nome}`}
+          {p.escalada_em && (
+            <span className="font-medium text-amber-700 dark:text-amber-400">
+              {' · '}diretor avisado em{' '}
+              {new Date(p.escalada_em).toLocaleString('pt-BR', {
+                timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+              })}
+            </span>
+          )}
+        </p>
+
+        {children}
+
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+          {acao}
+          {p.lead_id && (
+            <button
+              type="button"
+              onClick={() => onAbrirLead(p.lead_id!)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 shadow-sm transition-colors hover:border-blue-300 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:border-blue-500/60"
+            >
+              Abrir lead <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
+            </button>
+          )}
+          <OpenConversationLink phone={p.lead_telefone} contactName={p.lead_nome} className="text-xs" />
+          {longo && (
+            <button
+              type="button"
+              onClick={() => setExpandido((v) => !v)}
+              className="text-xs font-medium text-slate-500 hover:text-slate-800 hover:underline dark:text-slate-400 dark:hover:text-slate-200"
+            >
+              {expandido ? 'Ver menos' : 'Ver mais'}
+            </button>
+          )}
+        </div>
+      </div>
+    </li>
+  );
+}
+
+const CAIXA_DA_LISTA =
+  'divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900';
+
+function ListaAguardando({
+  fila,
+  agora,
+  onAbrirLead,
+}: {
+  fila: FilaDoPlantao;
+  agora: number;
+  onAbrirLead: (leadId: string) => void;
+}) {
   if (fila.linhas.length === 0) {
     /*
      * FILA VAZIA TEM DOIS MOTIVOS, E ELES SÃO OPOSTOS.
@@ -247,35 +543,24 @@ function ListaAguardando({ fila, agora }: { fila: FilaDoPlantao; agora: number }
         Régua de {fila.espera_maxima_minutos} min
         {!fila.configurado && ' (padrão — ninguém configurou ainda)'}. Passou disso, fica em vermelho.
       </p>
-      <ul className="space-y-2">
+      <ul className={CAIXA_DA_LISTA}>
         {fila.linhas.map((p) => {
           const espera = esperaDe(p.criado_em, fila.espera_maxima_minutos, agora);
           return (
-            <li key={p.id} className="rounded-md border p-3">
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <span className="font-medium">{p.pergunta}</span>
-                <span className={`inline-flex items-center gap-1 text-sm tabular-nums ${espera?.classe ?? ''}`}>
+            <Chamado
+              key={p.id}
+              p={p}
+              atrasado={espera?.estourou}
+              onAbrirLead={onAbrirLead}
+              tempo={
+                <span className={`inline-flex items-center gap-1 tabular-nums ${espera?.classe ?? ''}`}>
                   <Clock className="h-3.5 w-3.5" />
                   {espera?.texto ?? 'sem data'}
                   {p.status === 'expirada' && ' · expirou'}
                 </span>
-              </div>
-              {p.contexto && <p className="mt-1 text-sm text-muted-foreground">{p.contexto}</p>}
-              <p className="mt-1 text-xs text-muted-foreground">
-                {p.lead_nome ?? 'lead sem nome'} · com {quemRecebeu(p)}
-                {p.nudges > 0 && ` · ${p.nudges} lembrete${p.nudges > 1 ? 's' : ''}`}
-                {p.empreendimento_nome && ` · ${p.empreendimento_nome}`}
-                {p.escalada_em && (
-                  <span className="font-medium text-amber-700 dark:text-amber-400">
-                    {' · '}diretor avisado em{' '}
-                    {new Date(p.escalada_em).toLocaleString('pt-BR', {
-                      timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
-                    })}
-                  </span>
-                )}
-              </p>
-              <ResponderAqui perguntaId={p.id} />
-            </li>
+              }
+              acao={<ResponderAqui perguntaId={p.id} />}
+            />
           );
         })}
       </ul>
@@ -286,9 +571,12 @@ function ListaAguardando({ fila, agora }: { fila: FilaDoPlantao; agora: number }
 function ListaRespondidas({
   fila,
   onSalvar,
+  onAbrirLead,
 }: {
   fila: FilaDoPlantao;
-  onSalvar: (p: PerguntaDoPlantao) => void;
+  /** Ausente para o corretor: salvar na base ensina a LIA para a casa inteira. */
+  onSalvar?: (p: PerguntaDoPlantao) => void;
+  onAbrirLead: (leadId: string) => void;
 }) {
   const linhas = fila.linhas;
   if (linhas.length === 0) {
@@ -305,40 +593,51 @@ function ListaRespondidas({
     );
   }
   return (
-    <ul className="space-y-2">
+    <ul className={CAIXA_DA_LISTA}>
       {linhas.map((p) => (
-        <li key={p.id} className="rounded-md border p-3">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <span className="font-medium">{p.pergunta}</span>
-            <span className="text-xs text-muted-foreground">
-              {quemRecebeu(p)} respondeu {tempoDeResposta(p) ?? ''}
+        <Chamado
+          key={p.id}
+          p={p}
+          onAbrirLead={onAbrirLead}
+          tempo={
+            <span className="text-slate-500 dark:text-slate-400">
+              respondeu {tempoDeResposta(p) ?? ''}
             </span>
-          </div>
-          <p className="mt-1 whitespace-pre-wrap text-sm">{p.resposta}</p>
+          }
+          acao={<AcaoDaRespondida p={p} onSalvar={onSalvar} />}
+        >
+          <p className="mt-2 whitespace-pre-wrap rounded-lg bg-slate-50 p-2.5 text-sm text-slate-800 dark:bg-slate-800/60 dark:text-slate-200">
+            {p.resposta}
+          </p>
           <SeloDeEntrega entrega={p.entrega} />
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            {p.aprovada_para_base ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
-                <Sparkles className="h-3 w-3" /> na base
-              </span>
-            ) : p.fora_do_canal ? (
-              /* Na Japi, 331 das 1.540 respostas são só o aviso de que o corretor
-                 falou direto com o cliente. Não há resposta para ensinar. */
-              <span className="text-xs text-muted-foreground">
-                resolvida fora do canal — não há resposta para salvar
-              </span>
-            ) : (
-              <button
-                onClick={() => onSalvar(p)}
-                className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs hover:bg-accent"
-              >
-                <BookPlus className="h-3.5 w-3.5" /> Salvar na base
-              </button>
-            )}
-          </div>
-        </li>
+        </Chamado>
       ))}
     </ul>
+  );
+}
+
+/** A primeira ação de uma respondida: se já ensina a LIA, ou o botão que a ensina (só gestão). */
+function AcaoDaRespondida({ p, onSalvar }: { p: PerguntaDoPlantao; onSalvar?: (p: PerguntaDoPlantao) => void }) {
+  if (p.aprovada_para_base) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+        <Sparkles className="h-3 w-3" /> na base
+      </span>
+    );
+  }
+  if (!onSalvar) return null;
+  if (p.fora_do_canal) {
+    /* Na Japi, 331 das 1.540 respostas são só o aviso de que o corretor
+       falou direto com o cliente. Não há resposta para ensinar. */
+    return <span className="text-xs text-muted-foreground">resolvida fora do canal — não há resposta para salvar</span>;
+  }
+  return (
+    <button
+      onClick={() => onSalvar(p)}
+      className="inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold hover:bg-accent"
+    >
+      <BookPlus className="h-3.5 w-3.5" /> Salvar na base
+    </button>
   );
 }
 
@@ -432,7 +731,11 @@ function DialogoSalvarNaBase({
     try {
       const r = await salvarNaBase(pergunta.id, titulo, conteudo, validoAte || null);
       if (!r.ok) {
-        onErro(r.motivo === 'conteudo_vazio' ? 'A resposta está vazia.' : (r.motivo ?? 'erro'));
+        onErro(
+          r.motivo === 'conteudo_vazio' ? 'A resposta está vazia.'
+          : r.motivo === 'sem_acesso' ? 'Só a gestão salva na base, e só o que ela enxerga.'
+          : (r.motivo ?? 'erro')
+        );
         return;
       }
       onSalvou(!!r.geral);
@@ -549,7 +852,7 @@ function ResponderAqui({ perguntaId }: { perguntaId: string }) {
       <button
         type="button"
         onClick={() => setAberto(true)}
-        className="mt-2 text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
+        className="inline-flex h-8 items-center rounded-lg bg-blue-600 px-3 text-xs font-semibold text-white hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
       >
         Responder
       </button>
@@ -557,7 +860,7 @@ function ResponderAqui({ perguntaId }: { perguntaId: string }) {
   }
 
   return (
-    <div className="mt-2 space-y-2">
+    <div className="w-full space-y-2">
       <textarea
         value={texto}
         onChange={(e) => setTexto(e.target.value)}

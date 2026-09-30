@@ -25,6 +25,27 @@ export interface ContadoresDoPlantao {
    * quem vê a imobiliária inteira: nada lhe foi escondido.
    */
   sem_dono_oculto: number;
+  /** Esperando além da régua agora (pendentes e expiradas). */
+  atrasadas: number;
+  /** Mediana, em minutos, de quanto levou para responder. null = nada respondido no período. */
+  mediana_resposta_min: number | null;
+}
+
+/** Uma área que a pessoa pode filtrar, com o total do período ANTES do filtro. */
+export interface AreaDoPlantao {
+  /** Id da equipe, ou 'sem_equipe'. */
+  id: string;
+  nome: string | null;
+  total: number;
+  pendentes: number;
+}
+
+/** O que a tela pede além da aba. Datas de São Paulo, as duas inclusivas. */
+export interface FiltroDoPlantao {
+  de: string;
+  ate: string;
+  /** null = todas as áreas que a pessoa enxerga. */
+  equipe: string | null;
 }
 
 export interface FilaDoPlantao {
@@ -39,6 +60,7 @@ export interface FilaDoPlantao {
   recorte: 'imobiliaria' | 'equipe' | 'proprias';
   ve_tudo: boolean;
   contadores: ContadoresDoPlantao;
+  equipes: AreaDoPlantao[];
   linhas: PerguntaDoPlantao[];
 }
 
@@ -67,14 +89,16 @@ export interface ReguaDoPlantao {
 export async function carregarFila(
   tenantId: string,
   aba: AbaDoPlantao,
-  dias = 90
+  filtro: FiltroDoPlantao
 ): Promise<FilaDoPlantao | null> {
   if (!tenantId || tenantId === 'owner') return null;
   const { data, error } = await supabase.rpc('plantao_fila', {
     p_tenant_id: tenantId,
     p_aba: aba === 'mais' ? 'todas' : aba,
     p_limite: aba === 'mais' ? 500 : 200,
-    p_dias: dias,
+    p_de: filtro.de,
+    p_ate: filtro.ate,
+    p_equipe: filtro.equipe,
   });
   // Erro não vira fila vazia: a tela diria "nenhuma pergunta" onde houve falha.
   if (error) throw error;

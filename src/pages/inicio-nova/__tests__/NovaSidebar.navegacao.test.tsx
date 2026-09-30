@@ -105,16 +105,20 @@ describe('a Lia tem categoria própria no menu', () => {
 
   /*
    * O CASO QUE SUSTENTA O ARQUIVO. Ao sair das abas, as duas perderiam a
-   * trava de `SO_GESTAO` — e a fila mostra o nome de cada lead e a resposta
-   * de cada colega da casa. Mover a tela não pode abri-la.
+   * trava de `SO_GESTAO` — mover a tela não pode abri-la sem querer.
+   *
+   * 30/09: o Plantão abriu DE PROPÓSITO, a pedido do chefe — o corretor vê e
+   * responde os chamados dele. O que protege a fila deixou de ser o menu: é o
+   * banco (plantao_visiveis), que entrega ao corretor só as suas. A Agenda
+   * segue só da gestão.
    */
-  it('corretor NÃO vê a fila nem a agenda', async () => {
+  it('corretor vê o Plantão, mas não a Agenda', async () => {
     quem.isOwner = false;
     quem.isGestao = false;
     render(<NovaSidebar />);
     // O menu carregou: outra coisa qualquer continua lá.
     expect(await screen.findByText('Configurações')).toBeInTheDocument();
-    expect(screen.queryByText('Plantão')).not.toBeInTheDocument();
+    expect(screen.getByText('Plantão')).toBeInTheDocument();
     expect(screen.queryByText('Agenda da LIA')).not.toBeInTheDocument();
   });
 });

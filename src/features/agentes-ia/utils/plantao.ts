@@ -96,6 +96,11 @@ export interface PerguntaDoPlantao {
   corretor_id: string | null;
   corretor_nome: string | null;
   corretor_email: string | null;
+  /** A área: a equipe do corretor dono. Nula = "Sem equipe" (corretor não identificado ou sem time). */
+  equipe_id?: string | null;
+  equipe_nome?: string | null;
+  /** Para "Abrir conversa". Só vem nas linhas que a pessoa já enxerga. */
+  lead_telefone?: string | null;
   empreendimento_id: string | null;
   empreendimento_nome: string | null;
   kb_documento_id: string | null;
@@ -210,4 +215,22 @@ export function tempoDeResposta(p: PerguntaDoPlantao): string | null {
 /** O nome do corretor, com o e-mail como segunda opção — UUID nunca. */
 export function quemRecebeu(p: PerguntaDoPlantao): string {
   return p.corretor_nome?.trim() || p.corretor_email?.trim() || 'sem corretor definido';
+}
+
+export type PeriodoPronto = 'mes' | 'mes_passado' | '7dias';
+
+/**
+ * As datas que `plantao_fila` recebe: dias de São Paulo, as duas inclusivas.
+ * O dia sai do fuso, não do UTC — às 22h de 30/09 em São Paulo já é 01/10 em
+ * UTC, e o resumo "deste mês" viraria outubro vazio. A conta de datas roda em
+ * UTC sobre o dia já resolvido, onde não há horário de verão para atrapalhar.
+ */
+export function datasDoPeriodo(periodo: PeriodoPronto, agora: Date = new Date()): { de: string; ate: string } {
+  const hoje = agora.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  const [a, m, d] = hoje.split('-').map(Number);
+  // Date.UTC normaliza: mês 0 volta ao dezembro anterior, dia 0 é o último do mês anterior.
+  const dia = (ano: number, mes: number, dd: number) => new Date(Date.UTC(ano, mes - 1, dd)).toISOString().slice(0, 10);
+  if (periodo === 'mes') return { de: dia(a, m, 1), ate: hoje };
+  if (periodo === 'mes_passado') return { de: dia(a, m - 1, 1), ate: dia(a, m, 0) };
+  return { de: dia(a, m, d - 6), ate: hoje };
 }

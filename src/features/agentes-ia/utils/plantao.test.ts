@@ -8,7 +8,7 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  agruparPorTema, esperaDe, quemRecebeu, temaDaPergunta, tempoDeResposta,
+  agruparPorTema, datasDoPeriodo, esperaDe, quemRecebeu, temaDaPergunta, tempoDeResposta,
   textoDaEspera, type PerguntaDoPlantao,
 } from './plantao';
 
@@ -196,5 +196,30 @@ describe('quemRecebeu', () => {
     expect(quemRecebeu(base({ corretor_id: '44f2af74-aa13-49f0-836a-f9ca03e5854b' }))).toBe(
       'sem corretor definido'
     );
+  });
+});
+
+/*
+ * O período vai ao banco como DATAS de São Paulo, as duas inclusivas — o banco
+ * corta o dia no mesmo fuso. "Agora" é o instante; o dia sai do fuso, não do UTC.
+ */
+describe('datasDoPeriodo', () => {
+  // 30/09 às 22h em São Paulo = 01/10 01h UTC. O dia é 30/09.
+  const agora = new Date('2026-10-01T01:00:00Z');
+
+  it('este mês: do dia 1 até hoje, no dia de São Paulo', () => {
+    expect(datasDoPeriodo('mes', agora)).toEqual({ de: '2026-09-01', ate: '2026-09-30' });
+  });
+
+  it('mês passado: o mês inteiro anterior', () => {
+    expect(datasDoPeriodo('mes_passado', agora)).toEqual({ de: '2026-08-01', ate: '2026-08-31' });
+  });
+
+  it('mês passado em janeiro volta um ano', () => {
+    expect(datasDoPeriodo('mes_passado', new Date('2027-01-15T12:00:00Z'))).toEqual({ de: '2026-12-01', ate: '2026-12-31' });
+  });
+
+  it('7 dias: hoje e os seis anteriores', () => {
+    expect(datasDoPeriodo('7dias', agora)).toEqual({ de: '2026-09-24', ate: '2026-09-30' });
   });
 });
