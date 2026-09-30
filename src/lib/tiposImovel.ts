@@ -65,3 +65,14 @@ export const PREFERENCIAS_PADRAO = [
   // Intenção de compra — também não é tipo de imóvel.
   'Investimento',
 ];
+
+/**
+ * Especialidades do corretor (Gestão de Equipe, até 5): sugestões de um clique.
+ * Os tipos são escritos IGUAL às preferências do lead — é por elas que um dia
+ * o lead vai achar o corretor, e 'Apartamentos' não casaria com 'Apartamento'.
+ * Lançamento/Pronto/Locação ficam de fora: já são a Atuação da pessoa.
+ */
+export const ESPECIALIDADES_PADRAO = [
+  'Apartamento', 'Casa', 'Cobertura', 'Terreno', 'Sala Comercial', 'Chácara',
+  'Investimento', 'Alto padrão', 'Primeiro imóvel', 'Permuta',
+];

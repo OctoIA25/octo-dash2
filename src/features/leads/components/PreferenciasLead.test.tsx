@@ -114,4 +114,23 @@ describe('PreferenciasEditor', () => {
     render(<PreferenciasEditor valor={dez} onChange={vi.fn()} />);
     expect(screen.getByPlaceholderText(`Máximo de ${MAX_PREFERENCIAS} preferências`)).toBeDisabled();
   });
+
+  // Especialidades do corretor (Gestão de Equipe): mesmo editor, teto 5 — o do
+  // CHECK da 20261003. Sem o `max` repassado, a vírgula deixaria passar o 6º.
+  it('com max=5 (especialidades), o 6º termo não entra e o aviso diz o nome', async () => {
+    const onChange = vi.fn();
+    const cinco = ['A', 'B', 'C', 'D'];
+    const { rerender } = render(
+      <PreferenciasEditor valor={cinco} onChange={onChange} max={5} nome="especialidade" nomePlural="especialidades" />,
+    );
+    // Colar de uma vez: um único change com dois termos, o 5º e o 6º.
+    await userEvent.click(screen.getByPlaceholderText('Outra especialidade — Enter para adicionar'));
+    await userEvent.paste('E,F,');
+    expect(onChange).toHaveBeenLastCalledWith(['A', 'B', 'C', 'D', 'E']);
+
+    rerender(
+      <PreferenciasEditor valor={[...cinco, 'E']} onChange={onChange} max={5} nome="especialidade" nomePlural="especialidades" />,
+    );
+    expect(screen.getByPlaceholderText('Máximo de 5 especialidades')).toBeDisabled();
+  });
 });

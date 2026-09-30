@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, ChevronDown, Users, UserPlus, Shield, User, Loader2, Trash2, Mail, Lock, Unlock, Camera, AlertTriangle, CheckCircle, Settings, Info, Ban, X, IdCard, Building2, Phone, ClipboardList, Target, BarChart3, GraduationCap, Key, FileUser, LineChart, Brain } from 'lucide-react';
+import { Search, ChevronDown, Users, UserPlus, Shield, User, Loader2, Trash2, Mail, Lock, Unlock, Camera, AlertTriangle, CheckCircle, Settings, Info, Ban, X, IdCard, Building2, Phone, ClipboardList, Target, BarChart3, GraduationCap, Key, FileUser, LineChart, Brain, Award } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import {
@@ -38,6 +38,8 @@ import { carregarCargos, carregarCatalogo, definirCargoDoMembro } from '@/featur
 import { excecoesQuePreservam, cargoDoMesmoNivel } from '@/features/cargos/converterParaCargo';
 import { ROTULO_DO_PAPEL, type Cargo, type PermissaoDoCatalogo } from '@/features/cargos/cargos';
 import { NIVEIS, nivelValido, type Nivel } from '@/features/comissionamento/commissionRules';
+import { PreferenciasEditor } from '@/features/leads/components/PreferenciasLead';
+import { ESPECIALIDADES_PADRAO } from '@/lib/tiposImovel';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -183,6 +185,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
   const [editNivelComissao, setEditNivelComissao] = useState<Nivel | ''>('');
   const [editMemberWhatsapp, setEditMemberWhatsapp] = useState<string>('');
   const [editAtuacao, setEditAtuacao] = useState<AtuacaoTipo[]>([...ATUACAO_TIPOS]);
+  const [editEspecialidades, setEditEspecialidades] = useState<string[]>([]);
   const editMemberPhotoInputRef = useRef<HTMLInputElement>(null);
   const [isSavingPermissions, setIsSavingPermissions] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -650,7 +653,8 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
     const whatsappPhones = (currentPerms as any).whatsapp_phones;
     setEditMemberWhatsapp(Array.isArray(whatsappPhones) ? whatsappPhones.join(', ') : '');
     setEditAtuacao(atuacoesDe(member.permissions));
-    
+    setEditEspecialidades(member.especialidades ?? []);
+
     // Definir permissões de abas baseado nas sidebar_permissions salvas ou padrão por role
     const defaultPerms: Record<string, boolean> = {
       leads: true,
@@ -845,7 +849,11 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
         atuacao: editAtuacao,
       };
       
-      const result = await updateMemberPermissions(editingMember.id, newPermissions, editMemberCreci.trim() || null);
+      const result = await updateMemberPermissions(editingMember.id, newPermissions, {
+        creci: editMemberCreci.trim() || null,
+        // Vazio vira NULL: o CHECK da 20261003 recusa '{}' — "nenhuma" é uma forma só.
+        especialidades: editEspecialidades.length ? editEspecialidades : null,
+      });
       
       if (!result.success) {
         toast.error(result.error || 'Erro ao salvar permissões');
@@ -2751,6 +2759,26 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
               </DropdownMenu>
               <p className="text-xs text-gray-500 dark:text-slate-400">
                 Marque uma ou mais. Define quais leads o corretor vê no Bolsão e recebe na roleta.
+              </p>
+            </div>
+            {/* Especialidades — coluna própria (20261003), pública para o site.
+                Não decide nada no CRM ainda: a Atuação acima é que filtra lead. */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <Award className="h-4 w-4 text-gray-500 dark:text-slate-400" />
+                Especialidades
+              </Label>
+              <PreferenciasEditor
+                valor={editEspecialidades}
+                onChange={setEditEspecialidades}
+                disabled={isSavingPermissions}
+                sugestoes={ESPECIALIDADES_PADRAO}
+                max={5}
+                nome="especialidade"
+                nomePlural="especialidades"
+              />
+              <p className="text-xs text-gray-500 dark:text-slate-400">
+                Até 5 — escolha acima ou escreva. Ficam disponíveis para a página do corretor no site.
               </p>
             </div>
             {/* Abas do Menu Principal — VÊM DO CARGO (29/09, pedido do chefe).

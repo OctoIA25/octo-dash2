@@ -23,6 +23,8 @@ export interface TenantMember {
   team_id?: string | null;
   /** P4.1 — o cargo do membro. `null` = ainda na regra antiga de permissões. */
   cargo_id?: string | null;
+  /** Até 5 (CHECK da 20261003). Pública: o site lê pela anon key. */
+  especialidades?: string[] | null;
 }
 
 export interface CreateMemberData {
@@ -64,6 +66,7 @@ interface TenantMemberExtra {
   team_id: string | null;
   /** P4.1 — o cargo do membro. `null` = ainda na regra antiga de permissões. */
   cargo_id: string | null;
+  especialidades: string[] | null;
 }
 
 function mapTenantMemberRow(
@@ -100,6 +103,7 @@ function mapTenantMemberRow(
     creci: extra?.creci ?? member.creci ?? null,
     team_id: extra?.team_id ?? member.team_id ?? null,
     cargo_id: extra?.cargo_id ?? member.cargo_id ?? null,
+    especialidades: extra?.especialidades ?? member.especialidades ?? null,
   };
 }
 
@@ -167,7 +171,7 @@ export async function fetchTenantMembers(tenantId: string): Promise<TenantMember
       // certa. Aconteceu em 21/09 com `cargo_id` recém-criada.
       const { data: extraData, error: extraError } = await supabase
         .from('tenant_memberships')
-        .select('user_id, leader_user_id, creci, team_id, cargo_id')
+        .select('user_id, leader_user_id, creci, team_id, cargo_id, especialidades')
         .eq('tenant_id', tenantId)
         .in('user_id', memberIds);
       if (extraError) console.error('Erro ao buscar cargo/líder/CRECI dos membros:', extraError);
@@ -177,6 +181,7 @@ export async function fetchTenantMembers(tenantId: string): Promise<TenantMember
           creci: row.creci ?? null,
           cargo_id: row.cargo_id ?? null,
           team_id: row.team_id ?? null,
+          especialidades: row.especialidades ?? null,
         };
       });
     }
@@ -369,12 +374,13 @@ export async function updateMemberRole(
 export async function updateMemberPermissions(
   memberId: string,
   permissions: Record<string, any>,
-  creci?: string | null
+  colunas: { creci?: string | null; especialidades?: string[] | null } = {}
 ): Promise<ServiceResult> {
   try {
-    // `creci` undefined = não mexe na coluna (retrocompat). null/string = grava.
-    const updatePayload: Record<string, any> =
-      creci === undefined ? { permissions } : { permissions, creci };
+    // Coluna ausente (undefined) = não mexe nela. null/valor = grava.
+    const updatePayload: Record<string, any> = { permissions };
+    if (colunas.creci !== undefined) updatePayload.creci = colunas.creci;
+    if (colunas.especialidades !== undefined) updatePayload.especialidades = colunas.especialidades;
 
     const { data, error } = await supabase
       .from('tenant_memberships')

@@ -28,12 +28,13 @@ export function preferenciasDe(valor?: string[] | string | null): string[] {
 /**
  * Normaliza o conjunto inteiro: tira espaço sobrando, corta em 40 chars,
  * remove repetido ignorando caixa (mantendo a primeira forma digitada) e limita
- * a 10 termos — o mesmo teto do CHECK da 20260819.
+ * a `max` termos — 10 é o teto do CHECK da 20260819 (preferências do lead); as
+ * especialidades do corretor passam 5, o da 20261003.
  *
  * Não corrige grafia: 'apto' e 'Apartamento' continuam sendo dois termos. É o
  * preço do vocabulário aberto, e o `<datalist>` é o empurrão para a forma boa.
  */
-export function normalizarPreferencias(itens: string[]): string[] {
+export function normalizarPreferencias(itens: string[], max = MAX_PREFERENCIAS): string[] {
   const vistos = new Set<string>();
   const saida: string[] = [];
   for (const bruto of itens) {
@@ -43,7 +44,7 @@ export function normalizarPreferencias(itens: string[]): string[] {
     if (vistos.has(chave)) continue;
     vistos.add(chave);
     saida.push(termo);
-    if (saida.length === MAX_PREFERENCIAS) break;
+    if (saida.length === max) break;
   }
   return saida;
 }
@@ -100,22 +101,34 @@ export function PreferenciasBadges({
  *
  * `<datalist>` em vez de combobox: autocomplete nativo, sem estado de dropdown
  * para manter e sem fechar por fora do popover do modal.
+ *
+ * Os padrões são os das preferências do lead; as especialidades do corretor
+ * (Gestão de Equipe) passam outras sugestões, teto 5 e o nome delas.
  */
 export function PreferenciasEditor({
   valor,
   onChange,
   disabled,
+  sugestoes = PREFERENCIAS_PADRAO,
+  max = MAX_PREFERENCIAS,
+  nome = 'preferência',
+  nomePlural = 'preferências',
 }: {
   valor: string[];
   onChange: (novo: string[]) => void;
   disabled?: boolean;
+  /** Os botões de um clique. O `<datalist>` segue sendo os tipos de imóvel. */
+  sugestoes?: readonly string[];
+  max?: number;
+  nome?: string;
+  nomePlural?: string;
 }) {
   const [rascunho, setRascunho] = useState('');
   const listaId = useId();
-  const cheio = valor.length >= MAX_PREFERENCIAS;
+  const cheio = valor.length >= max;
 
   const adicionar = (termo: string) => {
-    const novo = normalizarPreferencias([...valor, termo]);
+    const novo = normalizarPreferencias([...valor, termo], max);
     setRascunho('');
     if (novo.length !== valor.length) onChange(novo);
   };
@@ -148,7 +161,7 @@ export function PreferenciasEditor({
 
       {/* Padrões em um clique — só os que ainda não estão marcados */}
       <div className="flex flex-wrap gap-1.5">
-        {PREFERENCIAS_PADRAO.filter(
+        {sugestoes.filter(
           (t) => !valor.some((p) => p.toLowerCase() === t.toLowerCase()),
         ).map((termo) => (
           <button
@@ -170,13 +183,13 @@ export function PreferenciasEditor({
         value={rascunho}
         disabled={disabled || cheio}
         maxLength={MAX_CHARS}
-        placeholder={cheio ? `Máximo de ${MAX_PREFERENCIAS} preferências` : 'Outra preferência — Enter para adicionar'}
+        placeholder={cheio ? `Máximo de ${max} ${nomePlural}` : `Outra ${nome} — Enter para adicionar`}
         onChange={(e) => {
           // Vírgula fecha o termo: quem cola "Casa, Terreno" espera dois chips.
           const texto = e.target.value;
           if (texto.includes(',')) {
             const partes = texto.split(',');
-            onChange(normalizarPreferencias([...valor, ...partes.slice(0, -1)]));
+            onChange(normalizarPreferencias([...valor, ...partes.slice(0, -1)], max));
             setRascunho(partes[partes.length - 1]);
             return;
           }
