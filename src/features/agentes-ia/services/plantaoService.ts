@@ -27,8 +27,15 @@ export interface ContadoresDoPlantao {
   sem_dono_oculto: number;
   /** Esperando além da régua agora (pendentes e expiradas). */
   atrasadas: number;
-  /** Mediana, em minutos, de quanto levou para responder. null = nada respondido no período. */
+  /** Mediana, em minutos, das respostas COM TEMPO. null = nenhuma resposta medida no período. */
   mediana_resposta_min: number | null;
+  /** Respondidas com tempo medido (5 s ou mais entre a pergunta e a resposta). */
+  respostas_medidas: number;
+  /**
+   * Respondidas sem tempo: a LIA da Lotus grava a pergunta no instante da
+   * resposta (80 de 95 em 30/09). Ficam fora da mediana, e a tela diz quantas.
+   */
+  respostas_sem_tempo: number;
 }
 
 /** Uma área que a pessoa pode filtrar, com o total do período ANTES do filtro. */
@@ -80,6 +87,8 @@ export interface ReguaDoPlantao {
   /** null = não houve plantão respondido no período. Não é zero por cento. */
   pct_dentro: number | null;
   mediana_minutos: number | null;
+  /** Respondidas fora da conta por não terem tempo (gravadas junto com a resposta). */
+  sem_tempo?: number;
 }
 
 /**

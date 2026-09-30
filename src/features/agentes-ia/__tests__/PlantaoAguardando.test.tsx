@@ -213,6 +213,33 @@ describe('resumo, período e área', () => {
     expect(within(resumo).getByText('2h43')).toBeInTheDocument();
   });
 
+  /*
+   * A LIA da Lotus grava a pergunta no instante da resposta: 80 de 95 sem
+   * tempo. O banco deixa essas fora da mediana; o cartão diz quantas.
+   */
+  it('o tempo diz de quantas respostas é a mediana, e quantas não tinham tempo', async () => {
+    carregar.mockResolvedValue(fila({
+      na_janela: 119, respondidas: 95, mediana_resposta_min: 4013,
+      respostas_medidas: 15, respostas_sem_tempo: 80,
+    }));
+    abrir();
+    const resumo = await screen.findByLabelText('Resumo do período');
+    expect(within(resumo).getByText('2 dias')).toBeInTheDocument();
+    expect(within(resumo).getByText('mediana de 15 · 80 sem tempo medido')).toBeInTheDocument();
+  });
+
+  it('respondidas só gravadas junto: "—" e o motivo, não "nada respondido"', async () => {
+    carregar.mockResolvedValue(fila({
+      na_janela: 80, respondidas: 80, mediana_resposta_min: null,
+      respostas_medidas: 0, respostas_sem_tempo: 80,
+    }));
+    abrir();
+    const resumo = await screen.findByLabelText('Resumo do período');
+    expect(within(resumo).getByText('—')).toBeInTheDocument();
+    expect(within(resumo).getByText('80 sem tempo medido')).toBeInTheDocument();
+    expect(within(resumo).queryByText('nada respondido no período')).not.toBeInTheDocument();
+  });
+
   it('sem nada respondido, o tempo é "—", não zero minutos', async () => {
     carregar.mockResolvedValue(fila({ na_janela: 3, aguardando: 3 }));
     abrir();

@@ -22,6 +22,7 @@ import {
   CONFIG_PADRAO, DESTINOS, carregarConfig, salvarConfig, simularRegua,
   type ConfigDoPlantao, type DestinoDoPlantao,
 } from '../services/plantaoService';
+import { duracao } from '../utils/plantao';
 
 interface Props {
   tenantId?: string | null;
@@ -276,10 +277,15 @@ function ReguaMedida({
     return <p className="mt-1 text-xs text-muted-foreground">Medindo no seu histórico…</p>;
   }
   if (!regua) return null;
+  // Respostas gravadas junto com a pergunta (a LIA da Lotus faz assim) não
+  // têm tempo: o banco as deixa fora da conta, e a tela diz quantas.
+  const semTempo = regua.sem_tempo ?? 0;
   if (regua.respondidas === 0) {
     return (
       <p className="mt-1 text-xs text-muted-foreground">
-        Sem plantão respondido nos últimos {regua.dias} dias — não há histórico para medir esta régua.
+        {semTempo > 0
+          ? `As ${semTempo} respostas dos últimos ${regua.dias} dias foram gravadas junto com a pergunta — não há tempo de resposta para medir esta régua.`
+          : `Sem plantão respondido nos últimos ${regua.dias} dias — não há histórico para medir esta régua.`}
       </p>
     );
   }
@@ -288,7 +294,9 @@ function ReguaMedida({
     <p className="mt-1 text-xs text-muted-foreground">
       Nos últimos {regua.dias} dias, {regua.pct_dentro}% das {regua.respondidas} respostas vieram
       dentro de {regua.minutos} min
-      {fora > 0 && ` — ${fora} teriam estourado`}. Sua mediana é de {regua.mediana_minutos} min.
+      {fora > 0 && ` — ${fora} teriam estourado`}. Sua mediana é de{' '}
+      {regua.mediana_minutos === null ? '—' : duracao(regua.mediana_minutos)}.
+      {semTempo > 0 && ` ${semTempo} gravadas junto com a resposta ficaram fora da conta.`}
     </p>
   );
 }

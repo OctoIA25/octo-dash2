@@ -49,7 +49,7 @@ import {
   type AbaDoPlantao, type AreaDoPlantao, type FilaDoPlantao, type FiltroDoPlantao,
 } from '../services/plantaoService';
 import {
-  agruparPorTema, datasDoPeriodo, esperaDe, quemRecebeu, tempoDeResposta, textoDaEspera,
+  agruparPorTema, datasDoPeriodo, duracao, esperaDe, quemRecebeu, tempoDeResposta,
   type PerguntaDoPlantao, type PeriodoPronto,
 } from '../utils/plantao';
 
@@ -304,9 +304,6 @@ function Escolha<T extends string | null>({
   );
 }
 
-/** "2h43", "45 min", "3 dias" — a mesma escrita do relógio da fila. */
-const duracao = (min: number) => (min < 1 ? 'menos de 1 min' : textoDaEspera(min).replace('há ', ''));
-
 /**
  * Os números do período e da área escolhidos. Vêm do mesmo recorte da lista,
  * no banco — a tela não soma nada, para o cartão nunca dizer 20 com a lista
@@ -316,6 +313,13 @@ function Resumo({ fila }: { fila: FilaDoPlantao }) {
   const c = fila.contadores;
   const atrasadas = c.atrasadas ?? 0;
   const mediana = c.mediana_resposta_min ?? null;
+  const semTempo = c.respostas_sem_tempo ?? 0;
+  const notaDoTempo =
+    mediana !== null
+      ? `mediana de ${c.respostas_medidas}${semTempo > 0 ? ` · ${semTempo} sem tempo medido` : ''}`
+      : semTempo > 0
+        ? `${semTempo} sem tempo medido`
+        : 'nada respondido no período';
   const cartoes: Array<{ rotulo: string; valor: string | number; nota?: string; alerta?: boolean }> = [
     { rotulo: 'Abertos pela LIA', valor: c.na_janela },
     {
@@ -328,8 +332,9 @@ function Resumo({ fila }: { fila: FilaDoPlantao }) {
     {
       rotulo: 'Tempo de resposta',
       valor: mediana === null ? '—' : duracao(mediana),
-      // null é "não houve resposta", não "zero minutos".
-      nota: mediana === null ? 'nada respondido no período' : 'mediana',
+      // null é "nenhuma resposta medida", não "zero minutos". E a resposta
+      // gravada junto com a pergunta não tem tempo: a nota diz quantas.
+      nota: notaDoTempo,
     },
   ];
   return (

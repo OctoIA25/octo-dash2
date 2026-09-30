@@ -52,16 +52,20 @@ BEGIN
     ('x-a-nova',  t, 'A nova',  'pendente', now() - interval '5 minutes', NULL, NULL, u_corr_a::text, NULL),
     ('x-b',       t, 'do B',    'pendente', now() - interval '10 minutes', NULL, NULL, u_corr_b::text, NULL),
     ('x-orfa',    t, 'sem dono', 'respondida', now() - interval '3 hours', now() - interval '1 hour',
-       'resposta de duas horas', 'Fernanda Emilia', NULL);
+       'resposta de duas horas', 'Fernanda Emilia', NULL),
+    -- Gravada JUNTO com a resposta (meio segundo): é assim que a LIA da Lotus
+    -- registra — 80 das 95 respondidas em 30/09. Não é tempo de resposta.
+    ('x-instantanea', t, 'gravada ao responder', 'respondida', now() - interval '20 minutes',
+       now() - interval '20 minutes' + interval '500 milliseconds', 'r', u_corr_b::text, NULL);
 
   -- ---------- período ----------
   PERFORM set_config('request.jwt.claims', json_build_object('sub',u_admin,'role','authenticated')::text, true);
   r := public.plantao_fila(t, 'todas', 200, NULL, hoje - 3, hoje);
   SELECT string_agg(l->>'id', ',' ORDER BY l->>'id') INTO ids FROM jsonb_array_elements(r->'linhas') l;
-  IF ids IS DISTINCT FROM 'x-a-nova,x-a-velha,x-b,x-ontem-2330,x-orfa' THEN
-    RAISE EXCEPTION 'FALHOU: periodo hoje-3..hoje devia trazer as 5 de dentro, trouxe %', ids; END IF;
-  IF (r->'contadores'->>'na_janela')::int IS DISTINCT FROM 5 THEN
-    RAISE EXCEPTION 'FALHOU: contador do periodo diz %, a lista tem 5', r->'contadores'->>'na_janela'; END IF;
+  IF ids IS DISTINCT FROM 'x-a-nova,x-a-velha,x-b,x-instantanea,x-ontem-2330,x-orfa' THEN
+    RAISE EXCEPTION 'FALHOU: periodo hoje-3..hoje devia trazer as 6 de dentro, trouxe %', ids; END IF;
+  IF (r->'contadores'->>'na_janela')::int IS DISTINCT FROM 6 THEN
+    RAISE EXCEPTION 'FALHOU: contador do periodo diz %, a lista tem 6', r->'contadores'->>'na_janela'; END IF;
   RAISE NOTICE 'OK 1: o periodo corta no inicio do dia de Sao Paulo, e o contador acompanha';
 
   r := public.plantao_fila(t, 'todas', 200, NULL, hoje - 3, hoje - 1);
@@ -83,10 +87,24 @@ BEGIN
   -- Régua padrão de 30 min: só a de 2 horas passou.
   IF (r->'contadores'->>'atrasadas')::int IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'FALHOU: atrasadas deviam ser 1 (a de 2h), veio %', r->'contadores'->>'atrasadas'; END IF;
-  -- Mediana de 60 e 120 minutos.
+  -- Mediana de 60 e 120 minutos. A gravada junto com a resposta NÃO entra:
+  -- com ela a mediana da Lotus dava 0 min, e o cartão diria "menos de 1 min".
   IF (r->'contadores'->>'mediana_resposta_min')::int IS DISTINCT FROM 90 THEN
     RAISE EXCEPTION 'FALHOU: mediana devia ser 90 min, veio %', r->'contadores'->>'mediana_resposta_min'; END IF;
-  RAISE NOTICE 'OK 4: resumo -- 3 pendentes, 1 atrasada, mediana de 90 min';
+  IF (r->'contadores'->>'respostas_medidas')::int IS DISTINCT FROM 2
+     OR (r->'contadores'->>'respostas_sem_tempo')::int IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'FALHOU: devia medir 2 e dizer 1 sem tempo, veio % / %',
+      r->'contadores'->>'respostas_medidas', r->'contadores'->>'respostas_sem_tempo'; END IF;
+  RAISE NOTICE 'OK 4: resumo -- 3 pendentes, 1 atrasada, mediana de 90 min sem a gravada junto';
+
+  -- A régua de Configurações mede o mesmo tempo, e mentia do mesmo jeito: a
+  -- gravada junto contava como "respondida em 0 min, dentro do prazo".
+  -- Medidas em 7 dias: 30 min (borda), 60 e 120. Dentro de 30 min: só a borda.
+  r := public.plantao_regua(t, 30, 7);
+  IF (r->>'respondidas')::int IS DISTINCT FROM 3 OR (r->>'dentro_do_prazo')::int IS DISTINCT FROM 1
+     OR (r->>'mediana_minutos')::int IS DISTINCT FROM 60 OR (r->>'sem_tempo')::int IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'FALHOU: regua devia medir 3, 1 no prazo, mediana 60, 1 sem tempo -- veio %', r; END IF;
+  RAISE NOTICE 'OK 4b: a regua tambem ignora a gravada junto, e diz que ignorou';
 
   -- ---------- cada linha diz a equipe e traz o telefone para abrir a conversa ----------
   SELECT l INTO r FROM jsonb_array_elements(
@@ -116,7 +134,7 @@ BEGIN
   r := public.plantao_fila(t, 'todas', 200, NULL, hoje - 3, hoje, time_a::text);
   SELECT string_agg(e->>'nome' || '=' || (e->>'total'), ',' ORDER BY e->>'nome') INTO ids
     FROM jsonb_array_elements(r->'equipes') e;
-  IF ids IS DISTINCT FROM 'Time A=3,Time B=1' OR NOT (r->'equipes' @> '[{"id":"sem_equipe","total":1}]') THEN
+  IF ids IS DISTINCT FROM 'Time A=3,Time B=2' OR NOT (r->'equipes' @> '[{"id":"sem_equipe","total":1}]') THEN
     RAISE EXCEPTION 'FALHOU: areas do admin vieram % / %', ids, r->'equipes'; END IF;
   RAISE NOTICE 'OK 8: o admin escolhe entre Time A, Time B e Sem equipe, com o total de cada';
 
@@ -137,8 +155,8 @@ BEGIN
   -- ---------- a chamada antiga continua valendo (front antigo durante o deploy) ----------
   PERFORM set_config('request.jwt.claims', json_build_object('sub',u_admin,'role','authenticated')::text, true);
   r := public.plantao_fila(p_tenant_id => t, p_aba => 'todas', p_limite => 200, p_dias => 90);
-  IF jsonb_array_length(r->'linhas') IS DISTINCT FROM 6 THEN
-    RAISE EXCEPTION 'FALHOU: chamada antiga (90 dias) devia trazer as 6, trouxe %', jsonb_array_length(r->'linhas'); END IF;
+  IF jsonb_array_length(r->'linhas') IS DISTINCT FROM 7 THEN
+    RAISE EXCEPTION 'FALHOU: chamada antiga (90 dias) devia trazer as 7, trouxe %', jsonb_array_length(r->'linhas'); END IF;
   RAISE NOTICE 'OK 11: a chamada antiga, sem datas, continua funcionando';
 
   -- ---------- responder: o corretor só responde as dele ----------

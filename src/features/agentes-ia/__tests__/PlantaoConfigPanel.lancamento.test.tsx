@@ -10,6 +10,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: vi.fn() }) }));
 
 const salvar = vi.fn();
+const regua = vi.fn();
 vi.mock('../services/plantaoService', async (orig) => ({
   ...(await orig<Record<string, unknown>>()),
   carregarConfig: async () => ({
@@ -17,7 +18,7 @@ vi.mock('../services/plantaoService', async (orig) => ({
     lancamento_responsavel_id: null, lancamento_escala_horas: 24, lancamento_escala_para_id: null,
   }),
   salvarConfig: (...a: unknown[]) => salvar(...a),
-  simularRegua: async () => null,
+  simularRegua: (...a: unknown[]) => regua(...a),
 }));
 
 vi.mock('@/lib/supabaseClient', () => ({
@@ -40,7 +41,10 @@ const abrir = () => {
   return render(<QueryClientProvider client={qc}><PlantaoConfigPanel tenantId="t1" isAdmin /></QueryClientProvider>);
 };
 
-beforeEach(() => salvar.mockReset().mockResolvedValue(undefined));
+beforeEach(() => {
+  salvar.mockReset().mockResolvedValue(undefined);
+  regua.mockReset().mockResolvedValue(null);
+});
 
 describe('perguntas de lançamento', () => {
   it('grava quem responde, as horas e quem é avisado', async () => {
@@ -75,5 +79,32 @@ describe('perguntas de lançamento', () => {
     await screen.findByLabelText('Quem é avisado');
     await waitFor(() => expect(screen.getAllByRole('option', { name: 'Erick Ferrigatti' }).length).toBeGreaterThan(0));
     expect(screen.queryByRole('option', { name: /octo\.inteligencia/ })).not.toBeInTheDocument();
+  });
+});
+
+/*
+ * 30/09 — a régua contava como "respondida em 0 min, dentro do prazo" a
+ * pergunta que a LIA da Lotus grava no instante da resposta (80 de 95). O
+ * banco passou a medir só resposta com tempo; a tela diz quantas ficaram fora.
+ */
+describe('a régua só mede resposta com tempo', () => {
+  it('diz quantas ficaram fora da conta, e a mediana em dias, não em 4.013 min', async () => {
+    regua.mockResolvedValue({
+      minutos: 30, dias: 90, respondidas: 15, dentro_do_prazo: 0,
+      pct_dentro: 0, mediana_minutos: 4013, sem_tempo: 80,
+    });
+    abrir();
+    expect(await screen.findByText(/80 gravadas junto com a resposta ficaram fora da conta/)).toBeInTheDocument();
+    expect(screen.getByText(/Sua mediana é de 2 dias/)).toBeInTheDocument();
+  });
+
+  it('se TODAS foram gravadas junto, diz que não há tempo para medir — não "sem plantão"', async () => {
+    regua.mockResolvedValue({
+      minutos: 30, dias: 90, respondidas: 0, dentro_do_prazo: 0,
+      pct_dentro: null, mediana_minutos: null, sem_tempo: 80,
+    });
+    abrir();
+    expect(await screen.findByText(/não há tempo de resposta para medir/)).toBeInTheDocument();
+    expect(screen.queryByText(/Sem plantão respondido/)).not.toBeInTheDocument();
   });
 });

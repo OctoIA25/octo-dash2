@@ -203,6 +203,11 @@ export function esperaDe(
   };
 }
 
+/** "2h43", "45 min", "2 dias" — a mesma escrita do relógio da fila, sem o "há". */
+export function duracao(minutos: number): string {
+  return minutos < 1 ? 'menos de 1 min' : textoDaEspera(minutos).replace('há ', '');
+}
+
 /** Quanto o corretor levou para responder. Null quando ainda não respondeu. */
 export function tempoDeResposta(p: PerguntaDoPlantao): string | null {
   if (!p.respondida_em || !p.criado_em) return null;
