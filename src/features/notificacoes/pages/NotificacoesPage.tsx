@@ -136,9 +136,9 @@ export const NotificacoesPage = () => {
       </header>
 
       <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-        <div role="tablist" aria-label="Filtrar por tipo" className="inline-flex flex-wrap rounded-lg bg-slate-100 p-1 dark:bg-slate-800">
+        <div role="group" aria-label="Filtrar por tipo" className="inline-flex flex-wrap rounded-lg bg-slate-100 p-1 dark:bg-slate-800">
           {ABAS.map((a) => (
-            <button key={a.id} type="button" role="tab" aria-selected={aba === a.id} onClick={() => trocarAba(a.id)}
+            <button key={a.id} type="button" aria-pressed={aba === a.id} onClick={() => trocarAba(a.id)}
               className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                 aba === a.id
                   ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-900 dark:text-slate-50'
