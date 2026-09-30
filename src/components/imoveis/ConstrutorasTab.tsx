@@ -329,7 +329,8 @@ export function ConstrutorasTab() {
         aberto={Boolean(editando) || criando}
         onFechar={() => { setEditando(null); setCriando(false); }}
         construtora={editando}
-        comissao={editando ? comissoes.get(editando.id)?.comissaoPadraoPct ?? null : undefined}
+        // Fora do mapa = a RPC não devolveu a linha = este cargo não vê a comissão.
+        comissao={editando && comissoes.has(editando.id) ? comissoes.get(editando.id)!.comissaoPadraoPct : undefined}
         cnpj={editando ? cnpjs.get(editando.id) ?? null : null}
         salvando={salvando}
         onCriar={criarConstrutora}

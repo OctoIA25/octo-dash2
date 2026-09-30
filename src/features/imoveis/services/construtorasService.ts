@@ -276,6 +276,13 @@ function erroDeDuplicata(error: { code?: string; message?: string }): string | n
   return 'já existe uma construtora com esse nome';
 }
 
+/**
+ * A escrita é só de admin e líder de equipe (política `construtoras_write`).
+ * Para os outros cargos o banco não devolve erro no UPDATE: a RLS só deixa a
+ * linha de fora. Por isso o UPDATE confere quantas linhas mudou.
+ */
+const SEM_PERMISSAO = 'nada foi salvo: só admin ou líder de equipe edita construtoras';
+
 function validar(entrada: EntradaDeConstrutora): { codigo: string; nome: string } | { erro: string } {
   const codigo = (entrada.codigo || '').trim().toLowerCase();
   if (!/^[a-z0-9_]+$/.test(codigo)) {
@@ -328,6 +335,7 @@ export async function criarConstrutora(
     .from('construtoras')
     .insert({ tenant_id: tenantId, codigo: v.codigo, ...paraLinha(entrada, v.nome) });
 
+  if (error?.code === '42501') return { success: false, error: SEM_PERMISSAO };
   if (error) return { success: false, error: erroDeDuplicata(error) ?? error.message };
   return { success: true };
 }
@@ -342,13 +350,15 @@ export async function atualizarConstrutora(
   const v = validar(entrada);
   if ('erro' in v) return { success: false, error: v.erro };
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('construtoras')
     .update(paraLinha(entrada, v.nome))
     .eq('tenant_id', tenantId)
-    .eq('id', id);
+    .eq('id', id)
+    .select('id');
 
   if (error) return { success: false, error: erroDeDuplicata(error) ?? error.message };
+  if (!data?.length) return { success: false, error: SEM_PERMISSAO };
   return { success: true };
 }
 

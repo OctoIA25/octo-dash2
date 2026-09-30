@@ -198,6 +198,35 @@ describe('criar NUNCA sobrescreve uma existente', () => {
   });
 });
 
+describe('cargo sem escrita não recebe um falso "salvo"', () => {
+  const entrada = {
+    codigo: 'santa_angela', nome: 'Santa Ângela', razaoSocial: null,
+    responsavelNome: null, responsavelTelefone: null, responsavelEmail: null,
+    prazoPagamentoDias: null, dadosNota: null, eAvulso: false, ativa: true, observacao: null,
+  };
+
+  it('UPDATE que a RLS filtrou (0 linhas, sem erro) volta como falha', async () => {
+    // O corretor via o modal fechar como se tivesse salvo, e nada mudava.
+    linhas = [];
+    const { atualizarConstrutora } = await import('../construtorasService');
+    const r = await atualizarConstrutora(TENANT, 'c1', entrada);
+    expect(r.success).toBe(false);
+    expect(r.error).toMatch(/nada foi salvo/);
+  });
+
+  it('UPDATE que alterou a linha é sucesso', async () => {
+    const { atualizarConstrutora } = await import('../construtorasService');
+    expect((await atualizarConstrutora(TENANT, 'c1', entrada)).success).toBe(true);
+  });
+
+  it('INSERT barrado pela RLS vira mensagem em português', async () => {
+    respostaErro = { code: '42501', message: 'new row violates row-level security policy for table "construtoras"' };
+    const { criarConstrutora } = await import('../construtorasService');
+    const r = await criarConstrutora(TENANT, entrada);
+    expect(r.error).toMatch(/nada foi salvo/);
+  });
+});
+
 describe('codigoDaConstrutora', () => {
   it('vira snake_case sem acento', async () => {
     const { codigoDaConstrutora } = await import('../construtorasService');
