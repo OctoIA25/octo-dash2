@@ -16,7 +16,7 @@
  * lista vazia**.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { carregarPlanilha } from '../vendasPlanilhaService';
+import { carregarPlanilha, gravarCodigoDaVenda } from '../vendasPlanilhaService';
 import { carregarConferencia } from '../vendasService';
 
 const rpc = vi.fn();
@@ -71,6 +71,30 @@ describe('a chamada usa os nomes da função do banco', () => {
     await carregarPlanilha('t1', { corretor: '', equipeId: '', tipo: '', situacao: '' });
     const args = rpc.mock.calls[0][1] as Record<string, unknown>;
     expect([args.p_corretor, args.p_equipe_id, args.p_tipo, args.p_situacao]).toEqual([null, null, null, null]);
+  });
+});
+
+describe('o código do imóvel das vendas de terceiros', () => {
+  it('grava com os nomes da função do banco, sem espaço sobrando', async () => {
+    rpc.mockResolvedValue({ data: { ok: true }, error: null });
+    await gravarCodigoDaVenda('linha-1', '  110D1GD ');
+    expect(rpc).toHaveBeenCalledWith('venda_planilha_gravar_codigo', {
+      p_venda_planilha_id: 'linha-1', p_codigo: '110D1GD',
+    });
+  });
+
+  // Apagar é mandar nulo: é o que o banco entende como "tira o código".
+  it('campo em branco apaga', async () => {
+    rpc.mockResolvedValue({ data: { ok: true }, error: null });
+    await gravarCodigoDaVenda('linha-1', '   ');
+    expect((rpc.mock.calls[0][1] as Record<string, unknown>).p_codigo).toBeNull();
+  });
+
+  it('recusa do banco sobe, para a tela desfazer e avisar', async () => {
+    rpc.mockResolvedValue({ data: null, error: { message: 'sem permissao para editar o codigo' } });
+    await expect(gravarCodigoDaVenda('linha-1', 'X')).rejects.toMatchObject({
+      message: 'sem permissao para editar o codigo',
+    });
   });
 });
 

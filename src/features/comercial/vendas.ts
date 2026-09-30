@@ -42,6 +42,8 @@ export interface VendaNaLista {
   lead_id: string | null;
   /** De onde veio o lead ("Santa Angela", "ZAP Imóveis"). "Manual" quando a proposta nasceu à mão. */
   origem: string | null;
+  /** Qd · Un do lançamento ("B-27") ou código do imóvel de terceiros, da proposta. */
+  codigo: string | null;
   vgv: number;
   comissao_pct: number;
   comissao_bruta: number;

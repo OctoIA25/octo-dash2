@@ -374,6 +374,7 @@ export function ConferenciaDeVendasPage() {
                 <tr className="border-b bg-muted/40 text-left uppercase tracking-wide text-muted-foreground">
                   <th className="px-3 py-2">Data</th>
                   <th className="px-3 py-2">Empreendimento</th>
+                  <th className="px-3 py-2">Qd · Un / Código</th>
                   <th className="px-3 py-2">Origem</th>
                   <th className="px-3 py-2">Corretor</th>
                   <th className="px-3 py-2 text-right">VGV</th>
@@ -386,7 +387,7 @@ export function ConferenciaDeVendasPage() {
               </thead>
               <tbody className="divide-y">
                 {linhas.length === 0 && (
-                  <tr><td colSpan={10} className="px-3 py-6 text-center text-muted-foreground">
+                  <tr><td colSpan={11} className="px-3 py-6 text-center text-muted-foreground">
                     Nenhuma venda no período. A venda aparece aqui quando a proposta entra em “Proposta Assinada”.
                   </td></tr>
                 )}
@@ -400,6 +401,7 @@ export function ConferenciaDeVendasPage() {
                         <span className="font-medium">{v.empreendimento || '—'}</span>
                         {v.construtora && <span className="ml-1 text-muted-foreground">· {v.construtora}</span>}
                       </td>
+                      <td className="px-3 py-2 whitespace-nowrap">{v.codigo || '—'}</td>
                       {/* De onde veio o lead. "Manual" é a proposta que nasceu
                           à mão, sem lead — é o que se sabe, e aparece. */}
                       <td className="px-3 py-2 whitespace-nowrap">{v.origem || '—'}</td>

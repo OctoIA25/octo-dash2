@@ -52,6 +52,10 @@ export interface VendaDaPlanilha {
   status_recebimento: string | null;
   /** Lida da própria planilha pelo banco — ver a migration de 29/09. */
   situacao: SituacaoDaPlanilha;
+  /** Do cadastro. Diz à tela se a célula mostra Qd · Un ou o código. */
+  tipo_negocio: 'lancamento' | 'terceiros' | null;
+  /** O código do imóvel das vendas de terceiros, digitado na Dash. */
+  codigo_imovel: string | null;
 }
 
 export type SituacaoDaPlanilha = 'pago' | 'parcelado' | 'pendente';
@@ -106,4 +110,18 @@ export async function carregarPlanilha(
   // conclusões opostas sobre o mês.
   if (error) throw error;
   return (data as ConferenciaDaPlanilha) ?? null;
+}
+
+/**
+ * Grava o código do imóvel de uma venda de terceiros. Vazio apaga.
+ *
+ * Recebe o id da LINHA, mas o banco guarda pela venda (cliente + assinatura +
+ * empreendimento): as parcelas da mesma venda passam a mostrar o mesmo código.
+ */
+export async function gravarCodigoDaVenda(vendaPlanilhaId: string, codigo: string) {
+  const { error } = await supabase.rpc('venda_planilha_gravar_codigo', {
+    p_venda_planilha_id: vendaPlanilhaId,
+    p_codigo: codigo.trim() || null,
+  });
+  if (error) throw error;
 }

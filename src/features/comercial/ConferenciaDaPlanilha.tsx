@@ -27,12 +27,14 @@
  * Total (-3%), e o Status ganhou o selo pago / parcelado / pendente.
  */
 
-import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
+import { useToast } from '@/hooks/use-toast';
 import { reaisExatos } from './vendas';
 import {
-  ROTULO_DA_SITUACAO, carregarPlanilha,
+  ROTULO_DA_SITUACAO, carregarPlanilha, gravarCodigoDaVenda,
   type ConferenciaDaPlanilha as DadosDaPlanilha, type SituacaoDaPlanilha, type VendaDaPlanilha,
 } from './vendasPlanilhaService';
 import { ondeEstaoAsVendas } from './ondeEstaoAsVendas';
@@ -118,7 +120,7 @@ export function ConferenciaDaPlanilha({ dados, carregando, erro, soPeriodo }: Pr
             */}
             <tr className="border-b bg-muted/40 text-left uppercase tracking-wide text-muted-foreground">
               <th className="px-2.5 py-2">Empreendimento</th>
-              <th className="px-2.5 py-2">Qd · Un</th>
+              <th className="px-2.5 py-2">Qd · Un / Código</th>
               <th className="px-2.5 py-2">Origem</th>
               <th className="px-2.5 py-2 text-right">Total unidade</th>
               <th className="px-2.5 py-2 text-right">Comissão total</th>
@@ -146,7 +148,19 @@ export function ConferenciaDaPlanilha({ dados, carregando, erro, soPeriodo }: Pr
             {linhas.map((v) => (
               <tr key={v.id} className="border-b last:border-0 hover:bg-muted/30">
                 <td className="px-2.5 py-2 font-medium whitespace-nowrap">{v.empreendimento || '—'}</td>
-                <td className="px-2.5 py-2 whitespace-nowrap">{v.unidade_codigo || '—'}</td>
+                {/* Lançamento tem quadra e unidade na planilha. O resto —
+                    terceiros e o que ninguém classificou — não tem código
+                    nenhum lá, e ele é digitado aqui (decidido em 29/09). */}
+                <td className="px-2.5 py-2 whitespace-nowrap">
+                  {v.tipo_negocio === 'lancamento'
+                    ? (v.unidade_codigo || '—')
+                    // O código é guardado por cliente + data de assinatura:
+                    // sem os dois, o banco recusaria, e um campo que sempre
+                    // falha é pior que um travessão com o motivo.
+                    : v.cliente_nome?.trim() && v.data_assinatura
+                      ? <CodigoDoImovel key={v.codigo_imovel ?? ''} vendaId={v.id} codigo={v.codigo_imovel} />
+                      : <span className="text-muted-foreground" title="A planilha não tem cliente ou data de assinatura nesta linha">—</span>}
+                </td>
                 <td className="px-2.5 py-2 whitespace-nowrap">{v.origem || '—'}</td>
                 <td className="px-2.5 py-2 text-right tabular-nums whitespace-nowrap">{dinheiro(v.total_unidade)}</td>
                 <td className="px-2.5 py-2 text-right tabular-nums whitespace-nowrap font-medium">{dinheiro(v.comissao_total_venda)}</td>
@@ -197,5 +211,43 @@ export function ConferenciaDaPlanilha({ dados, carregando, erro, soPeriodo }: Pr
         </table>
       </div>
     </>
+  );
+}
+
+/**
+ * O código do imóvel de uma venda de terceiros, digitado na tela.
+ *
+ * Grava ao sair do campo ou no Enter. O `key` de quem chama é o código salvo:
+ * quando a lista volta do banco com o código novo, o campo renasce com ele —
+ * inclusive nas outras parcelas da mesma venda, que dividem o código.
+ */
+function CodigoDoImovel({ vendaId, codigo }: { vendaId: string; codigo: string | null }) {
+  const [valor, setValor] = useState(codigo ?? '');
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const gravar = useMutation({
+    mutationFn: () => gravarCodigoDaVenda(vendaId, valor),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['conferencia-planilha'] }),
+    onError: (e: Error) => {
+      setValor(codigo ?? '');
+      toast({ title: 'Não deu para gravar o código', description: e.message, variant: 'destructive' });
+    },
+  });
+  const salvarSeMudou = () => {
+    if (valor.trim() !== (codigo ?? '')) gravar.mutate();
+  };
+
+  return (
+    <input
+      value={valor}
+      onChange={(e) => setValor(e.target.value)}
+      onBlur={salvarSeMudou}
+      onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+      disabled={gravar.isPending}
+      maxLength={40}
+      placeholder="código"
+      aria-label="Código do imóvel"
+      className="h-7 w-24 rounded border bg-background px-1.5 text-xs outline-none placeholder:text-muted-foreground/60 focus:ring-1 focus:ring-ring disabled:opacity-50"
+    />
   );
 }
