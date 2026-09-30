@@ -4985,6 +4985,8 @@ registerDocumentosRoutes(app, supabase, validateApiKey);
 // as tarefas na agenda de alguém é uma pessoa, depois de revisar.
 import { registerAtasRoutes } from './atas/routes.js';
 registerAtasRoutes(app, supabase, validateApiKey);
+import { registerComunicadosRoutes } from './comunicados/routes.js';
+registerComunicadosRoutes(app, supabase, validateApiKey);
 
 // Cadência do corretor — os 10 quadrados do modal do lead (canal, resultado,
 // próximo toque). Leitura e escrita pelo servidor porque lead_toques tem RLS
