@@ -37,6 +37,7 @@ import { numberToString } from '@amcharts/amcharts5/.internal/core/util/Type';
 import { createGoogleCalendarEvent } from '@/features/agenda/services/googleCalendarService';
 import { MeuDiaSection } from '@/features/metas-diarias/MeuDiaSection';
 import { PlacarMetasDiarias } from '@/features/metas-diarias/PlacarMetasDiarias';
+import { FireNoInicio } from '@/features/fire/FireNoInicio';
 
 const BRL = (value: number): string =>
   value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
@@ -754,6 +755,8 @@ export function InicioNovaPage() {
             {tenantId && tenantId !== 'owner' && user?.systemRole !== 'corretor' && (
               <PlacarMetasDiarias tenantId={tenantId} />
             )}
+            {/* A.6 · a campanha aparece todo dia — só quando há edição ativa */}
+            {tenantId && tenantId !== 'owner' && <FireNoInicio tenantId={tenantId} />}
 
             {/* KPIs */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">

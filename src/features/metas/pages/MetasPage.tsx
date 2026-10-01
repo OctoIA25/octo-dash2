@@ -5,6 +5,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Plus, Target, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -35,6 +36,22 @@ import { GoalsFilters } from '../components/GoalsFilters';
 import { GoalCard } from '../components/GoalCard';
 import { GoalFormDialog } from '../components/GoalFormDialog';
 import { GoalHistoryDialog } from '../components/GoalHistoryDialog';
+import { useAuthContext } from '@/contexts/AuthContext';
+import { FireGestao } from '@/features/fire/FireGestao';
+
+/** A.6 · o Fire mora ao lado das metas: ?aba=fire. */
+function AbasDeMetas({ aba, onTrocar }: { aba: 'metas' | 'fire'; onTrocar: (a: 'metas' | 'fire') => void }) {
+  return (
+    <div role="tablist" aria-label="Metas e campanha" className="inline-flex rounded-lg border border-border p-0.5">
+      {(['metas', 'fire'] as const).map((a) => (
+        <button key={a} type="button" role="tab" aria-selected={aba === a} onClick={() => onTrocar(a)}
+          className={`h-8 rounded-md px-3 text-sm font-medium ${aba === a ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}`}>
+          {a === 'metas' ? 'Metas' : 'Fire · campanha'}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function getToday(): string {
   return new Date().toISOString().slice(0, 10);
@@ -45,6 +62,10 @@ export const MetasPage = () => {
   const { goals, isLoading, isError, canManage } = useGoals();
   const { create, update, remove, feature, sync } = useGoalMutations();
   const hasAutoSyncedRef = useRef(false);
+  const { tenantId } = useAuthContext();
+  const [params, setParams] = useSearchParams();
+  const aba = params.get('aba') === 'fire' ? 'fire' : 'metas';
+  const trocarAba = (a: 'metas' | 'fire') => setParams(a === 'fire' ? { aba: 'fire' } : {}, { replace: true });
 
   const [filters, setFilters] = useState<GoalFilters>(EMPTY_GOAL_FILTERS);
   const [formOpen, setFormOpen] = useState(false);
@@ -138,6 +159,20 @@ export const MetasPage = () => {
     }
   };
 
+  if (aba === 'fire') {
+    return (
+      <div className="w-full h-full p-6 space-y-5">
+        <h1 className="text-xl font-semibold flex items-center gap-2">
+          <Target className="w-5 h-5" /> Metas
+        </h1>
+        <AbasDeMetas aba={aba} onTrocar={trocarAba} />
+        {tenantId && tenantId !== 'owner'
+          ? <FireGestao tenantId={tenantId} />
+          : <p className="text-sm text-muted-foreground">Escolha uma imobiliária para ver a campanha.</p>}
+      </div>
+    );
+  }
+
   if (isLoading) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
@@ -170,6 +205,8 @@ export const MetasPage = () => {
           </div>
         )}
       </div>
+
+      <AbasDeMetas aba={aba} onTrocar={trocarAba} />
 
       {!canManage && (
         <p className="text-sm text-amber-600 dark:text-amber-400">
