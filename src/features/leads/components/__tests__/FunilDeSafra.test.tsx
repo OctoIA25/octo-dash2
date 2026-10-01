@@ -17,7 +17,7 @@ import { FunilDeSafra } from '../FunilDeSafra';
 const outubro = { de: '2026-10-01', ate: '2026-10-31' };
 const montar = (periodo: { de: string; ate: string } | null) => render(
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-    <FunilDeSafra tenantId="lotus" periodo={periodo} />
+    <FunilDeSafra tenantId="lotus" periodo={periodo} atuacao="todos" />
   </QueryClientProvider>,
 );
 
@@ -29,9 +29,9 @@ const safra = (o: Partial<Safra> = {}): Safra => ({
 beforeEach(() => carregar.mockReset());
 
 describe('o funil de safra na tela', () => {
-  it('"todo o período" não tem safra: pede um período e não consulta nada', () => {
+  it('datas livres inválidas: pede para completar e não consulta nada', () => {
     montar(null);
-    expect(screen.getByText(/Escolha um período no filtro acima/)).toBeInTheDocument();
+    expect(screen.getByText(/Complete as duas datas do período personalizado/)).toBeInTheDocument();
     expect(carregar).not.toHaveBeenCalled();
   });
 

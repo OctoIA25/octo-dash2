@@ -5,8 +5,8 @@ import { periodoDoFiltro } from './periodoDoFiltro';
 const virada = new Date('2026-10-01T02:30:00Z');
 
 describe('o filtro de período vira datas da safra', () => {
-  it('"todo o período" não tem safra', () => {
-    expect(periodoDoFiltro('all', 8, 2026, '', '', virada)).toBeNull();
+  it('"todo o período" abre a safra nos últimos 30 dias, no dia de São Paulo', () => {
+    expect(periodoDoFiltro('all', 8, 2026, '', '', virada)).toEqual({ de: '2026-08-31', ate: '2026-09-30' });
   });
 
   it('mês escolhido vai do dia 1 ao último dia — fevereiro incluído', () => {
@@ -23,5 +23,6 @@ describe('o filtro de período vira datas da safra', () => {
     expect(periodoDoFiltro('year', 0, 2026, '', '', virada)).toEqual({ de: '2026-01-01', ate: '2026-12-31' });
     expect(periodoDoFiltro('custom', 0, 2026, '2026-09-01', '2026-09-15', virada)).toEqual({ de: '2026-09-01', ate: '2026-09-15' });
     expect(periodoDoFiltro('custom', 0, 2026, '2026-09-15', '2026-09-01', virada)).toBeNull();
+    expect(periodoDoFiltro('custom', 0, 2026, '', '2026-09-01', virada)).toBeNull();
   });
 });

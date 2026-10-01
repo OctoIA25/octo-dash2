@@ -10,7 +10,9 @@
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { InfoMetrica } from '@/features/kpis/components/KpiComponents';
-import { FunilDeSafra } from '@/features/leads/components/FunilDeSafra';
+import { FunilDeSafra, SeletorDeAtuacao } from '@/features/leads/components/FunilDeSafra';
+import type { Atuacao } from '@/features/leads/services/funilDeSafraService';
+import { classificacoesDe } from '@/features/leads/utils/classificarLead';
 import { periodoDoFiltro } from '@/features/metricas/utils/periodoDoFiltro';
 import { chaveDoRotulo } from '@/features/kpis/domain/kpiDictionary';
 import { ProcessedLead } from '@/data/realLeadsProcessor';
@@ -65,6 +67,8 @@ import {
   type TeamMetricInfo,
 } from '@/features/metricas/services/teamMetricsService';
 
+const dataBR = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString('pt-BR');
+
 interface MainMetricsSectionProps {
   leads: ProcessedLead[];
   activeSection?: 'leads' | 'proprietarios' | 'corretores' | 'imoveis' | 'geral';
@@ -116,6 +120,8 @@ export const MainMetricsSection = ({
   const [customEndDate, setCustomEndDate] = useState<string>('');
   // A.5 · o mesmo funil, com todos os leads ou só a safra do período.
   const [modoDoFunil, setModoDoFunil] = useState<'todos' | 'safra'>('todos');
+  // Mesma regra da safra no banco: `p_atuacao = ANY(classification)`.
+  const [atuacaoDoFunil, setAtuacaoDoFunil] = useState<Atuacao>('todos');
   const periodoDaSafra = useMemo(
     () => periodoDoFiltro(dateFilter, selectedMonth, selectedYear, customStartDate, customEndDate),
     [dateFilter, selectedMonth, selectedYear, customStartDate, customEndDate],
@@ -1504,26 +1510,42 @@ export const MainMetricsSection = ({
                 {/* Linha 1 - MÉTRICAS DE LEADS - Altura aumentada para mostrar todas as 9 etapas */}
                 <div className="w-full h-[850px] min-h-[850px] overflow-visible transition-all duration-300 ease-in-out flex flex-col gap-2">
                   {/* A.5 · ao lado do funil: todos os leads × só quem entrou no período. */}
-                  <div role="group" aria-label="Quais leads o funil conta" className="flex w-fit rounded-lg border border-border p-0.5">
-                    {([['todos', 'Todos os leads'], ['safra', 'Só quem entrou no período']] as const).map(([id, rotulo]) => (
-                      <button
-                        key={id}
-                        type="button"
-                        aria-pressed={modoDoFunil === id}
-                        onClick={() => setModoDoFunil(id)}
-                        className={`rounded-md px-3 py-1 text-[12px] font-medium ${
-                          modoDoFunil === id ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900' : 'text-text-secondary hover:text-foreground'
-                        }`}
-                      >
-                        {rotulo}
-                      </button>
-                    ))}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div role="group" aria-label="Quais leads o funil conta" className="flex w-fit rounded-lg border border-border p-0.5">
+                      {([['todos', 'Todos os leads'], ['safra', 'Só quem entrou no período']] as const).map(([id, rotulo]) => (
+                        <button
+                          key={id}
+                          type="button"
+                          aria-pressed={modoDoFunil === id}
+                          onClick={() => setModoDoFunil(id)}
+                          className={`rounded-md px-3 py-1 text-[12px] font-medium ${
+                            modoDoFunil === id ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900' : 'text-text-secondary hover:text-foreground'
+                          }`}
+                        >
+                          {rotulo}
+                        </button>
+                      ))}
+                    </div>
+                    <SeletorDeAtuacao valor={atuacaoDoFunil} onChange={setAtuacaoDoFunil} />
+                    {modoDoFunil === 'todos' && (
+                      <span className="text-[12px] text-text-secondary">
+                        {dateFilter === 'all'
+                          ? 'Toda a base · para recortar, use o filtro Período no topo'
+                          : periodoDaSafra
+                            ? `Só os leads que entraram de ${dataBR(periodoDaSafra.de)} a ${dataBR(periodoDaSafra.ate)}`
+                            : null}
+                      </span>
+                    )}
                   </div>
                   <div className="flex-1 min-h-0">
                     <ErrorBoundary fallbackTitle="Funil de Leads">
                       {modoDoFunil === 'safra'
-                        ? <FunilDeSafra tenantId={tenantId} periodo={periodoDaSafra} />
-                        : <EnhancedFunnelChart leads={filterLeadsByDate(filteredLeadsGeral)} />}
+                        ? <FunilDeSafra tenantId={tenantId} periodo={periodoDaSafra} atuacao={atuacaoDoFunil} />
+                        : <EnhancedFunnelChart
+                            leads={filterLeadsByDate(atuacaoDoFunil === 'todos' ? filteredLeadsGeral
+                              : filteredLeadsGeral.filter((l) => classificacoesDe(l.classification).includes(atuacaoDoFunil)))}
+                            contarPassaram={dateFilter === 'all' && atuacaoDoFunil === 'todos'}
+                          />}
                     </ErrorBoundary>
                   </div>
                 </div>

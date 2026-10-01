@@ -7,7 +7,6 @@
  * safra do período — separada por Lançamento e Pronto, cujos ciclos são
  * diferentes demais para dividir uma média.
  */
-import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { InfoMetrica } from '@/features/kpis/components/KpiComponents';
 import { ETAPAS_DO_FUNIL_INTERESSADO, rotuloDaEtapa } from '@/features/leads/utils/funnelStages';
@@ -22,12 +21,33 @@ const ATUACOES: { id: Atuacao; rotulo: string }[] = [
 const dataBR = (iso: string) => new Date(`${iso.slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR');
 const pct = (parte: number, todo: number) => (todo > 0 ? `${Math.round((parte / todo) * 100)}%` : '—');
 
-export function FunilDeSafra({ tenantId, periodo }: {
+/** Todos · Lançamento · Pronto — o mesmo recorte vale para os dois funis da Visão Geral. */
+export function SeletorDeAtuacao({ valor, onChange }: { valor: Atuacao; onChange: (a: Atuacao) => void }) {
+  return (
+    <div role="group" aria-label="Atuação" className="flex rounded-lg border border-border p-0.5">
+      {ATUACOES.map((a) => (
+        <button
+          key={a.id}
+          type="button"
+          aria-pressed={valor === a.id}
+          onClick={() => onChange(a.id)}
+          className={`rounded-md px-2.5 py-1 text-[12px] font-medium ${
+            valor === a.id ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900' : 'text-text-secondary hover:text-foreground'
+          }`}
+        >
+          {a.rotulo}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function FunilDeSafra({ tenantId, periodo, atuacao }: {
   tenantId: string | null | undefined;
-  /** Null quando o filtro é "todo o período": safra precisa de começo e fim. */
+  /** Null quando as datas livres estão incompletas ou invertidas. */
   periodo: { de: string; ate: string } | null;
+  atuacao: Atuacao;
 }) {
-  const [atuacao, setAtuacao] = useState<Atuacao>('todos');
   const pronto = !!tenantId && tenantId !== 'owner' && !!periodo;
   const safra = useQuery({
     queryKey: ['funil-de-safra', tenantId, periodo?.de, periodo?.ate, atuacao],
@@ -37,33 +57,16 @@ export function FunilDeSafra({ tenantId, periodo }: {
 
   return (
     <div className="flex h-full flex-col gap-4 rounded-xl border border-border bg-card/60 p-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h3 className="text-[15px] font-semibold">Funil de safra</h3>
-          <p className="text-[12px] text-text-secondary">
-            {periodo ? `Só os leads que entraram de ${dataBR(periodo.de)} a ${dataBR(periodo.ate)}` : 'Só os leads que entraram no período'}
-          </p>
-        </div>
-        <div role="group" aria-label="Atuação" className="flex rounded-lg border border-border p-0.5">
-          {ATUACOES.map((a) => (
-            <button
-              key={a.id}
-              type="button"
-              aria-pressed={atuacao === a.id}
-              onClick={() => setAtuacao(a.id)}
-              className={`rounded-md px-2.5 py-1 text-[12px] font-medium ${
-                atuacao === a.id ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900' : 'text-text-secondary hover:text-foreground'
-              }`}
-            >
-              {a.rotulo}
-            </button>
-          ))}
-        </div>
+      <div>
+        <h3 className="text-[15px] font-semibold">Funil de safra</h3>
+        <p className="text-[12px] text-text-secondary">
+          {periodo ? `Só os leads que entraram de ${dataBR(periodo.de)} a ${dataBR(periodo.ate)}` : 'Só os leads que entraram no período'}
+        </p>
       </div>
 
       {!periodo ? (
         <p className="rounded-lg border border-dashed border-border px-4 py-6 text-[13px] text-text-secondary">
-          Escolha um período no filtro acima — mês, ano ou datas. "Todo o período" não tem safra: é a base inteira.
+          Complete as duas datas do período personalizado no filtro acima — a de início não pode vir depois da de fim.
         </p>
       ) : safra.isLoading ? (
         <p className="text-[13px] text-text-secondary">Carregando a safra…</p>

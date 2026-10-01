@@ -12,6 +12,12 @@ import { useAuthContext } from '@/contexts/AuthContext';
 
 interface EnhancedFunnelChartProps {
   leads: ProcessedLead[];
+  /**
+   * "Passaram" é contado no banco sobre a base INTEIRA. Com os leads
+   * recortados (período, Lançamento/Pronto), ele dividiria pelo total
+   * recortado — "Hoje" chegava a passar de 1000%. Falso = só o "agora".
+   */
+  contarPassaram?: boolean;
 }
 
 declare global {
@@ -20,7 +26,7 @@ declare global {
   }
 }
 
-export const EnhancedFunnelChart = ({ leads }: EnhancedFunnelChartProps) => {
+export const EnhancedFunnelChart = ({ leads, contarPassaram = true }: EnhancedFunnelChartProps) => {
   /*
    * O SEGUNDO NÚMERO: quantos PASSARAM por cada etapa (24/09).
    *
@@ -174,6 +180,7 @@ export const EnhancedFunnelChart = ({ leads }: EnhancedFunnelChartProps) => {
 
   useEffect(() => {
     let cancelado = false;
+    if (!contarPassaram) { setPassaram(null); setErroPassaram(null); return; }
 
     carregarPassaramPorEtapa(etapasDoFunil.split('|'), undefined, tenantId)
       .then((r) => { if (!cancelado) { setPassaram(r); setErroPassaram(null); } })
@@ -184,7 +191,7 @@ export const EnhancedFunnelChart = ({ leads }: EnhancedFunnelChartProps) => {
       });
 
     return () => { cancelado = true; };
-  }, [etapasDoFunil, tenantId]);
+  }, [etapasDoFunil, tenantId, contarPassaram]);
 
   useEffect(() => {
     // Carregar CanvasJS dinamicamente com tratamento de erro
@@ -585,7 +592,11 @@ export const EnhancedFunnelChart = ({ leads }: EnhancedFunnelChartProps) => {
                 * 10/09/2026, e sem ela "13 passaram" ao lado de "331 agora"
                 * parece erro do sistema em vez de histórico curto.
                 */}
-              {erroPassaram ? (
+              {!contarPassaram ? (
+                <div className="absolute left-1 bottom-0 max-w-[230px] text-[11px] leading-tight text-text-secondary/70">
+                  Com filtro, o funil mostra quem está em cada etapa agora. "Passaram" só sai sem filtro: ele conta a base inteira.
+                </div>
+              ) : erroPassaram ? (
                 <div className="absolute left-1 bottom-0 max-w-[230px] text-[11px] leading-tight text-red-400/80">
                   Não deu para contar quem passou por cada etapa: {erroPassaram}
                 </div>
