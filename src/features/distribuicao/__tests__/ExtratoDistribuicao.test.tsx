@@ -9,7 +9,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { ExtratoDistribuicao, contar, situacaoDoPrazo, type EventoDistribuicao } from '../ExtratoDistribuicao';
+import { ExtratoDistribuicao, contar, motivoNaTela, situacaoDoPrazo, type EventoDistribuicao } from '../ExtratoDistribuicao';
 
 const AGORA = new Date('2026-09-20T15:00:00-03:00');
 
@@ -196,5 +196,35 @@ describe('cada linha diz de QUAL lead é', () => {
     comRota({ eventos: [ev({ lead_ref: 'L020' })] });
     expect(screen.getByText(/imóvel L020/)).toBeInTheDocument();
     expect(screen.queryByText(/lead L020/)).not.toBeInTheDocument();
+  });
+});
+
+/*
+ * Ajuste 1 do grupo (28/09): "devolvido ao bolsão pela Lia — Motivo: XXX".
+ * A Lia manda a devolução em duas linhas; em produção, as 24 de setembro
+ * chegaram com o "expirou" do mesmo lead menos de 1 s antes do "bolsao".
+ */
+describe('a devolução ao bolsão diz o motivo', () => {
+  const expirou = ev({ id: 'x', evento: 'expirou', lead_id: 'L1', motivo: 'prazo de 60 min úteis venceu sem resposta', created_at: '2026-09-30T19:56:04.000Z' });
+  const bolsao = ev({ id: 'b', evento: 'bolsao', lead_id: 'L1', motivo: 'devolvido ao bolsão pela Lia', created_at: '2026-09-30T19:56:04.400Z' });
+
+  it('a linha do bolsão leva o motivo do "expirou" do mesmo lead', () => {
+    expect(motivoNaTela(bolsao, [bolsao, expirou]))
+      .toBe('devolvido ao bolsão pela Lia — Motivo: prazo de 60 min úteis venceu sem resposta');
+  });
+
+  it('não pega o "expirou" de outro lead, nem um de horas antes', () => {
+    const deOutro = { ...expirou, lead_id: 'L2' };
+    const antigo = { ...expirou, created_at: '2026-09-30T15:00:00.000Z' };
+    expect(motivoNaTela(bolsao, [bolsao, deOutro, antigo])).toBe('devolvido ao bolsão pela Lia');
+  });
+
+  it('as outras linhas não mudam', () => {
+    expect(motivoNaTela(expirou, [bolsao, expirou])).toBe('prazo de 60 min úteis venceu sem resposta');
+  });
+
+  it('a tela mostra o motivo na linha do bolsão', () => {
+    montar({ eventos: [bolsao, expirou], jaHouveAlgum: true });
+    expect(screen.getByText(/devolvido ao bolsão pela Lia — Motivo: prazo de 60 min úteis venceu sem resposta/)).toBeInTheDocument();
   });
 });

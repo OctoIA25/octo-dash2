@@ -133,6 +133,31 @@ function relogioParado(eventos: EventoDistribuicao[]) {
   return parados;
 }
 
+/** O "expirou" que causou a devolução sai no máximo isto antes dela (em produção, < 1 s). */
+const JANELA_DA_DEVOLUCAO_MS = 10 * 60_000;
+
+/**
+ * O porquê de cada linha, como a tela escreve.
+ *
+ * A devolução ao bolsão chega da Lia em DUAS linhas: "expirou", com o motivo
+ * ("prazo de 60 min úteis venceu sem resposta"), e "bolsao", dizendo só
+ * "devolvido ao bolsão pela Lia". O grupo pediu (ajuste 1, 28/09) que a do
+ * bolsão diga o motivo — então ela leva o do "expirou" do mesmo lead. Sem esse
+ * par, fica como veio: inventar "motivo não informado" seria ruído.
+ */
+export function motivoNaTela(ev: EventoDistribuicao, eventos: EventoDistribuicao[]): string {
+  const texto = TEXTO_DO_MOTIVO[ev.motivo] ?? ev.motivo;
+  const chave = ev.lead_id ?? ev.lead_ref;
+  if (ev.evento !== 'bolsao' || !chave) return texto;
+
+  const t = Date.parse(ev.created_at);
+  const causa = eventos
+    .filter((e) => e.evento === 'expirou' && (e.lead_id ?? e.lead_ref) === chave)
+    .filter((e) => { const d = t - Date.parse(e.created_at); return d >= 0 && d <= JANELA_DA_DEVOLUCAO_MS; })
+    .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0];
+  return causa ? `${texto} — Motivo: ${TEXTO_DO_MOTIVO[causa.motivo] ?? causa.motivo}` : texto;
+}
+
 /** Os contadores da janela, contados das MESMAS linhas que a lista mostra. */
 export function contar(eventos: EventoDistribuicao[]) {
   const por = (e: string) => eventos.filter((x) => x.evento === e).length;
@@ -238,7 +263,7 @@ export function ExtratoDistribuicao({ eventos, nomes, leads = {}, jaHouveAlgum, 
                   </p>
                 ) : null}
                 <p className="truncate text-[12px] text-text-secondary">
-                  {TEXTO_DO_MOTIVO[ev.motivo] ?? ev.motivo}
+                  {motivoNaTela(ev, eventos)}
                   {/* O servidor grava aqui o código do imóvel quando a Lia não
                       manda outra referência — é o caso de todas as linhas até
                       28/09 (L020, RESERVA CASTANHEIRA…). Com o nome do lead na
