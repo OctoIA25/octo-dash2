@@ -68,6 +68,10 @@ const PERMISSAO_DA_ABA: Record<string, Readonly<Record<string, string>>> = {
     tarefas: 'gestao-tarefas',
     equipes: 'gestao-equipes',
     'acessos-permissoes': 'gestao-acessos',
+    // A.3 · as Flags são dos mesmos membros da tela de Acessos: vale a mesma
+    // caixa, sem um código novo que nasceria desmarcado em todo cargo. Quem
+    // vê o quê dentro dela é o banco (flags_do_mes) que decide.
+    flags: 'gestao-acessos',
   },
 };
 

@@ -9,6 +9,7 @@ import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { AdminTaskManager } from './AdminTaskManager';
 import { EquipeSection } from '@/features/corretores/components/EquipeSection';
 import { EquipesManagerSection } from '@/features/corretores/components/EquipesManagerSection';
+import { FlagsSection } from '@/features/flags/FlagsSection';
 import { Bot, ArrowLeft, ArrowRight } from 'lucide-react';
 import { useLeadsData } from '@/features/leads/hooks/useLeadsData';
 import { useAuthContext } from '@/contexts/AuthContext';
@@ -24,7 +25,7 @@ export const AdminDashboard = () => {
   // A tab vem da URL. Não há mais barra de abas: quem manda `?tab=` são os
   // atalhos do card de cada membro. Sem parâmetro, abre em Acessos e
   // Permissões — é a tela dos cards, de onde se alcança todo o resto.
-  const activeTab = (searchParams.get('tab') as 'tarefas' | 'okrs' | 'pdi' | 'acessos-permissoes' | 'equipes') || 'acessos-permissoes';
+  const activeTab = (searchParams.get('tab') as 'tarefas' | 'okrs' | 'pdi' | 'acessos-permissoes' | 'equipes' | 'flags') || 'acessos-permissoes';
 
   /*
    * As caixas "Sub-abas de Gestão de Equipe" do modal existiam desde sempre e
@@ -32,7 +33,7 @@ export const AdminDashboard = () => {
    * desmarcado em produção e viam a tela assim mesmo. Aqui é onde a marcação
    * passa a valer; `sub_permissions` ausente continua significando liberado.
    */
-  const { user, isOwner } = useAuthContext();
+  const { user, isOwner, tenantId } = useAuthContext();
   const subPermissoes = user?.permissions?.sub_permissions as Record<string, boolean> | undefined;
   const podeVer = (aba: string) =>
     podeVerAba('/gestao-equipe', aba, { isOwner, subPermissoes, permissoesDoCargo: user?.permissoesDoCargo });
@@ -99,6 +100,7 @@ export const AdminDashboard = () => {
         {abaLiberada && activeTab === 'pdi' && <Navigate to="/pdi" replace />}
 
         {abaLiberada && activeTab === 'equipes' && <EquipesManagerSection />}
+        {abaLiberada && activeTab === 'flags' && tenantId && tenantId !== 'owner' && <FlagsSection tenantId={tenantId} />}
         {abaLiberada && activeTab === 'acessos-permissoes' && <EquipeSection leads={leads} />}
       </div>
     </div>

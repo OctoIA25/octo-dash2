@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, ChevronDown, Users, UserPlus, Shield, User, Loader2, Trash2, Mail, Lock, Unlock, Camera, AlertTriangle, CheckCircle, Settings, Info, Ban, X, IdCard, Building2, Phone, ClipboardList, Target, BarChart3, GraduationCap, Key, FileUser, LineChart, Brain, Award } from 'lucide-react';
+import { Search, ChevronDown, Users, UserPlus, Shield, User, Loader2, Trash2, Mail, Lock, Unlock, Camera, AlertTriangle, CheckCircle, Settings, Info, Ban, X, IdCard, Building2, Phone, ClipboardList, Target, BarChart3, GraduationCap, Key, FileUser, LineChart, Brain, Award, Flag } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import {
@@ -1148,6 +1148,16 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
               >
                 <Users className="h-4 w-4" />
                 Equipes
+              </Button>
+
+              {/* A.3 · o semáforo dos mesmos membros, com "falta para subir". */}
+              <Button
+                variant="outline"
+                onClick={() => navigate('/gestao-equipe?tab=flags')}
+                className="h-10 px-4 gap-2"
+              >
+                <Flag className="h-4 w-4" />
+                Flags
               </Button>
 
               {/* Botão Novo Membro */}

@@ -18,7 +18,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { getWebhookUrl, saveWebhookUrl, testWebhookConnection } from '@/features/agentes-ia/services/agentWebhookService';
 import { supabase } from '@/integrations/supabase/client';
-import { Lock, ListChecks, Gauge, MessageSquare, CalendarClock, CircleDollarSign } from 'lucide-react';
+import { Lock, ListChecks, Gauge, MessageSquare, CalendarClock, CircleDollarSign, Flag } from 'lucide-react';
+import { ReguaFlagsPanel } from '@/features/flags/ReguaFlagsPanel';
 import { EtapaConfigPanel } from '@/features/leads/components/EtapaConfigPanel';
 import { PlantaoConfigPanel } from '@/features/agentes-ia/components/PlantaoConfigPanel';
 import { AgendaLiaConfigPanel } from '@/features/agentes-ia/components/AgendaLiaConfigPanel';
@@ -104,8 +105,9 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
   const { currentTheme, changeTheme, themes } = useTheme();
   
   const [searchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState<'perfil' | 'geral' | 'aparencia' | 'agentes-ia' | 'usuarios' | 'bolsao' | 'limite-leads' | 'etapas' | 'score' | 'plantao' | 'agenda-lia' | 'precos-ia' | 'marca-dagua' | 'canais-lead' | 'recomendacoes' | 'cargos'>(
-    () => (searchParams.get('tab') === 'cargos' ? 'cargos' : 'perfil'),
+  const [activeTab, setActiveTab] = useState<'perfil' | 'geral' | 'aparencia' | 'agentes-ia' | 'usuarios' | 'bolsao' | 'limite-leads' | 'etapas' | 'score' | 'plantao' | 'agenda-lia' | 'precos-ia' | 'marca-dagua' | 'canais-lead' | 'recomendacoes' | 'cargos' | 'flags'>(
+    // ?tab=flags vem do aviso "ainda sem régua" da tela de Flags.
+    () => (searchParams.get('tab') === 'cargos' ? 'cargos' : searchParams.get('tab') === 'flags' ? 'flags' : 'perfil'),
   );
 
   // P4.1 — Cargos segue exigindo `gestao-equipe` (a mesma regra da barra
@@ -446,6 +448,10 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
                   <button type="button" onClick={() => setActiveTab('score')} className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all text-left ${activeTab === 'score' ? 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'}`}>
                     <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${activeTab === 'score' ? 'bg-rose-100 dark:bg-rose-900/60' : 'bg-slate-100 dark:bg-slate-800'}`}><Gauge className={`w-3.5 h-3.5 ${activeTab === 'score' ? 'text-rose-600 dark:text-rose-400' : 'text-slate-400'}`} /></div>
                     Score do Lead
+                  </button>
+                  <button type="button" onClick={() => setActiveTab('flags')} className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all text-left ${activeTab === 'flags' ? 'bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'}`}>
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${activeTab === 'flags' ? 'bg-amber-100 dark:bg-amber-900/60' : 'bg-slate-100 dark:bg-slate-800'}`}><Flag className={`w-3.5 h-3.5 ${activeTab === 'flags' ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`} /></div>
+                    Régua das Flags
                   </button>
                   <button type="button" onClick={() => setActiveTab('plantao')} className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all text-left ${activeTab === 'plantao' ? 'bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'}`}>
                     <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${activeTab === 'plantao' ? 'bg-violet-100 dark:bg-violet-900/60' : 'bg-slate-100 dark:bg-slate-800'}`}><MessageSquare className={`w-3.5 h-3.5 ${activeTab === 'plantao' ? 'text-violet-600 dark:text-violet-400' : 'text-slate-400'}`} /></div>
@@ -851,6 +857,22 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
                 </div>
               </div>
               <ScoreConfigPanel tenantId={user?.tenantId} isAdmin={isGestao} />
+            </div>
+          )}
+
+          {activeTab === 'flags' && isGestao && tenantId && tenantId !== 'owner' && (
+            <div className="space-y-6">
+              <div className="-mx-6 -mt-6 mb-6 px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center">
+                  <Flag className="w-[18px] h-[18px] text-amber-600 dark:text-amber-400" />
+                </div>
+                <div>
+                  <h2 className="text-[15px] font-semibold text-slate-900 dark:text-slate-100">Régua das Flags</h2>
+                  <p className="text-[12px] text-slate-500 dark:text-slate-400">Verde e amarelo por atuação. Mudou aqui, a tela de Flags reclassifica na hora</p>
+                </div>
+              </div>
+              {/* Gravar é da diretoria — a mesma regra que o banco impõe (flag_reguas_write). */}
+              <ReguaFlagsPanel tenantId={tenantId} podeEditar={user?.systemRole === 'admin' || isOwner} />
             </div>
           )}
 
