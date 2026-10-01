@@ -225,7 +225,7 @@ export function entradaDoMotor(
     };
   }
   if (!(venda.comissao_bruta > 0)) {
-    return { impedimento: 'A venda está com comissão zerada. Confira o percentual da construtora antes de gerar os repasses.' };
+    return { impedimento: 'A venda está com comissão zerada: a proposta veio sem comissão e a construtora não tem percentual. Cadastre o percentual da construtora antes de gerar os repasses.' };
   }
 
   const eu = equipe.find((p) => p.user_id === venda.corretor_id);

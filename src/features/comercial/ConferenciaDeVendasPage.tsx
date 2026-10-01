@@ -350,9 +350,9 @@ export function ConferenciaDeVendasPage() {
 
           {totais!.sem_percentual > 0 && (
             <Aviso tom="amber" icone={<AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />}>
-              <strong>{totais!.sem_percentual} venda(s) com comissão zerada.</strong> Elas nasceram sem casar com
-              nenhuma construtora cadastrada, então não há percentual para aplicar. Cadastre a construtora do
-              empreendimento e traga as assinadas de novo.
+              <strong>{totais!.sem_percentual} venda(s) com comissão zerada.</strong> A proposta veio sem
+              comissão e a construtora não tem percentual cadastrado. Cadastre o percentual padrão da
+              construtora: a venda se completa sozinha.
             </Aviso>
           )}
 
