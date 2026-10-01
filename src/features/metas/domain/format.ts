@@ -34,6 +34,16 @@ export function formatPercent(percent: number): string {
   return `${clamped}%`;
 }
 
+/**
+ * O texto da super meta, igual na lista e na Home (Manual, A.1):
+ * "meta batida · faltam R$ X para a Super Meta".
+ */
+export function describeSuperMeta(superMeta: { remaining: number; reached: boolean }, unit: GoalUnit): string {
+  return superMeta.reached
+    ? 'Super Meta batida'
+    : `meta batida · faltam ${formatGoalValue(superMeta.remaining, unit)} para a Super Meta`;
+}
+
 export const GOAL_UNIT_LABELS: Record<GoalUnit, string> = {
   currency: 'Moeda (R$)',
   count: 'Quantidade',

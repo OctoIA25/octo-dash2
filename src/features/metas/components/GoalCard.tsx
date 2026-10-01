@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
-import { formatGoalValue, formatPercent } from '../domain/format';
+import { describeSuperMeta, formatGoalValue, formatPercent } from '../domain/format';
 import type { GoalView } from '../domain/metrics';
 import { getModelStrategy } from '../domain/models';
 import { GOAL_MODEL_VIEWS } from './GoalModelViews';
@@ -48,7 +48,7 @@ export function GoalCard({
   onViewHistory,
   variant = 'default',
 }: Props) {
-  const { goal, progress, status, category } = view;
+  const { goal, progress, status, category, superMeta } = view;
   const accent = accentClasses(category.accent);
   const statusMeta = STATUS_META[status];
   const Icon = category.icon;
@@ -144,20 +144,39 @@ export function GoalCard({
           </p>
         )}
 
-        {/* Barra de progresso principal */}
+        {/* Barra de progresso principal. Depois de bater a meta, se houver
+            Super Meta (A.1), a barra passa a medir contra ela e ganha o
+            marcador da meta original — antes disso, nada muda. */}
         <div className="mt-4">
           <div className={cn('flex items-center justify-between mb-1.5', isExpanded ? 'text-base' : 'text-sm')}>
             <span className="text-muted-foreground">
-              {formatGoalValue(progress.currentValue, goal.unit)} / {formatGoalValue(progress.targetValue, goal.unit)}
+              {formatGoalValue(progress.currentValue, goal.unit)} /{' '}
+              {formatGoalValue(superMeta ? superMeta.target : progress.targetValue, goal.unit)}
+              {superMeta && ' (super meta)'}
             </span>
-            <span className="font-semibold tabular-nums">{formatPercent(progress.percent)}</span>
+            <span className="font-semibold tabular-nums">
+              {formatPercent(superMeta ? superMeta.percent : progress.percent)}
+            </span>
           </div>
-          <div className={cn('rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden', isExpanded ? 'h-3' : 'h-2')}>
+          <div className={cn('relative rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden', isExpanded ? 'h-3' : 'h-2')}>
             <div
-              className={cn('h-full rounded-full transition-all', accent.bar)}
-              style={{ width: `${Math.max(0, Math.min(100, progress.percent))}%` }}
+              className={cn('h-full rounded-full transition-all', superMeta?.reached ? 'bg-amber-500' : accent.bar)}
+              style={{ width: `${Math.max(0, Math.min(100, superMeta ? superMeta.percent : progress.percent))}%` }}
             />
+            {superMeta && (
+              <span
+                aria-hidden
+                data-testid="marcador-da-meta"
+                className="absolute inset-y-0 w-0.5 bg-slate-900/60 dark:bg-white/70"
+                style={{ left: `${superMeta.metaMarkerPercent}%` }}
+              />
+            )}
           </div>
+          {superMeta && (
+            <p className="mt-1.5 text-xs font-medium text-amber-700 dark:text-amber-400">
+              {describeSuperMeta(superMeta, goal.unit)}
+            </p>
+          )}
         </div>
 
         {/* Visualização específica do modelo (níveis/marcos) */}

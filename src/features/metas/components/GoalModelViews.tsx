@@ -58,16 +58,34 @@ function parseNumber(value: string): number {
 
 function SimpleFields({ draft, onChange }: ModelFieldsProps) {
   return (
-    <div className="space-y-1.5">
-      <Label htmlFor="goal-target">Valor alvo</Label>
-      <Input
-        id="goal-target"
-        type="number"
-        min={0}
-        value={draft.targetValue || ''}
-        onChange={(event) => onChange({ targetValue: parseNumber(event.target.value) })}
-        placeholder="Ex: 50"
-      />
+    <div className="space-y-3">
+      <div className="space-y-1.5">
+        <Label htmlFor="goal-target">Valor alvo</Label>
+        <Input
+          id="goal-target"
+          type="number"
+          min={0}
+          value={draft.targetValue || ''}
+          onChange={(event) => onChange({ targetValue: parseNumber(event.target.value) })}
+          placeholder="Ex: 50"
+        />
+      </div>
+      {/* A.1 · Super Meta: logo abaixo do valor alvo, mesma tela, mesmo cálculo. */}
+      <div className="space-y-1.5">
+        <Label htmlFor="goal-super">Super meta (opcional)</Label>
+        <Input
+          id="goal-super"
+          type="number"
+          min={0}
+          value={draft.superTarget ?? ''}
+          onChange={(event) =>
+            onChange({ superTarget: event.target.value === '' ? null : parseNumber(event.target.value) })}
+          placeholder="Ex: 60"
+        />
+        <p className="text-xs text-muted-foreground">
+          Um segundo alvo, acima do valor alvo. Só aparece depois que a meta for batida.
+        </p>
+      </div>
     </div>
   );
 }

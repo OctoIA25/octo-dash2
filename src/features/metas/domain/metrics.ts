@@ -10,7 +10,7 @@
 
 import type { GoalCategoryDefinition } from './categories';
 import { resolveCategory } from './categories';
-import { computeGoalProgress, type GoalProgress } from './models';
+import { computeGoalProgress, computeSuperMeta, type GoalProgress, type SuperMetaView } from './models';
 import type { Goal, GoalModel, GoalProgressStatus } from './types';
 
 export interface GoalView {
@@ -18,6 +18,8 @@ export interface GoalView {
   progress: GoalProgress;
   status: GoalProgressStatus;
   category: GoalCategoryDefinition;
+  /** A.1 · null até a meta ser batida, ou quando ela não tem super meta. */
+  superMeta: SuperMetaView | null;
 }
 
 /**
@@ -42,6 +44,7 @@ export function buildGoalView(goal: Goal, today: string): GoalView {
     progress,
     status: deriveProgressStatus(goal, progress, today),
     category: resolveCategory(goal.categoryId),
+    superMeta: computeSuperMeta(goal, progress),
   };
 }
 

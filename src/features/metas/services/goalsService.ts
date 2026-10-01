@@ -32,6 +32,9 @@ interface GoalRow {
   source: Goal['source'];
   scope: Goal['scope'];
   is_featured: boolean;
+  /** A.1 · 20261007. Ausentes antes da migration. */
+  valor_super?: number | string | null;
+  super_batida_em?: string | null;
   config: GoalConfig | Record<string, never>;
   created_at: string;
   updated_at: string;
@@ -92,6 +95,8 @@ function mapRowToGoal(row: GoalRow): Goal {
     source: row.source ?? 'manual',
     scope: row.scope ?? 'team',
     isFeatured: row.is_featured ?? false,
+    superTarget: row.valor_super == null ? null : toNumber(row.valor_super),
+    superReachedAt: row.super_batida_em ?? null,
     config: normalizeConfig(row.model, row.config),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -114,6 +119,8 @@ function mapDraftToRow(draft: GoalDraft, tenantId: string) {
     unit: draft.unit,
     source: draft.source,
     scope: draft.scope,
+    // Só a meta simples tem super meta; o banco recusa nas outras.
+    valor_super: draft.model === 'simple' ? draft.superTarget ?? null : null,
     config: draft.config,
   };
 }
@@ -144,6 +151,9 @@ function describeChanges(previous: Goal, draft: GoalDraft): string {
   }
   if (previous.targetValue !== draft.targetValue) {
     parts.push(`alvo ${previous.targetValue} → ${draft.targetValue}`);
+  }
+  if ((previous.superTarget ?? null) !== (draft.superTarget ?? null)) {
+    parts.push(`super meta ${previous.superTarget ?? '—'} → ${draft.superTarget ?? '—'}`);
   }
   if (previous.name !== draft.name.trim()) parts.push('Nome alterado');
   if (previous.endDate !== draft.endDate) parts.push('Prazo alterado');

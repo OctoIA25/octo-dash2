@@ -99,6 +99,13 @@ export interface Goal {
   scope: GoalScope;
   /** Destacada na tela inicial (no máximo uma por tenant). */
   isFeatured: boolean;
+  /**
+   * A.1 · Super Meta: segundo alvo, acima do `targetValue`. Só na meta simples,
+   * e a tela só a mostra depois que a meta é batida. Ausente/null = sem super meta.
+   */
+  superTarget?: number | null;
+  /** Quando o realizado cruzou a super meta — gravado pelo banco, uma vez só. */
+  superReachedAt?: string | null;
   config: GoalConfig;
   createdAt: string;
   updatedAt: string;
@@ -108,7 +115,7 @@ export interface Goal {
  * Campos editáveis no formulário de criação/edição.
  * `isFeatured` é gerenciado por uma ação dedicada (destacar), não pelo form.
  */
-export type GoalDraft = Omit<Goal, 'id' | 'tenantId' | 'isFeatured' | 'createdAt' | 'updatedAt'>;
+export type GoalDraft = Omit<Goal, 'id' | 'tenantId' | 'isFeatured' | 'superReachedAt' | 'createdAt' | 'updatedAt'>;
 
 /** Registro do histórico de alterações de uma meta. */
 export interface GoalHistoryEntry {

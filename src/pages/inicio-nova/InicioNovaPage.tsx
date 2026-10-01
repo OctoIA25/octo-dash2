@@ -30,7 +30,7 @@ import { useAuthContext } from '@/contexts/AuthContext';
 import { podeVerAba } from './abasVisiveis';
 import { buscarMinutosPorLead, medianaMinutos } from '@/features/metricas/services/primeiraInteracaoService';
 import { useFeaturedGoal } from '@/features/metas/hooks/useGoals';
-import { formatGoalValue, formatPercent } from '@/features/metas/domain';
+import { describeSuperMeta, formatGoalValue, formatPercent } from '@/features/metas/domain';
 import { useLeadsMetrics } from '@/features/leads/hooks/useLeadsMetrics';
 import type { ProcessedLead } from '@/data/realLeadsProcessor';
 import { numberToString } from '@amcharts/amcharts5/.internal/core/util/Type';
@@ -412,7 +412,17 @@ export function InicioNovaPage() {
         barColor: 'bg-slate-300 dark:bg-slate-700',
       };
     }
-    const { goal, progress } = featuredGoal;
+    const { goal, progress, superMeta } = featuredGoal;
+    // A.1 · a Home segue a regra da lista: só fala de Super Meta depois de
+    // bater a primeira — e aí passa a medir contra ela.
+    if (superMeta) {
+      return {
+        value: formatGoalValue(superMeta.target, goal.unit),
+        pct: superMeta.percent,
+        caption: `${describeSuperMeta(superMeta, goal.unit)} · ${goal.name}`,
+        barColor: superMeta.reached ? 'bg-amber-500' : 'bg-emerald-500',
+      };
+    }
     return {
       value: formatGoalValue(progress.targetValue, goal.unit),
       pct: progress.percent,

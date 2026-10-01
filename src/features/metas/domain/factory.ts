@@ -9,7 +9,7 @@ import type { Goal, GoalDraft, GoalLevel, GoalMilestone, GoalModel } from './typ
 
 /** Extrai os campos editáveis de uma meta existente. */
 export function goalToDraft(goal: Goal): GoalDraft {
-  const { id, tenantId, isFeatured, createdAt, updatedAt, ...draft } = goal;
+  const { id, tenantId, isFeatured, superReachedAt, createdAt, updatedAt, ...draft } = goal;
   return draft;
 }
 
@@ -37,6 +37,7 @@ export function createEmptyDraft(today: string, model: GoalModel = 'simple'): Go
     unit: defaultCategory.defaultUnit,
     source: 'manual',
     scope: 'team',
+    superTarget: null,
     config: getModelStrategy(model).createDefaultConfig(),
   };
 }
@@ -46,7 +47,13 @@ export function createEmptyDraft(today: string, model: GoalModel = 'simple'): Go
  * recriando a config específica do novo modelo.
  */
 export function changeDraftModel(draft: GoalDraft, model: GoalModel): GoalDraft {
-  return { ...draft, model, config: getModelStrategy(model).createDefaultConfig() };
+  // A super meta é só da meta simples: trocar de modelo a descarta.
+  return {
+    ...draft,
+    model,
+    config: getModelStrategy(model).createDefaultConfig(),
+    superTarget: model === 'simple' ? draft.superTarget ?? null : null,
+  };
 }
 
 /**

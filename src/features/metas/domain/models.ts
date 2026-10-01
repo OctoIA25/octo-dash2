@@ -155,6 +155,9 @@ const simpleStrategy: GoalModelStrategy = {
   validate: (draft) => {
     const errors = validateCommon(draft);
     if (draft.targetValue <= 0) errors.push('O valor alvo deve ser maior que zero.');
+    if (draft.superTarget != null && draft.superTarget <= draft.targetValue) {
+      errors.push('A Super Meta precisa ser maior que o valor alvo.');
+    }
     return errors;
   },
 };
@@ -272,4 +275,35 @@ export function computeGoalProgress(goal: Goal): GoalProgress {
 
 export function validateGoalDraft(draft: GoalDraft): string[] {
   return getModelStrategy(draft.model).validate(draft);
+}
+
+/** A.1 · Super Meta como a tela a mostra. */
+export interface SuperMetaView {
+  target: number;
+  /** Quanto falta para a super meta (0 quando batida). */
+  remaining: number;
+  reached: boolean;
+  /** Progresso rumo à super meta, 0–100: depois da meta, a barra mede contra ela. */
+  percent: number;
+  /** Onde fica o marcador da meta original nessa barra, 0–100. */
+  metaMarkerPercent: number;
+}
+
+/**
+ * A super meta só aparece DEPOIS que a meta é batida (Manual, A.1): antes
+ * disso ela polui a tela; depois, é o que impede alguém de parar no dia 20.
+ * Null = não há nada a mostrar — sem super meta, ou a meta ainda não foi batida.
+ */
+export function computeSuperMeta(goal: Goal, progress: GoalProgress): SuperMetaView | null {
+  const alvo = goal.superTarget;
+  if (goal.model !== 'simple' || alvo == null || alvo <= goal.targetValue) return null;
+  if (progress.rawPercent < 100) return null;
+  const remaining = Math.max(0, alvo - goal.currentValue);
+  return {
+    target: alvo,
+    remaining,
+    reached: remaining === 0,
+    percent: clampPercent(toPercent(goal.currentValue, alvo)),
+    metaMarkerPercent: clampPercent(toPercent(goal.targetValue, alvo)),
+  };
 }
