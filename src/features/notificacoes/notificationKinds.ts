@@ -9,7 +9,7 @@
  * de vários produtores (imóvel pendente, recrutamento, anúncio desconhecido,
  * demandas).
  */
-import { AlertTriangle, Ban, CalendarClock, Info, Megaphone, PhoneCall, type LucideIcon } from 'lucide-react';
+import { AlertTriangle, Ban, CalendarClock, GraduationCap, Info, Megaphone, PhoneCall, type LucideIcon } from 'lucide-react';
 
 export type Categoria = 'comunicado' | 'alerta' | 'sistema';
 export type Tom = 'azul' | 'ambar' | 'rosa' | 'cinza';
@@ -50,6 +50,8 @@ const TIPOS = new Map<string, TipoDeNotificacao>([
   ['activity_pending', { categoria: 'alerta', icone: CalendarClock, tom: 'ambar', origem: 'Agenda' }],
   ['blocked', { categoria: 'alerta', icone: Ban, tom: 'rosa', origem: 'Distribuição' }],
   ['cadencia_toque', { categoria: 'alerta', icone: PhoneCall, tom: 'ambar', origem: 'Cadência' }],
+  // A.7 · curso obrigatório do cargo: é coisa a fazer, não recado.
+  ['curso_obrigatorio', { categoria: 'alerta', icone: GraduationCap, tom: 'ambar', origem: 'Universidade' }],
 ]);
 const SISTEMA: TipoDeNotificacao = { categoria: 'sistema', icone: Info, tom: 'cinza', origem: 'Sistema' };
 
@@ -165,6 +167,7 @@ const ROTAS = new Map<string, { rota: (id: string) => string; rotulo: string; se
   ['bolsao', { rota: () => '/bolsao', rotulo: 'Ver no bolsão', semId: true }],
   ['lancamento', { rota: (id) => `/imoveis/lancamentos/${encodeURIComponent(id)}`, rotulo: 'Ver lançamento' }],
   ['material', { rota: (id) => `/materiais?material=${encodeURIComponent(id)}`, rotulo: 'Abrir material' }],
+  ['curso', { rota: (id) => `/materiais?aba=cursos&curso=${encodeURIComponent(id)}`, rotulo: 'Abrir curso' }],
   ['metas', { rota: () => '/metas', rotulo: 'Ver metas', semId: true }],
   ['imovel', { rota: () => '/imoveis', rotulo: 'Ver imóvel' }],
   ['condominio', { rota: () => '/imoveis', rotulo: 'Ver condomínio' }],

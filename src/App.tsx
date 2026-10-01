@@ -46,6 +46,9 @@ const OwnerDashboard = lazyWithRetry(() =>
   import("@/components/OwnerDashboard").then((module) => ({ default: module.OwnerDashboard }))
 );
 const ApiDocsPage = lazyWithRetry(() => import("@/features/api-docs/pages/ApiDocsPage"));
+const CertificadoPage = lazyWithRetry(() =>
+  import("@/features/universidade/CertificadoPage").then((module) => ({ default: module.CertificadoPage }))
+);
 const GoogleOAuthCallbackPage = lazyWithRetry(() =>
   import("@/features/agenda/pages/GoogleOAuthCallbackPage").then((module) => ({ default: module.GoogleOAuthCallbackPage }))
 );
@@ -95,6 +98,9 @@ const AppContent = () => {
                 <Routes>
                   {/* 🌐 ROTA PÚBLICA - Documentação da API (sem autenticação) */}
                   <Route path="/apidocs/*" element={<ApiDocsPage />} />
+
+                  {/* 🌐 ROTA PÚBLICA - conferência de certificado da Universidade (A.7): quem tem o hash confere */}
+                  <Route path="/certificado/:hash" element={<CertificadoPage />} />
                   
                   {/* Callback OAuth Google Calendar (abre em popup) */}
                   <Route path="/oauth/google/callback" element={<GoogleOAuthCallbackPage />} />

@@ -25,6 +25,9 @@ import {
 import { useAuthContext } from '@/contexts/AuthContext';
 import { useEscapeFecha } from '@/hooks/useEscapeFecha';
 import { useToast } from '@/hooks/use-toast';
+import { AbasDaUniversidade } from '@/features/universidade/AbasDaUniversidade';
+import { CursosTab } from '@/features/universidade/CursosTab';
+import { TrilhaTab } from '@/features/universidade/TrilhaTab';
 import {
   ORDEM_DAS_CATEGORIAS, ROTULO_DA_CATEGORIA, avisoDePendentes, filtrar, formatoDoArquivo,
   nomeParaBaixar, paraQuem, planoDeCarreira, porCategoria, quantosFaltam, saltoEntreNiveis,
@@ -109,8 +112,20 @@ export function MateriaisPage() {
     return <p className="p-6 text-sm text-muted-foreground">Escolha uma imobiliária para ver os materiais.</p>;
   }
 
+  // A.7 · Universidade: cursos e trilha moram ao lado dos materiais (?aba=).
+  const aba = params.get('aba');
+  if (aba === 'cursos' || aba === 'trilha') {
+    return (
+      <div className="p-4 sm:p-6">
+        <AbasDaUniversidade tenantId={tenantId} />
+        {aba === 'cursos' ? <CursosTab tenantId={tenantId} /> : <TrilhaTab tenantId={tenantId} />}
+      </div>
+    );
+  }
+
   return (
     <div className="p-4 sm:p-6">
+      <AbasDaUniversidade tenantId={tenantId} />
       <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold">Materiais de estudo</h1>
