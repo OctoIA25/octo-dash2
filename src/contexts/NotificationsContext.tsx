@@ -5,8 +5,10 @@ import {
   markNotificationAsRead as apiMarkAsRead,
   markAllNotificationsAsRead as apiMarkAllAsRead,
   clearReadNotifications as apiClearRead,
+  darCiente as apiDarCiente,
   type NotificationRow,
 } from '@/features/notificacoes/services/notificationsService';
+import { aguardaCiente } from '@/features/notificacoes/notificationKinds';
 
 /** O que publicar_comunicado grava em metadata: a fotografia do envio. */
 export type NotificationMetadata = {
@@ -18,6 +20,8 @@ export type NotificationMetadata = {
   destinatario?: { nome?: string; cargo?: string; equipe?: string };
   /** Na cópia do gestor: retrato de sobre quem é. */
   sobre_perfil?: { nome?: string; cargo?: string; equipe?: string };
+  /** O aviso só sai do sino com o "Ciente" (20261005). */
+  exige_ciente?: boolean;
   [chave: string]: unknown;
 };
 
@@ -31,7 +35,11 @@ export type NotificationItem = {
   linkType?: string;
   linkId?: string;
   metadata: NotificationMetadata;
+  /** Pede "Ciente": marcar como lida não tira do sino. */
+  exigeCiente: boolean;
+  cienteEm?: string;
 };
+
 
 type NotificationsContextValue = {
   notifications: NotificationItem[];
@@ -49,6 +57,8 @@ type NotificationsContextValue = {
   loadNotifications: (tenantId: string, userId: string) => Promise<void>;
   markAllAsRead: () => Promise<void>;
   markAsRead: (id: string) => void;
+  /** "Ciente" num aviso que pede. Devolve se deu certo. */
+  darCiente: (id: string) => Promise<boolean>;
   /** Apaga só as lidas. */
   clearRead: () => Promise<void>;
   currentTenantId: string | null;
@@ -57,9 +67,11 @@ type NotificationsContextValue = {
 
 const NotificationsContext = createContext<NotificationsContextValue | undefined>(undefined);
 
-type Linha = Pick<NotificationRow, 'id' | 'title' | 'body' | 'created_at' | 'read_at' | 'type' | 'link_type' | 'link_id' | 'metadata'>;
+type Linha = Pick<NotificationRow, 'id' | 'title' | 'body' | 'created_at' | 'read_at' | 'type' | 'link_type' | 'link_id' | 'metadata'>
+  & Partial<Pick<NotificationRow, 'ciente_em'>>;
 
 function mapRowToItem(row: Linha): NotificationItem {
+  const metadata = (row.metadata ?? {}) as NotificationMetadata;
   return {
     id: row.id,
     title: row.title,
@@ -70,7 +82,9 @@ function mapRowToItem(row: Linha): NotificationItem {
     linkType: row.link_type ?? undefined,
     linkId: row.link_id ?? undefined,
     // As linhas de antes de 01/10 têm metadata {} ou null.
-    metadata: (row.metadata ?? {}) as NotificationMetadata,
+    metadata,
+    exigeCiente: metadata.exige_ciente === true,
+    cienteEm: row.ciente_em ?? undefined,
   };
 }
 
@@ -158,7 +172,14 @@ export const NotificationsProvider = ({ children }: { children: ReactNode }) => 
     };
   }, [currentTenantId, currentUserId, loadNotifications]);
 
+  // A lista atual para decidir sem closure velho (markAsRead é estável e usado em refs).
+  const listaRef = useRef(notifications);
+  listaRef.current = notifications;
+
+  // Aviso que pede ciente não vira lido por aqui — o banco também não deixa.
   const markAsRead = useCallback((id: string) => {
+    const item = listaRef.current.find((n) => n.id === id);
+    if (!item || aguardaCiente(item)) return;
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
     apiMarkAsRead(id).catch(console.error);
   }, []);
@@ -166,8 +187,15 @@ export const NotificationsProvider = ({ children }: { children: ReactNode }) => 
   const markAllAsRead = useCallback(async () => {
     if (!currentTenantId || !currentUserId) return;
     const ok = await apiMarkAllAsRead(currentTenantId, currentUserId);
-    if (ok) setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    if (ok) setNotifications((prev) => prev.map((n) => (aguardaCiente(n) ? n : { ...n, read: true })));
   }, [currentTenantId, currentUserId]);
+
+  const darCiente = useCallback(async (id: string) => {
+    const em = await apiDarCiente(id);
+    if (!em) return false;
+    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true, cienteEm: em } : n)));
+    return true;
+  }, []);
 
   const clearRead = useCallback(async () => {
     if (!currentTenantId || !currentUserId) return;
@@ -185,11 +213,12 @@ export const NotificationsProvider = ({ children }: { children: ReactNode }) => 
       loadNotifications,
       markAllAsRead,
       markAsRead,
+      darCiente,
       clearRead,
       currentTenantId,
       currentUserId,
     }),
-    [notifications, unreadCount, loading, loadError, aoChegar, loadNotifications, markAllAsRead, markAsRead, clearRead, currentTenantId, currentUserId]
+    [notifications, unreadCount, loading, loadError, aoChegar, loadNotifications, markAllAsRead, markAsRead, darCiente, clearRead, currentTenantId, currentUserId]
   );
 
   return <NotificationsContext.Provider value={value}>{children}</NotificationsContext.Provider>;

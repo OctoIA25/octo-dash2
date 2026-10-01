@@ -16,6 +16,8 @@ export interface NotificationRow {
   body: string | null;
   type: string;
   read_at: string | null;
+  /** Quando deu "Ciente" num aviso que pede (metadata.exige_ciente). */
+  ciente_em: string | null;
   created_at: string;
   link_type: string | null;
   link_id: string | null;
@@ -24,7 +26,7 @@ export interface NotificationRow {
 }
 
 const COLUNAS =
-  'id, tenant_id, user_id, title, body, type, read_at, created_at, link_type, link_id, comunicado_id, metadata';
+  'id, tenant_id, user_id, title, body, type, read_at, ciente_em, created_at, link_type, link_id, comunicado_id, metadata';
 
 /** Lança em erro: a tela precisa distinguir "não há nada" de "não deu para buscar". */
 export async function fetchNotificationsForUser(tenantId: string, userId: string): Promise<NotificationRow[]> {
@@ -46,6 +48,16 @@ export async function markNotificationAsRead(id: string): Promise<boolean> {
     .update({ read_at: new Date().toISOString() })
     .eq('id', id);
   return !error;
+}
+
+/**
+ * "Ciente" num aviso que pede. Só a função grava (o navegador só mexe em
+ * read_at), e ela também marca como lida. Devolve quando, ou null se falhou.
+ */
+export async function darCiente(id: string): Promise<string | null> {
+  const { data, error } = await supabase.rpc('dar_ciente', { p_notification_id: id });
+  if (error) return null;
+  return (data as string | null) ?? null;
 }
 
 export async function markAllNotificationsAsRead(tenantId: string, userId: string): Promise<boolean> {

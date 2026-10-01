@@ -245,13 +245,13 @@ BEGIN
 
   -- 2k. só o service_role executa.
   PERFORM pg_temp.checa(NOT has_function_privilege('authenticated',
-    'public.publicar_comunicado(uuid,text,uuid,text,text,text,text,text,uuid[],text[],boolean,text,text,text)', 'execute'),
+    'public.publicar_comunicado(uuid,text,uuid,text,text,text,text,text,uuid[],text[],boolean,text,text,text,uuid[],uuid[],boolean)', 'execute'),
     'authenticated não executa publicar_comunicado');
   PERFORM pg_temp.checa(NOT has_function_privilege('anon',
-    'public.publicar_comunicado(uuid,text,uuid,text,text,text,text,text,uuid[],text[],boolean,text,text,text)', 'execute'),
+    'public.publicar_comunicado(uuid,text,uuid,text,text,text,text,text,uuid[],text[],boolean,text,text,text,uuid[],uuid[],boolean)', 'execute'),
     'anon não executa publicar_comunicado');
   PERFORM pg_temp.checa(has_function_privilege('service_role',
-    'public.publicar_comunicado(uuid,text,uuid,text,text,text,text,text,uuid[],text[],boolean,text,text,text)', 'execute'),
+    'public.publicar_comunicado(uuid,text,uuid,text,text,text,text,text,uuid[],text[],boolean,text,text,text,uuid[],uuid[],boolean)', 'execute'),
     'service_role executa publicar_comunicado');
 
   RAISE NOTICE 'OK 2: publicar_comunicado';
@@ -313,8 +313,9 @@ BEGIN
   v := pg_temp.enviar_como(f.vizinho, 'vizinho@teste-comunicados.dev', f.t, 'todos', '{}');
   PERFORM pg_temp.checa(v = 'sem_permissao', 'admin da vizinha não envia para a casa ao lado');
 
+  -- Desde 20261005 a tela envia para pessoas (comunicados_a2.test.sql); sem ninguém escolhido, não sai.
   v := pg_temp.enviar_como(f.diretora, 'diretora@teste-comunicados.dev', f.t, 'pessoas', '{}');
-  PERFORM pg_temp.checa(v = 'publico_invalido', 'a tela não envia para pessoas avulsas');
+  PERFORM pg_temp.checa(v = 'sem_destinatarios', 'pessoas sem ninguém escolhido não envia (veio ' || v || ')');
 
   v := pg_temp.enviar_como(f.dono, 'dono@teste-comunicados.dev', f.t2, 'todos', '{}');
   PERFORM pg_temp.checa(v = 'ok:1', 'owner da plataforma envia mesmo sem ser membro da casa (veio ' || v || ')');
@@ -325,7 +326,7 @@ BEGIN
                          WHERE c.autor_user_id = f.gerente_a LIMIT 1) = 'Gil Gerente', 'remetente é o chamador');
 
   PERFORM pg_temp.checa(NOT has_function_privilege('anon',
-    'public.enviar_comunicado(uuid,text,text,text,text,uuid[],text)', 'execute'), 'anon não executa enviar_comunicado');
+    'public.enviar_comunicado(uuid,text,text,text,text,uuid[],text,uuid[],uuid[],text,text,boolean)', 'execute'), 'anon não executa enviar_comunicado');
 
   -- Chave da tela não colide com a da LIA, e o replay do mesmo remetente continua deduplicando.
   v := pg_temp.enviar_com_chave(f.gerente_a, f.t, f.equipe_a, 'lia:colisao:1');

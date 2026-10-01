@@ -155,13 +155,17 @@ export function duracaoDoAviso(item: ItemComMetadata): number {
   return 6_000;
 }
 
-const ROTAS = new Map<string, { rota: (id: string) => string; rotulo: string }>([
+/** semId: o destino é uma tela, não um registro (Metas, Bolsão) — o comunicado vai sem link_id. */
+const ROTAS = new Map<string, { rota: (id: string) => string; rotulo: string; semId?: boolean }>([
   // /lead/:id usa um número montado na tela (id_lead), não o UUID do banco:
   // o lead abre na própria página de notificações, como o Chat faz.
   ['lead', { rota: (id) => `/notificacoes?lead=${encodeURIComponent(id)}`, rotulo: 'Abrir lead' }],
   ['mkt_demanda', { rota: () => '/marketing/demandas', rotulo: 'Ver demanda' }],
   ['recrutamento', { rota: () => '/recrutamento', rotulo: 'Ver candidato' }],
-  ['bolsao', { rota: () => '/bolsao', rotulo: 'Ver no bolsão' }],
+  ['bolsao', { rota: () => '/bolsao', rotulo: 'Ver no bolsão', semId: true }],
+  ['lancamento', { rota: (id) => `/imoveis/lancamentos/${encodeURIComponent(id)}`, rotulo: 'Ver lançamento' }],
+  ['material', { rota: (id) => `/materiais?material=${encodeURIComponent(id)}`, rotulo: 'Abrir material' }],
+  ['metas', { rota: () => '/metas', rotulo: 'Ver metas', semId: true }],
   ['imovel', { rota: () => '/imoveis', rotulo: 'Ver imóvel' }],
   ['condominio', { rota: () => '/imoveis', rotulo: 'Ver condomínio' }],
   ['agenda_event', { rota: () => '/atividades', rotulo: 'Ver atividades' }],
@@ -170,7 +174,14 @@ const ROTAS = new Map<string, { rota: (id: string) => string; rotulo: string }>(
 /** Para onde o clique leva. null = o item não é clicável. */
 export function destinoDoLink(linkType?: string, linkId?: string): string | null {
   const link = linkType ? ROTAS.get(linkType) : undefined;
-  return link && linkId ? link.rota(linkId) : null;
+  if (!link) return null;
+  if (link.semId) return link.rota('');
+  return linkId ? link.rota(linkId) : null;
+}
+
+/** Pede ciente e ainda não deu: fica não lido até o botão "Ciente" (A.2). */
+export function aguardaCiente(n: { exigeCiente: boolean; cienteEm?: string }): boolean {
+  return n.exigeCiente && !n.cienteEm;
 }
 
 /** O nome do botão diz o que acontece ao clicar ("Abrir lead", não "Abrir"). */

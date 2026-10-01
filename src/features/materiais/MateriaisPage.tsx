@@ -16,7 +16,8 @@
  *     mudança, em vez de confiar num "já leram" de seis meses atrás.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle, BookOpen, Check, Download, ExternalLink, FileText, Loader2, Plus, Search, X,
@@ -88,6 +89,21 @@ export function MateriaisPage() {
         .catch((e) => console.warn('[materiais] não registrou a abertura', e));
     }
   };
+
+  // ?material=<id>: o comunicado que aponta para um material abre ele direto (A.2).
+  const [params, setParams] = useSearchParams();
+  const materialDoLink = params.get('material');
+  useEffect(() => {
+    if (!materialDoLink || !quadro.data) return;
+    const m = quadro.data.materiais.find((x) => x.id === materialDoLink);
+    if (m) abrir(m);
+    else toast({ title: 'Esse material não está disponível para você.', variant: 'destructive' });
+    const p = new URLSearchParams(params);
+    p.delete('material');
+    setParams(p, { replace: true });
+    // abrir/toast/params mudam a cada render; o que dispara é o link chegar com a lista carregada.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [materialDoLink, quadro.data]);
 
   if (!tenantId || tenantId === 'owner') {
     return <p className="p-6 text-sm text-muted-foreground">Escolha uma imobiliária para ver os materiais.</p>;

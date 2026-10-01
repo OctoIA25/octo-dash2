@@ -153,6 +153,18 @@ describe('destinoDoLink', () => {
     expect(destinoDoLink('agenda_event', 'x')).toBe('/atividades');
   });
 
+  it('os destinos do comunicado (A.2): lançamento e material pelo id, Metas e Bolsão sem id', () => {
+    expect(destinoDoLink('lancamento', 'l-1')).toBe('/imoveis/lancamentos/l-1');
+    expect(destinoDoLink('material', 'm 1')).toBe('/materiais?material=m%201');
+    expect(destinoDoLink('metas', undefined)).toBe('/metas');
+    expect(destinoDoLink('bolsao', undefined)).toBe('/bolsao');
+    expect(destinoDoLink('lancamento', undefined)).toBeNull();
+    expect(destinoDoLink('material', undefined)).toBeNull();
+    expect(rotuloDoLink('lancamento')).toBe('Ver lançamento');
+    expect(rotuloDoLink('material')).toBe('Abrir material');
+    expect(rotuloDoLink('metas')).toBe('Ver metas');
+  });
+
   it('sem tipo, sem id, tipo desconhecido ou nome do Object: não clicável', () => {
     expect(destinoDoLink(undefined, 'x')).toBeNull();
     expect(destinoDoLink('lead', undefined)).toBeNull();

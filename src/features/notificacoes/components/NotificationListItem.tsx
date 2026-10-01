@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { ArrowUpRight, Check } from 'lucide-react';
+import { ArrowUpRight, Check, CheckCheck } from 'lucide-react';
 import type { NotificationItem } from '@/contexts/NotificationsContext';
-import { acentoDoAviso, destinoDoLink, rotaDe, rotuloDoLink } from '../notificationKinds';
+import { acentoDoAviso, aguardaCiente, destinoDoLink, rotaDe, rotuloDoLink } from '../notificationKinds';
 import { AvatarDoAviso, LinhaDeRota } from './RotaDoAviso';
 
 /** Acima disto o corpo abre cortado em 2 linhas, com "Ver mais". */
@@ -13,14 +13,27 @@ interface Props {
   item: NotificationItem;
   onAbrir: (item: NotificationItem) => void;
   onMarcarLida: (id: string) => void;
+  /** "Ciente" num aviso que pede. */
+  onCiente?: (id: string) => Promise<boolean>;
 }
 
 /**
  * Uma linha da caixa de entrada: de quem → para quem, o assunto, o texto e a
  * ação. Não lida = fundo levemente azul e ponto; urgência = faixa à esquerda.
  */
-export function NotificationListItem({ item, onAbrir, onMarcarLida }: Props) {
+export function NotificationListItem({ item, onAbrir, onMarcarLida, onCiente }: Props) {
   const [expandido, setExpandido] = useState(false);
+  const [confirmando, setConfirmando] = useState(false);
+  const pedeCiente = aguardaCiente(item);
+  const confirmar = async () => {
+    if (!onCiente || confirmando) return;
+    setConfirmando(true);
+    try {
+      await onCiente(item.id);
+    } finally {
+      setConfirmando(false);
+    }
+  };
   const temDestino = destinoDoLink(item.linkType, item.linkId) !== null;
   const longo = (item.body?.length ?? 0) > CORPO_LONGO;
   const quando = new Date(item.createdAt);
@@ -40,7 +53,7 @@ export function NotificationListItem({ item, onAbrir, onMarcarLida }: Props) {
       <div className="min-w-0 flex-1">
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1"><LinhaDeRota item={item} /></div>
-          {!item.read && (
+          {!item.read && !pedeCiente && (
             <button
               type="button"
               onClick={() => onMarcarLida(item.id)}
@@ -76,6 +89,11 @@ export function NotificationListItem({ item, onAbrir, onMarcarLida }: Props) {
               Importante
             </span>
           )}
+          {pedeCiente && (
+            <span className="ml-2 inline-block rounded-full bg-blue-100 px-2 py-0.5 align-[2px] text-[11px] font-semibold text-blue-800 dark:bg-blue-500/15 dark:text-blue-300">
+              Pede ciente
+            </span>
+          )}
         </h3>
 
         {item.body && (
@@ -88,8 +106,24 @@ export function NotificationListItem({ item, onAbrir, onMarcarLida }: Props) {
           </p>
         )}
 
-        {(temDestino || longo) && (
+        {(temDestino || longo || item.exigeCiente) && (
           <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+            {pedeCiente && onCiente && (
+              <button
+                type="button"
+                onClick={confirmar}
+                disabled={confirmando}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:opacity-60 dark:focus-visible:ring-offset-slate-900"
+              >
+                <CheckCheck className="h-3.5 w-3.5" aria-hidden /> {confirmando ? 'Registrando…' : 'Ciente'}
+              </button>
+            )}
+            {item.exigeCiente && item.cienteEm && (
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                <CheckCheck className="h-3.5 w-3.5" aria-hidden />
+                Ciente em {new Date(item.cienteEm).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
+              </span>
+            )}
             {temDestino && (
               <button
                 type="button"

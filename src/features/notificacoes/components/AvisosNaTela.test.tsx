@@ -21,7 +21,7 @@ vi.mock('./NotificationBloop', () => bloop);
 import { AvisosNaTela } from './AvisosNaTela';
 
 const item = (id: string, extra: Partial<NotificationItem> = {}): NotificationItem => ({
-  id, title: id, createdAt: '2026-10-01T12:00:00Z', read: false, metadata: {}, ...extra,
+  id, title: id, createdAt: '2026-10-01T12:00:00Z', read: false, metadata: {}, exigeCiente: false, ...extra,
 });
 
 const Onde = () => <p data-testid="onde">{useLocation().pathname}</p>;

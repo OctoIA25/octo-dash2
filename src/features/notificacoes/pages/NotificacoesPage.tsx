@@ -6,6 +6,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { BellRing, CheckCheck, Inbox, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -17,7 +18,8 @@ import { CriarLeadQuickModal } from '@/features/leads/components/CriarLeadQuickM
 import { fetchKanbanLeadDaConversa, type KanbanLead } from '@/features/leads/services/leadsService';
 import { NotificationListItem } from '../components/NotificationListItem';
 import { NovoComunicadoDialog } from '../components/NovoComunicadoDialog';
-import { destinoDoLink, tipoDe, type Categoria } from '../notificationKinds';
+import { CHAVE_ENVIADOS, ComunicadosEnviados } from '../components/ComunicadosEnviados';
+import { aguardaCiente, destinoDoLink, tipoDe, type Categoria } from '../notificationKinds';
 import { agruparPorDia } from '../tempo';
 import { avisosNaTelaLigados, definirAvisosNaTela } from '../avisosNaTela';
 
@@ -34,7 +36,8 @@ const ehAba = (v: string | null): v is Aba => ABAS.some((a) => a.id === v);
 
 export const NotificacoesPage = () => {
   const { user, tenantId, isOwner } = useAuthContext();
-  const { notifications, loading, loadError, loadNotifications, markAllAsRead, markAsRead, clearRead } = useNotifications();
+  const { notifications, loading, loadError, loadNotifications, markAllAsRead, markAsRead, darCiente, clearRead } = useNotifications();
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const abaParam = params.get('aba');
@@ -49,6 +52,8 @@ export const NotificacoesPage = () => {
   const role = user?.systemRole;
   const casaDeVerdade = !!tenantId && tenantId !== 'owner';
   const podeEnviarComunicado = casaDeVerdade && (isOwner || role === 'admin' || role === 'team_leader');
+  // ?ver=enviados: o que a casa anunciou e quem leu. Só para quem envia.
+  const vendoEnviados = podeEnviarComunicado && params.get('ver') === 'enviados';
 
   useEffect(() => {
     if (tenantId && user?.id) loadNotifications(tenantId, user.id);
@@ -78,6 +83,13 @@ export const NotificacoesPage = () => {
   };
 
   const trocarAba = (id: Aba) => atualizarParams((p) => (id === 'todos' ? p.delete('aba') : p.set('aba', id)));
+  const trocarVisao = (enviados: boolean) => atualizarParams((p) => (enviados ? p.set('ver', 'enviados') : p.delete('ver')));
+
+  const fecharCompositor = (aberto: boolean) => {
+    setCompondo(aberto);
+    // O que acabou de sair entra na lista de enviados sem F5.
+    if (!aberto) queryClient.invalidateQueries({ queryKey: [CHAVE_ENVIADOS] });
+  };
 
   const naoLidasPorAba = useMemo(() => {
     const conta: Record<Aba, number> = { todos: 0, comunicado: 0, alerta: 0, sistema: 0 };
@@ -108,6 +120,8 @@ export const NotificacoesPage = () => {
   };
 
   const temLidas = notifications.some((n) => n.read);
+  // Aviso que pede ciente não é marcado pelo "tudo como lido": sozinho, não liga o botão.
+  const temMarcaveis = notifications.some((n) => !n.read && !aguardaCiente(n));
   const abaAtual = ABAS.find((a) => a.id === aba) ?? ABAS[0];
 
   return (
@@ -136,104 +150,124 @@ export const NotificacoesPage = () => {
         </div>
       </header>
 
-      <div className="mt-7 flex flex-wrap items-center justify-between gap-3">
-        <div role="group" aria-label="Filtrar por tipo" className="inline-flex flex-wrap gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
-          {ABAS.map((a) => (
-            <button key={a.id} type="button" aria-pressed={aba === a.id} onClick={() => trocarAba(a.id)}
-              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
-                aba === a.id
+      {podeEnviarComunicado && (
+        <div role="group" aria-label="Recebidos ou enviados" className="mt-6 inline-flex gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+          {[{ enviados: false, rotulo: 'Recebidos' }, { enviados: true, rotulo: 'Enviados' }].map((v) => (
+            <button key={v.rotulo} type="button" aria-pressed={vendoEnviados === v.enviados} onClick={() => trocarVisao(v.enviados)}
+              className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                vendoEnviados === v.enviados
                   ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-900 dark:text-slate-50'
                   : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
               }`}>
-              {a.rotulo}
-              {naoLidasPorAba[a.id] > 0 && (
-                <span className={`min-w-5 rounded-full px-1.5 text-center text-[11px] font-semibold leading-5 ${
-                  aba === a.id ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200'
-                }`}>
-                  {naoLidasPorAba[a.id]}
-                </span>
-              )}
+              {v.rotulo}
             </button>
           ))}
         </div>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
-          <label className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
-            <Switch checked={soNaoLidas} onCheckedChange={setSoNaoLidas} aria-label="Só não lidas" />
-            Só não lidas
-          </label>
-          <button type="button" onClick={() => markAllAsRead()} disabled={naoLidasPorAba.todos === 0}
-            className="inline-flex items-center gap-1.5 font-medium text-slate-600 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:text-slate-50">
-            <CheckCheck className="h-4 w-4" aria-hidden /> Marcar tudo como lido
-          </button>
-          <button type="button" onClick={() => clearRead()} disabled={!temLidas}
-            className="font-medium text-slate-500 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-400 dark:hover:text-slate-50">
-            Limpar lidas
-          </button>
-        </div>
-      </div>
+      )}
 
-      <section className="mt-5">
-        {loadError && (
-          <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
-            Não deu para carregar os avisos. Confira a conexão e tente de novo.
-            <Button variant="outline" size="sm" onClick={() => tenantId && user && loadNotifications(tenantId, user.id)}>
-              Tentar de novo
-            </Button>
+      {vendoEnviados ? (
+        <section className="mt-5"><ComunicadosEnviados tenantId={tenantId!} /></section>
+      ) : (
+        <>
+          <div className="mt-7 flex flex-wrap items-center justify-between gap-3">
+            <div role="group" aria-label="Filtrar por tipo" className="inline-flex flex-wrap gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+              {ABAS.map((a) => (
+                <button key={a.id} type="button" aria-pressed={aba === a.id} onClick={() => trocarAba(a.id)}
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                    aba === a.id
+                      ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-900 dark:text-slate-50'
+                      : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
+                  }`}>
+                  {a.rotulo}
+                  {naoLidasPorAba[a.id] > 0 && (
+                    <span className={`min-w-5 rounded-full px-1.5 text-center text-[11px] font-semibold leading-5 ${
+                      aba === a.id ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200'
+                    }`}>
+                      {naoLidasPorAba[a.id]}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+              <label className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
+                <Switch checked={soNaoLidas} onCheckedChange={setSoNaoLidas} aria-label="Só não lidas" />
+                Só não lidas
+              </label>
+              <button type="button" onClick={() => markAllAsRead()} disabled={!temMarcaveis}
+                className="inline-flex items-center gap-1.5 font-medium text-slate-600 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:text-slate-50">
+                <CheckCheck className="h-4 w-4" aria-hidden /> Marcar tudo como lido
+              </button>
+              <button type="button" onClick={() => clearRead()} disabled={!temLidas}
+                className="font-medium text-slate-500 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-400 dark:hover:text-slate-50">
+                Limpar lidas
+              </button>
+            </div>
           </div>
-        )}
 
-        {loading && notifications.length === 0 ? (
-          <div className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200 bg-white dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900">
-            {[0, 1, 2].map((i) => (
-              <div key={i} className="flex gap-3.5 px-5 py-4">
-                <Skeleton className="h-10 w-10 rounded-full" />
-                <div className="flex-1 space-y-2"><Skeleton className="h-3 w-1/3" /><Skeleton className="h-4 w-2/3" /><Skeleton className="h-3 w-5/6" /></div>
-              </div>
-            ))}
-          </div>
-        ) : grupos.length === 0 ? (
-          !loadError && (
-            <div className="flex flex-col items-center rounded-2xl border border-dashed border-slate-200 bg-white px-6 py-14 text-center dark:border-slate-800 dark:bg-slate-900">
-              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
-                <Inbox className="h-5 w-5 text-slate-500" aria-hidden />
-              </span>
-              <p className="mt-4 text-sm font-semibold text-slate-900 dark:text-slate-50">
-                {soNaoLidas ? 'Tudo lido por aqui' : abaAtual.vazio.titulo}
-              </p>
-              <p className="mt-1 max-w-sm text-sm text-slate-500 dark:text-slate-400">
-                {soNaoLidas ? 'Desligue "Só não lidas" para ver os avisos que você já leu.' : abaAtual.vazio.texto}
-              </p>
-              {podeEnviarComunicado && !soNaoLidas && (aba === 'todos' || aba === 'comunicado') && (
-                <Button variant="outline" className="mt-5" onClick={() => setCompondo(true)}>
-                  <Plus className="mr-1.5 h-4 w-4" aria-hidden /> Novo comunicado
+          <section className="mt-5">
+            {loadError && (
+              <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
+                Não deu para carregar os avisos. Confira a conexão e tente de novo.
+                <Button variant="outline" size="sm" onClick={() => tenantId && user && loadNotifications(tenantId, user.id)}>
+                  Tentar de novo
                 </Button>
-              )}
-            </div>
-          )
-        ) : (
-          grupos.map((g) => (
-            <div key={g.rotulo} className="mb-6">
-              <h2 className="mb-2 flex items-center gap-3 text-sm font-semibold text-slate-700 dark:text-slate-300">
-                {g.rotulo}
-                <span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" aria-hidden />
-              </h2>
-              <ul className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900">
-                {g.itens.map((n) => (
-                  <NotificationListItem key={n.id} item={n} onAbrir={abrir} onMarcarLida={markAsRead} />
+              </div>
+            )}
+
+            {loading && notifications.length === 0 ? (
+              <div className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200 bg-white dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="flex gap-3.5 px-5 py-4">
+                    <Skeleton className="h-10 w-10 rounded-full" />
+                    <div className="flex-1 space-y-2"><Skeleton className="h-3 w-1/3" /><Skeleton className="h-4 w-2/3" /><Skeleton className="h-3 w-5/6" /></div>
+                  </div>
                 ))}
-              </ul>
-            </div>
-          ))
-        )}
-      </section>
+              </div>
+            ) : grupos.length === 0 ? (
+              !loadError && (
+                <div className="flex flex-col items-center rounded-2xl border border-dashed border-slate-200 bg-white px-6 py-14 text-center dark:border-slate-800 dark:bg-slate-900">
+                  <span className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
+                    <Inbox className="h-5 w-5 text-slate-500" aria-hidden />
+                  </span>
+                  <p className="mt-4 text-sm font-semibold text-slate-900 dark:text-slate-50">
+                    {soNaoLidas ? 'Tudo lido por aqui' : abaAtual.vazio.titulo}
+                  </p>
+                  <p className="mt-1 max-w-sm text-sm text-slate-500 dark:text-slate-400">
+                    {soNaoLidas ? 'Desligue "Só não lidas" para ver os avisos que você já leu.' : abaAtual.vazio.texto}
+                  </p>
+                  {podeEnviarComunicado && !soNaoLidas && (aba === 'todos' || aba === 'comunicado') && (
+                    <Button variant="outline" className="mt-5" onClick={() => setCompondo(true)}>
+                      <Plus className="mr-1.5 h-4 w-4" aria-hidden /> Novo comunicado
+                    </Button>
+                  )}
+                </div>
+              )
+            ) : (
+              grupos.map((g) => (
+                <div key={g.rotulo} className="mb-6">
+                  <h2 className="mb-2 flex items-center gap-3 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                    {g.rotulo}
+                    <span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" aria-hidden />
+                  </h2>
+                  <ul className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900">
+                    {g.itens.map((n) => (
+                      <NotificationListItem key={n.id} item={n} onAbrir={abrir} onMarcarLida={markAsRead} onCiente={darCiente} />
+                    ))}
+                  </ul>
+                </div>
+              ))
+            )}
+          </section>
+        </>
+      )}
 
       {compondo && casaDeVerdade && user && (
         <NovoComunicadoDialog
           open={compondo}
-          onOpenChange={setCompondo}
+          onOpenChange={fecharCompositor}
           tenantId={tenantId!}
-          userId={user.id}
-          soEquipesQueLidera={role === 'team_leader' && !isOwner}
+          ehGerente={role === 'team_leader' && !isOwner}
         />
       )}
 
