@@ -283,6 +283,39 @@ BEGIN
   RAISE NOTICE 'OK 4 · a casa vê a campanha; o extrato é de cada um e da gestão';
 END $$;
 
+-- 4b. Só gente no Fire (20261016) -------------------------------------------------------
+-- Como na Lotus: o assistente de IA (sem atuação) e a conta de teste (com
+-- atuação e uma venda hoje), com a edição ativa.
+INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+  ('7e1b0000-0000-4000-a000-00000000000a', 'ia@teste-fire.dev', '{"name":"Lia"}'),
+  ('7e1b0000-0000-4000-a000-00000000000b', 'teste@teste-fire.dev', '{"name":"Conta de Teste"}')
+ON CONFLICT (id) DO NOTHING;
+INSERT INTO public.tenant_memberships (tenant_id, user_id, role, team_id, permissions)
+SELECT t, '7e1b0000-0000-4000-a000-00000000000a'::uuid, 'corretor', NULL::uuid,
+       '{"atuacao":[],"lead_limit":{"motivo":"assistente-ia","receives_auto_leads":false}}'::jsonb FROM fx
+UNION ALL SELECT t, '7e1b0000-0000-4000-a000-00000000000b'::uuid, 'corretor', equipe_l,
+       '{"atuacao":["lancamentos"],"conta_de_teste":true}'::jsonb FROM fx;
+SET LOCAL session_replication_role = replica;
+INSERT INTO public.proposals (id, tenant_id, agent_user_id, lead_id, value, stage_id, signed_at, created_at)
+SELECT '7e1f0000-0000-4000-a000-0000000000a3'::uuid, t, '7e1b0000-0000-4000-a000-00000000000b'::uuid, NULL, 1000,
+       'proposta-assinada', now(), now() FROM fx;
+SET LOCAL session_replication_role = origin;
+
+DO $$
+DECLARE f record; e record; p jsonb;
+BEGIN
+  SELECT * INTO f FROM fx; SELECT * INTO e FROM ed;
+  PERFORM public.fire_processar(e.id);
+  PERFORM pg_temp.checa(pg_temp.saldo('7e1b0000-0000-4000-a000-00000000000b') = 0,
+    'a conta de teste vendeu e não pontua (veio ' || pg_temp.saldo('7e1b0000-0000-4000-a000-00000000000b') || ')');
+  p := pg_temp.painel(f.cl1);
+  PERFORM pg_temp.checa(jsonb_array_length(p->'edicao'->'classificacao') = 4,
+    'a classificação segue com o líder e os 3 corretores (veio ' || (p->'edicao'->'classificacao')::text || ')');
+  PERFORM pg_temp.checa(p->'edicao'->'sem_atuacao' = '["Sérgio Sem Atuação"]'::jsonb,
+    'o assistente de IA não aparece como "sem atuação" (veio ' || (p->'edicao'->'sem_atuacao')::text || ')');
+  RAISE NOTICE 'OK 4b · só gente no Fire';
+END $$;
+
 -- 5. Encerrar congela ----------------------------------------------------------------------
 DO $$
 DECLARE f record; e record; v text; antes jsonb; depois jsonb;

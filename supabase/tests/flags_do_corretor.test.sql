@@ -267,4 +267,36 @@ BEGIN
   RAISE NOTICE 'OK 6 · o mês fecha uma vez e fica como fechou';
 END $$;
 
+-- 7. Só gente nas flags (20261016) ---------------------------------------------------
+-- Como na Lotus: o assistente de IA e a conta de teste são `corretor`. A conta
+-- de teste tem atuação e venda: contada, ganharia flag.
+INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+  ('7f3b0000-0000-4000-a000-00000000000b', 'ia@teste-fl.dev', '{"name":"Lia"}'),
+  ('7f3b0000-0000-4000-a000-00000000000c', 'teste@teste-fl.dev', '{"name":"Conta de Teste"}')
+ON CONFLICT (id) DO NOTHING;
+INSERT INTO public.tenant_memberships (tenant_id, user_id, role, team_id, permissions)
+SELECT t, '7f3b0000-0000-4000-a000-00000000000b'::uuid, 'corretor', NULL::uuid,
+       '{"atuacao":[],"lead_limit":{"motivo":"assistente-ia","receives_auto_leads":false}}'::jsonb FROM fx
+UNION ALL SELECT t, '7f3b0000-0000-4000-a000-00000000000c'::uuid, 'corretor', equipe_l,
+       '{"atuacao":["lancamentos"],"conta_de_teste":true}'::jsonb FROM fx;
+SET LOCAL session_replication_role = replica;
+INSERT INTO public.proposals (tenant_id, agent_user_id, value, stage_id, signed_at, created_at)
+SELECT t, '7f3b0000-0000-4000-a000-00000000000c'::uuid, 1000, 'proposta-assinada', now(), now() FROM fx;
+SET LOCAL session_replication_role = origin;
+
+DO $$
+DECLARE f record; p jsonb;
+BEGIN
+  SELECT * INTO f FROM fx;
+  p := pg_temp.flags(f.admin);
+  PERFORM pg_temp.checa(jsonb_array_length(p->'pessoas') = 7
+      AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(p->'pessoas') x WHERE x->>'nome' IN ('Lia', 'Conta de Teste')),
+    'a diretoria segue vendo os 7 que vendem, sem o assistente e sem a conta de teste (veio '
+      || (SELECT string_agg(x->>'nome', ', ') FROM jsonb_array_elements(p->'pessoas') x) || ')');
+  PERFORM pg_temp.checa(NOT EXISTS (SELECT 1 FROM public.flags_calculadas(f.t, f.mes) c
+                                     WHERE c.user_id IN ('7f3b0000-0000-4000-a000-00000000000b', '7f3b0000-0000-4000-a000-00000000000c')),
+    'e o fechamento do mês, que lê a mesma lista, não grava flag para elas');
+  RAISE NOTICE 'OK 7 · só gente nas flags';
+END $$;
+
 ROLLBACK;

@@ -318,4 +318,31 @@ BEGIN
   RAISE NOTICE 'OK 7 · a trilha é fila com progresso, e o obrigatório entra sozinho';
 END $$;
 
+-- 8. Só gente na Universidade (20261016) ---------------------------------------------
+-- Como na Lotus: o assistente de IA e a conta de teste são `corretor` com cargo.
+INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+  ('7a1b0000-0000-4000-a000-000000000007', 'ia@teste-univ.dev', '{"name":"Lia"}'),
+  ('7a1b0000-0000-4000-a000-000000000008', 'teste@teste-univ.dev', '{"name":"Conta de Teste"}')
+ON CONFLICT (id) DO NOTHING;
+INSERT INTO tenant_memberships (tenant_id, user_id, role, team_id, cargo_id, permissions)
+SELECT t, '7a1b0000-0000-4000-a000-000000000007'::uuid, 'corretor', NULL::uuid, cargo_corretor,
+       '{"atuacao":[],"lead_limit":{"motivo":"assistente-ia","receives_auto_leads":false}}'::jsonb FROM fx
+UNION ALL SELECT t, '7a1b0000-0000-4000-a000-000000000008'::uuid, 'corretor', equipe_l, cargo_corretor,
+       '{"atuacao":["prontos"],"conta_de_teste":true}'::jsonb FROM fx;
+
+DO $$
+DECLARE f record; k record; p jsonb;
+BEGIN
+  SELECT * INTO f FROM fx; SELECT * INTO k FROM c;
+  p := pg_temp.como(f.admin, format('SELECT public.curso_painel(%L)::text', k.id))::jsonb;
+  PERFORM pg_temp.checa((SELECT array_agg(x->>'nome' ORDER BY x->>'nome') FROM jsonb_array_elements(p) x)
+      = ARRAY['Ana Aluna', 'Bruno Aluno', 'Caio Captador', 'Leo Líder'],
+    'o painel do curso não lista o assistente nem a conta de teste (veio ' || p::text || ')');
+  p := pg_temp.como(f.admin, format('SELECT public.trilha_pessoas(%L)::text', f.t))::jsonb;
+  PERFORM pg_temp.checa((SELECT array_agg(x->>'nome' ORDER BY x->>'nome') FROM jsonb_array_elements(p) x)
+      = ARRAY['Ana Aluna', 'Bruno Aluno', 'Caio Captador', 'Leo Líder'],
+    'nem a lista de quem recebe trilha (veio ' || p::text || ')');
+  RAISE NOTICE 'OK 8 · só gente na Universidade';
+END $$;
+
 ROLLBACK;
