@@ -35,6 +35,8 @@ import { useLeadsMetrics } from '@/features/leads/hooks/useLeadsMetrics';
 import type { ProcessedLead } from '@/data/realLeadsProcessor';
 import { numberToString } from '@amcharts/amcharts5/.internal/core/util/Type';
 import { createGoogleCalendarEvent } from '@/features/agenda/services/googleCalendarService';
+import { MeuDiaSection } from '@/features/metas-diarias/MeuDiaSection';
+import { PlacarMetasDiarias } from '@/features/metas-diarias/PlacarMetasDiarias';
 
 const BRL = (value: number): string =>
   value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
@@ -744,6 +746,14 @@ export function InicioNovaPage() {
                 </button>
               </div>
             </div>
+
+            {/* A.4 · Metas diárias: o dia do corretor e o placar da gestão */}
+            {tenantId && tenantId !== 'owner' && (user?.systemRole === 'corretor' || user?.systemRole === 'team_leader') && (
+              <MeuDiaSection tenantId={tenantId} />
+            )}
+            {tenantId && tenantId !== 'owner' && user?.systemRole !== 'corretor' && (
+              <PlacarMetasDiarias tenantId={tenantId} />
+            )}
 
             {/* KPIs */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
