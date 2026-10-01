@@ -14,6 +14,9 @@
  */
 
 import { supabase } from '@/integrations/supabase/client';
+// Faltava desde 02/09: sem ele, VGV e VGC davam "não está definido" a cada
+// sincronização, e as metas automáticas desses dois nunca saíam do lugar.
+import { buscarVendasAssinadas, somarVendas } from '@/features/metricas/services/vendasAssinadasService';
 
 export interface GoalMetricSource {
   categoryId: string;
