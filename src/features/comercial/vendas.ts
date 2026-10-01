@@ -217,8 +217,11 @@ export function entradaDoMotor(
   const nivel = nivelValido(venda.nivel_corretor);
   if (!nivel) {
     return {
-      impedimento: `${venda.corretor || 'O corretor'} não tinha nível de comissão no cadastro quando a venda foi registrada. ` +
-        'Defina o nível em Gestão de Equipe e registre o repasse manualmente — mudar o cadastro agora NÃO altera esta venda, de propósito.',
+      // Nível vazio é "não sabido", não "sem nível": preencher o cadastro
+      // completa esta venda na hora (gatilho de 20261006). O que já tinha
+      // nível não muda — essa é a garantia que continua valendo.
+      impedimento: `${venda.corretor || 'O corretor'} está sem nível de comissão no cadastro. ` +
+        'Defina o nível em Gestão de Equipe: a venda pega esse nível na hora. Vendas que já tinham nível não mudam.',
     };
   }
   if (!(venda.comissao_bruta > 0)) {

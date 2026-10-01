@@ -102,10 +102,10 @@ describe('a entrada do motor de comissão', () => {
     expect('entrada' in r && r.entrada.tipo !== 'permuta' && r.entrada.intermediacao?.nivel).toBe('junior');
   });
 
-  it('impede o cálculo quando a venda nasceu sem nível, e explica o porquê', () => {
+  it('impede o cálculo quando a venda está sem nível, e diz como destravar', () => {
     const r = entradaDoMotor(venda({ nivel_corretor: null }), equipe);
-    expect('impedimento' in r && r.impedimento).toContain('não tinha nível');
-    expect('impedimento' in r && r.impedimento).toContain('NÃO altera esta venda');
+    expect('impedimento' in r && r.impedimento).toContain('sem nível de comissão no cadastro');
+    expect('impedimento' in r && r.impedimento).toContain('a venda pega esse nível na hora');
   });
 
   it('impede quando a comissão está zerada — nada para repassar', () => {

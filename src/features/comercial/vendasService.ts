@@ -154,13 +154,16 @@ export async function carregarEquipe(tenantId: string): Promise<PessoaDoRepasse[
   if (!tenantId || tenantId === 'owner') return [];
   const [membros, { data: niveis, error }] = await Promise.all([
     fetchTenantMembers(tenantId),
-    supabase.from('tenant_memberships').select('user_id, nivel, leader_user_id').eq('tenant_id', tenantId),
+    // O nível mora em `permissions.nivel_comissao`, onde a Gestão de Equipe
+    // grava. A coluna `nivel` está obsoleta: ninguém a preenchia, e o líder de
+    // todo mundo chegava aqui "sem nível" (20261006).
+    supabase.from('tenant_memberships').select('user_id, permissions, leader_user_id').eq('tenant_id', tenantId),
   ]);
   if (error) throw error;
 
-  const porId = new Map<string, { nivel: string | null; leader_user_id: string | null }>();
+  const porId = new Map<string, { nivel: unknown; leader_user_id: string | null }>();
   (niveis ?? []).forEach((r) => porId.set(r.user_id as string, {
-    nivel: (r.nivel as string) ?? null,
+    nivel: (r.permissions as { nivel_comissao?: unknown } | null)?.nivel_comissao ?? null,
     leader_user_id: (r.leader_user_id as string) ?? null,
   }));
 
