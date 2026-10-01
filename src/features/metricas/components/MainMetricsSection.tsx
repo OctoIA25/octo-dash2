@@ -10,6 +10,8 @@
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { InfoMetrica } from '@/features/kpis/components/KpiComponents';
+import { FunilDeSafra } from '@/features/leads/components/FunilDeSafra';
+import { periodoDoFiltro } from '@/features/metricas/utils/periodoDoFiltro';
 import { chaveDoRotulo } from '@/features/kpis/domain/kpiDictionary';
 import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { EnhancedFunnelChart } from '@/features/leads/components/EnhancedFunnelChart';
@@ -112,6 +114,12 @@ export const MainMetricsSection = ({
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
+  // A.5 · o mesmo funil, com todos os leads ou só a safra do período.
+  const [modoDoFunil, setModoDoFunil] = useState<'todos' | 'safra'>('todos');
+  const periodoDaSafra = useMemo(
+    () => periodoDoFiltro(dateFilter, selectedMonth, selectedYear, customStartDate, customEndDate),
+    [dateFilter, selectedMonth, selectedYear, customStartDate, customEndDate],
+  );
   
   // Novo estado para filtro de tipo de negócio na aba Geral
   const [geralBusinessFilter, setGeralBusinessFilter] = useState<'todos' | 'venda' | 'locacao'>('todos');
@@ -1494,10 +1502,30 @@ export const MainMetricsSection = ({
               {/* Grid - 6 Gráficos com Espaçamento Adequado: 2 Leads + 1 Corretor + 3 Imóveis */}
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 w-full mb-6 transition-all duration-300 ease-in-out">
                 {/* Linha 1 - MÉTRICAS DE LEADS - Altura aumentada para mostrar todas as 9 etapas */}
-                <div className="w-full h-[850px] min-h-[850px] overflow-visible transition-all duration-300 ease-in-out">
-                  <ErrorBoundary fallbackTitle="Funil de Leads">
-                    <EnhancedFunnelChart leads={filterLeadsByDate(filteredLeadsGeral)} />
-                  </ErrorBoundary>
+                <div className="w-full h-[850px] min-h-[850px] overflow-visible transition-all duration-300 ease-in-out flex flex-col gap-2">
+                  {/* A.5 · ao lado do funil: todos os leads × só quem entrou no período. */}
+                  <div role="group" aria-label="Quais leads o funil conta" className="flex w-fit rounded-lg border border-border p-0.5">
+                    {([['todos', 'Todos os leads'], ['safra', 'Só quem entrou no período']] as const).map(([id, rotulo]) => (
+                      <button
+                        key={id}
+                        type="button"
+                        aria-pressed={modoDoFunil === id}
+                        onClick={() => setModoDoFunil(id)}
+                        className={`rounded-md px-3 py-1 text-[12px] font-medium ${
+                          modoDoFunil === id ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900' : 'text-text-secondary hover:text-foreground'
+                        }`}
+                      >
+                        {rotulo}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex-1 min-h-0">
+                    <ErrorBoundary fallbackTitle="Funil de Leads">
+                      {modoDoFunil === 'safra'
+                        ? <FunilDeSafra tenantId={tenantId} periodo={periodoDaSafra} />
+                        : <EnhancedFunnelChart leads={filterLeadsByDate(filteredLeadsGeral)} />}
+                    </ErrorBoundary>
+                  </div>
                 </div>
 
                 <div className="w-full h-[850px] min-h-[850px] overflow-visible transition-all duration-300 ease-in-out">

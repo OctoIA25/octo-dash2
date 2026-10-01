@@ -88,6 +88,16 @@ export const DICIONARIO_DASH: Record<string, string> = {
   'inicio.metaMensal':
     'A meta que está destacada na aba Metas, com o quanto já foi realizado. Sem nenhuma meta destacada, o card mostra um traço e convida a destacar uma — não mostra zero, que pareceria meta não cumprida.',
 
+  // A.5 · Funil de safra (20261008): só os leads que ENTRARAM no período.
+  'safra.fechou':
+    'Dos leads que ENTRARAM no período, quantos chegaram a Proposta Assinada — pela mudança de etapa registrada, pela etapa atual do card ou por proposta assinada ligada ao lead, em qualquer data até hoje. Só a safra do período conta: a base antiga não infla o número.',
+
+  'safra.medianaDias':
+    'Mediana de dias entre o lead entrar e chegar a Proposta Assinada, só entre os que fecharam com data conhecida. Quem não fechou fica de fora do cálculo, e a tela diz quantos. É mediana, não média: um lead de dois anos distorceria a média. Sem nenhum fechamento datado, mostra "Sem dados".',
+
+  'safra.viva':
+    'Dos leads que entraram no período e ainda não fecharam, quantos não foram arquivados — os que continuam andando no funil. Os arquivados aparecem ao lado, separados.',
+
   'inicio.aguardandoResposta':
     'Leads marcados como quentes que entraram nas últimas 24 horas. É uma fila de urgência, não um indicador de desempenho.',
 
