@@ -14,6 +14,7 @@
  */
 
 import { useMemo, useState } from 'react';
+import { hojeSP, primeiroDoMesSP, ultimoDoMesSP } from '@/lib/dataSP';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -40,13 +41,11 @@ import { ABAS_DO_FINANCEIRO, abaDoEndereco, type AbaDoFinanceiro } from './abas'
 type Aba = AbaDoFinanceiro;
 
 // O dia de São Paulo, não o de Greenwich: com `toISOString`, a baixa feita
-// depois das 21h caía no dia seguinte.
-const hoje = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
-const primeiroDoMes = () => `${new Date().toISOString().slice(0, 7)}-01`;
-const ultimoDoMes = () => {
-  const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().slice(0, 10);
-};
+// depois das 21h caía no dia seguinte — e na última noite do mês o período
+// abria invertido ("de 01/10 até 30/09").
+const hoje = () => hojeSP();
+const primeiroDoMes = () => primeiroDoMesSP();
+const ultimoDoMes = () => ultimoDoMesSP();
 const dataBR = (d: string | null | undefined) =>
   d ? new Date(`${String(d).slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : '—';
 

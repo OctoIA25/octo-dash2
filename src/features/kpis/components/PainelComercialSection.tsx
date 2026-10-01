@@ -11,6 +11,7 @@
  */
 
 import { useCallback, useMemo, useState } from 'react';
+import { mesSP } from '@/lib/dataSP';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, ArrowDownRight, ArrowUpRight, Bookmark, Info, Loader2, Minus, X } from 'lucide-react';
@@ -44,7 +45,7 @@ export function PainelComercialSection() {
   const [params, setParams] = useSearchParams();
   const filtros = useMemo(() => daQuery(params), [params]);
   const tipo = (params.get('tipo') as Tipo) ?? 'todos';
-  const mes = params.get('mes') ?? new Date().toISOString().slice(0, 7);
+  const mes = params.get('mes') ?? mesSP();
 
   const de = `${mes}-01`;
   const ate = new Date(Number(mes.slice(0, 4)), Number(mes.slice(5, 7)), 0).toISOString().slice(0, 10);

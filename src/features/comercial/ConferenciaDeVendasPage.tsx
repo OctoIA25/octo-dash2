@@ -12,6 +12,7 @@
  */
 
 import { useMemo, useState } from 'react';
+import { hojeSP, primeiroDoAnoSP } from '@/lib/dataSP';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle, Calculator, Check, DownloadCloud, FileText, Info, Loader2, RefreshCw, X,
@@ -35,8 +36,11 @@ import {
 } from './vendasService';
 import { sincronizarVendasComerciais } from '@/features/metricas/services/commercialSalesService';
 
-const hoje = () => new Date().toISOString().slice(0, 10);
-const primeiroDoMes = () => `${new Date().toISOString().slice(0, 7)}-01`;
+// O dia de São Paulo: com `toISOString`, das 21h em diante já era amanhã.
+const hoje = () => hojeSP();
+// Abre no ano todo: a planilha da Lotus tem as vendas de janeiro a agosto, e o
+// recorte do mês abria vazio, parecendo quebrado.
+const primeiroDoAno = () => primeiroDoAnoSP();
 
 const dataBR = (d: string | null | undefined) =>
   d ? new Date(`${String(d).slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : '—';
@@ -46,7 +50,7 @@ export function ConferenciaDeVendasPage() {
   const { toast } = useToast();
   const qc = useQueryClient();
 
-  const [de, setDe] = useState(primeiroDoMes);
+  const [de, setDe] = useState(primeiroDoAno);
   const [ate, setAte] = useState(hoje);
   const [status, setStatus] = useState('');
   /*

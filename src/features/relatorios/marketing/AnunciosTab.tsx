@@ -12,6 +12,7 @@
  */
 
 import { useMemo, useState } from 'react';
+import { mesSP } from '@/lib/dataSP';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, Info, Loader2 } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
@@ -39,7 +40,7 @@ const inteiro = (n: number | null | undefined) => (n == null ? '—' : n.toLocal
 export function AnunciosTab() {
   const { user } = useAuthContext();
   const tenantId = user?.tenantId;
-  const [mes, setMes] = useState(() => new Date().toISOString().slice(0, 7));
+  const [mes, setMes] = useState(() => mesSP());
   const [por, setPor] = useState<'corretor' | 'equipe'>('corretor');
   const [origem, setOrigem] = useState('');
 

@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect, type ReactNode } from 'react';
+import { hojeSP, primeiroDoAnoSP, primeiroDoMesSP } from '@/lib/dataSP';
 import { DollarSign, TrendingUp, Users, Target, Percent, Info, type LucideIcon } from 'lucide-react';
 import { TermoFinanceiro } from '@/components/ui/termo-financeiro';
 import { ProcessedLead } from '@/data/realLeadsProcessor';
@@ -64,11 +65,8 @@ export function FinanceiroTab({ leads }: FinanceiroTabProps) {
   useEffect(() => {
     const tid = user?.tenantId;
     if (!tid || tid === 'owner') { setGastoDaMeta(null); return; }
-    const hoje = new Date();
-    const de = periodo === 'anual'
-      ? `${hoje.getFullYear()}-01-01`
-      : `${hoje.toISOString().slice(0, 7)}-01`;
-    const ate = hoje.toISOString().slice(0, 10);
+    const de = periodo === 'anual' ? primeiroDoAnoSP() : primeiroDoMesSP();
+    const ate = hojeSP();
     let cancelado = false;
     gastoDaMetaNoPeriodo(tid, de, ate)
       .then((v) => { if (!cancelado) setGastoDaMeta(v); })

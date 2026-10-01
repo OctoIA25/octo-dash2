@@ -1,4 +1,5 @@
 import { useMemo, useRef, useEffect } from 'react';
+import { mesSP, mesAnterior } from '@/lib/dataSP';
 import { isEtapaVisitaAgendada, isEtapaVisitaRealizada, isEtapaFechamento } from '@/features/leads/utils/funnelStages';
 import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -43,8 +44,7 @@ export const MonthlyReport = ({ leads }: MonthlyReportProps) => {
 
     // Agrupar leads por mês
     const leadsByMonth = leads.reduce((acc, lead) => {
-      const date = new Date(lead.data_entrada);
-      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      const monthKey = mesSP(new Date(lead.data_entrada));
       
       if (!acc[monthKey]) {
         acc[monthKey] = {
@@ -104,11 +104,11 @@ export const MonthlyReport = ({ leads }: MonthlyReportProps) => {
     );
 
     // Calcular métricas do mês atual
-    const currentMonth = new Date().toISOString().slice(0, 7);
+    // Mês de São Paulo, igual ao agrupamento acima: com `toISOString`, na
+    // última noite do mês o "mês atual" já era o seguinte e aparecia zerado.
+    const currentMonth = mesSP();
     const currentMonthData = leadsByMonth[currentMonth];
-    const lastMonth = new Date();
-    lastMonth.setMonth(lastMonth.getMonth() - 1);
-    const lastMonthKey = lastMonth.toISOString().slice(0, 7);
+    const lastMonthKey = mesAnterior(currentMonth);
     const lastMonthData = leadsByMonth[lastMonthKey];
 
     return {
@@ -130,9 +130,9 @@ export const MonthlyReport = ({ leads }: MonthlyReportProps) => {
   const exportMonthlyData = () => {
     if (!monthlyData) return;
 
-    const currentMonth = new Date().toISOString().slice(0, 7);
+    const currentMonth = mesSP();
     const currentLeads = leads.filter(lead => {
-      const leadMonth = new Date(lead.data_entrada).toISOString().slice(0, 7);
+      const leadMonth = mesSP(new Date(lead.data_entrada));
       return leadMonth === currentMonth;
     });
 

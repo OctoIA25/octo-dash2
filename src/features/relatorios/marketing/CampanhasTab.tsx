@@ -13,6 +13,7 @@
  */
 
 import { Link } from 'react-router-dom';
+import { mesSP } from '@/lib/dataSP';
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, ChevronDown, ChevronRight, Info, Loader2, RefreshCw } from 'lucide-react';
@@ -47,7 +48,7 @@ export function CampanhasTab() {
   const tenantId = user?.tenantId;
   const { toast } = useToast();
   const qc = useQueryClient();
-  const [mes, setMes] = useState(() => new Date().toISOString().slice(0, 7));
+  const [mes, setMes] = useState(() => mesSP());
   const [sincronizando, setSincronizando] = useState(false);
   const [empreendimento, setEmpreendimento] = useState('');
 
