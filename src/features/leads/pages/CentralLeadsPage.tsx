@@ -62,10 +62,6 @@ import {
 import { ClassificacaoDots } from '@/features/leads/components/ClassificacaoBadge';
 import { fetchTenantMembers } from '@/features/corretores/services/tenantMembersService';
 import {
-  hasAnyPendingBlockingActivity,
-  unblockCorretor,
-} from '@/features/corretores/services/activityBlockingService';
-import {
   faixaDaAtividade,
   contarAbas,
   filtrarPorAba,
@@ -651,14 +647,7 @@ export const CentralLeadsPage: React.FC<CentralLeadsPageProps> = ({ embedded = f
         prev.map((x) => (x.id === a.id ? { ...x, status: 'concluido' } : x))
       );
 
-      if ((TIPOS_BLOQUEANTES as readonly string[]).includes(a.tipo)) {
-        const aindaPendente = await hasAnyPendingBlockingActivity(tenantId as string, meuEmail);
-        if (!aindaPendente) {
-          await unblockCorretor(tenantId as string, meuEmail);
-          toast.success('Atividade concluída! Você foi desbloqueado do recebimento de leads.');
-          return;
-        }
-      }
+      // O desbloqueio por atividade é do banco (tr_agenda_libera_bloqueio).
       toast.success('Atividade concluída!');
     } catch (error) {
       console.error('Erro ao concluir atividade:', error);

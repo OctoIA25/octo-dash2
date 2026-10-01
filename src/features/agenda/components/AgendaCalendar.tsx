@@ -59,7 +59,6 @@ import {
   sincronizarStatusTarefaSemanalDaAgenda,
   sincronizarTarefaSemanalDaAgenda
 } from '../services/tarefasAgendaSyncService';
-import { hasAnyPendingBlockingActivity, unblockCorretor } from '@/features/corretores/services/activityBlockingService';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -574,17 +573,8 @@ export const AgendaCalendar = ({ corretorEmail }: AgendaCalendarProps) => {
         }
       }
 
-      if (novoStatus === 'concluido' && (evento.tipo === 'retornar_cliente' || evento.tipo === 'visita_agendada') && tenantId && tenantId !== 'owner' && emailParaOperacao) {
-        const stillHas = await hasAnyPendingBlockingActivity(tenantId, emailParaOperacao);
-        if (!stillHas) {
-          await unblockCorretor(tenantId, emailParaOperacao);
-          toast.success('Evento concluído! Corretor desbloqueado do recebimento de leads.');
-        } else {
-          toast.success('Evento marcado como concluído!');
-        }
-      } else {
-        toast.success(novoStatus === 'concluido' ? 'Evento marcado como concluído!' : 'Evento marcado como pendente!');
-      }
+      // O desbloqueio por atividade é do banco (tr_agenda_libera_bloqueio).
+      toast.success(novoStatus === 'concluido' ? 'Evento marcado como concluído!' : 'Evento marcado como pendente!');
 
       await carregarEventosDoSupabase();
       setDetalhesEventoOpen(false);

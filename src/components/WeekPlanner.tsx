@@ -46,7 +46,6 @@ import { useImoveisData } from '@/features/imoveis/hooks/useImoveisData';
 import { ComboBox } from '@/components/ui/combobox';
 import { ImoveisComboBox } from '@/components/ui/imovel-combobox';
 import { supabaseToEvento } from '@/features/agenda/services/agendaSupabaseService';
-import { hasAnyPendingBlockingActivity, unblockCorretor } from '@/features/corretores/services/activityBlockingService';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -355,17 +354,8 @@ export const WeekPlanner = ({ corretorEmail }: WeekPlannerProps) => {
       
       if (error) throw error;
 
-      if (novoStatus === 'concluido' && (evento.tipo === 'retornar_cliente' || evento.tipo === 'visita_agendada') && tenantId && tenantId !== 'owner') {
-        const stillHas = await hasAnyPendingBlockingActivity(tenantId, user.email);
-        if (!stillHas) {
-          await unblockCorretor(tenantId, user.email);
-          toast.success('Tarefa concluída! Você foi desbloqueado do recebimento de leads.');
-        } else {
-          toast.success('Tarefa concluída!');
-        }
-      } else {
-        toast.success(novoStatus === 'concluido' ? 'Tarefa concluída!' : 'Tarefa reaberta!');
-      }
+      // O desbloqueio por atividade é do banco (tr_agenda_libera_bloqueio).
+      toast.success(novoStatus === 'concluido' ? 'Tarefa concluída!' : 'Tarefa reaberta!');
       await carregarEventos();
       setDetalhesEventoOpen(false);
     } catch (error) {

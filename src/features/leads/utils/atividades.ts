@@ -32,8 +32,8 @@ export const JANELA_DIAS = 30;
 
 /**
  * Tipos cujo atraso bloqueia o corretor de receber leads do bolsão.
- * Mantido igual ao que já existia em `activityBlockingService`: qualquer tipo
- * pode atrasar, mas só estes dois tiram o corretor da roleta.
+ * Os mesmos de `processar_atividades_pendentes` no banco: qualquer tipo pode
+ * atrasar, mas só estes dois tiram o corretor da roleta.
  */
 export const TIPOS_BLOQUEANTES = ['retornar_cliente', 'visita_agendada'] as const;
 
@@ -66,7 +66,7 @@ export const rotuloTipoAtividade = (tipo: string) =>
 
 /**
  * Instante em que a atividade vence.
- * Sem horário, o prazo é o fim do dia — mesma regra do activityBlockingService,
+ * Sem horário, o prazo é o fim do dia — mesma regra de `prazo_atividade` no banco,
  * senão toda tarefa sem hora nasceria atrasada à meia-noite.
  */
 export function prazoAtividade(a: Pick<Atividade, 'data' | 'horario'>): Date {

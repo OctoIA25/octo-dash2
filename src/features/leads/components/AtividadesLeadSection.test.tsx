@@ -26,10 +26,6 @@ vi.mock('@/integrations/supabase/client', () => {
   return { supabase: { from: (tabela: string) => { leituras(tabela); return cadeia; } } };
 });
 vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: vi.fn() }) }));
-vi.mock('@/features/corretores/services/activityBlockingService', () => ({
-  hasAnyPendingBlockingActivity: vi.fn().mockResolvedValue(false),
-  unblockCorretor: vi.fn().mockResolvedValue(undefined),
-}));
 
 const atividade = {
   id: 'a1',

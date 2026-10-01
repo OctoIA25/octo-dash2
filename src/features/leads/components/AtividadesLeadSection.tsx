@@ -29,10 +29,6 @@ import {
   TIPOS_BLOQUEANTES,
   type Atividade,
 } from '../utils/atividades';
-import {
-  hasAnyPendingBlockingActivity,
-  unblockCorretor,
-} from '@/features/corretores/services/activityBlockingService';
 
 const COLUNAS =
   'id, titulo, descricao, data, horario, tipo, status, prioridade, corretor_email, lead_uuid, lead_id, lead_nome, lead_telefone';
@@ -141,15 +137,8 @@ export const AtividadesLeadSection = ({
 
       setAtividades((prev) => prev.map((x) => (x.id === a.id ? { ...x, status: 'concluido' } : x)));
 
-      // Concluir um tipo bloqueante é o que devolve o corretor à roleta.
-      if ((TIPOS_BLOQUEANTES as readonly string[]).includes(a.tipo)) {
-        const aindaPendente = await hasAnyPendingBlockingActivity(tenantId, corretorEmail);
-        if (!aindaPendente) {
-          await unblockCorretor(tenantId, corretorEmail);
-          toast({ title: '✅ Atividade concluída!', description: 'Você foi desbloqueado do recebimento de leads.' });
-          return;
-        }
-      }
+      // Concluir um tipo bloqueante devolve o corretor à roleta — quem faz é
+      // o banco (tr_agenda_libera_bloqueio), no mesmo UPDATE.
       toast({ title: '✅ Atividade concluída!' });
     } catch (error) {
       console.error('Erro ao concluir atividade:', error);

@@ -81,7 +81,7 @@ describe('updateMemberPermissions — colunas ao lado do jsonb', () => {
     expect(payload()).toEqual({ permissions: {}, especialidades: null });
   });
 
-  // O bloqueio por atividade (activityBlockingService) só mexe no jsonb: se
+  // O bloqueio por atividade só mexe no jsonb: se
   // "não passei" virasse null, cada bloqueio apagaria o CRECI e as especialidades.
   it('sem colunas, não encosta em CRECI nem em especialidades', async () => {
     await updateMemberPermissions('m1', { bloqueio: true });
