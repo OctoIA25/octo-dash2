@@ -226,4 +226,32 @@ BEGIN
   RAISE NOTICE 'OK 5 · placar da gestão, por equipe';
 END $$;
 
+-- 6. Só gente no placar (20261015) ------------------------------------------
+-- Como na Lotus: o assistente de IA e a conta de teste são `corretor` sem
+-- equipe. Contados, criariam um "Sem equipe · 0 de 2". A "Lia Líder" do
+-- fixture segue contando: quem sai é a marca, não o nome.
+INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+  ('7c2b0000-0000-4000-a000-000000000007', 'ia@teste-md.dev', '{"name":"Lia"}'),
+  ('7c2b0000-0000-4000-a000-000000000008', 'teste@teste-md.dev', '{"name":"Conta de Teste"}')
+ON CONFLICT (id) DO NOTHING;
+INSERT INTO public.tenant_memberships (tenant_id, user_id, role, team_id, permissions)
+SELECT t, '7c2b0000-0000-4000-a000-000000000007'::uuid, 'corretor', NULL::uuid,
+       '{"atuacao":[],"lead_limit":{"motivo":"assistente-ia","receives_auto_leads":false}}'::jsonb FROM fx
+UNION ALL SELECT t, '7c2b0000-0000-4000-a000-000000000008'::uuid, 'corretor', NULL::uuid,
+       '{"atuacao":["prontos"],"conta_de_teste":true}'::jsonb FROM fx;
+
+DO $$
+DECLARE f record; p jsonb;
+BEGIN
+  SELECT * INTO f FROM fx;
+  p := pg_temp.como(f.admin, 'admin@teste-md.dev', format('SELECT public.placar_metas_diarias(%L)::text', f.t))::jsonb;
+  PERFORM pg_temp.checa(p->'equipes' = '[{"equipe":"Lançamentos","corretores":2,"lancaram":1,"bateram":0,"aproveitamento":40},
+                                         {"equipe":"Prontos","corretores":2,"lancaram":1,"bateram":1,"aproveitamento":100}]'::jsonb,
+    'o assistente de IA e a conta de teste não entram no placar (veio ' || (p->'equipes')::text || ')');
+  PERFORM pg_temp.checa(NOT EXISTS (SELECT 1 FROM jsonb_array_elements(p->'pessoas') x
+                                     WHERE x->>'nome' IN ('Lia', 'Conta de Teste')),
+    'nem na lista de pessoas (veio ' || (p->'pessoas')::text || ')');
+  RAISE NOTICE 'OK 6 · só gente no placar';
+END $$;
+
 ROLLBACK;
