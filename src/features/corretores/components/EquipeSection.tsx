@@ -24,6 +24,7 @@ import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { useAuth } from "@/hooks/useAuth";
 import { podeAlterarTelefoneDe } from '../domain/memberPhonePermission';
 import { garantirFotoNoStorage } from '../services/memberPhotoService';
+import { ZerarMfa } from '@/features/seguranca/ZerarMfa';
 import { fetchTenantMembers, createTenantMember, updateMemberRole, removeTenantMember, updateMemberPermissions, updateMemberWhatsappPhones, updateMemberLeader, deleteMemberCompletely, adminUpdateMemberPassword, adminUpdateMemberEmail, type TenantMember } from '../services/tenantMembersService';
 import { fetchTeams, toggleTeamLeader, type Team } from '../services/teamsManagementService';
 import { fetchMemberDados, saveMemberDados, EMPTY_MEMBER_DADOS, type MemberDados } from '../services/memberDadosService';
@@ -472,8 +473,9 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
       return;
     }
 
-    if (newMemberPassword.length < 6) {
-      toast.error('A senha deve ter pelo menos 6 caracteres');
+    // A regra inteira (tipos, palavras óbvias) é do banco: create_auth_user devolve o motivo.
+    if (newMemberPassword.length < 8) {
+      toast.error('A senha precisa de pelo menos 8 caracteres');
       return;
     }
 
@@ -589,8 +591,8 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
   // Admin: salvar nova senha do membro
   const handleSaveMemberPassword = async () => {
     if (!editingMember) return;
-    if (!credentialsNewPassword || credentialsNewPassword.length < 6) {
-      toast.error('A senha deve ter pelo menos 6 caracteres');
+    if (!credentialsNewPassword || credentialsNewPassword.length < 8) {
+      toast.error('A senha precisa de pelo menos 8 caracteres');
       return;
     }
     setIsSavingCredentials(true);
@@ -1922,7 +1924,8 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                 className="h-10"
               />
               <p className="text-xs text-gray-500 dark:text-slate-400">
-                O usuário poderá alterar a senha após o primeiro acesso.
+                Senha provisória: no primeiro acesso a pessoa é obrigada a trocar por uma só dela. Pelo menos 8 caracteres,
+                três tipos (minúscula, maiúscula, número, símbolo), nada óbvio.
               </p>
             </div>
 
@@ -2407,7 +2410,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                 </div>
 
                 <Label className="text-xs text-gray-600 dark:text-slate-400 mb-1 block">
-                  Nova senha (mín. 6 caracteres)
+                  Nova senha provisória (8+ caracteres, três tipos — a pessoa troca no próximo acesso)
                 </Label>
                 <div className="flex gap-2">
                   <Input
@@ -2422,7 +2425,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                   <Button
                     type="button"
                     onClick={handleSaveMemberPassword}
-                    disabled={isSavingCredentials || credentialsNewPassword.length < 6}
+                    disabled={isSavingCredentials || credentialsNewPassword.length < 8}
                     className="h-9 bg-amber-700 hover:bg-amber-800 text-white"
                   >
                     {isSavingCredentials ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Redefinir senha'}
@@ -2431,6 +2434,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                 <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-2">
                   O usuário precisará fazer login novamente após a alteração.
                 </p>
+                <ZerarMfa userId={editingMember.user_id} />
               </div>
             )}
 

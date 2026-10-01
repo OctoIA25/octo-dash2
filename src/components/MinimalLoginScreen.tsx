@@ -5,6 +5,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { EsqueciSenha } from '@/features/seguranca/EsqueciSenha';
 import { useAuth } from "@/hooks/useAuth";
 import { Loader2, Eye, EyeOff, Lock, Shield, Globe } from 'lucide-react';
 import { isOwnerEmail } from '@/lib/ownerEmails';
@@ -203,6 +204,10 @@ export const MinimalLoginScreen = () => {
                 )}
               </button>
             </form>
+            {/* Kit de segurança: recuperação por e-mail */}
+            <div className="mt-4">
+              <EsqueciSenha emailInicial={email.trim()} />
+            </div>
           </div>
         </div>
 

@@ -20,6 +20,8 @@ import { getWebhookUrl, saveWebhookUrl, testWebhookConnection } from '@/features
 import { supabase } from '@/integrations/supabase/client';
 import { Lock, ListChecks, Gauge, MessageSquare, CalendarClock, CircleDollarSign, Flag } from 'lucide-react';
 import { ReguaFlagsPanel } from '@/features/flags/ReguaFlagsPanel';
+import { TrocarSenhaForm } from '@/features/seguranca/TrocarSenhaForm';
+import { LigarKit } from '@/features/seguranca/LigarKit';
 import { EtapaConfigPanel } from '@/features/leads/components/EtapaConfigPanel';
 import { PlantaoConfigPanel } from '@/features/agentes-ia/components/PlantaoConfigPanel';
 import { AgendaLiaConfigPanel } from '@/features/agentes-ia/components/AgendaLiaConfigPanel';
@@ -132,9 +134,6 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
   });
 
   // Estados para alteração de senha própria
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [isSavingPassword, setIsSavingPassword] = useState(false);
   const [isSavingOwnProfile, setIsSavingOwnProfile] = useState(false);
 
   // O Telefone do Perfil é o MESMO número de Gestão de Equipe
@@ -300,29 +299,6 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
     }
   };
 
-  const handleChangeOwnPassword = async () => {
-    if (!newPassword || newPassword.length < 6) {
-      toast({ title: 'Senha muito curta', description: 'Mínimo 6 caracteres.', variant: 'destructive', duration: 3000 });
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      toast({ title: 'As senhas não coincidem', variant: 'destructive', duration: 3000 });
-      return;
-    }
-    setIsSavingPassword(true);
-    try {
-      const { error } = await supabase.auth.updateUser({ password: newPassword });
-      if (error) {
-        toast({ title: 'Erro ao alterar senha', description: error.message, variant: 'destructive', duration: 4000 });
-        return;
-      }
-      toast({ title: 'Senha alterada com sucesso', duration: 3000 });
-      setNewPassword('');
-      setConfirmPassword('');
-    } finally {
-      setIsSavingPassword(false);
-    }
-  };
 
   const handleSaveSettings = () => {
     // TODO: Integrar com localStorage ou Supabase
@@ -592,53 +568,13 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
                   </div>
                   <div>
                     <h3 className="text-[14px] font-semibold text-slate-900 dark:text-slate-100">Alterar senha</h3>
-                    <p className="text-[12px] text-slate-500 dark:text-slate-400">Mínimo 6 caracteres</p>
+                    <p className="text-[12px] text-slate-500 dark:text-slate-400">Pede a senha atual — quem pegou o seu computador aberto não troca a sua senha</p>
                   </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="new-password" className="text-slate-700 dark:text-slate-300 mb-2 block">
-                      Nova senha
-                    </Label>
-                    <Input
-                      id="new-password"
-                      type="password"
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      autoComplete="new-password"
-                      placeholder="Digite a nova senha"
-                      className="h-11"
-                      disabled={isSavingPassword}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="confirm-password" className="text-slate-700 dark:text-slate-300 mb-2 block">
-                      Confirmar nova senha
-                    </Label>
-                    <Input
-                      id="confirm-password"
-                      type="password"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      autoComplete="new-password"
-                      placeholder="Repita a nova senha"
-                      className="h-11"
-                      disabled={isSavingPassword}
-                    />
-                  </div>
-                </div>
-                <div className="mt-4 flex justify-end">
-                  <Button
-                    onClick={handleChangeOwnPassword}
-                    disabled={isSavingPassword || !newPassword || !confirmPassword}
-                    className="bg-amber-600 hover:bg-amber-700 text-white"
-                  >
-                    {isSavingPassword ? (
-                      <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Alterando...</>
-                    ) : (
-                      <><Lock className="h-4 w-4 mr-2" /> Alterar senha</>
-                    )}
-                  </Button>
+                <div className="max-w-md space-y-4">
+                  {/* A virada é global: só o dono da plataforma liga. */}
+                  {isOwner && <LigarKit />}
+                  <TrocarSenhaForm onTrocou={() => toast({ title: 'Senha alterada com sucesso', duration: 3000 })} />
                 </div>
               </div>
 

@@ -32,6 +32,7 @@ import { NotificationsProvider } from "@/contexts/NotificationsContext";
 import { AuthProvider, useAuthContext } from "@/contexts/AuthContext";
 import { WatermarkReprocessNotice } from "@/features/settings/components/WatermarkReprocessNotice";
 import { BloqueioDeContrato } from '@/features/contratos/BloqueioDeContrato';
+import { PortaoDeSeguranca } from '@/features/seguranca/PortaoDeSeguranca';
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 
 const DashboardLayout = lazyWithRetry(() => import("./pages/DashboardLayout"));
@@ -46,6 +47,9 @@ const OwnerDashboard = lazyWithRetry(() =>
   import("@/components/OwnerDashboard").then((module) => ({ default: module.OwnerDashboard }))
 );
 const ApiDocsPage = lazyWithRetry(() => import("@/features/api-docs/pages/ApiDocsPage"));
+const RedefinirSenhaPage = lazyWithRetry(() =>
+  import("@/features/seguranca/RedefinirSenhaPage").then((module) => ({ default: module.RedefinirSenhaPage }))
+);
 const CertificadoPage = lazyWithRetry(() =>
   import("@/features/universidade/CertificadoPage").then((module) => ({ default: module.CertificadoPage }))
 );
@@ -101,6 +105,9 @@ const AppContent = () => {
 
                   {/* 🌐 ROTA PÚBLICA - conferência de certificado da Universidade (A.7): quem tem o hash confere */}
                   <Route path="/certificado/:hash" element={<CertificadoPage />} />
+
+                  {/* 🌐 ROTA PÚBLICA - o link do e-mail de recuperação de senha cai aqui (Kit de segurança) */}
+                  <Route path="/redefinir-senha" element={<RedefinirSenhaPage />} />
                   
                   {/* Callback OAuth Google Calendar (abre em popup) */}
                   <Route path="/oauth/google/callback" element={<GoogleOAuthCallbackPage />} />
@@ -127,9 +134,12 @@ const AppContent = () => {
                   */}
                   <Route path="/*" element={
                     isAuthenticated ? (
-                      showOwnerDashboard ? <OwnerDashboard /> : (
-                        <BloqueioDeContrato><DashboardLayout /></BloqueioDeContrato>
-                      )
+                      // Kit de segurança: código do autenticador, troca de senha e MFA antes de tudo.
+                      <PortaoDeSeguranca>
+                        {showOwnerDashboard ? <OwnerDashboard /> : (
+                          <BloqueioDeContrato><DashboardLayout /></BloqueioDeContrato>
+                        )}
+                      </PortaoDeSeguranca>
                     ) : (
                       <MinimalLoginScreen />
                     )
