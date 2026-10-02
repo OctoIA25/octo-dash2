@@ -977,7 +977,7 @@ export const IntegracoesPage: React.FC = () => {
                           Encontramos <strong>{xmlCorretoresPreview.length}</strong> corretores com imóveis.
                         </p>
                         <p className="text-xs text-blue-700 mt-1">
-                          Login: email do XML | Senha: 4 últimos dígitos do telefone
+                          Login: email do XML | Senha: o admin define em Gestão de Equipe, ou o corretor usa "Esqueci minha senha"
                         </p>
                       </div>
                       <div className="flex items-center gap-2">

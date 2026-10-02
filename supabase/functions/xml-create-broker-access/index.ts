@@ -224,8 +224,11 @@ Deno.serve(async (req: Request) => {
       }
 
       try {
-        // Generate password from last 4 digits of phone, or default
-        const password = telefone.length >= 4 ? telefone.slice(-4) : "0000";
+        // Senha aleatória que ninguém vê: os 4 últimos dígitos do telefone (a regra
+        // antiga) se adivinham em 10 mil tentativas. O corretor entra pela senha que o
+        // admin define em Gestão de Equipe, ou por "Esqueci minha senha". O sufixo
+        // garante os tipos de caractere que a política do Auth possa exigir.
+        const password = `${crypto.randomUUID()}A!`;
 
         let authUserId: string | undefined;
 
