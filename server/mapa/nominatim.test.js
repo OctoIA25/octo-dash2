@@ -34,8 +34,8 @@ describe('lerResposta', () => {
   });
 
   /**
-   * Medido em 02/10: os 21 imóveis da Lotus "achados" voltaram com place_rank
-   * 26 — a rua, não a porta. Gravados como exatos, o 1220 e o 1400 da mesma
+   * Medido em 02/10: 20 dos 21 imóveis da Lotus "achados" voltaram com
+   * place_rank 26 — a rua, não a porta (o 21º, rank 30, caiu num prédio). Gravados como exatos, o 1220 e o 1400 da mesma
    * rua dividiam o mesmo pino e ninguém sabia que precisava corrigir.
    */
   it('achou só a rua: o pino é aproximado', () => {

@@ -38,8 +38,8 @@ export function montarUrl(endereco, limite = 1) {
  * Um resultado do Nominatim, ou null.
  *
  * `aproximado`: o OSM achou a RUA, não a porta. Em Jundiaí quase nenhum prédio
- * tem número no OSM (medido em 02/10: os 21 imóveis da Lotus "achados" caíram
- * todos em place_rank 26, rua — o 1220 e o 1400 da mesma rua no mesmo ponto).
+ * tem número no OSM (medido em 02/10: dos 21 imóveis da Lotus "achados", 20
+ * caíram em place_rank 26, rua — o 1220 e o 1400 da mesma rua no mesmo ponto).
  * Pino de rua marcado como exato é o pino errado em que ninguém desconfia.
  * place_rank 28+ é número de casa, prédio ou ponto de interesse.
  */
