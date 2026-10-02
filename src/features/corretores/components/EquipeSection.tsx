@@ -42,6 +42,7 @@ import { NIVEIS, nivelValido, type Nivel } from '@/features/comissionamento/comm
 import { PreferenciasEditor } from '@/features/leads/components/PreferenciasLead';
 import { ESPECIALIDADES_PADRAO } from '@/lib/tiposImovel';
 import { estaNaEquipe } from '@/features/corretores/domain/filtroDeEquipe';
+import { RecebimentoDeLeads } from '@/features/corretores/components/RecebimentoDeLeads';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -147,6 +148,8 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
   const [newMemberPasswordConfirm, setNewMemberPasswordConfirm] = useState('');
   const [newMemberCreci, setNewMemberCreci] = useState('');
   const [newMemberAtuacao, setNewMemberAtuacao] = useState<AtuacaoTipo[]>([...ATUACAO_TIPOS]);
+  // Liberado por padrão — como sempre foi. Quem ainda não começou nasce Bloqueado.
+  const [newMemberRecebimento, setNewMemberRecebimento] = useState<BrokerLeadLimitOverride>({});
   const [newMemberPhoto, setNewMemberPhoto] = useState<string>('');
   const newMemberPhotoInputRef = useRef<HTMLInputElement>(null);
   const [newMemberRole, setNewMemberRole] = useState<'admin' | 'corretor' | 'team_leader'>('corretor');
@@ -520,7 +523,12 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
         role: newMemberRole,
         name: `${newMemberName} ${newMemberSurname}`.trim() || undefined,
         team: newMemberTeam || undefined,
-        permissions: { ...permissions, photo: fotoNovoMembro, atuacao: newMemberAtuacao } as any,
+        permissions: {
+          ...permissions,
+          photo: fotoNovoMembro,
+          atuacao: newMemberAtuacao,
+          ...(newMemberRecebimento.receives_auto_leads === false ? { lead_limit: newMemberRecebimento } : {}),
+        } as any,
         sidebarPermissions: sidebarPerms as any,
         creci: newMemberCreci.trim() || undefined,
       };
@@ -544,6 +552,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
         setNewMemberPasswordConfirm('');
         setNewMemberCreci('');
         setNewMemberAtuacao([...ATUACAO_TIPOS]);
+        setNewMemberRecebimento({});
         setNewMemberPhoto('');
         setNewMemberRole('corretor');
         setNewMemberTeam('');
@@ -2122,6 +2131,15 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
               </p>
             </div>
 
+            {/* Recebimento de leads — quem ainda não começou já nasce bloqueado */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <Ban className="h-4 w-4 text-gray-500 dark:text-slate-400" />
+                Recebimento de leads
+              </Label>
+              <RecebimentoDeLeads nome="novo" valor={newMemberRecebimento} onChange={setNewMemberRecebimento} />
+            </div>
+
             {/* Permissões Granulares - Accordion Harmônico */}
             <div className="border border-gray-200 dark:border-slate-800 rounded-lg overflow-hidden">
               <button
@@ -2988,56 +3006,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                 Recebimento de Leads
               </h3>
 
-              <label className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
-                editBrokerOverride.receives_auto_leads === false
-                  ? 'bg-gray-50 dark:bg-slate-950 border-gray-400'
-                  : 'bg-gray-50 dark:bg-slate-950 border-gray-200 dark:border-slate-800 hover:bg-gray-100 dark:hover:bg-slate-800'
-              }`}>
-                <input
-                  type="checkbox"
-                  checked={editBrokerOverride.receives_auto_leads === false}
-                  onChange={(e) => setEditBrokerOverride(prev => ({
-                    ...prev,
-                    receives_auto_leads: e.target.checked ? false : undefined,
-                    // Desmarcar limpa o motivo junto, senão sobra rótulo órfão: o
-                    // save grava o objeto inteiro de lead_limit.
-                    motivo: e.target.checked ? prev.motivo : undefined,
-                  }))}
-                  className="h-4 w-4 text-gray-600 dark:text-slate-400 rounded border-gray-300"
-                />
-                <div className="flex-1">
-                  <span className="text-sm font-medium text-gray-800 dark:text-slate-200">Não recebe leads automáticos</span>
-                  <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
-                    Fica fora da roleta, da redistribuição por expiração e do lead do
-                    imóvel que ele captou. Continua podendo assumir lead do Bolsão por
-                    conta própria — com o limite de carteira ligado, o Bolsão ainda o barra.
-                  </p>
-                </div>
-              </label>
-
-              {editBrokerOverride.receives_auto_leads === false && (
-                <div className="pl-3 space-y-2">
-                  <p className="text-xs text-gray-600 dark:text-slate-400 font-medium">
-                    Motivo (aparece na lista da equipe)
-                  </p>
-                  {([
-                    { valor: 'captador', titulo: 'Captador', ajuda: 'Função permanente: capta imóvel, não atende cliente.' },
-                    { valor: 'pausa', titulo: 'Pausa temporária', ajuda: 'Férias, afastamento, carteira cheia.' },
-                  ] as const).map((opcao) => (
-                    <label key={opcao.valor} className="flex items-center gap-3 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="motivo-nao-recebe"
-                        checked={editBrokerOverride.motivo === opcao.valor}
-                        onChange={() => setEditBrokerOverride(prev => ({ ...prev, motivo: opcao.valor }))}
-                        className="h-4 w-4 border-gray-300"
-                      />
-                      <span className="text-sm text-gray-800 dark:text-slate-200">{opcao.titulo}</span>
-                      <span className="text-xs text-gray-500 dark:text-slate-400">{opcao.ajuda}</span>
-                    </label>
-                  ))}
-                </div>
-              )}
+              <RecebimentoDeLeads nome="editar" valor={editBrokerOverride} onChange={setEditBrokerOverride} />
             </div>
 
             {/* Limite de Leads — Override por Corretor */}

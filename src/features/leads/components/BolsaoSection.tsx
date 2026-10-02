@@ -126,7 +126,10 @@ export const BolsaoSection = (props: BolsaoSectionProps) => {
     const until = typeof perms?.bolsao_blocked_until === 'string' ? perms.bolsao_blocked_until : null;
     const expired = until ? new Date(until).getTime() < Date.now() : false;
     const isBlocked = enabled && !expired;
-    return { isBlocked, until };
+    // "Bloqueado para receber leads" (Gestão de Equipe) também fecha o Bolsão:
+    // quem está em pausa ou ainda não começou não assume lead por conta própria.
+    const semReceber = perms?.lead_limit?.receives_auto_leads === false;
+    return { isBlocked: isBlocked || semReceber, until: isBlocked ? until : null, semReceber: semReceber && !isBlocked };
   }, [user?.permissions]);
 
   // Corretor bloqueado vê apenas a tela de bloqueio.
@@ -146,7 +149,9 @@ export const BolsaoSection = (props: BolsaoSectionProps) => {
                 </div>
                 <div className="flex-1">
                   <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-2 dark:text-slate-100">
-                    Você está bloqueado da área bolsão. resolva sua pendencia imediatamente!
+                    {bolsaoBlockedInfo.semReceber
+                      ? 'Você está bloqueado para receber leads. Fale com o seu gestor para liberar.'
+                      : 'Você está bloqueado da área bolsão. resolva sua pendencia imediatamente!'}
                   </h2>
                   {bolsaoBlockedInfo.until && (
                     <p className="text-sm text-gray-600 dark:text-gray-400 dark:text-slate-400">

@@ -136,6 +136,26 @@ extrato com "expirou" e nada mais não serve para ninguém.
 
 ---
 
+## Corretor bloqueado para receber leads (02/10)
+
+Na Dash, o admin marca em Gestão de Equipe › Gerenciar Permissões se o
+corretor está **Liberado** ou **Bloqueado para receber leads** — pausa, férias,
+ou quem foi cadastrado e ainda não começou. Fica gravado em
+`tenant_memberships.permissions.lead_limit.receives_auto_leads = false`
+(com `lead_limit.motivo` = `pausa` ou `captador`, só rótulo).
+
+- **A rota `/destino` já respeita.** Bloqueado é pulado na roleta, e se for o
+  captador volta `captador_indisponivel`. A exceção é o dono fixo de
+  recrutamento/vendedores (`tipo_tem_dono_fixo`), que é configuração à parte.
+- **A roleta da própria Lia precisa respeitar também.** A lista que a Lia usa
+  hoje (5 em Lançamentos, 4 em Prontos na Lotus) não sabe do bloqueio. Antes
+  de escolher o próximo, pulem quem tem
+  `permissions.lead_limit.receives_auto_leads = false`. Sem isso, o admin
+  bloqueia na Dash e o corretor continua recebendo pela Lia.
+- Quem não tem o campo, ou tem `true`, está liberado — é o normal.
+
+---
+
 ## O que NÃO muda
 
 - A Lia continua atribuindo. A rota não escreve em `leads`.

@@ -293,6 +293,15 @@ describe('montarFila — a MESMA fila para o servidor e para o simulador', () =>
   it('quem não recebe leads sai da fila', () => {
     const fila = montarFila([m('1', { permissions: { nao_recebe_leads: true } }), m('2')]);
     expect(fila[0].semPermissao).toBe(true);
+    expect(fila[1].semPermissao).toBe(false);
+  });
+
+  it('o Bloqueado da Gestão de Equipe (lead_limit.receives_auto_leads=false) sai da fila', () => {
+    const fila = montarFila([
+      m('1', { permissions: { lead_limit: { receives_auto_leads: false, motivo: 'pausa' } } }),
+      m('2', { permissions: { lead_limit: { receives_auto_leads: true } } }),
+    ]);
+    expect(fila.map((c) => c.semPermissao)).toEqual([true, false]);
     expect(proximoDaRoleta(fila, -1).corretor.id).toBe('2');
   });
 

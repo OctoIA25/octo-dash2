@@ -295,7 +295,10 @@ export function comoParticipante(membro, agora = Date.now()) {
     nome: membro.name || membro.email || null,
     // Bloqueio temporário do bolsão = pausado: pula a vez e a mantém.
     pausado: Number.isFinite(ate) ? ate > agora : Boolean(p.bolsao_pausado),
-    semPermissao: p.nao_recebe_leads === true,
+    // "Bloqueado para receber leads" da Gestão de Equipe grava em
+    // lead_limit.receives_auto_leads — até 02/10 esta consulta lia só
+    // `nao_recebe_leads`, que nada grava, e devolvia o corretor pausado à Lia.
+    semPermissao: p.nao_recebe_leads === true || p.lead_limit?.receives_auto_leads === false,
     noLimite: false, // o limite de leads está desligado nesta base
     atuacoes: atuacoesDoMembro(p),
   };
