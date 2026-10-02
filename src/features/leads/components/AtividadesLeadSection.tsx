@@ -27,6 +27,7 @@ import {
   rotuloTipoAtividade,
   TIPOS_ATIVIDADE,
   TIPOS_BLOQUEANTES,
+  BLOQUEIO_POR_ATIVIDADE_ATIVO,
   type Atividade,
 } from '../utils/atividades';
 
@@ -355,7 +356,7 @@ export const AtividadesLeadSection = ({
             />
           </div>
 
-          {(TIPOS_BLOQUEANTES as readonly string[]).includes(form.tipo) && (
+          {BLOQUEIO_POR_ATIVIDADE_ATIVO && (TIPOS_BLOQUEANTES as readonly string[]).includes(form.tipo) && (
             <p className="rounded-md bg-amber-50 p-2 text-[10.5px] text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
               Passando do prazo sem concluir, você é avisado e, 24h depois, bloqueado de receber
               novos leads até concluir.

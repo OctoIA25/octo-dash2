@@ -38,6 +38,14 @@ export const JANELA_DIAS = 30;
 export const TIPOS_BLOQUEANTES = ['retornar_cliente', 'visita_agendada'] as const;
 
 /**
+ * O bloqueio está PAUSADO desde 02/10 (20261020, pedido do Erick): os avisos
+ * continuam, ninguém é bloqueado. Espelha `v_inicio_bloqueio` em
+ * `processar_atividades_pendentes` — religar lá e aqui juntos, senão a tela
+ * promete (ou esconde) um bloqueio que o banco não faz.
+ */
+export const BLOQUEIO_POR_ATIVIDADE_ATIVO = false;
+
+/**
  * As categorias de atividade, em um lugar só. O painel usa pros chips de filtro
  * e o modal do lead usa pras opções pré-definidas — duas listas separadas
  * divergiriam na primeira vez que alguém acrescentasse um tipo.

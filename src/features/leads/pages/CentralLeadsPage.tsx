@@ -74,6 +74,7 @@ import {
   prazoAtividade,
   JANELA_DIAS,
   TIPOS_BLOQUEANTES,
+  BLOQUEIO_POR_ATIVIDADE_ATIVO,
   type Atividade,
 } from '@/features/leads/utils/atividades';
 
@@ -1090,7 +1091,7 @@ export const CentralLeadsPage: React.FC<CentralLeadsPageProps> = ({ embedded = f
               />
             </div>
 
-            {(TIPOS_BLOQUEANTES as readonly string[]).includes(nova.tipo) && (
+            {BLOQUEIO_POR_ATIVIDADE_ATIVO && (TIPOS_BLOQUEANTES as readonly string[]).includes(nova.tipo) && (
               <p className="rounded-lg bg-amber-50 p-2 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
                 Se esta atividade passar do prazo sem ser concluída, você é avisado e, 24h
                 depois, bloqueado de receber novos leads até concluí-la.
