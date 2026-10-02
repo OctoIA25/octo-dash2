@@ -134,6 +134,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
   const [newMemberSurname, setNewMemberSurname] = useState('');
   const [newMemberEmail, setNewMemberEmail] = useState('');
   const [newMemberPassword, setNewMemberPassword] = useState('');
+  const [newMemberPasswordConfirm, setNewMemberPasswordConfirm] = useState('');
   const [newMemberCreci, setNewMemberCreci] = useState('');
   const [newMemberAtuacao, setNewMemberAtuacao] = useState<AtuacaoTipo[]>([...ATUACAO_TIPOS]);
   const [newMemberPhoto, setNewMemberPhoto] = useState<string>('');
@@ -227,6 +228,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
   const [teams, setTeams] = useState<Team[]>([]);
   const [credentialsEmail, setCredentialsEmail] = useState('');
   const [credentialsNewPassword, setCredentialsNewPassword] = useState('');
+  const [credentialsConfirmPassword, setCredentialsConfirmPassword] = useState('');
   const [isSavingCredentials, setIsSavingCredentials] = useState(false);
 
   // Quem pode alterar o número de WhatsApp do membro aberto (regra em
@@ -478,6 +480,10 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
       toast.error('A senha precisa de pelo menos 8 caracteres');
       return;
     }
+    if (newMemberPassword !== newMemberPasswordConfirm) {
+      toast.error('As duas senhas não são iguais');
+      return;
+    }
 
     setIsCreatingMember(true);
     try {
@@ -525,6 +531,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
         setNewMemberSurname('');
         setNewMemberEmail('');
         setNewMemberPassword('');
+        setNewMemberPasswordConfirm('');
         setNewMemberCreci('');
         setNewMemberAtuacao([...ATUACAO_TIPOS]);
         setNewMemberPhoto('');
@@ -595,12 +602,17 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
       toast.error('A senha precisa de pelo menos 8 caracteres');
       return;
     }
+    if (credentialsNewPassword !== credentialsConfirmPassword) {
+      toast.error('As duas senhas não são iguais');
+      return;
+    }
     setIsSavingCredentials(true);
     const result = await adminUpdateMemberPassword(editingMember.user_id, credentialsNewPassword);
     setIsSavingCredentials(false);
     if (result.success) {
       toast.success('Senha alterada com sucesso');
       setCredentialsNewPassword('');
+      setCredentialsConfirmPassword('');
     } else {
       toast.error(result.error || 'Erro ao alterar senha');
     }
@@ -636,6 +648,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
     setEditLeadsTeamIds(ledTeamIds);
     setCredentialsEmail(member.email || '');
     setCredentialsNewPassword('');
+    setCredentialsConfirmPassword('');
     
     // Carregar permissões atuais do membro
     const currentPerms = member.permissions || {};
@@ -1922,7 +1935,21 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                 value={newMemberPassword}
                 onChange={(e) => setNewMemberPassword(e.target.value)}
                 className="h-10"
+                autoComplete="new-password"
               />
+              <Input
+                id="password-confirm"
+                type="password"
+                placeholder="Repita a senha"
+                aria-label="Repita a senha"
+                value={newMemberPasswordConfirm}
+                onChange={(e) => setNewMemberPasswordConfirm(e.target.value)}
+                className="h-10"
+                autoComplete="new-password"
+              />
+              {newMemberPasswordConfirm && newMemberPasswordConfirm !== newMemberPassword && (
+                <p role="alert" className="text-xs text-rose-600">As duas senhas não são iguais.</p>
+              )}
               <p className="text-xs text-gray-500 dark:text-slate-400">
                 Senha provisória: no primeiro acesso a pessoa é obrigada a trocar por uma só dela. Pelo menos 8 caracteres,
                 três tipos (minúscula, maiúscula, número, símbolo), nada óbvio.
@@ -2187,7 +2214,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
               </Button>
               <Button
                 onClick={handleCreateMember}
-                disabled={isCreatingMember || !newMemberEmail || !newMemberPassword}
+                disabled={isCreatingMember || !newMemberEmail || !newMemberPassword || newMemberPassword !== newMemberPasswordConfirm}
                 className="bg-[#1a5276] hover:bg-[#154360] text-white"
               >
                 {isCreatingMember ? (
@@ -2412,25 +2439,44 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                 <Label className="text-xs text-gray-600 dark:text-slate-400 mb-1 block">
                   Nova senha provisória (8+ caracteres, três tipos — a pessoa troca no próximo acesso)
                 </Label>
-                <div className="flex gap-2">
-                  <Input
-                    type="password"
-                    value={credentialsNewPassword}
-                    onChange={(e) => setCredentialsNewPassword(e.target.value)}
-                    placeholder="Digite a nova senha"
-                    className="h-9"
-                    disabled={isSavingCredentials}
-                    autoComplete="new-password"
-                  />
+                <div className="flex gap-2 items-end">
+                  <div className="flex-1 space-y-2">
+                    <Input
+                      type="password"
+                      value={credentialsNewPassword}
+                      onChange={(e) => setCredentialsNewPassword(e.target.value)}
+                      placeholder="Digite a nova senha"
+                      className="h-9"
+                      disabled={isSavingCredentials}
+                      autoComplete="new-password"
+                    />
+                    <Input
+                      type="password"
+                      value={credentialsConfirmPassword}
+                      onChange={(e) => setCredentialsConfirmPassword(e.target.value)}
+                      placeholder="Repita a nova senha"
+                      aria-label="Repita a nova senha"
+                      className="h-9"
+                      disabled={isSavingCredentials}
+                      autoComplete="new-password"
+                    />
+                  </div>
                   <Button
                     type="button"
                     onClick={handleSaveMemberPassword}
-                    disabled={isSavingCredentials || credentialsNewPassword.length < 8}
+                    disabled={
+                      isSavingCredentials ||
+                      credentialsNewPassword.length < 8 ||
+                      credentialsNewPassword !== credentialsConfirmPassword
+                    }
                     className="h-9 bg-amber-700 hover:bg-amber-800 text-white"
                   >
                     {isSavingCredentials ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Redefinir senha'}
                   </Button>
                 </div>
+                {credentialsConfirmPassword && credentialsConfirmPassword !== credentialsNewPassword && (
+                  <p role="alert" className="text-[11px] text-rose-600 mt-2">As duas senhas não são iguais.</p>
+                )}
                 <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-2">
                   O usuário precisará fazer login novamente após a alteração.
                 </p>
