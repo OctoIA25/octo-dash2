@@ -28,11 +28,11 @@ import { ZerarMfa } from '@/features/seguranca/ZerarMfa';
 import { fetchTenantMembers, createTenantMember, updateMemberRole, removeTenantMember, updateMemberPermissions, updateMemberWhatsappPhones, updateMemberLeader, deleteMemberCompletely, adminUpdateMemberPassword, adminUpdateMemberEmail, type TenantMember } from '../services/tenantMembersService';
 import { fetchTeams, toggleTeamLeader, type Team } from '../services/teamsManagementService';
 import { fetchMemberDados, saveMemberDados, EMPTY_MEMBER_DADOS, type MemberDados } from '../services/memberDadosService';
+import { DadosCadastraisFields } from './DadosCadastraisFields';
 import { DocumentosAnexos } from '@/components/DocumentosAnexos';
 import { CorretorMetricasPanel } from './CorretorMetricasPanel';
 import { CorretorPainel } from '@/features/personalidade/admin/components/CorretorPainel';
 import { buscarCorretorPorEmail } from '../services/buscarCorretorPorEmailService';
-import { formatCpf, formatCnpj } from '@/lib/documentoMasks';
 import { useLateralDrawer } from '@/hooks/useLateralDrawer';
 import { SidebarPermission, ATUACAO_TIPOS, ATUACAO_LABELS, atuacoesDe, comPermissoesNaoEditaveis, permissoesDeSidebar, SIDEBAR_PERMISSIONS_EDITAVEIS, type AtuacaoTipo } from '@/types/permissions';
 import { carregarCargos, carregarCatalogo, definirCargoDoMembro } from '@/features/cargos/cargosService';
@@ -2641,129 +2641,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
                   {isLoadingDados && <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-400" />}
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="edit-rg" className="text-xs">RG</Label>
-                    <Input
-                      id="edit-rg"
-                      value={editDados.rg}
-                      onChange={(e) => setEditDados((d) => ({ ...d, rg: e.target.value }))}
-                      placeholder="Ex: 12.345.678-9"
-                      disabled={isSavingPermissions}
-                      className="h-10"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="edit-cpf" className="text-xs">CPF</Label>
-                    <Input
-                      id="edit-cpf"
-                      inputMode="numeric"
-                      value={editDados.cpf}
-                      onChange={(e) => setEditDados((d) => ({ ...d, cpf: formatCpf(e.target.value) }))}
-                      placeholder="000.000.000-00"
-                      disabled={isSavingPermissions}
-                      className="h-10"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="edit-nascimento" className="text-xs">Data de nascimento</Label>
-                    {/* input nativo de data — sem dependência de datepicker */}
-                    <Input
-                      id="edit-nascimento"
-                      type="date"
-                      value={editDados.data_nascimento}
-                      onChange={(e) => setEditDados((d) => ({ ...d, data_nascimento: e.target.value }))}
-                      disabled={isSavingPermissions}
-                      className="h-10"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="edit-cnpj" className="text-xs">CNPJ (se tiver)</Label>
-                    <Input
-                      id="edit-cnpj"
-                      inputMode="numeric"
-                      value={editDados.cnpj}
-                      onChange={(e) => setEditDados((d) => ({ ...d, cnpj: formatCnpj(e.target.value) }))}
-                      placeholder="00.000.000/0000-00"
-                      disabled={isSavingPermissions}
-                      className="h-10"
-                    />
-                  </div>
-                  <div className="space-y-1.5 sm:col-span-2">
-                    <Label htmlFor="edit-endereco" className="text-xs">Endereço</Label>
-                    <Input
-                      id="edit-endereco"
-                      value={editDados.endereco}
-                      onChange={(e) => setEditDados((d) => ({ ...d, endereco: e.target.value }))}
-                      placeholder="Rua, número, complemento, bairro, cidade/UF, CEP"
-                      disabled={isSavingPermissions}
-                      className="h-10"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-3 pt-1 border-t border-gray-100 dark:border-slate-800">
-                  <span className="text-xs font-medium text-gray-600 dark:text-slate-400 block pt-3">
-                    Dados de recebimento
-                  </span>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="space-y-1.5 sm:col-span-2">
-                      <Label htmlFor="edit-pix" className="text-xs">Chave PIX</Label>
-                      <Input
-                        id="edit-pix"
-                        value={editDados.pix_chave}
-                        onChange={(e) => setEditDados((d) => ({ ...d, pix_chave: e.target.value }))}
-                        placeholder="CPF, e-mail, telefone ou chave aleatória"
-                        disabled={isSavingPermissions}
-                        className="h-10"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="edit-banco" className="text-xs">Banco</Label>
-                      <Input
-                        id="edit-banco"
-                        value={editDados.banco}
-                        onChange={(e) => setEditDados((d) => ({ ...d, banco: e.target.value }))}
-                        placeholder="Ex: 341 — Itaú"
-                        disabled={isSavingPermissions}
-                        className="h-10"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="edit-titular" className="text-xs">Titular da conta</Label>
-                      <Input
-                        id="edit-titular"
-                        value={editDados.titular}
-                        onChange={(e) => setEditDados((d) => ({ ...d, titular: e.target.value }))}
-                        placeholder="Nome ou razão social"
-                        disabled={isSavingPermissions}
-                        className="h-10"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="edit-agencia" className="text-xs">Agência</Label>
-                      <Input
-                        id="edit-agencia"
-                        value={editDados.agencia}
-                        onChange={(e) => setEditDados((d) => ({ ...d, agencia: e.target.value }))}
-                        placeholder="0000"
-                        disabled={isSavingPermissions}
-                        className="h-10"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="edit-conta" className="text-xs">Conta</Label>
-                      <Input
-                        id="edit-conta"
-                        value={editDados.conta}
-                        onChange={(e) => setEditDados((d) => ({ ...d, conta: e.target.value }))}
-                        placeholder="00000-0"
-                        disabled={isSavingPermissions}
-                        className="h-10"
-                      />
-                    </div>
-                  </div>
-                </div>
+                <DadosCadastraisFields dados={editDados} setDados={setEditDados} disabled={isSavingPermissions} />
 
                 <div className="space-y-2 pt-3 border-t border-gray-100 dark:border-slate-800">
                   <Label className="text-xs">Termo de Associação</Label>
@@ -3200,7 +3078,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
               </Button>
               <Button
                 onClick={handleSavePermissions}
-                disabled={isSavingPermissions || (!isCurrentUserAdmin && !podeEditarTelefone)}
+                disabled={isSavingPermissions || isLoadingDados || (!isCurrentUserAdmin && !podeEditarTelefone)}
                 className="bg-[#1a5276] hover:bg-[#154360] text-white"
               >
                 {isSavingPermissions ? (

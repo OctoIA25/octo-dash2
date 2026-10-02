@@ -69,8 +69,10 @@ import {
   RotateCcw,
   Inbox,
   ShieldCheck,
-  Megaphone
+  Megaphone,
+  IdCard
 } from 'lucide-react';
+import { DadosPessoaisPanel } from '@/features/settings/components/DadosPessoaisPanel';
 import { WatermarkSettingsCard } from '@/features/settings/components/WatermarkSettingsCard';
 import { LeadChannelsSettingsCard } from '@/features/settings/components/LeadChannelsSettingsCard';
 import { LeadOriginsSettingsCard } from '@/features/settings/components/LeadOriginsSettingsCard';
@@ -107,7 +109,7 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
   const { currentTheme, changeTheme, themes } = useTheme();
   
   const [searchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState<'perfil' | 'geral' | 'aparencia' | 'agentes-ia' | 'usuarios' | 'bolsao' | 'limite-leads' | 'etapas' | 'score' | 'plantao' | 'agenda-lia' | 'precos-ia' | 'marca-dagua' | 'canais-lead' | 'recomendacoes' | 'cargos' | 'flags'>(
+  const [activeTab, setActiveTab] = useState<'perfil' | 'dados-pessoais' | 'geral' | 'aparencia' | 'agentes-ia' | 'usuarios' | 'bolsao' | 'limite-leads' | 'etapas' | 'score' | 'plantao' | 'agenda-lia' | 'precos-ia' | 'marca-dagua' | 'canais-lead' | 'recomendacoes' | 'cargos' | 'flags'>(
     // ?tab=flags vem do aviso "ainda sem régua" da tela de Flags.
     () => (searchParams.get('tab') === 'cargos' ? 'cargos' : searchParams.get('tab') === 'flags' ? 'flags' : 'perfil'),
   );
@@ -393,6 +395,13 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${activeTab === 'perfil' ? 'bg-blue-100 dark:bg-blue-900/60' : 'bg-slate-100 dark:bg-slate-800'}`}><User className={`w-3.5 h-3.5 ${activeTab === 'perfil' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'}`} /></div>
                 Perfil
               </button>
+              {/* Dados pessoais: só quem é membro de uma imobiliária (o owner no painel dele não tem linha). */}
+              {tenantId && tenantId !== 'owner' && (
+                <button type="button" onClick={() => setActiveTab('dados-pessoais')} className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all text-left ${activeTab === 'dados-pessoais' ? 'bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'}`}>
+                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${activeTab === 'dados-pessoais' ? 'bg-blue-100 dark:bg-blue-900/60' : 'bg-slate-100 dark:bg-slate-800'}`}><IdCard className={`w-3.5 h-3.5 ${activeTab === 'dados-pessoais' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'}`} /></div>
+                  Dados pessoais
+                </button>
+              )}
               <button type="button" onClick={() => setActiveTab('geral')} className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all text-left ${activeTab === 'geral' ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'}`}>
                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${activeTab === 'geral' ? 'bg-slate-200 dark:bg-slate-700' : 'bg-slate-100 dark:bg-slate-800'}`}><Bell className={`w-3.5 h-3.5 ${activeTab === 'geral' ? 'text-slate-700 dark:text-slate-200' : 'text-slate-400'}`} /></div>
                 Geral
@@ -591,6 +600,22 @@ export const ConfiguracoesSection = ({ leads }: ConfiguracoesSectionProps) => {
                   )}
                 </Button>
               </div>
+            </div>
+          )}
+
+          {/* ABA DADOS PESSOAIS */}
+          {activeTab === 'dados-pessoais' && user?.id && tenantId && tenantId !== 'owner' && (
+            <div className="space-y-6">
+              <div className="-mx-6 -mt-6 mb-6 px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center">
+                  <IdCard className="w-[18px] h-[18px] text-blue-600 dark:text-blue-400" />
+                </div>
+                <div>
+                  <h2 className="text-[15px] font-semibold text-slate-900 dark:text-slate-100">Dados pessoais</h2>
+                  <p className="text-[12px] text-slate-500 dark:text-slate-400">Documentos, endereço e dados para receber comissão</p>
+                </div>
+              </div>
+              <DadosPessoaisPanel tenantId={tenantId} userId={user.id} />
             </div>
           )}
 
