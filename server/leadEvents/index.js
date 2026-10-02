@@ -31,7 +31,7 @@ import { makeRequireSupabaseAuth, resolveTenant } from '../kpis/index.js';
 import { isPlatformOwner } from '../utils/ownerAuth.js';
 import { autenticar, papelNoTenant, podeVerCadencia } from '../liaCadencia/index.js';
 import { buscarLead } from '../liaCadencia/query.js';
-import { buscarLeadPorTelefone, carregarEventos, buscarBolsao, gravarEvento, carregarPassaramPorEtapa } from './query.js';
+import { buscarLeadPorTelefone, carregarEventos, buscarBolsao, gravarEvento, carregarPassaramPorEtapa, carregarPassaramPorAlguma } from './query.js';
 import { montarHistorico } from './compute.js';
 import { normalizarEvento } from './normalize.js';
 
@@ -116,9 +116,15 @@ export function registerLeadEventsRoutes(app, supabase, options = {}) {
         .filter(Boolean);
       if (etapas.length === 0) return res.status(400).json({ ok: false, error: 'etapas_obrigatorias' });
 
-      const { porEtapa, inicioDoHistorico: inicio } = await carregarPassaramPorEtapa(
-        supabase, tenantId, { de: req.query.de || null, ate: req.query.ate || null },
-      );
+      // "A+B+C" é UMA etapa da tela que junta várias do banco (a "Proposta",
+      // 02/10): contada por lead distinto, nunca pela soma das partes.
+      const periodo = { de: req.query.de || null, ate: req.query.ate || null };
+      const grupos = etapas.filter((e) => e.includes('+'));
+      const [{ porEtapa, inicioDoHistorico: inicio }, ...dosGrupos] = await Promise.all([
+        carregarPassaramPorEtapa(supabase, tenantId, periodo),
+        ...grupos.map((g) => carregarPassaramPorAlguma(supabase, tenantId, g.split('+').map((e) => e.trim()), periodo)),
+      ]);
+      grupos.forEach((g, i) => porEtapa.set(g, dosGrupos[i]));
 
       return res.json({
         ok: true,

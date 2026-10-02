@@ -9,6 +9,8 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, act } from '@testing-library/react';
+import type { ReactNode } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 vi.mock('@/hooks/useTheme', () => ({ useTheme: () => ({ currentTheme: 'light' }) }));
 vi.mock('@/contexts/AuthContext', () => ({ useAuthContext: () => ({ tenantId: 't1' }) }));
@@ -16,7 +18,16 @@ vi.mock('@/features/leads/services/funilPassaramService', () => ({
   carregarPassaramPorEtapa: () => new Promise(() => {}),
 }));
 
+vi.mock('@/features/leads/services/funilVendasService', () => ({
+  contarVendasDoFunil: () => new Promise(() => {}),
+}));
+
 import { EnhancedFunnelChart } from '../EnhancedFunnelChart';
+
+const comQuery = () => {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return ({ children }: { children: ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
+};
 
 let observado: (() => void) | null = null;
 const renders = vi.fn();
@@ -45,7 +56,7 @@ afterEach(() => {
 
 describe('EnhancedFunnelChart — redesenho ao redimensionar', () => {
   it('redesenha enquanto está na tela', () => {
-    render(<EnhancedFunnelChart leads={[]} />);
+    render(<EnhancedFunnelChart leads={[]} />, { wrapper: comQuery() });
     renders.mockClear();
 
     act(() => { observado?.(); vi.advanceTimersByTime(400); });
@@ -54,7 +65,7 @@ describe('EnhancedFunnelChart — redesenho ao redimensionar', () => {
   });
 
   it('não redesenha depois de sair da tela', () => {
-    const { unmount } = render(<EnhancedFunnelChart leads={[]} />);
+    const { unmount } = render(<EnhancedFunnelChart leads={[]} />, { wrapper: comQuery() });
     renders.mockClear();
 
     act(() => { observado?.(); });   // redesenho agendado para daqui a 350 ms

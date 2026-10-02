@@ -56,6 +56,29 @@ export const ETAPAS_DO_FUNIL_INTERESSADO = [
 ] as const;
 
 /**
+ * O funil da Visão Geral (pedido do chefe em 02/10/2026): as etapas de
+ * proposta viram UMA, "Proposta", e a última passa a ser a "Venda" — as da
+ * Conferência de vendas, cada uma pela própria data.
+ *
+ * SÓ A TELA muda: o banco segue gravando 'Proposta Enviada' e 'Proposta
+ * Assinada'. E o funil de safra segue com ETAPAS_DO_FUNIL_INTERESSADO: a venda
+ * não aponta para lead (nenhuma das 29 da Lotus), então não entra numa safra
+ * de leads.
+ */
+export const ETAPAS_DO_FUNIL_DA_VISAO_GERAL = [
+  'Novos Leads',
+  'Interação',
+  'Visita Agendada',
+  'Visita Realizada',
+  'Negociação',
+  'Proposta',
+  'Venda',
+] as const;
+
+/** As etapas gravadas no banco que a "Proposta" da Visão Geral junta. */
+export const ETAPAS_DA_PROPOSTA = ['Proposta Enviada', 'Proposta Criada', 'Proposta Assinada'] as const;
+
+/**
  * 28/09/2026 — "Proposta Criada" e "Proposta Enviada" viraram UMA etapa na
  * tela, chamada "Proposta" (pedido do chefe; Criada tinha zero leads em todas
  * as casas). SÓ A TELA mudou: o banco segue gravando 'Proposta Enviada' — é o

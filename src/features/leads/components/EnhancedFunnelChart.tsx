@@ -1,13 +1,16 @@
 // Funil cliente interessado
 
 import { useEffect, useRef, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { ProcessedLead } from '@/data/realLeadsProcessor';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { StandardCardTitle } from '@/components/ui/StandardCardTitle';
-import { TrendingDown, Users, Target, CheckCircle } from 'lucide-react';
+import { TrendingDown } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
-import { ETAPAS_DO_FUNIL_INTERESSADO, rotuloDaEtapa } from '@/features/leads/utils/funnelStages';
+import { ETAPAS_DO_FUNIL_DA_VISAO_GERAL, ETAPAS_DA_PROPOSTA } from '@/features/leads/utils/funnelStages';
 import { carregarPassaramPorEtapa, type PassaramPorEtapa } from '@/features/leads/services/funilPassaramService';
+import { contarVendasDoFunil } from '@/features/leads/services/funilVendasService';
+import type { Atuacao } from '@/features/leads/services/funilDeSafraService';
 import { useAuthContext } from '@/contexts/AuthContext';
 
 interface EnhancedFunnelChartProps {
@@ -18,7 +21,17 @@ interface EnhancedFunnelChartProps {
    * recortado — "Hoje" chegava a passar de 1000%. Falso = só o "agora".
    */
   contarPassaram?: boolean;
+  /** O período da etapa Venda, pela data de cada venda. `null` = todas. */
+  periodoDasVendas?: { de: string; ate: string } | null;
+  atuacao?: Atuacao;
 }
+
+/**
+ * O que se pergunta ao banco por cada etapa da tela. A "Proposta" junta três,
+ * e o servidor conta o lead UMA vez — somar daria 8 na Lotus, para 5 leads.
+ */
+const chaveNoBanco = (etapa: string): string =>
+  etapa === 'Proposta' ? ETAPAS_DA_PROPOSTA.join('+') : etapa;
 
 declare global {
   interface Window {
@@ -26,7 +39,9 @@ declare global {
   }
 }
 
-export const EnhancedFunnelChart = ({ leads, contarPassaram = true }: EnhancedFunnelChartProps) => {
+export const EnhancedFunnelChart = ({
+  leads, contarPassaram = true, periodoDasVendas = null, atuacao = 'todos',
+}: EnhancedFunnelChartProps) => {
   /*
    * O SEGUNDO NÚMERO: quantos PASSARAM por cada etapa (24/09).
    *
@@ -45,13 +60,25 @@ export const EnhancedFunnelChart = ({ leads, contarPassaram = true }: EnhancedFu
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<any>(null);
   const { currentTheme } = useTheme();
+  const { tenantId } = useAuthContext();
 
-  // Calcular dados do funil - PRIMEIRA METADE (até Visita Agendada) - MESMO LAYOUT DO ORIGINAL
+  /*
+   * A VENDA não é etapa de lead (02/10): são as vendas da Conferência, cada
+   * uma pela própria data. Nenhuma das 29 da Lotus aponta para lead, então não
+   * dá para tirá-las dos leads da tela — vêm do banco, pelo período do filtro.
+   */
+  const vendas = useQuery({
+    queryKey: ['funil-vendas', tenantId, periodoDasVendas?.de ?? null, periodoDasVendas?.ate ?? null, atuacao],
+    queryFn: () => contarVendasDoFunil(tenantId!, periodoDasVendas, atuacao),
+    enabled: !!tenantId && tenantId !== 'owner',
+  });
+  const quantasVendas = vendas.data ?? null;
+
   const funnelData = useMemo(() => {
     const safeLeads = leads || [];
 
 
-    const etapasOrdem = ETAPAS_DO_FUNIL_INTERESSADO;
+    const etapasOrdem = ETAPAS_DO_FUNIL_DA_VISAO_GERAL;
     const totalLeads = safeLeads.length;
     
     // Calcular quantidade real para cada etapa - CONTAGEM EXATA (não acumulativa)
@@ -92,25 +119,15 @@ export const EnhancedFunnelChart = ({ leads, contarPassaram = true }: EnhancedFu
             return etapaAtual === 'negociação' || etapaAtual === 'negociacao' || etapaAtual === 'em negociação';
           }).length;
         
-        case 'Proposta Criada':
+        case 'Proposta':
+          // Criada, Enviada e Assinada juntas (02/10): a assinada deixou de ser
+          // o fim do funil — o fim agora é a Venda.
           return safeLeads.filter(l => {
             const etapaAtual = (l.etapa_atual || '').toLowerCase().trim();
-            return etapaAtual === 'proposta criada';
-          }).length;
-        
-        case 'Proposta Enviada':
-          return safeLeads.filter(l => {
-            const etapaAtual = (l.etapa_atual || '').toLowerCase().trim();
-            // A etapa "Proposta" (ver rotuloDaEtapa): Criada conta junto.
-            return etapaAtual === 'proposta enviada' || etapaAtual === 'proposta criada' || etapaAtual === 'propostas respondidas';
+            return etapaAtual === 'proposta enviada' || etapaAtual === 'proposta criada' || etapaAtual === 'propostas respondidas'
+              || etapaAtual === 'proposta assinada' || etapaAtual === 'fechamento' || etapaAtual === 'finalizado';
           }).length;
 
-        case 'Proposta Assinada':
-          return safeLeads.filter(l => {
-            const etapaAtual = (l.etapa_atual || '').toLowerCase().trim();
-            return etapaAtual === 'proposta assinada' || etapaAtual === 'fechamento' || etapaAtual === 'finalizado';
-          }).length;
-        
         default:
           return 0;
       }
@@ -118,7 +135,8 @@ export const EnhancedFunnelChart = ({ leads, contarPassaram = true }: EnhancedFu
 
     // Criar dataPoints com tamanhos HARMÔNICOS E ESTÁTICOS - SEMPRE OS MESMOS TAMANHOS
     const dataPoints = etapasOrdem.map((etapa, index) => {
-      const quantidade = calcularEtapa(etapa);
+      // `null` = a contagem de vendas ainda não chegou, ou falhou. Nunca 0.
+      const quantidade: number | null = etapa === 'Venda' ? quantasVendas : calcularEtapa(etapa);
       
       // 🎨 Valores FIXOS harmônicos REDUZIDOS - proporção golden ratio para visual perfeito
       // Cada etapa diminui suavemente mantendo a harmonia visual SEMPRE
@@ -129,54 +147,28 @@ export const EnhancedFunnelChart = ({ leads, contarPassaram = true }: EnhancedFu
       
       return {
         y: valorVisualFixo, // Valor SEMPRE FIXO para manter consistência visual
-        label: rotuloDaEtapa(etapa),
+        label: etapa,
         originalKey: etapa,
-        description: `${quantidade} leads em ${rotuloDaEtapa(etapa)}`,
         quantidade: quantidade,
         index: index,
-        percentual: totalLeads > 0 ? ((quantidade / totalLeads) * 100) : 0
+        percentual: totalLeads > 0 && quantidade !== null ? ((quantidade / totalLeads) * 100) : 0
       };
     });
 
-    // Métricas reais calculadas para todas as 7 etapas
-    const novosLeads = totalLeads;
-    const interacao = calcularEtapa('Interação');
-    const visitaAgendada = calcularEtapa('Visita Agendada');
-    const visitaRealizada = calcularEtapa('Visita Realizada');
-    const negociacao = calcularEtapa('Negociação');
-    const propostaCriada = calcularEtapa('Proposta Enviada');
-    const propostaAssinada = calcularEtapa('Proposta Assinada');
-    
-    const metrics = {
-      totalLeads,
-      novosLeads,
-      interacao,
-      visitaAgendada,
-      visitaRealizada,
-      negociacao,
-      propostaCriada,
-      propostaAssinada,
-      taxaConversaoGeral: totalLeads > 0 ? (propostaAssinada / totalLeads * 100) : 0,
-      taxaInteracao: novosLeads > 0 ? (interacao / novosLeads * 100) : 0,
-      taxaVisitaAgendada: interacao > 0 ? (visitaAgendada / interacao * 100) : 0,
-      taxaVisitaRealizada: visitaAgendada > 0 ? (visitaRealizada / visitaAgendada * 100) : 0,
-      taxaNegociacao: visitaRealizada > 0 ? (negociacao / visitaRealizada * 100) : 0,
-      taxaPropostaCriada: negociacao > 0 ? (propostaCriada / negociacao * 100) : 0,
-      taxaPropostaAssinada: propostaCriada > 0 ? (propostaAssinada / propostaCriada * 100) : 0
-    };
-
-    return { dataPoints, metrics };
-  }, [leads]);
+    return { dataPoints, metrics: { totalLeads } };
+  }, [leads, quantasVendas]);
 
   /*
    * Quem manda nas etapas é a lista DESENHADA, e não uma cópia da lista aqui:
    * um número ao lado de uma etapa que o funil não mostra seria pior que
    * nenhum número. String, e não array, porque array novo a cada render
-   * reentraria no efeito para sempre.
+   * reentraria no efeito para sempre. A Venda fica de fora: ela não é etapa
+   * de lead, e "passaram" não existe para ela.
    */
-  const etapasDoFunil = funnelData.dataPoints.map((p) => p.originalKey).join('|');
-
-  const { tenantId } = useAuthContext();
+  const etapasDoFunil = funnelData.dataPoints
+    .filter((p) => p.originalKey !== 'Venda')
+    .map((p) => chaveNoBanco(p.originalKey))
+    .join('|');
 
   useEffect(() => {
     let cancelado = false;
@@ -250,8 +242,7 @@ export const EnhancedFunnelChart = ({ leads, contarPassaram = true }: EnhancedFu
           dataPoints: funnelData.dataPoints.map(point => ({
             y: point.y,
             label: point.label,
-            quantidade: point.quantidade,
-            description: point.description,
+            quantidade: point.quantidade ?? '…',
             percentual: point.percentual.toFixed(1),
             color: getFunnelColor(point.originalKey, point.index)
           }))
@@ -462,7 +453,7 @@ export const EnhancedFunnelChart = ({ leads, contarPassaram = true }: EnhancedFu
   /** `null` = ainda não chegou, ou falhou. Nunca 0 por omissão. */
   const passaramNaEtapa = (etapa: string): number | null => {
     if (!passaram) return null;
-    const i = passaram.etapas.indexOf(etapa);
+    const i = passaram.etapas.indexOf(chaveNoBanco(etapa));
     return i < 0 ? null : passaram.passaram[i] ?? null;
   };
 
@@ -493,11 +484,8 @@ export const EnhancedFunnelChart = ({ leads, contarPassaram = true }: EnhancedFu
                 const ultimaEtapa = Math.max(1, funnelData.dataPoints.length - 1);
                 const topPercent = 8 + index * (84 / ultimaEtapa);
                 
-                // Calcular percentual
-                const percentual = funnelData.metrics && funnelData.metrics.totalLeads > 0 
-                  ? ((point.quantidade / funnelData.metrics.totalLeads) * 100).toFixed(1)
-                  : '0.0';
-                
+                const percentual = point.percentual.toFixed(1);
+                const cor = getFunnelColor(point.originalKey, index);
                 const quantosPassaram = passaramNaEtapa(point.originalKey);
                 
                 return (
@@ -547,7 +535,25 @@ export const EnhancedFunnelChart = ({ leads, contarPassaram = true }: EnhancedFu
                           na Lotus: 163 leads passaram por lá, mas só 66 tiveram
                           a ENTRADA registrada. Sobre o total dá 9,5%: baixo, e
                           verdadeiro.
+
+                          A VENDA não tem nenhum dos dois: não é etapa de lead.
+                          É quantas vendas a Conferência tem no período.
                         */}
+                        {point.originalKey === 'Venda' ? (
+                          <div title="Vendas da Conferência de vendas, cada uma pela data da venda, no período do filtro">
+                            <div className="flex items-baseline gap-1.5 mt-1">
+                              <span className="text-xl font-black" style={{ color: cor }}>
+                                {vendas.isError ? '—' : point.quantidade ?? '…'}
+                              </span>
+                              <span className="text-[11px] font-semibold opacity-60" style={{ color: cor }}>
+                                {point.quantidade === 1 ? 'venda' : 'vendas'}
+                              </span>
+                            </div>
+                            <div className="text-[13px] font-semibold whitespace-nowrap opacity-75" style={{ color: cor }}>
+                              {vendas.isError ? 'Não deu para contar as vendas' : 'da Conferência de vendas'}
+                            </div>
+                          </div>
+                        ) : (<>
                         <div className="flex items-baseline gap-1.5 mt-1">
                           <span
                             className="text-xl font-black"
@@ -581,6 +587,7 @@ export const EnhancedFunnelChart = ({ leads, contarPassaram = true }: EnhancedFu
                             {point.quantidade} ({percentual}%) agora
                           </div>
                         )}
+                        </>)}
                       </div>
                     </div>
                   </div>

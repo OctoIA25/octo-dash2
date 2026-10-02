@@ -468,4 +468,31 @@ describe('GET /api/v1/funil/passaram-por-etapa', () => {
     expect(res.corpo.passaram).toEqual([0, 0, 0]);
     expect(res.corpo.inicio_do_historico).toBeNull();
   });
+
+  /*
+   * A "Proposta" junta três etapas (02/10). Somando por etapa daria 3 + 5 = 8;
+   * na Lotus eram 5 leads. O grupo vai inteiro ao banco, que conta distinto.
+   */
+  it('etapa agrupada com "+" é contada no banco, não pela soma das partes', async () => {
+    const sb = registrar(
+      { tenant_memberships: [{ tenant_id: TENANT, role: 'admin' }] },
+      undefined,
+      {
+        funil_passaram_por_etapa: contagem({ 'Negociação': 9, 'Proposta Enviada': 3, 'Proposta Assinada': 5 }),
+        funil_inicio_do_historico: '2026-09-10T10:00:00Z',
+        funil_passaram_por_alguma: 5,
+      },
+    );
+    const grupo = 'Proposta Enviada+Proposta Criada+Proposta Assinada';
+    const res = await app.chamar(CHAVE, pedido({ query: { tenantId: TENANT, etapas: `Negociação|${grupo}` } }));
+
+    expect(res.statusCode).toBe(200);
+    expect(res.corpo.etapas).toEqual(['Negociação', grupo]);
+    expect(res.corpo.passaram).toEqual([9, 5]);
+    const pergunta = sb.chamadas.find((c) => c.rpc === 'funil_passaram_por_alguma');
+    expect(pergunta.args).toMatchObject({
+      p_tenant_id: TENANT,
+      p_etapas: ['Proposta Enviada', 'Proposta Criada', 'Proposta Assinada'],
+    });
+  });
 });

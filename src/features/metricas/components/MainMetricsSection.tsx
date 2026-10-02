@@ -1545,6 +1545,9 @@ export const MainMetricsSection = ({
                             leads={filterLeadsByDate(atuacaoDoFunil === 'todos' ? filteredLeadsGeral
                               : filteredLeadsGeral.filter((l) => classificacoesDe(l.classification).includes(atuacaoDoFunil)))}
                             contarPassaram={dateFilter === 'all' && atuacaoDoFunil === 'todos'}
+                            // "Todo período" aqui é a base inteira — as vendas também.
+                            periodoDasVendas={dateFilter === 'all' ? null : periodoDaSafra}
+                            atuacao={atuacaoDoFunil}
                           />}
                     </ErrorBoundary>
                   </div>

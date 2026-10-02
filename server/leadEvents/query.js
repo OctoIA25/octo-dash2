@@ -202,3 +202,18 @@ export async function carregarPassaramPorEtapa(supabase, tenantId, { de = null, 
   return { porEtapa, inicioDoHistorico: inicio.data ?? null };
 }
 
+/**
+ * Quantos leads DISTINTOS passaram por ALGUMA das etapas.
+ *
+ * A "Proposta" do funil junta Enviada, Criada e Assinada (02/10). Somar o que
+ * vem por etapa conta duas vezes o lead que passou por mais de uma — na Lotus,
+ * 3 + 5 = 8 para 5 leads de verdade. O grupo é contado no banco.
+ */
+export async function carregarPassaramPorAlguma(supabase, tenantId, etapas, { de = null, ate = null } = {}) {
+  const { data, error } = await supabase.rpc('funil_passaram_por_alguma', {
+    p_tenant_id: tenantId, p_etapas: etapas, p_de: de, p_ate: ate,
+  });
+  if (error) throw error;
+  return Number(data) || 0;
+}
+
