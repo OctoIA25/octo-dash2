@@ -61,6 +61,7 @@ import {
 } from '@/features/leads/utils/leadsSemAtividade';
 import { ClassificacaoDots } from '@/features/leads/components/ClassificacaoBadge';
 import { fetchTenantMembers } from '@/features/corretores/services/tenantMembersService';
+import { carregarPessoasDaCasa } from '@/features/corretores/services/pessoasDaCasaService';
 import {
   faixaDaAtividade,
   contarAbas,
@@ -420,6 +421,10 @@ export const CentralLeadsPage: React.FC<CentralLeadsPageProps> = ({ embedded = f
         .from('agenda_eventos')
         .select(COLUNAS)
         .eq('tenant_id', tenantId)
+        // Só atividade de LEAD (pedido do Erick, 01/10): compromisso pessoal da
+        // agenda — "Reunião Santa Angela", "Visita Inkkorp" — aparecia em
+        // Pendentes sem lead nenhum. Ele continua na Agenda, que é o lugar dele.
+        .not('lead_uuid', 'is', null)
         .gte('data', inicioJanelaISO());
 
       if (!visaoDeEquipe) query = query.eq('corretor_email', emailConsultado);
@@ -469,7 +474,7 @@ export const CentralLeadsPage: React.FC<CentralLeadsPageProps> = ({ embedded = f
     try {
       let consultaLeads = supabase
         .from('leads')
-        .select('id, name, phone, assigned_agent_name, assigned_at, status')
+        .select('id, name, phone, assigned_agent_id, assigned_agent_name, assigned_at, status')
         .eq('tenant_id', tenantId)
         .is('archived_at', null)
         .not('assigned_agent_id', 'is', null);
@@ -478,7 +483,7 @@ export const CentralLeadsPage: React.FC<CentralLeadsPageProps> = ({ embedded = f
       // base ("Fernanda" e "Fernanda Souza" são pessoas diferentes lá).
       if (!isAdmin && user?.id) consultaLeads = consultaLeads.eq('assigned_agent_id', user.id);
 
-      const [{ data: linhasLeads, error: erroLeads }, { data: comAtividade, error: erroAtiv }] =
+      const [{ data: linhasLeads, error: erroLeads }, { data: comAtividade, error: erroAtiv }, pessoas] =
         await Promise.all([
           consultaLeads,
           supabase
@@ -487,6 +492,8 @@ export const CentralLeadsPage: React.FC<CentralLeadsPageProps> = ({ embedded = f
             .eq('tenant_id', tenantId)
             .in('status', ['pendente', 'confirmado'])
             .not('lead_uuid', 'is', null),
+          // Lead da Lia não tem quem agendar: ela mesma atende (pedido de 01/10).
+          carregarPessoasDaCasa(tenantId as string),
         ]);
       if (erroLeads) throw erroLeads;
       if (erroAtiv) throw erroAtiv;
@@ -498,6 +505,7 @@ export const CentralLeadsPage: React.FC<CentralLeadsPageProps> = ({ embedded = f
         : null;
 
       const leadsDoEscopo: LeadSemAtividade[] = (linhasLeads || [])
+        .filter((l) => pessoas.has(String(l.assigned_agent_id)))
         .map((l) => ({
           id: l.id as string,
           nome: (l.name as string) ?? null,
@@ -694,6 +702,11 @@ export const CentralLeadsPage: React.FC<CentralLeadsPageProps> = ({ embedded = f
       toast.error('Escreva o que precisa ser feito');
       return;
     }
+    // Aqui só entra atividade de lead: sem ele, ela seria criada e sumiria da lista.
+    if (!nova.leadUuid) {
+      toast.error('Escolha o lead da atividade');
+      return;
+    }
     if (!user?.email || !tenantValido) {
       toast.error('Sessão sem tenant selecionado');
       return;
@@ -860,7 +873,8 @@ export const CentralLeadsPage: React.FC<CentralLeadsPageProps> = ({ embedded = f
             <section className="space-y-2">
               <h2 className="flex flex-wrap items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                 <ClipboardList className="h-4 w-4 text-primary" />
-                Agendar
+                {/* Era só "Agendar" — o Erick perguntou "o que seria este agendar?" (01/10). */}
+                Leads sem próximo passo
                 <span className="rounded-full bg-muted px-2 text-xs">{semAtividade.recentes.length}</span>
                 {semAtividade.antigos > 0 && (
                   <span className="text-[11px] font-normal normal-case text-muted-foreground">
@@ -868,6 +882,10 @@ export const CentralLeadsPage: React.FC<CentralLeadsPageProps> = ({ embedded = f
                   </span>
                 )}
               </h2>
+              <p className="text-xs text-muted-foreground">
+                Leads que o corretor recebeu nas últimas 24h e que ainda não têm nenhuma atividade
+                marcada. Clique em Agendar para marcar o primeiro contato. Não bloqueia ninguém.
+              </p>
               {semAtividade.recentes.length === 0 ? (
                 <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
                   Todo lead recebido nas últimas 24h já tem atividade agendada.
@@ -1043,7 +1061,7 @@ export const CentralLeadsPage: React.FC<CentralLeadsPageProps> = ({ embedded = f
             </div>
 
             <div className="space-y-2">
-              <Label>Lead (opcional)</Label>
+              <Label>Lead</Label>
               <ComboBox
                 options={opcoesLead}
                 value={nova.leadNome}
