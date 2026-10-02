@@ -4,6 +4,9 @@
  */
 
 import { useMemo, useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { carregarPessoasDaCasa } from '@/features/corretores/services/pessoasDaCasaService';
+import { rankingDaEquipe, type RankingItem } from './rankingDaEquipe';
 import { InfoMetrica } from '@/features/kpis/components/KpiComponents';
 import { pipelineDaHome, contarVisitasAgendadasPara } from '@/features/leads/utils/funnelStages';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
@@ -302,13 +305,7 @@ function PipelineCard({ stages, foraDoFunil, onViewFull }: { stages: PipelineSta
 }
 
 // =================== RANKING ===================
-interface RankingItem {
-  name: string;
-  closings: number;
-  volume: number;
-}
-
-function RankingCard({ items, onViewAll }: { items: RankingItem[]; onViewAll: () => void }) {
+function RankingCard({ items, erro, onViewAll }: { items: RankingItem[]; erro: boolean; onViewAll: () => void }) {
   return (
     <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4">
       <div className="flex items-center justify-between mb-3">
@@ -339,7 +336,9 @@ function RankingCard({ items, onViewAll }: { items: RankingItem[]; onViewAll: ()
             <span className="text-[11.5px] font-semibold text-slate-700 dark:text-slate-300">{BRL(it.volume)}</span>
           </li>
         ))}
-        {items.length === 0 && <li className="text-[12px] text-slate-400">Sem dados de equipe</li>}
+        {erro
+          ? <li role="alert" className="text-[12px] text-rose-600 dark:text-rose-400">Não deu para carregar a equipe.</li>
+          : items.length === 0 && <li className="text-[12px] text-slate-400">Sem dados de equipe</li>}
       </ul>
     </div>
   );
@@ -626,22 +625,16 @@ export function InicioNovaPage() {
     label: b.label, count: b.count, pct: b.pct, shade: CORES[b.label] ?? 'bg-slate-400',
   }));
 
-  const ranking: RankingItem[] = useMemo(() => {
-    const map = new Map<string, { closings: number; volume: number }>();
-    leads.forEach((l) => {
-      const name = l.corretor_responsavel || 'Sem corretor';
-      const entry = map.get(name) || { closings: 0, volume: 0 };
-      if ((l.etapa_atual || '').toLowerCase().includes('assinad') || (l.etapa_atual || '').toLowerCase().includes('fechad')) {
-        entry.closings += 1;
-        entry.volume += l.valor_final_venda || l.valor_imovel || 0;
-      }
-      map.set(name, entry);
-    });
-    return Array.from(map.entries())
-      .filter(([name]) => name !== 'Sem corretor')
-      .map(([name, v]) => ({ name, ...v }))
-      .sort((a, b) => b.volume - a.volume);
-  }, [leads]);
+  // Quem é gente na casa (sem a Lia e sem conta de teste), com o nome do cadastro.
+  const pessoas = useQuery({
+    queryKey: ['pessoas-da-casa', tenantId],
+    queryFn: () => carregarPessoasDaCasa(tenantId!),
+    enabled: !!tenantId && tenantId !== 'owner',
+  });
+  const ranking = useMemo(
+    () => (pessoas.data ? rankingDaEquipe(leads, pessoas.data) : []),
+    [leads, pessoas.data],
+  );
 
 
   // Switch de conteúdo baseado na aba da Início
@@ -901,7 +894,7 @@ export function InicioNovaPage() {
                   foraDoFunil={pipeline.outros}
                   onViewFull={() => navigate('/metricas/cliente-interessado')}
                 />
-                <RankingCard items={ranking} onViewAll={() => navigate('/gestao-equipe')} />
+                <RankingCard items={ranking} erro={pessoas.isError} onViewAll={() => navigate('/gestao-equipe')} />
               </div>
             </div>
 

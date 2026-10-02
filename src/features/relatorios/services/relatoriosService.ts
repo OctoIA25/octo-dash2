@@ -15,6 +15,7 @@ import {
   normalizarNome,
   type VendaAssinada,
 } from '@/features/metricas/services/vendasAssinadasService';
+import { carregarPessoasDaCasa } from '@/features/corretores/services/pessoasDaCasaService';
 
 const UUID_AGENT_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -345,10 +346,13 @@ export async function buscarRankingCorretores(
     endMonth = 12;
   }
 
-  // Buscar dados diretos da tabela leads em vez de corretor_metrics
+  // Por PESSOA (o dono do lead), com o nome do cadastro: somar pelo nome
+  // escrito punha a Lia no ranking e repetia quem tem duas grafias
+  // ("FERNANDA SOUZA" × "Fernanda Souza"). Pedido do Erick, 01/10.
+  const pessoas = await carregarPessoasDaCasa(tenantId);
   const { data: leads, error } = await supabase
     .from('leads')
-    .select('assigned_agent_name, created_at, final_sale_value')
+    .select('assigned_agent_id, created_at, final_sale_value')
     .eq('tenant_id', tenantId)
     // .gte('created_at', `${startYear}-${String(startMonth - 1).padStart(2, '0')}-01`)
     // .lt('created_at', `${endYear}-${String(endMonth + 1).padStart(2, '0')}-01`);
@@ -364,7 +368,7 @@ export async function buscarRankingCorretores(
   }>();
 
   leads?.forEach(lead => {
-    const key = lead.assigned_agent_name;
+    const key = lead.assigned_agent_id ? pessoas.get(lead.assigned_agent_id) : undefined;
     if (!key) return;
 
     const existing = aggregated.get(key) || {
