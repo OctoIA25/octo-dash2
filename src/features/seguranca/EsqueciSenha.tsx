@@ -22,7 +22,8 @@ export function EsqueciSenha({ emailInicial = '' }: { emailInicial?: string }) {
   if (enviado) {
     return (
       <p role="status" className="text-sm text-gray-700">
-        Se houver uma conta com esse e-mail, chega em instantes um link para criar uma senha nova. Confira também a caixa de spam.
+        Se houver uma conta com esse e-mail, enviamos um link para criar uma senha nova (confira também o spam). Não chegou
+        em alguns minutos? Peça ao admin da sua imobiliária para definir uma senha nova em Gestão de Equipe.
       </p>
     );
   }

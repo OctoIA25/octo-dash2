@@ -127,6 +127,8 @@ describe('recuperação por e-mail', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Esqueci minha senha' }));
     fireEvent.click(screen.getByRole('button', { name: 'Enviar o link' }));
     expect(await screen.findByRole('status')).toHaveTextContent('Se houver uma conta com esse e-mail');
+    // Sem SMTP próprio o e-mail não chega a quem não é da equipe do Supabase: a saída é o admin.
+    expect(screen.getByRole('status')).toHaveTextContent('Peça ao admin da sua imobiliária');
     expect(s.pedirRecuperacao).toHaveBeenCalledWith('carla@lotus.com');
   });
   it('sem a sessão do link, a página explica em vez de mostrar o formulário', async () => {
