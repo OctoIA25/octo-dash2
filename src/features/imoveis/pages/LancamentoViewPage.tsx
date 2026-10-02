@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { MiniMapaDoEndereco } from '../components/MiniMapaDoEndereco';
+import { pinoVoltaParaFila } from '../utils/pinoDoLancamento';
 import {
   ArrowLeft,
   FileText,
@@ -41,6 +42,8 @@ interface Lancamento {
   codigos: string[] | null;
   descricao: string | null;
   endereco_plantao: string | null;
+  /** Onde o prédio fica — nem sempre é o plantão (20261019). É dele o pino do Mapa. */
+  endereco_empreendimento?: string | null;
   /** Coordenadas do pino no Mapa (P2.6). */
   latitude?: number | null;
   longitude?: number | null;
@@ -129,6 +132,7 @@ export const LancamentoViewPage = () => {
   const [codigos, setCodigos] = useState('');
   const [descricao, setDescricao] = useState('');
   const [enderecoPlantao, setEnderecoPlantao] = useState('');
+  const [enderecoEmpreendimento, setEnderecoEmpreendimento] = useState('');
   const [siteUrl, setSiteUrl] = useState('');
   const [cidade, setCidade] = useState('');
   const [bairro, setBairro] = useState('');
@@ -182,6 +186,7 @@ export const LancamentoViewPage = () => {
     setCodigos((normalized.codigos ?? []).join(', '));
     setDescricao(normalized.descricao ?? '');
     setEnderecoPlantao(normalized.endereco_plantao ?? '');
+    setEnderecoEmpreendimento(normalized.endereco_empreendimento ?? '');
     setSiteUrl(normalized.site_url ?? '');
     setCidade(normalized.cidade ?? '');
     setBairro(normalized.bairro ?? '');
@@ -343,6 +348,15 @@ export const LancamentoViewPage = () => {
         return;
       }
 
+      // Endereço do pino mudou: o pino automático volta para a fila de
+      // "Localizar" (o erro antigo também sai — a fila pula quem já falhou).
+      const voltaParaFila = pinoVoltaParaFila(lancamento, {
+        endereco_empreendimento: enderecoEmpreendimento,
+        endereco_plantao: enderecoPlantao,
+        bairro,
+        cidade,
+      });
+
       const { error } = await supabase
         .from('lancamentos')
         .update({
@@ -350,6 +364,10 @@ export const LancamentoViewPage = () => {
           codigos: listaCodigos.length ? listaCodigos : null,
           descricao: descricao || null,
           endereco_plantao: enderecoPlantao.trim() || null,
+          endereco_empreendimento: enderecoEmpreendimento.trim() || null,
+          ...(voltaParaFila
+            ? { latitude: null, longitude: null, geo_origem: null, geo_precisao: null, geo_em: null, geo_erro: null }
+            : {}),
           site_url: siteUrlNormalizado,
           cidade: cidade.trim() || null,
           bairro: bairro.trim() || null,
@@ -386,6 +404,16 @@ export const LancamentoViewPage = () => {
       setFotos(fotosFinais);
       setSiteUrl(siteUrlNormalizado ?? '');
       setCodigos(listaCodigos.join(', '));
+      // O que foi gravado vira a base da próxima comparação de endereço — sem
+      // isto, o segundo salvamento compararia com o endereço de antes.
+      setLancamento((prev) => prev && {
+        ...prev,
+        endereco_plantao: enderecoPlantao.trim() || null,
+        endereco_empreendimento: enderecoEmpreendimento.trim() || null,
+        bairro: bairro.trim() || null,
+        cidade: cidade.trim() || null,
+        ...(voltaParaFila ? { latitude: null, longitude: null, geo_origem: null, geo_precisao: null } : {}),
+      });
       setEditandoNome(false);
       setSavedAt(new Date());
     } catch (err) {
@@ -776,10 +804,30 @@ export const LancamentoViewPage = () => {
           value={enderecoPlantao}
           onChange={(e) => setEnderecoPlantao(e.target.value)}
         />
+      </section>
 
-        {/* É este endereço que vira o pino do lançamento no Mapa (P2.6).
-            Quando falta, o pino sai do bairro e é marcado como aproximado. */}
+      <section className="rounded-xl border border-border bg-card p-5 space-y-3">
+        <div>
+          <h2 className="text-lg font-semibold text-text-primary">
+            Endereço do empreendimento{' '}
+            <span className="text-sm font-normal text-text-secondary">(opcional)</span>
+          </h2>
+          <p className="text-xs text-text-secondary mt-1">
+            Onde o prédio fica — muitas vezes não é o plantão. É ele que vira o pino no Mapa;
+            em branco, o pino sai do endereço do plantão.
+          </p>
+        </div>
+        <Input
+          placeholder="Ex: Rua das Palmeiras, 250 — Jardim Ana Maria"
+          value={enderecoEmpreendimento}
+          onChange={(e) => setEnderecoEmpreendimento(e.target.value)}
+        />
+
+        {/* O pino do lançamento no Mapa (P2.6): endereço do empreendimento, ou
+            o do plantão; sem nenhum, sai do bairro e é marcado como aproximado.
+            A chave remonta o mini-mapa quando o pino some (endereço mudou). */}
         <MiniMapaDoEndereco
+          key={lancamento?.latitude == null ? 'sem-pino' : 'com-pino'}
           tipo="lancamento"
           id={id}
           tenantId={tenantId}
