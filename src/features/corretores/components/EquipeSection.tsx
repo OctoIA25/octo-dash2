@@ -41,6 +41,7 @@ import { ROTULO_DO_PAPEL, type Cargo, type PermissaoDoCatalogo } from '@/feature
 import { NIVEIS, nivelValido, type Nivel } from '@/features/comissionamento/commissionRules';
 import { PreferenciasEditor } from '@/features/leads/components/PreferenciasLead';
 import { ESPECIALIDADES_PADRAO } from '@/lib/tiposImovel';
+import { estaNaEquipe } from '@/features/corretores/domain/filtroDeEquipe';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -85,6 +86,8 @@ interface MembroEquipe {
   cor: string;
   status: 'online' | 'offline' | 'ausente';
   equipe: string;
+  /** A Atuação do cadastro — é por ela que o filtro separa Lançamentos e Prontos. */
+  atuacoes: AtuacaoTipo[];
   cargo: string;
   totalLeads: number;
   leadsAtivos: number;
@@ -1052,6 +1055,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
         cor,
         status: 'online', // Membros do banco são considerados ativos
         equipe: member.role === 'admin' ? 'Gestão' : 'Vendas',
+        atuacoes: atuacoesDe(member.permissions),
         /*
          * O rótulo vinha de um ternário de dois valores, e por isso os 5
          * líderes de equipe apareciam como "Corretor" — o líder não existia
@@ -1116,9 +1120,7 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
     }
 
     // Filtro de equipe
-    if (equipeFilter !== 'todas') {
-      filtered = filtered.filter(membro => membro.equipe === equipeFilter);
-    }
+    filtered = filtered.filter(membro => estaNaEquipe(membro, equipeFilter));
 
     // Filtro de cargo
     if (cargoFilter !== 'todos') {
@@ -1445,7 +1447,8 @@ export const EquipeSection = ({ leads }: EquipeSectionProps) => {
               <SelectContent>
                 <SelectItem value="todas">Todas Equipes</SelectItem>
                 <SelectItem value="Vendas">Vendas</SelectItem>
-                <SelectItem value="Locação">Locação</SelectItem>
+                <SelectItem value="lancamentos">Lançamentos</SelectItem>
+                <SelectItem value="prontos">Prontos</SelectItem>
                 <SelectItem value="Gestão">Gestão</SelectItem>
               </SelectContent>
             </Select>
