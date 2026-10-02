@@ -41,6 +41,10 @@ export const OwnerDashboard = () => {
   const [newTenantCode, setNewTenantCode] = useState('');
   const [newAdminEmail, setNewAdminEmail] = useState('');
   const [newAdminPassword, setNewAdminPassword] = useState('');
+  const [newAdminPasswordConfirm, setNewAdminPasswordConfirm] = useState('');
+  // Erro do modal "Criar nova imobiliária". Separado de `error` porque o
+  // loadTenants() que roda depois de uma falha zera `error` — e a recusa sumia.
+  const [createError, setCreateError] = useState('');
   const [search, setSearch] = useState('');
   const [error, setError] = useState('');
   const [isLoadingTenants, setIsLoadingTenants] = useState(false);
@@ -212,22 +216,24 @@ export const OwnerDashboard = () => {
 
     if (!name) return;
     if (!adminEmail) return;
-    if (!adminPassword || adminPassword.length < 6) return;
+    // A regra inteira (tipos, palavras óbvias) é do banco: a função devolve o motivo.
+    if (!adminPassword || adminPassword.length < 8) return;
+    if (adminPassword !== newAdminPasswordConfirm) return;
 
     setIsCreating(true);
-    setError('');
+    setCreateError('');
 
     const { data: sessionData } = await supabase.auth.getSession();
     const token = sessionData.session?.access_token;
     if (!token) {
-      setError('Sessão inválida. Faça login novamente.');
+      setCreateError('Sessão inválida. Faça login novamente.');
       setIsCreating(false);
       return;
     }
 
     const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
     if (!anonKey) {
-      setError('Configuração inválida: VITE_SUPABASE_ANON_KEY não encontrado.');
+      setCreateError('Configuração inválida: VITE_SUPABASE_ANON_KEY não encontrado.');
       setIsCreating(false);
       return;
     }
@@ -251,9 +257,9 @@ export const OwnerDashboard = () => {
     const payload = await res.json().catch(() => null);
     if (!res.ok || !payload?.ok) {
       if (res.status === 401) {
-        setError('Não autorizado (401). Faça logout e login novamente como dono e tente de novo.');
+        setCreateError('Não autorizado (401). Faça logout e login novamente como dono e tente de novo.');
       } else {
-        setError(payload?.error || 'Erro ao criar imobiliária');
+        setCreateError(payload?.error || 'Erro ao criar imobiliária');
       }
       setIsCreating(false);
       await loadTenants();
@@ -264,6 +270,7 @@ export const OwnerDashboard = () => {
     setNewTenantCode('');
     setNewAdminEmail('');
     setNewAdminPassword('');
+    setNewAdminPasswordConfirm('');
     setIsModalOpen(false);
     setIsCreating(false);
     await loadTenants();
@@ -312,7 +319,7 @@ export const OwnerDashboard = () => {
             <button
               type="button"
               className="inline-flex items-center gap-2 h-10 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[13px] font-medium shadow-sm transition-colors"
-              onClick={() => setIsModalOpen(true)}
+              onClick={() => { setCreateError(''); setIsModalOpen(true); }}
             >
               <Plus className="h-4 w-4" />
               Nova imobiliária
@@ -556,11 +563,33 @@ export const OwnerDashboard = () => {
                   value={newAdminPassword}
                   onChange={(e) => setNewAdminPassword(e.target.value)}
                   className="w-full h-11 px-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[13px] text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 transition-colors"
-                  placeholder="mínimo 6 caracteres"
+                  placeholder="Senha provisória do admin"
                   disabled={isCreating}
                   autoComplete="new-password"
                 />
+                <input
+                  type="password"
+                  value={newAdminPasswordConfirm}
+                  onChange={(e) => setNewAdminPasswordConfirm(e.target.value)}
+                  className="mt-2 w-full h-11 px-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[13px] text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 transition-colors"
+                  placeholder="Repita a senha"
+                  aria-label="Repita a senha"
+                  disabled={isCreating}
+                  autoComplete="new-password"
+                />
+                {newAdminPasswordConfirm && newAdminPasswordConfirm !== newAdminPassword && (
+                  <p role="alert" className="mt-1.5 text-[11px] text-rose-600">As duas senhas não são iguais.</p>
+                )}
+                <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+                  Pelo menos 8 caracteres, três tipos (minúscula, maiúscula, número, símbolo), nada óbvio e nada do e-mail.
+                </p>
               </div>
+
+              {createError && (
+                <div role="alert" className="rounded-xl border border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-300 p-3 text-[12px]">
+                  {createError}
+                </div>
+              )}
             </div>
 
             <div className="px-5 py-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-2">
@@ -579,8 +608,8 @@ export const OwnerDashboard = () => {
                   isCreating ||
                   !newTenantName.trim() ||
                   !newAdminEmail.trim() ||
-                  !newAdminPassword ||
-                  newAdminPassword.length < 6
+                  newAdminPassword.length < 8 ||
+                  newAdminPassword !== newAdminPasswordConfirm
                 }
                 className="inline-flex items-center gap-2 h-10 px-5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[13px] font-medium shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
