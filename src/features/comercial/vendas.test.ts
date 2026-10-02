@@ -195,3 +195,12 @@ describe('resumoDaReleitura', () => {
     expect(r.descricao).toContain('1 sumiram');
   });
 });
+
+describe('nível que a planilha escreve', () => {
+  it('nível do cadastro sai com o %; código antigo passa como veio', async () => {
+    const { rotuloDoNivelDaPlanilha } = await import('./vendas');
+    expect(rotuloDoNivelDaPlanilha('senior')).toBe('Sênior (50%)');
+    expect(rotuloDoNivelDaPlanilha('PL')).toBe('PL');
+    expect(rotuloDoNivelDaPlanilha(null)).toBe('—');
+  });
+});

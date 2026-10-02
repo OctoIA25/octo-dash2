@@ -28,6 +28,7 @@
  */
 
 import { useState } from 'react';
+import { rotuloDoNivelDaPlanilha } from '@/features/comercial/vendas';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
@@ -166,7 +167,7 @@ export function ConferenciaDaPlanilha({ dados, carregando, erro, soPeriodo }: Pr
                 <td className="px-2.5 py-2 text-right tabular-nums whitespace-nowrap font-medium">{dinheiro(v.comissao_total_venda)}</td>
                 <td className="px-2.5 py-2 whitespace-nowrap">{v.cliente_nome || '—'}</td>
                 <td className="px-2.5 py-2 whitespace-nowrap">{v.corretor_nome || '—'}</td>
-                <td className="px-2.5 py-2 whitespace-nowrap">{v.nivel_corretor || '—'}</td>
+                <td className="px-2.5 py-2 whitespace-nowrap">{rotuloDoNivelDaPlanilha(v.nivel_corretor)}</td>
                 <td className="px-2.5 py-2 text-right tabular-nums whitespace-nowrap">{dinheiro(v.repasse_corretor)}</td>
                 <td className="px-2.5 py-2 text-right tabular-nums whitespace-nowrap">{dinheiro(v.team_leader_valor)}</td>
                 {/* O valor que a PLANILHA escreveu; a conta (comissão menos

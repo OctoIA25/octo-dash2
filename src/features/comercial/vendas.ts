@@ -291,6 +291,16 @@ export const rotuloDoNivel = (n: string | null | undefined): string => {
   return v ? NIVEIS[v].label : 'sem nível';
 };
 
+/**
+ * "Tipo" da planilha. Nível do cadastro sai com o % ("Sênior (50%)"), como o
+ * Erick pediu em 01/10; código antigo (PL, TL…) passa como veio até alguém
+ * dizer a qual nível novo ele corresponde.
+ */
+export const rotuloDoNivelDaPlanilha = (t: string | null | undefined): string => {
+  const v = nivelValido(t);
+  return v ? `${NIVEIS[v].label} (${NIVEIS[v].percentual}%)` : t?.trim() || '—';
+};
+
 const formatar = (v: number) =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2 })
     .replace(/\u00A0/g, ' ');

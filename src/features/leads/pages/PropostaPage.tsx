@@ -125,6 +125,7 @@ import type { SystemRole } from '@/contexts/AuthContext';
 import type { Imovel } from '@/features/imoveis/services/kenloService';
 import { avisoTelefone, linkWhatsapp } from '@/lib/contato';
 import { PastaDoCliente } from '@/features/documentos/PastaDoCliente';
+import { donoDaProposta } from '@/features/leads/utils/donoDaProposta';
 
 const PROPOSAL_STAGES = [
   {
@@ -1036,7 +1037,7 @@ const proposalToSaveInput = (
     complemento: address.complemento.trim(),
     cidade: address.cidade.trim(),
     uf: address.uf.trim().toUpperCase(),
-    agentUserId: userId || null,
+    agentUserId: donoDaProposta(proposal.agentUserId, detail.agenteResponsavel || proposal.agenteResponsavel || proposal.corretor, userId),
     agentName: detail.agenteResponsavel || proposal.agenteResponsavel || proposal.corretor,
     businessType: proposal.tipoNegocio,
     leadType: proposal.tipoLead,
