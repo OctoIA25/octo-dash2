@@ -192,7 +192,10 @@ export const EquipesManagerSection = () => {
         // Atualizar selectedTeam se aberto
         if (selectedTeam?.id === teamModal.team.id) {
           const leaderNames = formLeaderIds.map(
-            (id) => allMembers.find((m) => m.user_id === id)?.email ?? id
+            (id) => {
+              const m = allMembers.find((x) => x.user_id === id);
+              return m?.name || m?.email || id;
+            }
           );
           setSelectedTeam((prev) => prev ? {
             ...prev,
@@ -817,7 +820,7 @@ export const EquipesManagerSection = () => {
                         }}
                         className="h-4 w-4 rounded border-gray-300 text-[#1a5276] focus:ring-[#1a5276]"
                       />
-                      <span className="flex-1 truncate">{leader.email}</span>
+                      <span className="flex-1 truncate" title={leader.email}>{leader.name || leader.email}</span>
                       {formLeaderIds[0] === leader.user_id && (
                         <span className="text-[10px] text-amber-600">principal</span>
                       )}
