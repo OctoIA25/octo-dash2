@@ -2,6 +2,7 @@
  * 🗺️ Mapa interligado (P2.6) — geocodificação.
  *
  *   POST /api/v1/mapa/geocodificar — roda a fila do tenant, ou um registro só
+ *   GET  /api/v1/mapa/buscar?q=     — a rua que o corretor procura no mini-mapa
  *
  * POR QUE PASSA PELO SERVIDOR
  * A política do OpenStreetMap pede identificação de quem chama e no máximo 1
@@ -19,7 +20,7 @@
 
 import { makeRequireSupabaseAuth, resolveTenant } from '../kpis/index.js';
 import { isPlatformOwner } from '../utils/ownerAuth.js';
-import { geocodificar, dormir, INTERVALO_MS } from './nominatim.js';
+import { geocodificar, buscarCandidatos, esperarAVez, dormir, INTERVALO_MS } from './nominatim.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -49,7 +50,8 @@ export function linhaDoResultado(resultado, precisao, agora = new Date()) {
     latitude: resultado.lat,
     longitude: resultado.lng,
     geo_origem: 'automatica',
-    geo_precisao: precisao === 'aproximada' ? 'aproximada' : 'exata',
+    // Montado só com o bairro, ou achado só na rua: os dois são aproximados.
+    geo_precisao: precisao === 'aproximada' || resultado.aproximado ? 'aproximada' : 'exata',
     geo_em: quando,
     geo_erro: null,
   };
@@ -154,7 +156,32 @@ export function registerMapaRoutes(app, supabase, options = {}) {
     }
   });
 
+  /**
+   * Qualquer membro procura: é o corretor marcando o pino do próprio imóvel.
+   * Não grava nada — o pino é gravado pela tela, com as permissões de quem o
+   * marca. Busca é por clique (Enter/botão), nunca por tecla: a política do OSM
+   * proíbe autocompletar.
+   */
+  app.get('/api/v1/mapa/buscar', requireAuth, async (req, res) => {
+    try {
+      const resolved = await resolveTenant(supabase, req);
+      if (resolved.error) return res.status(resolved.status).json({ ok: false, error: resolved.error });
+
+      const q = String(req.query?.q ?? '').trim();
+      if (q.length < 3 || q.length > 200) return res.status(400).json({ ok: false, error: 'busca_invalida' });
+
+      await esperarAVez();
+      const r = await buscarCandidatos(q);
+      if (r.erro) return res.status(502).json({ ok: false, error: r.erro });
+      return res.json({ ok: true, candidatos: r.candidatos });
+    } catch (err) {
+      console.error('[mapa] erro buscando endereço:', err?.message);
+      return res.status(500).json({ ok: false, error: 'internal_error' });
+    }
+  });
+
   if (options.verbose !== false) {
     console.log('   └─ 🗺️  POST /api/v1/mapa/geocodificar                     → Geocodifica o que falta (Nominatim)');
+    console.log('   └─ 🗺️  GET  /api/v1/mapa/buscar                           → Corretor procura a rua no mini-mapa');
   }
 }

@@ -71,4 +71,12 @@ export interface Imovel {
   endereco?: string;
   numero?: string;
   nome_condominio?: string;
+  /** Como o pino do cadastro local foi posto (`imoveis_locais.geo_*`). O XML não tem. */
+  geo_origem?: 'automatica' | 'manual' | null;
+  geo_precisao?: 'exata' | 'aproximada' | null;
+  /**
+   * Veio só do cadastro local (`imoveis_locais`), sem XML. O Mapa não chuta
+   * ponto no bairro para ele: sem coordenada gravada, fica fora até alguém marcar.
+   */
+  cadastro_local?: boolean;
 }

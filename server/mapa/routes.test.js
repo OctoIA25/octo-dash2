@@ -48,6 +48,10 @@ describe('linhaDoResultado', () => {
     });
   });
 
+  it('achado só na rua, e não na porta, é aproximado mesmo com endereço completo', () => {
+    expect(linhaDoResultado({ lat: -23.5, lng: -46.6, aproximado: true }, 'exata', agora).geo_precisao).toBe('aproximada');
+  });
+
   it('o erro anterior é limpo quando a coordenada aparece', () => {
     expect(linhaDoResultado({ lat: 1, lng: -50 }, 'exata', agora).geo_erro).toBeNull();
   });
@@ -174,5 +178,46 @@ describe('POST /api/v1/mapa/geocodificar', () => {
     registerMapaRoutes(app, supabaseFalso({ fila: [] }), { verbose: false });
     const res = await app.chamar('POST /api/v1/mapa/geocodificar', req());
     expect(res.corpo).toMatchObject({ ok: true, tentados: 0, achados: 0, na_fila: 0, falhas: [] });
+  });
+});
+
+describe('GET /api/v1/mapa/buscar', () => {
+  const busca = (q) => ({ headers: { authorization: 'Bearer jwt' }, query: { tenantId: TENANT, q }, params: {} });
+
+  it('corretor procura a rua — não é só gestão', async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => [{ lat: '-23.17', lon: '-46.88', place_rank: 26, display_name: 'Rua Tiradentes, Jundiaí' }],
+    }));
+    vi.stubGlobal('fetch', fetchImpl);
+    try {
+      const app = appFalso();
+      const sb = supabaseFalso({ role: 'corretor' });
+      registerMapaRoutes(app, sb, { verbose: false });
+      const res = await app.chamar('GET /api/v1/mapa/buscar', busca('Rua Tiradentes, Jundiaí'));
+      expect(res.statusCode).toBe(200);
+      expect(res.corpo.candidatos).toEqual([
+        { lat: -23.17, lng: -46.88, aproximado: true, nome: 'Rua Tiradentes, Jundiaí' },
+      ]);
+      // Procurar não grava nada.
+      expect(sb.updates).toHaveLength(0);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('busca curta demais nem chega ao OSM', async () => {
+    const fetchImpl = vi.fn();
+    vi.stubGlobal('fetch', fetchImpl);
+    try {
+      const app = appFalso();
+      registerMapaRoutes(app, supabaseFalso(), { verbose: false });
+      const res = await app.chamar('GET /api/v1/mapa/buscar', busca('ru'));
+      expect(res.statusCode).toBe(400);
+      expect(fetchImpl).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

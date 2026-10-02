@@ -51,6 +51,10 @@ export interface ImovelLocalConvertivel {
   destaque?: boolean | null;
   super_destaque?: boolean | null;
   status_aprovacao?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  geo_origem?: 'automatica' | 'manual' | null;
+  geo_precisao?: 'exata' | 'aproximada' | null;
 }
 
 /** "790.000" nunca aparece se o valor seguir string: toLocaleString não formata texto. */
@@ -89,4 +93,10 @@ export const convertLocalToImovel = (local: ImovelLocalConvertivel): Imovel => (
   videos: [],
   area_comum: [],
   area_privativa: [],
+  ...(typeof local.latitude === 'number' && typeof local.longitude === 'number'
+    ? { latitude: local.latitude, longitude: local.longitude }
+    : {}),
+  geo_origem: local.geo_origem ?? null,
+  geo_precisao: local.geo_precisao ?? null,
+  cadastro_local: true,
 });

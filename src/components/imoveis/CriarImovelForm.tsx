@@ -210,6 +210,11 @@ interface ImovelFormData {
   condominio: string;
   /** `imoveis_locais.condominio_id` — é ele que é salvo; o nome é só display. */
   condominio_id: string;
+  /**
+   * Pino marcado à mão no mini-mapa ANTES de o imóvel ter id (cadastro novo).
+   * Vai junto no save. Com id, o mini-mapa grava sozinho e isto fica null.
+   */
+  pino_marcado: [number, number] | null;
   
   // Características
   area_total: string;
@@ -298,6 +303,7 @@ const initialFormData: ImovelFormData = {
   numero: '',
   complemento: '',
   bairro: '',
+  pino_marcado: null,
   cidade: '',
   estado: 'SP',
   condominio: '',
@@ -1362,6 +1368,18 @@ export const CriarImovelForm = ({
       estado: formData.estado || 'SP',
       cep: formData.cep || null,
       condominio_id: formData.condominio_id || null,
+      // Posto à mão = exato, e a geocodificação automática nunca o desfaz.
+      // Ausente, o UPDATE mantém o pino gravado.
+      ...(formData.pino_marcado
+        ? {
+            latitude: formData.pino_marcado[0],
+            longitude: formData.pino_marcado[1],
+            geo_origem: 'manual',
+            geo_precisao: 'exata',
+            geo_em: new Date().toISOString(),
+            geo_erro: null,
+          }
+        : {}),
       area_total: parseFloat(formData.area_total) || 0,
       area_util: parseFloat(formData.area_util) || 0,
       metragem_m2: formData.metragem_m2 ? parseFloat(formData.metragem_m2) : null,
@@ -2076,7 +2094,8 @@ export const CriarImovelForm = ({
                     prédio têm pinos próprios: arrastar um não move o outro. */}
                 <div className="space-y-2 md:col-span-3">
                   <Label>Posição no mapa</Label>
-                  {/* Até 02/10 só recebia o id: o pino salvo nunca aparecia aqui. */}
+                  {/* Até 02/10 só recebia o id: o pino salvo nunca aparecia aqui.
+                      Sem id (cadastro novo), o pino marcado vai no save. */}
                   <MiniMapaDoEndereco
                     tipo="imovel"
                     id={initialData?.id ?? null}
@@ -2085,6 +2104,8 @@ export const CriarImovelForm = ({
                     longitude={initialData?.longitude ?? null}
                     precisao={initialData?.geo_precisao ?? null}
                     origem={initialData?.geo_origem ?? null}
+                    cidade={formData.cidade}
+                    aoMarcar={(lat, lng) => setFormData((prev) => ({ ...prev, pino_marcado: [lat, lng] }))}
                   />
                 </div>
                 <div className="space-y-2">

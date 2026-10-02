@@ -20,18 +20,37 @@ export const USER_AGENT = 'OctoDash/1.0 (CRM imobiliario; contato via octoia.org
 /** 1 req/s é o teto do OSM; 1,1 s dá folga para o relógio. */
 export const INTERVALO_MS = 1100;
 
-export function montarUrl(endereco) {
+export function montarUrl(endereco, limite = 1) {
   const q = String(endereco ?? '').trim();
   if (!q) return null;
   const p = new URLSearchParams({
     q,
     format: 'jsonv2',
-    limit: '1',
+    limit: String(limite),
     addressdetails: '0',
     // Sem isto, "Rua Augusta" acha uma Rua Augusta em Portugal.
     countrycodes: 'br',
   });
   return `https://nominatim.openstreetmap.org/search?${p}`;
+}
+
+/**
+ * Um resultado do Nominatim, ou null.
+ *
+ * `aproximado`: o OSM achou a RUA, não a porta. Em Jundiaí quase nenhum prédio
+ * tem número no OSM (medido em 02/10: os 21 imóveis da Lotus "achados" caíram
+ * todos em place_rank 26, rua — o 1220 e o 1400 da mesma rua no mesmo ponto).
+ * Pino de rua marcado como exato é o pino errado em que ninguém desconfia.
+ * place_rank 28+ é número de casa, prédio ou ponto de interesse.
+ */
+function lerItem(item) {
+  if (!item) return null;
+  const lat = Number(item.lat);
+  const lng = Number(item.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  // Caixa do Brasil, com folga. Fora dela a resposta não é deste país.
+  if (lat < -34 || lat > 6 || lng < -74 || lng > -34) return null;
+  return { lat, lng, aproximado: Number(item.place_rank) < 28 };
 }
 
 /**
@@ -43,14 +62,20 @@ export function montarUrl(endereco) {
  * corretor leva o cliente ao lugar errado.
  */
 export function lerResposta(json) {
-  const primeiro = Array.isArray(json) ? json[0] : null;
-  if (!primeiro) return null;
-  const lat = Number(primeiro.lat);
-  const lng = Number(primeiro.lon);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-  // Caixa do Brasil, com folga. Fora dela a resposta não é deste país.
-  if (lat < -34 || lat > 6 || lng < -74 || lng > -34) return null;
-  return { lat, lng };
+  return lerItem(Array.isArray(json) ? json[0] : null);
+}
+
+/** Os candidatos que a busca da rua mostra ao corretor — até `limite`, só do Brasil. */
+export function lerCandidatos(json) {
+  if (!Array.isArray(json)) return [];
+  return json
+    .map((item) => {
+      const c = lerItem(item);
+      // "…, Jundiaí, São Paulo, Região Sudeste, 13215-900, Brasil": a região e o país são ruído.
+      const nome = String(item.display_name ?? '').replace(/, Região [^,]+/, '').replace(/, Brasil$/, '');
+      return c && { ...c, nome: nome.slice(0, 200) };
+    })
+    .filter(Boolean);
 }
 
 /**
@@ -70,4 +95,34 @@ export async function geocodificar(endereco, { fetchImpl = fetch } = {}) {
   }
 }
 
+/**
+ * Busca da rua digitada pelo corretor no mini-mapa: vários candidatos, para ele
+ * escolher a rua certa (há três trechos de "Rua Tiradentes" em Jundiaí) e então
+ * clicar no ponto exato. Nada é gravado aqui.
+ */
+export async function buscarCandidatos(texto, { fetchImpl = fetch, limite = 5 } = {}) {
+  const url = montarUrl(texto, limite);
+  if (!url) return { erro: 'endereco_vazio' };
+  try {
+    const r = await fetchImpl(url, { headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' } });
+    if (!r.ok) return { erro: `nominatim_${r.status}` };
+    return { candidatos: lerCandidatos(await r.json()) };
+  } catch (e) {
+    return { erro: `falha_de_rede: ${String(e?.message ?? e).slice(0, 120)}` };
+  }
+}
+
 export const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
+
+let proximaVez = 0;
+/**
+ * Reserva a próxima vaga de 1,1 s para quem chama — a busca do corretor passa
+ * aqui, então dez corretores buscando ao mesmo tempo viram uma fila só.
+ * ponytail: o "Localizar os que faltam" mantém a pausa própria dele; se os dois
+ * rodarem juntos, o OSM vê até 2 req/s por instantes. Unificar se ele reclamar.
+ */
+export async function esperarAVez(agora = Date.now()) {
+  const minha = Math.max(agora, proximaVez);
+  proximaVez = minha + INTERVALO_MS;
+  if (minha > agora) await dormir(minha - agora);
+}

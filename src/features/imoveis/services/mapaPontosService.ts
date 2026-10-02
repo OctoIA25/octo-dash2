@@ -104,3 +104,28 @@ export async function geocodificarPendentes(
   if (!r.ok || !json?.ok) throw new Error(json?.error ?? `falhou (${r.status})`);
   return json as RelatorioDeGeocodificacao;
 }
+
+export interface CandidatoDeEndereco {
+  lat: number;
+  lng: number;
+  nome: string;
+  /** O OSM achou a rua, não a porta: falta o clique no ponto exato. */
+  aproximado: boolean;
+}
+
+/**
+ * A rua que o corretor procura no mini-mapa. Passa pelo servidor pelo mesmo
+ * motivo da geocodificação: uma fila só para o OpenStreetMap. Não grava nada.
+ */
+export async function buscarEnderecos(tenantId: string | null | undefined, texto: string): Promise<CandidatoDeEndereco[]> {
+  const { data: sessao } = await supabase.auth.getSession();
+  const token = sessao?.session?.access_token;
+  if (!token) throw new Error('sessão expirada');
+
+  const params = new URLSearchParams({ q: texto });
+  if (tenantId && tenantId !== 'owner') params.set('tenantId', tenantId);
+  const r = await fetch(`/api/v1/mapa/buscar?${params}`, { headers: { Authorization: `Bearer ${token}` } });
+  const json = await r.json().catch(() => null);
+  if (!r.ok || !json?.ok) throw new Error(json?.error ?? `falhou (${r.status})`);
+  return json.candidatos as CandidatoDeEndereco[];
+}

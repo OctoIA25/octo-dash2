@@ -28,6 +28,9 @@ export const COLUNAS_IMOVEL_LOCAL = [
   'placa_local', 'tipo_comissao', 'captou_pretensao', 'condicao_comercial', 'codigo_iptu',
   'numero_matricula', 'codigo_eletricidade', 'codigo_agua', 'titulos_direitos',
   'aprovado_ambiental', 'projeto_aprovado', 'obs_documentacao', 'atualizado_por',
+  // O pino do imóvel. Sem estas, o catálogo não sabia onde o imóvel fica e o
+  // formulário de edição abria sem o pino salvo (até 02/10).
+  'latitude', 'longitude', 'geo_origem', 'geo_precisao',
 ].join(', ');
 
 /**

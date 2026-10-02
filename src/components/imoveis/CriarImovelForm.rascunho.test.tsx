@@ -73,6 +73,13 @@ vi.mock('@/features/imoveis/services/rascunhosService', () => ({ excluirRascunho
 vi.mock('./ImovelHistorico', () => ({ ImovelHistorico: () => null }));
 vi.mock('./ProprietarioAutocomplete', () => ({ ProprietarioAutocomplete: () => null }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+// O mini-mapa de verdade (Leaflet) tem teste próprio; aqui importa o que o
+// formulário faz com o pino que o corretor marca antes de o imóvel ter id.
+vi.mock('@/features/imoveis/components/MiniMapaDoEndereco', () => ({
+  MiniMapaDoEndereco: ({ aoMarcar }: { aoMarcar?: (lat: number, lng: number) => void }) => (
+    <button type="button" onClick={() => aoMarcar?.(-23.17461, -46.88737)}>marcar no mapa</button>
+  ),
+}));
 
 const { CriarImovelForm } = await import('./CriarImovelForm');
 
@@ -314,6 +321,25 @@ describe('CriarImovelForm — rascunho', () => {
     expect(screen.queryByText(/Deseja sair mesmo assim/i)).not.toBeInTheDocument();
 
     await act(async () => concluir({ data: [{ updated_at: '2026-09-14T13:10:00Z' }], error: null }));
+  });
+
+  /** Pedido de 02/10: o corretor marca o pino no próprio cadastro, antes de o imóvel existir. */
+  it('pino marcado no mapa vai no save como posto à mão; sem marcar, o pino gravado fica intocado', async () => {
+    await abrir();
+    digitarTitulo('Sem pino');
+    await avancar(5000);
+    expect(updates()[0].payload).not.toHaveProperty('latitude');
+
+    fireEvent.click(screen.getByText('Localização'));
+    fireEvent.click(screen.getByRole('button', { name: 'marcar no mapa' }));
+    await avancar(5000);
+    expect(updates()[1].payload).toMatchObject({
+      latitude: -23.17461,
+      longitude: -46.88737,
+      geo_origem: 'manual',
+      geo_precisao: 'exata',
+      geo_erro: null,
+    });
   });
 
   it('carrega o proprietário pela RPC, sem contar como alteração, e o envia no save', async () => {

@@ -11,6 +11,7 @@
  * - fotos do cadastro local vencem as do XML quando o corretor subiu as suas;
  * - `captador_id`, `updated_at`, destaques e `status_aprovacao` são do cadastro
  *   local — o XML não os tem;
+ * - o pino marcado à mão no cadastro vence o GPS do XML;
  * - imóvel só local entra no fim da lista;
  * - rascunho não é imóvel do catálogo: sai antes do merge (nem sobrepõe o XML).
  */
@@ -58,6 +59,16 @@ export const mergeCatalogoImoveis = (
       destaque: local.destaque,
       super_destaque: local.super_destaque,
       status_aprovacao: local.status_aprovacao,
+      // Pino marcado à mão no cadastro vence o GPS do XML; o achado pelo
+      // endereço (quase sempre só a rua) só entra quando o XML não tem nenhum.
+      ...(local.latitude != null && (local.geo_origem === 'manual' || imovel.latitude == null)
+        ? {
+            latitude: local.latitude,
+            longitude: local.longitude,
+            geo_origem: local.geo_origem,
+            geo_precisao: local.geo_precisao,
+          }
+        : {}),
     };
   });
 

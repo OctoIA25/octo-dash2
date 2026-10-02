@@ -34,6 +34,7 @@ import {
   COR_DO_TIPO, ROTULO_DO_TIPO, contar, filtrarPontos, textoDoContador,
   type PontoDoMapa, type TipoDePonto, type TotaisDoMapa,
 } from '../utils/mapaPontos';
+import { coordenadaDoImovel } from '../utils/coordenadaDoImovel';
 
 // Fix dos ícones default do Leaflet ao usar com bundlers
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -44,14 +45,14 @@ L.Icon.Default.mergeOptions({
 });
 
 // Ícone customizado por tipo (pin grande estilo Google Maps)
-const makeIcon = (color: string) =>
+const makeIcon = (color: string, aproximado = false) =>
   L.divIcon({
     className: 'custom-pin',
     html: `<div style="
       background:${color};
       width:42px;height:42px;border-radius:50% 50% 50% 0;
       transform:rotate(-45deg);
-      border:3px solid white;
+      border:3px ${aproximado ? 'dashed' : 'solid'} white;${aproximado ? 'opacity:.6;' : ''}
       box-shadow:0 4px 10px rgba(0,0,0,0.35);
       display:flex;align-items:center;justify-content:center;
     "><div style="
@@ -63,33 +64,39 @@ const makeIcon = (color: string) =>
     popupAnchor: [0, -42],
   });
 
-const ICON_BY_TIPO: Record<string, L.DivIcon> = {
-  apartamento: makeIcon('#2563eb'), // azul
-  casa: makeIcon('#16a34a'), // verde
-  terreno: makeIcon('#ca8a04'), // amarelo escuro
-  comercial: makeIcon('#9333ea'), // roxo
-  rural: makeIcon('#65a30d'), // verde escuro
-  outro: makeIcon('#64748b'), // cinza
+const COR_POR_TIPO: Record<string, string> = {
+  apartamento: '#2563eb', // azul
+  casa: '#16a34a', // verde
+  terreno: '#ca8a04', // amarelo escuro
+  comercial: '#9333ea', // roxo
+  rural: '#65a30d', // verde escuro
+  outro: '#64748b', // cinza
 };
+const ICON_BY_TIPO = Object.fromEntries(Object.entries(COR_POR_TIPO).map(([t, c]) => [t, makeIcon(c)]));
+// O pino que caiu na rua ou no bairro, e não na porta, não pode parecer certo.
+const ICON_APROXIMADO_BY_TIPO = Object.fromEntries(Object.entries(COR_POR_TIPO).map(([t, c]) => [t, makeIcon(c, true)]));
 
 const formatBRL = (n: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(n);
 
 function ImovelMarker({ imovel, coords }: { imovel: Imovel; coords: GeoCoords }) {
-  const icon = ICON_BY_TIPO[imovel.tipoSimplificado] || ICON_BY_TIPO.outro;
+  const icones = coords.confidence === 'low' ? ICON_APROXIMADO_BY_TIPO : ICON_BY_TIPO;
+  const icon = icones[imovel.tipoSimplificado] || icones.outro;
   const valor =
     imovel.finalidade === 'venda' || imovel.finalidade === 'venda_locacao'
       ? imovel.valor_venda
       : imovel.valor_locacao;
   const finalidadeLabel = imovel.finalidade === 'locacao' ? 'Locação' : 'Venda';
   const sourceLabel =
-    coords.source === 'xml'
+    coords.source === 'manual'
+      ? '📍 Marcado à mão no cadastro'
+      : coords.confidence === 'low'
+      ? '🔍 Aproximado — abra o imóvel e marque o ponto exato'
+      : coords.source === 'xml'
       ? '📍 GPS exato'
-      : coords.source === 'cache'
-      ? '🗂 Cache'
       : coords.source === 'viacep'
       ? '📮 Via CEP'
-      : '🔍 Aproximado';
+      : '🗂 Pelo endereço';
 
   return (
     <Marker position={[coords.lat, coords.lng]} icon={icon}>
@@ -279,36 +286,34 @@ export default function ImoveisMapPage({ imoveis, isLoading }: ImoveisMapPagePro
     });
   }, [imoveis, search, tipoFiltro, finalidadeFiltro]);
 
-  // Pins aparecem progressivamente conforme coordenadas são resolvidas
+  // A coordenada gravada na LINHA do imóvel vence o cache de endereço: se
+  // alguém marcou o pino, é ela que vale. Sem esta precedência, o cache —
+  // que é por endereço, e portanto compartilhado entre imóveis do mesmo
+  // prédio — devolveria o pino para a posição automática na recarga seguinte.
+  const pinoDoBanco = useMemo(() => {
+    const m = new Map<string, GeoCoords>();
+    for (const p of pontos) {
+      if (p.tipo !== 'imovel' || !p.ref || p.latitude == null || p.longitude == null) continue;
+      m.set(p.ref, {
+        lat: p.latitude,
+        lng: p.longitude,
+        source: p.geo_origem === 'manual' ? 'manual' : 'nominatim',
+        confidence: p.geo_precisao === 'aproximada' ? 'low' : 'high',
+      });
+    }
+    return m;
+  }, [pontos]);
+
+  // Pins aparecem progressivamente conforme coordenadas são resolvidas.
+  // A ordem de quem vence está em coordenadaDoImovel.
   const markers = useMemo(() => {
     const out: Array<{ imovel: Imovel; coords: GeoCoords }> = [];
     for (const i of imoveisFiltrados) {
-      const c = coordsByRef.get(i.referencia);
+      const c = coordenadaDoImovel(i, pinoDoBanco.get(i.referencia), coordsByRef.get(i.referencia));
       if (c) out.push({ imovel: i, coords: c });
     }
     return out;
-  }, [imoveisFiltrados, coordsByRef]);
-
-  // A coordenada gravada na LINHA do imóvel vence o cache de endereço: se
-  // alguém arrastou o pino, é ela que vale. Sem esta precedência, o cache —
-  // que é por endereço, e portanto compartilhado entre imóveis do mesmo
-  // prédio — devolveria o pino para a posição automática na recarga seguinte.
-  useEffect(() => {
-    const doBanco = pontos.filter((p) => p.tipo === 'imovel' && p.ref && p.latitude != null);
-    if (doBanco.length === 0) return;
-    setCoordsByRef((prev) => {
-      const next = new Map(prev);
-      for (const p of doBanco) {
-        next.set(p.ref as string, {
-          lat: p.latitude as number,
-          lng: p.longitude as number,
-          source: p.geo_origem === 'manual' ? 'manual' : 'cache',
-          confidence: p.geo_precisao === 'aproximada' ? 'low' : 'high',
-        });
-      }
-      return next;
-    });
-  }, [pontos]);
+  }, [imoveisFiltrados, coordsByRef, pinoDoBanco]);
 
   // Lançamentos e condomínios: pinos próprios, que não passam pela lista de
   // imóveis. Os imóveis continuam vindo por `markers`, já com a precedência
@@ -398,35 +403,16 @@ export default function ImoveisMapPage({ imoveis, isLoading }: ImoveisMapPagePro
     }
   }, [tenantId, totais]);
 
-  // 1) XML — coordenadas válidas aparecem INSTANTANEAMENTE (síncrono)
-  useEffect(() => {
-    setCoordsByRef((prev) => {
-      const next = new Map(prev);
-      let added = 0;
-      for (const i of imoveisFiltrados) {
-        if (next.has(i.referencia)) continue;
-        const lat = i.latitude;
-        const lng = i.longitude;
-        const valid =
-          typeof lat === 'number' && typeof lng === 'number' &&
-          !Number.isNaN(lat) && !Number.isNaN(lng) &&
-          !(lat === 0 && lng === 0) &&
-          lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
-        if (valid) {
-          next.set(i.referencia, { lat: lat!, lng: lng!, source: 'xml', confidence: 'high' });
-          added++;
-        }
-      }
-      if (added === 0) return prev;
-      return next;
-    });
-  }, [imoveisFiltrados]);
-
-  // 2) Background — só geocodifica os SEM lat/lng (ou 0,0), após o BD ser carregado
+  // Background — palpite pelo bairro só para imóvel do XML sem coordenada
+  // nenhuma, após o BD ser carregado. O do cadastro local fica de fora: ver
+  // coordenadaDoImovel. A coordenada própria (XML ou cadastro) já aparece
+  // direto em `markers`, sem passar por aqui.
   useEffect(() => {
     if (!dbLoaded) return; // aguarda o cache do BD antes de geocodificar
     let cancelled = false;
-    const semCoords = imoveisFiltrados.filter((i) => !coordsByRef.has(i.referencia));
+    const semCoords = imoveisFiltrados.filter(
+      (i) => !i.cadastro_local && !coordenadaDoImovel(i, pinoDoBanco.get(i.referencia), coordsByRef.get(i.referencia))
+    );
     if (semCoords.length === 0) {
       setIsGeocoding(false);
       return;
