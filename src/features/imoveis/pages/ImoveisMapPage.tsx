@@ -11,9 +11,9 @@
  * agora existe, em PinosDoMapa.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Loader2 } from 'lucide-react';
@@ -146,6 +146,32 @@ function ImovelMarker({ imovel, coords }: { imovel: Imovel; coords: GeoCoords })
 
 // Centro padrão (São Paulo)
 const DEFAULT_CENTER: [number, number] = [-23.55, -46.633];
+
+/**
+ * O MapContainer só lê `center` ao montar — e monta antes de os pinos chegarem
+ * (o banco e a geocodificação respondem depois). Até 02/10 o mapa abria em São
+ * Paulo, a 40 km dos imóveis de Jundiaí, e parecia vazio. Enquadra a cada lote
+ * de pinos novo, até a pessoa mexer no mapa — daí em diante a vista é dela.
+ */
+function EnquadrarNosPinos({ pinos }: { pinos: [number, number][] }) {
+  const map = useMap();
+  const mexeu = useRef(false);
+  useEffect(() => {
+    const el = map.getContainer();
+    const marcar = () => { mexeu.current = true; };
+    el.addEventListener('pointerdown', marcar);
+    el.addEventListener('wheel', marcar);
+    return () => {
+      el.removeEventListener('pointerdown', marcar);
+      el.removeEventListener('wheel', marcar);
+    };
+  }, [map]);
+  useEffect(() => {
+    if (mexeu.current || pinos.length === 0) return;
+    map.fitBounds(L.latLngBounds(pinos), { padding: [40, 40], maxZoom: 15 });
+  }, [pinos, map]);
+  return null;
+}
 
 // Mapa curado no Google My Maps (regiões/pins desenhados à mão pela imobiliária).
 // O mid vem de tenant_xml_config.my_maps_mid — cada imobiliária tem o seu, e sem
@@ -465,6 +491,16 @@ export default function ImoveisMapPage({ imoveis, isLoading }: ImoveisMapPagePro
     return DEFAULT_CENTER;
   }, [markers]);
 
+  const pinosNaTela = useMemo<[number, number][]>(
+    () => [
+      ...(tiposLigados.has('imovel') ? markers.map((m) => [m.coords.lat, m.coords.lng] as [number, number]) : []),
+      ...pontosVisiveis
+        .filter((p) => p.latitude != null && p.longitude != null)
+        .map((p) => [p.latitude!, p.longitude!] as [number, number]),
+    ],
+    [markers, pontosVisiveis, tiposLigados]
+  );
+
   const totalPendentes = imoveisFiltrados.length - markers.length;
   const mostrandoCurado = modo === 'curado' && Boolean(myMapsMid);
 
@@ -565,6 +601,7 @@ export default function ImoveisMapPage({ imoveis, isLoading }: ImoveisMapPagePro
             {/* Lançamentos e condomínios, agrupados por proximidade. O pino é
                 arrastável aqui também: é onde o gestor VÊ que está errado. */}
             <PinosDoMapa pontos={pontosVisiveis} aoArrastar={arrastarPino} />
+            <EnquadrarNosPinos pinos={pinosNaTela} />
           </MapContainer>
         )}
 

@@ -126,6 +126,11 @@ interface CriarImovelFormProps {
   initialData?: Partial<ImovelFormData> & {
     /** Id da linha em `imoveis_locais` — o mini-mapa grava o pino nele (P2.6). */
     id?: string;
+    /** Só leitura: o pino salvo, que o mini-mapa mostra. */
+    latitude?: number | null;
+    longitude?: number | null;
+    geo_precisao?: 'exata' | 'aproximada' | null;
+    geo_origem?: 'automatica' | 'manual' | null;
     codigo_imovel?: string;
     status_aprovacao?: StatusAprovacaoImovel;
     exclusivo?: Exclusividade;
@@ -2071,7 +2076,16 @@ export const CriarImovelForm = ({
                     prédio têm pinos próprios: arrastar um não move o outro. */}
                 <div className="space-y-2 md:col-span-3">
                   <Label>Posição no mapa</Label>
-                  <MiniMapaDoEndereco tipo="imovel" id={initialData?.id ?? null} tenantId={tenantId} />
+                  {/* Até 02/10 só recebia o id: o pino salvo nunca aparecia aqui. */}
+                  <MiniMapaDoEndereco
+                    tipo="imovel"
+                    id={initialData?.id ?? null}
+                    tenantId={tenantId}
+                    latitude={initialData?.latitude ?? null}
+                    longitude={initialData?.longitude ?? null}
+                    precisao={initialData?.geo_precisao ?? null}
+                    origem={initialData?.geo_origem ?? null}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Número</Label>

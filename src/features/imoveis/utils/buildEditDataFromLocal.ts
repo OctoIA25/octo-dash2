@@ -99,6 +99,10 @@ export const CAMPOS_PERSISTIDOS = [
 export interface ImovelLocalRow {
   /** Opcional: nem toda origem traz o id, e a edição funciona sem ele. */
   id?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  geo_precisao?: 'exata' | 'aproximada' | null;
+  geo_origem?: 'automatica' | 'manual' | null;
   codigo_imovel: string;
   tipo?: string | null;
   finalidade?: string | null;
@@ -175,6 +179,12 @@ export const buildEditDataFromLocal = (local: ImovelLocalRow) => {
     // O id da linha, não do formulário: é por ele que o mini-mapa sabe onde
     // gravar a posição do pino arrastado (P2.6).
     id: local.id,
+    // Só leitura, para o mini-mapa mostrar o pino salvo — o save não grava
+    // posição (quem grava é o próprio mini-mapa, ao arrastar ou colar).
+    latitude: local.latitude ?? null,
+    longitude: local.longitude ?? null,
+    geo_precisao: local.geo_precisao ?? null,
+    geo_origem: local.geo_origem ?? null,
     codigo_imovel: local.codigo_imovel,
     tipo: local.tipo || '',
     // Categoria do tipo, não a coluna `finalidade` do banco. Ver categoriaDoTipo.

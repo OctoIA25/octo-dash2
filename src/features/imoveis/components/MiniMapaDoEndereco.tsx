@@ -18,8 +18,9 @@ import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Loader2, MapPin } from 'lucide-react';
-import { geocodificarPendentes, salvarPino } from '../services/mapaPontosService';
+import { geocodificarPendentes, lerPino, salvarPino } from '../services/mapaPontosService';
 import type { TipoDePonto } from '../utils/mapaPontos';
+import { lerCoordenadas } from '../utils/lerCoordenadas';
 
 /** Jundiaí, onde está a maior parte do cadastro. Só enquadra o mapa vazio. */
 const CENTRO_PADRAO: [number, number] = [-23.1857, -46.8978];
@@ -49,6 +50,7 @@ export function MiniMapaDoEndereco({
   const [manual, setManual] = useState(origem === 'manual');
   const [buscando, setBuscando] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
+  const [colado, setColado] = useState('');
 
   useEffect(() => {
     if (typeof latitude === 'number' && typeof longitude === 'number') setPos([latitude, longitude]);
@@ -80,20 +82,38 @@ export function MiniMapaDoEndereco({
       pinoRef.current = L.marker(pos, { draggable: Boolean(id) }).addTo(mapa);
       pinoRef.current.on('dragend', () => {
         const { lat, lng } = pinoRef.current!.getLatLng();
-        setPos([lat, lng]);
-        setManual(true);
-        setAviso(null);
-        if (id) {
-          salvarPino(tipo, id, lat, lng)
-            .then(() => aoMover?.(lat, lng))
-            .catch((e) => setAviso(`Não deu para gravar: ${(e as Error).message}`));
-        }
+        gravarRef.current(lat, lng);
       });
     } else {
       pinoRef.current.setLatLng(pos);
     }
     mapa.setView(pos, Math.max(mapa.getZoom(), 16));
-  }, [pos, id, tipo, aoMover]);
+  }, [pos, id]);
+
+  // Arrastar e colar coordenada gravam igual: posição posta à mão, exata.
+  const gravar = (lat: number, lng: number) => {
+    setPos([lat, lng]);
+    setManual(true);
+    setAviso(null);
+    if (id) {
+      salvarPino(tipo, id, lat, lng)
+        .then(() => aoMover?.(lat, lng))
+        .catch((e) => setAviso(`Não deu para gravar: ${(e as Error).message}`));
+    }
+  };
+  // O pino é criado uma vez; o ouvinte do arrasto lê a versão atual de `gravar`.
+  const gravarRef = useRef(gravar);
+  gravarRef.current = gravar;
+
+  const usarColado = () => {
+    const c = lerCoordenadas(colado);
+    if (!c) {
+      setAviso('Não entendi a coordenada. Cole como o Google Maps copia: -23.18712, -46.88452');
+      return;
+    }
+    setColado('');
+    gravar(c[0], c[1]);
+  };
 
   const localizar = async () => {
     if (!id || !tenantId) return;
@@ -108,8 +128,10 @@ export function MiniMapaDoEndereco({
             : `Não deu para localizar: ${r.falhas[0]?.erro ?? 'sem endereço para buscar'}`
         );
       } else {
-        // A rota gravou; recarregar a página do formulário não é necessário —
-        // o próximo `latitude`/`longitude` chega pela prop.
+        // A rota gravou, mas não devolve a coordenada: lê da linha. Antes
+        // esperava a prop mudar — e o formulário do imóvel nunca a mudava.
+        const achado = await lerPino(tipo, id);
+        if (achado) setPos(achado);
         setAviso('Encontrado. Confira o pino e arraste se precisar.');
         aoMover?.(0, 0);
       }
@@ -166,6 +188,34 @@ export function MiniMapaDoEndereco({
           </>
         )}
       </div>
+      <div className="flex items-center gap-2">
+        <input
+          value={colado}
+          onChange={(e) => setColado(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              usarColado();
+            }
+          }}
+          placeholder="Coordenadas: cole do Google Maps (-23.18712, -46.88452)"
+          aria-label="Coordenadas"
+          className="h-8 flex-1 rounded-md border bg-background px-2 text-[12px]"
+        />
+        <button
+          type="button"
+          onClick={usarColado}
+          disabled={!colado.trim()}
+          className="rounded-md border px-2 py-1 text-[11px] hover:bg-accent disabled:opacity-50"
+        >
+          Usar
+        </button>
+      </div>
+      {pos && (
+        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+          {pos[0].toFixed(6)}, {pos[1].toFixed(6)}
+        </p>
+      )}
       {aviso && <p className="text-[11px] text-amber-600 dark:text-amber-400">{aviso}</p>}
     </div>
   );

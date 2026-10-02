@@ -60,6 +60,17 @@ export async function salvarPino(
   if (error) throw error;
 }
 
+/** A posição gravada agora — depois de "Localizar", que grava no servidor e não devolve a coordenada. */
+export async function lerPino(tipo: TipoDePonto, id: string): Promise<[number, number] | null> {
+  const tabela = TABELA_DO_TIPO[tipo];
+  if (!tabela) throw new Error('tipo inválido');
+  const { data, error } = await supabase.from(tabela).select('latitude, longitude').eq('id', id).maybeSingle();
+  if (error) throw error;
+  return data && typeof data.latitude === 'number' && typeof data.longitude === 'number'
+    ? [data.latitude, data.longitude]
+    : null;
+}
+
 export interface RelatorioDeGeocodificacao {
   ok: boolean;
   tentados: number;
