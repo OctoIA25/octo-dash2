@@ -33,6 +33,8 @@ import { fetchFichasDuplicadas, type FichaDuplicada } from '../services/leadsSer
 import { CadenciaLiaSection } from './CadenciaLiaSection';
 import { DistribuicaoDoLead } from '@/features/distribuicao/DistribuicaoDoLead';
 import { CadenciaToquesSection } from './CadenciaToquesSection';
+import { OrigemEPrimeiroToque, PRIMEIRO_TOQUE_VAZIO, toqueDaCriacao, type PrimeiroToque } from './OrigemEPrimeiroToque';
+import { registrarToque } from '../services/toquesService';
 import { AtividadesLeadSection } from './AtividadesLeadSection';
 import { useCadenciaLead } from '../hooks/useCadenciaLead';
 import { HistoricoLeadSection } from './HistoricoLeadSection';
@@ -165,6 +167,9 @@ export const CriarLeadQuickModal = ({
   // Documentação (CPF + upload) só a partir da etapa de Propostas.
   const showDocumentacao = isEditMode && reachedPropostaStage(editingLead?.status);
   const [form, setForm] = useState<LeadForm>(EMPTY_FORM);
+  // Só na criação: de onde o lead veio e o primeiro toque (pedido de 01/10).
+  const [origem, setOrigem] = useState('');
+  const [primeiroToque, setPrimeiroToque] = useState<PrimeiroToque>(PRIMEIRO_TOQUE_VAZIO);
   // Seletor de etapa (P1.6). Só em edição, e só quando o pai entrega o funil
   // e o caminho de mudar — um seletor que não muda nada é pior que nenhum.
   const [mudandoEtapa, setMudandoEtapa] = useState(false);
@@ -312,6 +317,8 @@ export const CriarLeadQuickModal = ({
 
   const reset = () => {
     setForm(EMPTY_FORM);
+    setOrigem('');
+    setPrimeiroToque(PRIMEIRO_TOQUE_VAZIO);
     setDestinoId('');
     setError(null);
     setIsSubmitting(false);
@@ -373,6 +380,15 @@ export const CriarLeadQuickModal = ({
     }
     if (!isEditMode && !form.phone.trim()) {
       setError('Telefone é obrigatório');
+      return;
+    }
+    if (!isEditMode && !origem) {
+      setError('Diga de onde veio o lead.');
+      return;
+    }
+    const toque = isEditMode ? null : toqueDaCriacao(primeiroToque);
+    if (typeof toque === 'string') {
+      setError(toque);
       return;
     }
     // Telefone que não dá para discar não entra: vira lead que ninguém atende e,
@@ -560,17 +576,31 @@ export const CriarLeadQuickModal = ({
           email: form.email.trim() || null,
           property_code: form.interest_reference.trim() || null,
           comments: form.message.trim() || null,
-          source: 'Manual',
+          source: origem,
           status: isProprietario ? 'Novos Proprietários' : 'Novos Leads',
           lead_type: leadType,
         };
         if (authUserId) payload.assigned_agent_id = authUserId;
         if (authUserName) payload.assigned_agent_name = authUserName;
 
-        const { error: insertError } = await supabase.from('leads').insert(payload);
+        const { data: novo, error: insertError } = await supabase.from('leads').insert(payload).select('id').single();
         if (insertError) throw new Error(insertError.message || 'Erro ao criar lead');
 
         toast({ title: `✅ ${typeLabel} criado`, description: `${form.name.trim()} foi adicionado.` });
+
+        // O toque vai pelo servidor (lead_toques não aceita o navegador). Se
+        // falhar, o lead fica — e o corretor é avisado para registrar na mão.
+        if (toque && novo?.id) {
+          try {
+            await registrarToque(novo.id, tenantId, toque);
+          } catch (e) {
+            toast({
+              title: 'Lead criado, mas o primeiro contato não foi registrado',
+              description: `${e instanceof Error ? e.message : 'Erro ao registrar.'} Registre na Cadência do lead.`,
+              variant: 'destructive',
+            });
+          }
+        }
       }
 
       leadsEventEmitter.emit();
@@ -886,6 +916,17 @@ export const CriarLeadQuickModal = ({
                 <ReguaDaTemperatura avaliacao={avaliacao ?? null} pesos={pesos} registrada={editingLead?.temperature ?? null} />
               </div>
             </div>
+
+            {!isEditMode && (
+              <OrigemEPrimeiroToque
+                tenantId={tenantId}
+                origem={origem}
+                onOrigem={setOrigem}
+                toque={primeiroToque}
+                onToque={setPrimeiroToque}
+                disabled={!canEdit}
+              />
+            )}
 
             {/* Classificação — SÓ em edição.
                 No INSERT o trigger `tg_*_classificar` sobrescreve `classification`

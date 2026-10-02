@@ -15,9 +15,9 @@ vi.mock('@/lib/supabaseClient', () => {
   const chain = () => {
     const self = {
       update: () => self,
-      insert: async (payload: Record<string, unknown>) => {
+      insert: (payload: Record<string, unknown>) => {
         inserts.push(payload);
-        return { error: null };
+        return { select: () => ({ single: async () => ({ data: { id: 'novo-1' }, error: null }) }) };
       },
       eq: () => self,
       select: async () => ({ data: [{ id: 'lead-1' }], error: null }),
@@ -72,6 +72,7 @@ describe('Permissão de edição no CriarLeadQuickModal', () => {
     render(<CriarLeadQuickModal {...props} permitirEdicao />);
     fireEvent.change(campoNome(), { target: { value: 'Beltrano' } });
     fireEvent.change(screen.getByPlaceholderText('(11) 99999-9999'), { target: { value: '11988887777' } });
+    fireEvent.change(screen.getByLabelText(/De onde veio o lead/), { target: { value: 'Plantão' } });
     fireEvent.click(screen.getByRole('button', { name: /Criar Lead/ }));
     await waitFor(() => expect(inserts).toHaveLength(1));
     expect(inserts[0]).toMatchObject({ tenant_id: 't1', name: 'Beltrano', assigned_agent_id: 'u1' });

@@ -17,9 +17,9 @@ vi.mock('@/lib/supabaseClient', () => {
   const chain = () => {
     const self: Record<string, unknown> = {
       update: () => self,
-      insert: async (payload: Record<string, unknown>) => {
+      insert: (payload: Record<string, unknown>) => {
         inserts.push(payload);
-        return { error: null };
+        return { select: () => ({ single: async () => ({ data: { id: 'novo-1' }, error: null }) }) };
       },
       eq: (coluna: string, valor: unknown) => { filtros.ultimo[coluna] = valor; return self; },
       neq: () => self,
@@ -62,6 +62,7 @@ const preencher = (nome: string, telefone: string, email = '') => {
   fireEvent.change(campoNome(), { target: { value: nome } });
   fireEvent.change(campoTelefone(), { target: { value: telefone } });
   if (email) fireEvent.change(campoEmail(), { target: { value: email } });
+  fireEvent.change(screen.getByLabelText(/De onde veio o lead/), { target: { value: 'Plantão' } });
 };
 
 beforeEach(() => {

@@ -34,7 +34,7 @@ vi.mock('@/lib/supabaseClient', () => {
       },
       insert(payload: Record<string, unknown>) {
         inserts.push({ tabela, payload });
-        return { error: null };
+        return { select: () => ({ single: async () => ({ data: { id: 'novo-1' }, error: null }) }) };
       },
       eq: () => self,
       select: async () => ({ data: [{ id: 'lead-1' }], error: null }),
@@ -160,6 +160,7 @@ describe('o bolsão deixa de ser decidido lead a lead', () => {
     render(<CriarLeadQuickModal {...props} />);
     fireEvent.change(screen.getByPlaceholderText('Nome do cliente'), { target: { value: 'Novo Fulano' } });
     fireEvent.change(screen.getByPlaceholderText('(11) 99999-9999'), { target: { value: '11999999999' } });
+    fireEvent.change(screen.getByLabelText(/De onde veio o lead/), { target: { value: 'Plantão' } });
     salvar();
 
     await waitFor(() => expect(inserts.find((i) => i.tabela === 'leads')).toBeDefined());
