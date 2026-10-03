@@ -1,5 +1,5 @@
 /**
- * Financeiro › Projeção 90 dias — a "Planilha Rolling 90d" do chefe (03/10/2026).
+ * Financeiro › Projeção — a "Planilha Rolling 90d" do chefe (03/10/2026).
  *
  * Nada aqui é digitado de novo: as parcelas vêm das vendas, as contas fixas são
  * as recorrentes já lançadas, os repasses vêm da folha. A tela agrupa pelas

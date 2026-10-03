@@ -11,7 +11,7 @@ export const ABAS_DO_FINANCEIRO: ReadonlyArray<{ id: AbaDoFinanceiro; rotulo: st
   { id: 'receber', rotulo: 'A receber' },
   { id: 'pagar', rotulo: 'A pagar' },
   { id: 'fluxo', rotulo: 'Fluxo de caixa' },
-  { id: 'projecao', rotulo: 'Projeção 90 dias' },
+  { id: 'projecao', rotulo: 'Projeção' },
   { id: 'dre', rotulo: 'DRE gerencial' },
   { id: 'conciliacao', rotulo: 'Conciliação' },
   { id: 'notas', rotulo: 'Notas a emitir' },
