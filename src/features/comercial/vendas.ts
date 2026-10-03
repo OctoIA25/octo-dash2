@@ -27,6 +27,10 @@ import {
 // comissão o centavo é a unidade de trabalho, e ter dois formatadores de real
 // na mesma Dash é o começo de dois números diferentes para o mesmo valor.
 export { reaisExatos } from '@/features/relatorios/marketing/campanhas';
+import { ROTULO_DA_SITUACAO, type SituacaoDaPlanilha } from './vendasPlanilhaService';
+
+/** pendente / parcelado / pago — o vocabulário da aba Planilha, calculado aqui pelas parcelas. */
+export type SituacaoDaVenda = SituacaoDaPlanilha;
 
 export type StatusDaVenda = 'a_faturar' | 'faturado' | 'recebido' | 'divergente';
 
@@ -69,6 +73,11 @@ export interface VendaNaLista {
   status: StatusDaVenda;
   repasses: number;
   repasses_pagos: number;
+  /** Nome do cliente — preenchido na venda criada à mão ou vinda da planilha. */
+  cliente: string;
+  parcelas: number;
+  parcelas_pagas: number;
+  situacao: SituacaoDaVenda;
 }
 
 export interface TotaisDaConferencia {
@@ -353,4 +362,24 @@ export function resumoDaReleitura(r: ReleituraDaPlanilha): {
     titulo: 'Planilha relida',
     descricao: `${nova} nova(s), ${alterada} alterada(s), ${sumiu} sumiram da planilha.`,
   };
+}
+
+/** "Parcelado (2 de 5)": a contagem só quando ela diz algo. */
+export function rotuloDaSituacao(v: { situacao: SituacaoDaVenda; parcelas: number; parcelas_pagas: number }): string {
+  const base = ROTULO_DA_SITUACAO[v.situacao];
+  return v.situacao === 'parcelado' ? `${base} (${v.parcelas_pagas} de ${v.parcelas})` : base;
+}
+
+/**
+ * O parcelamento fecha com a comissão? O banco recusa do mesmo jeito; a tela
+ * confere antes para dizer quanto falta enquanto a pessoa digita.
+ */
+export function conferirParcelas(
+  novas: Array<{ valor: number | null }>,
+  jaBaixado: number,
+  bruta: number,
+): { soma: number; falta: number; fecha: boolean } {
+  const soma = Math.round((novas.reduce((s, p) => s + (p.valor ?? 0), 0) + jaBaixado) * 100) / 100;
+  const falta = Math.round((bruta - soma) * 100) / 100;
+  return { soma, falta, fecha: Math.abs(falta) <= 0.01 && novas.every((p) => (p.valor ?? 0) > 0) };
 }

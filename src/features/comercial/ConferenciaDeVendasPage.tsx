@@ -15,24 +15,26 @@ import { useMemo, useState } from 'react';
 import { hojeSP, primeiroDoAnoSP } from '@/lib/dataSP';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  AlertTriangle, Calculator, Check, DownloadCloud, FileText, Info, Loader2, RefreshCw, X,
+  AlertTriangle, Calculator, Check, DownloadCloud, FileText, Info, Loader2, Plus, RefreshCw, X,
 } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { useEscapeFecha } from '@/hooks/useEscapeFecha';
 import { useToast } from '@/hooks/use-toast';
 import {
   COR_DO_STATUS, ROTULO_DO_STATUS, avisoDaComissaoDaProposta, divergencia,
-  reaisExatos, repassesDaVenda, resumoDaReleitura, rotuloDoNivel, totaisConferem,
-  type StatusDaVenda, type VendaNaLista,
+  reaisExatos, repassesDaVenda, resumoDaReleitura, rotuloDaSituacao, rotuloDoNivel, totaisConferem,
+  type VendaNaLista,
 } from './vendas';
 import { ConferenciaDaPlanilha } from './ConferenciaDaPlanilha';
+import { NovaVendaModal } from './NovaVendaModal';
+import { ParcelasDaVenda } from './ParcelasDaVenda';
 import {
-  ROTULO_DA_SITUACAO, carregarPlanilha, type SituacaoDaPlanilha,
+  COR_DA_SITUACAO, ROTULO_DA_SITUACAO, carregarPlanilha, type SituacaoDaPlanilha,
 } from './vendasPlanilhaService';
 import {
   carregarConferencia, carregarConstrutoras, carregarDetalhe, carregarEmpreendimentos,
   carregarEquipe, carregarEquipes, gravarRepasses, importarAssinadas, linkDaNotaFiscal,
-  marcarRepassePago, salvarConferencia, subirNotaFiscal,
+  marcarRepassePago, gravarNotaFiscal, subirNotaFiscal,
 } from './vendasService';
 import { sincronizarVendasComerciais } from '@/features/metricas/services/commercialSalesService';
 
@@ -76,6 +78,7 @@ export function ConferenciaDeVendasPage() {
    */
   const [fonte, setFonte] = useState<'planilha' | 'crm'>('planilha');
   const [aberta, setAberta] = useState<VendaNaLista | null>(null);
+  const [novaVenda, setNovaVenda] = useState(false);
 
   const trocarFonte = (f: 'planilha' | 'crm') => {
     setFonte(f);
@@ -90,7 +93,7 @@ export function ConferenciaDeVendasPage() {
   const lancamentoFiltro = soLancamento ? lancamentoId : '';
 
   const filtros = {
-    de, ate, status, corretorId: corretor, equipeId, tipo,
+    de, ate, situacao: status, corretorId: corretor, equipeId, tipo,
     construtoraId: construtoraFiltro, lancamentoId: lancamentoFiltro,
   };
 
@@ -208,9 +211,10 @@ export function ConferenciaDeVendasPage() {
   const empreendimentosDaConstrutora = (empreendimentos.data ?? [])
     .filter((e) => !construtoraId || e.construtora_id === construtoraId);
 
-  const statusDaAba: Array<[string, string]> = fonte === 'planilha'
-    ? (Object.keys(ROTULO_DA_SITUACAO) as SituacaoDaPlanilha[]).map((s) => [s, ROTULO_DA_SITUACAO[s]])
-    : (Object.keys(ROTULO_DO_STATUS) as StatusDaVenda[]).map((s) => [s, ROTULO_DO_STATUS[s]]);
+  // As duas abas filtram pelo mesmo vocabulário: pago / parcelado / pendente.
+  // No CRM ele sai das parcelas; na Planilha, da venda ligada ou da própria planilha.
+  const statusDaAba: Array<[string, string]> =
+    (Object.keys(ROTULO_DA_SITUACAO) as SituacaoDaPlanilha[]).map((s) => [s, ROTULO_DA_SITUACAO[s]]);
 
   if (!tenantId || tenantId === 'owner') {
     return <p className="p-6 text-sm text-muted-foreground">Escolha uma imobiliária para conferir as vendas.</p>;
@@ -260,6 +264,12 @@ export function ConferenciaDeVendasPage() {
             >
               {importar.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <DownloadCloud className="h-3.5 w-3.5" />}
               Trazer assinadas do CRM
+            </button>
+          )}
+          {fonte === 'crm' && (
+            <button onClick={() => setNovaVenda(true)}
+              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground">
+              <Plus className="h-3.5 w-3.5" /> Nova venda
             </button>
           )}
         </div>
@@ -385,13 +395,14 @@ export function ConferenciaDeVendasPage() {
                   <th className="px-3 py-2 text-right">Bruta</th>
                   <th className="px-3 py-2 text-right">Líquida</th>
                   <th className="px-3 py-2 text-right">Recebido</th>
+                  <th className="px-3 py-2">Situação</th>
                   <th className="px-3 py-2">Status</th>
                   <th className="px-3 py-2">Repasses</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
                 {linhas.length === 0 && (
-                  <tr><td colSpan={11} className="px-3 py-6 text-center text-muted-foreground">
+                  <tr><td colSpan={12} className="px-3 py-6 text-center text-muted-foreground">
                     Nenhuma venda no período. A venda aparece aqui quando a proposta entra em “Proposta Assinada”.
                   </td></tr>
                 )}
@@ -426,6 +437,11 @@ export function ConferenciaDeVendasPage() {
                       <td className={`px-3 py-2 text-right tabular-nums whitespace-nowrap ${d ? 'text-rose-700 dark:text-rose-300' : ''}`}>
                         {v.valor_recebido == null ? '—' : reaisExatos(v.valor_recebido)}
                       </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${COR_DA_SITUACAO[v.situacao]}`}>
+                          {rotuloDaSituacao(v)}
+                        </span>
+                      </td>
                       <td className="px-3 py-2">
                         <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${COR_DO_STATUS[v.status]}`}>
                           {ROTULO_DO_STATUS[v.status]}
@@ -454,7 +470,7 @@ export function ConferenciaDeVendasPage() {
               <Total rotulo="Comissão líquida" valor={reaisExatos(totais!.comissao_liquida)} forte />
               <Total rotulo="Recebido" valor={reaisExatos(totais!.recebido)} />
               <Total rotulo="A receber" valor={reaisExatos(totais!.a_receber)}
-                nota="só as vendas sem data de recebimento" />
+                nota="o que falta entrar, parcela a parcela" />
             </div>
           )}
         </>
@@ -462,11 +478,28 @@ export function ConferenciaDeVendasPage() {
 
       {aberta && (
         <GavetaDaVenda
-          venda={aberta}
+          venda={linhas.find((l) => l.id === aberta.id) ?? aberta}
           tenantId={tenantId}
           equipe={equipe.data ?? []}
           onFechar={() => setAberta(null)}
-          onMudou={() => qc.invalidateQueries({ queryKey: ['conferencia-vendas'] })}
+          onMudou={() => {
+            qc.invalidateQueries({ queryKey: ['conferencia-vendas'] });
+            qc.invalidateQueries({ queryKey: ['fin-projecao'] });
+          }}
+        />
+      )}
+
+      {novaVenda && (
+        <NovaVendaModal
+          tenantId={tenantId}
+          equipe={equipe.data ?? []}
+          empreendimentos={empreendimentos.data ?? []}
+          onFechar={() => setNovaVenda(false)}
+          onCriou={() => {
+            setNovaVenda(false);
+            qc.invalidateQueries({ queryKey: ['conferencia-vendas'] });
+            qc.invalidateQueries({ queryKey: ['fin-projecao'] });
+          }}
         />
       )}
     </div>
@@ -524,27 +557,14 @@ function GavetaDaVenda({
   const [nfNumero, setNfNumero] = useState(venda.nf_numero ?? '');
   const [nfData, setNfData] = useState(venda.nf_data ?? '');
   const [nfArquivo, setNfArquivo] = useState<string | null>(null);
-  const [previstoEm, setPrevistoEm] = useState(venda.recebimento_previsto_em ?? '');
-  const [recebidoEm, setRecebidoEm] = useState(venda.recebido_em ?? '');
-  const [valorRecebido, setValorRecebido] = useState(
-    venda.valor_recebido == null ? '' : String(venda.valor_recebido)
-  );
   const [subindo, setSubindo] = useState(false);
 
   const arquivoAtual = (detalhe.data?.venda?.nf_arquivo as string | null) ?? nfArquivo;
 
   const salvar = useMutation({
-    mutationFn: () => salvarConferencia(venda.id, {
-      nfNumero,
-      nfData: nfData || null,
-      nfArquivo: arquivoAtual,
-      previstoEm: previstoEm || null,
-      recebidoEm: recebidoEm || null,
-      valorRecebido: valorRecebido === '' ? null : Number(valorRecebido.replace(',', '.')),
-      observacao: '',
-    }),
+    mutationFn: () => gravarNotaFiscal(venda.id, { numero: nfNumero, data: nfData || null, arquivo: arquivoAtual }),
     onSuccess: () => {
-      toast({ title: 'Conferência salva' });
+      toast({ title: 'Nota fiscal salva' });
       qc.invalidateQueries({ queryKey: ['venda-detalhe', venda.id] });
       onMudou();
     },
@@ -579,12 +599,7 @@ function GavetaDaVenda({
     try {
       const caminho = await subirNotaFiscal(tenantId, venda.id, arquivo);
       setNfArquivo(caminho);
-      await salvarConferencia(venda.id, {
-        nfNumero, nfData: nfData || null, nfArquivo: caminho,
-        previstoEm: previstoEm || null, recebidoEm: recebidoEm || null,
-        valorRecebido: valorRecebido === '' ? null : Number(valorRecebido.replace(',', '.')),
-        observacao: '',
-      });
+      await gravarNotaFiscal(venda.id, { numero: nfNumero, data: nfData || null, arquivo: caminho });
       toast({ title: 'Nota fiscal anexada' });
       qc.invalidateQueries({ queryKey: ['venda-detalhe', venda.id] });
       onMudou();
@@ -602,7 +617,7 @@ function GavetaDaVenda({
     else toast({ title: 'Não deu para abrir a nota', variant: 'destructive' });
   };
 
-  const d = divergencia({ ...venda, valor_recebido: valorRecebido === '' ? null : Number(valorRecebido.replace(',', '.')) });
+  const d = divergencia(venda);
   const avisoProposta = avisoDaComissaoDaProposta(venda);
   const repasses = detalhe.data?.repasses ?? [];
   const previa = repasses.length === 0 ? repassesDaVenda(venda, equipe) : null;
@@ -684,32 +699,22 @@ function GavetaDaVenda({
               <button onClick={abrirNota} className="text-xs underline underline-offset-2">Ver a nota anexada</button>
             )}
           </div>
-        </section>
-
-        <section className="mb-5 rounded-lg border">
-          <h3 className="border-b bg-muted/40 px-3 py-2 text-sm font-semibold">Recebimento</h3>
-          <div className="grid gap-2 p-3 sm:grid-cols-3">
-            <Campo rotulo="Previsto para">
-              <input type="date" value={previstoEm} onChange={(e) => setPrevistoEm(e.target.value)} className={inputCls} />
-            </Campo>
-            <Campo rotulo="Recebido em">
-              <input type="date" value={recebidoEm} onChange={(e) => setRecebidoEm(e.target.value)} className={inputCls} />
-            </Campo>
-            <Campo rotulo="Valor recebido">
-              {/* A BRUTA, e não a líquida: é ela que a construtora deposita.
-                  O repasse sai depois, da casa para o corretor. */}
-              <input inputMode="decimal" value={valorRecebido} placeholder={String(venda.comissao_bruta)}
-                onChange={(e) => setValorRecebido(e.target.value)} className={inputCls} />
-            </Campo>
-          </div>
           <div className="flex justify-end border-t px-3 py-2">
             <button onClick={() => salvar.mutate()} disabled={salvar.isPending}
               className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground disabled:opacity-50">
               {salvar.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              Salvar conferência
+              Salvar nota
             </button>
           </div>
         </section>
+
+        <ParcelasDaVenda
+          vendaId={venda.id}
+          comissaoBruta={venda.comissao_bruta}
+          parcelas={detalhe.data?.parcelas ?? []}
+          carregando={detalhe.isLoading}
+          onMudou={() => { qc.invalidateQueries({ queryKey: ['venda-detalhe', venda.id] }); onMudou(); }}
+        />
 
         <section className="mb-5 rounded-lg border">
           <div className="flex items-center justify-between border-b bg-muted/40 px-3 py-2">

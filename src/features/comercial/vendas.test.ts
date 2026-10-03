@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   avisoDaComissaoDaProposta, divergencia, entradaDoMotor, repassesDaVenda,
-  resumoDaReleitura, rotuloDoNivel, totaisConferem,
+  conferirParcelas, resumoDaReleitura, rotuloDaSituacao, rotuloDoNivel, totaisConferem,
   type PessoaDoRepasse, type TotaisDaConferencia, type VendaNaLista,
 } from './vendas';
 
@@ -14,6 +14,7 @@ const venda = (over: Partial<VendaNaLista> = {}): VendaNaLista => ({
   comissao_da_proposta: null, nf_numero: null, nf_data: null,
   recebimento_previsto_em: null, recebido_em: null, valor_recebido: null,
   diferenca: 0, status: 'a_faturar', repasses: 0, repasses_pagos: 0,
+  cliente: '', parcelas: 1, parcelas_pagas: 0, situacao: 'pendente',
   ...over,
 });
 
@@ -202,5 +203,27 @@ describe('nível que a planilha escreve', () => {
     expect(rotuloDoNivelDaPlanilha('senior')).toBe('Sênior (50%)');
     expect(rotuloDoNivelDaPlanilha('PL')).toBe('PL');
     expect(rotuloDoNivelDaPlanilha(null)).toBe('—');
+  });
+});
+
+describe('situação da venda', () => {
+  it('parcelado diz quantas entraram; o resto, só o nome', () => {
+    expect(rotuloDaSituacao({ situacao: 'parcelado', parcelas: 5, parcelas_pagas: 2 })).toBe('Parcelado (2 de 5)');
+    expect(rotuloDaSituacao({ situacao: 'pago', parcelas: 1, parcelas_pagas: 1 })).toBe('Pago');
+    expect(rotuloDaSituacao({ situacao: 'pendente', parcelas: 3, parcelas_pagas: 0 })).toBe('Pendente');
+  });
+});
+
+describe('conferirParcelas — fecha com a comissão antes de mandar ao banco', () => {
+  it('novas + já recebidas = comissão fecha', () => {
+    expect(conferirParcelas([{ valor: 3000 }, { valor: 3000 }], 4000, 10000)).toEqual({ soma: 10000, falta: 0, fecha: true });
+  });
+  it('diz quanto falta, e quanto passou', () => {
+    expect(conferirParcelas([{ valor: 3000 }], 4000, 10000).falta).toBe(3000);
+    expect(conferirParcelas([{ valor: 7000 }], 4000, 10000).falta).toBe(-1000);
+  });
+  it('parcela vazia ou zero não fecha, mesmo com a soma certa', () => {
+    expect(conferirParcelas([{ valor: 6000 }, { valor: null }], 4000, 10000).fecha).toBe(false);
+    expect(conferirParcelas([{ valor: 6000 }, { valor: 0 }], 4000, 10000).fecha).toBe(false);
   });
 });

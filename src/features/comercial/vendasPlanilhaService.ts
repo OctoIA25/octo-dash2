@@ -66,6 +66,13 @@ export const ROTULO_DA_SITUACAO: Record<SituacaoDaPlanilha, string> = {
   pendente: 'Pendente',
 };
 
+/** A cor do selo, a mesma nas duas abas da Conferência. */
+export const COR_DA_SITUACAO: Record<SituacaoDaPlanilha, string> = {
+  pago: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
+  parcelado: 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300',
+  pendente: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
+};
+
 export interface ConferenciaDaPlanilha {
   linhas: VendaDaPlanilha[];
   total_linhas: number;

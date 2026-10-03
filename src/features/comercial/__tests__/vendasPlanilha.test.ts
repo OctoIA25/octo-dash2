@@ -59,8 +59,15 @@ describe('a chamada usa os nomes da função do banco', () => {
     expect(rpc).toHaveBeenCalledWith('vendas_conferencia', {
       p_tenant_id: 't1', p_de: '2026-09-01', p_ate: '2026-09-30', p_status: null,
       p_construtora_id: null, p_corretor_id: null,
-      p_equipe_id: 'e1', p_tipo: 'terceiros', p_lancamento_id: 'l1',
+      p_equipe_id: 'e1', p_tipo: 'terceiros', p_lancamento_id: 'l1', p_situacao: null,
     });
+  });
+
+  // 03/10: o CRM filtra pela mesma situação da aba Planilha (pago/parcelado/pendente).
+  it('CRM: a situação vai como p_situacao', async () => {
+    rpc.mockResolvedValue({ data: null, error: null });
+    await carregarConferencia('t1', { de: '2026-09-01', ate: '2026-09-30', situacao: 'parcelado' });
+    expect((rpc.mock.calls.at(-1)?.[1] as Record<string, unknown>).p_situacao).toBe('parcelado');
   });
 
   /*

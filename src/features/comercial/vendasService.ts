@@ -15,6 +15,7 @@ export interface FiltrosDaConferencia {
   de: string;
   ate: string;
   status?: string;
+  situacao?: string;
   construtoraId?: string | null;
   corretorId?: string | null;
   equipeId?: string | null;
@@ -38,6 +39,7 @@ export async function carregarConferencia(
     p_equipe_id: f.equipeId || null,
     p_tipo: f.tipo || null,
     p_lancamento_id: f.lancamentoId || null,
+    p_situacao: f.situacao || null,
   });
   if (error) throw error;
   return (data as Conferencia) ?? null;
@@ -54,6 +56,17 @@ export interface RepasseNaTela {
   pago_em: string | null;
 }
 
+/** Uma parcela da venda — é a mesma linha do "a receber" do Financeiro. */
+export interface ParcelaDaVenda {
+  id: string;
+  parcela: number;
+  valor: number;
+  vencimento: string | null;
+  pago_em: string | null;
+  valor_pago: number | null;
+  status: 'aberto' | 'baixado' | 'cancelado';
+}
+
 export interface PassoDoHistorico {
   campo: string;
   de: string | null;
@@ -66,6 +79,7 @@ export interface PassoDoHistorico {
 export interface DetalheDaVenda {
   venda: Record<string, unknown>;
   construtora: string | null;
+  parcelas: ParcelaDaVenda[];
   repasses: RepasseNaTela[];
   historico: PassoDoHistorico[];
 }
@@ -76,36 +90,64 @@ export async function carregarDetalhe(vendaId: string): Promise<DetalheDaVenda |
   return (data as DetalheDaVenda) ?? null;
 }
 
-export interface ConferenciaDaVenda {
-  nfNumero: string;
-  nfData: string | null;
-  nfArquivo: string | null;
-  previstoEm: string | null;
-  recebidoEm: string | null;
-  valorRecebido: number | null;
-  observacao: string;
-}
-
 /**
- * Manda o formulário INTEIRO. A função do banco não tem parâmetro opcional de
- * propósito — com patch não há como distinguir "não mexi" de "apaguei", e o
- * número da NF voltaria sozinho na primeira vez que alguém o limpasse.
+ * A nota fiscal, sozinha. O recebimento NÃO vai junto: com parcelas, salvar a
+ * nota mandando o recebimento lido antes da última baixa desfaria a baixa.
  */
-export async function salvarConferencia(vendaId: string, v: ConferenciaDaVenda) {
-  const { data, error } = await supabase.rpc('venda_atualizar', {
+export async function gravarNotaFiscal(
+  vendaId: string,
+  nf: { numero: string; data: string | null; arquivo: string | null },
+) {
+  const { data, error } = await supabase.rpc('venda_gravar_nf', {
     p_venda_id: vendaId,
-    p_nf_numero: v.nfNumero ?? '',
-    p_nf_data: v.nfData || null,
-    p_nf_arquivo: v.nfArquivo || null,
-    p_previsto_em: v.previstoEm || null,
-    p_recebido_em: v.recebidoEm || null,
-    p_valor_recebido: v.valorRecebido ?? null,
-    p_observacao: v.observacao ?? '',
+    p_nf_numero: nf.numero ?? '',
+    p_nf_data: nf.data || null,
+    p_nf_arquivo: nf.arquivo || null,
+    p_observacao: '',
   });
   if (error) throw error;
-  // A função devolve NULL quando recusa (não é admin). Sem este aviso a tela
-  // mostraria "salvo" para quem não salvou nada.
   if (data == null) throw new Error('Você não tem permissão para editar esta venda.');
+  return data;
+}
+
+/** Troca as parcelas EM ABERTO; as já recebidas ficam. A soma tem de fechar com a comissão. */
+export async function parcelarVenda(vendaId: string, parcelas: Array<{ valor: number; vencimento: string | null }>) {
+  const { data, error } = await supabase.rpc('venda_parcelar', { p_venda_id: vendaId, p_parcelas: parcelas });
+  if (error) throw error;
+  if (data == null) throw new Error('Você não tem permissão para parcelar esta venda.');
+  return data as ParcelaDaVenda[];
+}
+
+export interface NovaVenda {
+  dataVenda: string;
+  /** Texto livre — só quando não é um empreendimento do cadastro (terceiros). */
+  empreendimento: string;
+  lancamentoId: string | null;
+  corretorId: string | null;
+  corretorNome: string;
+  cliente: string;
+  vgv: number;
+  /** A comissão NEGOCIADA, em reais. O % sai dela. */
+  comissao: number;
+  /** Previsão de recebimento (à vista). Sem ela, a venda fica "sem data" na projeção. */
+  previstoEm: string | null;
+}
+
+export async function criarVenda(tenantId: string, v: NovaVenda) {
+  const { data, error } = await supabase.rpc('venda_criar', {
+    p_tenant_id: tenantId,
+    p_data_venda: v.dataVenda,
+    p_empreendimento: v.empreendimento,
+    p_lancamento_id: v.lancamentoId,
+    p_corretor_id: v.corretorId,
+    p_corretor_nome: v.corretorNome,
+    p_cliente: v.cliente,
+    p_vgv: v.vgv,
+    p_comissao: v.comissao,
+    p_parcelas: v.previstoEm ? [{ valor: v.comissao, vencimento: v.previstoEm }] : null,
+  });
+  if (error) throw error;
+  if (data == null) throw new Error('Você não tem permissão para criar venda nesta imobiliária.');
   return data;
 }
 

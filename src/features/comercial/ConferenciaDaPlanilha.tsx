@@ -35,7 +35,7 @@ import { useAuthContext } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { reaisExatos } from './vendas';
 import {
-  ROTULO_DA_SITUACAO, carregarPlanilha, gravarCodigoDaVenda,
+  COR_DA_SITUACAO, ROTULO_DA_SITUACAO, carregarPlanilha, gravarCodigoDaVenda,
   type ConferenciaDaPlanilha as DadosDaPlanilha, type SituacaoDaPlanilha, type VendaDaPlanilha,
 } from './vendasPlanilhaService';
 import { ondeEstaoAsVendas } from './ondeEstaoAsVendas';
@@ -46,12 +46,6 @@ const dataBR = (d: string | null | undefined) =>
 /** Dinheiro. Zero É um valor e aparece; ausente vira travessão. */
 const dinheiro = (n: number | null | undefined) =>
   n == null ? '—' : reaisExatos(Number(n));
-
-const COR_DA_SITUACAO: Record<SituacaoDaPlanilha, string> = {
-  pago: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
-  parcelado: 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300',
-  pendente: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
-};
 
 interface Props {
   dados: DadosDaPlanilha | null | undefined;
