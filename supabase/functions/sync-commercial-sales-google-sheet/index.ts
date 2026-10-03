@@ -1,9 +1,13 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
+import { parseDate } from "./datas.ts";
+import { decidirAcesso } from "./acesso.ts";
 
 // Planilha OPERACIONAL da equipe (a cópia antiga 1kxCtpZ04tDig_x7m_4QOIqDNWv-AIbLA
 // parou de ser atualizada e ficou para trás em ago/2026).
-const DEFAULT_SPREADSHEET_ID = "1y_M-keBtpSnAp1syrfj_FzwUj5Q-hUEL";
+// 03/10: o arquivo antigo (1y_M-keBtpSnAp1syrfj_FzwUj5Q-hUEL) dá 410 desde 01/09; este é o que o
+// usuário mandou. A aba (gid 292051209) é a mesma.
+const DEFAULT_SPREADSHEET_ID = "143f1eXpufQPxwhTEv_GpDrGioU8jGM54";
 const DEFAULT_SHEET_GID = "292051209";
 
 const corsHeaders = {
@@ -183,28 +187,6 @@ function parseNumber(value: string | null | undefined): number {
 
   const parsed = Number(cleaned);
   return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function parseDate(value: string | null | undefined, fallbackYear: number): string | null {
-  const raw = String(value ?? "").trim();
-  if (!raw) return null;
-
-  const brDate = raw.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/);
-  if (brDate) {
-    const day = Number(brDate[1]);
-    const month = Number(brDate[2]);
-    let year = brDate[3] ? Number(brDate[3]) : fallbackYear;
-    if (year < 100) year += 2000;
-
-    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
-      return `${year.toString().padStart(4, "0")}-${month.toString().padStart(2, "0")}-${day.toString().padStart(2, "0")}`;
-    }
-  }
-
-  const isoDate = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (isoDate) return `${isoDate[1]}-${isoDate[2]}-${isoDate[3]}`;
-
-  return null;
 }
 
 function findHeaderRow(rows: string[][]): number {
@@ -490,6 +472,32 @@ Deno.serve(async (req: Request) => {
     if (!tenantId) {
       return jsonResponse({ ok: false, error: "tenantId é obrigatório" }, 400);
     }
+
+    // Quem chama (03/10): o servidor, ou uma pessoa logada que vê o Financeiro
+    // desta imobiliária — e só a planilha configurada. Ver acesso.ts.
+    const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
+    const ehServidor = token !== "" && token === supabaseServiceKey;
+    let usuarioLogado = false;
+    let podeVerFinanceiro = false;
+    if (!ehServidor && token) {
+      const comoUsuario = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
+        global: { headers: { Authorization: `Bearer ${token}` } },
+        auth: { autoRefreshToken: false, persistSession: false },
+      });
+      const { data: quem } = await comoUsuario.auth.getUser(token);
+      usuarioLogado = Boolean(quem?.user);
+      if (usuarioLogado) {
+        const { data: pode } = await comoUsuario.rpc("financeiro_pode_ver", { p_tenant_id: tenantId });
+        podeVerFinanceiro = pode === true;
+      }
+    }
+    const acesso = decidirAcesso({
+      ehServidor,
+      usuarioLogado,
+      podeVerFinanceiro,
+      pediuOutraOrigem: Boolean(body.sourceUrl || body.spreadsheetId || body.sheetGid),
+    });
+    if (!acesso.ok) return jsonResponse({ ok: false, error: acesso.error }, acesso.status);
 
     const { data: tenant, error: tenantError } = await supabase
       .from("tenants")

@@ -321,4 +321,25 @@ BEGIN
   RAISE NOTICE 'OK 16 · releitura: a venda a prazo só fica recebida quando todas as parcelas entram';
 END $$;
 
+-- 17. Releitura de venda a prazo JÁ quitada: a data vai para a da última parcela ----------
+-- O caso Angelo Finati na releitura: a linha principal chega primeiro (nasce
+-- recebida na data da 1ª parcela) e as parcelas, todas com data, depois.
+DO $$
+DECLARE v_cab uuid;
+BEGIN
+  v_cab := pg_temp.linha(100, '2026-01-31', 0, 66250, '2026-02-09', 'Cliente Quitou Relendo');
+  PERFORM pg_temp.checa((pg_temp.v_da(v_cab)).recebido_em IS NOT DISTINCT FROM '2026-02-09'::date, 'sozinha, nasce na data da principal');
+  INSERT INTO commercial_sales (tenant_id, empreendimento, valor_vgv, comissao_total_venda, data_assinatura,
+                                data_recebimento, cliente_nome, corretor_nome, repasse_40, is_active, source_row_number)
+  SELECT t, 'Terceiros', 0, 0, '2026-01-31'::date, '2026-03-06'::date, 'Cliente Quitou Relendo', 'Cora', 1250, true, 101 FROM fx;
+  INSERT INTO commercial_sales (tenant_id, empreendimento, valor_vgv, comissao_total_venda, data_assinatura,
+                                data_recebimento, cliente_nome, corretor_nome, repasse_40, is_active, source_row_number)
+  SELECT t, 'Terceiros', 0, 0, '2026-01-31'::date, '2026-07-31'::date, 'Cliente Quitou Relendo', 'Cora', 1250, true, 102 FROM fx;
+  PERFORM pg_temp.checa((pg_temp.v_da(v_cab)).recebido_em IS NOT DISTINCT FROM '2026-07-31'::date,
+    'as parcelas chegaram todas pagas: a data vai para a da última (veio '
+    || coalesce((pg_temp.v_da(v_cab)).recebido_em::text, 'NULL') || ')');
+  PERFORM pg_temp.checa((pg_temp.v_da(v_cab)).valor_recebido IS NOT DISTINCT FROM 66250::numeric, 'e o valor é a comissão inteira');
+  RAISE NOTICE 'OK 17 · releitura de venda a prazo quitada: recebida na data da última parcela';
+END $$;
+
 ROLLBACK;
