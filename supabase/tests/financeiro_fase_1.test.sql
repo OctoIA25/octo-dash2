@@ -114,12 +114,12 @@ BEGIN
 
   SELECT count(*), sum(valor) INTO n, r
     FROM lancamentos_financeiros WHERE tenant_id = t AND origem = 'repasse';
-  IF n IS DISTINCT FROM 3 THEN
-    RAISE EXCEPTION 'FALHOU: 3 repasses deveriam virar 3 a pagar, viraram %', n;
+  IF n IS DISTINCT FROM 2 THEN
+    RAISE EXCEPTION 'FALHOU: corretor e líder deveriam virar 2 a pagar (a parte da casa fica com ela), viraram %', n;
   END IF;
   SELECT sum(valor) INTO n FROM lancamentos_financeiros WHERE tenant_id = t AND origem = 'repasse';
-  IF n IS DISTINCT FROM 30000 THEN
-    RAISE EXCEPTION 'FALHOU: os a pagar dos repasses somam % e deveriam somar 30000', n;
+  IF n IS DISTINCT FROM 18000 THEN
+    RAISE EXCEPTION 'FALHOU: os a pagar dos repasses somam % e deveriam somar 18000', n;
   END IF;
 
   -- ----------------------------------------------------------
@@ -211,10 +211,11 @@ BEGIN
       r->'totais'->>'resultado', n;
   END IF;
 
-  -- Receita 30.000 menos repasses 30.000 menos imposto 1.800 = −1.800.
-  -- (A casa fica com 12.000 dos repasses; o negativo é só o imposto.)
-  IF (r->'totais'->>'resultado')::numeric IS DISTINCT FROM -1800 THEN
-    RAISE EXCEPTION 'FALHOU: o resultado deveria ser -1800, deu %', r->'totais'->>'resultado';
+  -- Receita 30.000 menos corretor e líder 18.000 menos imposto 1.800 = 10.200.
+  -- Até 03/10 a parte da casa (12.000) também virava "a pagar", e o DRE dava
+  -- −1.800 numa venda em que a casa fica com 10.200 depois do imposto.
+  IF (r->'totais'->>'resultado')::numeric IS DISTINCT FROM 10200 THEN
+    RAISE EXCEPTION 'FALHOU: o resultado deveria ser 10200, deu %', r->'totais'->>'resultado';
   END IF;
 
   -- ----------------------------------------------------------
@@ -231,8 +232,8 @@ BEGIN
                        'percentual', 50, 'valor', 15000)));
 
   SELECT count(*) INTO n FROM lancamentos_financeiros WHERE tenant_id = t AND origem = 'repasse';
-  IF n IS DISTINCT FROM 2 THEN
-    RAISE EXCEPTION 'FALHOU: depois de recalcular deveriam sobrar 2 a pagar, sobraram %', n;
+  IF n IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'FALHOU: depois de recalcular deveria sobrar 1 a pagar (o do corretor), sobraram %', n;
   END IF;
 
   -- ----------------------------------------------------------
@@ -320,9 +321,10 @@ BEGIN
   IF (SELECT status FROM lancamentos_financeiros WHERE id = l.id) IS DISTINCT FROM 'cancelado' THEN
     RAISE EXCEPTION 'FALHOU: não cancelou o lançamento manual';
   END IF;
-  -- E o cancelado sai do DRE.
+  -- E o cancelado sai do DRE. Depois de recalcular a folha só o corretor
+  -- (15.000) é "a pagar": 30.000 − 15.000 − 1.800 de imposto = 13.200.
   r := financeiro_dre(t, '2026-09-01', '2026-09-30');
-  IF (r->'totais'->>'resultado')::numeric IS DISTINCT FROM -1800 THEN
+  IF (r->'totais'->>'resultado')::numeric IS DISTINCT FROM 13200 THEN
     RAISE EXCEPTION 'FALHOU: o cancelado continuou no DRE — resultado %', r->'totais'->>'resultado';
   END IF;
 
