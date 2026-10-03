@@ -130,10 +130,33 @@ BEGIN
     RETURN 'ignorada';
   END IF;
 
-  -- A prazo, a data da linha é a da 1ª parcela: a venda fica a receber até
-  -- alguém parcelar na Dash, em vez de nascer recebida pela comissão inteira.
-  v_recebido := CASE WHEN public.situacao_na_planilha(p_linha_id) = 'parcelado'
-                     THEN NULL ELSE l.data_recebimento END;
+  -- A prazo, a data da linha principal é a da 1ª parcela. A venda só conta
+  -- como recebida quando a linha principal E todas as parcelas abaixo dela
+  -- (mesmo cliente e data, comissão zero, repasse preenchido) têm data — e
+  -- então na data da última. Faltando uma, fica a receber até alguém parcelar
+  -- na Dash. Era o caso de 30/01 da Lotus: R$ 66.250 em 6 parcelas, quitado.
+  -- ponytail: na RELEITURA da planilha a linha principal chega antes das
+  -- parcelas, e uma venda a prazo nova nasce recebida pela 1ª data; a carga
+  -- (todas as linhas já lá) acerta. Conferir as vendas a prazo depois de reler.
+  IF public.situacao_na_planilha(p_linha_id) = 'parcelado' THEN
+    WITH parcelas AS (
+      SELECT p.data_recebimento
+        FROM commercial_sales p
+       WHERE p.tenant_id = l.tenant_id AND p.is_active AND p.id <> l.id
+         AND p.data_assinatura IS NOT DISTINCT FROM l.data_assinatura
+         AND public.normalizar_texto(p.cliente_nome) = public.normalizar_texto(l.cliente_nome)
+         AND COALESCE(p.total_unidade,0) = 0 AND COALESCE(p.valor_vgv,0) = 0
+         AND COALESCE(p.comissao_total_venda,0) = 0
+         AND COALESCE(p.repasse_20,0) + COALESCE(p.repasse_40,0)
+             + COALESCE(p.repasse_45,0) + COALESCE(p.repasse_50,0) > 0
+    )
+    SELECT CASE WHEN l.data_recebimento IS NOT NULL AND count(*) > 0
+                 AND count(*) FILTER (WHERE data_recebimento IS NULL) = 0
+                THEN GREATEST(l.data_recebimento, max(data_recebimento)) END
+      INTO v_recebido FROM parcelas;
+  ELSE
+    v_recebido := l.data_recebimento;
+  END IF;
 
   SELECT * INTO v_ligada FROM vendas WHERE planilha_id = p_linha_id;
   IF FOUND THEN

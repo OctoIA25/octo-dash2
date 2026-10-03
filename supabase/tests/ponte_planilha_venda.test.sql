@@ -235,4 +235,31 @@ BEGIN
   RAISE NOTICE 'OK 12 · a prazo na planilha: a venda fica a receber até alguém parcelar na Dash';
 END $$;
 
+-- 13. A prazo com TODAS as parcelas recebidas conta como recebida -----------------
+-- O caso real da Lotus (30/01, R$ 66.250): a linha principal e as parcelas
+-- abaixo dela, todas com data. Como a carga roda: as linhas já estão todas lá.
+SET LOCAL session_replication_role = replica;
+INSERT INTO commercial_sales (tenant_id, empreendimento, valor_vgv, comissao_total_venda, data_assinatura,
+                              data_recebimento, cliente_nome, corretor_nome, repasse_40, is_active, source_row_number)
+SELECT t, 'Terceiros', 0, 66250, '2026-01-30'::date, '2026-02-09'::date, 'Cliente Quitou', 'Cora', 21875, true, 70 FROM fx
+UNION ALL SELECT t, 'Terceiros', 0, 0, '2026-01-30', '2026-03-06', 'Cliente Quitou', 'Cora', 1250, true, 71 FROM fx
+UNION ALL SELECT t, 'Terceiros', 0, 0, '2026-01-30', '2026-07-31', 'Cliente Quitou', 'Cora', 1250, true, 72 FROM fx
+-- e uma a prazo com uma parcela ainda sem data
+UNION ALL SELECT t, 'Terceiros', 0, 50000, '2026-02-02', '2026-02-10', 'Cliente Devendo', 'Cora', 20000, true, 73 FROM fx
+UNION ALL SELECT t, 'Terceiros', 0, 0, '2026-02-02', '2026-03-10', 'Cliente Devendo', 'Cora', 1000, true, 74 FROM fx
+UNION ALL SELECT t, 'Terceiros', 0, 0, '2026-02-02', NULL, 'Cliente Devendo', 'Cora', 1000, true, 75 FROM fx;
+SET LOCAL session_replication_role = origin;
+DO $$
+DECLARE r text; vq vendas; vd vendas;
+BEGIN
+  r := pg_temp.como((SELECT admin FROM fx), format('SELECT public.vendas_ligar_planilha(%L)::text', (SELECT t FROM fx)));
+  SELECT * INTO vq FROM vendas WHERE tenant_id = (SELECT t FROM fx) AND cliente = 'Cliente Quitou';
+  SELECT * INTO vd FROM vendas WHERE tenant_id = (SELECT t FROM fx) AND cliente = 'Cliente Devendo';
+  PERFORM pg_temp.checa(vq.recebido_em IS NOT DISTINCT FROM '2026-07-31'::date,
+    'a prazo com todas as parcelas pagas: recebida na data da última (veio ' || coalesce(vq.recebido_em::text, 'NULL') || ')');
+  PERFORM pg_temp.checa(vd.id IS NOT NULL AND vd.recebido_em IS NULL,
+    'a prazo com parcela sem data: fica a receber (veio ' || coalesce(vd.recebido_em::text, 'NULL') || ')');
+  RAISE NOTICE 'OK 13 · a prazo quitada conta como recebida; com parcela em aberto, não';
+END $$;
+
 ROLLBACK;
