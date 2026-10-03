@@ -33,7 +33,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { reaisExatos } from './vendas';
+import { reaisExatos, rotuloDaSituacao } from './vendas';
 import {
   COR_DA_SITUACAO, ROTULO_DA_SITUACAO, carregarPlanilha, gravarCodigoDaVenda,
   type ConferenciaDaPlanilha as DadosDaPlanilha, type SituacaoDaPlanilha, type VendaDaPlanilha,
@@ -57,9 +57,11 @@ interface Props {
    * escolhidos, o vazio pode ser do recorte, e a frase mentiria.
    */
   soPeriodo: boolean;
+  /** Clicar numa linha ligada a uma venda da Dash abre a venda (03/10). */
+  onAbrirVenda?: (vendaId: string) => void;
 }
 
-export function ConferenciaDaPlanilha({ dados, carregando, erro, soPeriodo }: Props) {
+export function ConferenciaDaPlanilha({ dados, carregando, erro, soPeriodo, onAbrirVenda }: Props) {
   const { tenantId } = useAuthContext();
 
   /**
@@ -141,12 +143,16 @@ export function ConferenciaDaPlanilha({ dados, carregando, erro, soPeriodo }: Pr
               </td></tr>
             )}
             {linhas.map((v) => (
-              <tr key={v.id} className="border-b last:border-0 hover:bg-muted/30">
+              <tr key={v.id}
+                onClick={v.venda_id && onAbrirVenda ? () => onAbrirVenda(v.venda_id!) : undefined}
+                title={v.venda_id ? 'Abrir a venda' : undefined}
+                className={`border-b last:border-0 hover:bg-muted/30 ${v.venda_id ? 'cursor-pointer' : ''}`}>
                 <td className="px-2.5 py-2 font-medium whitespace-nowrap">{v.empreendimento || '—'}</td>
                 {/* Lançamento tem quadra e unidade na planilha. O resto —
                     terceiros e o que ninguém classificou — não tem código
-                    nenhum lá, e ele é digitado aqui (decidido em 29/09). */}
-                <td className="px-2.5 py-2 whitespace-nowrap">
+                    nenhum lá, e ele é digitado aqui (decidido em 29/09).
+                    Digitar o código não abre a venda: o clique para aqui. */}
+                <td className="px-2.5 py-2 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                   {v.tipo_negocio === 'lancamento'
                     ? (v.unidade_codigo || '—')
                     // O código é guardado por cliente + data de assinatura:
@@ -175,8 +181,17 @@ export function ConferenciaDaPlanilha({ dados, carregando, erro, soPeriodo }: Pr
                     "pagou mais 252 em 14/03" não cabe em selo nenhum. */}
                 <td className="px-2.5 py-2 max-w-[200px]">
                   <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${COR_DA_SITUACAO[v.situacao]}`}>
-                    {ROTULO_DA_SITUACAO[v.situacao]}
+                    {/* A contagem só quando a Dash parcelou (2+); com 1 parcela vale o que a planilha diz. */}
+                    {v.venda_id && (v.parcelas ?? 0) > 1
+                      ? rotuloDaSituacao({ situacao: v.situacao, parcelas: v.parcelas, parcelas_pagas: v.parcelas_pagas ?? 0 })
+                      : ROTULO_DA_SITUACAO[v.situacao]}
                   </span>
+                  {v.sem_par && (
+                    <span className="ml-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                      title="Nenhuma venda da Dash casa com esta linha (mesmo VGV, data e comissão), ou mais de uma casa. Ela não entra no Financeiro até alguém resolver.">
+                      sem par
+                    </span>
+                  )}
                   {v.status_recebimento && (
                     <span className="block truncate text-[10px] text-muted-foreground" title={v.status_recebimento}>
                       {v.status_recebimento}

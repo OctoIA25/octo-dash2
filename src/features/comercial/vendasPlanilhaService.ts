@@ -56,6 +56,12 @@ export interface VendaDaPlanilha {
   tipo_negocio: 'lancamento' | 'terceiros' | null;
   /** O código do imóvel das vendas de terceiros, digitado na Dash. */
   codigo_imovel: string | null;
+  /** A venda da Dash que é esta linha (20261027). Null = a linha não é venda, ou está sem par. */
+  venda_id: string | null;
+  /** Linha com comissão que não achou venda certa: não entra no Financeiro até alguém resolver. */
+  sem_par: boolean;
+  parcelas: number | null;
+  parcelas_pagas: number | null;
 }
 
 export type SituacaoDaPlanilha = 'pago' | 'parcelado' | 'pendente';

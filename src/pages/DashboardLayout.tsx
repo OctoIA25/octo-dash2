@@ -24,6 +24,7 @@ import {
 } from '@/types/permissions';
 import { podeVerAba } from '@/pages/inicio-nova/abasVisiveis';
 import { destinoDoEnderecoAntigo } from '@/features/marketing/abas';
+import { podeAbrirConferencia } from '@/features/comercial/acessoDaConferencia';
 
 const DEBUG_LOGS = import.meta.env?.VITE_DEBUG_LOGS === 'true';
 
@@ -321,7 +322,9 @@ const DashboardLayout = () => {
           */}
           <Route
             path="comercial/vendas"
-            element={canAccess('financeiro') ? <ConferenciaDeVendasPage /> : <Navigate to={defaultAllowedRoute} replace />}
+            element={podeAbrirConferencia({ isOwner, podeFinanceiro: canAccess('financeiro'), systemRole: user?.systemRole })
+              ? <ConferenciaDeVendasPage podeMexerNoDinheiro={isOwner || canAccess('financeiro')} />
+              : <Navigate to={defaultAllowedRoute} replace />}
           />
           <Route
             path="financeiro"

@@ -11,7 +11,7 @@
  * própria soma em vez de prometer que bate.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { hojeSP, primeiroDoAnoSP } from '@/lib/dataSP';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -47,7 +47,7 @@ const primeiroDoAno = () => primeiroDoAnoSP();
 const dataBR = (d: string | null | undefined) =>
   d ? new Date(`${String(d).slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : '—';
 
-export function ConferenciaDeVendasPage() {
+export function ConferenciaDeVendasPage({ podeMexerNoDinheiro = true }: { podeMexerNoDinheiro?: boolean } = {}) {
   const { tenantId } = useAuthContext();
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -79,6 +79,7 @@ export function ConferenciaDeVendasPage() {
   const [fonte, setFonte] = useState<'planilha' | 'crm'>('planilha');
   const [aberta, setAberta] = useState<VendaNaLista | null>(null);
   const [novaVenda, setNovaVenda] = useState(false);
+  const [abrirVendaId, setAbrirVendaId] = useState<string | null>(null);
 
   const trocarFonte = (f: 'planilha' | 'crm') => {
     setFonte(f);
@@ -188,6 +189,15 @@ export function ConferenciaDeVendasPage() {
   const totais = dados?.totais;
   const fechamento = totaisConferem(linhas, totais);
 
+  // Clicar numa linha ligada da Planilha abre a venda no CRM: troca a aba e,
+  // quando a lista chegar, abre a gaveta dela. Fora do recorte de datas, desiste.
+  useEffect(() => {
+    if (fonte !== 'crm' || !abrirVendaId || conferencia.isLoading) return;
+    const alvo = linhas.find((l) => l.id === abrirVendaId);
+    if (alvo) setAberta(alvo);
+    setAbrirVendaId(null);
+  }, [fonte, abrirVendaId, conferencia.isLoading, linhas]);
+
   // Antes do early return: um hook depois dele deixa de rodar quando não há
   // tenant, e o React quebra na próxima renderização com outra contagem.
   /*
@@ -246,7 +256,7 @@ export function ConferenciaDeVendasPage() {
               </button>
             ))}
           </div>
-          {fonte === 'planilha' && (
+          {fonte === 'planilha' && podeMexerNoDinheiro && (
             <button
               onClick={() => relerPlanilha.mutate()}
               disabled={relerPlanilha.isPending}
@@ -256,7 +266,7 @@ export function ConferenciaDeVendasPage() {
               Reler a planilha do Drive
             </button>
           )}
-          {fonte === 'crm' && (
+          {fonte === 'crm' && podeMexerNoDinheiro && (
             <button
               onClick={() => importar.mutate()}
               disabled={importar.isPending}
@@ -335,6 +345,7 @@ export function ConferenciaDeVendasPage() {
           carregando={planilha.isLoading}
           erro={planilha.error as Error | null}
           soPeriodo={!corretor && !equipeId && !tipo && !status}
+          onAbrirVenda={(id) => { setAbrirVendaId(id); trocarFonte('crm'); }}
         />
       )}
 
@@ -478,6 +489,7 @@ export function ConferenciaDeVendasPage() {
 
       {aberta && (
         <GavetaDaVenda
+          podeMexerNoDinheiro={podeMexerNoDinheiro}
           venda={linhas.find((l) => l.id === aberta.id) ?? aberta}
           tenantId={tenantId}
           equipe={equipe.data ?? []}
@@ -537,13 +549,15 @@ function Aviso({
  * que prendeu quem testava dentro do modal.
  */
 function GavetaDaVenda({
-  venda, tenantId, equipe, onFechar, onMudou,
+  venda, tenantId, equipe, onFechar, onMudou, podeMexerNoDinheiro,
 }: {
   venda: VendaNaLista;
   tenantId: string;
   equipe: Parameters<typeof repassesDaVenda>[1];
   onFechar: () => void;
   onMudou: () => void;
+  /** Gerente: vê tudo, mas não anexa nota nem mexe na folha de repasse (03/10). */
+  podeMexerNoDinheiro: boolean;
 }) {
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -689,12 +703,14 @@ function GavetaDaVenda({
             </Campo>
           </div>
           <div className="flex flex-wrap items-center gap-2 border-t px-3 py-2">
+            {podeMexerNoDinheiro && (
             <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs hover:bg-accent">
               {subindo ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
               {arquivoAtual ? 'Trocar arquivo' : 'Anexar nota'}
               <input type="file" className="hidden" accept=".pdf,.xml,image/*"
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) void subir(f); }} />
             </label>
+            )}
             {arquivoAtual && (
               <button onClick={abrirNota} className="text-xs underline underline-offset-2">Ver a nota anexada</button>
             )}
@@ -719,11 +735,13 @@ function GavetaDaVenda({
         <section className="mb-5 rounded-lg border">
           <div className="flex items-center justify-between border-b bg-muted/40 px-3 py-2">
             <h3 className="text-sm font-semibold">Repasses</h3>
+            {podeMexerNoDinheiro && (
             <button onClick={() => calcular.mutate()} disabled={calcular.isPending}
               className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs hover:bg-accent disabled:opacity-50">
               {calcular.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Calculator className="h-3.5 w-3.5" />}
               {repasses.length === 0 ? 'Calcular' : 'Recalcular'}
             </button>
+            )}
           </div>
 
           {previa && 'impedimento' in previa && (
@@ -759,6 +777,7 @@ function GavetaDaVenda({
                   {!String(r.id).startsWith('previa-') && (
                     <button
                       onClick={() => pagar.mutate({ id: r.id, pago: r.status !== 'pago' })}
+                      disabled={!podeMexerNoDinheiro}
                       className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
                         r.status === 'pago'
                           ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'

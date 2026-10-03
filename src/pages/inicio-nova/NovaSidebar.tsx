@@ -59,6 +59,8 @@ interface SubItem {
    * ausente, o sub-item herda a visibilidade do pai (comportamento padrão).
    */
   permission?: SidebarPermission;
+  /** Aparece também para o Gerente (role team_leader), mesmo sem a permissão. Só a Conferência de vendas usa (03/10). */
+  tambemParaGerente?: boolean;
 }
 
 interface SidebarItem {
@@ -303,7 +305,8 @@ const GROUPS: SidebarGroup[] = [
           // por dentro. Dar a permissão do Jurídico aqui faria o item aparecer
           // para quem a tela vai recusar — que é o defeito que o P0.1 levou
           // uma semana para achar, só que ao contrário.
-          { id: 'juridico-vendas', label: 'Conferência de vendas', icon: Receipt, route: '/comercial/vendas', permission: 'financeiro' },
+          // 03/10: o Gerente também entra (edita vendas); o banco confere vendas_pode_editar.
+          { id: 'juridico-vendas', label: 'Conferência de vendas', icon: Receipt, route: '/comercial/vendas', permission: 'financeiro', tambemParaGerente: true },
         ],
       },
     ],
@@ -389,9 +392,10 @@ export function NovaSidebar() {
   const visibleSubItems = useCallback(
     (item: SidebarItem): SubItem[] =>
       (item.subItems ?? []).filter((sub) =>
-        sub.permission ? canAccess(sub.permission) : canAccess(item.permission),
+        (sub.tambemParaGerente && user?.systemRole === 'team_leader')
+        || (sub.permission ? canAccess(sub.permission) : canAccess(item.permission)),
       ),
-    [canAccess],
+    [canAccess, user?.systemRole],
   );
 
   /**
