@@ -74,6 +74,8 @@ CREATE FUNCTION pg_temp.v(p text) RETURNS public.vendas LANGUAGE sql AS $$
   SELECT v.* FROM vendas v WHERE v.id = pg_temp.vid(p) $$;
 CREATE FUNCTION pg_temp.da_linha(p text) RETURNS public.vendas LANGUAGE sql AS $$
   SELECT v.* FROM vendas v WHERE v.planilha_id = pg_temp.vid(p) $$;
+CREATE FUNCTION pg_temp.v_da(p_linha uuid) RETURNS public.vendas LANGUAGE sql AS $$
+  SELECT v.* FROM vendas v WHERE v.planilha_id = p_linha $$;
 CREATE FUNCTION pg_temp.qtd_vendas() RETURNS int LANGUAGE sql AS $$
   SELECT count(*)::int FROM vendas WHERE tenant_id = (SELECT t FROM fx) $$;
 
@@ -150,12 +152,17 @@ BEGIN
 END $$;
 
 -- 6. A linha que deslocou desliga -----------------------------------------------------
-UPDATE commercial_sales SET valor_vgv = 777777, comissao_total_venda = 30000, data_recebimento = NULL
- WHERE id = pg_temp.vid('l1');
-DO $$ BEGIN
+DO $$
+DECLARE n int := pg_temp.qtd_vendas();
+BEGIN
+  UPDATE commercial_sales SET valor_vgv = 777777, comissao_total_venda = 30000, data_recebimento = NULL
+   WHERE id = pg_temp.vid('l1');
   PERFORM pg_temp.checa((pg_temp.v('crm')).planilha_id IS NULL, 'a venda antiga desliga da linha que mudou de conteúdo');
-  PERFORM pg_temp.checa((pg_temp.da_linha('l1')).vgv = 777777, 'o conteúdo novo, sem par, vira a venda dele');
-  RAISE NOTICE 'OK 6 · deslocamento: desliga e trata como linha nova';
+  PERFORM pg_temp.checa(pg_temp.qtd_vendas() = n,
+    'a linha que mudou NÃO vira venda nova: seria a mesma comissão duas vezes (veio ' || pg_temp.qtd_vendas() || ' de ' || n || ')');
+  PERFORM pg_temp.checa(EXISTS (SELECT 1 FROM venda_historico WHERE campo = 'planilha_id' AND de = pg_temp.vid('l1')::text),
+    'o desligamento fica no histórico da venda');
+  RAISE NOTICE 'OK 6 · a linha mudou: desliga, fica sem par, e não cria venda';
 END $$;
 
 -- 7. A proposta adota a venda que chegou antes pela planilha ------------------------
@@ -260,6 +267,58 @@ BEGIN
   PERFORM pg_temp.checa(vd.id IS NOT NULL AND vd.recebido_em IS NULL,
     'a prazo com parcela sem data: fica a receber (veio ' || coalesce(vd.recebido_em::text, 'NULL') || ')');
   RAISE NOTICE 'OK 13 · a prazo quitada conta como recebida; com parcela em aberto, não';
+END $$;
+
+-- 14. Corrigir o VGV de uma venda nascida da planilha não cria outra ------------------
+DO $$
+DECLARE n int; v_linha uuid;
+BEGIN
+  v_linha := pg_temp.linha(80, '2026-05-20', 500000, 25000);
+  INSERT INTO vx VALUES ('l_corrige', v_linha);
+  PERFORM pg_temp.checa((pg_temp.da_linha('l_corrige')).id IS NOT NULL, 'a linha nova vira venda');
+  n := pg_temp.qtd_vendas();
+  UPDATE commercial_sales SET valor_vgv = 520000 WHERE id = v_linha;
+  PERFORM pg_temp.checa(pg_temp.qtd_vendas() = n,
+    'corrigir o VGV na planilha não duplica a venda (veio ' || pg_temp.qtd_vendas() || ' de ' || n || ')');
+  UPDATE commercial_sales SET valor_vgv = 500000 WHERE id = v_linha;
+  PERFORM pg_temp.checa(pg_temp.qtd_vendas() = n AND (pg_temp.da_linha('l_corrige')).id IS NOT NULL,
+    'desfeita a correção, a linha volta a casar com a venda dela');
+  RAISE NOTICE 'OK 14 · correção na planilha não cria venda em dobro';
+END $$;
+
+-- 15. A proposta adota também a venda criada à mão ----------------------------------
+DO $$
+DECLARE n int; r text;
+BEGIN
+  r := pg_temp.como((SELECT admin FROM fx), format(
+    'SELECT public.venda_criar(%L, %L, %L, NULL, NULL, %L, %L, %s, %s)::text',
+    (SELECT t FROM fx), '2026-09-20', 'Apto Manual', '', 'Cliente Manual', 700000, 35000));
+  PERFORM pg_temp.checa(r IS NOT NULL AND r NOT LIKE 'ERRO%', 'admin cria venda à mão (veio ' || coalesce(r, 'NULL') || ')');
+  n := pg_temp.qtd_vendas();
+  INSERT INTO vx VALUES ('crm_manual', pg_temp.vende(700000, 35000, '2026-09-20 15:00-03'));
+  PERFORM pg_temp.checa(pg_temp.qtd_vendas() = n,
+    'a proposta assinada depois adota a venda feita à mão (veio ' || pg_temp.qtd_vendas() || ' de ' || n || ')');
+  RAISE NOTICE 'OK 15 · venda à mão + proposta assinada = uma venda';
+END $$;
+
+-- 16. Na releitura, a linha principal chega antes das parcelas -----------------------
+DO $$
+DECLARE v_cab uuid; v_par uuid;
+BEGIN
+  v_cab := pg_temp.linha(90, '2026-02-15', 0, 40000, '2026-02-20', 'Cliente Releitura');
+  PERFORM pg_temp.checa((pg_temp.v_da(v_cab)).recebido_em IS NOT DISTINCT FROM '2026-02-20'::date,
+    'sozinha, a linha principal parece paga');
+  INSERT INTO commercial_sales (tenant_id, empreendimento, valor_vgv, comissao_total_venda, data_assinatura,
+                                data_recebimento, cliente_nome, corretor_nome, repasse_40, is_active, source_row_number)
+  SELECT t, 'Terceiros', 0, 0, '2026-02-15', NULL, 'Cliente Releitura', 'Cora', 1000, true, 91 FROM fx
+  RETURNING id INTO v_par;
+  PERFORM pg_temp.checa((pg_temp.v_da(v_cab)).recebido_em IS NULL,
+    'chegou uma parcela em aberto: a baixa que a planilha deu sai (veio '
+    || coalesce((pg_temp.v_da(v_cab)).recebido_em::text, 'NULL') || ')');
+  UPDATE commercial_sales SET data_recebimento = '2026-04-01' WHERE id = v_par;
+  PERFORM pg_temp.checa((pg_temp.v_da(v_cab)).recebido_em IS NOT DISTINCT FROM '2026-04-01'::date,
+    'a última parcela entrou: recebida na data dela');
+  RAISE NOTICE 'OK 16 · releitura: a venda a prazo só fica recebida quando todas as parcelas entram';
 END $$;
 
 ROLLBACK;

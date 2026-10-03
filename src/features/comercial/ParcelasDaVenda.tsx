@@ -12,7 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { hojeSP } from '@/lib/dataSP';
 import { parseNumeric } from '@/features/relatorios/import/generic/metadataDiscovery';
 import { baixar } from '@/features/financeiro/financeiroService';
-import { conferirParcelas, reaisExatos } from './vendas';
+import { avisoDeParcelas, conferirParcelas, reaisExatos } from './vendas';
 import { parcelarVenda, type ParcelaDaVenda } from './vendasService';
 
 const inputCls = 'h-8 rounded-md border bg-background px-2 text-xs';
@@ -36,6 +36,7 @@ export function ParcelasDaVenda({ vendaId, comissaoBruta, parcelas, carregando, 
   const jaBaixado = baixadas.reduce((s, p) => s + p.valor, 0);
   const novas = (rascunho ?? []).map((r) => ({ valor: parseNumeric(r.valor), vencimento: r.vencimento || null }));
   const conta = conferirParcelas(novas, jaBaixado, comissaoBruta);
+  const naoFecha = avisoDeParcelas(parcelas, comissaoBruta);
 
   const abrirParcelamento = () => {
     const abertas = parcelas.filter((p) => p.status === 'aberto');
@@ -75,6 +76,11 @@ export function ParcelasDaVenda({ vendaId, comissaoBruta, parcelas, carregando, 
         <p className="p-3 text-xs text-muted-foreground">Venda sem comissão não tem parcela: não há o que receber.</p>
       )}
 
+      {!rascunho && naoFecha && (
+        <p className="border-b bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+          {naoFecha}
+        </p>
+      )}
       {!rascunho && parcelas.length > 0 && (
         <ul className="divide-y text-xs">
           {parcelas.map((p, i) => (

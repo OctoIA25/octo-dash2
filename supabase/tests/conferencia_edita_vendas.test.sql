@@ -205,4 +205,15 @@ BEGIN
   RAISE NOTICE 'OK 7 · anon barrado';
 END $$;
 
+-- 8. A mesma venda não se cria duas vezes à mão -------------------------------------
+DO $$
+DECLARE r text;
+BEGIN
+  r := pg_temp.como((SELECT admin FROM fx), format(
+    'SELECT public.venda_criar(%L, %L, %L, NULL, NULL, %L, %L, %s, %s)::text',
+    (SELECT t FROM fx), '2026-09-21', 'Apto Centro', '', 'Cliente Bia', 300000, 9000));
+  PERFORM pg_temp.checa(r LIKE 'ERRO%existe uma venda%', 'mesma data e VGV: recusa a duplicata (veio ' || coalesce(r, 'NULL') || ')');
+  RAISE NOTICE 'OK 8 · venda repetida à mão é recusada';
+END $$;
+
 ROLLBACK;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   avisoDaComissaoDaProposta, divergencia, entradaDoMotor, repassesDaVenda,
-  conferirParcelas, resumoDaReleitura, rotuloDaSituacao, rotuloDoNivel, totaisConferem,
+  avisoDeParcelas, conferirParcelas, resumoDaReleitura, rotuloDaSituacao, rotuloDoNivel, totaisConferem,
   type PessoaDoRepasse, type TotaisDaConferencia, type VendaNaLista,
 } from './vendas';
 
@@ -231,5 +231,18 @@ describe('conferirParcelas — fecha com a comissão antes de mandar ao banco', 
   it('parcela vazia ou zero não fecha, mesmo com a soma certa', () => {
     expect(conferirParcelas([{ valor: 6000 }, { valor: null }], 4000, 10000).fecha).toBe(false);
     expect(conferirParcelas([{ valor: 6000 }, { valor: 0 }], 4000, 10000).fecha).toBe(false);
+  });
+});
+
+describe('avisoDeParcelas — a comissão mudou depois de parcelar', () => {
+  it('diz quanto as parcelas somam e quanto é a comissão', () => {
+    const t = avisoDeParcelas([{ valor: 4000 }, { valor: 6000 }], 12000);
+    expect(t).toContain('10.000,00');
+    expect(t).toContain('12.000,00');
+  });
+  it('fechando (ou sem parcela), não diz nada', () => {
+    expect(avisoDeParcelas([{ valor: 4000 }, { valor: 6000 }], 10000)).toBeNull();
+    expect(avisoDeParcelas([{ valor: 9999.995 }], 10000)).toBeNull();
+    expect(avisoDeParcelas([], 10000)).toBeNull();
   });
 });

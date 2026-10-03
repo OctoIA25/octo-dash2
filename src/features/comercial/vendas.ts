@@ -388,3 +388,15 @@ export function conferirParcelas(
   const falta = Math.round((bruta - soma) * 100) / 100;
   return { soma, falta, fecha: Math.abs(falta) <= 0.01 && novas.every((p) => (p.valor ?? 0) > 0) };
 }
+
+/**
+ * As parcelas não fecham mais com a comissão — ela mudou depois de parcelar.
+ * As parcelas não se reescrevem sozinhas (o valor é de quem parcelou), então a
+ * tela avisa em vez de esperar a última parcela para acusar divergência.
+ */
+export function avisoDeParcelas(parcelas: Array<{ valor: number }>, bruta: number): string | null {
+  if (!parcelas.length) return null;
+  const soma = Math.round(parcelas.reduce((s, p) => s + (Number(p.valor) || 0), 0) * 100) / 100;
+  if (Math.abs(soma - bruta) <= CENTAVO) return null;
+  return `As parcelas somam ${formatar(soma)} e a comissão é ${formatar(bruta)}. Parcele de novo para fechar.`;
+}

@@ -62,6 +62,16 @@ BEGIN
   IF v_bruta <= 0 THEN
     RAISE EXCEPTION 'Informe a comissão negociada da venda.' USING ERRCODE = 'check_violation';
   END IF;
+  -- A mesma venda duas vezes é a mesma comissão contada duas vezes, e a Dash
+  -- não tem como apagar venda. Mesmo VGV num dia vizinho pede conferência.
+  IF COALESCE(p_vgv, 0) > 0 AND EXISTS (
+       SELECT 1 FROM vendas v
+        WHERE v.tenant_id = p_tenant_id
+          AND v.data_venda BETWEEN p_data_venda - 1 AND p_data_venda + 1
+          AND abs(v.vgv - p_vgv) < 1) THEN
+    RAISE EXCEPTION 'Já existe uma venda com esse VGV nessa data. Confira a lista antes de criar outra.'
+      USING ERRCODE = 'check_violation';
+  END IF;
   IF p_corretor_id IS NOT NULL AND NOT EXISTS (
        SELECT 1 FROM tenant_memberships WHERE tenant_id = p_tenant_id AND user_id = p_corretor_id) THEN
     RAISE EXCEPTION 'O corretor não é desta imobiliária.' USING ERRCODE = 'check_violation';

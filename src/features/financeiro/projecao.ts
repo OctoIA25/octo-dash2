@@ -118,3 +118,16 @@ export function diaAnterior(dia: string): string {
   d.setUTCDate(d.getUTCDate() - 1);
   return d.toISOString().slice(0, 10);
 }
+
+/**
+ * O que o formulário do saldo mostra ao abrir: o saldo e a data gravados NA
+ * CONTA. O saldo da projeção soma todas as contas e o que entrou depois da data
+ * informada; gravá-lo de volta numa conta só contaria isso em dobro.
+ */
+export function saldoParaEditar(
+  conta: { saldo_inicial: number; saldo_em: string | null } | undefined,
+  hoje: string,
+): { texto: string; dia: string } {
+  if (conta?.saldo_em) return { texto: String(conta.saldo_inicial).replace('.', ','), dia: conta.saldo_em };
+  return { texto: '', dia: diaAnterior(hoje) };
+}

@@ -13,7 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { hojeSP } from '@/lib/dataSP';
 import { reaisExatos } from './financeiro';
 import {
-  ENTRADAS, ROTULO_DA_LINHA, SAIDAS, diaAnterior, lerValor, linhaVisivel, montarProjecao,
+  ENTRADAS, ROTULO_DA_LINHA, SAIDAS, diaAnterior, lerValor, linhaVisivel, montarProjecao, saldoParaEditar,
   type ColunaCalculada, type LinhaDaProjecao, type ValoresDaColuna,
 } from './projecao';
 import {
@@ -99,10 +99,16 @@ export function ProjecaoPanel({ tenantId }: { tenantId: string }) {
   const saidas = SAIDAS.filter((l) => linhaVisivel(l, [...colunas, atrasado]));
   const ncol = colunas.length + 2;
 
+  // O formulário abre com o saldo e a data gravados NA CONTA — não com o saldo
+  // da projeção, que soma todas as contas e o que entrou depois da data.
+  const preencherDaConta = (id: string) => {
+    const s = saldoParaEditar((contas.data ?? []).find((c) => c.id === id), hojeSP());
+    setContaId(id);
+    setSaldoTexto(s.texto);
+    setSaldoEm(s.dia);
+  };
   const abrirSaldo = () => {
-    setSaldoTexto(p.tem_conta ? String(p.saldo_inicial).replace('.', ',') : '');
-    setContaId((contas.data ?? [])[0]?.id ?? '');
-    setSaldoEm(diaAnterior(hojeSP()));
+    preencherDaConta((contas.data ?? [])[0]?.id ?? '');
     setEditandoSaldo(true);
   };
 
@@ -124,7 +130,7 @@ export function ProjecaoPanel({ tenantId }: { tenantId: string }) {
           {(contas.data ?? []).length > 1 && (
             <label className="flex flex-col gap-1">
               <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Conta</span>
-              <select value={contaId} onChange={(e) => setContaId(e.target.value)} className={inputCls}>
+              <select value={contaId} onChange={(e) => preencherDaConta(e.target.value)} className={inputCls}>
                 {(contas.data ?? []).map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
               </select>
             </label>

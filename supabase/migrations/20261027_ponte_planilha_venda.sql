@@ -119,6 +119,7 @@ DECLARE
   v_imposto_pct numeric;
   v_corretor uuid;
   v_recebido date;
+  v_antes date;
 BEGIN
   SELECT * INTO l FROM commercial_sales WHERE id = p_linha_id;
   IF NOT FOUND THEN RETURN 'ignorada'; END IF;
@@ -126,7 +127,13 @@ BEGIN
   -- Linha inativa, sem data ou sem comissão (as parcelas soltas da planilha)
   -- não é venda. Se estava ligada, desliga: a venda fica, o vínculo não.
   IF NOT l.is_active OR l.data_assinatura IS NULL OR COALESCE(l.comissao_total_venda, 0) <= 0 THEN
-    UPDATE vendas SET planilha_id = NULL WHERE planilha_id = p_linha_id;
+    WITH solta AS (
+      UPDATE vendas SET planilha_id = NULL WHERE planilha_id = p_linha_id RETURNING id, tenant_id
+    )
+    INSERT INTO venda_historico (venda_id, tenant_id, campo, de, para, justificativa, por)
+    SELECT id, tenant_id, 'planilha_id', p_linha_id::text, NULL,
+           'a linha da planilha deixou de ser venda (inativa, sem data ou sem comissão)', auth.uid()
+      FROM solta;
     RETURN 'ignorada';
   END IF;
 
@@ -164,8 +171,16 @@ BEGIN
        AND abs(v_ligada.vgv - COALESCE(l.valor_vgv, 0)) < 1 THEN
       v_id := v_ligada.id;
     ELSE
-      -- Deslocou: o conteúdo desta linha é outra venda agora.
+      -- A linha mudou de VGV ou data: alguém corrigiu a planilha, ou uma linha
+      -- foi inserida no meio e o conteúdo deslizou. De dentro do gatilho não
+      -- dá para saber qual dos dois. Desliga; o conteúdo novo ainda pode casar
+      -- com uma venda livre (o deslizamento se conserta), mas esta linha NUNCA
+      -- cria venda (guarda do histórico, abaixo): a venda dela continua
+      -- existindo, e outra contaria a mesma comissão duas vezes.
       UPDATE vendas SET planilha_id = NULL WHERE id = v_ligada.id;
+      INSERT INTO venda_historico (venda_id, tenant_id, campo, de, para, justificativa, por)
+      VALUES (v_ligada.id, v_ligada.tenant_id, 'planilha_id', p_linha_id::text, NULL,
+              'a linha da planilha mudou de VGV ou data: desligada', auth.uid());
     END IF;
   END IF;
 
@@ -193,7 +208,12 @@ BEGIN
 
     IF v_gemeas = 0 AND v_livres = 1 THEN
       UPDATE vendas SET planilha_id = p_linha_id WHERE id = v_id;
-    ELSIF v_gemeas = 0 AND v_todas = 0 THEN
+    ELSIF v_gemeas = 0 AND v_todas = 0
+      -- Linha que já teve venda e foi desligada não cria outra: a venda dela
+      -- continua existindo, só não casa mais com o conteúdo.
+      AND NOT EXISTS (SELECT 1 FROM venda_historico h
+                       WHERE h.tenant_id = l.tenant_id AND h.campo = 'planilha_id'
+                         AND h.de = p_linha_id::text) THEN
       SELECT * INTO v_lp FROM public.lancamento_da_planilha(l.tenant_id, l.empreendimento);
       SELECT f.imposto_pct INTO v_imposto_pct FROM tenant_fiscal_config f WHERE f.tenant_id = l.tenant_id;
       v_imposto_pct := COALESCE(v_imposto_pct, 0);
@@ -239,6 +259,21 @@ BEGIN
     SELECT f.id, f.tenant_id, 'recebido_em', NULL, f.recebido_em::text,
            'recebimento lido da planilha de vendas (mesmo VGV, data e comissão)', auth.uid()
       FROM feito f;
+  ELSIF public.situacao_na_planilha(p_linha_id) = 'parcelado' THEN
+    -- A prazo com parcela em aberto: se a venda está quitada pela data da
+    -- linha principal com a comissão inteira — a baixa que a própria planilha
+    -- dá quando a linha principal chega antes das parcelas —, ela sai. Uma
+    -- baixa feita na Dash com outra data ou outro valor fica.
+    SELECT recebido_em INTO v_antes FROM vendas
+     WHERE id = v_id AND recebido_em = l.data_recebimento AND valor_recebido = comissao_bruta
+       AND (SELECT count(*) FROM lancamentos_financeiros
+             WHERE origem = 'venda' AND origem_id = v_id AND status <> 'cancelado') <= 1;
+    IF v_antes IS NOT NULL THEN
+      UPDATE vendas SET recebido_em = NULL, valor_recebido = NULL WHERE id = v_id;
+      INSERT INTO venda_historico (venda_id, tenant_id, campo, de, para, justificativa, por)
+      VALUES (v_id, l.tenant_id, 'recebido_em', v_antes::text, NULL,
+              'a planilha diz a prazo com parcela em aberto: a data era só a da 1ª parcela', auth.uid());
+    END IF;
   END IF;
   RETURN 'ligada';
 END;
@@ -252,6 +287,19 @@ SET search_path TO 'public'
 AS $function$
 BEGIN
   PERFORM public.venda_da_planilha(NEW.id);
+  -- Uma parcela (comissão zero, repasse preenchido) muda o que a linha
+  -- principal da venda dela quer dizer: reavalia a principal. É o que conserta
+  -- a releitura, em que a principal chega antes das parcelas.
+  IF COALESCE(NEW.comissao_total_venda, 0) = 0
+     AND COALESCE(NEW.repasse_20,0) + COALESCE(NEW.repasse_40,0)
+         + COALESCE(NEW.repasse_45,0) + COALESCE(NEW.repasse_50,0) > 0 THEN
+    PERFORM public.venda_da_planilha(h.id)
+       FROM commercial_sales h
+      WHERE h.tenant_id = NEW.tenant_id AND h.is_active AND h.id <> NEW.id
+        AND h.data_assinatura IS NOT DISTINCT FROM NEW.data_assinatura
+        AND public.normalizar_texto(h.cliente_nome) = public.normalizar_texto(NEW.cliente_nome)
+        AND COALESCE(h.comissao_total_venda, 0) > 0;
+  END IF;
   RETURN NULL;
 END;
 $function$;
@@ -314,12 +362,12 @@ BEGIN
 
   IF EXISTS (SELECT 1 FROM vendas v WHERE v.proposta_id = NEW.id) THEN RETURN NEW; END IF;
 
-  -- A VENDA QUE CHEGOU ANTES PELA PLANILHA É ADOTADA, não duplicada (20261027).
-  -- Pelo dia de São Paulo: assinada às 22h, a proposta já é amanhã em UTC, e a
-  -- planilha anota o dia daqui.
+  -- A VENDA QUE CHEGOU ANTES — pela planilha ou criada à mão na Conferência —
+  -- É ADOTADA, não duplicada (20261027). Pelo dia de São Paulo: assinada às
+  -- 22h, a proposta já é amanhã em UTC, e quem lança anota o dia daqui.
   SELECT CASE WHEN count(*) = 1 THEN min(v.id::text)::uuid END INTO v_adotar
     FROM vendas v
-   WHERE v.tenant_id = NEW.tenant_id AND v.proposta_id IS NULL AND v.planilha_id IS NOT NULL
+   WHERE v.tenant_id = NEW.tenant_id AND v.proposta_id IS NULL
      AND v.data_venda = (COALESCE(NEW.signed_at, now()) AT TIME ZONE 'America/Sao_Paulo')::date
      AND abs(v.vgv - NEW.value) < 1;
   IF v_adotar IS NOT NULL THEN

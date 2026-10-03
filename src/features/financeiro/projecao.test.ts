@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { diaAnterior, lerValor, linhaVisivel, montarProjecao, rotuloDaColuna } from './projecao';
+import { diaAnterior, lerValor, linhaVisivel, montarProjecao, rotuloDaColuna, saldoParaEditar } from './projecao';
 
 const mes = (id: string, v: Record<string, number> = {}) =>
   ({ id, tipo: 'mes' as const, de: '2026-11-01', ate: '2026-11-30', ...v });
@@ -67,5 +67,18 @@ describe('o dia do saldo informado', () => {
     expect(diaAnterior('2026-10-03')).toBe('2026-10-02');
     expect(diaAnterior('2026-11-01')).toBe('2026-10-31');
     expect(diaAnterior('2027-01-01')).toBe('2026-12-31');
+  });
+});
+
+describe('o formulário do saldo abre com o que está gravado na conta', () => {
+  // O saldo da projeção soma todas as contas e o que foi baixado depois da data
+  // informada. Gravá-lo de volta numa conta só contaria isso em dobro.
+  it('conta com saldo datado: o valor e a data DELA', () => {
+    expect(saldoParaEditar({ saldo_inicial: 150000, saldo_em: '2026-10-02' }, '2026-10-03'))
+      .toEqual({ texto: '150000', dia: '2026-10-02' });
+  });
+  it('sem conta, ou conta sem data: vazio, com a data de ontem', () => {
+    expect(saldoParaEditar(undefined, '2026-10-03')).toEqual({ texto: '', dia: '2026-10-02' });
+    expect(saldoParaEditar({ saldo_inicial: 50000, saldo_em: null }, '2026-10-03')).toEqual({ texto: '', dia: '2026-10-02' });
   });
 });
