@@ -1,10 +1,11 @@
 # Projeção 90 dias — o que falta (03/10/2026)
 
-Código pronto na branch `projecao-90d` (worktree `octo-dash2-projecao`). **Nada foi para produção.**
-Testado no Supabase local e no navegador com contas descartáveis (Diretoria e Gerente).
+**No ar em 03/10:** as 4 migrations (20261025 → 20261028) aplicadas em produção, md5 das 28 funções = local,
+nenhuma aberta ao anon, 29 vendas e 227 lançamentos intactos; código em `origin/main` (76eeb55), CI verde.
+Testado antes no Supabase local e no navegador com contas descartáveis (Diretoria e Gerente).
 
 ## Para você (OK de produção, nesta ordem)
-1. Aplicar as migrations 20261025 → 20261026 → 20261027 → 20261028 **antes** do push (a tela nova chama as funções novas).
+1. ~~Migrations~~ e ~~push~~: feitos em 03/10. **Falta o deploy no EasyPanel.**
 2. Rodar `scripts/projecao-90d/1-carga-ponte-planilha.sql`. Medido: 29 linhas ligam nas vendas do CRM, 2 viram venda
    (Angelo Finati, 30/01, R$ 66.250; parceria de 29/04, R$ 9.870 — as duas já recebidas), 6 ficam de fora.
    O DRE (competência) de janeiro e abril sobe esses valores; no caixa, os R$ 66.250 entram de uma vez em 31/07
@@ -12,7 +13,6 @@ Testado no Supabase local e no navegador com contas descartáveis (Diretoria e G
    ⚠️ Depois da migration 20261027, a primeira releitura da planilha que der certo já faz essa carga sozinha.
    Hoje isso não acontece porque o arquivo dá 410.
 3. Rodar `scripts/projecao-90d/2-classificar-custos.sql` (46 de Marketing, 45 de Salários). Sem ele, Marketing e provisões saem zerados.
-4. Push da branch → deploy no EasyPanel.
 5. Link novo da planilha de vendas: o arquivo atual dá 410 desde 01/09; setembro não entra sem ele.
    Ao trocar o link, desativar antes as linhas da planilha antiga (o importador não faz isso): senão cada linha
    relida aparece "sem par" e a aba Planilha dobra.
