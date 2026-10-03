@@ -36,6 +36,7 @@ import {
 } from './financeiroService';
 import { ConciliacaoPanel } from './ConciliacaoPanel';
 import { NotasAEmitir } from './NotasAEmitir';
+import { ProjecaoPanel } from './ProjecaoPanel';
 import { ABAS_DO_FINANCEIRO, abaDoEndereco, type AbaDoFinanceiro } from './abas';
 
 type Aba = AbaDoFinanceiro;
@@ -129,6 +130,7 @@ export function FinanceiroPage() {
     qc.invalidateQueries({ queryKey: ['fin-lancamentos'] });
     qc.invalidateQueries({ queryKey: ['fin-dre'] });
     qc.invalidateQueries({ queryKey: ['fin-fluxo'] });
+    qc.invalidateQueries({ queryKey: ['fin-projecao'] });
     // Baixar ou desfazer aqui mexe no extrato: desfazer a baixa solta o
     // movimento conciliado (gatilho do P4.6). Sem estas três, a Conciliação
     // seguia mostrando como casado um movimento que já tinha sido solto.
@@ -196,6 +198,8 @@ export function FinanceiroPage() {
         ))}
       </nav>
 
+      {/* A projeção é sempre de hoje a +90 dias: o recorte de datas não vale para ela. */}
+      {aba !== 'projecao' && (
       <div className="mb-4 flex flex-wrap items-end gap-2">
         <Campo rotulo="De">
           <input type="date" value={de} onChange={(e) => setDe(e.target.value)} className={inputCls} />
@@ -221,6 +225,7 @@ export function FinanceiroPage() {
           </Campo>
         )}
       </div>
+      )}
 
       {semAcesso && (
         <Aviso tom="amber">
@@ -235,6 +240,7 @@ export function FinanceiroPage() {
 
       {ehLista && <Lista q={lista} aba={aba} acao={acao} />}
       {aba === 'dre' && <PainelDre q={dre} />}
+      {aba === 'projecao' && <ProjecaoPanel tenantId={tenantId} />}
       {aba === 'notas' && <NotasAEmitir tenantId={tenantId} />}
 
       {aba === 'conciliacao' && (

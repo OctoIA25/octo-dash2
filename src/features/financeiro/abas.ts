@@ -5,12 +5,13 @@
  * tela, e só mostrava "A receber". Duas listas escritas à mão divergiriam na
  * primeira aba nova; por isso a lateral monta os atalhos DAQUI.
  */
-export type AbaDoFinanceiro = 'receber' | 'pagar' | 'fluxo' | 'dre' | 'conciliacao' | 'notas';
+export type AbaDoFinanceiro = 'receber' | 'pagar' | 'fluxo' | 'projecao' | 'dre' | 'conciliacao' | 'notas';
 
 export const ABAS_DO_FINANCEIRO: ReadonlyArray<{ id: AbaDoFinanceiro; rotulo: string }> = [
   { id: 'receber', rotulo: 'A receber' },
   { id: 'pagar', rotulo: 'A pagar' },
   { id: 'fluxo', rotulo: 'Fluxo de caixa' },
+  { id: 'projecao', rotulo: 'Projeção 90 dias' },
   { id: 'dre', rotulo: 'DRE gerencial' },
   { id: 'conciliacao', rotulo: 'Conciliação' },
   { id: 'notas', rotulo: 'Notas a emitir' },

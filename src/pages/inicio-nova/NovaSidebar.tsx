@@ -85,6 +85,7 @@ const ICONE_DA_ABA_DO_FINANCEIRO: Record<AbaDoFinanceiro, typeof Receipt> = {
   receber: Receipt,
   pagar: Wallet,
   fluxo: TrendingUp,
+  projecao: CalendarClock,
   dre: BarChart3,
   conciliacao: Scale,
   notas: FileText,

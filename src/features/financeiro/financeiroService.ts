@@ -7,6 +7,7 @@
  */
 
 import { supabase } from '@/lib/supabaseClient';
+import type { ProjecaoDoBanco } from './projecao';
 import type {
   Dre, FluxoDeCaixa, LinhaDaExportacao, ListaDeLancamentos, TipoDeLancamento,
 } from './financeiro';
@@ -27,6 +28,8 @@ export interface ContaBancaria {
   nome: string;
   banco: string;
   saldo_inicial: number;
+  /** Dia em que `saldo_inicial` era o saldo do extrato. Null = saldo antes de qualquer lançamento. */
+  saldo_em: string | null;
   ativa: boolean;
 }
 
@@ -175,7 +178,7 @@ export async function carregarContasBancarias(tenantId: string): Promise<ContaBa
 
 export async function salvarContaBancaria(
   tenantId: string,
-  c: { id?: string; nome: string; banco: string; saldoInicial: number }
+  c: { id?: string; nome: string; banco: string; saldoInicial: number; saldoEm?: string | null }
 ) {
   const { data, error } = await supabase.rpc('financeiro_conta_bancaria', {
     p_tenant_id: tenantId,
@@ -183,9 +186,27 @@ export async function salvarContaBancaria(
     p_banco: c.banco ?? '',
     p_saldo_inicial: c.saldoInicial ?? 0,
     p_id: c.id ?? null,
+    p_saldo_em: c.saldoEm ?? null,
   });
   if (error) throw error;
   return exigir(data, 'salvar a conta bancária');
+}
+
+export async function carregarProjecao(tenantId: string): Promise<ProjecaoDoBanco | null> {
+  if (vazio(tenantId)) return null;
+  const { data, error } = await supabase.rpc('financeiro_projecao', { p_tenant_id: tenantId });
+  if (error) throw error;
+  return (data as ProjecaoDoBanco) ?? null;
+}
+
+/** `null` tira o alerta. */
+export async function definirAlerta(tenantId: string, valor: number | null) {
+  const { data, error } = await supabase.rpc('financeiro_definir_alerta', {
+    p_tenant_id: tenantId,
+    p_valor: valor,
+  });
+  if (error) throw error;
+  return exigir(data, 'definir o alerta');
 }
 
 /**
