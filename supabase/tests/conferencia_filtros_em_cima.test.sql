@@ -70,6 +70,10 @@ BEGIN
   INSERT INTO planilha_corretor_de_para (tenant_id, nome_na_planilha, user_id, situacao)
     VALUES (casa, 'Fulano Ex', NULL, 'ex_membro');
 
+  -- 03/10: a planilha entra com os gatilhos desligados. Este teste mede a LEITURA
+  -- da conferência; a ponte planilha → venda (20261027) tem teste próprio, e aqui
+  -- ela criaria vendas no CRM que mudariam as contagens da seção 5.
+  SET LOCAL session_replication_role = replica;
   INSERT INTO commercial_sales
     (tenant_id, empreendimento, origem, area_m2, valor_m2,
      total_unidade, valor_vgv, valor_vgc, valor_imovel, comissao_total_venda,
@@ -114,6 +118,7 @@ BEGIN
     (casa, 'Castanheira', 'Santa', 0, 0, 450000, 436000, 0, 0, 20000,
      0, 'Cliente do Ex', 'Fulano Ex', 'PL', 0, 8000, 0, 0, 4000,
      '2026-06-16', '2026-06-30', 'ok', '{}'::jsonb, true);
+  SET LOCAL session_replication_role = origin;
 
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', u_admin, 'role', 'authenticated')::text, true);
@@ -255,7 +260,7 @@ BEGIN
   -- só do anon deixaria passar.
   -- ----------------------------------------------------------
   IF has_function_privilege('anon', 'public.vendas_planilha_conferencia(uuid,date,date,text,uuid,text,uuid,uuid,text)', 'execute')
-  OR has_function_privilege('anon', 'public.vendas_conferencia(uuid,date,date,text,uuid,uuid,uuid,text,uuid)', 'execute') THEN
+  OR has_function_privilege('anon', 'public.vendas_conferencia(uuid,date,date,text,uuid,uuid,uuid,text,uuid,text)', 'execute') THEN
     RAISE EXCEPTION 'FALHOU 6: anon executa a conferencia';
   END IF;
   RAISE NOTICE 'OK 6: anon fora das duas';

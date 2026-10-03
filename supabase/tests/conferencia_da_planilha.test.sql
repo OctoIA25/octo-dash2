@@ -44,7 +44,10 @@ DECLARE
     'status_recebimento', 'situacao',
     -- 29/09, tarde: o código das vendas de terceiros (digitado na Dash) e o
     -- tipo, que diz à tela se a célula mostra Qd · Un ou o código.
-    'tipo_negocio', 'codigo_imovel'
+    'tipo_negocio', 'codigo_imovel',
+    -- 03/10: a venda da Dash que é esta linha, e o que a tela precisa para
+    -- dizer a situação dela e o "sem par". Não são colunas novas na tela.
+    'venda_id', 'sem_par', 'parcelas', 'parcelas_pagas'
   ];
 BEGIN
   INSERT INTO tenants (id, code, name) VALUES (casa,'teste-conferencia','Casa')
