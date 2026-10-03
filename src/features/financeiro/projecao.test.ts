@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { lerValor, linhaVisivel, montarProjecao, rotuloDaColuna } from './projecao';
+import { diaAnterior, lerValor, linhaVisivel, montarProjecao, rotuloDaColuna } from './projecao';
 
 const mes = (id: string, v: Record<string, number> = {}) =>
   ({ id, tipo: 'mes' as const, de: '2026-11-01', ate: '2026-11-30', ...v });
@@ -57,5 +57,15 @@ describe('rótulos e linhas', () => {
     expect(lerValor('4.000,50')).toBe(4000.5);
     expect(lerValor('100000')).toBe(100000);
     expect(lerValor('  ')).toBeNull();
+  });
+});
+
+describe('o dia do saldo informado', () => {
+  // O saldo vale no FIM do dia escolhido. Vir com "hoje" faria o que for baixado
+  // hoje, depois de digitar o saldo, sumir das colunas sem entrar no saldo.
+  it('o padrão é ontem, inclusive na virada de mês e de ano', () => {
+    expect(diaAnterior('2026-10-03')).toBe('2026-10-02');
+    expect(diaAnterior('2026-11-01')).toBe('2026-10-31');
+    expect(diaAnterior('2027-01-01')).toBe('2026-12-31');
   });
 });

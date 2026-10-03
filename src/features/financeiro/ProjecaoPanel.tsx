@@ -13,7 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { hojeSP } from '@/lib/dataSP';
 import { reaisExatos } from './financeiro';
 import {
-  ENTRADAS, ROTULO_DA_LINHA, SAIDAS, lerValor, linhaVisivel, montarProjecao,
+  ENTRADAS, ROTULO_DA_LINHA, SAIDAS, diaAnterior, lerValor, linhaVisivel, montarProjecao,
   type ColunaCalculada, type LinhaDaProjecao, type ValoresDaColuna,
 } from './projecao';
 import {
@@ -42,7 +42,7 @@ export function ProjecaoPanel({ tenantId }: { tenantId: string }) {
   const [editandoSaldo, setEditandoSaldo] = useState(false);
   const [contaId, setContaId] = useState('');
   const [saldoTexto, setSaldoTexto] = useState('');
-  const [saldoEm, setSaldoEm] = useState(hojeSP);
+  const [saldoEm, setSaldoEm] = useState(() => diaAnterior(hojeSP()));
   const [alertaTexto, setAlertaTexto] = useState<string | null>(null);
 
   const recarregar = () => {
@@ -102,7 +102,7 @@ export function ProjecaoPanel({ tenantId }: { tenantId: string }) {
   const abrirSaldo = () => {
     setSaldoTexto(p.tem_conta ? String(p.saldo_inicial).replace('.', ',') : '');
     setContaId((contas.data ?? [])[0]?.id ?? '');
-    setSaldoEm(hojeSP());
+    setSaldoEm(diaAnterior(hojeSP()));
     setEditandoSaldo(true);
   };
 
@@ -144,7 +144,7 @@ export function ProjecaoPanel({ tenantId }: { tenantId: string }) {
           </button>
           <button type="button" onClick={() => setEditandoSaldo(false)} className="h-8 px-2 text-muted-foreground">Cancelar</button>
           <span className="basis-full text-[11px] text-muted-foreground">
-            O que for baixado depois desse dia entra por cima do saldo; o que foi baixado até ele já está dentro.
+            Use o saldo do fim de ontem: o que for baixado depois desse dia entra por cima; o que foi baixado até ele já está dentro.
           </span>
         </form>
       )}

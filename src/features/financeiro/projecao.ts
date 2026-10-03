@@ -107,3 +107,14 @@ export function lerValor(texto: string): number | null {
   if (!texto.trim()) return null;
   return parseNumeric(texto);
 }
+
+/**
+ * O dia anterior, em 'YYYY-MM-DD'. É o padrão do "saldo do extrato": o saldo
+ * vale no FIM do dia escolhido, e com "hoje" o que fosse baixado hoje depois
+ * de digitar o saldo sumiria das colunas sem entrar nele.
+ */
+export function diaAnterior(dia: string): string {
+  const d = new Date(`${dia}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}

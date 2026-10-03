@@ -52,6 +52,12 @@ describe('divergência entre o previsto e o recebido', () => {
   it('acusa também o que entrou A MAIS — dinheiro sobrando é erro igual', () => {
     expect(divergencia(venda({ valor_recebido: 31000 }))?.sentido).toBe('a_mais');
   });
+
+  // 03/10: venda parcelada com parcela ainda em aberto. O que entrou é a soma
+  // das parcelas pagas — faltar o resto é esperar, não divergir.
+  it('parcelada pela metade não é divergência: ainda faltam parcelas', () => {
+    expect(divergencia(venda({ valor_recebido: 8000, situacao: 'parcelado' }))).toBeNull();
+  });
 });
 
 describe('a comissão da proposta contra a calculada', () => {

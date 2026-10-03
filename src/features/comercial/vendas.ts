@@ -130,12 +130,17 @@ const CENTAVO = 0.01;
  * pago depois, pela casa. Comparar contra a líquida acusava divergência
  * justamente no caso normal — o recebimento certo virava alarme.
  */
-export function divergencia(v: Pick<VendaNaLista, 'valor_recebido' | 'comissao_bruta'>): {
+export function divergencia(
+  v: Pick<VendaNaLista, 'valor_recebido' | 'comissao_bruta'> & Partial<Pick<VendaNaLista, 'situacao'>>,
+): {
   valor: number;
   sentido: 'a_menos' | 'a_mais';
   texto: string;
 } | null {
   if (v?.valor_recebido == null) return null;
+  // Parcelada com parcela em aberto: o que entrou é só parte, e faltar o resto
+  // é esperar (03/10). A conta vale quando a última parcela entra.
+  if (v.situacao === 'parcelado') return null;
   const d = v.valor_recebido - v.comissao_bruta;
   if (Math.abs(d) <= CENTAVO) return null;
   const sentido = d < 0 ? 'a_menos' : 'a_mais';
